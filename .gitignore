@@ -1,0 +1,9 @@
+
+# CrewCheck local secrets / deploy helpers
+*TOKEN_INSERIDO*.sh
+*token*.sh
+.env
+.env.local
+*.jks
+*.keystore
+crewcheck-upload.jks
