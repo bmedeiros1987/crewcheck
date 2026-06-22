@@ -1,0 +1,72 @@
+{
+  "name": "CrewCheck Premium Total",
+  "short_name": "CrewCheck",
+  "description": "CrewCheck Premium — escala, iFlight, calendário, perfil e temas claro/escuro.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#092846",
+  "orientation": "any",
+  "lang": "pt-BR",
+  "categories": [
+    "productivity",
+    "utilities",
+    "business"
+  ],
+  "icons": [
+    {
+      "src": "/icons/crewcheck-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false,
+  "version": "10.8.122",
+  "shortcuts": [
+    {
+      "name": "Escala no relógio",
+      "short_name": "Watch",
+      "description": "Escala compacta para Galaxy Watch/Wear OS",
+      "url": "/watch",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon.svg",
+          "sizes": "512x512",
+          "type": "image/svg+xml",
+          "purpose": "any maskable"
+        }
+      ]
+    },
+    {
+      "name": "Vivo de Extra",
+      "short_name": "Vivo",
+      "description": "Abrir Vivo de Extra na Saída Inteligente",
+      "url": "/?view=departure",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon.svg",
+          "sizes": "512x512",
+          "type": "image/svg+xml",
+          "purpose": "any maskable"
+        }
+      ]
+    },
+    {
+      "name": "Radar de Voos",
+      "short_name": "Radar",
+      "description": "Monitores de voos do dia",
+      "url": "/?view=flightboard",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon.svg",
+          "sizes": "512x512",
+          "type": "image/svg+xml",
+          "purpose": "any maskable"
+        }
+      ]
+    }
+  ]
+}

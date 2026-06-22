@@ -1,0 +1,57 @@
+plugins {
+    id 'com.android.application'
+}
+
+def crewcheckStoreFile = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
+def crewcheckStorePassword = project.findProperty('CREWCHECK_STORE_PASSWORD') ?: System.getenv('CREWCHECK_STORE_PASSWORD')
+def crewcheckKeyAlias = project.findProperty('CREWCHECK_KEY_ALIAS') ?: System.getenv('CREWCHECK_KEY_ALIAS')
+def crewcheckKeyPassword = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.getenv('CREWCHECK_KEY_PASSWORD')
+def crewcheckSigningReady = crewcheckStoreFile && crewcheckStorePassword && crewcheckKeyAlias && crewcheckKeyPassword
+
+android {
+    namespace 'com.crewcheck.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.crewcheck.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 11019
+        versionName '11.0.19'
+    }
+
+    def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
+    def storePasswordValue = project.findProperty('CREWCHECK_STORE_PASSWORD') ?: System.getenv('CREWCHECK_STORE_PASSWORD')
+    def keyAliasValue = project.findProperty('CREWCHECK_KEY_ALIAS') ?: System.getenv('CREWCHECK_KEY_ALIAS')
+    def keyPasswordValue = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.getenv('CREWCHECK_KEY_PASSWORD')
+    def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            debuggable true
+        }
+    }
+}
