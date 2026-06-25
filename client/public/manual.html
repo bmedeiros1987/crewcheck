@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manual CrewCheck v11</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#061426;--card:#0b2038;--ink:#f8fafc;--muted:#cbd5e1;--cyan:#67e8f9;--blue:#38bdf8;--violet:#c4b5fd;--emerald:#86efac;--line:#27415f}
+    *{box-sizing:border-box}body{font-family:Inter,Arial,sans-serif;margin:0;background:radial-gradient(circle at 15% 0%,rgba(56,189,248,.22),transparent 28%),linear-gradient(180deg,#061426,#081c32);color:var(--ink)}
+    main{max-width:1080px;margin:auto;padding:32px 20px 72px}.hero{border:1px solid var(--line);border-radius:30px;background:linear-gradient(135deg,#0b2038,#081827);padding:30px;box-shadow:0 18px 48px rgba(0,0,0,.25)}
+    h1{font-size:clamp(34px,5vw,58px);line-height:1.02;margin:12px 0}h2{font-size:24px;margin:0 0 10px}h3{font-size:18px;margin:0 0 8px}p,li{line-height:1.65;color:var(--muted)}section{background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:24px;padding:22px;margin:16px 0}.tag{display:inline-block;background:var(--cyan);color:#061426;border-radius:999px;padding:7px 12px;font-weight:900;font-size:12px}.btn{display:inline-block;border-radius:16px;padding:13px 18px;margin:6px 8px 6px 0;font-weight:900;text-decoration:none}.cyan{background:var(--cyan);color:#061426}.violet{background:var(--violet);color:#061426}.emerald{background:var(--emerald);color:#061426}.ghost{border:1px solid var(--line);color:var(--ink)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{border:1px solid var(--line);border-radius:20px;padding:18px;background:rgba(255,255,255,.04)}.small{font-size:13px;color:#94a3b8}.warn{border-color:#fbbf24;background:rgba(251,191,36,.09)}
+  </style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <span class="tag">CrewCheck v11.0.20</span>
+    <h1>Manual Completo CrewCheck</h1>
+    <p>Guia web atualizável com as principais telas, permissões, planos e boas práticas. O CrewCheck é uma ferramenta independente de apoio pessoal; sempre confirme dados operacionais nos canais oficiais.</p>
+    <a class="btn cyan" href="/manuals/manual-completo-crewcheck-premium-v1.pdf" target="_blank" rel="noreferrer">Baixar manual completo PDF</a>
+    <a class="btn violet" href="/manuals/crewcheck-novas-funcionalidades-v11.pdf" target="_blank" rel="noreferrer">Baixar novas funcionalidades</a>
+    <a class="btn ghost" href="/manuals/crewcheck-sincronizacao-calendario.pdf" target="_blank" rel="noreferrer">Guia de calendário</a>
+  </div>
+
+  <section><h2>1. Cadastro sem CPF inicial</h2><p>No plano gratuito, o CrewCheck não solicita CPF. O CPF aparece somente se o usuário decidir iniciar teste grátis, assinar ou regularizar cobrança. O cadastro pede nome, sobrenome, e-mail pessoal, confirmação de e-mail e senha.</p></section>
+  <section><h2>2. Modo demonstração</h2><p>O modo demonstração usa escala fictícia, sem dados pessoais. Ele serve para conhecer o sistema antes de importar a primeira escala real. Após a primeira importação, o modo demonstração é desativado.</p></section>
+  <section><h2>3. Escala e Cockpit</h2><p>A tela inicial mostra a programação a seguir e deve avançar conforme o andamento do dia. A escala abre no dia correspondente quando houver programação atual ou futura.</p></section>
+  <section><h2>4. Diárias, ceia e salário</h2><p>O cálculo considera voo, reserva, pernoite/inativo fora da base contratual e permanência fora de base. Base virtual e pernoite dirigido não geram diária automática. A ceia depende de jornada ativa entre 00:00 e 01:00. Em Salário, use a expressão bonificação de chefe de cabine.</p></section>
+  <section><h2>5. Saída Inteligente</h2><p>Ajuda a decidir quando sair para cumprir a programação. Em deslocamentos longos, pode trabalhar com carro + voo, Uber/99 + voo, moto + voo ou transporte público + voo.</p></section>
+  <section><h2>6. Radar e relatórios</h2><p>O radar fica separado da escala e pode ser filtrado por manhã, tarde e noite. O relatório de bordo usa a escala para sugerir o voo atual e pode lembrar MAAS/WCH no destino quando houver permissão.</p></section>
+  <section><h2>7. Agenda</h2><p>O usuário escolhe se quer incluir diárias e ganhos nas observações do calendário em Configurações &gt; Agenda. A exportação ICS permanece disponível.</p></section>
+
+  <section>
+    <h2>8. Planos em linguagem simples</h2>
+    <div class="grid">
+      <div class="card"><h3>Gratuito</h3><p>Importação PDF, escala, Cockpit, cálculos locais, rotina, moedas, estacionamento, relatório manual, legenda e manual.</p></div>
+      <div class="card"><h3>Premium mensal</h3><p>Inclui suporte, radar atualizado quando disponível, sincronizações, alertas avançados e manutenção da estrutura do projeto.</p></div>
+      <div class="card"><h3>Premium anual</h3><p>Inclui o Premium mensal com desconto anual, menos renovações durante o ano e prioridade em melhorias.</p></div>
+      <div class="card"><h3>Premium Unlimited</h3><p>Plano especial preservado para contas autorizadas e apoiadores iniciais. Obrigado pelo apoio ao CrewCheck.</p></div>
+    </div>
+  </section>
+
+  <section class="warn"><h2>9. Permissões e segundo plano</h2><p>Ative notificações, localização e funcionamento em segundo plano em Configurações &gt; Permissões. Em alguns Androids, a economia de bateria pode limitar alertas; liberar segundo plano melhora a entrega.</p></section>
+  <p class="small">Última revisão: CrewCheck v11.0.20. Este manual pode ser atualizado a cada melhoria do sistema.</p>
+</main>
+</body>
+</html>
