@@ -1737,7 +1737,7 @@ try{
         var sels='[role=dialog],.modal,.popover,.tooltip,.x-tip,.x-window,.x-panel,.detail,.details,.crew,.tripulation,.tripulacao,.crew-list,.crewList';
         Array.prototype.slice.call(d.querySelectorAll(sels)).forEach(function(el){
           if(!visible(el)) return;
-          var t=(txt(el)+' '+attrs(el)).replace(/\s+/g,' ').trim();
+          var t=(txt(el)+' '+attrs(el)).replace(/\\s+/g,' ').trim();
           if(t && t.length>20) chunks.push(t);
         });
       });
@@ -1748,10 +1748,10 @@ try{
     var list=[];
     try{
       list=all().filter(visible).filter(function(el){
-        var t=(txt(el)+' '+attrs(el)).replace(/\s+/g,' ').trim();
+        var t=(txt(el)+' '+attrs(el)).replace(/\\s+/g,' ').trim();
         if(!t || t.length<2 || t.length>260) return false;
         if(/Roster Calendar|Statistics|Current|Welcome|Copyright|Home|Profile|Airport|Alert History|Swap|Roster Report/i.test(t)) return false;
-        return /(\bLA\s*\d{3,4}\b|\bLA\d{3,4}\b|\bASB\b|\bHSBE?\b|\bDO\b|\bDR\b|\bMT\b|\bCBF\b|\bEMER\b|\bCRM\b|\bC\d{2,3}F\b|\d{1,2}:\d{2})/i.test(t);
+        return /(\\bLA\\s*\\d{3,4}\\b|\\bLA\\d{3,4}\\b|\\bASB\\b|\\bHSBE?\\b|\\bDO\\b|\\bDR\\b|\\bMT\\b|\\bCBF\\b|\\bEMER\\b|\\bCRM\\b|\\bC\\d{2,3}F\\b|\\d{1,2}:\\d{2})/i.test(t);
       }).slice(0,60);
     }catch(e){}
     return list;
@@ -1999,7 +1999,7 @@ try{
   setTimeout(step,450);
 }catch(e){ console.log('CrewCheck iFlight automation',e); }
 })(
-""" + activeIFlightConfigJson + """
+""" + (activeIFlightConfigJson != null ? activeIFlightConfigJson : "{}") + """
 );
 """;
         try {
