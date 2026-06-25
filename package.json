@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.55",
+  "version": "11.0.56",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.55: correção do Concierge Telegram para sincronizar/encontrar escala, botão de sincronização e melhorias premium para Web/Android/iOS.",
+  "description": "CrewCheck v11.0.56: correção do build Android Java no iFlight Automation, mantendo menu compacto, Telegram Concierge e refinamentos premium.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

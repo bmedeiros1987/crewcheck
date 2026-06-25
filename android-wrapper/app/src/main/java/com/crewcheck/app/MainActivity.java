@@ -1751,7 +1751,7 @@ try{
         var t=(txt(el)+' '+attrs(el)).replace(/\s+/g,' ').trim();
         if(!t || t.length<2 || t.length>260) return false;
         if(/Roster Calendar|Statistics|Current|Welcome|Copyright|Home|Profile|Airport|Alert History|Swap|Roster Report/i.test(t)) return false;
-        return /(\bLA\s*\d{3,4}\b|\bLA\d{3,4}\b|\bASB\b|\bHSBE?\b|\bDO\b|\bDR\b|\bMT\b|\bCBF\b|\bEMER\b|\bCRM\b|\bC\d{2,3}F\b|\d{1,2}:\d{2})/i.test(t);
+        return /(LA *[0-9]{3,4}|LA[0-9]{3,4}|ASB|HSB|HSBE|DO|DR|MT|CBF|EMER|CRM|C[0-9]{2,3}F|[0-9]{1,2}:[0-9]{2})/i.test(t);
       }).slice(0,60);
     }catch(e){}
     return list;
