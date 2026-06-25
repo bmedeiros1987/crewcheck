@@ -108,7 +108,7 @@ type NativePdfPayload = {
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.60';
+const APP_VERSION = '11.0.61';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -1795,6 +1795,17 @@ function Home() {
   refreshSavedRosters();
  }, [refreshSavedRosters]);
 
+ useEffect(() => {
+  const refreshCloud = () => void refreshSavedRosters();
+  window.addEventListener('focus', refreshCloud);
+  window.addEventListener('online', refreshCloud);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCloud(); });
+  return () => {
+   window.removeEventListener('focus', refreshCloud);
+   window.removeEventListener('online', refreshCloud);
+  };
+ }, [refreshSavedRosters]);
+
 
  useEffect(() => {
   try {
@@ -1816,7 +1827,7 @@ function Home() {
 
 
  useEffect(() => {
-  const latest = savedRosters.find(isSavedRosterCurrentOrFuture);
+  const latest = savedRosters.find(isSavedRosterCurrentOrFuture) || savedRosters[0];
   if (autoLatestLoaded || savedLoading || hasCurrentRosterSession() || !latest) return;
   setAutoLatestLoaded(true);
   openSavedRoster(latest.id)
@@ -1827,7 +1838,7 @@ function Home() {
     sessionStorage.setItem('crewcheck_gym', JSON.stringify(data.gym || []));
     sessionStorage.setItem('crewcheck_role_selection', roleSelection);
     sessionStorage.setItem('crewcheck_source_file', latest.sourceFileName || 'Última escala sincronizada');
-    toast.success('Última escala sincronizada neste dispositivo.');
+    toast.success('Última escala da nuvem sincronizada neste dispositivo.');
     setDashboardClockTick(Date.now());
     window.setTimeout(() => window.dispatchEvent(new CustomEvent('crewcheck:refresh-smart-departure')), 450);
    })
@@ -2127,16 +2138,19 @@ function Home() {
   const sourceFileName = sessionStorage.getItem('crewcheck_source_file') || 'Escala CrewCheck';
   try {
    publishRosterSyncBundle(roster, compliance, gym, sourceFileName);
-   const saved = await saveRosterAnalysis({ roster, compliance, gym, sourceFileName });
+   const response = await fetch('/api/telegram/roster-sync', { method: 'POST', headers: crewcheckAuthHeader({ 'content-type': 'application/json' }), body: JSON.stringify({ roster, compliance, gym, sourceFileName, force: true }), cache: 'no-store' });
+   const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; status?: TelegramStatus; syncedRoster?: TelegramStatus['syncedRoster']; roster?: SavedRosterSummary } | null;
+   if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'Falha ao confirmar escala no Concierge.');
    sessionStorage.removeItem('crewcheck_auto_db_save_pending');
+   sessionStorage.removeItem('crewcheck_auto_sync_pending');
    await refreshSavedRosters();
-   toast.success(saved?.id ? 'Escala enviada ao servidor e liberada para o Concierge Telegram.' : 'Escala sincronizada com o Concierge Telegram.');
+   toast.success('Escala enviada ao servidor e liberada para o Concierge Telegram.');
    return true;
-  } catch {
+  } catch (error) {
    try {
     await forceSyncRosterEverywhere(roster, compliance, gym, sourceFileName);
    } catch {}
-   toast.warning('Escala salva no dispositivo, mas ainda não consegui confirmar no servidor. Reabra Configurações > Telegram e toque em Sincronizar escala.');
+   toast.warning(error instanceof Error ? error.message : 'Escala salva no dispositivo, mas ainda não consegui confirmar no servidor.');
    return false;
   }
  }, [forceSyncRosterEverywhere, publishRosterSyncBundle, refreshSavedRosters, roleSelection]);

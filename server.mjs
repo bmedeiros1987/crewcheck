@@ -8057,7 +8057,56 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
   newId(), user.id || null, action, result.rows[0].id,
   JSON.stringify({ sourceFileName: sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, importSource }),
  ]).catch(() => null);
+ await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName, checksum: payloadChecksum }).catch(() => null);
  return { row: result.rows[0], deduplicated: Boolean(existing.rowCount), alerts, criticalAlerts, checksum: payloadChecksum };
+}
+
+function telegramConciergeRosterSnapshotFromLink(linkRow = null) {
+ const raw = telegramConciergeSafeJson(linkRow?.preferences_json, linkRow?.preferences_json || {}) || {};
+ const snapshot = raw._conciergeRosterSnapshot || raw.conciergeRosterSnapshot || null;
+ const roster = snapshot?.roster;
+ if (!roster || !Array.isArray(roster.days)) return null;
+ return {
+  id: snapshot.id || `telegram-snapshot-${linkRow?.user_id || 'user'}`,
+  created_at: snapshot.createdAt || snapshot.updatedAt || new Date().toISOString(),
+  updated_at: snapshot.updatedAt || snapshot.createdAt || new Date().toISOString(),
+  period_year: Number(snapshot.periodYear || roster.year) || null,
+  period_month: Number(snapshot.periodMonth || roster.month) || null,
+  roster,
+  compliance: snapshot.compliance || null,
+  gym: Array.isArray(snapshot.gym) ? snapshot.gym : [],
+  crew_id: roster.crewId || snapshot.crewId || null,
+  crew_name: roster.crewName || snapshot.crewName || null,
+  checksum: snapshot.checksum || null,
+  source_file_name: snapshot.sourceFileName || 'Escala sincronizada com Telegram',
+  source: 'telegram_link_snapshot',
+ };
+}
+
+async function storeTelegramRosterSnapshotForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, checksum = null } = {}) {
+ if (!db || !user?.id || !roster || !Array.isArray(roster.days)) return null;
+ if (!telegramIsConfigured()) return null;
+ const row = await ensureTelegramLinkForUser(db, user).catch(() => null);
+ if (!row?.id) return null;
+ const raw = telegramConciergeSafeJson(row.preferences_json, row.preferences_json || {}) || {};
+ const preferences = { ...raw };
+ const snapshot = {
+  id: `telegram-snapshot-${user.id}-${Date.now()}`,
+  updatedAt: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+  periodYear: Number(roster.year) || null,
+  periodMonth: Number(roster.month) || null,
+  crewId: roster.crewId || null,
+  crewName: roster.crewName || null,
+  sourceFileName: sourceFileName || null,
+  checksum: checksum || null,
+  roster,
+  compliance,
+  gym: Array.isArray(gym) ? gym : [],
+ };
+ preferences._conciergeRosterSnapshot = snapshot;
+ await db.query('update crewcheck_telegram_links set preferences_json = $1::jsonb, updated_at = now() where id = $2', [JSON.stringify(preferences), row.id]).catch(() => null);
+ return snapshot;
 }
 
 async function importTelegramPdfRoster(db, row, message, document) {
@@ -8237,6 +8286,7 @@ async function telegramConciergeLatestRosters(db, userOrId, limit = 8, linkRow =
  if (!db || !userOrId) return [];
  const user = typeof userOrId === 'object' ? userOrId : { id: userOrId };
  const userId = user.id || user.user_id || linkRow?.user_id || null;
+ const linkSnapshot = telegramConciergeRosterSnapshotFromLink(linkRow);
  const normalizeRows = (rows = []) => (rows || []).map((row) => ({
   ...row,
   roster: telegramConciergeSafeJson(row.roster_json, row.roster_json || null),
@@ -8300,7 +8350,7 @@ async function telegramConciergeLatestRosters(db, userOrId, limit = 8, linkRow =
   ));
  }
  const results = await Promise.all(queries);
- let rosters = unique(results.flatMap((result) => normalizeRows(result.rows)));
+ let rosters = unique([...(linkSnapshot ? [linkSnapshot] : []), ...results.flatMap((result) => normalizeRows(result.rows))]);
  if (rosters.length) return rosters;
  if (telegramConciergeIsPremium(user) || isBillingAdmin(user)) {
   const latestOwnCompatible = await run(
@@ -8788,6 +8838,37 @@ async function handleApi(req, res, url) {
    sendJson(res, 200, { ok: true, result });
   } catch (error) {
    sendJson(res, 200, { ok: false, message: 'Falha ao processar webhook Telegram.', detail: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/telegram/roster-sync' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 20 * 1024 * 1024);
+   const roster = body.roster;
+   if (!roster || !Array.isArray(roster.days)) {
+    sendJson(res, 400, { ok: false, message: 'Envie uma escala válida para sincronizar com o Concierge.' });
+    return true;
+   }
+   const compliance = body.compliance || null;
+   const gym = Array.isArray(body.gym) ? body.gym : [];
+   const sourceFileName = body.sourceFileName || 'Escala CrewCheck sincronizada';
+   const saved = await saveRosterForUser(db, user, { roster, compliance, gym, sourceFileName, importSource: 'telegram_roster_sync' });
+   const row = await ensureTelegramLinkForUser(db, user).catch(() => null);
+   const snapshot = await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName, checksum: saved?.row?.checksum || null }).catch(() => null);
+   const bot = await telegramBotIdentity().catch(() => null);
+   const updated = await telegramLinkForUser(db, user.id).catch(() => row);
+   const status = telegramPublicStatusFromRow(updated, bot);
+   const synced = await telegramConciergeLatestRosters(db, user, 1, updated).catch(() => []);
+   status.syncedRoster = synced[0] ? { available: true, updatedAt: synced[0].updated_at || synced[0].created_at || snapshot?.updatedAt || null, periodYear: synced[0].period_year || synced[0].roster?.year || null, periodMonth: synced[0].period_month || synced[0].roster?.month || null } : { available: Boolean(snapshot), updatedAt: snapshot?.updatedAt || null, periodYear: snapshot?.periodYear || null, periodMonth: snapshot?.periodMonth || null };
+   sendJson(res, 200, { ok: true, roster: summarizeRosterRow(saved.row), status, syncedRoster: status.syncedRoster });
+  } catch (error) {
+   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)), detail: error?.code || null });
   }
   return true;
  }
@@ -10627,7 +10708,10 @@ async function handleApi(req, res, url) {
     JSON.stringify({ sourceFileName: body.sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum }),
    ]);
 
-   if (user.id) {
+   await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName: body.sourceFileName || null, checksum: payloadChecksum }).catch(() => null);
+
+   const wantsTelegramImportNotice = /^(1|true|yes|sim)$/i.test(String(body.notifyTelegram || body.telegramPush || '').trim());
+   if (user.id && wantsTelegramImportNotice) {
     await notifyTelegramForUser(db, user.id, 'roster', existing.rowCount ? 'Escala atualizada' : 'Nova escala importada', [
      `${String(roster.month || '').padStart(2, '0')}/${roster.year || '----'} · Base ${roster.base || 'não informada'}`,
      alerts.length ? `${alerts.length} alerta(s) mapeado(s) · ${criticalAlerts.length} crítico(s).` : 'Nenhum alerta crítico identificado na importação.',

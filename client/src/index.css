@@ -8208,7 +8208,7 @@ html.crewcheck-ios .crewcheck-nav-trigger {
 }
 
 
-/* CrewCheck v11.0.60 — Escala estável: Web/Desktop, Android e iOS
+/* CrewCheck v11.0.61 — Escala estável: Web/Desktop, Android e iOS
    1) consultas passivas do radar não disparam Telegram; 2) escala em modo claro fica legível;
    3) desktop deixa de distorcer/encavalhar a coluna de data com os cards. */
 .crewcheck-results-premium .cc-roster-desktop-list {
@@ -8352,3 +8352,62 @@ html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-fl
 }
 html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill-label { color: #475569 !important; }
 html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill-value { color: #061526 !important; }
+
+/* CrewCheck v11.0.61 — configurações: rolagem principal na tela, não no menu flutuante */
+.crewcheck-settings-scroll-fix {
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  height: auto !important;
+  min-height: 100dvh !important;
+  overscroll-behavior-y: auto !important;
+}
+.crewcheck-side-layout:has(.crewcheck-settings-scroll-fix),
+.crewcheck-side-layout:has(.crewcheck-settings-screen),
+.crewcheck-side-content:has(.crewcheck-settings-scroll-fix) {
+  min-height: 100dvh !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+@media (max-width: 1023px) {
+  .crewcheck-settings-page-inner {
+    padding-top: calc(4.8rem + env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: calc(9.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .crewcheck-settings-category-list {
+    position: relative !important;
+    top: auto !important;
+    z-index: 1 !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .62rem !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .crewcheck-settings-category-list > button {
+    min-width: 0 !important;
+    width: 100% !important;
+    flex: initial !important;
+    min-height: 4.8rem !important;
+  }
+  .crewcheck-settings-category-list > button .block.truncate.text-xs {
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+  .crewcheck-settings-content-panel {
+    overflow: visible !important;
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+@media (max-width: 460px) {
+  .crewcheck-settings-category-list {
+    grid-template-columns: 1fr !important;
+  }
+}

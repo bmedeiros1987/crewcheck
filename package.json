@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.60",
+  "version": "11.0.61",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.60: anti-spam real no Telegram, escala legível em Android/iOS modo claro, layout Web corrigido e AAB consolidado versionCode 11060.",
+  "description": "CrewCheck v11.0.61: Concierge Telegram com snapshot da escala, sincronização real entre dispositivos, scroll de Configurações corrigido e AAB consolidado versionCode 11061.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
