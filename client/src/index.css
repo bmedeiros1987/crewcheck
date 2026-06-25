@@ -8206,3 +8206,149 @@ html.crewcheck-ios .crewcheck-nav-trigger {
     padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+
+
+/* CrewCheck v11.0.60 — Escala estável: Web/Desktop, Android e iOS
+   1) consultas passivas do radar não disparam Telegram; 2) escala em modo claro fica legível;
+   3) desktop deixa de distorcer/encavalhar a coluna de data com os cards. */
+.crewcheck-results-premium .cc-roster-desktop-list {
+  width: min(1220px, calc(100vw - 2rem)) !important;
+  max-width: min(1220px, calc(100vw - 2rem)) !important;
+  margin-inline: auto !important;
+  overflow: visible !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list > div {
+  overflow: hidden !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-roster-day-desktop {
+  overflow: hidden !important;
+  contain: layout paint;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-roster-day-desktop > .grid {
+  display: grid !important;
+  grid-template-columns: minmax(5.8rem, 7.2rem) minmax(0, 1fr) !important;
+  gap: .85rem !important;
+  align-items: stretch !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: .85rem !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-roster-date-desktop {
+  position: relative !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 7.2rem !important;
+  overflow: hidden !important;
+  z-index: 1 !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-day-finance-chips {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: .28rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-financial-chip {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: .55rem !important;
+  line-height: .75rem !important;
+  padding: .2rem .38rem !important;
+  text-align: center !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-roster-event {
+  width: 100% !important;
+  min-width: 0 !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-roster-event button {
+  display: grid !important;
+  grid-template-columns: 2.35rem minmax(4.9rem, 6.2rem) minmax(0, 1fr) auto !important;
+  gap: .68rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  align-items: center !important;
+}
+.crewcheck-results-premium .cc-roster-desktop-list .cc-roster-event button > * {
+  min-width: 0 !important;
+}
+@media (min-width: 1536px) {
+  .crewcheck-results-premium .cc-roster-desktop-list .cc-roster-event button {
+    grid-template-columns: 2.35rem minmax(5.2rem, 6.6rem) minmax(0, 1fr) minmax(11rem, 14rem) auto !important;
+  }
+}
+@media (max-width: 1279px) and (min-width: 1024px) {
+  .crewcheck-results-premium .cc-roster-desktop-list {
+    width: min(100%, calc(100vw - 1rem)) !important;
+    max-width: min(100%, calc(100vw - 1rem)) !important;
+  }
+  .crewcheck-results-premium .cc-roster-desktop-list .cc-roster-day-desktop > .grid {
+    grid-template-columns: minmax(4.8rem, 5.4rem) minmax(0, 1fr) !important;
+    gap: .55rem !important;
+    padding: .62rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-desktop-list .cc-roster-event button {
+    grid-template-columns: 2rem minmax(4.3rem, 5.3rem) minmax(0, 1fr) auto !important;
+    gap: .48rem !important;
+  }
+}
+
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list,
+html[data-crew-theme="light"] .crewcheck-results-premium.android-premium-shell {
+  color: #061526 !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-day-card,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-day-desktop {
+  background: #ffffff !important;
+  border-color: #d7e4ef !important;
+  color: #061526 !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, .08) !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-date-card,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-date-desktop {
+  background: linear-gradient(180deg, #f8fbff, #eef6fb) !important;
+  border-color: #d7e4ef !important;
+  color: #061526 !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-event,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-event {
+  background: linear-gradient(145deg, #ffffff, #f8fbff) !important;
+  border-color: #d7e4ef !important;
+  color: #061526 !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .07) !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-event button,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-event button {
+  color: #061526 !important;
+  background: transparent !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-event :is(.cc-roster-event-time,.cc-roster-event-title,.cc-time-start,.cc-time-end),
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-event :is(.cc-roster-event-time,.cc-roster-event-title,.cc-time-start,.cc-time-end),
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-day-number,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-day-number-desktop {
+  color: #061526 !important;
+  text-shadow: none !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-event :is(.cc-roster-event-subtitle,.cc-roster-routine-line,.cc-roster-crew-summary,.cc-time-arrow),
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-event :is(.cc-roster-event-subtitle,.cc-roster-routine-line,.cc-roster-crew-summary,.cc-time-arrow),
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-weekday,
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-roster-month,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-weekday-desktop,
+html[data-crew-theme="light"] .android-premium-shell .cc-roster-desktop-list .cc-roster-month-desktop {
+  color: #334155 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill,
+html[data-crew-theme="light"] .android-premium-shell .android-roster-list .cc-flight-pill {
+  background: #f8fbff !important;
+  border-color: #d7e4ef !important;
+  color: #061526 !important;
+}
+html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill-label { color: #475569 !important; }
+html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill-value { color: #061526 !important; }

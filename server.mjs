@@ -239,6 +239,22 @@ function radarTelegramHasUsefulOperationalData(status = {}) {
  return Boolean(st && !radarTelegramStatusIsScheduledOnly(st));
 }
 
+function telegramRadarRequestWantsPush(params = {}) {
+ const get = (key) => typeof params.get === 'function' ? params.get(key) : params?.[key];
+ return /^(1|true|yes|sim)$/i.test(String(get('notifyTelegram') || get('telegramPush') || get('telegram') || '').trim());
+}
+
+function radarTelegramIsPastOrClosed(status = {}, params = {}) {
+ const get = (key) => typeof params.get === 'function' ? params.get(key) : params?.[key];
+ const origin = normalizeRadarTelegramValue(get('origin') || status.origin || status.departureAirport || 'BSB').toUpperCase();
+ const dateKey = radarIsoDate(get('date') || status.date || '');
+ const today = todayIsoForAirportServer(origin || 'BSB');
+ if (dateKey < today) return true;
+ const statusLabel = normalizeRadarTelegramValue(status.status || '');
+ if (/(pousou|landed|arrived|chegou|finalizado|finished|completed|encerrado|closed)$/i.test(statusLabel)) return true;
+ return false;
+}
+
 async function notifyTelegramRadarForUser(db, userId, status = {}, params = {}) {
  if (!telegramIsConfigured() || !db || !userId) return { ok: false, skipped: true };
  const row = await telegramLinkForUser(db, userId).catch(() => null);
@@ -247,6 +263,8 @@ async function notifyTelegramRadarForUser(db, userId, status = {}, params = {}) 
  if (preferences.radar === false || preferences.radarQuiet === true) return { ok: false, skipped: true, reason: 'radar silenciado' };
  const flight = normalizeFlightToken(params.flight || params.flightNumber || status.flightNumber || status.matchedFlight || '');
  const statusLabel = normalizeRadarTelegramValue(status.status || '');
+ if (!telegramRadarRequestWantsPush(params)) return { ok: false, skipped: true, reason: 'consulta radar sem push Telegram' };
+ if (radarTelegramIsPastOrClosed(status, params)) return { ok: false, skipped: true, reason: 'voo passado/finalizado não notificado' };
  const importantOnly = preferences.radarImportantOnly !== false;
  if (importantOnly && !radarTelegramHasUsefulOperationalData(status)) return { ok: false, skipped: true, reason: 'sem mudança operacional relevante' };
  const dateKey = radarIsoDate(params.date || status.date || new Date().toISOString().slice(0, 10));
@@ -8215,62 +8233,86 @@ function telegramConciergeSafeJson(value, fallback = null) {
  try { return JSON.parse(String(value)); } catch { return fallback; }
 }
 
-async function telegramConciergeLatestRosters(db, userOrId, limit = 8) {
+async function telegramConciergeLatestRosters(db, userOrId, limit = 8, linkRow = null) {
  if (!db || !userOrId) return [];
  const user = typeof userOrId === 'object' ? userOrId : { id: userOrId };
- const userId = user.id || user.user_id || null;
+ const userId = user.id || user.user_id || linkRow?.user_id || null;
  const normalizeRows = (rows = []) => (rows || []).map((row) => ({
   ...row,
   roster: telegramConciergeSafeJson(row.roster_json, row.roster_json || null),
   compliance: telegramConciergeSafeJson(row.compliance_json, row.compliance_json || null),
   gym: telegramConciergeSafeJson(row.gym_json, row.gym_json || []),
  })).filter((row) => row.roster && Array.isArray(row.roster.days));
- const run = (sql, params) => db.query(sql, params).catch(() => ({ rows: [] }));
- const byUser = userId ? await run(
-  `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
-     from crewcheck_rosters
-    where user_id = $1
-    order by period_year desc nulls last, period_month desc nulls last, updated_at desc, created_at desc
-    limit $2`,
-  [userId, limit],
- ) : { rows: [] };
- let rosters = normalizeRows(byUser.rows);
- if (rosters.length) return rosters;
- const byUserFallback = userId ? await run(
-  `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
-     from crewcheck_rosters
-    where user_id = $1
-    order by updated_at desc, created_at desc
-    limit $2`,
-  [userId, limit],
- ) : { rows: [] };
- rosters = normalizeRows(byUserFallback.rows);
- if (rosters.length) return rosters;
+ const run = (sql, params = []) => db.query(sql, params).catch(() => ({ rows: [] }));
+ const unique = (items = []) => {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+   const key = String(item?.id || item?.checksum || JSON.stringify([item?.period_year, item?.period_month, item?.updated_at]).slice(0, 120));
+   if (!key || seen.has(key)) continue;
+   seen.add(key);
+   out.push(item);
+  }
+  return out.slice(0, limit);
+ };
+ const queries = [];
+ if (userId) {
+  queries.push(run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
+      from crewcheck_rosters
+     where user_id = $1
+     order by updated_at desc, created_at desc
+     limit $2`,
+   [userId, limit],
+  ));
+  queries.push(run(
+   `select r.id, r.created_at, r.updated_at, r.period_year, r.period_month, r.roster_json, r.compliance_json, r.gym_json, r.crew_id, r.crew_name, r.checksum
+      from crewcheck_rosters r
+      join crewcheck_audit_logs a on a.entity_id = r.id
+     where a.user_id = $1
+     order by r.updated_at desc, r.created_at desc
+     limit $2`,
+   [userId, limit],
+  ));
+ }
  const crewId = String(user.crew_id || user.crewId || '').trim();
  if (crewId) {
-  const byCrew = await run(
-   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
+  queries.push(run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
       from crewcheck_rosters
-     where crew_id = $1
+     where lower(replace(coalesce(crew_id,''),' ','')) = lower(replace($1,' ',''))
      order by updated_at desc, created_at desc
      limit $2`,
    [crewId, limit],
-  );
-  rosters = normalizeRows(byCrew.rows);
-  if (rosters.length) return rosters;
+  ));
  }
- const userName = String(user.name || '').trim();
- if (userName && userName.length >= 4) {
-  const byName = await run(
-   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
+ const userName = String(user.name || user.full_name || '').replace(/\s+/g, ' ').trim();
+ const nameTokens = userName.split(/\s+/).filter((token) => token.length >= 3).slice(0, 3);
+ if (nameTokens.length) {
+  const like = `%${nameTokens.join('%')}%`;
+  queries.push(run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
       from crewcheck_rosters
      where lower(coalesce(crew_name,'')) like lower($1)
      order by updated_at desc, created_at desc
      limit $2`,
-   [`%${userName.split(/\s+/).slice(0, 2).join('%')}%`, Math.min(limit, 3)],
+   [like, Math.min(limit, 5)],
+  ));
+ }
+ const results = await Promise.all(queries);
+ let rosters = unique(results.flatMap((result) => normalizeRows(result.rows)));
+ if (rosters.length) return rosters;
+ if (telegramConciergeIsPremium(user) || isBillingAdmin(user)) {
+  const latestOwnCompatible = await run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
+      from crewcheck_rosters
+     where user_id is null
+     order by updated_at desc, created_at desc
+     limit $1`,
+   [Math.min(limit, 3)],
   );
-  rosters = normalizeRows(byName.rows);
-  if (rosters.length) return rosters;
+  rosters = normalizeRows(latestOwnCompatible.rows);
+  if (rosters.length) return unique(rosters);
  }
  return [];
 }
@@ -8300,11 +8342,21 @@ function telegramConciergeDateFromDay(day = {}, roster = {}) {
  return telegramConciergeIsoDateFromParts(day.year || roster.year, day.month || roster.month, dayNumber);
 }
 
+function telegramConciergeSaoPauloDateParts(date = new Date()) {
+ try {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { year: Number(map.year), month: Number(map.month), day: Number(map.day) };
+ } catch {
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+ }
+}
+
 function telegramConciergeDatePlus(days = 0) {
- const date = new Date();
- date.setHours(12, 0, 0, 0);
- date.setDate(date.getDate() + Number(days || 0));
- return date.toISOString().slice(0, 10);
+ const baseParts = telegramConciergeSaoPauloDateParts(new Date());
+ const base = new Date(Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day + Number(days || 0), 12, 0, 0));
+ const shifted = telegramConciergeSaoPauloDateParts(base);
+ return telegramConciergeIsoDateFromParts(shifted.year, shifted.month, shifted.day);
 }
 
 function telegramConciergeDateFromText(text = '', rosters = []) {
@@ -8469,7 +8521,7 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
    return { ok: true, limited: true };
   }
  }
- const rosters = await telegramConciergeLatestRosters(db, user);
+ const rosters = await telegramConciergeLatestRosters(db, user, 8, row);
  const usageAfter = !premium && !isHelp ? telegramConciergeFreeUsage(row, true) : telegramConciergeFreeUsage(row, false);
  if (isHelp) {
   const lines = premium ? [
@@ -8485,7 +8537,11 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   return { ok: true, help: true };
  }
  if (!rosters.length) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Escala não sincronizada', ['Ainda não encontrei uma escala salva no servidor da sua conta.', 'Abra o CrewCheck e toque em Configurações > Telegram > Sincronizar escala.', 'Ou envie o PDF da escala aqui no Telegram para importar direto no Concierge.'], { footer: 'Sem escala sincronizada, o Concierge não chuta programação.' }), { reply_markup: telegramPremiumReplyMarkup('Sincronizar escala') });
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Escala não sincronizada', [
+   'Ainda não encontrei escala salva no servidor desta conta.',
+   'No app: Configurações > Telegram > Sincronizar escala. Este botão agora força o envio online mesmo se a escala já existir no aparelho.',
+   'Alternativa: envie o PDF original da escala aqui no Telegram para eu importar direto no Concierge.',
+  ], { footer: 'Sem escala no servidor, o Concierge não chuta programação.' }), { reply_markup: telegramPremiumReplyMarkup('Sincronizar escala') });
   return { ok: true, noRoster: true };
  }
  const basicAllowed = /\b(hoje|amanha|amanhã|proximo|próximo|programacao|programação|escala)\b/.test(String(text || '').toLowerCase()) || /^\/(hoje|amanha|amanhã|proximo|próximo)/i.test(String(text || ''));
@@ -8752,7 +8808,10 @@ async function handleApi(req, res, url) {
    await ensureSchema();
    const bot = await telegramBotIdentity().catch(() => null);
    const row = await telegramLinkForUser(db, user.id);
-   sendJson(res, 200, telegramPublicStatusFromRow(row, bot));
+   const status = telegramPublicStatusFromRow(row, bot);
+   const synced = row?.is_active ? await telegramConciergeLatestRosters(db, user, 1, row).catch(() => []) : [];
+   status.syncedRoster = synced[0] ? { available: true, updatedAt: synced[0].updated_at || synced[0].created_at || null, periodYear: synced[0].period_year || synced[0].roster?.year || null, periodMonth: synced[0].period_month || synced[0].roster?.month || null } : { available: false };
+   sendJson(res, 200, status);
   } catch (error) {
    sendJson(res, 200, { ok: false, configured: telegramIsConfigured(), connected: false, message: sanitizePublicError(error?.message || String(error)) });
   }

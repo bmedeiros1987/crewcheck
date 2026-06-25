@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.57",
+  "version": "11.0.60",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.57: link oficial da Play Store atualizado e rolagem premium de Configurações melhorada para Web, Android e iOS.",
+  "description": "CrewCheck v11.0.60: anti-spam real no Telegram, escala legível em Android/iOS modo claro, layout Web corrigido e AAB consolidado versionCode 11060.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

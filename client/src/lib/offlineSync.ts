@@ -145,13 +145,13 @@ export async function saveRosterOfflineFirst(payload: {
   compliance: ComplianceResult;
   gym: GymRecommendation[];
   sourceFileName?: string | null;
-}): Promise<OfflineSaveResult> {
+}, options: { forceOnline?: boolean } = {}): Promise<OfflineSaveResult> {
   const checksum = await checksumRoster(payload);
   const alreadySavedLocal = readSavedChecksums().includes(checksum);
   const queuedDuplicate = readQueue().some((item) => item.checksum === checksum);
   rememberLocalHistory({ ...payload, checksum });
 
-  if (alreadySavedLocal) {
+  if (alreadySavedLocal && !options.forceOnline) {
     return { savedOnline: false, queued: false, deduplicatedLocal: true, checksum, pendingCount: getPendingOfflineCount() };
   }
 

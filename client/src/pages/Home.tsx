@@ -68,7 +68,7 @@ import type { CrewRoleSelection } from '@/lib/actRules';
 import { parsePDF, type CrewRoster } from '@/lib/pdfParser';
 import { getStoredUser, getToken, logout } from '@/lib/authClient';
 import { syncPendingRosters, getPendingOfflineCount, saveRosterOfflineFirst } from '@/lib/offlineSync';
-import { getDatabaseStatus, listSavedRosters, openSavedRoster, type DatabaseStatus, type SavedRosterSummary } from '@/lib/databaseClient';
+import { getDatabaseStatus, listSavedRosters, openSavedRoster, saveRosterAnalysis, type DatabaseStatus, type SavedRosterSummary } from '@/lib/databaseClient';
 import { exportReport } from '@/lib/pdfExport';
 import { applyDocumentLanguage, getSavedLanguage, saveCrewLanguage, type CrewLanguage } from '@/lib/i18n';
 import { downloadCalendarFile, generateICalendar } from '@/lib/calendarExport';
@@ -96,7 +96,7 @@ type HomeView = 'home' | 'import' | 'history' | 'calendar' | 'billing' | 'ifligh
 type CrewCheckBottomActive = 'home' | 'roster' | 'vivo' | 'iflight' | 'flightboard' | 'departure' | 'settings' | 'more';
 type CrewThemeMode = 'light' | 'dark' | 'system';
 type ResultsView = 'summary' | 'roster' | 'alerts' | 'irregularities' | 'gym' | 'fatigue' | 'metrics' | 'glossary' | 'statistics' | 'settings' | 'manual';
-type TelegramStatus = { ok?: boolean; configured?: boolean; connected?: boolean; botUsername?: string | null; code?: string | null; connectUrl?: string | null; expectedUsername?: string | null; message?: string; chat?: { username?: string | null; maskedId?: string | null; firstName?: string | null } | null; preferences?: Record<string, boolean> };
+type TelegramStatus = { ok?: boolean; configured?: boolean; connected?: boolean; botUsername?: string | null; code?: string | null; connectUrl?: string | null; expectedUsername?: string | null; message?: string; chat?: { username?: string | null; maskedId?: string | null; firstName?: string | null } | null; preferences?: Record<string, boolean>; syncedRoster?: { available?: boolean; updatedAt?: string | null; periodYear?: number | null; periodMonth?: number | null } };
 
 type NativePdfPayload = {
  ok?: boolean;
@@ -108,7 +108,7 @@ type NativePdfPayload = {
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.57';
+const APP_VERSION = '11.0.60';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -1729,6 +1729,7 @@ function Home() {
     if (dashboardNextEvent.origin) params.set('origin', dashboardNextEvent.origin);
     if (dashboardNextEvent.destination) params.set('destination', dashboardNextEvent.destination);
     if (dashboardNextEvent.route) params.set('route', dashboardNextEvent.route);
+    params.set('notifyTelegram', '1');
     const response = await fetch(`/api/radar/private-status?${params.toString()}`, { cache: 'no-store', signal: controller.signal, headers: crewcheckAuthHeader() });
     const payload = await response.json().catch(() => null) as RadarPrivateStatus | null;
     if (!active || !payload?.ok) return;
@@ -1981,7 +1982,7 @@ function Home() {
  const forceSyncRosterEverywhere = useCallback(async (roster: CrewRoster, compliance: ComplianceResult, gym: GymRecommendation[], sourceFileName: string) => {
   publishRosterSyncBundle(roster, compliance, gym, sourceFileName);
   try {
-   const result = await saveRosterOfflineFirst({ roster, compliance, gym, sourceFileName });
+   const result = await saveRosterOfflineFirst({ roster, compliance, gym, sourceFileName }, { forceOnline: true });
    setPendingOffline(result.pendingCount);
    if (result.savedOnline || result.deduplicatedLocal) {
     sessionStorage.removeItem('crewcheck_auto_db_save_pending');
@@ -2125,14 +2126,20 @@ function Home() {
   const gym = Array.isArray(bundle?.gym) ? bundle.gym : getGymRecommendations(roster, roleSelection);
   const sourceFileName = sessionStorage.getItem('crewcheck_source_file') || 'Escala CrewCheck';
   try {
-   await forceSyncRosterEverywhere(roster, compliance, gym, sourceFileName);
-   toast.success('Escala sincronizada com o Concierge Telegram.');
+   publishRosterSyncBundle(roster, compliance, gym, sourceFileName);
+   const saved = await saveRosterAnalysis({ roster, compliance, gym, sourceFileName });
+   sessionStorage.removeItem('crewcheck_auto_db_save_pending');
+   await refreshSavedRosters();
+   toast.success(saved?.id ? 'Escala enviada ao servidor e liberada para o Concierge Telegram.' : 'Escala sincronizada com o Concierge Telegram.');
    return true;
   } catch {
-   toast.warning('Escala salva no dispositivo, mas ainda não consegui sincronizar com o servidor. Tente novamente com internet.');
+   try {
+    await forceSyncRosterEverywhere(roster, compliance, gym, sourceFileName);
+   } catch {}
+   toast.warning('Escala salva no dispositivo, mas ainda não consegui confirmar no servidor. Reabra Configurações > Telegram e toque em Sincronizar escala.');
    return false;
   }
- }, [forceSyncRosterEverywhere, roleSelection]);
+ }, [forceSyncRosterEverywhere, publishRosterSyncBundle, refreshSavedRosters, roleSelection]);
 
  const handleDemoMode = useCallback(async () => {
   const demoRoster = buildCrewCheckDemoRoster();
@@ -5446,6 +5453,7 @@ if (activeCategory === 'telegram') {
    const telegramPrefs = telegramStatus?.preferences || {};
    const telegramConnected = Boolean(telegramStatus?.connected);
    const telegramConfigured = telegramStatus?.configured !== false;
+   const syncedRoster = telegramStatus?.syncedRoster;
    return (
     <div className="space-y-5">
      <SettingsCategoryCard eyebrow="Permissões" title="Localização, notificações e Saída Inteligente" description="O CrewCheck usa sua localização apenas sob permissão para calcular hora de sair, transporte público, carro e corrida por app.">
@@ -5460,6 +5468,7 @@ if (activeCategory === 'telegram') {
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-100/65">Status</p>
         <h3 className="mt-1 text-2xl font-black text-white">{telegramConnected ? 'Telegram Concierge conectado' : telegramConfigured ? 'Telegram Concierge disponível' : 'Telegram não configurado'}</h3>
         <p className="mt-1 text-sm leading-6 text-slate-300">{telegramConnected ? `Conectado ${telegramStatus?.chat?.username ? `com @${telegramStatus.chat.username}` : telegramStatus?.chat?.maskedId ? `ao chat ${telegramStatus.chat.maskedId}` : 'ao bot CrewCheck'}.` : telegramConfigured ? 'Informe seu usuário do Telegram uma vez. O app abre o bot e conclui a conexão com aparência Premium, sem código manual.' : 'Configure TELEGRAM_BOT_TOKEN no Render para ativar este canal.'}</p>
+        {telegramConnected && <p className={`mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] ${syncedRoster?.available ? 'border-emerald-300/30 bg-emerald-300/12 text-emerald-50' : 'border-amber-300/30 bg-amber-300/12 text-amber-50'}`}>{syncedRoster?.available ? `Escala no Concierge${syncedRoster.periodMonth ? ` · ${String(syncedRoster.periodMonth).padStart(2, '0')}/${syncedRoster.periodYear || '----'}` : ''}` : 'Escala ainda não confirmada no servidor'}</p>}
        </div>
        <div className="flex flex-wrap gap-2">
         <button onClick={() => void refreshTelegramStatus()} disabled={telegramBusy} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-xs font-black text-white disabled:opacity-60"><RefreshCw className={`mr-2 inline h-4 w-4 ${telegramBusy ? 'animate-spin' : ''}`} />Atualizar</button>
