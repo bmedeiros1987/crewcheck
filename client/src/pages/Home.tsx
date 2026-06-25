@@ -108,7 +108,7 @@ type NativePdfPayload = {
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.56';
+const APP_VERSION = '11.0.57';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -5588,9 +5588,9 @@ Calendário ICS gerado no dispositivo.`, 'ics'); }} className="rounded-2xl borde
  }
 
  return (
-  <div className="min-h-screen bg-[#08111f] pb-28 text-white crewcheck-settings-screen crewcheck-settings-categories-premium">
+  <div className="min-h-screen bg-[#08111f] pb-28 text-white crewcheck-settings-screen crewcheck-settings-categories-premium crewcheck-settings-scroll-fix">
    <div className="pointer-events-none fixed inset-0 opacity-90"><div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(14,165,233,0.18),transparent_28rem),radial-gradient(circle_at_90%_5%,rgba(37,99,235,0.14),transparent_30rem),linear-gradient(180deg,#08111f_0%,#07111f_50%,#020817_100%)]" /></div>
-   <div className="relative z-10 mx-auto max-w-7xl px-5 py-7">
+   <div className="relative z-10 mx-auto max-w-7xl px-5 py-7 crewcheck-settings-page-inner">
     <HeaderBack title="Configurações" subtitle="Submenus completos e intuitivos" onBack={onBack} />
     <div className="mt-5 rounded-[2rem] border border-cyan-200/18 bg-white/[0.07] p-5 shadow-2xl shadow-cyan-950/20 backdrop-blur-2xl">
      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -5599,13 +5599,13 @@ Calendário ICS gerado no dispositivo.`, 'ics'); }} className="rounded-2xl borde
      </div>
     </div>
     <div className="mt-6 grid gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
-     <aside className="space-y-3 lg:sticky lg:top-6 lg:self-start">
+     <aside className="space-y-3 lg:sticky lg:top-6 lg:self-start crewcheck-settings-category-list">
       {categories.map(({ key, title, text, icon: Icon, badge, tone }) => {
        const active = activeCategory === key;
        return <button key={key} onClick={() => openSettingsCategory(key)} className={`flex w-full items-center gap-3 rounded-[1.35rem] border p-3 text-left transition active:scale-[0.99] ${active ? 'border-cyan-300/50 bg-cyan-300/14 shadow-xl shadow-cyan-950/20' : 'border-white/10 bg-white/[0.045] hover:bg-white/[0.075]'} ${settingsPulse === key ? 'ring-2 ring-cyan-200/70 scale-[1.01]' : ''}`}><span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${tone} text-[#06101d] shadow-lg`}><Icon className="h-5 w-5" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-black text-white">{title}</span><span className="block truncate text-xs font-semibold text-slate-400">{text}</span></span>{badge && <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-cyan-100">{badge}</span>}</button>;
       })}
      </aside>
-     <main ref={settingsContentRef} className="min-w-0 scroll-mt-6">{renderCategoryContent()}</main>
+     <main ref={settingsContentRef} className="min-w-0 scroll-mt-6 crewcheck-settings-content-panel">{renderCategoryContent()}</main>
     </div>
    </div>
   </div>

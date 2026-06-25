@@ -8103,3 +8103,106 @@ html.crewcheck-ios .crewcheck-nav-trigger {
 @media (max-width: 640px) {
   .crewcheck-commercial-dashboard .cc-hero-avatar-button { display: none !important; }
 }
+
+
+/* CrewCheck v11.0.57 — Configurações com rolagem premium e link Google Play atualizado */
+.crewcheck-settings-scroll-fix {
+  min-height: 100dvh !important;
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+}
+.crewcheck-settings-page-inner {
+  min-height: 100dvh;
+  padding-bottom: calc(9.25rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+.crewcheck-settings-category-list {
+  max-height: calc(100dvh - 7.5rem);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-right: .15rem;
+}
+.crewcheck-settings-content-panel {
+  min-height: 28rem;
+  overflow: visible;
+}
+.crewcheck-settings-content-panel section {
+  scroll-margin-top: calc(5.5rem + env(safe-area-inset-top, 0px));
+}
+@media (max-width: 1023px) {
+  .crewcheck-settings-scroll-fix {
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .crewcheck-settings-page-inner {
+    padding-left: .95rem !important;
+    padding-right: .95rem !important;
+    padding-top: calc(5.4rem + env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .crewcheck-settings-category-list {
+    position: sticky !important;
+    top: calc(4.7rem + env(safe-area-inset-top, 0px)) !important;
+    z-index: 35;
+    display: flex !important;
+    gap: .55rem !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    margin-left: -.15rem;
+    margin-right: -.15rem;
+    padding: .45rem .15rem .75rem !important;
+    border-radius: 1.45rem;
+    background: rgba(8, 17, 31, .78);
+    backdrop-filter: blur(18px) saturate(1.18);
+    -webkit-backdrop-filter: blur(18px) saturate(1.18);
+    scrollbar-width: none;
+  }
+  .crewcheck-settings-category-list::-webkit-scrollbar { display: none; }
+  html[data-crew-theme="light"] .crewcheck-settings-category-list {
+    background: rgba(248, 251, 255, .88) !important;
+    border: 1px solid rgba(186, 230, 253, .72) !important;
+    box-shadow: 0 14px 34px rgba(15,23,42,.08) !important;
+  }
+  .crewcheck-settings-category-list > button {
+    min-width: 11.5rem !important;
+    width: 11.5rem !important;
+    flex: 0 0 11.5rem !important;
+    align-self: stretch;
+    padding: .72rem !important;
+  }
+  .crewcheck-settings-category-list > button > span:first-child {
+    height: 2.35rem !important;
+    width: 2.35rem !important;
+    border-radius: .95rem !important;
+  }
+  .crewcheck-settings-category-list > button .block.text-sm {
+    font-size: .76rem !important;
+    line-height: 1.05rem !important;
+  }
+  .crewcheck-settings-category-list > button .block.truncate.text-xs {
+    max-width: 7.1rem;
+    font-size: .66rem !important;
+  }
+  .crewcheck-settings-content-panel {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .crewcheck-settings-content-panel .rounded-\[2rem\] {
+    border-radius: 1.55rem !important;
+  }
+}
+@supports (-webkit-touch-callout: none) {
+  html.crewcheck-ios .crewcheck-settings-scroll-fix,
+  .crewcheck-settings-scroll-fix {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  html.crewcheck-ios .crewcheck-settings-page-inner {
+    padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}

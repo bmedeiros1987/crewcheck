@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { AuthClientError, getAuthConfig, login, register, resendVerification, requestPasswordReset, verifyEmail } from '@/lib/authClient';
 
 type AuthMode = 'login' | 'register' | 'reset' | 'verify';
-const APP_VERSION = '11.0.56';
+const APP_VERSION = '11.0.57';
 
 declare global {
   interface Window {

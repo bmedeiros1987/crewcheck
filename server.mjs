@@ -272,7 +272,7 @@ async function notifyTelegramRadarForUser(db, userId, status = {}, params = {}) 
  ];
  return notifyTelegramForUser(db, userId, 'radar', `Radar CrewCheck · ${flight || 'voo'}`, lines);
 }
-const CREWCHECK_ANDROID_PLAY_URL = String(process.env.CREWCHECK_ANDROID_PLAY_URL || 'https://play.google.com/apps/test/com.crewcheck.app/10527').trim();
+const CREWCHECK_ANDROID_PLAY_URL = String(process.env.CREWCHECK_ANDROID_PLAY_URL || 'https://play.google.com/apps/testing/com.crewcheck.app').trim();
 const CREWCHECK_ANDROID_APK_URL = String(process.env.CREWCHECK_ANDROID_APK_URL || CREWCHECK_ANDROID_PLAY_URL).trim();
 const AUTH_REGISTER_RATE_LIMIT_MAX = Math.max(3, Number(process.env.CREWCHECK_REGISTER_RATE_LIMIT_MAX || 10));
 const AUTH_REGISTER_RATE_LIMIT_WINDOW_MS = Math.max(60_000, Number(process.env.CREWCHECK_REGISTER_RATE_LIMIT_WINDOW_MS || 60 * 60 * 1000));

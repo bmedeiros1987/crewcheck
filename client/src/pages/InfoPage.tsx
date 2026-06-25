@@ -187,7 +187,7 @@ export default function InfoPage({ page }: { page: PageKey }) {
 
           {page === 'download' ? (
             <div className="mt-8 grid gap-4 md:grid-cols-2">
-              <a href="https://play.google.com/apps/test/com.crewcheck.app/10527" target="_blank" rel="noreferrer" className="rounded-3xl border border-emerald-200/25 bg-emerald-300/15 p-5 text-emerald-50 shadow-xl hover:bg-emerald-300/20">
+              <a href="https://play.google.com/apps/testing/com.crewcheck.app" target="_blank" rel="noreferrer" className="rounded-3xl border border-emerald-200/25 bg-emerald-300/15 p-5 text-emerald-50 shadow-xl hover:bg-emerald-300/20">
                 <strong className="block text-xl text-white">Baixar Android</strong>
                 <span className="mt-2 block text-sm leading-6">Abre a página de teste do CrewCheck no Google Play. Atalho rápido: /apk</span>
               </a>
