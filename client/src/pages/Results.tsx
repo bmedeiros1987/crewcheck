@@ -592,7 +592,7 @@ export default function Results() {
                 <Bell className="h-5 w-5" />
                 <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold">{errors.length + warnings.length}</span>
               </button>
-              <button onClick={() => switchView("settings")} className="hidden items-center gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-white/10 md:flex" aria-label="Abrir configurações de perfil e conta">
+              <button onClick={() => openHomeView("settings")} className="hidden items-center gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-white/10 md:flex" aria-label="Abrir configurações completas de perfil e conta">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-sm font-black">{initials(displayCrewName)}</div>
                 <div className="leading-tight">
                   <p className="text-sm font-bold">{titleCase(displayCrewName)}</p>
@@ -609,7 +609,7 @@ export default function Results() {
 
         <MobileSideDrawer open={mobileMenuOpen} activeView={activeView} displayName={displayCrewName} rank={roster.rank || "Flight Crew"} base={roster.base} errors={errors.length} canAccessAdmin={isAdminUser} onClose={() => setMobileMenuOpen(false)} onChange={switchView} onOpenHomeView={openHomeView} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />
         <main className={appMode ? "px-2.5 pb-24 pt-3 sm:px-4 md:px-5 android-premium-main" : "px-4 py-6 md:px-7 lg:py-8"}>
-          <div className="mx-auto max-w-[1540px]">
+          <div className={activeView === "roster" && !appMode ? "mx-auto w-full max-w-none" : "mx-auto max-w-[1540px]"}>
             {!appMode && (
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#0b4f7a]/20 pb-3">
                 <div className="text-sm font-medium text-sky-500">
@@ -666,7 +666,7 @@ export default function Results() {
             {activeView === "glossary" && <GlossaryPanel />}
 
             {activeView === "roster" && (
-              <section className="space-y-4">
+              <section className="crewcheck-roster-workspace space-y-4">
                 {appMode && <AndroidFeatureShortcuts activeView={activeView} onChange={switchView} errors={errors.length} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />}
                 <RosterQuickToolbar onOpenSummary={() => switchView("summary")} onOpenFilters={() => { const box = document.getElementById("crewcheck-roster-filters"); box?.classList.toggle("hidden"); }} onDeleteMonth={handleDeleteCurrentMonth} />
                 <div id="crewcheck-roster-filters" className="hidden"><RosterFilters roster={roster} query={query} setQuery={setQuery} dutyType={dutyType} setDutyType={setDutyType} uniqueTypes={uniqueTypes} /></div>
@@ -2037,10 +2037,11 @@ function MobileSideDrawer({ open, activeView, displayName, rank, base, errors, c
     { key: 'gym', label: 'Rotina', caption: 'treino e estudo', icon: Dumbbell },
     { key: 'fatigue', label: 'Carga da escala', caption: 'fadiga e descanso', icon: Gauge },
     { key: 'statistics', label: 'Histórico', caption: 'escalas salvas', icon: BarChart3 },
-    { key: 'settings', label: 'Configurações', caption: 'perfil, rotina e manual', icon: Settings },
+    { key: 'settings', label: 'Ajustes da escala', caption: 'exportações e relatório', icon: Settings },
       ];
   const extraNav: Array<{ view: string; label: string; caption: string; icon: LucideIcon }> = [
     { view: 'home', label: 'Cockpit', caption: 'tela inicial', icon: Home },
+    { view: 'settings', label: 'Configurações completas', caption: 'conta, Telegram e Premium', icon: Settings },
     { view: 'departure', label: 'Saída inteligente', caption: 'Maps · Uber/99', icon: Clock },
     ...(canAccessAdmin ? [{ view: 'iflight', label: 'iFlight Admin', caption: 'admin', icon: Plane }] : []),
     { view: 'perdiem', label: 'Diárias', caption: 'valores previstos', icon: Coffee },
@@ -2094,6 +2095,7 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
     { key: "summary", label: "Resumo", caption: "visão geral", icon: LayoutDashboard },
     { key: "roster", label: "Escala", caption: "agenda completa", icon: CalendarDays },
     { view: "departure", label: "Saída inteligente", caption: "Maps · Uber/99", icon: Clock },
+    { view: "settings", label: "Configurações", caption: "menu completo", icon: Settings },
     ...(canAccessAdmin ? [{ view: "iflight", label: "iFlight Admin", caption: "admin", icon: Plane }] : []),
     { view: "flightboard", label: "Radar", caption: "status e portão", icon: Gauge },
     { view: "perdiem", label: "Diárias", caption: "previsão mensal", icon: Coffee },
@@ -2104,7 +2106,7 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
     { key: "fatigue", label: "Carga da escala", caption: "fadiga e descanso", icon: Gauge },
     { key: "statistics", label: "Histórico", caption: "estatísticas salvas", icon: BarChart3 },
     { view: "support", label: "Ajuda", caption: "falar com suporte", icon: Mail },
-    { key: "settings", label: "Configurações", caption: "agenda, conta, tema e manual", icon: Settings },
+    { key: "settings", label: "Ajustes da escala", caption: "exportações e relatório", icon: Settings },
       ];
   const handleNav = (item: typeof nav[number]) => item.key ? onChange(item.key) : item.view ? onOpenHomeView(item.view) : undefined;
   return (
@@ -2131,6 +2133,7 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
         })}
       </nav>
       <div className="space-y-2 border-t border-white/10 p-3">
+        <button onClick={() => onOpenHomeView('settings')} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-cyan-300 px-3 py-3 text-sm font-black text-[#052032] shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-200 ${collapsed ? 'px-2' : ''}`}><Settings className="h-4 w-4" /> {!collapsed && 'Configurações'}</button>
         <button onClick={onNewRoster} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-3 py-3 text-sm font-black text-[#071f38] transition hover:bg-cyan-50 ${collapsed ? 'px-2' : ''}`}><CloudUpload className="h-4 w-4" /> {!collapsed && 'Nova escala'}</button>
         <button onClick={onPowerOff} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-red-300/20 bg-red-500/10 px-3 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/20 ${collapsed ? 'px-2' : ''}`}><LogOut className="h-4 w-4" /> {!collapsed && 'Sair'}</button>
       </div>

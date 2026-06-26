@@ -8413,7 +8413,7 @@ html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill-value { col
 }
 
 
-/* CrewCheck v11.0.63 — desktop roster premium, botões vivos e menu individual */
+/* CrewCheck v11.0.64 — desktop roster premium, botões vivos e menu individual */
 .crewcheck-primary-cta {
   background: linear-gradient(135deg, #67e8f9 0%, #38bdf8 38%, #2563eb 100%) !important;
   color: #04101f !important;
@@ -8455,4 +8455,101 @@ html[data-crew-theme="light"] .crewcheck-secondary-cta {
 @media (max-width: 1023px) {
   .crewcheck-import-screen main.container { padding-top: 1rem !important; }
   .crewcheck-import-screen .cc-import-hero-panel p { margin-top: .85rem !important; }
+}
+
+
+/* CrewCheck v11.0.64 — desktop roster presentation + complete settings access */
+@media (min-width: 1024px) {
+  .crewcheck-results-premium main {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .crewcheck-results-premium .crewcheck-roster-workspace {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .crewcheck-results-premium .cc-roster-desktop-list {
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+  }
+  .crewcheck-results-premium .cc-roster-desktop-list > div {
+    width: 100% !important;
+    max-width: none !important;
+    border-radius: 1.35rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-day-desktop {
+    width: 100% !important;
+    max-width: none !important;
+    overflow: hidden !important;
+  }
+  .crewcheck-results-premium .cc-roster-day-desktop > .grid {
+    grid-template-columns: 7rem minmax(0, 1fr) !important;
+    align-items: stretch !important;
+    gap: .9rem !important;
+    padding: .9rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-date-desktop {
+    min-height: 100% !important;
+    align-self: stretch !important;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+  }
+  .crewcheck-results-premium .cc-day-finance-chips {
+    grid-template-columns: 1fr !important;
+  }
+  .crewcheck-results-premium .cc-financial-chip {
+    white-space: normal !important;
+    line-height: 1.05rem !important;
+    text-align: center !important;
+  }
+  .crewcheck-results-premium .cc-roster-event {
+    width: 100% !important;
+    max-width: none !important;
+    border-radius: 1rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-event > button {
+    width: 100% !important;
+    grid-template-columns: 2.55rem 6.6rem minmax(0, 1fr) minmax(10.5rem, 14rem) auto !important;
+    min-height: 4.25rem !important;
+    gap: .75rem !important;
+    padding: .85rem 1rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-event-title {
+    font-size: 1.02rem !important;
+    line-height: 1.16rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-event-subtitle {
+    font-size: .86rem !important;
+    line-height: 1.15rem !important;
+  }
+  .crewcheck-results-premium .cc-roster-event-time {
+    font-size: .95rem !important;
+    white-space: nowrap !important;
+  }
+}
+@media (min-width: 1280px) {
+  .crewcheck-results-premium .cc-roster-day-desktop > .grid {
+    grid-template-columns: 7.5rem minmax(0, 1fr) !important;
+  }
+  .crewcheck-results-premium .cc-roster-event > button {
+    grid-template-columns: 2.65rem 7.2rem minmax(0, 1fr) minmax(15rem, 20rem) auto !important;
+  }
+}
+@media (min-width: 1600px) {
+  .crewcheck-results-premium .cc-roster-event > button {
+    grid-template-columns: 2.8rem 7.5rem minmax(0, 1fr) minmax(18rem, 24rem) auto !important;
+  }
+}
+@media (max-width: 1279px) and (min-width: 1024px) {
+  .crewcheck-results-premium .cc-roster-event > button {
+    grid-template-columns: 2.45rem 5.8rem minmax(0,1fr) auto !important;
+  }
+  .crewcheck-results-premium .cc-roster-event > button > div:nth-last-child(2) {
+    display: none !important;
+  }
+}
+.crewcheck-v10855-results-sidebar .bg-cyan-300 {
+  box-shadow: 0 16px 34px rgba(8, 145, 178, .28) !important;
 }
