@@ -19,7 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { AuthClientError, getAuthConfig, login, register, resendVerification, requestPasswordReset, verifyEmail } from '@/lib/authClient';
+import { AuthClientError, confirmPasswordReset, getAuthConfig, login, register, resendVerification, requestPasswordReset, verifyEmail } from '@/lib/authClient';
 
 type AuthMode = 'login' | 'register' | 'reset' | 'verify';
 const APP_VERSION = '11.0.63';
@@ -45,6 +45,7 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
+  const [resetCodeSent, setResetCodeSent] = useState(false);
   const [form, setForm] = useState({
     email: '',
     confirmEmail: '',
@@ -148,6 +149,7 @@ export default function AuthPage() {
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
+    if (nextMode !== 'reset') setResetCodeSent(false);
     setTurnstileToken(null);
     if (widgetIdRef.current && window.turnstile) {
       try { window.turnstile.reset(widgetIdRef.current); } catch {}
@@ -193,9 +195,13 @@ export default function AuthPage() {
     if (mode === 'login') {
       if (!form.password.trim()) missing.add('password');
     }
+    if (mode === 'reset' && (resetCodeSent || form.verificationCode.trim() || form.password.trim())) {
+      if (!form.verificationCode.trim()) missing.add('verificationCode');
+      if (!form.password.trim()) missing.add('password');
+      if (!form.confirmPassword.trim()) missing.add('confirmPassword');
+      if (form.password && form.confirmPassword && form.password !== form.confirmPassword) missing.add('confirmPassword');
+    }
     if (mode === 'register') {
-      if (!form.confirmEmail.trim()) missing.add('confirmEmail');
-      if (email && form.confirmEmail.trim() && email.toLowerCase() !== form.confirmEmail.trim().toLowerCase()) missing.add('confirmEmail');
       if (!form.firstName.trim()) missing.add('firstName');
       if (!form.lastName.trim()) missing.add('lastName');
       if (!form.password.trim()) missing.add('password');
@@ -219,8 +225,16 @@ export default function AuthPage() {
     setIsLoading(true);
     try {
       if (mode === 'reset') {
-        await requestPasswordReset(form.email);
-        toast.success('Se o e-mail estiver cadastrado, enviaremos uma senha provisória premium.');
+        if (!resetCodeSent && !form.verificationCode.trim() && !form.password.trim()) {
+          await requestPasswordReset(form.email);
+          setResetCodeSent(true);
+          toast.success('Se o e-mail estiver cadastrado, enviaremos um código temporário para redefinir sua senha.');
+          return;
+        }
+        await confirmPasswordReset({ email: form.email, code: form.verificationCode, password: form.password, confirmPassword: form.confirmPassword });
+        toast.success('Senha redefinida. Entre com a nova senha.');
+        setForm((prev) => ({ ...prev, password: '', confirmPassword: '', verificationCode: '' }));
+        setResetCodeSent(false);
         changeMode('login');
         return;
       }
@@ -240,7 +254,6 @@ export default function AuthPage() {
         const firstName = form.firstName.trim().replace(/\s+/g, ' ');
         const lastName = form.lastName.trim().replace(/\s+/g, ' ');
         if (!firstName || !lastName) throw new Error('Informe nome e sobrenome para concluir o cadastro.');
-        if (form.email.trim().toLowerCase() !== form.confirmEmail.trim().toLowerCase()) throw new Error('A confirmação do e-mail precisa ser igual ao e-mail informado.');
         const hasVirtualBase = form.hasVirtualBase === 'yes';
         const virtualBase = hasVirtualBase ? form.virtualBase.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) : '';
         if (hasVirtualBase && virtualBase.length < 2) throw new Error('Informe a sigla da base virtual. Ex.: SP, SAO, RIO, CGH ou GIG.');
@@ -270,12 +283,7 @@ export default function AuthPage() {
         if ('verificationRequired' in response && response.verificationRequired) {
           setPendingEmail(form.email);
           changeMode('verify');
-          if (response.emailSent === false) {
-            toast.warning('Cadastro criado, mas o provedor não confirmou o envio do e-mail. Confira spam/lixo eletrônico e use Reenviar código.');
-          } else {
-            const yahoo = /@(yahoo\.com|yahoo\.com\.br|ymail\.com|rocketmail\.com)$/i.test(form.email.trim());
-            toast.success(yahoo ? 'Código enviado. No Yahoo, confira também Spam/Lixo eletrônico e aguarde alguns minutos.' : 'Cadastro realizado com sucesso. Enviamos um e-mail de confirmação para você entrar com segurança.');
-          }
+          toast.success('Cadastro realizado com sucesso. Enviamos um e-mail de confirmação para você entrar com segurança.');
           return;
         }
         toast.success('Cadastro realizado com sucesso. E-mail confirmado e login liberado.');
@@ -303,9 +311,9 @@ export default function AuthPage() {
   const description = mode === 'register'
     ? 'Informe nome, sobrenome, e-mail pessoal e senha. O CPF não é solicitado no cadastro gratuito. O Telegram pode ser conectado automaticamente depois.'
     : mode === 'reset'
-      ? 'Informe seu e-mail cadastrado. Enviaremos uma senha provisória profissional e temporária para recuperar o acesso.'
+      ? resetCodeSent ? 'Digite o código temporário recebido por e-mail e defina uma nova senha definitiva.' : 'Informe seu e-mail cadastrado. Enviaremos um código temporário para redefinir a senha.'
       : mode === 'verify'
-        ? 'Digite o código recebido por e-mail ou abra o link de confirmação enviado pelo CrewCheck.'
+        ? 'Abra o botão de confirmação enviado por e-mail. O código manual fica reservado apenas para recuperação de senha.'
         : 'Entre para carregar nova escala, consultar histórico e sincronizar pendências.';
 
   return (
@@ -331,7 +339,7 @@ export default function AuthPage() {
           </p>
 
           <div className="mt-8 grid max-w-3xl grid-cols-2 gap-3">
-            <Feature icon={ShieldCheck} title="E-mail validado" text="Novas contas precisam confirmar o código antes do primeiro acesso." />
+            <Feature icon={ShieldCheck} title="Confirmação por botão" text="O e-mail de confirmação traz apenas o botão seguro para validar a conta." />
             <Feature icon={WifiOff} title="Modo offline" text="Analisa e guarda pendências até sincronizar." />
             <Feature icon={Cloud} title="Proteção" text="Verificação discreta no cadastro quando a proteção estiver ativa." />
             <Feature icon={CalendarDays} title="Dados mínimos" text="CPF só é solicitado se você iniciar teste ou assinatura paga." />
@@ -369,13 +377,6 @@ export default function AuthPage() {
                 </Field>
 
                 {mode === 'register' && (
-                  <Field icon={Mail} label="Confirmar e-mail *" invalid={invalidFields.has('confirmEmail')}>
-                    <input type="email" value={form.confirmEmail} onChange={(e) => update('confirmEmail', e.target.value)} className={`field-input ${invalidFields.has('confirmEmail') ? 'ring-2 ring-rose-300/80' : ''}`} placeholder="repita o e-mail informado" aria-invalid={invalidFields.has('confirmEmail')} />
-                    {invalidFields.has('confirmEmail') && <p className="mt-2 text-[11px] font-bold text-rose-100">Confira se os dois e-mails estão iguais.</p>}
-                  </Field>
-                )}
-
-                {mode === 'register' && (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field icon={UserRound} label="Nome *" invalid={invalidFields.has('firstName')}>
                       <input value={form.firstName} onChange={(e) => update('firstName', e.target.value)} className={`field-input ${invalidFields.has('firstName') ? 'ring-2 ring-rose-300/80' : ''}`} placeholder="Ana" autoComplete="given-name" aria-invalid={invalidFields.has('firstName')} />
@@ -404,6 +405,26 @@ export default function AuthPage() {
                   </div>
                 )}
 
+                {mode === 'reset' && resetCodeSent && (
+                  <>
+                    <Field icon={ShieldCheck} label="Código temporário *" invalid={invalidFields.has('verificationCode')}>
+                      <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={form.verificationCode} onChange={(e) => update('verificationCode', e.target.value.replace(/\D/g, '').slice(0, 6))} className={`field-input tracking-[0.28em] ${invalidFields.has('verificationCode') ? 'ring-2 ring-rose-300/80' : ''}`} placeholder="000000" aria-invalid={invalidFields.has('verificationCode')} />
+                    </Field>
+                    <Field icon={Lock} label="Nova senha *" invalid={invalidFields.has('password')}>
+                      <div className="relative">
+                        <input minLength={6} type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => update('password', e.target.value)} className={`field-input pr-11 ${invalidFields.has('password') ? 'ring-2 ring-rose-300/80' : ''}`} placeholder="mínimo 6 caracteres" aria-invalid={invalidFields.has('password')} />
+                        <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-1.5 text-cyan-100/80 hover:bg-white/10 hover:text-white" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                      </div>
+                    </Field>
+                    <Field icon={Lock} label="Confirmar nova senha *" invalid={invalidFields.has('confirmPassword')}>
+                      <div className="relative">
+                        <input minLength={6} type={showConfirmPassword ? 'text' : 'password'} value={form.confirmPassword} onChange={(e) => update('confirmPassword', e.target.value)} className={`field-input pr-11 ${invalidFields.has('confirmPassword') ? 'ring-2 ring-rose-300/80' : ''}`} placeholder="repita a nova senha" aria-invalid={invalidFields.has('confirmPassword')} />
+                        <button type="button" onClick={() => setShowConfirmPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-1.5 text-cyan-100/80 hover:bg-white/10 hover:text-white" aria-label={showConfirmPassword ? 'Ocultar confirmação' : 'Mostrar confirmação'}>{showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                      </div>
+                    </Field>
+                  </>
+                )}
+
                 {mode !== 'reset' && mode !== 'verify' && (
                   <Field icon={Lock} label={mode === 'register' ? 'Senha *' : 'Senha *'} invalid={invalidFields.has('password')}>
                     <div className="relative">
@@ -423,7 +444,7 @@ export default function AuthPage() {
                   </Field>
                 )}
 
-                {mode === 'register' && (
+                {false && mode === 'register' && (
                   <div className="rounded-2xl border border-white/10 bg-white/[.055] p-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-cyan-100/70">Como você pretende usar o CrewCheck?</p>
                     <p className="mt-1 text-xs leading-5 text-cyan-50/75">Isso ajuda a personalizar a primeira experiência. Não pedimos CPF para criar conta gratuita.</p>
@@ -448,8 +469,8 @@ export default function AuthPage() {
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-cyan-100/70">Base virtual</p>
                     <p className="mt-1 text-xs leading-5 text-cyan-50/80">Essa informação pode ser editada depois em Configurações &gt; Perfil. Ela aparecerá automaticamente como destino no Extra.</p>
                     <div className="mt-3 grid grid-cols-2 gap-2">
-                      <button type="button" onClick={() => update('hasVirtualBase', 'yes')} className={`rounded-2xl border px-4 py-3 text-sm font-black ${form.hasVirtualBase === 'yes' ? 'border-cyan-200 bg-cyan-200 text-[#06101d]' : 'border-white/10 bg-white/[.06] text-white'}`}>Sim</button>
-                      <button type="button" onClick={() => update('hasVirtualBase', 'no')} className={`rounded-2xl border px-4 py-3 text-sm font-black ${form.hasVirtualBase !== 'yes' ? 'border-cyan-200 bg-cyan-200 text-[#06101d]' : 'border-white/10 bg-white/[.06] text-white'}`}>Não</button>
+                      <button type="button" onClick={() => update('hasVirtualBase', 'yes')} className={`rounded-2xl border px-4 py-3 text-sm font-black shadow-lg transition ${form.hasVirtualBase === 'yes' ? 'border-cyan-100 bg-gradient-to-r from-cyan-200 to-blue-300 text-[#06101d] shadow-cyan-950/30 scale-[1.02]' : 'border-white/10 bg-white/[.06] text-white hover:bg-white/[.10]'}`}>Sim</button>
+                      <button type="button" onClick={() => update('hasVirtualBase', 'no')} className={`rounded-2xl border px-4 py-3 text-sm font-black shadow-lg transition ${form.hasVirtualBase !== 'yes' ? 'border-emerald-100 bg-gradient-to-r from-emerald-200 to-cyan-200 text-[#06101d] shadow-emerald-950/30 scale-[1.02]' : 'border-white/10 bg-white/[.06] text-white hover:bg-white/[.10]'}`}>Não</button>
                     </div>
                     {form.hasVirtualBase === 'yes' && (
                       <label className="mt-3 block">
@@ -484,7 +505,7 @@ export default function AuthPage() {
                 )}
 
                 <Button disabled={isLoading} type="submit" className="h-12 w-full rounded-2xl bg-gradient-to-r from-cyan-300 to-blue-500 text-base font-black text-[#04101f] shadow-lg shadow-cyan-950/30 hover:opacity-95">
-                  {isLoading ? 'Aguarde...' : mode === 'reset' ? 'Enviar senha provisória' : mode === 'register' ? 'Criar cadastro seguro' : mode === 'verify' ? 'Confirmar e entrar' : 'Entrar no CrewCheck'}
+                  {isLoading ? 'Aguarde...' : mode === 'reset' ? (resetCodeSent ? 'Definir nova senha' : 'Enviar código temporário') : mode === 'register' ? 'Criar cadastro seguro' : mode === 'verify' ? 'Confirmar e entrar' : 'Entrar no CrewCheck'}
                   <ArrowRight className="h-5 w-5" />
                 </Button>
                 {mode !== 'verify' && (

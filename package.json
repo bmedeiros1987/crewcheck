@@ -3,7 +3,7 @@
   "version": "11.0.63",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.63: melhorias de entrega de e-mail para Yahoo, modo transacional robusto, logs de provedor e AAB consolidado versionCode 11063.",
+  "description": "CrewCheck v11.0.63: desktop roster premium, importação rápida Google Drive/iCloud, menu individual, Google Maps em Meu Carro com fallback TomTom, Telegram com data do voo e autenticação/reset mais seguro.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

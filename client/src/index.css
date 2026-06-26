@@ -8411,3 +8411,48 @@ html[data-crew-theme="light"] .android-premium-shell .cc-flight-pill-value { col
     grid-template-columns: 1fr !important;
   }
 }
+
+
+/* CrewCheck v11.0.63 — desktop roster premium, botões vivos e menu individual */
+.crewcheck-primary-cta {
+  background: linear-gradient(135deg, #67e8f9 0%, #38bdf8 38%, #2563eb 100%) !important;
+  color: #04101f !important;
+  border: 1px solid rgba(255,255,255,.55) !important;
+  box-shadow: 0 18px 42px rgba(14,165,233,.30), inset 0 1px 0 rgba(255,255,255,.7) !important;
+}
+.crewcheck-secondary-cta {
+  background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(34,211,238,.18)) !important;
+  color: #ecfeff !important;
+  border: 1px solid rgba(125,211,252,.35) !important;
+  box-shadow: 0 14px 34px rgba(2,8,23,.28) !important;
+}
+html[data-crew-theme="light"] .crewcheck-secondary-cta {
+  color: #083344 !important;
+  background: linear-gradient(135deg,#ffffff,#ecfeff) !important;
+  border-color: rgba(14,165,233,.35) !important;
+}
+.crewcheck-sidebar-item.is-active,
+.crewcheck-sidebar-group-btn.is-active {
+  background: linear-gradient(135deg, rgba(103,232,249,.24), rgba(59,130,246,.20)) !important;
+  border-color: rgba(125,211,252,.42) !important;
+  color: #f8fdff !important;
+}
+.crewcheck-sidebar-subitems .crewcheck-sidebar-item:not(.is-active) { opacity: .88; }
+.cc-roster-desktop-list { max-width: min(100%, 1180px) !important; margin-inline: auto !important; overflow-x: clip !important; }
+.cc-roster-desktop-list .cc-roster-day-desktop > .grid { grid-template-columns: 6.75rem minmax(0,1fr) !important; align-items: stretch !important; }
+.cc-roster-date-desktop { min-width: 0 !important; }
+.cc-roster-desktop-list .cc-roster-event button { grid-template-columns: 2.65rem 6.2rem minmax(0,1fr) auto !important; gap: .75rem !important; }
+.cc-roster-desktop-list .cc-roster-event button > .hidden.min-w-0.grid-cols-3 { display: none !important; }
+.cc-roster-desktop-list .cc-roster-event-title { font-size: .98rem !important; line-height: 1.08 !important; }
+.cc-roster-desktop-list .cc-roster-event-subtitle { font-size: .82rem !important; line-height: 1.25 !important; }
+.cc-roster-desktop-list .cc-roster-event-time { white-space: nowrap !important; font-size: .86rem !important; }
+.cc-roster-desktop-list .cc-day-finance-chips { grid-template-columns: 1fr !important; }
+.cc-roster-desktop-list .cc-financial-chip { display: block !important; width: 100% !important; text-align: center !important; }
+@media (min-width: 1600px) {
+  .cc-roster-desktop-list { max-width: min(100%, 1320px) !important; }
+  .cc-roster-desktop-list .cc-roster-event button { grid-template-columns: 2.75rem 6.4rem minmax(0,1fr) auto !important; }
+}
+@media (max-width: 1023px) {
+  .crewcheck-import-screen main.container { padding-top: 1rem !important; }
+  .crewcheck-import-screen .cc-import-hero-panel p { margin-top: .85rem !important; }
+}

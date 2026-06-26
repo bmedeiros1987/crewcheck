@@ -127,8 +127,8 @@ export async function register(payload: {
   virtualBase?: string;
   usageIntent?: string;
   telegramUsername?: string;
-}): Promise<AuthSession | { ok: boolean; verificationRequired: true; emailSent?: boolean; emailStatus?: unknown; message?: string }> {
-  const response = await jsonFetch<(AuthSession & { ok: boolean }) | { ok: boolean; verificationRequired: true; emailSent?: boolean; emailStatus?: unknown; message?: string }>('/api/auth/register', {
+}): Promise<AuthSession | { ok: boolean; verificationRequired: true; emailSent?: boolean; message?: string }> {
+  const response = await jsonFetch<(AuthSession & { ok: boolean }) | { ok: boolean; verificationRequired: true; emailSent?: boolean; message?: string }>('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -166,6 +166,14 @@ export async function requestPasswordReset(email: string): Promise<{ ok: boolean
   return jsonFetch<{ ok: boolean; emailSent?: boolean; emailStatus?: unknown }>('/api/auth/request-reset', {
     method: 'POST',
     body: JSON.stringify({ email }),
+  });
+}
+
+
+export async function confirmPasswordReset(payload: { email: string; code: string; password: string; confirmPassword: string }): Promise<{ ok: boolean; message?: string }> {
+  return jsonFetch<{ ok: boolean; message?: string }>('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

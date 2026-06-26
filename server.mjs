@@ -1628,7 +1628,6 @@ async function verifyTurnstileToken({ token, remoteIp }) {
 
 function buildEmailVerificationEmail({ email, code }) {
  const safeEmail = escapeHtml(email);
- const safeCode = escapeHtml(code);
  const link = `${PUBLIC_APP_URL}/login?email=${encodeURIComponent(email)}&verify=${encodeURIComponent(code)}`;
  const safeLink = escapeHtml(link);
  const subject = 'Confirme seu e-mail no CrewCheck';
@@ -1636,11 +1635,10 @@ function buildEmailVerificationEmail({ email, code }) {
   'CrewCheck — confirmação de e-mail.',
   '',
   `Conta: ${email}`,
-  `Código de confirmação: ${code}`,
   '',
-  `Confirme pelo link: ${link}`,
+  `Confirme pelo botão/link: ${link}`,
   '',
-  `O código expira em ${EMAIL_VERIFICATION_TTL_MINUTES} minutos.`,
+  `O link expira em ${EMAIL_VERIFICATION_TTL_MINUTES} minutos.`,
   'Se você não criou essa conta, ignore este e-mail.',
  ].join('\n');
  const html = `<div style="margin:0;padding:0;background:#f4f8fb;font-family:Inter,Arial,sans-serif;color:#092846">
@@ -1651,12 +1649,10 @@ function buildEmailVerificationEmail({ email, code }) {
      <h1 style="margin:10px 0 0;font-size:28px;line-height:1.15">Confirme seu e-mail</h1>
     </td></tr>
     <tr><td style="padding:30px;color:#092846;font-size:15px;line-height:1.7">
-     <p style="margin:0 0 14px">Recebemos um cadastro para <strong>${safeEmail}</strong>.</p>
-     <p style="margin:0 0 16px">Use o código abaixo para ativar a conta e liberar o acesso ao CrewCheck:</p>
-     <div style="margin:18px 0;padding:18px 22px;border-radius:20px;background:#e0f2fe;color:#082f49;font-size:34px;letter-spacing:.18em;font-weight:900;text-align:center">${safeCode}</div>
-     <p style="margin:0 0 20px;color:#475569">O código expira em ${EMAIL_VERIFICATION_TTL_MINUTES} minutos.</p>
-     <a href="${safeLink}" style="display:inline-block;border-radius:16px;background:#0891b2;color:white;text-decoration:none;font-weight:900;padding:14px 20px">Confirmar e entrar</a>
-     <p style="margin:20px 0 0;color:#64748b;font-size:13px">Se o botão não abrir, copie este link no navegador:<br>${safeLink}</p>
+     <p style="margin:0 0 18px">Recebemos um cadastro para <strong>${safeEmail}</strong>.</p>
+     <p style="margin:0 0 22px;color:#475569">Para liberar o acesso, toque no botão abaixo. Não exibimos código manual neste e-mail.</p>
+     <a href="${safeLink}" style="display:inline-block;border-radius:18px;background:#0891b2;color:white;text-decoration:none;font-weight:900;padding:15px 22px">Confirmar e-mail</a>
+     <p style="margin:22px 0 0;color:#64748b;font-size:13px">Se você não criou essa conta, ignore esta mensagem.</p>
     </td></tr>
    </table>
   </td></tr></table>
@@ -2801,51 +2797,6 @@ function sanitizeEmailAddress(value = '') {
  return String(value || '').replace(/[\r\n<>]/g, '').trim();
 }
 
-function emailDomainOf(value = '') {
- const email = normalizeEmail(value);
- const at = email.lastIndexOf('@');
- return at > -1 ? email.slice(at + 1) : '';
-}
-
-function isYahooLikeEmail(value = '') {
- const domain = emailDomainOf(value);
- return ['yahoo.com', 'yahoo.com.br', 'ymail.com', 'rocketmail.com'].includes(domain);
-}
-
-function emailFromDomain(value = '') {
- const domain = emailDomainOf(value);
- return domain || 'crewcheck.online';
-}
-
-function sanitizeEmailProviderError(error, body = '') {
- const message = error?.message || String(error || 'falha');
- const safeBody = String(body || '')
-  .replace(/SG\.[A-Za-z0-9._-]+/g, 'SG.[redacted]')
-  .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
-  .slice(0, 900);
- return safeBody ? `${message} · ${safeBody}` : message;
-}
-
-function buildYahooSafeHtml({ title = 'CrewCheck', message = '', actionUrl = '', actionLabel = 'Abrir CrewCheck' } = {}) {
- const safeTitle = escapeHtml(title || 'CrewCheck');
- const safeMessage = escapeHtml(message || '').replace(/\n/g, '<br>');
- const safeUrl = escapeHtml(actionUrl || publicAppUrl());
- const safeLabel = escapeHtml(actionLabel || 'Abrir CrewCheck');
- return `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;background:#ffffff;padding:20px"><h1 style="font-size:22px;margin:0 0 14px;color:#082f49">${safeTitle}</h1><p style="font-size:15px;margin:0 0 18px">${safeMessage}</p><p style="margin:0 0 18px"><a href="${safeUrl}" style="background:#0891b2;color:#ffffff;text-decoration:none;font-weight:bold;border-radius:10px;padding:12px 16px;display:inline-block">${safeLabel}</a></p><p style="font-size:12px;color:#64748b;margin-top:22px">Mensagem transacional enviada pelo CrewCheck. Se não reconhece esta solicitação, ignore este e-mail.</p></div>`;
-}
-
-function normalizeTransactionalEmailForRecipient({ to, subject, text, html }) {
- if (!isYahooLikeEmail(to)) return { subject, text, html, yahooMode: false };
- const plain = String(text || subject || 'CrewCheck').trim();
- const htmlMessage = plain || String(subject || 'CrewCheck');
- return {
-  subject: String(subject || 'CrewCheck').replace(/\s+/g, ' ').trim(),
-  text: plain,
-  html: buildYahooSafeHtml({ title: subject || 'CrewCheck', message: htmlMessage, actionUrl: publicAppUrl(), actionLabel: 'Abrir CrewCheck' }),
-  yahooMode: true,
- };
-}
-
 function normalizeAttachmentContentForSmtp(item) {
  const base64 = String(item?.content || item?.base64 || '').replace(/^data:[^;]+;base64,/, '').replace(/\s/g, '');
  return base64.replace(/.{1,76}/g, '$&\r\n').trim();
@@ -2857,7 +2808,7 @@ function buildSmtpMimeMessage({ from, fromName, to, subject, text, html, attachm
  const plain = String(text || subject || 'CrewCheck').replace(/\r?\n/g, '\r\n');
  const htmlBody = String(html || `<pre>${escapeHtml(text || '')}</pre>`);
  const date = new Date().toUTCString();
- const messageId = `<${crypto.randomUUID()}@${emailFromDomain(from)}>`;
+ const messageId = `<${crypto.randomUUID()}@crewcheck.local>`;
  const altBoundary = `crewcheck_alt_${crypto.randomUUID().replace(/-/g, '')}`;
  const mixedBoundary = `crewcheck_mix_${crypto.randomUUID().replace(/-/g, '')}`;
  const headers = [
@@ -2985,18 +2936,9 @@ async function sendSmtpMail({ to, subject, text, html, attachments = [] }) {
 
 async function sendEmail({ to, subject, text, html, attachments = [] }) {
  const from = process.env.EMAIL_FROM || process.env.SENDGRID_FROM || process.env.MAILERSEND_FROM || smtpConfig().from || '';
- const safeTo = normalizeEmail(to);
  if (!from) {
   return { ok: false, configured: false, message: 'Configure EMAIL_FROM e ao menos um provedor de e-mail: SendGrid, MailerSend API ou SMTP.' };
  }
- if (!safeTo || !safeTo.includes('@')) {
-  return { ok: false, configured: true, message: 'Destinatário de e-mail inválido.' };
- }
- const transactional = normalizeTransactionalEmailForRecipient({ to: safeTo, subject, text, html });
- subject = transactional.subject;
- text = transactional.text;
- html = transactional.html;
- const yahooMode = transactional.yahooMode;
 
  const safeAttachments = Array.isArray(attachments)
   ? attachments
@@ -3012,37 +2954,27 @@ async function sendEmail({ to, subject, text, html, attachments = [] }) {
 
  if (process.env.SENDGRID_API_KEY) {
   try {
-   const payload = {
-    personalizations: [{ to: [{ email: safeTo }], custom_args: { crewcheck_transactional: 'true', recipient_domain: emailDomainOf(safeTo) || 'unknown' } }],
-    from: { email: from, name: process.env.EMAIL_FROM_NAME || 'CrewCheck' },
-    reply_to: { email: process.env.EMAIL_REPLY_TO || from, name: process.env.EMAIL_FROM_NAME || 'CrewCheck' },
-    subject,
-    content: [
-     { type: 'text/plain', value: text || subject },
-     { type: 'text/html', value: html || `<pre>${escapeHtml(text || '')}</pre>` },
-    ],
-    categories: ['crewcheck-transactional'],
-    tracking_settings: {
-     click_tracking: { enable: false, enable_text: false },
-     open_tracking: { enable: false },
-     subscription_tracking: { enable: false },
-    },
-    mail_settings: { bypass_list_management: { enable: true } },
-    ...(safeAttachments.length && !yahooMode ? { attachments: safeAttachments.map((item) => ({ content: item.content, filename: item.filename, type: item.type, disposition: 'attachment' })) } : {}),
-   };
    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
     headers: {
      authorization: `Bearer ${process.env.SENDGRID_API_KEY}`,
      'content-type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+     personalizations: [{ to: [{ email: to }] }],
+     from: { email: from, name: process.env.EMAIL_FROM_NAME || 'CrewCheck' },
+     subject,
+     content: [
+      { type: 'text/plain', value: text || subject },
+      { type: 'text/html', value: html || `<pre>${escapeHtml(text || '')}</pre>` },
+     ],
+     ...(safeAttachments.length ? { attachments: safeAttachments.map((item) => ({ content: item.content, filename: item.filename, type: item.type, disposition: 'attachment' })) } : {}),
+    }),
    });
-   const bodyText = await response.text().catch(() => '');
-   if (!response.ok) throw new Error(`HTTP ${response.status}${bodyText ? ` · ${bodyText.slice(0, 500)}` : ''}`);
-   return { ok: true, provider: 'sendgrid', attempts, yahooMode };
+   if (!response.ok) throw new Error(`HTTP ${response.status}`);
+   return { ok: true, provider: 'sendgrid', attempts };
   } catch (error) {
-   attempts.push({ provider: 'sendgrid', ok: false, reason: sanitizeEmailProviderError(error) });
+   attempts.push({ provider: 'sendgrid', ok: false, reason: error?.message || 'falha' });
   }
  }
 
@@ -3056,33 +2988,31 @@ async function sendEmail({ to, subject, text, html, attachments = [] }) {
     },
     body: JSON.stringify({
      from: { email: from, name: process.env.EMAIL_FROM_NAME || 'CrewCheck' },
-     reply_to: { email: process.env.EMAIL_REPLY_TO || from, name: process.env.EMAIL_FROM_NAME || 'CrewCheck' },
-     to: [{ email: safeTo }],
+     to: [{ email: to }],
      subject,
      text: text || subject,
      html: html || `<pre>${escapeHtml(text || '')}</pre>`,
-     ...(safeAttachments.length && !yahooMode ? { attachments: safeAttachments.map((item) => ({ content: item.content, filename: item.filename, disposition: 'attachment', type: item.type })) } : {}),
+     ...(safeAttachments.length ? { attachments: safeAttachments.map((item) => ({ content: item.content, filename: item.filename, disposition: 'attachment', type: item.type })) } : {}),
     }),
    });
-   const bodyText = await response.text().catch(() => '');
-   if (!response.ok) throw new Error(`HTTP ${response.status}${bodyText ? ` · ${bodyText.slice(0, 500)}` : ''}`);
-   return { ok: true, provider: 'mailersend', attempts, yahooMode };
+   if (!response.ok) throw new Error(`HTTP ${response.status}`);
+   return { ok: true, provider: 'mailersend', attempts };
   } catch (error) {
-   attempts.push({ provider: 'mailersend', ok: false, reason: sanitizeEmailProviderError(error) });
+   attempts.push({ provider: 'mailersend', ok: false, reason: error?.message || 'falha' });
   }
  }
 
  if (smtpEmailConfigured()) {
   try {
-   const result = await sendSmtpMail({ to: safeTo, subject, text, html, attachments: yahooMode ? [] : safeAttachments });
-   if (result.ok) return { ...result, attempts, yahooMode };
+   const result = await sendSmtpMail({ to, subject, text, html, attachments: safeAttachments });
+   if (result.ok) return { ...result, attempts };
    attempts.push({ provider: 'smtp', ok: false, reason: result.message || 'não configurado' });
   } catch (error) {
    attempts.push({ provider: 'smtp', ok: false, reason: error?.message || 'falha' });
   }
  }
 
- return { ok: false, configured: Object.values(emailProviderStatus()).some(Boolean), message: yahooMode ? 'Não foi possível entregar o e-mail para Yahoo. Verifique spam/lixo eletrônico e teste EMAIL_FROM com domínio verificado (SPF/DKIM) no provedor.' : 'Envio por e-mail indisponível. Configure SendGrid, MailerSend API ou SMTP no Render.', attempts, providerStatus: emailProviderStatus(), yahooMode };
+ return { ok: false, configured: false, message: 'Envio por e-mail indisponível. Configure SendGrid, MailerSend API ou SMTP no Render.', attempts, providerStatus: emailProviderStatus() };
 }
 
 function escapeHtml(value) {
@@ -3122,7 +3052,7 @@ function buildWelcomeEmail({ email, temporaryPassword }) {
   'Bem-vindo ao CrewCheck Premium.',
   '',
   `Conta criada para: ${email}`,
-  `Senha provisória de emergência: ${temporaryPassword}`,
+  `Código temporário de emergência: ${temporaryPassword}`,
   '',
   'Você pode acessar com a senha escolhida no cadastro. A senha provisória é temporária e serve apenas como alternativa inicial/de recuperação.',
   'Após carregar sua primeira escala, o CrewCheck preencherá automaticamente BP, base e função a partir do PDF.',
@@ -3148,7 +3078,7 @@ function buildWelcomeEmail({ email, temporaryPassword }) {
      </td></tr>
      <tr><td style="padding:0 34px 24px">
       <div style="background:#06172a;border-radius:24px;padding:24px;color:white">
-       <p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Senha provisória de emergência</p>
+       <p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Código temporário de emergência</p>
        <div style="margin-top:14px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.08);font-size:28px;letter-spacing:.12em;font-weight:900;text-align:center">${safePassword}</div>
        <p style="margin:16px 0 0;color:#cbd5e1;font-size:13px;line-height:1.6">Você também pode entrar com a senha escolhida no cadastro. A senha provisória expira automaticamente e deve ser usada apenas se necessário.</p>
       </div>
@@ -3167,14 +3097,14 @@ function buildWelcomeEmail({ email, temporaryPassword }) {
 function buildPasswordResetEmail({ email, temporaryPassword }) {
  const safeEmail = escapeHtml(email);
  const safePassword = escapeHtml(temporaryPassword);
- const subject = 'CrewCheck Premium — senha provisória de acesso';
+ const subject = 'CrewCheck Premium — código temporário de redefinição';
  const text = [
   'CrewCheck Premium — recuperação de acesso.',
   '',
   `Conta: ${email}`,
-  `Senha provisória: ${temporaryPassword}`,
+  `Código temporário: ${temporaryPassword}`,
   '',
-  'A senha provisória expira em 7 dias e será invalidada após o uso.',
+  'O código temporário expira em 30 minutos e só serve para definir uma nova senha.',
   'Se você não solicitou essa recuperação, ignore este e-mail.',
   '',
   'Equipe CrewCheck',
@@ -3188,10 +3118,10 @@ function buildPasswordResetEmail({ email, temporaryPassword }) {
      <tr><td style="padding:34px 34px 18px">
       <div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#0ea5e9;font-weight:800">CrewCheck Premium</div>
       <h1 style="margin:10px 0 8px;font-size:30px;line-height:1.1;color:#06172a">Recuperação de acesso</h1>
-      <p style="margin:0;color:#60758a;font-size:15px;line-height:1.7">Geramos uma senha provisória para você acessar sua conta. Por segurança, use-a apenas uma vez e depois continue com sua senha principal.</p>
+      <p style="margin:0;color:#60758a;font-size:15px;line-height:1.7">Geramos um código temporário para redefinir sua senha. Ele não faz login direto: você precisará criar uma nova senha no CrewCheck.</p>
      </td></tr>
      <tr><td style="padding:0 34px 22px"><div style="background:#f8fbff;border:1px solid #dbeafe;border-radius:22px;padding:22px"><p style="margin:0 0 10px;color:#60758a;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Conta</p><p style="margin:0;font-size:16px;font-weight:800;color:#092846">${safeEmail}</p></div></td></tr>
-     <tr><td style="padding:0 34px 24px"><div style="background:#06172a;border-radius:24px;padding:24px;color:white"><p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Senha provisória</p><div style="margin-top:14px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.08);font-size:28px;letter-spacing:.12em;font-weight:900;text-align:center">${safePassword}</div><p style="margin:16px 0 0;color:#cbd5e1;font-size:13px;line-height:1.6">Expira em 7 dias e é invalidada após o primeiro uso.</p></div></td></tr>
+     <tr><td style="padding:0 34px 24px"><div style="background:#06172a;border-radius:24px;padding:24px;color:white"><p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Código temporário</p><div style="margin-top:14px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.08);font-size:28px;letter-spacing:.12em;font-weight:900;text-align:center">${safePassword}</div><p style="margin:16px 0 0;color:#cbd5e1;font-size:13px;line-height:1.6">Expira em 30 minutos e só serve para definir uma nova senha.</p></div></td></tr>
      <tr><td style="padding:0 34px 34px;color:#60758a;font-size:14px;line-height:1.7"><strong style="color:#092846">Privacidade:</strong> usamos seus dados apenas para autenticação e análise da escala conforme as boas práticas da LGPD.</td></tr>
     </table>
    </td></tr>
@@ -6648,6 +6578,19 @@ function buildTomTomPlanUrl({ destination }) {
  }
 }
 
+
+function buildGoogleMapsWebRouteUrl({ destination }) {
+ try {
+  const lat = Number(destination?.lat);
+  const lng = Number(destination?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'https://www.google.com/maps';
+  const point = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(point)}&travelmode=driving`;
+ } catch {
+  return 'https://www.google.com/maps';
+ }
+}
+
 function getTomTomServerKey() {
  return String(process.env.TOMTOM_API_KEY || process.env.TOMTOM_ROUTING_API_KEY || process.env.CREWCHECK_TOMTOM_API_KEY || '').trim();
 }
@@ -6757,13 +6700,13 @@ async function geocodeCrewCheckAddress({ address, cep }) {
  const viaCep = normalizedCep ? await lookupViaCep(normalizedCep) : null;
  const addressText = String(address || '').trim();
  const queryAddress = [addressText, !addressText && viaCep?.address ? viaCep.address : '', addressText && normalizedCep ? `CEP ${normalizedCep}` : '', 'Brasil'].filter(Boolean).join(', ');
- const tomTomGeocode = await geocodeTomTomAddress({ queryAddress, normalizedCep });
- if (tomTomGeocode?.ok) return { ...tomTomGeocode, viaCep, inputCep: normalizedCep || null, inputAddress: addressText || null };
  if (!key) {
+  const tomTomGeocode = await geocodeTomTomAddress({ queryAddress, normalizedCep });
+  if (tomTomGeocode?.ok) return { ...tomTomGeocode, viaCep, inputCep: normalizedCep || null, inputAddress: addressText || null, source: 'TomTom Search · fallback' };
   return {
    ok: false,
-   code: 'TOMTOM_KEY_MISSING',
-   message: 'TomTom não configurado ou sem resultado. Configure TOMTOM_API_KEY no Render para geocodificação e rotas.',
+   code: 'GOOGLE_KEY_MISSING',
+   message: 'Google Maps não configurado. Configure GOOGLE_MAPS_API_KEY no Render; TomTom será usado apenas como fallback quando disponível.',
    viaCep,
    tomTomGeocode,
   };
@@ -6783,11 +6726,14 @@ async function geocodeCrewCheckAddress({ address, cep }) {
  });
  const payload = await response.json().catch(() => null);
  if (!response.ok || payload?.status !== 'OK') {
+  const tomTomGeocode = await geocodeTomTomAddress({ queryAddress, normalizedCep });
+  if (tomTomGeocode?.ok) return { ...tomTomGeocode, viaCep, inputCep: normalizedCep || null, inputAddress: addressText || null, source: 'TomTom Search · fallback' };
   return {
    ok: false,
    code: `GOOGLE_GEOCODING_${payload?.status || response.status}`,
    message: payload?.error_message || payload?.status || `HTTP ${response.status}`,
    viaCep,
+   tomTomGeocode,
   };
  }
  const best = normalizeGeocodeResult(payload.results?.[0], 'Google Geocoding');
@@ -7087,12 +7033,11 @@ async function computeLegacyDirectionsPlan({ origin, destination, departureTime,
 
 async function computeGoogleRoutesPlan({ origin, destination, departureTime, arrivalTime, mode = 'DRIVE', transitPreference = 'FEWER_TRANSFERS', sourceSuffix = '' }) {
  const travelMode = mode === 'TRANSIT' ? 'TRANSIT' : mode === 'WALK' ? 'WALK' : mode === 'TWO_WHEELER' ? 'TWO_WHEELER' : 'DRIVE';
- if (travelMode !== 'TRANSIT') {
-  const tomTom = await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode });
-  if (tomTom?.durationSeconds) return tomTom;
- }
  const key = String(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || '').trim();
- if (!key) return null;
+ if (!key) {
+  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }) : null;
+  return tomTom?.durationSeconds ? { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` } : null;
+ }
  const body = {
   origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
   destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
@@ -7132,6 +7077,8 @@ async function computeGoogleRoutesPlan({ origin, destination, departureTime, arr
  } catch (error) {
   const legacy = await computeLegacyDirectionsPlan({ origin, destination, departureTime, arrivalTime, mode: travelMode });
   if (legacy?.durationSeconds) return legacy;
+  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }) : null;
+  if (tomTom?.durationSeconds) return { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` };
   throw error;
  }
  const payload = await response.json();
@@ -7230,7 +7177,7 @@ function buildUberRideLinks({ origin, destination, airport }) {
  return {
   deepLink: `uber://?${common.toString()}`,
   webLink: `https://m.uber.com/ul/?${common.toString()}`,
-  mapsLink: buildTomTomPlanUrl({ destination }),
+  mapsLink: buildGoogleMapsWebRouteUrl({ destination }),
  };
 }
 
@@ -7756,7 +7703,7 @@ function buildSmartRouteOption({ route, airport, destination, origin, target, ar
   fareRange: route.fareRange || null,
   fareLabel: route.fareLabel || null,
   fareConfidence: route.fareConfidence || null,
-  mapsUrl: buildTomTomPlanUrl({ destination }),
+  mapsUrl: buildGoogleMapsWebRouteUrl({ destination }),
   isLate,
   source: route.source,
   humanSourceLabel,
@@ -7949,7 +7896,7 @@ async function getSmartDeparturePlan(query) {
   locationLearning: { mode: 'local', samples: localSamples, enabled: localSamples > 0, locationTime: locationTime || null },
   warning: isLongDistance && !userAllowsFlightAboveThreshold
    ? `Trajeto longo detectado. Ative a opção de voo em longa distância para o Automático considerar ponte aérea.`
-   : (usedGoogle ? null : 'TomTom não retornou rota em tempo real. O CrewCheck mantém estimativa segura e o botão abre a rota no TomTom.'),
+   : (usedGoogle ? null : 'Google Maps não retornou rota em tempo real. O CrewCheck mantém estimativa segura e usa TomTom apenas como fallback.'),
   diagnostics: {
    provider: isFlightBridgeMode(primary.mode) ? 'flight-threshold-policy' : primary.mode === 'RIDE_APP' ? 'ride-apps' : usedGoogle ? 'google-routes' : 'local-fallback',
    mapsKeyConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY),
@@ -8368,7 +8315,8 @@ function telegramLineIcon(line = '') {
  const lower = String(line || '').toLowerCase();
  if (/saia|saída|chegue|apresent/.test(lower)) return '⏱️';
  if (/destino|aeroporto|base|origem|local/.test(lower)) return '📍';
- if (/modal|carro|uber|99|moto|transporte|voo/.test(lower)) return '🚘';
+ if (/\bla\s?\d{3,4}\b|voo|trecho|decolagem|chegada/.test(lower)) return '🛫';
+ if (/modal|carro|uber|99|moto|transporte/.test(lower)) return '🚘';
  if (/alerta|crítico|irregular|atenção|falha/.test(lower)) return '⚠️';
  if (/escala|programação|importada|atualizada|mês|base/.test(lower)) return '📅';
  if (/ganho|diária|valor|salário|resumo/.test(lower)) return '💎';
@@ -8620,6 +8568,12 @@ function telegramConciergeFindDay(rosters = [], iso = '') {
  return null;
 }
 
+function telegramConciergeReadableDate(iso = '') {
+ const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if (!m) return iso || 'data não informada';
+ return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 function telegramConciergeFormatTime(value) {
  const raw = String(value || '').trim();
  const m = raw.match(/(\d{1,2})[:hH](\d{2})/);
@@ -8785,6 +8739,7 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   const leg = found?.leg || {};
   const flight = telegramConciergeLegNumber(leg) || 'próximo voo';
   const lines = found ? [
+   `Data da programação: ${telegramConciergeReadableDate(found.iso)}`,
    telegramConciergeLegLine(leg),
    leg.gate ? `Portão: ${leg.gate}` : 'Portão: ainda não disponível no radar salvo.',
    leg.terminal ? `Terminal: ${leg.terminal}` : 'Terminal: ainda não disponível no radar salvo.',
@@ -8805,6 +8760,7 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
   const origin = leg.origin || leg.from || found?.day?.location || 'origem não informada';
   const lines = [
+   found ? `Data da programação: ${telegramConciergeReadableDate(found.iso)}` : '',
    found ? telegramConciergeLegLine(leg) : 'Não encontrei voo futuro na escala salva.',
    report ? `Apresentação na escala: ${report}` : dep ? `Decolagem: ${dep}` : 'Horário de apresentação não localizado na escala.',
    `Origem: ${origin}`,
@@ -10577,8 +10533,8 @@ async function handleApi(req, res, url) {
    const user = result.rows[0];
    let emailResult = { ok: false, configured: false };
    if (user) {
-    const temporaryPassword = generateTemporaryPassword();
-    const temporaryExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const temporaryPassword = String(Math.floor(100000 + Math.random() * 900000));
+    const temporaryExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     await db.query('update crewcheck_users set temp_password_hash = $1, temp_password_expires_at = $2, updated_at = now() where id = $3', [hashPassword(temporaryPassword), temporaryExpiresAt, user.id]);
     try {
      const mail = buildPasswordResetEmail({ email, temporaryPassword });
@@ -10595,6 +10551,36 @@ async function handleApi(req, res, url) {
   }
   return true;
  }
+
+ if (url.pathname === '/api/auth/reset-password' && req.method === 'POST') {
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 128 * 1024);
+   const email = normalizeEmail(body.email);
+   const code = String(body.code || body.temporaryPassword || '').trim();
+   const password = String(body.password || '');
+   const confirmPassword = String(body.confirmPassword || '');
+   if (!email || !email.includes('@') || !code || password.length < 6 || password !== confirmPassword) {
+    sendJson(res, 400, { ok: false, message: 'Informe e-mail, código temporário e nova senha com confirmação idêntica.' });
+    return true;
+   }
+   const result = await db.query('select * from crewcheck_users where email = $1 and is_active = true limit 1', [email]);
+   const user = result.rows[0];
+   if (!user || !canUseTemporaryPassword(code, user)) {
+    sendJson(res, 400, { ok: false, code: 'INVALID_RESET_CODE', message: 'Código temporário inválido ou expirado. Solicite um novo código.' });
+    return true;
+   }
+   await db.query('update crewcheck_users set password_hash = $1, temp_password_hash = null, temp_password_expires_at = null, email_verified = true, email_verified_at = coalesce(email_verified_at, now()), updated_at = now() where id = $2', [hashPassword(password), user.id]);
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, metadata) values ($1, $2, $3, $4::jsonb)', [newId(), user.id, 'auth.password_reset.completed', JSON.stringify({ email: maskEmailForLog(email) })]).catch(() => null);
+   sendJson(res, 200, { ok: true, message: 'Senha redefinida com sucesso.' });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível redefinir a senha.', detail: error.message, code: error.code, db: dbErrorInfo(error) });
+  }
+  return true;
+ }
+
 
  if (url.pathname === '/api/auth/login' && req.method === 'POST') {
   const db = requireDatabase(res);
@@ -10625,7 +10611,8 @@ async function handleApi(req, res, url) {
     return true;
    }
    if (validTemporaryPassword) {
-    await db.query('update crewcheck_users set temp_password_hash = null, temp_password_expires_at = null, updated_at = now() where id = $1', [user.id]);
+    sendJson(res, 403, { ok: false, code: 'TEMP_PASSWORD_REQUIRES_RESET', message: 'Código temporário validado apenas na recuperação de senha. Defina uma nova senha antes de entrar.' });
+    return true;
    }
    const session = await createSession(db, user, req);
    sendJson(res, 200, { ok: true, user: publicUser(user), token: session.token, expiresAt: session.expiresAt });

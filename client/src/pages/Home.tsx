@@ -2537,6 +2537,21 @@ function CrewCheckMobileMenu({ active, onNavigate, canAccessAdmin = false, drawe
  const [openGroup, setOpenGroup] = useState<string>(() => {
   try { return localStorage.getItem('crewcheck_side_menu_group') || 'operacional'; } catch { return 'operacional'; }
  });
+ const [selectedMenuView, setSelectedMenuView] = useState<string>(() => {
+  try { return localStorage.getItem('crewcheck_last_menu_view') || ''; } catch { return ''; }
+ });
+ const [selectedSettingsCategory, setSelectedSettingsCategory] = useState<string>(() => {
+  try { return localStorage.getItem('crewcheck_settings_category') || 'profile'; } catch { return 'profile'; }
+ });
+ useEffect(() => {
+  const handler = (event: Event) => {
+   const category = String((event as CustomEvent<string>).detail || 'profile');
+   setSelectedSettingsCategory(category);
+   setSelectedMenuView(`settings:${category}`);
+  };
+  window.addEventListener('crewcheck:settings-category', handler as EventListener);
+  return () => window.removeEventListener('crewcheck:settings-category', handler as EventListener);
+ }, []);
  const toggleExpanded = () => setExpanded((current) => {
   const next = !current;
   try { localStorage.setItem('crewcheck_side_menu_expanded', next ? '1' : '0'); } catch {}
@@ -2548,8 +2563,11 @@ function CrewCheckMobileMenu({ active, onNavigate, canAccessAdmin = false, drawe
   return next;
  });
  const go = (view: string) => {
+  setSelectedMenuView(view);
+  try { localStorage.setItem('crewcheck_last_menu_view', view); } catch {}
   if (view.startsWith('settings:')) {
    const category = view.split(':')[1] || 'profile';
+   setSelectedSettingsCategory(category);
    try { localStorage.setItem('crewcheck_settings_category', category); } catch {}
    window.dispatchEvent(new CustomEvent('crewcheck:settings-category', { detail: category }));
    onNavigate('settings');
@@ -2609,7 +2627,7 @@ function CrewCheckMobileMenu({ active, onNavigate, canAccessAdmin = false, drawe
      const GroupIcon = group.icon;
      const visibleItems = group.items.filter((item) => !item.admin || canAccessAdmin);
      if (!visibleItems.length) return null;
-     const groupActive = visibleItems.some((item) => item.activeId === active);
+     const groupActive = visibleItems.some((item) => (selectedMenuView && item.view === selectedMenuView) || (item.view.startsWith('settings:') && selectedMenuView === item.view) || (!selectedMenuView && item.activeId === active));
      const groupOpen = showExpanded && (openGroup === group.key || groupActive);
      return (
       <div key={group.key} className={`crewcheck-sidebar-group ${groupOpen ? 'is-open' : ''}`}>
@@ -2621,7 +2639,7 @@ function CrewCheckMobileMenu({ active, onNavigate, canAccessAdmin = false, drawe
        <div className="crewcheck-sidebar-subitems">
         {visibleItems.map((item) => {
          const Icon = item.icon;
-         const isActive = item.activeId === active;
+         const isActive = selectedMenuView ? item.view === selectedMenuView || (item.view.startsWith('settings:') && item.view === `settings:${selectedSettingsCategory}`) : item.activeId === active;
          return (
           <button key={`${group.key}-${item.label}`} type="button" onClick={() => go(item.view)} className={`crewcheck-sidebar-item ${isActive ? 'is-active' : ''}`} title={item.label}>
            <Icon className="h-5 w-5" />
@@ -3485,7 +3503,7 @@ function SmartDepartureScreen({ nextEvent, bundle, userBase, hasRoster, canAcces
  }, [runGeolocationCalculation, canCalculate, nativeStatus.location]);
 
  const tomTomRouteFallbackUrl = plan?.destination?.lat && plan?.destination?.lng ? buildTomTomPlanSearchUrl(plan.destination.lat, plan.destination.lng) : 'https://plan.tomtom.com/';
- const tomTomRouteUrl = plan?.destination?.lat && plan?.destination?.lng ? buildTomTomGoAndroidIntentUrl(plan.destination.lat, plan.destination.lng) : (plan?.mapsUrl || tomTomRouteFallbackUrl);
+ const googleRouteUrl = plan?.destination?.lat && plan?.destination?.lng ? buildGoogleMapsDestinationUrl(plan.destination.lat, plan.destination.lng) : (plan?.mapsUrl || 'https://www.google.com/maps');
  const isRestOnlyProgram = Boolean(hasRoster && nextEvent?.requiresDeparture === false);
  const smartDepartureHeroTitle = isRestOnlyProgram ? 'Vá descansar' : (plan?.leaveAtLabel || 'Calcular');
  const smartDepartureHeroDescription = isRestOnlyProgram
@@ -3677,7 +3695,7 @@ function SmartDepartureScreen({ nextEvent, bundle, userBase, hasRoster, canAcces
 
        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <button onClick={calculate} disabled={permission === 'requesting' || !canCalculate} className="cc-button-primary rounded-2xl px-6 py-4 text-sm font-black shadow-xl transition active:scale-95 disabled:opacity-50">{permission === 'requesting' ? 'Aguardando permissão...' : (locationAllowed ? 'Calcular / recalcular agora' : 'Ativar localização e calcular')}</button>
-        <button type="button" onClick={() => openTomTomDestination(tomTomRouteUrl, tomTomRouteFallbackUrl)} className="rounded-2xl border border-cyan-200/20 bg-white/[0.06] px-6 py-4 text-center text-sm font-black text-cyan-50 transition hover:bg-white/[0.10]"><ExternalLink className="mr-2 inline h-4 w-4" /> Abrir no TomTom</button>
+        <button type="button" onClick={() => openGoogleDestination(googleRouteUrl, tomTomRouteFallbackUrl)} className="crewcheck-secondary-cta rounded-2xl px-6 py-4 text-center text-sm font-black transition"><ExternalLink className="mr-2 inline h-4 w-4" /> Abrir no Google Maps</button>
         {rideBoard[0]?.webUrl ? <a href={rideBoard[0].webUrl} target="_blank" rel="noreferrer" className="rounded-2xl border border-cyan-200/25 bg-cyan-300/12 px-6 py-4 text-center text-sm font-black text-cyan-50 transition hover:bg-cyan-300/18"><Car className="mr-2 inline h-4 w-4" /> Abrir corrida</a> : null}
         <button onClick={requestAppNotifications} className="rounded-2xl border border-emerald-200/25 bg-emerald-300/10 px-6 py-4 text-sm font-black text-emerald-50 transition hover:bg-emerald-300/15"><Bell className="mr-2 inline h-4 w-4" /> {notificationsAllowed ? 'Notificações permitidas' : 'Ativar notificações'}</button>
         <button onClick={scheduleCurrentDepartureAlert} className="rounded-2xl border border-cyan-200/20 bg-cyan-300/10 px-6 py-4 text-sm font-black text-cyan-50 transition hover:bg-cyan-300/15"><Clock className="mr-2 inline h-4 w-4" /> Agendar hora de sair</button>
@@ -3839,6 +3857,10 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
          <div><p className="text-sm font-semibold text-cyan-100">Upload seguro</p><h3 className="text-2xl font-black tracking-tight">Analisar escala</h3></div>
          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-300/15 text-cyan-200"><FileText className="h-6 w-6" /></div>
         </div>
+        <div className="mb-5 grid gap-3 sm:grid-cols-2">
+         <label className="crewcheck-primary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-2xl transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Importar PDF agora</label>
+         <label className="crewcheck-secondary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-xl transition active:scale-[0.99]"><input type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><CloudUpload className="h-5 w-5" />Google Drive / iCloud</label>
+        </div>
 
         <div className="mb-5 rounded-[1.2rem] border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-50/90">
          <div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" /><p><strong>Fase de testes privados:</strong> o CrewCheck ainda não tem data oficial de lançamento. As informações podem conter divergências; confira sempre com sua escala oficial. Se encontrar erro, abra a aba <strong>Suporte</strong> e envie o PDF ou print para ajustarmos o sistema.</p></div>
@@ -3865,7 +3887,7 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
           <div className="flex flex-col items-center gap-5 py-4">
            <div className="flex h-20 w-20 items-center justify-center rounded-[1.7rem] bg-gradient-to-br from-cyan-300 to-fuchsia-400 text-[#07111F] shadow-xl shadow-cyan-500/25"><Upload className="h-9 w-9" /></div>
            <div><p className="text-xl font-black">Arraste sua escala em PDF aqui</p><p className="mt-2 text-sm text-slate-300">CrewRosterReport, CrewTopia ou AIMS — PDF oficial salvo em Arquivos</p></div>
-           <div className="flex flex-col items-center gap-3 sm:flex-row"><label className="crewcheck-premium-file-button relative inline-flex cursor-pointer items-center justify-center gap-3 px-7 py-4 text-sm font-black shadow-lg transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Escolher PDF da escala agora <ChevronRight className="h-5 w-5" /></label><button type="button" onClick={onDemoMode} className="rounded-[1.35rem] border border-cyan-300/25 bg-cyan-300/10 px-6 py-4 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-300/15"><Sparkles className="mr-2 inline h-4 w-4" />Ver demonstração</button></div>
+           <div className="flex flex-col items-center gap-3 sm:flex-row"><label className="crewcheck-premium-file-button relative inline-flex cursor-pointer items-center justify-center gap-3 px-7 py-4 text-sm font-black shadow-lg transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Escolher PDF no dispositivo <ChevronRight className="h-5 w-5" /></label><button type="button" onClick={onDemoMode} className="rounded-[1.35rem] border border-cyan-300/25 bg-cyan-300/10 px-6 py-4 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-300/15"><Sparkles className="mr-2 inline h-4 w-4" />Ver demonstração</button></div>
            <p className="max-w-md text-xs leading-5 text-slate-400">No iPad/iPhone, use o PDF oficial salvo em Arquivos. Para evitar escala fora de ordem, o CrewCheck prioriza a leitura segura do servidor e não usa leitura local quando isso puder gerar erro. A demonstração usa dados fictícios e é desativada ao importar sua primeira escala real.</p>
           </div>
          )}
@@ -9097,7 +9119,21 @@ function buildPreciseMarkerUrl(lat?: number | null, lng?: number | null): string
  const latitude = Number(lat);
  const longitude = Number(lng);
  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return '';
- return buildTomTomPlanSearchUrl(latitude, longitude);
+ return `https://www.google.com/maps/search/?api=1&query=${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+}
+
+function buildGoogleMapsDestinationUrl(lat?: number | null, lng?: number | null): string {
+ const latitude = Number(lat);
+ const longitude = Number(lng);
+ if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return 'https://www.google.com/maps';
+ const point = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+ return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(point)}&travelmode=driving`;
+}
+
+function openGoogleDestination(url: string, fallbackUrl?: string): void {
+ const target = url || 'https://www.google.com/maps';
+ try { window.open(target, '_blank', 'noopener,noreferrer'); }
+ catch { if (fallbackUrl) window.location.href = fallbackUrl; }
 }
 
 function buildTomTomGoDestinationUrl(lat?: number | null, lng?: number | null): string {
@@ -9202,7 +9238,7 @@ function ParkingSpotScreen({ onBack }: { onBack: () => void }) {
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
  };
  const copyParking = async () => {
-  const text = [`Meu carro está salvo no CrewCheck.`, terminal && `Terminal: ${terminal}`, floor && `Piso: ${floor}`, sector && `Setor: ${sector}`, row && `Vaga/fileira: ${row}`, note && `Observação: ${note}`, coordinateLabel && `Coordenadas: ${coordinateLabel}`, tomTomUrl && `TomTom GO: ${tomTomUrl}`, tomTomWebUrl && `Fallback TomTom Web: ${tomTomWebUrl}`, preciseMarkerUrl && `TomTom Web: ${preciseMarkerUrl}`].filter(Boolean).join('\n');
+  const text = [`Meu carro está salvo no CrewCheck.`, terminal && `Terminal: ${terminal}`, floor && `Piso: ${floor}`, sector && `Setor: ${sector}`, row && `Vaga/fileira: ${row}`, note && `Observação: ${note}`, coordinateLabel && `Coordenadas: ${coordinateLabel}`, tomTomUrl && `Google Maps: ${preciseMarkerUrl}`, tomTomWebUrl && `Fallback TomTom Web: ${tomTomWebUrl}`, preciseMarkerUrl && `Google Maps: ${preciseMarkerUrl}`].filter(Boolean).join('\n');
   try {
    if (navigator.share) await navigator.share({ title: 'Local do carro', text, url: tomTomUrl || undefined });
    else await navigator.clipboard.writeText(text);
@@ -9240,13 +9276,13 @@ function ParkingSpotScreen({ onBack }: { onBack: () => void }) {
       <div className="mt-4 grid gap-3">
        <button onClick={saveCurrentLocation} disabled={saving} className="crewcheck-premium-button crewcheck-premium-button-primary rounded-3xl px-5 py-4 text-sm font-black"><MapPin className="h-5 w-5" />{saving ? 'Capturando GPS...' : 'Salvar localização atual'}</button>
        <button onClick={saveManual} className="crewcheck-premium-button crewcheck-premium-button-ghost rounded-3xl px-5 py-4 text-sm font-black"><CheckCircle2 className="h-5 w-5" />Salvar dados manuais</button>
-       <button onClick={() => tomTomUrl ? openTomTomDestination(tomTomIntentUrl || tomTomUrl, preciseMarkerUrl || tomTomWebUrl) : toast.info('Salve uma localização GPS primeiro.')} className="rounded-3xl border border-white/10 bg-white/[0.07] px-5 py-4 text-left text-sm font-black text-white hover:bg-white/[0.11]"><Navigation className="mr-2 inline h-5 w-5 text-cyan-200" />Abrir no TomTom GO</button>
+       <button onClick={() => preciseMarkerUrl ? openGoogleDestination(preciseMarkerUrl, tomTomWebUrl) : toast.info('Salve uma localização GPS primeiro.')} className="rounded-3xl border border-white/10 bg-white/[0.07] px-5 py-4 text-left text-sm font-black text-white hover:bg-white/[0.11]"><Navigation className="mr-2 inline h-5 w-5 text-cyan-200" />Abrir no Google Maps</button>
        <button onClick={() => preciseMarkerUrl ? window.location.assign(preciseMarkerUrl) : toast.info('Salve uma localização GPS primeiro.')} className="rounded-3xl border border-cyan-300/20 bg-cyan-300/10 px-5 py-4 text-left text-sm font-black text-cyan-50 hover:bg-cyan-300/15"><MapPin className="mr-2 inline h-5 w-5 text-cyan-200" />Ver marcador preciso</button>
        <button onClick={async () => { if (!coordinateLabel) { toast.info('Salve uma localização GPS primeiro.'); return; } await navigator.clipboard?.writeText(coordinateLabel); toast.success('Coordenadas copiadas.'); }} className="rounded-3xl border border-white/10 bg-white/[0.07] px-5 py-4 text-left text-sm font-black text-white hover:bg-white/[0.11]"><Copy className="mr-2 inline h-5 w-5 text-cyan-200" />Copiar coordenadas</button>
        <button onClick={copyParking} className="rounded-3xl border border-white/10 bg-white/[0.07] px-5 py-4 text-left text-sm font-black text-white hover:bg-white/[0.11]"><Copy className="mr-2 inline h-5 w-5 text-cyan-200" />Copiar ou compartilhar</button>
        <button onClick={() => { setSpot(saveParkingSpotLocal(null)); toast.success('Local do carro removido.'); }} className="rounded-3xl border border-rose-300/20 bg-rose-300/10 px-5 py-4 text-left text-sm font-black text-rose-50 hover:bg-rose-300/15"><Trash2 className="mr-2 inline h-5 w-5" />Apagar local salvo</button>
       </div>
-      {coordinateLabel ? <div className="mt-5 rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-semibold leading-6 text-cyan-50/90"><b className="block text-xs uppercase tracking-[0.18em] text-cyan-100/70">Coordenadas do carro</b><span className="mt-1 block font-mono text-base font-black text-white">{coordinateLabel}</span><span className="mt-1 block text-xs text-cyan-50/70">Se o TomTom GO não estiver instalado, o CrewCheck abre o TomTom Web com as coordenadas salvas.</span></div> : null}
+      {coordinateLabel ? <div className="mt-5 rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm font-semibold leading-6 text-cyan-50/90"><b className="block text-xs uppercase tracking-[0.18em] text-cyan-100/70">Coordenadas do carro</b><span className="mt-1 block font-mono text-base font-black text-white">{coordinateLabel}</span><span className="mt-1 block text-xs text-cyan-50/70">O CrewCheck abre primeiro no Google Maps e mantém TomTom Web como fallback.</span></div> : null}
       <div className="mt-5 rounded-3xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm font-semibold leading-6 text-amber-50/90">Em estacionamentos cobertos, o GPS pode variar. Use também setor, piso, coluna, portão ou uma referência visual.</div>
      </div>
     </section>
