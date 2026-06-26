@@ -108,7 +108,7 @@ type NativePdfPayload = {
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.64';
+const APP_VERSION = '11.0.66';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -7084,9 +7084,11 @@ const CREW_PERDIEM_REAL_WEEK_TOTALS: Record<string, number> = {
  '27/05/2026-02/06/2026': 684.00,
  '03/06/2026-09/06/2026': 547.20,
  '10/06/2026-16/06/2026': 738.72,
+ '17/06/2026-23/06/2026': 1094.40,
 };
 
 const CREW_PERDIEM_DEFAULT_SAMPLES: PerDiemReceivedSample[] = [
+ { id: 'seed-2026-06-25', paymentDate: '2026-06-25', amount: 1094.40, note: 'Demonstrativo LATAM 17/06–23/06 · 10 refeições principais · auditoria oficial', createdAt: '2026-06-25T12:00:00.000Z' },
  { id: 'seed-2026-06-03', paymentDate: '2026-06-03', amount: 684.00, note: 'Informado pelo administrador', createdAt: '2026-06-03T12:00:00.000Z' },
  { id: 'seed-2026-06-18', paymentDate: '2026-06-18', amount: 738.72, note: 'Informado pelo administrador · diferença sistêmica compatível com 3 cafés', createdAt: '2026-06-18T12:00:00.000Z' },
  { id: 'seed-2026-06-11', paymentDate: '2026-06-11', amount: 547.20, note: 'Informado pelo administrador', createdAt: '2026-06-11T12:00:00.000Z' },
@@ -7781,6 +7783,19 @@ const CREW_OFFICIAL_DOMESTIC_DIEM_CALIBRATION: OfficialPerDiemCalibrationRow[] =
  { date: '08/06/2026', type: 'ALMOCO', dutyCode: 'PERNOITE CGH', value: 109.44, source: 'Demonstrativo LATAM 03/06–09/06' },
  { date: '08/06/2026', type: 'JANTAR', dutyCode: 'C32F', value: 109.44, source: 'Demonstrativo LATAM 03/06–09/06' },
  { date: '09/06/2026', type: 'JANTAR', dutyCode: 'ASB', value: 109.44, source: 'Demonstrativo LATAM 03/06–09/06' },
+
+ // Demonstrativo 17/06/2026 – 23/06/2026 · pagamento 25/06 · total depositado R$ 1.094,40
+ // Auditoria oficial enviada em PDF: 10 refeições principais, sem café; DO 18/06 e 19/06 sem diária.
+ { date: '17/06/2026', type: 'ALMOCO', dutyCode: 'LA 3732 BSB-FOR', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '17/06/2026', type: 'JANTAR', dutyCode: 'LA 3743 FOR-BSB', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '20/06/2026', type: 'ALMOCO', dutyCode: 'LA 3280 BSB-VCP', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '20/06/2026', type: 'JANTAR', dutyCode: 'LA 3573 PMW-BSB', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '21/06/2026', type: 'JANTAR', dutyCode: 'LA 3819 FLN-BSB', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '21/06/2026', type: 'CEIA', dutyCode: 'LA 3500 BSB-MAB', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '22/06/2026', type: 'ALMOCO', dutyCode: 'PERNOITE MAB', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '22/06/2026', type: 'JANTAR', dutyCode: 'PERNOITE MAB', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '23/06/2026', type: 'ALMOCO', dutyCode: 'LA 3980 BSB-CPV', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
+ { date: '23/06/2026', type: 'JANTAR', dutyCode: 'PERNOITE CPV', value: 109.44, source: 'Demonstrativo LATAM 17/06–23/06' },
 ];
 
 function domesticWeekKeyForDate(dateString: string): string {
@@ -7819,7 +7834,7 @@ function officialRowToPerDiemEntry(row: OfficialPerDiemCalibrationRow): PerDiemE
   currencyLabel: 'Brasil · R$',
   international: false,
   confidence: 'alta',
-  reason: `${row.source}: lançamento oficial de diária nacional usado como calibração prioritária. O demonstrativo oficial prevalece quando a escala mensal não contém todo o contexto do fechamento semanal ou quando a estimativa gerou divergência.`,
+  reason: `${row.source}: lançamento oficial de diária nacional usado como calibração prioritária. O demonstrativo oficial prevalece quando a escala mensal não contém todo o contexto do fechamento semanal, quando há pernoite que atravessa dias ou quando a estimativa gerou divergência.`,
  };
 }
 

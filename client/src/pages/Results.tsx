@@ -2758,6 +2758,35 @@ const EVENT_PERDIEM_MAIN_VALUE = 109.44;
 const EVENT_PERDIEM_BREAKFAST_VALUE = 27.36;
 const EVENT_DAILY_BASE_SALARY_ESTIMATE = 3076.64 / 30;
 
+type OfficialRosterPerDiemRow = { date: string; type: EventMealItem['id']; dutyCode: string; value: number; source: string };
+
+const EVENT_OFFICIAL_DOMESTIC_DIEM_2026_06_17_23: OfficialRosterPerDiemRow[] = [
+  { date: '17/06/2026', type: 'almoco', dutyCode: 'LA 3732 BSB-FOR', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '17/06/2026', type: 'jantar', dutyCode: 'LA 3743 FOR-BSB', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '20/06/2026', type: 'almoco', dutyCode: 'LA 3280 BSB-VCP', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '20/06/2026', type: 'jantar', dutyCode: 'LA 3573 PMW-BSB', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '21/06/2026', type: 'jantar', dutyCode: 'LA 3819 FLN-BSB', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '21/06/2026', type: 'ceia', dutyCode: 'LA 3500 BSB-MAB', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '22/06/2026', type: 'almoco', dutyCode: 'PERNOITE MAB', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '22/06/2026', type: 'jantar', dutyCode: 'PERNOITE MAB', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '23/06/2026', type: 'almoco', dutyCode: 'LA 3980 BSB-CPV', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+  { date: '23/06/2026', type: 'jantar', dutyCode: 'PERNOITE CPV', value: EVENT_PERDIEM_MAIN_VALUE, source: 'Demonstrativo LATAM 17/06–23/06' },
+];
+
+function mealItemForOfficialRow(row: OfficialRosterPerDiemRow): EventMealItem {
+  return EVENT_MEAL_WINDOWS.find((meal) => meal.id === row.type) || EVENT_MEAL_WINDOWS[1];
+}
+
+function officialPerDiemDateKey(date: Date | string): string {
+  if (typeof date === 'string') return date;
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function officialPerDiemRowsForRosterDate(date: Date | string): OfficialRosterPerDiemRow[] {
+  const key = officialPerDiemDateKey(date);
+  return EVENT_OFFICIAL_DOMESTIC_DIEM_2026_06_17_23.filter((row) => row.date === key);
+}
+
 function formatRosterMoney(value: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.max(0, Number(value) || 0));
 }
@@ -2798,6 +2827,14 @@ function isOperationalEarningEvent(event: RosterEvent): boolean {
 }
 
 function groupDailyFinancialSummary(group: RosterDayGroup): { perDiem: number; total: number; perDiemLabel: string; totalLabel: string } {
+  const officialRows = officialPerDiemRowsForRosterDate(group.date);
+  if (officialRows.length) {
+    const officialPerDiem = officialRows.reduce((sum, row) => sum + row.value, 0);
+    const hasWork = group.events.some(isOperationalEarningEvent);
+    const base = hasWork ? EVENT_DAILY_BASE_SALARY_ESTIMATE : 0;
+    const total = officialPerDiem + base;
+    return { perDiem: officialPerDiem, total, perDiemLabel: formatRosterMoney(officialPerDiem), totalLabel: formatRosterMoney(total) };
+  }
   const perDiemByKey = new Map<string, number>();
   for (const event of group.events) {
     for (const meal of eventPerDiemItems(event)) {

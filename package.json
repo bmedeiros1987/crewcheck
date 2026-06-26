@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.64",
+  "version": "11.0.66",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.64: menu Configurações completo restaurado no desktop/mobile, apresentação da escala no PC corrigida com largura total e cards responsivos.",
+  "description": "CrewCheck v11.0.66: parser CrewRosterReport web com offsets (+2/+3), continuidade de pairing e escala desktop redesenhada para leitura correta no PC.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

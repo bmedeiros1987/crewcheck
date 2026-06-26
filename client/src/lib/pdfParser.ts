@@ -250,7 +250,7 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
   const mergedDays = mergeParsedDaySources(primaryVisual, [...looseDays, ...(columnarScore > visualScore ? visualDays : columnarDays)], header.month, header.year);
   const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);
   const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);
-  const days = applyGenericTripulationRecordsToDays(rescuedDays, crewRecords, header.crewName);
+  const days = applyGenericTripulationRecordsToDays(normalizeCrewRosterReportContinuationDays(rescuedDays, header.month, header.year, header.base), crewRecords, header.crewName);
 
   return {
     crewName: header.crewName,
@@ -320,7 +320,26 @@ function rescueFlightsFromFullText(days: RosterDay[], fullText: string, referenc
   });
 }
 
+function dateTokenFromCompactPairingDate(value: string, fallbackYear: number): string | null {
+  const compact = String(value || '').replace(/\D/g, '');
+  if (compact.length !== 6) return null;
+  const day = Number(compact.slice(0, 2));
+  const month = Number(compact.slice(2, 4));
+  const year = 2000 + Number(compact.slice(4, 6));
+  if (!day || !month || month < 1 || month > 12) return null;
+  return `${String(day).padStart(2, '0')}-${monthNumberToEnglishAbbr(month)}-${year || fallbackYear}`;
+}
+
+function dateTokenFromReportLine(line: string, fallbackYear: number): string | null {
+  const explicit = line.match(DATE_TOKEN_RE)?.[0];
+  if (explicit) return explicit;
+  const pairing = line.match(/\b(?:LA\d{3,4}|HSBE?|ASB|RCFI|DR|DOF?|C\d{2,3}F)[-/](\d{6})(?:\/|\b)/i);
+  if (pairing) return dateTokenFromCompactPairingDate(pairing[1], fallbackYear);
+  return null;
+}
+
 function buildCrewRosterReportDateBlocks(fullText: string): { dateToken: string; text: string }[] {
+  const fallbackYear = Number(fullText.match(/\d{2}-[A-Za-z]{3}-(\d{4})/)?.[1]) || new Date().getFullYear();
   const lines = fullText
     .split(/\r?\n/)
     .map(line => stripUpdatedDate(normalizeSpaces(line)))
@@ -330,13 +349,13 @@ function buildCrewRosterReportDateBlocks(fullText: string): { dateToken: string;
   let current: { dateToken: string; parts: string[] } | null = null;
 
   for (const line of lines) {
-    const dateMatch = line.match(DATE_TOKEN_RE);
-    if (dateMatch && line.indexOf(dateMatch[0]) <= 18) {
+    const detectedDateToken = dateTokenFromReportLine(line, fallbackYear);
+    if (detectedDateToken && (line.indexOf(detectedDateToken) <= 18 || /^<==/.test(line) || /\b(?:LA\d{3,4}|HSBE?|ASB|RCFI)[-/]\d{6}\//i.test(line))) {
       if (current) blocks.push(current);
-      current = { dateToken: dateMatch[0], parts: [line.replace(dateMatch[0], '').trim()] };
+      current = { dateToken: detectedDateToken, parts: [line.replace(DATE_TOKEN_RE, '').trim()] };
       continue;
     }
-    if (current && /\b(LA\d{3,4}|OP|PS|DH|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+1\))\b/.test(line)) {
+    if (current && /\b(LA\d{3,4}|OP|PS|DH|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+\d+\))\b/.test(line)) {
       current.parts.push(line);
     }
   }
@@ -346,11 +365,11 @@ function buildCrewRosterReportDateBlocks(fullText: string): { dateToken: string;
 
 function extractFlightLegsFromReportBlock(text: string): FlightLeg[] {
   const legs: FlightLeg[] = [];
-  const re = /\b(LA\d{3,4})\b\s+(?:(?:CC|CP|FO|CM)\s+)?(?:(OP|PS|DH)\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2})\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+1\))?)/g;
+  const re = /\b(LA\d{3,4})\b\s+(?:(?:CC|CP|FO|CM)\s+)?(?:(OP|PS|DH)\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
     const [, flightNumber, explicitWorkType, origin, departureTime, destination, rawArrivalTime] = match;
-    const isNextDay = /\(\+1\)/.test(rawArrivalTime) || timeToMinutes(cleanTime(rawArrivalTime)) < timeToMinutes(departureTime);
+    const isNextDay = isExplicitNextDayTime(rawArrivalTime) || timeToMinutes(cleanTime(rawArrivalTime)) < timeToMinutes(cleanTime(departureTime));
     const arrivalTime = cleanTime(rawArrivalTime);
     legs.push({
       flightNumber,
@@ -360,11 +379,68 @@ function extractFlightLegsFromReportBlock(text: string): FlightLeg[] {
       arrivalTime,
       workType: explicitWorkType || inferWorkTypeFromContext(text, match.index) || 'OP',
       aircraftType: inferAircraftType(text),
-      duration: diffHours(departureTime, arrivalTime, isNextDay),
+      duration: diffHours(cleanTime(departureTime), arrivalTime, isNextDay),
       isNextDay,
     });
   }
   return legs.filter((leg, index, all) => all.findIndex(other => other.flightNumber === leg.flightNumber && other.origin === leg.origin && other.departureTime === leg.departureTime) === index);
+}
+
+function addDaysToRosterDate(date: string, daysToAdd: number): { day: number; month: number; year: number } {
+  const [d, m, y] = date.split('/').map(Number);
+  const value = new Date(y || new Date().getFullYear(), (m || 1) - 1, d || 1);
+  value.setDate(value.getDate() + daysToAdd);
+  return { day: value.getDate(), month: value.getMonth() + 1, year: value.getFullYear() };
+}
+
+function normalizeCrewRosterReportContinuationDays(days: RosterDay[], referenceMonth: number, referenceYear: number, base: string): RosterDay[] {
+  const output: RosterDay[] = [];
+  for (const day of days) {
+    if (!day.legs?.length || !/\(\+\d+\)/.test(day.rawText || '')) {
+      output.push(day);
+      continue;
+    }
+    const raw = day.rawText || '';
+    const legsByOffset = new Map<number, FlightLeg[]>();
+    for (const leg of day.legs) {
+      const safeFlight = leg.flightNumber.replace(/[^A-Z0-9]/gi, '');
+      const pattern = new RegExp(`${safeFlight}[\s\S]{0,80}?${leg.origin}\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)`, 'i');
+      const rawDepart = raw.match(pattern)?.[1] || leg.departureTime;
+      const offset = dayOffsetFromTime(rawDepart);
+      const cleanedLeg = { ...leg, departureTime: cleanTime(leg.departureTime), arrivalTime: cleanTime(leg.arrivalTime), isNextDay: leg.isNextDay || offset > 0 };
+      const list = legsByOffset.get(offset) || [];
+      list.push(cleanedLeg);
+      legsByOffset.set(offset, list);
+    }
+
+    if (legsByOffset.size <= 1) {
+      day.legs = day.legs.map((leg) => ({ ...leg, departureTime: cleanTime(leg.departureTime), arrivalTime: cleanTime(leg.arrivalTime) }));
+      finalizeRosterDay(day);
+      output.push(day);
+      continue;
+    }
+
+    for (const [offset, legs] of Array.from(legsByOffset.entries()).sort((a, b) => a[0] - b[0])) {
+      const target = offset === 0 ? day : createRosterDay(addDaysToRosterDate(day.date, offset).day, addDaysToRosterDate(day.date, offset).month, addDaysToRosterDate(day.date, offset).year, base || day.base);
+      target.type = 'VOO';
+      target.pairingCode = day.pairingCode || legs[0]?.flightNumber || '';
+      target.rawText = raw;
+      target.legs = legs.sort((a, b) => timeToMinutes(a.departureTime) - timeToMinutes(b.departureTime));
+      target.dutyReport = offset === 0 ? day.dutyReport : (target.legs[0]?.departureTime || null);
+      target.dutyDebrief = offset === 0 ? day.dutyDebrief : null;
+      target.isNextDay = offset > 0 || target.legs.some((leg) => leg.isNextDay);
+      finalizeRosterDay(target);
+      if (isPublishedRosterContextMonth(target.month, target.year, referenceMonth, referenceYear)) output.push(target);
+    }
+  }
+  return output.sort((a, b) => {
+    const [ad, am, ay] = a.date.split('/').map(Number);
+    const [bd, bm, by] = b.date.split('/').map(Number);
+    const av = new Date(ay || referenceYear, (am || referenceMonth) - 1, ad || 1).getTime();
+    const bv = new Date(by || referenceYear, (bm || referenceMonth) - 1, bd || 1).getTime();
+    if (av !== bv) return av - bv;
+    return (a.dutyReport ? timeToMinutes(a.dutyReport) : 9999) - (b.dutyReport ? timeToMinutes(b.dutyReport) : 9999);
+  });
 }
 
 
@@ -537,13 +613,13 @@ function extractDutyDebriefFromReportBlock(text: string, lastLeg?: FlightLeg): s
   if (!lastLeg) return null;
   const idx = text.lastIndexOf(lastLeg.flightNumber);
   const tail = idx >= 0 ? text.slice(idx) : text;
-  const nextDayTimes = tail.match(/\b\d{1,2}:\d{2}\(\+1\)\b/g) || [];
+  const nextDayTimes = tail.match(/\b\d{1,2}:\d{2}\(\+\d+\)\b/g) || [];
   if (lastLeg.isNextDay && nextDayTimes.length >= 2) return cleanTime(nextDayTimes[nextDayTimes.length - 1]);
-  const timeMatches = tail.match(/\b\d{1,2}:\d{2}(?:\(\+1\))?\b/g) || [];
+  const timeMatches = tail.match(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g) || [];
   const arrivalIndex = timeMatches.findIndex(time => cleanTime(time) === lastLeg.arrivalTime);
   if (arrivalIndex >= 0 && timeMatches[arrivalIndex + 1]) {
     const candidate = cleanTime(timeMatches[arrivalIndex + 1]);
-    const gap = diffHours(lastLeg.arrivalTime, candidate, /\(\+1\)/.test(timeMatches[arrivalIndex + 1]));
+    const gap = diffHours(lastLeg.arrivalTime, candidate, /\(\+\d+\)/.test(timeMatches[arrivalIndex + 1]));
     if (gap >= 0 && gap <= 3) return candidate;
   }
   return null;
@@ -775,7 +851,7 @@ function parseCrewRosterColumnarRows(rows: VisualRow[], defaultMonth: number, de
       currentDay.rawText = rawText;
       parseRowIntoDay(currentDay, rawText);
       prelude = [];
-    } else if (currentDay && (isColumnarContinuationText(rowText) || /\b\d{1,2}:\d{2}(?:\(\+1\))?\b/.test(rowText) || /\b[A-Z]{3}\b/.test(rowText))) {
+    } else if (currentDay && (isColumnarContinuationText(rowText) || /\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/.test(rowText) || /\b[A-Z]{3}\b/.test(rowText))) {
       currentDay.rawText = cleanColumnarRosterText(`${currentDay.rawText || ''} ${rowText}`);
       parseRowIntoDay(currentDay, currentDay.rawText || rowText);
     } else if (isColumnarPreludeText(rowText)) {
@@ -815,7 +891,7 @@ function isColumnarPreludeText(text: string): boolean {
 }
 
 function isColumnarContinuationText(text: string): boolean {
-  return /\b(?:LA\s?\d{3,4}|OP|PS|DH|HSBE?|ASB|CRM|CRMBSB|DOF?|DOP|DR|OFF|VC|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+1\)|320-P|JJCC)\b/i.test(text);
+  return /\b(?:LA\s?\d{3,4}|OP|PS|DH|HSBE?|ASB|CRM|CRMBSB|DOF?|DOP|DR|OFF|VC|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+\d+\)|320-P|JJCC)\b/i.test(text);
 }
 
 function dedupeColumnarRosterDays(days: RosterDay[]): RosterDay[] {
@@ -835,7 +911,7 @@ function dedupeColumnarRosterDays(days: RosterDay[]): RosterDay[] {
 
 function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
   const text = cleanColumnarRosterText(rowText);
-  const reversedFlightRegex = /\b([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+1\))?)\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+1\))?)\s+(OP|PS|DH)\s+(?:(?:CC|CP|FO|CM)\s+)?(LA\s?\d{3,4})\b(?:\s+(\d{1,2}:\d{2}))?/gi;
+  const reversedFlightRegex = /\b([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+(OP|PS|DH)\s+(?:(?:CC|CP|FO|CM)\s+)?(LA\s?\d{3,4})\b(?:\s+(\d{1,2}:\d{2}))?/gi;
   let match: RegExpExecArray | null;
 
   while ((match = reversedFlightRegex.exec(text)) !== null) {
@@ -843,7 +919,7 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
     const flightNumber = rawFlightNumber.replace(/\s+/g, '').toUpperCase();
     const departureTime = cleanTime(rawDepartureTime);
     const arrivalTime = cleanTime(rawArrivalTime);
-    const isNextDay = /\(\+1\)/.test(rawArrivalTime) || timeToMinutes(arrivalTime) < timeToMinutes(departureTime);
+    const isNextDay = isExplicitNextDayTime(rawArrivalTime) || timeToMinutes(arrivalTime) < timeToMinutes(cleanTime(departureTime));
     const prefix = text.slice(0, match.index);
     const aircraftType = inferAircraftType(prefix);
 
@@ -852,11 +928,11 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
         flightNumber,
         origin,
         destination,
-        departureTime,
+        departureTime: cleanTime(departureTime),
         arrivalTime,
         workType: workType.toUpperCase(),
         aircraftType,
-        duration: diffHours(departureTime, arrivalTime, isNextDay),
+        duration: diffHours(cleanTime(departureTime), arrivalTime, isNextDay),
         isNextDay,
       });
     }
@@ -864,16 +940,16 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
     if (reportTime && !day.dutyReport) day.dutyReport = cleanTime(reportTime);
     const debrief = maybeColumnarDebriefBeforeRoute(prefix);
     if (debrief) day.dutyDebrief = debrief;
-    if (isNextDay || /\(\+1\)/.test(prefix)) day.isNextDay = true;
+    if (isNextDay || /\(\+\d+\)/.test(prefix)) day.isNextDay = true;
   }
 
-  const splitWrappedFlightRegex = /(?:^|\s)(?:(\d{1,2}:\d{2}(?:\(\+1\))?)\s+)?([A-Z]{3})\s+(?:(32S|31R|39R|328|319|320|321|32N)\s+)?(?:\d{1,2}:\d{2}\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+1\))?)\s+(OP|PS|DH)\s+(?:(?:CC|CP|FO|CM)\s+)?(LA\s?\d{3,4})\b\s+(\d{1,2}:\d{2}(?:\(\+1\))?)/gi;
+  const splitWrappedFlightRegex = /(?:^|\s)(?:(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+)?([A-Z]{3})\s+(?:(32S|31R|39R|328|319|320|321|32N)\s+)?(?:\d{1,2}:\d{2}\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+(OP|PS|DH)\s+(?:(?:CC|CP|FO|CM)\s+)?(LA\s?\d{3,4})\b\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/gi;
   while ((match = splitWrappedFlightRegex.exec(text)) !== null) {
     const [, rawDebrief, destination, rawAircraftType, origin, rawDepartureTime, workType, rawFlightNumber, rawArrivalTime] = match;
     const flightNumber = rawFlightNumber.replace(/\s+/g, '').toUpperCase();
     const departureTime = cleanTime(rawDepartureTime);
     const arrivalTime = cleanTime(rawArrivalTime);
-    const isNextDay = /\(\+1\)/.test(rawArrivalTime) || timeToMinutes(arrivalTime) < timeToMinutes(departureTime);
+    const isNextDay = isExplicitNextDayTime(rawArrivalTime) || timeToMinutes(arrivalTime) < timeToMinutes(cleanTime(departureTime));
     const prefix = text.slice(0, match.index);
     const aircraftType = rawAircraftType || inferAircraftType(prefix);
 
@@ -882,17 +958,17 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
         flightNumber,
         origin,
         destination,
-        departureTime,
+        departureTime: cleanTime(departureTime),
         arrivalTime,
         workType: workType.toUpperCase(),
         aircraftType,
-        duration: diffHours(departureTime, arrivalTime, isNextDay),
+        duration: diffHours(cleanTime(departureTime), arrivalTime, isNextDay),
         isNextDay,
       });
     }
 
     if (rawDebrief) day.dutyDebrief = cleanTime(rawDebrief);
-    if (isNextDay || /\(\+1\)/.test(prefix)) day.isNextDay = true;
+    if (isNextDay || /\(\+\d+\)/.test(prefix)) day.isNextDay = true;
   }
 
   if (day.legs.length > 0) {
@@ -905,7 +981,7 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
 }
 
 function maybeColumnarDebriefBeforeRoute(prefix: string): string | null {
-  const times = prefix.match(/\b\d{1,2}:\d{2}(?:\(\+1\))?\b/g) || [];
+  const times = prefix.match(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g) || [];
   const last = times[times.length - 1];
   if (!last) return null;
   const clean = cleanTime(last);
@@ -963,17 +1039,17 @@ function applyColumnarActivityWindow(day: RosterDay, rowText: string): void {
   day.pairingCode = code;
   day.flyingHours = 0;
 
-  const codeRe = new RegExp(`\\b${activity[1]}\\b\\s*(\\d{1,2}:\\d{2}(?:\\(\\+1\\))?)?`, 'i');
+  const codeRe = new RegExp(`\\b${activity[1]}\\b\\s*(\\d{1,2}:\\d{2}(?:\\(\\+\\d+\\))?)?`, 'i');
   const afterCode = text.match(codeRe)?.[1] || null;
-  const stationTimes = [...text.matchAll(/\b[A-Z]{3}\s+(\d{1,2}:\d{2}(?:\(\+1\))?)/g)].map(m => m[1]);
-  const allTimes = text.match(/\b\d{1,2}:\d{2}(?:\(\+1\))?\b/g) || [];
+  const stationTimes = [...text.matchAll(/\b[A-Z]{3}\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/g)].map(m => m[1]);
+  const allTimes = text.match(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g) || [];
   const startRaw = afterCode || stationTimes[stationTimes.length - 1] || allTimes[allTimes.length - 1] || null;
   const endRaw = stationTimes.find(time => cleanTime(time) !== cleanTime(startRaw || '')) || allTimes.find(time => cleanTime(time) !== cleanTime(startRaw || '')) || null;
 
   if (startRaw) day.dutyReport = cleanTime(startRaw);
   if (endRaw) {
     day.dutyDebrief = cleanTime(endRaw);
-    day.isNextDay = /\(\+1\)/.test(endRaw) || Boolean(day.dutyReport && timeToMinutes(day.dutyDebrief) < timeToMinutes(day.dutyReport));
+    day.isNextDay = /\(\+\d+\)/.test(endRaw) || Boolean(day.dutyReport && timeToMinutes(day.dutyDebrief) < timeToMinutes(day.dutyReport));
   }
   if (day.dutyReport && day.dutyDebrief) day.dutyHours = round2(diffHours(day.dutyReport, day.dutyDebrief, day.isNextDay));
 }
@@ -1017,26 +1093,26 @@ function parseRowIntoDay(day: RosterDay, rowText: string): void {
 }
 
 function parseFlightLegsIntoDay(day: RosterDay, text: string): void {
-  const flightRegex = /\b(LA\d{3,4})\b\s+(?:(?:CC|CP|FO|CM)\s+)?(?:(OP|PS|DH)\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2})\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+1\))?)/g;
+  const flightRegex = /\b(LA\d{3,4})\b\s+(?:(?:CC|CP|FO|CM)\s+)?(?:(OP|PS|DH)\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/g;
   let match: RegExpExecArray | null;
 
   while ((match = flightRegex.exec(text)) !== null) {
     const [, flightNumber, explicitWorkType, origin, departureTime, destination, rawArrivalTime] = match;
-    const isNextDay = /\(\+1\)/.test(rawArrivalTime);
-    const arrivalTime = rawArrivalTime.replace('( +1)', '').replace('(+1)', '');
+    const isNextDay = isExplicitNextDayTime(rawArrivalTime) || timeToMinutes(cleanTime(rawArrivalTime)) < timeToMinutes(cleanTime(departureTime));
+    const arrivalTime = cleanTime(rawArrivalTime);
     const workType = explicitWorkType || inferWorkTypeFromContext(text, match.index) || 'OP';
     const aircraftType = inferAircraftType(text);
 
-    if (!day.legs.some(leg => leg.flightNumber === flightNumber && leg.origin === origin && leg.departureTime === departureTime)) {
+    if (!day.legs.some(leg => leg.flightNumber === flightNumber && leg.origin === origin && leg.departureTime === cleanTime(departureTime))) {
       day.legs.push({
         flightNumber,
         origin,
         destination,
-        departureTime,
+        departureTime: cleanTime(departureTime),
         arrivalTime,
         workType,
         aircraftType,
-        duration: diffHours(departureTime, arrivalTime, isNextDay),
+        duration: diffHours(cleanTime(departureTime), arrivalTime, isNextDay),
         isNextDay,
       });
     }
@@ -1066,7 +1142,7 @@ function selectReliableGroundWindow(values: string[], dayType: RosterDay['type']
     const candidate = cleanTime(rawCandidate);
     if (!candidate || candidate === start) continue;
     const rawValue = values.find((item) => cleanTime(item) === candidate) || candidate;
-    const explicitNextDay = /\(\+1\)/.test(rawValue);
+    const explicitNextDay = /\(\+\d+\)/.test(rawValue);
     const hours = diffHours(start, candidate, explicitNextDay);
 
     if (dayType === 'ASB' || dayType === 'RES') {
@@ -1087,7 +1163,7 @@ function selectReliableGroundWindow(values: string[], dayType: RosterDay['type']
 }
 
 function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
-  const times = [...text.matchAll(/\b(\d{1,2}:\d{2})(?:\(\+1\))?\b/g)].map(m => m[0]);
+  const times = [...text.matchAll(/\b(\d{1,2}:\d{2})(?:\(\+\d+\))?\b/g)].map(m => m[0]);
   const cleanTimes = times.map(cleanTime);
 
   if (day.type === 'DO' || day.type === 'DOF' || day.type === 'DR' || day.type === 'OFF') {
@@ -1098,7 +1174,7 @@ function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
   }
 
   if ((day.type === 'HSB' || day.type === 'HSBE' || day.type === 'ASB' || day.type === 'CRM' || day.type === 'OTHER') && day.legs.length === 0) {
-    const stationTimes = [...text.matchAll(/\b[A-Z]{3}\s+(\d{1,2}:\d{2}(?:\(\+1\))?)/g)].map(m => m[1]);
+    const stationTimes = [...text.matchAll(/\b[A-Z]{3}\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/g)].map(m => m[1]);
     const stationWindow = selectReliableGroundWindow(stationTimes, day.type);
     if (stationWindow) {
       day.dutyReport = stationWindow.start;
@@ -1253,7 +1329,16 @@ function normalizeSpaces(text: string): string {
 }
 
 function cleanTime(time: string): string {
-  return time.replace('(+1)', '').padStart(5, '0');
+  return String(time || '').replace(/\(\+\d+\)/g, '').padStart(5, '0');
+}
+
+function dayOffsetFromTime(value: string | null | undefined): number {
+  const match = String(value || '').match(/\(\+(\d+)\)/);
+  return match ? Number(match[1]) || 0 : 0;
+}
+
+function isExplicitNextDayTime(value: string | null | undefined): boolean {
+  return dayOffsetFromTime(value) > 0;
 }
 
 function monthNameToNumber(name: string): number {
@@ -1315,10 +1400,10 @@ function parseCrewRosterReportLooseText(fullText: string, referenceMonth: number
   let current: { dateToken: string; parts: string[] } | null = null;
 
   for (const line of lines) {
-    const dateMatch = line.match(DATE_TOKEN_RE);
-    if (dateMatch && line.indexOf(dateMatch[0]) <= 18) {
+    const detectedDateToken = dateTokenFromReportLine(line, referenceYear);
+    if (detectedDateToken && (line.indexOf(detectedDateToken) <= 18 || /^<==/.test(line) || /\b(?:LA\d{3,4}|HSBE?|ASB|RCFI)[-/]\d{6}\//i.test(line))) {
       if (current) blocks.push({ dateToken: current.dateToken, text: current.parts.join(' ') });
-      current = { dateToken: dateMatch[0], parts: [line.replace(dateMatch[0], '').trim()] };
+      current = { dateToken: detectedDateToken, parts: [line.replace(DATE_TOKEN_RE, '').trim()] };
       continue;
     }
     if (current && isRelevantContinuationText(line)) {
@@ -1374,17 +1459,17 @@ function rescueSplitFlightLegsIntoDay(day: RosterDay, text: string): void {
     let rawArrivalTime = '';
     let rawDebriefTime = '';
 
-    const directAfter = after.match(/^\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+1\))?)/);
+    const directAfter = after.match(/^\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/);
     if (directAfter) {
       destination = directAfter[1];
       rawArrivalTime = directAfter[2];
-      const debriefAfter = after.slice(directAfter.index || 0).match(/\b\d{1,2}:\d{2}\(\+1\)\b/g);
+      const debriefAfter = after.slice(directAfter.index || 0).match(/\b\d{1,2}:\d{2}\(\+\d+\)\b/g);
       if (debriefAfter && debriefAfter.length > 1) rawDebriefTime = debriefAfter[debriefAfter.length - 1];
     }
 
     if (!destination || !rawArrivalTime) {
-      const stationBefore = [...before.matchAll(/\b([A-Z]{3})\s+(\d{1,2}:\d{2}\(\+1\))/g)].pop();
-      const nextDayTimesAfter = after.match(/\b\d{1,2}:\d{2}\(\+1\)\b/g) || [];
+      const stationBefore = [...before.matchAll(/\b([A-Z]{3})\s+(\d{1,2}:\d{2}\(\+\d+\))/g)].pop();
+      const nextDayTimesAfter = after.match(/\b\d{1,2}:\d{2}\(\+\d+\)\b/g) || [];
       const destinationBefore = stationBefore?.[1];
       const debriefBefore = stationBefore?.[2];
       const arrivalAfter = nextDayTimesAfter[0];
@@ -1399,7 +1484,7 @@ function rescueSplitFlightLegsIntoDay(day: RosterDay, text: string): void {
 
     if (!destination || !rawArrivalTime) continue;
 
-    const isNextDay = /\(\+1\)/.test(rawArrivalTime) || timeToMinutes(cleanTime(rawArrivalTime)) < timeToMinutes(departureTime);
+    const isNextDay = isExplicitNextDayTime(rawArrivalTime) || timeToMinutes(cleanTime(rawArrivalTime)) < timeToMinutes(cleanTime(departureTime));
     const arrivalTime = cleanTime(rawArrivalTime);
     const workType = explicitWorkType || inferWorkTypeFromContext(text, match.index) || 'OP';
 
@@ -1411,7 +1496,7 @@ function rescueSplitFlightLegsIntoDay(day: RosterDay, text: string): void {
       arrivalTime,
       workType,
       aircraftType: inferAircraftType(after) || inferAircraftType(text),
-      duration: diffHours(departureTime, arrivalTime, isNextDay),
+      duration: diffHours(cleanTime(departureTime), arrivalTime, isNextDay),
       isNextDay,
     });
 
@@ -1428,7 +1513,7 @@ function rescueSplitFlightLegsIntoDay(day: RosterDay, text: string): void {
 }
 
 function isRelevantContinuationText(line: string): boolean {
-  return /\b(LA\d{3,4}|DOF?|DR|OFF|HSBE?|ASB|CBF|EMER|MT|CRM|C\d{2,3}F|NSJ?|IJ|DM|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+1\))\b/i.test(line);
+  return /\b(LA\d{3,4}|DOF?|DR|OFF|HSBE?|ASB|CBF|EMER|MT|CRM|C\d{2,3}F|NSJ?|IJ|DM|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+\d+\))\b/i.test(line);
 }
 
 function rescueActivitiesFromText(days: RosterDay[], fullText: string, referenceMonth: number, referenceYear: number, base: string): RosterDay[] {
