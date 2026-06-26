@@ -1,21 +1,38 @@
-# CrewCheck v11.0.73 — Concierge Telegram com OpenAI Voz
+# CrewCheck v11.0.76 — Concierge Telegram com Azure Speech + OpenAI fallback
 
-Esta versão adiciona voz ao Concierge Telegram usando a chave `OPENAI_API_KEY` já configurada no ambiente do servidor. Quando o usuário envia texto, o CrewCheck responde por texto. Quando o usuário envia áudio/voice note no Telegram, o sistema baixa o áudio do Telegram, transcreve com OpenAI, interpreta a pergunta no Concierge e responde em áudio MP3, com fallback automático para texto se o TTS falhar.
+Esta versão mantém o Concierge Telegram por texto e áudio, mas adiciona **Azure Speech** como provedor de voz preferencial no modo `auto`. Assim, quando `AZURE_SPEECH_KEY` estiver configurada, o CrewCheck usa Azure para transcrever voice notes do Telegram e gerar áudio MP3 em português brasileiro; se a Azure não estiver configurada, pode cair para OpenAI quando `OPENAI_API_KEY` existir.
 
 ## Variáveis novas/opcionais
 
-- `OPENAI_API_KEY` ou `CREWCHECK_OPENAI_API_KEY`: chave da OpenAI para transcrição e text-to-speech.
+- `CREWCHECK_SPEECH_PROVIDER` ou `TELEGRAM_CONCIERGE_SPEECH_PROVIDER`: `auto`, `azure`, `openai`, `azure,openai`, `openai,azure` ou `off`. Padrão: `auto`.
+- `AZURE_SPEECH_KEY` ou `CREWCHECK_AZURE_SPEECH_KEY`: chave do recurso Azure Speech.
+- `AZURE_SPEECH_REGION` ou `CREWCHECK_AZURE_SPEECH_REGION`: região do recurso. Sugestão Brasil: `brazilsouth`.
+- `AZURE_STT_LANGUAGE`: padrão `pt-BR`.
+- `AZURE_TTS_VOICE`: padrão `pt-BR-FranciscaNeural`. Outras opções comuns: `pt-BR-AntonioNeural`, `pt-BR-BrendaNeural`, `pt-BR-DonatoNeural`, `pt-BR-ThalitaNeural`.
+- `AZURE_TTS_STYLE`: padrão `calm`; se a voz escolhida não aceitar estilo, o sistema tenta novamente sem estilo.
+- `AZURE_TTS_RATE`: padrão `+2%`.
+- `AZURE_TTS_PITCH`: padrão `+0%`.
+- `AZURE_TTS_OUTPUT_FORMAT`: padrão `audio-24khz-48kbitrate-mono-mp3`.
+- `OPENAI_API_KEY` ou `CREWCHECK_OPENAI_API_KEY`: opcional, usado como fallback se mantido.
 - `OPENAI_TRANSCRIBE_MODEL`: padrão `gpt-4o-mini-transcribe`.
 - `OPENAI_TTS_MODEL`: padrão `gpt-4o-mini-tts`.
 - `OPENAI_TTS_VOICE`: padrão `nova`.
 - `OPENAI_TTS_SPEED`: padrão `1.02`.
 - `TELEGRAM_CONCIERGE_VOICE_ENABLED`: padrão `true`.
 - `TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY`: padrão `false`.
-- `TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS`: padrão `180`.
+- `TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS`: padrão `60` quando Azure/auto; pode ser ajustado por variável.
+
+## Comportamento
+
+- Texto no Telegram continua respondendo por texto.
+- Voice note no Telegram é transcrita e respondida por áudio quando houver provedor de voz configurado.
+- No modo `auto`, Azure tem prioridade sobre OpenAI para evitar erro de cota da OpenAI quando Azure estiver ativa.
+- Se o TTS falhar, o usuário recebe resposta por texto sem erro técnico.
+- Se o áudio não puder ser transcrito, o usuário recebe uma mensagem premium e nenhuma ação operacional é tomada.
 
 ## Premium
 
-O Premium pode alterar o nome do Concierge em Configurações > Telegram. Usuários gratuitos mantêm o nome padrão `CrewCheck Concierge`. As mensagens agora chamam o usuário pelo primeiro nome quando disponível e usam uma linguagem mais humana, sem perder avisos operacionais.
+O Premium pode alterar o nome do Concierge em Configurações > Telegram. Usuários gratuitos mantêm o nome padrão `CrewCheck Concierge`. As mensagens chamam o usuário pelo primeiro nome quando disponível e usam linguagem mais humana, sem perder avisos operacionais.
 
 ---
 

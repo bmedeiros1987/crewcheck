@@ -159,9 +159,19 @@ const OPENAI_TRANSCRIBE_MODEL = String(process.env.OPENAI_TRANSCRIBE_MODEL || pr
 const OPENAI_TTS_MODEL = String(process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts').trim();
 const OPENAI_TTS_VOICE = String(process.env.OPENAI_TTS_VOICE || 'nova').trim();
 const OPENAI_TTS_SPEED = Math.min(1.15, Math.max(0.85, Number(process.env.OPENAI_TTS_SPEED || 1.02)));
+const TELEGRAM_CONCIERGE_SPEECH_PROVIDER = String(process.env.TELEGRAM_CONCIERGE_SPEECH_PROVIDER || process.env.CREWCHECK_SPEECH_PROVIDER || process.env.SPEECH_PROVIDER || process.env.TTS_PROVIDER || 'auto').trim().toLowerCase();
+const AZURE_SPEECH_KEY = String(process.env.AZURE_SPEECH_KEY || process.env.CREWCHECK_AZURE_SPEECH_KEY || process.env.SPEECH_KEY || '').trim();
+const AZURE_SPEECH_REGION = String(process.env.AZURE_SPEECH_REGION || process.env.CREWCHECK_AZURE_SPEECH_REGION || process.env.SPEECH_REGION || 'brazilsouth').trim().toLowerCase();
+const AZURE_SPEECH_ENDPOINT = String(process.env.AZURE_SPEECH_ENDPOINT || process.env.CREWCHECK_AZURE_SPEECH_ENDPOINT || '').trim().replace(/\/+$/, '');
+const AZURE_STT_LANGUAGE = String(process.env.AZURE_STT_LANGUAGE || 'pt-BR').trim();
+const AZURE_TTS_VOICE = String(process.env.AZURE_TTS_VOICE || 'pt-BR-FranciscaNeural').trim();
+const AZURE_TTS_STYLE = String(process.env.AZURE_TTS_STYLE || 'calm').trim();
+const AZURE_TTS_RATE = String(process.env.AZURE_TTS_RATE || '+2%').trim();
+const AZURE_TTS_PITCH = String(process.env.AZURE_TTS_PITCH || '+0%').trim();
+const AZURE_TTS_OUTPUT_FORMAT = String(process.env.AZURE_TTS_OUTPUT_FORMAT || 'audio-24khz-48kbitrate-mono-mp3').trim();
 const TELEGRAM_CONCIERGE_VOICE_ENABLED = String(process.env.TELEGRAM_CONCIERGE_VOICE_ENABLED || 'true').toLowerCase() !== 'false';
 const TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY = String(process.env.TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || 'false').toLowerCase() === 'true';
-const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS = Math.max(20, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS || 180));
+const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS = Math.max(20, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS || (TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('openai') ? 180 : 60)));
 const TELEGRAM_DEFAULT_CONCIERGE_NAME = 'CrewCheck Concierge';
 const TELEGRAM_DEFAULT_PREFERENCES = {
  smartDeparture: true,
@@ -8348,6 +8358,168 @@ function openAiAudioIsConfigured() {
  return Boolean(OPENAI_API_KEY);
 }
 
+function azureSpeechIsConfigured() {
+ return Boolean(AZURE_SPEECH_KEY && (AZURE_SPEECH_REGION || AZURE_SPEECH_ENDPOINT));
+}
+
+function telegramSpeechProviderOrder(kind = 'tts') {
+ const configured = TELEGRAM_CONCIERGE_SPEECH_PROVIDER || 'auto';
+ const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z,_-]/g, '');
+ const explicit = normalize(configured);
+ const pick = [];
+ const push = (provider) => {
+  const p = normalize(provider);
+  if (!p || p === 'off' || p === 'none' || p === 'disabled') return;
+  if (!['azure', 'openai'].includes(p)) return;
+  if (p === 'azure' && !azureSpeechIsConfigured()) return;
+  if (p === 'openai' && !openAiAudioIsConfigured()) return;
+  if (!pick.includes(p)) pick.push(p);
+ };
+ if (explicit && explicit !== 'auto') {
+  explicit.split(/[,_-]/).forEach(push);
+  return pick;
+ }
+ // No modo auto, Azure vem primeiro: evita falha por cota da OpenAI quando o Azure Speech já está configurado.
+ push('azure');
+ push('openai');
+ return pick;
+}
+
+function telegramSpeechHasProvider(kind = 'tts') {
+ return telegramSpeechProviderOrder(kind).length > 0;
+}
+
+function azureSpeechBaseEndpoint(type = 'tts') {
+ if (AZURE_SPEECH_ENDPOINT) {
+  if (/\.speech\.microsoft\.com/i.test(AZURE_SPEECH_ENDPOINT)) return AZURE_SPEECH_ENDPOINT;
+  if (/\.cognitiveservices\.azure\.com/i.test(AZURE_SPEECH_ENDPOINT)) return AZURE_SPEECH_ENDPOINT;
+ }
+ const subdomain = type === 'tts' ? 'tts' : 'stt';
+ return `https://${AZURE_SPEECH_REGION}.${subdomain}.speech.microsoft.com`;
+}
+
+function azureSpeechTtsEndpoint() {
+ const base = azureSpeechBaseEndpoint('tts');
+ if (/\/cognitiveservices\/v1$/i.test(base)) return base;
+ return `${base}/cognitiveservices/v1`;
+}
+
+function azureSpeechSttEndpoint() {
+ const base = azureSpeechBaseEndpoint('stt');
+ if (/\/stt\/speech\/recognition\/conversation\/cognitiveservices\/v1$/i.test(base)) return base;
+ if (/\.cognitiveservices\.azure\.com$/i.test(base)) return `${base}/stt/speech/recognition/conversation/cognitiveservices/v1`;
+ return `${base}/speech/recognition/conversation/cognitiveservices/v1`;
+}
+
+function speechProviderLabel(provider = '') {
+ const p = String(provider || '').toLowerCase();
+ if (p === 'azure') return 'Azure Speech';
+ if (p === 'openai') return 'OpenAI';
+ return 'serviço de voz';
+}
+
+function classifySpeechAudioError(error = {}) {
+ const raw = String(error?.message || error || '').replace(/\s+/g, ' ').trim();
+ const code = String(error?.code || '').toLowerCase();
+ const status = Number(error?.statusCode || error?.status || 0);
+ const provider = String(error?.provider || '').toLowerCase();
+ const providerName = speechProviderLabel(provider);
+ const quota = code.includes('insufficient_quota') || code.includes('quota') || /exceeded your current quota|check your plan and billing|atingiu.*limite|limite de uso|quota|billing|free tier|cota/i.test(raw);
+ const rate = !quota && (status === 429 || code.includes('rate_limit') || /rate limit|too many requests|muitas solicitações|limite de taxa|throttl/i.test(raw));
+ const auth = status === 401 || status === 403 || code.includes('invalid_api_key') || code.includes('unauthorized') || /api key|subscription key|unauthorized|permission|forbidden|sem permissão|chave|assinatura/i.test(raw);
+ const notConfigured = code === 'openai_not_configured' || code === 'azure_speech_not_configured' || /OPENAI_API_KEY.*não configurada|AZURE_SPEECH_KEY.*não configurada|não configurad/i.test(raw);
+ const unsupported = code === 'azure_stt_unsupported_format' || /unsupported.*format|formato.*não compatível|codec|samplerate|ogg opus/i.test(raw);
+ const timeout = /abort|timeout|timed out|tempo esgotado/i.test(raw);
+ if (quota) {
+  return {
+   kind: 'quota',
+   title: 'Áudio indisponível no momento',
+   lines: [
+    `A integração de voz (${providerName}) retornou limite de uso/cota.`,
+    'Sua pergunta por áudio não foi processada para evitar resposta incorreta.',
+    'Envie a pergunta por texto enquanto o administrador ajusta o billing/usage da chave API.'
+   ],
+   log: raw || `${providerName} quota exceeded`
+  };
+ }
+ if (rate) {
+  return {
+   kind: 'rate_limit',
+   title: 'Voz temporariamente ocupada',
+   lines: [
+    `A integração de voz (${providerName}) recebeu muitas solicitações ao mesmo tempo.`,
+    'Tente novamente em alguns instantes ou envie sua pergunta por texto.'
+   ],
+   log: raw || `${providerName} rate limit`
+  };
+ }
+ if (auth) {
+  return {
+   kind: 'auth',
+   title: 'Voz precisa de configuração',
+   lines: [
+    `A chave do ${providerName} não autorizou o uso de áudio neste servidor.`,
+    'Envie por texto enquanto o administrador confere a chave, a região, o projeto e as permissões.'
+   ],
+   log: raw || `${providerName} auth/config error`
+  };
+ }
+ if (notConfigured) {
+  return {
+   kind: 'not_configured',
+   title: 'Voz não configurada',
+   lines: [
+    'Nenhum provedor de voz está disponível no servidor.',
+    'Configure AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY no Render para ativar áudio no Concierge.'
+   ],
+   log: raw || 'Speech provider not configured'
+  };
+ }
+ if (unsupported) {
+  return {
+   kind: 'unsupported_format',
+   title: 'Formato de áudio não compatível',
+   lines: [
+    'O Azure Speech funciona melhor com mensagem de voz do Telegram em OGG/Opus.',
+    'Envie uma mensagem de voz normal pelo Telegram ou mande por texto.'
+   ],
+   log: raw || 'Azure STT unsupported format'
+  };
+ }
+ if (timeout) {
+  return {
+   kind: 'timeout',
+   title: 'Áudio demorou demais',
+   lines: [
+    'A leitura do áudio demorou mais que o esperado.',
+    'Reenvie com menos ruído, grave um áudio mais curto ou mande por texto.'
+   ],
+   log: raw || `${providerName} audio timeout`
+  };
+ }
+ return {
+  kind: 'generic',
+  title: 'Não consegui processar o áudio',
+  lines: [
+   'Não consegui entender ou converter esse áudio agora.',
+   'Tente reenviar com menos ruído ou mande por texto.'
+  ],
+  log: raw || 'Speech audio error'
+ };
+}
+
+function classifyOpenAiAudioError(error = {}) {
+ return classifySpeechAudioError({ ...error, provider: error?.provider || 'openai' });
+}
+
+function markSpeechError(error, provider, fallbackCode = '') {
+ if (error && typeof error === 'object') {
+  if (!error.provider) error.provider = provider;
+  if (!error.code && fallbackCode) error.code = fallbackCode;
+ }
+ return error;
+}
+
 async function openAiTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
  if (!openAiAudioIsConfigured()) {
   const err = new Error('OPENAI_API_KEY não configurada no Render.');
@@ -8382,6 +8554,92 @@ async function openAiTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType 
  } finally {
   clearTimeout(timeout);
  }
+}
+
+async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
+ if (!azureSpeechIsConfigured()) {
+  const err = new Error('AZURE_SPEECH_KEY/AZURE_SPEECH_REGION não configurada no Render.');
+  err.code = 'AZURE_SPEECH_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'azure';
+  throw err;
+ }
+ const lowerMime = String(mimeType || '').toLowerCase();
+ const lowerName = String(filename || '').toLowerCase();
+ let contentType = '';
+ if (lowerMime.includes('ogg') || lowerName.endsWith('.ogg') || lowerName.endsWith('.oga')) {
+  contentType = 'audio/ogg; codecs=opus';
+ } else if (lowerMime.includes('wav') || lowerName.endsWith('.wav')) {
+  contentType = 'audio/wav; codecs=audio/pcm; samplerate=16000';
+ } else {
+  const err = new Error('Formato de áudio não compatível com Azure Speech REST curto. Use voice note OGG/Opus ou WAV PCM 16k mono.');
+  err.code = 'AZURE_STT_UNSUPPORTED_FORMAT';
+  err.statusCode = 415;
+  err.provider = 'azure';
+  throw err;
+ }
+ const url = new URL(azureSpeechSttEndpoint());
+ url.searchParams.set('language', AZURE_STT_LANGUAGE || 'pt-BR');
+ url.searchParams.set('format', 'detailed');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 45_000);
+ try {
+  const response = await fetch(url, {
+   method: 'POST',
+   headers: {
+    'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
+    'Content-Type': contentType,
+    'Accept': 'application/json',
+    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.76',
+   },
+   body: buffer,
+   signal: controller.signal,
+  });
+  const contentTypeResponse = String(response.headers.get('content-type') || '').toLowerCase();
+  const data = contentTypeResponse.includes('json') ? await response.json().catch(() => null) : null;
+  const raw = data ? '' : await response.text().catch(() => '');
+  if (!response.ok) {
+   const message = data?.message || data?.error?.message || data?.error || raw || `Falha na transcrição Azure Speech (${response.status}).`;
+   const err = new Error(message);
+   err.statusCode = response.status;
+   err.code = data?.error?.code || data?.code || 'AZURE_STT_ERROR';
+   err.provider = 'azure';
+   throw err;
+  }
+  const best = data?.NBest?.[0]?.Display || data?.NBest?.[0]?.Lexical || data?.DisplayText || data?.Text || '';
+  const text = String(best || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+   const err = new Error('Azure Speech não retornou transcrição reconhecida.');
+   err.code = 'AZURE_STT_EMPTY';
+   err.provider = 'azure';
+   throw err;
+  }
+  return text.slice(0, 1200);
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+async function transcribeTelegramAudio(buffer, options = {}) {
+ const order = telegramSpeechProviderOrder('stt');
+ if (!order.length) {
+  const err = new Error('Nenhum provedor de transcrição configurado.');
+  err.code = 'SPEECH_PROVIDER_NOT_CONFIGURED';
+  err.statusCode = 503;
+  throw err;
+ }
+ const failures = [];
+ for (const provider of order) {
+  try {
+   if (provider === 'azure') return await azureSpeechToTextShortAudio(buffer, options);
+   if (provider === 'openai') return await openAiTranscribeAudio(buffer, options);
+  } catch (error) {
+   failures.push(markSpeechError(error, provider));
+   console.warn(`[telegram] transcrição ${provider} falhou; ${failures.length < order.length ? 'tentando fallback' : 'sem fallback disponível'}`, error?.message || error);
+  }
+ }
+ const preferred = failures.find((error) => String(error?.code || '').toLowerCase() !== 'azure_stt_unsupported_format') || failures[0] || new Error('Falha ao transcrever áudio.');
+ throw preferred;
 }
 
 function telegramPlainTextFromPremiumMessage(text = '') {
@@ -8435,6 +8693,104 @@ async function openAiTextToSpeechBuffer(text, { voice = OPENAI_TTS_VOICE, userNa
  } finally {
   clearTimeout(timeout);
  }
+}
+
+
+function azureXmlEscape(value = '') {
+ return String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] || ch));
+}
+
+function azureSpeechSsmlContent(text = '') {
+ const plain = telegramPlainTextFromPremiumMessage(text).slice(0, 2800);
+ const parts = plain.split(/\n+/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 12);
+ const content = (parts.length ? parts : [plain]).map((line, index) => `${azureXmlEscape(line)}${index < parts.length - 1 ? '<break time="260ms"/>' : ''}`).join(' ');
+ return content || 'CrewCheck Concierge.';
+}
+
+function azureSpeechBuildSsml(text, { voice = AZURE_TTS_VOICE, style = AZURE_TTS_STYLE } = {}) {
+ const content = azureSpeechSsmlContent(text);
+ const prosody = `<prosody rate="${azureXmlEscape(AZURE_TTS_RATE || '+2%')}" pitch="${azureXmlEscape(AZURE_TTS_PITCH || '+0%')}">${content}</prosody>`;
+ const expressive = style ? `<mstts:express-as style="${azureXmlEscape(style)}">${prosody}</mstts:express-as>` : prosody;
+ return `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="pt-BR"><voice name="${azureXmlEscape(voice || AZURE_TTS_VOICE)}">${expressive}</voice></speak>`;
+}
+
+async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, style = AZURE_TTS_STYLE } = {}) {
+ if (!azureSpeechIsConfigured()) {
+  const err = new Error('AZURE_SPEECH_KEY/AZURE_SPEECH_REGION não configurada no Render.');
+  err.code = 'AZURE_SPEECH_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'azure';
+  throw err;
+ }
+ const input = telegramPlainTextFromPremiumMessage(text).slice(0, 2800);
+ if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
+ const attempt = async (attemptStyle) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  try {
+   const response = await fetch(azureSpeechTtsEndpoint(), {
+    method: 'POST',
+    headers: {
+     'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
+     'Content-Type': 'application/ssml+xml',
+     'X-Microsoft-OutputFormat': AZURE_TTS_OUTPUT_FORMAT,
+     'Accept': 'audio/mpeg',
+     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.76',
+    },
+    body: azureSpeechBuildSsml(input, { voice, style: attemptStyle }),
+    signal: controller.signal,
+   });
+   if (!response.ok) {
+    const raw = await response.text().catch(() => '');
+    const err = new Error(raw || `Falha no Text to Speech Azure Speech (${response.status}).`);
+    err.statusCode = response.status;
+    err.code = 'AZURE_TTS_ERROR';
+    err.provider = 'azure';
+    throw err;
+   }
+   const arrayBuffer = await response.arrayBuffer();
+   const buffer = Buffer.from(arrayBuffer);
+   if (!buffer.length) {
+    const err = new Error('Azure Speech retornou áudio vazio.');
+    err.code = 'AZURE_TTS_EMPTY';
+    err.provider = 'azure';
+    throw err;
+   }
+   return buffer;
+  } finally {
+   clearTimeout(timeout);
+  }
+ };
+ try {
+  return await attempt(style);
+ } catch (error) {
+  if (style) {
+   console.warn('[telegram] Azure TTS falhou com estilo SSML; tentando sem estilo', error?.message || error);
+   return await attempt('');
+  }
+  throw error;
+ }
+}
+
+async function textToSpeechBuffer(text, options = {}) {
+ const order = telegramSpeechProviderOrder('tts');
+ if (!order.length) {
+  const err = new Error('Nenhum provedor de text-to-speech configurado.');
+  err.code = 'SPEECH_PROVIDER_NOT_CONFIGURED';
+  err.statusCode = 503;
+  throw err;
+ }
+ const failures = [];
+ for (const provider of order) {
+  try {
+   if (provider === 'azure') return await azureSpeechTextToSpeechBuffer(text, options);
+   if (provider === 'openai') return await openAiTextToSpeechBuffer(text, options);
+  } catch (error) {
+   failures.push(markSpeechError(error, provider));
+   console.warn(`[telegram] TTS ${provider} falhou; ${failures.length < order.length ? 'tentando fallback' : 'usando texto'}`, error?.message || error);
+  }
+ }
+ throw failures[0] || new Error('Falha ao gerar áudio.');
 }
 
 async function saveRosterForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, importSource = 'api' }) {
@@ -8704,10 +9060,10 @@ async function telegramSendConciergeReply(chatId, { row = null, user = null, tit
  const messageText = telegramPremiumMessage('concierge', title, humanLines, { footer: footer || TELEGRAM_PREMIUM_CATEGORIES.concierge.footer, conciergeName });
  const reply_markup = telegramPremiumReplyMarkup(actionLabel);
  const maySendAudio = Boolean(preferAudio && TELEGRAM_CONCIERGE_VOICE_ENABLED && preferences.conciergeAudioReplies !== false && (!TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || premium));
- if (maySendAudio && openAiAudioIsConfigured()) {
+ if (maySendAudio && telegramSpeechHasProvider('tts')) {
   try {
    await telegramApi('sendChatAction', { chat_id: String(chatId), action: 'upload_voice' }).catch(() => null);
-   const audio = await openAiTextToSpeechBuffer(messageText, { userName, conciergeName });
+   const audio = await textToSpeechBuffer(messageText, { userName, conciergeName });
    const caption = telegramEscapeHtml(`${conciergeName}: ${telegramPlainTextFromPremiumMessage(title).slice(0, 80)}`);
    return await telegramSendAudio(chatId, audio, { caption, filename: 'crewcheck-concierge.mp3', reply_markup });
   } catch (error) {
@@ -9255,19 +9611,21 @@ async function handleTelegramConciergeAudio(db, row, chat, message = {}) {
   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio muito longo', [`Envie perguntas de até ${TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS} segundos para manter o Concierge rápido.`, 'Para assuntos longos, envie por texto ou divida em partes.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: true, audioTooLong: true };
  }
- if (!openAiAudioIsConfigured()) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'OpenAI não configurada', ['A chave OPENAI_API_KEY ainda não está disponível no servidor.', 'Depois de configurar no Render, o Concierge transcreve áudio e responde em áudio automaticamente.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
-  return { ok: false, openAiNotConfigured: true };
+ if (!telegramSpeechHasProvider('stt')) {
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz não configurada', ['Configure AZURE_SPEECH_KEY e AZURE_SPEECH_REGION no Render para usar Azure Speech.', 'Também é possível usar OPENAI_API_KEY como fallback. Enquanto isso, envie por texto.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  return { ok: false, speechNotConfigured: true };
  }
  try {
   await telegramApi('sendChatAction', { chat_id: String(chat.id), action: 'typing' }).catch(() => null);
   const file = await telegramDownloadFileObject(audio.file_id, 25 * 1024 * 1024);
-  const transcript = await openAiTranscribeAudio(file.buffer, { filename: audio.filename, mimeType: audio.mimeType });
+  const transcript = await transcribeTelegramAudio(file.buffer, { filename: audio.filename, mimeType: audio.mimeType });
   await telegramApi('sendChatAction', { chat_id: String(chat.id), action: 'upload_voice' }).catch(() => null);
   return await handleTelegramConciergeText(db, row, chat, transcript, { ...message, _crewcheckInputMode: 'audio', _crewcheckPreferAudio: true, _crewcheckTranscript: transcript });
  } catch (error) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Não consegui processar o áudio', [sanitizePublicError(error?.message || String(error)), 'Tente reenviar com menos ruído ou mande por texto.'], { footer: 'Nenhuma ação operacional foi tomada.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') }).catch(() => null);
-  return { ok: false, audioError: sanitizePublicError(error?.message || String(error)) };
+  const publicAudioError = classifySpeechAudioError(error);
+  console.warn('[telegram] falha ao processar áudio do Concierge', publicAudioError.kind, publicAudioError.log);
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', publicAudioError.title, publicAudioError.lines, { footer: 'Nenhuma ação operacional foi tomada.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') }).catch(() => null);
+  return { ok: false, audioError: publicAudioError.kind };
  }
 }
 
