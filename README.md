@@ -1,38 +1,53 @@
-# CrewCheck v11.0.77 — Concierge Telegram com ElevenLabs + Azure Speech + OpenAI fallback
+# CrewCheck v11.0.78 — Concierge Telegram mais humano + áudio leve
 
-Esta versão mantém o Concierge Telegram por texto e áudio, mas adiciona **ElevenLabs** como provedor de voz premium/natural. No modo `auto`, quando `ELEVENLABS_API_KEY` estiver configurada, o CrewCheck usa ElevenLabs para transcrever voice notes do Telegram e gerar áudio MP3; Azure Speech e OpenAI continuam como fallback.
+Esta versão refina o Concierge Telegram para soar como uma resposta direta de uma pessoa por áudio, sem ler a escala de forma literal. O áudio agora usa texto próprio para fala, mais curto e natural, enquanto a mensagem escrita continua completa para conferência.
 
-## Variáveis novas/opcionais
+## O que mudou
 
-- `CREWCHECK_SPEECH_PROVIDER` ou `TELEGRAM_CONCIERGE_SPEECH_PROVIDER`: `auto`, `elevenlabs`, `azure`, `openai`, `elevenlabs,azure,openai`, `azure,elevenlabs,openai` ou `off`. Padrão: `auto`.
-- `ELEVENLABS_API_KEY` ou `CREWCHECK_ELEVENLABS_API_KEY`: chave da API ElevenLabs. Não coloque a chave no código nem no frontend.
-- `ELEVENLABS_TTS_VOICE_ID` ou `ELEVENLABS_VOICE_ID`: voz usada no TTS. Padrão seguro: `JBFqnCBsd6RMkjVDRZzb`; recomenda-se escolher uma voz brasileira/natural no painel da ElevenLabs e copiar o Voice ID.
-- `ELEVENLABS_TTS_MODEL`: padrão `eleven_multilingual_v2`.
-- `ELEVENLABS_TTS_OUTPUT_FORMAT`: padrão `mp3_44100_128`.
-- `ELEVENLABS_TTS_STABILITY`: padrão `0.55`.
-- `ELEVENLABS_TTS_SIMILARITY_BOOST`: padrão `0.78`.
-- `ELEVENLABS_TTS_STYLE`: padrão `0.18`.
-- `ELEVENLABS_STT_MODEL`: padrão `scribe_v2`.
-- `ELEVENLABS_STT_LANGUAGE`: padrão `pt`.
-- `AZURE_SPEECH_KEY` ou `CREWCHECK_AZURE_SPEECH_KEY`: opcional, fallback Azure Speech.
-- `AZURE_SPEECH_REGION` ou `CREWCHECK_AZURE_SPEECH_REGION`: região do recurso. Sugestão Brasil: `brazilsouth`.
-- `OPENAI_API_KEY` ou `CREWCHECK_OPENAI_API_KEY`: opcional, fallback OpenAI.
-- `TELEGRAM_CONCIERGE_VOICE_ENABLED`: padrão `true`.
-- `TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY`: padrão `false`.
-- `TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS`: padrão `180` quando ElevenLabs/OpenAI estiver explícito, `60` para Azure puro.
+- Áudio do Telegram com linguagem mais humana e levemente informal.
+- Resposta por voz mais curta, objetiva e com menos “cara de robô”.
+- Arquivo de áudio mais leve no ElevenLabs: padrão `mp3_22050_32`.
+- Envio como **voice note** pelo Telegram quando possível; se o Telegram recusar, cai para arquivo de áudio MP3.
+- Tradução de siglas antes da fala:
+  - `DO`, `DOF`, `OFF` → folga
+  - `DOP` → folga pós-férias
+  - `HSB` → sobreaviso
+  - `HSB Extra`/`HSB X` → sobreaviso extra
+  - `PS`/`VEX` → extra
+  - `MT` → reunião
+  - `CRM` → treinamento CRM
+  - `EAD` → treinamento on-line
+- Tripulação falada com função antes do nome:
+  - `CCM` → Chefe
+  - `CP`/`CMTE` → Comandante
+  - `FO` → Copiloto
+  - `CMS` → Comissário
+- Aeroportos e voos ficam mais naturais no áudio: `BSB` vira Brasília, `GRU` vira Guarulhos, `LA1234` vira voo LATAM 1234.
 
-## Comportamento
+## Variáveis recomendadas no Render
+
+```env
+CREWCHECK_SPEECH_PROVIDER=elevenlabs,azure,openai
+ELEVENLABS_API_KEY=sua_chave_elevenlabs
+ELEVENLABS_TTS_MODEL=eleven_multilingual_v2
+ELEVENLABS_STT_MODEL=scribe_v2
+ELEVENLABS_STT_LANGUAGE=pt
+ELEVENLABS_TTS_OUTPUT_FORMAT=mp3_22050_32
+ELEVENLABS_TTS_STABILITY=0.42
+ELEVENLABS_TTS_SIMILARITY_BOOST=0.82
+ELEVENLABS_TTS_STYLE=0.34
+ELEVENLABS_TTS_SPEAKER_BOOST=true
+TELEGRAM_CONCIERGE_AUDIO_SEND_MODE=voice
+TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS=1150
+```
+
+## Fallbacks
 
 - Texto no Telegram continua respondendo por texto.
-- Voice note no Telegram é transcrita e respondida por áudio quando houver provedor de voz configurado.
-- No modo `auto`, a ordem é ElevenLabs → Azure Speech → OpenAI.
-- Se ElevenLabs ficar sem cota ou falhar, tenta Azure/OpenAI quando configurados.
-- Se o TTS falhar, o usuário recebe resposta por texto sem erro técnico.
-- Se o áudio não puder ser transcrito, o usuário recebe uma mensagem premium e nenhuma ação operacional é tomada.
-
-## Premium
-
-O Premium pode alterar o nome do Concierge em Configurações > Telegram. Usuários gratuitos mantêm o nome padrão `CrewCheck Concierge`. As mensagens chamam o usuário pelo primeiro nome quando disponível e usam linguagem mais humana, sem perder avisos operacionais.
+- Áudio no Telegram tenta responder por voice note.
+- Se `sendVoice` falhar, envia MP3 leve por `sendAudio`.
+- Se ElevenLabs falhar, tenta Azure/OpenAI quando configurados.
+- Se tudo falhar, responde em texto premium sem mostrar erro técnico ao usuário.
 
 ---
 

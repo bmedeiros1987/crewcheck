@@ -175,11 +175,13 @@ const ELEVENLABS_STT_MODEL = String(process.env.ELEVENLABS_STT_MODEL || 'scribe_
 const ELEVENLABS_STT_LANGUAGE = String(process.env.ELEVENLABS_STT_LANGUAGE || 'pt').trim();
 const ELEVENLABS_TTS_MODEL = String(process.env.ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2').trim();
 const ELEVENLABS_TTS_VOICE_ID = String(process.env.ELEVENLABS_TTS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb').trim();
-const ELEVENLABS_TTS_OUTPUT_FORMAT = String(process.env.ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_44100_128').trim();
-const ELEVENLABS_TTS_STABILITY = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STABILITY || 0.55)));
-const ELEVENLABS_TTS_SIMILARITY_BOOST = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_SIMILARITY_BOOST || 0.78)));
-const ELEVENLABS_TTS_STYLE = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STYLE || 0.18)));
+const ELEVENLABS_TTS_OUTPUT_FORMAT = String(process.env.ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_22050_32').trim();
+const ELEVENLABS_TTS_STABILITY = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STABILITY || 0.42))); 
+const ELEVENLABS_TTS_SIMILARITY_BOOST = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_SIMILARITY_BOOST || 0.82))); 
+const ELEVENLABS_TTS_STYLE = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STYLE || 0.34))); 
 const ELEVENLABS_TTS_SPEAKER_BOOST = String(process.env.ELEVENLABS_TTS_SPEAKER_BOOST || 'true').toLowerCase() !== 'false';
+const TELEGRAM_CONCIERGE_AUDIO_SEND_MODE = String(process.env.TELEGRAM_CONCIERGE_AUDIO_SEND_MODE || 'voice').trim().toLowerCase();
+const TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS = Math.max(420, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS || 1150));
 const TELEGRAM_CONCIERGE_VOICE_ENABLED = String(process.env.TELEGRAM_CONCIERGE_VOICE_ENABLED || 'true').toLowerCase() !== 'false';
 const TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY = String(process.env.TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || 'false').toLowerCase() === 'true';
 const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT = (TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('eleven') || TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('openai')) ? 180 : 60;
@@ -8663,7 +8665,7 @@ async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mim
     'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
     'Content-Type': contentType,
     'Accept': 'application/json',
-    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.77',
+    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.78',
    },
    body: buffer,
    signal: controller.signal,
@@ -8723,7 +8725,7 @@ function telegramPlainTextFromPremiumMessage(text = '') {
   .replace(/&lt;/g, '<')
   .replace(/&gt;/g, '>')
   .replace(/&quot;/g, '"')
-  .replace(/[•🤖✈️🧭📅🛫⚠️📊💼✅⏱️📍🚘💎]/g, '')
+  .replace(/[•🤖✈️🧭📅🛫⚠️📊💼✅⏱️📍🚘💎🎙️]/g, '')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
 }
@@ -8737,7 +8739,7 @@ async function elevenLabsTextToSpeechBuffer(text, { voice = ELEVENLABS_TTS_VOICE
   err.provider = 'elevenlabs';
   throw err;
  }
- const input = telegramPlainTextFromPremiumMessage(text).slice(0, 4500);
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
  if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
  const cleanVoice = String(voice || ELEVENLABS_TTS_VOICE_ID || '').trim();
  if (!cleanVoice) {
@@ -8747,7 +8749,7 @@ async function elevenLabsTextToSpeechBuffer(text, { voice = ELEVENLABS_TTS_VOICE
   throw err;
  }
  const url = new URL(`${ELEVENLABS_API_BASE}/text-to-speech/${encodeURIComponent(cleanVoice)}`);
- url.searchParams.set('output_format', ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_44100_128');
+ url.searchParams.set('output_format', ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_22050_32');
  const controller = new AbortController();
  const timeout = setTimeout(() => controller.abort(), 60_000);
  try {
@@ -8762,6 +8764,8 @@ async function elevenLabsTextToSpeechBuffer(text, { voice = ELEVENLABS_TTS_VOICE
     text: input,
     model_id: ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2',
     language_code: 'pt',
+    previous_text: userName ? `Mensagem de voz curta para ${userName}, em português brasileiro, natural e levemente informal.` : 'Mensagem de voz curta em português brasileiro, natural e levemente informal.',
+    next_text: 'Resposta objetiva de concierge de aviação, sem ler siglas de escala literalmente.',
     voice_settings: {
      stability: ELEVENLABS_TTS_STABILITY,
      similarity_boost: ELEVENLABS_TTS_SIMILARITY_BOOST,
@@ -8802,7 +8806,7 @@ async function openAiTextToSpeechBuffer(text, { voice = OPENAI_TTS_VOICE, userNa
   err.statusCode = 503;
   throw err;
  }
- const input = telegramPlainTextFromPremiumMessage(text).slice(0, 3900);
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
  if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
  const controller = new AbortController();
  const timeout = setTimeout(() => controller.abort(), 45_000);
@@ -8842,7 +8846,7 @@ function azureXmlEscape(value = '') {
 }
 
 function azureSpeechSsmlContent(text = '') {
- const plain = telegramPlainTextFromPremiumMessage(text).slice(0, 2800);
+ const plain = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
  const parts = plain.split(/\n+/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 12);
  const content = (parts.length ? parts : [plain]).map((line, index) => `${azureXmlEscape(line)}${index < parts.length - 1 ? '<break time="260ms"/>' : ''}`).join(' ');
  return content || 'CrewCheck Concierge.';
@@ -8863,7 +8867,7 @@ async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, st
   err.provider = 'azure';
   throw err;
  }
- const input = telegramPlainTextFromPremiumMessage(text).slice(0, 2800);
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
  if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
  const attempt = async (attemptStyle) => {
   const controller = new AbortController();
@@ -8876,7 +8880,7 @@ async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, st
      'Content-Type': 'application/ssml+xml',
      'X-Microsoft-OutputFormat': AZURE_TTS_OUTPUT_FORMAT,
      'Accept': 'audio/mpeg',
-     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.77',
+     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.78',
     },
     body: azureSpeechBuildSsml(input, { voice, style: attemptStyle }),
     signal: controller.signal,
@@ -9160,6 +9164,19 @@ async function telegramApiMultipart(method, form) {
  }
 }
 
+async function telegramSendVoice(chatId, audioBuffer, { caption = '', filename = 'crewcheck-concierge-voz.mp3', reply_markup = undefined } = {}) {
+ if (!chatId) return { ok: false, skipped: true, reason: 'chat_id ausente' };
+ if (!audioBuffer?.length) return { ok: false, skipped: true, reason: 'áudio vazio' };
+ const form = new FormData();
+ form.append('chat_id', String(chatId));
+ form.append('voice', new Blob([audioBuffer], { type: 'audio/mpeg' }), filename);
+ if (caption) form.append('caption', String(caption).slice(0, 900));
+ form.append('parse_mode', 'HTML');
+ if (reply_markup) form.append('reply_markup', JSON.stringify(reply_markup));
+ const result = await telegramApiMultipart('sendVoice', form);
+ return { ok: true, result };
+}
+
 async function telegramSendAudio(chatId, audioBuffer, { caption = '', filename = 'crewcheck-concierge.mp3', reply_markup = undefined } = {}) {
  if (!chatId) return { ok: false, skipped: true, reason: 'chat_id ausente' };
  if (!audioBuffer?.length) return { ok: false, skipped: true, reason: 'áudio vazio' };
@@ -9187,8 +9204,12 @@ function telegramConciergeDisplayName(row = null, user = null) {
 }
 
 function telegramConciergeHumanizeLines(lines = [], { userName = '', inputMode = 'text' } = {}) {
- const cleanLines = (Array.isArray(lines) ? lines : [lines]).map((line) => String(line || '').trim()).filter(Boolean);
- const greeting = userName ? `${userName}, ${inputMode === 'audio' ? 'ouvi seu áudio e já conferi.' : 'já conferi para você.'}` : (inputMode === 'audio' ? 'Ouvi seu áudio e já conferi.' : 'Já conferi para você.');
+ const cleanLines = (Array.isArray(lines) ? lines : [lines])
+  .map((line) => telegramConciergeTranslateRosterAbbreviations(String(line || '').trim()))
+  .filter(Boolean);
+ const greeting = userName
+  ? (inputMode === 'audio' ? `Boa, ${userName}. Ouvi aqui e já dei uma olhada.` : `${userName}, já olhei aqui para você.`)
+  : (inputMode === 'audio' ? 'Boa. Ouvi aqui e já dei uma olhada.' : 'Já olhei aqui para você.');
  if (cleanLines[0] && cleanLines[0].toLowerCase().startsWith(String(userName || '').toLowerCase())) return cleanLines;
  return [greeting, ...cleanLines].slice(0, 12);
 }
@@ -9204,10 +9225,18 @@ async function telegramSendConciergeReply(chatId, { row = null, user = null, tit
  const maySendAudio = Boolean(preferAudio && TELEGRAM_CONCIERGE_VOICE_ENABLED && preferences.conciergeAudioReplies !== false && (!TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || premium));
  if (maySendAudio && telegramSpeechHasProvider('tts')) {
   try {
-   await telegramApi('sendChatAction', { chat_id: String(chatId), action: 'upload_voice' }).catch(() => null);
-   const audio = await textToSpeechBuffer(messageText, { userName, conciergeName });
+   await telegramApi('sendChatAction', { chat_id: String(chatId), action: TELEGRAM_CONCIERGE_AUDIO_SEND_MODE === 'audio' ? 'upload_voice' : 'record_voice' }).catch(() => null);
+   const spokenText = telegramConciergeSpokenTextFromReply({ title, lines: humanLines, userName, inputMode, conciergeName });
+   const audio = await textToSpeechBuffer(spokenText, { userName, conciergeName });
    const caption = telegramEscapeHtml(`${conciergeName}: ${telegramPlainTextFromPremiumMessage(title).slice(0, 80)}`);
-   return await telegramSendAudio(chatId, audio, { caption, filename: 'crewcheck-concierge.mp3', reply_markup });
+   if (TELEGRAM_CONCIERGE_AUDIO_SEND_MODE !== 'audio') {
+    try {
+     return await telegramSendVoice(chatId, audio, { caption, filename: 'crewcheck-concierge-voz.mp3', reply_markup });
+    } catch (voiceError) {
+     console.warn('[telegram] sendVoice falhou; enviando como áudio', voiceError?.message || voiceError);
+    }
+   }
+   return await telegramSendAudio(chatId, audio, { caption, filename: 'crewcheck-concierge-leve.mp3', reply_markup });
   } catch (error) {
    console.warn('[telegram] falha ao gerar/enviar áudio; usando texto', error?.message || error);
   }
@@ -9501,6 +9530,154 @@ function telegramConciergeFormatTime(value) {
  return raw;
 }
 
+
+function telegramConciergeTitleCaseName(value = '') {
+ const clean = String(value || '').replace(/[_|;]/g, ' ').replace(/\s+/g, ' ').trim();
+ if (!clean) return '';
+ if (clean.length <= 3 && clean === clean.toUpperCase()) return clean;
+ return clean.toLowerCase().replace(/(^|\s|[-'])([\p{L}])/gu, (_, sep, ch) => `${sep}${ch.toUpperCase()}`);
+}
+
+function telegramConciergeReadableCrewRole(value = '', index = -1) {
+ const raw = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+ if (!raw) return index === 0 ? 'Chefe' : '';
+ if (/\b(CCM|CHEFE|CABIN CHIEF|CHIEF|PUR\d?|COMISSARIO CHEFE)\b/.test(raw)) return 'Chefe';
+ if (/\b(CP|CPT|CMTE|COMANDANTE|CAPTAIN|CAP)\b/.test(raw)) return 'Comandante';
+ if (/\b(FO|COP|COPILOTO|CO PILOTO|FIRST OFFICER)\b/.test(raw)) return 'Copiloto';
+ if (/\b(CMS|COMISSARIO|COMISSARIA|CABIN CREW|FA)\b/.test(raw)) return 'Comissário';
+ if (/\b(INST|INSTRUTOR|INSTRUCTOR)\b/.test(raw)) return 'Instrutor';
+ return telegramConciergeTitleCaseName(value).slice(0, 24);
+}
+
+function telegramConciergeCrewNameFromItem(item = {}) {
+ if (typeof item === 'string') {
+  const cleaned = item.replace(/^\s*(?:CP|CPT|CMTE|FO|COP|CCM|CMS|FA|INST|CHEFE|COMANDANTE|COPILOTO|COMISS[ÁA]RIO[A]?)\s*[-:·–—]?\s*/i, '').replace(/\s+/g, ' ').trim();
+  return telegramConciergeTitleCaseName(cleaned).slice(0, 48);
+ }
+ const candidates = [item.name, item.fullName, item.full_name, item.crewName, item.crew_name, item.displayName, item.employeeName, item.nome, item.tripulante, item.label].filter(Boolean);
+ const value = String(candidates[0] || '').replace(/\s+/g, ' ').trim();
+ return telegramConciergeTitleCaseName(value).slice(0, 48);
+}
+
+function telegramConciergeCrewRoleFromItem(item = {}, index = -1) {
+ if (typeof item === 'string') {
+  const match = item.match(/^\s*(CP|CPT|CMTE|FO|COP|CCM|CMS|FA|INST|CHEFE|COMANDANTE|COPILOTO|COMISS[ÁA]RIO[A]?)\b/i) || item.match(/\b(CP|CPT|CMTE|FO|COP|CCM|CMS|FA|INST)\b/i);
+  return telegramConciergeReadableCrewRole(match?.[1] || '', index);
+ }
+ const candidates = [item.role, item.rank, item.function, item.funcao, item.função, item.position, item.duty, item.code, item.category, item.cargo, item.type].filter(Boolean);
+ return telegramConciergeReadableCrewRole(candidates[0] || '', index);
+}
+
+function telegramConciergeCrewLabel(item = {}, index = -1) {
+ const role = telegramConciergeCrewRoleFromItem(item, index);
+ const name = telegramConciergeCrewNameFromItem(item);
+ if (role && name) return `${role}: ${name}`;
+ if (name) return name;
+ return '';
+}
+
+function telegramConciergeCollectCrewMembers(day = {}, leg = {}) {
+ const buckets = [leg.crew, leg.crews, leg.crewMembers, leg.crewList, leg.tripulantes, leg.tripulation, day.crew, day.crews, day.crewMembers, day.crewList, day.tripulantes, day.tripulation, day.team].filter(Boolean);
+ const rawItems = [];
+ for (const bucket of buckets) {
+  if (Array.isArray(bucket)) rawItems.push(...bucket);
+  else if (typeof bucket === 'object') rawItems.push(...Object.values(bucket));
+  else if (typeof bucket === 'string') rawItems.push(...bucket.split(/\n|;/).map((part) => part.trim()).filter(Boolean));
+ }
+ const seen = new Set();
+ const labels = [];
+ for (let i = 0; i < rawItems.length; i += 1) {
+  const label = telegramConciergeCrewLabel(rawItems[i], i);
+  const key = telegramConciergeNormalizeText(label);
+  if (!label || seen.has(key)) continue;
+  seen.add(key);
+  labels.push(label);
+ }
+ return labels.slice(0, 8);
+}
+
+function telegramConciergeTranslateRosterAbbreviations(text = '') {
+ let out = String(text || '');
+ const replacements = [
+  [/\bHSB\s*(?:EXTRA|EXT|\+|X)\b/g, 'sobreaviso extra'],
+  [/\b(?:EXTRA\s*)?HSB\b/g, (m) => /^EXTRA/.test(m) ? 'sobreaviso extra' : 'sobreaviso'],
+  [/\bSBY\b|\bSOB\b/g, 'sobreaviso'],
+  [/\bDOP\b/g, 'folga pós-férias'],
+  [/\bDOF\b|\bDO\b|\bOFF\b/g, 'folga'],
+  [/\bVAC\b|\bFERIAS\b|\bFÉRIAS\b/gi, 'férias'],
+  [/\bPS\b|\bVEX\b|\bVIVO\s+DE\s+EXTRA\b/g, 'extra'],
+  [/\bMT\b/g, 'reunião'],
+  [/\bCRM\b/g, 'treinamento CRM'],
+  [/\bEAD\b/g, 'treinamento on-line'],
+  [/\bRES\b|\bRSA\b/g, 'reserva'],
+  [/\bAPRES(?:ENTA[ÇC][ÃA]O)?\b|\bDUTY\s*REPORT\b/gi, 'apresentação'],
+  [/\bDEP\b/g, 'decolagem'],
+  [/\bARR\b/g, 'chegada'],
+  [/\bCP\b/g, 'Comandante'],
+  [/\bFO\b/g, 'Copiloto'],
+  [/\bCCM\b/g, 'Chefe'],
+ ];
+ for (const [pattern, value] of replacements) out = out.replace(pattern, value);
+ return out.replace(/\s+/g, ' ').trim();
+}
+
+function telegramConciergeNaturalizeForAudio(text = '') {
+ let out = telegramConciergeTranslateRosterAbbreviations(text);
+ out = out
+  .replace(/\b(LA)\s?(\d{3,4})\b/gi, 'voo LATAM $2')
+  .replace(/\b(G3)\s?(\d{3,4})\b/gi, 'voo Gol $2')
+  .replace(/\b(AD)\s?(\d{3,4})\b/gi, 'voo Azul $2')
+  .replace(/\b(TP)\s?(\d{3,4})\b/gi, 'voo TAP $2')
+  .replace(/\bBSB\b/g, 'Brasília')
+  .replace(/\bGRU\b/g, 'Guarulhos')
+  .replace(/\bCGH\b/g, 'Congonhas')
+  .replace(/\bSDU\b/g, 'Santos Dumont')
+  .replace(/\bGIG\b/g, 'Galeão')
+  .replace(/\bVCP\b/g, 'Viracopos')
+  .replace(/\bCNF\b/g, 'Confins')
+  .replace(/\bPOA\b/g, 'Porto Alegre')
+  .replace(/\bREC\b/g, 'Recife')
+  .replace(/\bSSA\b/g, 'Salvador')
+  .replace(/\bFOR\b/g, 'Fortaleza')
+  .replace(/\bNAT\b/g, 'Natal')
+  .replace(/\s*[·•]\s*/g, ', ')
+  .replace(/\s*→\s*/g, ' para ')
+  .replace(/--:--/g, 'horário não informado')
+  .replace(/\bHorário:\s*/gi, 'horário, ')
+  .replace(/\bData da programação:\s*/gi, 'programação em ')
+  .replace(/\bPortão:\s*/gi, 'portão, ')
+  .replace(/\bTerminal:\s*/gi, 'terminal, ')
+  .replace(/\bStatus:\s*/gi, 'status, ')
+  .replace(/\bOrigem:\s*/gi, 'saindo de ')
+  .replace(/\bLocal:\s*/gi, 'local, ')
+  .replace(/\bApresentação na escala:\s*/gi, 'apresentação na escala às ')
+  .replace(/\bDecolagem:\s*/gi, 'decolagem às ')
+  .replace(/\b(\d{2}):(\d{2})\b/g, '$1 e $2')
+  .replace(/\s+/g, ' ')
+  .trim();
+ return out;
+}
+
+function telegramConciergeTrimAudioText(text = '', maxChars = TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS) {
+ const clean = String(text || '').replace(/\s+/g, ' ').trim();
+ if (clean.length <= maxChars) return clean;
+ const sliced = clean.slice(0, maxChars);
+ const cut = Math.max(sliced.lastIndexOf('. '), sliced.lastIndexOf(', '), sliced.lastIndexOf(' '));
+ return `${sliced.slice(0, cut > 360 ? cut : maxChars).trim()}. O restante eu deixei escrito no Telegram.`;
+}
+
+function telegramConciergeSpokenTextFromReply({ title = '', lines = [], userName = '', inputMode = 'text', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME } = {}) {
+ const cleanLines = (Array.isArray(lines) ? lines : [lines]).map((line) => telegramConciergeNaturalizeForAudio(line)).filter(Boolean);
+ const greeting = userName
+  ? (inputMode === 'audio' ? `Boa, ${userName}. Ouvi aqui e olhei para você.` : `${userName}, olhei aqui para você.`)
+  : (inputMode === 'audio' ? 'Boa. Ouvi aqui e olhei para você.' : 'Olhei aqui para você.');
+ const readableTitle = telegramConciergeNaturalizeForAudio(title).replace(/^Programação\s*[·-]\s*/i, 'programação de ');
+ const body = cleanLines.slice(0, 7).join('. ');
+ const safety = 'Confere a escala oficial antes de qualquer decisão operacional, combinado?';
+ const text = [greeting, readableTitle && !/concierge/i.test(readableTitle) ? readableTitle : '', body, safety].filter(Boolean).join('. ');
+ return telegramConciergeTrimAudioText(text);
+}
+
 function telegramConciergeLegNumber(leg = {}) {
  return normalizeFlightToken(leg.flightNumber || leg.flight || leg.number || leg.label || '') || String(leg.flightNumber || leg.flight || '').trim();
 }
@@ -9513,14 +9690,14 @@ function telegramConciergeLegLine(leg = {}, index = 0) {
  const time = dep || arr ? `${dep || '--:--'}${arr ? `–${arr}` : ''}` : '';
  const gate = leg.gate ? `Portão ${leg.gate}` : '';
  const terminal = leg.terminal ? `Terminal ${leg.terminal}` : '';
- const status = leg.status || leg.flightStatus || '';
+ const status = telegramConciergeTranslateRosterAbbreviations(leg.status || leg.flightStatus || '');
  return [number, route, time, gate, terminal, status].filter(Boolean).join(' · ');
 }
 
 function telegramConciergeDayLines(day = {}, iso = '') {
  const lines = [];
- const type = day.type || day.title || day.activityType || day.pairingCode || day.code || '';
- const raw = String(day.rawText || day.description || '').replace(/\s+/g, ' ').trim();
+ const type = telegramConciergeTranslateRosterAbbreviations(day.type || day.title || day.activityType || day.pairingCode || day.code || '');
+ const raw = telegramConciergeTranslateRosterAbbreviations(String(day.rawText || day.description || '').replace(/\s+/g, ' ').trim());
  const start = telegramConciergeFormatTime(day.startTime || day.reportTime || day.dutyReport || day.presentationTime || day.checkInTime || '');
  const end = telegramConciergeFormatTime(day.endTime || day.releaseTime || day.dutyEnd || day.arrivalTime || '');
  const baseLine = [iso ? iso.split('-').reverse().join('/') : '', type].filter(Boolean).join(' · ');
@@ -9528,7 +9705,9 @@ function telegramConciergeDayLines(day = {}, iso = '') {
  if (start || end) lines.push(`Horário: ${start || '--:--'}${end ? ` até ${end}` : ''}`);
  const legs = Array.isArray(day.legs) ? day.legs : [];
  if (legs.length) lines.push(...legs.slice(0, 6).map(telegramConciergeLegLine));
- else if (raw) lines.push(raw.slice(0, 160));
+ else if (raw) lines.push(raw.slice(0, 180));
+ const crew = telegramConciergeCollectCrewMembers(day, legs[0] || {});
+ if (crew.length) lines.push(`Tripulação: ${crew.slice(0, 6).join('; ')}`);
  if (day.location || day.airport || day.base) lines.push(`Local: ${day.location || day.airport || day.base}`);
  return lines.length ? lines : ['Não encontrei programação detalhada para esta data.'];
 }
@@ -9567,8 +9746,8 @@ function telegramConciergeMealLines(day = {}, iso = '') {
  if (Array.isArray(day.perDiems)) candidates.push(...day.perDiems);
  if (Array.isArray(day.diarias)) candidates.push(...day.diarias);
  for (const item of candidates.slice(0, 8)) {
-  if (typeof item === 'string') lines.push(item);
-  else lines.push([item.label || item.type || item.name || 'Diária', item.value ? `R$ ${item.value}` : '', item.reason || item.source || ''].filter(Boolean).join(' · '));
+  if (typeof item === 'string') lines.push(telegramConciergeTranslateRosterAbbreviations(item));
+  else lines.push(telegramConciergeTranslateRosterAbbreviations([item.label || item.type || item.name || 'Diária', item.value ? `R$ ${item.value}` : '', item.reason || item.source || ''].filter(Boolean).join(' · ')));
  }
  if (!lines.length && /pernoite|inativo|layover|hotel|acomod/i.test(raw)) lines.push('Pernoite/inativo fora de base: verificar almoço e jantar conforme janela e tabela vigente.');
  if (!lines.length && Array.isArray(day.legs) && day.legs.length) lines.push('Há voo/jornada no dia. Abra a auditoria de diárias no app para ver janelas de café, almoço, jantar e ceia.');
@@ -9674,12 +9853,14 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   const found = telegramConciergeFindFlight(rosters, text);
   const leg = found?.leg || {};
   const flight = telegramConciergeLegNumber(leg) || 'próximo voo';
+  const crew = telegramConciergeCollectCrewMembers(found?.day || {}, leg);
   const lines = found ? [
    `Data da programação: ${telegramConciergeReadableDate(found.iso)}`,
    telegramConciergeLegLine(leg),
+   crew.length ? `Tripulação: ${crew.slice(0, 6).join('; ')}` : '',
    leg.gate ? `Portão: ${leg.gate}` : 'Portão: ainda não disponível no radar salvo.',
    leg.terminal ? `Terminal: ${leg.terminal}` : 'Terminal: ainda não disponível no radar salvo.',
-   leg.status || leg.flightStatus ? `Status: ${leg.status || leg.flightStatus}` : 'Status: confira o monitor do aeroporto quando estiver disponível.',
+   leg.status || leg.flightStatus ? `Status: ${telegramConciergeTranslateRosterAbbreviations(leg.status || leg.flightStatus)}` : 'Status: confira o monitor do aeroporto quando estiver disponível.',
    'Evito repetir “Programado” sem mudança real.',
   ] : ['Não encontrei voo futuro na escala salva.'];
   await reply(`Portão · ${flight}`, lines, { actionLabel: 'Abrir radar' });
@@ -9695,9 +9876,11 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   const report = telegramConciergeFormatTime(leg.dutyReport || leg.reportTime || leg.presentationTime || found?.day?.startTime || '');
   const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
   const origin = leg.origin || leg.from || found?.day?.location || 'origem não informada';
+  const crew = telegramConciergeCollectCrewMembers(found?.day || {}, leg);
   const lines = [
    found ? `Data da programação: ${telegramConciergeReadableDate(found.iso)}` : '',
    found ? telegramConciergeLegLine(leg) : 'Não encontrei voo futuro na escala salva.',
+   crew.length ? `Tripulação: ${crew.slice(0, 6).join('; ')}` : '',
    report ? `Apresentação na escala: ${report}` : dep ? `Decolagem: ${dep}` : 'Horário de apresentação não localizado na escala.',
    `Origem: ${origin}`,
    'Para trânsito real, mantenha Localização ativada no app e calcule a Saída Inteligente uma vez.',
