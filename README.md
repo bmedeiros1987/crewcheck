@@ -1,32 +1,32 @@
-# CrewCheck v11.0.76 — Concierge Telegram com Azure Speech + OpenAI fallback
+# CrewCheck v11.0.77 — Concierge Telegram com ElevenLabs + Azure Speech + OpenAI fallback
 
-Esta versão mantém o Concierge Telegram por texto e áudio, mas adiciona **Azure Speech** como provedor de voz preferencial no modo `auto`. Assim, quando `AZURE_SPEECH_KEY` estiver configurada, o CrewCheck usa Azure para transcrever voice notes do Telegram e gerar áudio MP3 em português brasileiro; se a Azure não estiver configurada, pode cair para OpenAI quando `OPENAI_API_KEY` existir.
+Esta versão mantém o Concierge Telegram por texto e áudio, mas adiciona **ElevenLabs** como provedor de voz premium/natural. No modo `auto`, quando `ELEVENLABS_API_KEY` estiver configurada, o CrewCheck usa ElevenLabs para transcrever voice notes do Telegram e gerar áudio MP3; Azure Speech e OpenAI continuam como fallback.
 
 ## Variáveis novas/opcionais
 
-- `CREWCHECK_SPEECH_PROVIDER` ou `TELEGRAM_CONCIERGE_SPEECH_PROVIDER`: `auto`, `azure`, `openai`, `azure,openai`, `openai,azure` ou `off`. Padrão: `auto`.
-- `AZURE_SPEECH_KEY` ou `CREWCHECK_AZURE_SPEECH_KEY`: chave do recurso Azure Speech.
+- `CREWCHECK_SPEECH_PROVIDER` ou `TELEGRAM_CONCIERGE_SPEECH_PROVIDER`: `auto`, `elevenlabs`, `azure`, `openai`, `elevenlabs,azure,openai`, `azure,elevenlabs,openai` ou `off`. Padrão: `auto`.
+- `ELEVENLABS_API_KEY` ou `CREWCHECK_ELEVENLABS_API_KEY`: chave da API ElevenLabs. Não coloque a chave no código nem no frontend.
+- `ELEVENLABS_TTS_VOICE_ID` ou `ELEVENLABS_VOICE_ID`: voz usada no TTS. Padrão seguro: `JBFqnCBsd6RMkjVDRZzb`; recomenda-se escolher uma voz brasileira/natural no painel da ElevenLabs e copiar o Voice ID.
+- `ELEVENLABS_TTS_MODEL`: padrão `eleven_multilingual_v2`.
+- `ELEVENLABS_TTS_OUTPUT_FORMAT`: padrão `mp3_44100_128`.
+- `ELEVENLABS_TTS_STABILITY`: padrão `0.55`.
+- `ELEVENLABS_TTS_SIMILARITY_BOOST`: padrão `0.78`.
+- `ELEVENLABS_TTS_STYLE`: padrão `0.18`.
+- `ELEVENLABS_STT_MODEL`: padrão `scribe_v2`.
+- `ELEVENLABS_STT_LANGUAGE`: padrão `pt`.
+- `AZURE_SPEECH_KEY` ou `CREWCHECK_AZURE_SPEECH_KEY`: opcional, fallback Azure Speech.
 - `AZURE_SPEECH_REGION` ou `CREWCHECK_AZURE_SPEECH_REGION`: região do recurso. Sugestão Brasil: `brazilsouth`.
-- `AZURE_STT_LANGUAGE`: padrão `pt-BR`.
-- `AZURE_TTS_VOICE`: padrão `pt-BR-FranciscaNeural`. Outras opções comuns: `pt-BR-AntonioNeural`, `pt-BR-BrendaNeural`, `pt-BR-DonatoNeural`, `pt-BR-ThalitaNeural`.
-- `AZURE_TTS_STYLE`: padrão `calm`; se a voz escolhida não aceitar estilo, o sistema tenta novamente sem estilo.
-- `AZURE_TTS_RATE`: padrão `+2%`.
-- `AZURE_TTS_PITCH`: padrão `+0%`.
-- `AZURE_TTS_OUTPUT_FORMAT`: padrão `audio-24khz-48kbitrate-mono-mp3`.
-- `OPENAI_API_KEY` ou `CREWCHECK_OPENAI_API_KEY`: opcional, usado como fallback se mantido.
-- `OPENAI_TRANSCRIBE_MODEL`: padrão `gpt-4o-mini-transcribe`.
-- `OPENAI_TTS_MODEL`: padrão `gpt-4o-mini-tts`.
-- `OPENAI_TTS_VOICE`: padrão `nova`.
-- `OPENAI_TTS_SPEED`: padrão `1.02`.
+- `OPENAI_API_KEY` ou `CREWCHECK_OPENAI_API_KEY`: opcional, fallback OpenAI.
 - `TELEGRAM_CONCIERGE_VOICE_ENABLED`: padrão `true`.
 - `TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY`: padrão `false`.
-- `TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS`: padrão `60` quando Azure/auto; pode ser ajustado por variável.
+- `TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS`: padrão `180` quando ElevenLabs/OpenAI estiver explícito, `60` para Azure puro.
 
 ## Comportamento
 
 - Texto no Telegram continua respondendo por texto.
 - Voice note no Telegram é transcrita e respondida por áudio quando houver provedor de voz configurado.
-- No modo `auto`, Azure tem prioridade sobre OpenAI para evitar erro de cota da OpenAI quando Azure estiver ativa.
+- No modo `auto`, a ordem é ElevenLabs → Azure Speech → OpenAI.
+- Se ElevenLabs ficar sem cota ou falhar, tenta Azure/OpenAI quando configurados.
 - Se o TTS falhar, o usuário recebe resposta por texto sem erro técnico.
 - Se o áudio não puder ser transcrito, o usuário recebe uma mensagem premium e nenhuma ação operacional é tomada.
 

@@ -169,9 +169,21 @@ const AZURE_TTS_STYLE = String(process.env.AZURE_TTS_STYLE || 'calm').trim();
 const AZURE_TTS_RATE = String(process.env.AZURE_TTS_RATE || '+2%').trim();
 const AZURE_TTS_PITCH = String(process.env.AZURE_TTS_PITCH || '+0%').trim();
 const AZURE_TTS_OUTPUT_FORMAT = String(process.env.AZURE_TTS_OUTPUT_FORMAT || 'audio-24khz-48kbitrate-mono-mp3').trim();
+const ELEVENLABS_API_KEY = String(process.env.ELEVENLABS_API_KEY || process.env.CREWCHECK_ELEVENLABS_API_KEY || process.env.XI_API_KEY || '').trim();
+const ELEVENLABS_API_BASE = String(process.env.ELEVENLABS_API_BASE || 'https://api.elevenlabs.io/v1').replace(/\/+$/, '');
+const ELEVENLABS_STT_MODEL = String(process.env.ELEVENLABS_STT_MODEL || 'scribe_v2').trim();
+const ELEVENLABS_STT_LANGUAGE = String(process.env.ELEVENLABS_STT_LANGUAGE || 'pt').trim();
+const ELEVENLABS_TTS_MODEL = String(process.env.ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2').trim();
+const ELEVENLABS_TTS_VOICE_ID = String(process.env.ELEVENLABS_TTS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb').trim();
+const ELEVENLABS_TTS_OUTPUT_FORMAT = String(process.env.ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_44100_128').trim();
+const ELEVENLABS_TTS_STABILITY = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STABILITY || 0.55)));
+const ELEVENLABS_TTS_SIMILARITY_BOOST = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_SIMILARITY_BOOST || 0.78)));
+const ELEVENLABS_TTS_STYLE = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STYLE || 0.18)));
+const ELEVENLABS_TTS_SPEAKER_BOOST = String(process.env.ELEVENLABS_TTS_SPEAKER_BOOST || 'true').toLowerCase() !== 'false';
 const TELEGRAM_CONCIERGE_VOICE_ENABLED = String(process.env.TELEGRAM_CONCIERGE_VOICE_ENABLED || 'true').toLowerCase() !== 'false';
 const TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY = String(process.env.TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || 'false').toLowerCase() === 'true';
-const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS = Math.max(20, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS || (TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('openai') ? 180 : 60)));
+const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT = (TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('eleven') || TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('openai')) ? 180 : 60;
+const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS = Math.max(20, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS || TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT));
 const TELEGRAM_DEFAULT_CONCIERGE_NAME = 'CrewCheck Concierge';
 const TELEGRAM_DEFAULT_PREFERENCES = {
  smartDeparture: true,
@@ -8362,24 +8374,38 @@ function azureSpeechIsConfigured() {
  return Boolean(AZURE_SPEECH_KEY && (AZURE_SPEECH_REGION || AZURE_SPEECH_ENDPOINT));
 }
 
+function elevenLabsAudioIsConfigured() {
+ return Boolean(ELEVENLABS_API_KEY);
+}
+
 function telegramSpeechProviderOrder(kind = 'tts') {
  const configured = TELEGRAM_CONCIERGE_SPEECH_PROVIDER || 'auto';
- const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z,_-]/g, '');
- const explicit = normalize(configured);
+ const normalize = (value) => {
+  const raw = String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (raw === 'eleven' || raw === 'elevenlabs' || raw === '11labs' || raw === 'xi') return 'elevenlabs';
+  if (raw === 'azure' || raw === 'azurespeech') return 'azure';
+  if (raw === 'openai' || raw === 'gpt') return 'openai';
+  if (raw === 'off' || raw === 'none' || raw === 'disabled') return 'off';
+  return raw;
+ };
+ const explicit = String(configured || '').trim().toLowerCase();
  const pick = [];
  const push = (provider) => {
   const p = normalize(provider);
   if (!p || p === 'off' || p === 'none' || p === 'disabled') return;
-  if (!['azure', 'openai'].includes(p)) return;
+  if (!['elevenlabs', 'azure', 'openai'].includes(p)) return;
+  if (p === 'elevenlabs' && !elevenLabsAudioIsConfigured()) return;
   if (p === 'azure' && !azureSpeechIsConfigured()) return;
   if (p === 'openai' && !openAiAudioIsConfigured()) return;
   if (!pick.includes(p)) pick.push(p);
  };
- if (explicit && explicit !== 'auto') {
-  explicit.split(/[,_-]/).forEach(push);
+ if (normalize(explicit) !== 'auto') {
+  explicit.split(/[,;\s]+/).forEach(push);
   return pick;
  }
- // No modo auto, Azure vem primeiro: evita falha por cota da OpenAI quando o Azure Speech já está configurado.
+ // No modo auto, ElevenLabs vem primeiro quando configurado, por ser mais natural para TTS
+ // e aceitar mais formatos/duração na transcrição. Azure e OpenAI ficam como fallback.
+ push('elevenlabs');
  push('azure');
  push('openai');
  return pick;
@@ -8413,6 +8439,7 @@ function azureSpeechSttEndpoint() {
 
 function speechProviderLabel(provider = '') {
  const p = String(provider || '').toLowerCase();
+ if (p === 'elevenlabs') return 'ElevenLabs';
  if (p === 'azure') return 'Azure Speech';
  if (p === 'openai') return 'OpenAI';
  return 'serviço de voz';
@@ -8427,7 +8454,7 @@ function classifySpeechAudioError(error = {}) {
  const quota = code.includes('insufficient_quota') || code.includes('quota') || /exceeded your current quota|check your plan and billing|atingiu.*limite|limite de uso|quota|billing|free tier|cota/i.test(raw);
  const rate = !quota && (status === 429 || code.includes('rate_limit') || /rate limit|too many requests|muitas solicitações|limite de taxa|throttl/i.test(raw));
  const auth = status === 401 || status === 403 || code.includes('invalid_api_key') || code.includes('unauthorized') || /api key|subscription key|unauthorized|permission|forbidden|sem permissão|chave|assinatura/i.test(raw);
- const notConfigured = code === 'openai_not_configured' || code === 'azure_speech_not_configured' || /OPENAI_API_KEY.*não configurada|AZURE_SPEECH_KEY.*não configurada|não configurad/i.test(raw);
+ const notConfigured = code === 'openai_not_configured' || code === 'azure_speech_not_configured' || code === 'elevenlabs_not_configured' || /OPENAI_API_KEY.*não configurada|AZURE_SPEECH_KEY.*não configurada|ELEVENLABS_API_KEY.*não configurada|não configurad/i.test(raw);
  const unsupported = code === 'azure_stt_unsupported_format' || /unsupported.*format|formato.*não compatível|codec|samplerate|ogg opus/i.test(raw);
  const timeout = /abort|timeout|timed out|tempo esgotado/i.test(raw);
  if (quota) {
@@ -8470,7 +8497,7 @@ function classifySpeechAudioError(error = {}) {
    title: 'Voz não configurada',
    lines: [
     'Nenhum provedor de voz está disponível no servidor.',
-    'Configure AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY no Render para ativar áudio no Concierge.'
+    'Configure ELEVENLABS_API_KEY, AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY no Render para ativar áudio no Concierge.'
    ],
    log: raw || 'Speech provider not configured'
   };
@@ -8556,6 +8583,52 @@ async function openAiTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType 
  }
 }
 
+
+async function elevenLabsTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
+ if (!elevenLabsAudioIsConfigured()) {
+  const err = new Error('ELEVENLABS_API_KEY não configurada no Render.');
+  err.code = 'ELEVENLABS_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'elevenlabs';
+  throw err;
+ }
+ const form = new FormData();
+ form.append('model_id', ELEVENLABS_STT_MODEL || 'scribe_v2');
+ form.append('file', new Blob([buffer], { type: mimeType || 'audio/ogg' }), filename || 'audio.ogg');
+ if (ELEVENLABS_STT_LANGUAGE) form.append('language_code', ELEVENLABS_STT_LANGUAGE);
+ form.append('tag_audio_events', 'false');
+ form.append('diarize', 'false');
+ form.append('timestamps_granularity', 'none');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 60_000);
+ try {
+  const response = await fetch(`${ELEVENLABS_API_BASE}/speech-to-text`, {
+   method: 'POST',
+   headers: { 'xi-api-key': ELEVENLABS_API_KEY },
+   body: form,
+   signal: controller.signal,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+   const err = new Error(data?.detail?.message || data?.message || data?.detail || `Falha na transcrição ElevenLabs (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.detail?.code || data?.code || 'ELEVENLABS_STT_ERROR';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  const text = String(data?.text || data?.transcript || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+   const err = new Error('ElevenLabs não retornou transcrição reconhecida.');
+   err.code = 'ELEVENLABS_STT_EMPTY';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  return text.slice(0, 1200);
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
 async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
  if (!azureSpeechIsConfigured()) {
   const err = new Error('AZURE_SPEECH_KEY/AZURE_SPEECH_REGION não configurada no Render.');
@@ -8590,7 +8663,7 @@ async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mim
     'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
     'Content-Type': contentType,
     'Accept': 'application/json',
-    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.76',
+    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.77',
    },
    body: buffer,
    signal: controller.signal,
@@ -8631,6 +8704,7 @@ async function transcribeTelegramAudio(buffer, options = {}) {
  const failures = [];
  for (const provider of order) {
   try {
+   if (provider === 'elevenlabs') return await elevenLabsTranscribeAudio(buffer, options);
    if (provider === 'azure') return await azureSpeechToTextShortAudio(buffer, options);
    if (provider === 'openai') return await openAiTranscribeAudio(buffer, options);
   } catch (error) {
@@ -8652,6 +8726,73 @@ function telegramPlainTextFromPremiumMessage(text = '') {
   .replace(/[•🤖✈️🧭📅🛫⚠️📊💼✅⏱️📍🚘💎]/g, '')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
+}
+
+
+async function elevenLabsTextToSpeechBuffer(text, { voice = ELEVENLABS_TTS_VOICE_ID, userName = '', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME } = {}) {
+ if (!elevenLabsAudioIsConfigured()) {
+  const err = new Error('ELEVENLABS_API_KEY não configurada no Render.');
+  err.code = 'ELEVENLABS_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'elevenlabs';
+  throw err;
+ }
+ const input = telegramPlainTextFromPremiumMessage(text).slice(0, 4500);
+ if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
+ const cleanVoice = String(voice || ELEVENLABS_TTS_VOICE_ID || '').trim();
+ if (!cleanVoice) {
+  const err = new Error('ELEVENLABS_TTS_VOICE_ID não configurado.');
+  err.code = 'ELEVENLABS_VOICE_NOT_CONFIGURED';
+  err.provider = 'elevenlabs';
+  throw err;
+ }
+ const url = new URL(`${ELEVENLABS_API_BASE}/text-to-speech/${encodeURIComponent(cleanVoice)}`);
+ url.searchParams.set('output_format', ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_44100_128');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 60_000);
+ try {
+  const response = await fetch(url, {
+   method: 'POST',
+   headers: {
+    'xi-api-key': ELEVENLABS_API_KEY,
+    'Content-Type': 'application/json',
+    'Accept': 'audio/mpeg',
+   },
+   body: JSON.stringify({
+    text: input,
+    model_id: ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2',
+    language_code: 'pt',
+    voice_settings: {
+     stability: ELEVENLABS_TTS_STABILITY,
+     similarity_boost: ELEVENLABS_TTS_SIMILARITY_BOOST,
+     style: ELEVENLABS_TTS_STYLE,
+     use_speaker_boost: ELEVENLABS_TTS_SPEAKER_BOOST,
+    },
+   }),
+   signal: controller.signal,
+  });
+  if (!response.ok) {
+   const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+   const data = contentType.includes('json') ? await response.json().catch(() => null) : null;
+   const raw = data ? '' : await response.text().catch(() => '');
+   const err = new Error(data?.detail?.message || data?.message || data?.detail || raw || `Falha no Text to Speech ElevenLabs (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.detail?.code || data?.code || 'ELEVENLABS_TTS_ERROR';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (!buffer.length) {
+   const err = new Error('ElevenLabs retornou áudio vazio.');
+   err.code = 'ELEVENLABS_TTS_EMPTY';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  return buffer;
+ } finally {
+  clearTimeout(timeout);
+ }
 }
 
 async function openAiTextToSpeechBuffer(text, { voice = OPENAI_TTS_VOICE, userName = '', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME } = {}) {
@@ -8735,7 +8876,7 @@ async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, st
      'Content-Type': 'application/ssml+xml',
      'X-Microsoft-OutputFormat': AZURE_TTS_OUTPUT_FORMAT,
      'Accept': 'audio/mpeg',
-     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.76',
+     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.77',
     },
     body: azureSpeechBuildSsml(input, { voice, style: attemptStyle }),
     signal: controller.signal,
@@ -8783,6 +8924,7 @@ async function textToSpeechBuffer(text, options = {}) {
  const failures = [];
  for (const provider of order) {
   try {
+   if (provider === 'elevenlabs') return await elevenLabsTextToSpeechBuffer(text, options);
    if (provider === 'azure') return await azureSpeechTextToSpeechBuffer(text, options);
    if (provider === 'openai') return await openAiTextToSpeechBuffer(text, options);
   } catch (error) {
@@ -9612,7 +9754,7 @@ async function handleTelegramConciergeAudio(db, row, chat, message = {}) {
   return { ok: true, audioTooLong: true };
  }
  if (!telegramSpeechHasProvider('stt')) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz não configurada', ['Configure AZURE_SPEECH_KEY e AZURE_SPEECH_REGION no Render para usar Azure Speech.', 'Também é possível usar OPENAI_API_KEY como fallback. Enquanto isso, envie por texto.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz não configurada', ['Configure ELEVENLABS_API_KEY no Render para usar ElevenLabs.', 'Também é possível usar AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY como fallback. Enquanto isso, envie por texto.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: false, speechNotConfigured: true };
  }
  try {

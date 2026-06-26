@@ -9297,7 +9297,7 @@ html[data-crew-theme="light"] #crewcheck-roster-filters input {
 }
 
 
-/* CrewCheck v11.0.76 — Menu lateral Premium sem sobreposição no Android/iPhone/iPad
+/* CrewCheck v11.0.77 — Menu lateral Premium sem sobreposição no Android/iPhone/iPad
    Correção principal: o grupo aberto não usa altura fixa menor que o conteúdo.
    A lista passa a rolar internamente e cada item mantém sua própria altura. */
 .crewcheck-premium-sidebar {

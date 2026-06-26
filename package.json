@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.76",
+  "version": "11.0.77",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.76: Concierge Telegram com Azure Speech como provedor gratuito/alternativo, fallback OpenAI, TTS neural pt-BR e tratamento premium de áudio.",
+  "description": "CrewCheck v11.0.77: Concierge Telegram com ElevenLabs, Azure Speech e OpenAI em fallback, TTS natural pt-BR e tratamento premium de áudio.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
