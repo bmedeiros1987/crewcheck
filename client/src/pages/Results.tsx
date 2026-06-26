@@ -654,7 +654,8 @@ export default function Results() {
               </div>
             </div>}
 
-            {!appMode && activeView === "summary" && <ViewKpis activeView={activeView} stats={stats} load={loadAnalysis} errors={errors.length} warnings={warnings.length} gym={gym} roster={roster} />}
+            {/* Resumo já possui KPIs próprios dentro do painel; evita duplicidade visual. */}
+            {!appMode && activeView !== "summary" && <ViewKpis activeView={activeView} stats={stats} load={loadAnalysis} errors={errors.length} warnings={warnings.length} gym={gym} roster={roster} />}
 
             {!appMode && (activeView === "roster" || activeView === "irregularities") && <LegalProfileBanner profile={visibleCompliance.legalProfile} />}
             

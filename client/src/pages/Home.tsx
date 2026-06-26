@@ -108,7 +108,7 @@ type NativePdfPayload = {
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.66';
+const APP_VERSION = '11.0.67';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
