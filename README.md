@@ -1,4 +1,4 @@
-# CrewCheck v11.0.78 — Concierge Telegram mais humano + áudio leve
+# CrewCheck v11.0.79 — Concierge Telegram mais humano + áudio leve
 
 Esta versão refina o Concierge Telegram para soar como uma resposta direta de uma pessoa por áudio, sem ler a escala de forma literal. O áudio agora usa texto próprio para fala, mais curto e natural, enquanto a mensagem escrita continua completa para conferência.
 
