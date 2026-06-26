@@ -9063,3 +9063,135 @@ html[data-crew-theme="light"] .crewcheck-roster-premium-list .cc-roster-month {
     padding: .65rem .72rem !important;
   }
 }
+
+
+/* CrewCheck v11.0.71 — Menu lateral sem corte em mobile/PWA
+   Corrige o menu expandido que ficava preso/cortado no Android/iPhone/WebView.
+   A rolagem passa a ser somente da lista, com header e footer fixos dentro do drawer. */
+.crewcheck-premium-sidebar {
+  box-sizing: border-box !important;
+  max-height: 100dvh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.crewcheck-sidebar-brand,
+.crewcheck-sidebar-footer {
+  flex: 0 0 auto !important;
+}
+.crewcheck-sidebar-nav {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable both-edges;
+  padding-bottom: .9rem !important;
+}
+.crewcheck-sidebar-group-btn,
+.crewcheck-sidebar-item {
+  min-width: 0 !important;
+}
+.crewcheck-sidebar-group-btn > span,
+.crewcheck-sidebar-item > span {
+  min-width: 0 !important;
+}
+.crewcheck-sidebar-group-btn small,
+.crewcheck-sidebar-item small {
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.crewcheck-sidebar-footer {
+  position: relative !important;
+  z-index: 2 !important;
+  margin-top: .58rem !important;
+}
+@media (max-width: 1023px) {
+  .crewcheck-premium-sidebar,
+  .crewcheck-premium-sidebar.is-mobile-open,
+  .crewcheck-side-layout.is-menu-open .crewcheck-premium-sidebar {
+    top: 0 !important;
+    bottom: 0 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    width: min(18.75rem, calc(100vw - .72rem)) !important;
+    padding: calc(.68rem + env(safe-area-inset-top, 0px)) .48rem calc(.58rem + env(safe-area-inset-bottom, 0px)) .48rem !important;
+    border-radius: 0 1.55rem 1.55rem 0 !important;
+    overflow: hidden !important;
+  }
+  .crewcheck-sidebar-brand {
+    min-height: 3.1rem !important;
+    padding: .34rem !important;
+    gap: .58rem !important;
+  }
+  .crewcheck-sidebar-logo {
+    width: 2.38rem !important;
+    height: 2.38rem !important;
+    border-radius: .92rem !important;
+  }
+  .crewcheck-sidebar-collapse {
+    width: 2rem !important;
+    height: 2rem !important;
+  }
+  .crewcheck-sidebar-nav {
+    margin-top: .52rem !important;
+    height: auto !important;
+    max-height: none !important;
+    padding-right: .14rem !important;
+    padding-bottom: .65rem !important;
+  }
+  .crewcheck-sidebar-group { margin-bottom: .22rem !important; }
+  .crewcheck-sidebar-group-btn,
+  .crewcheck-sidebar-item {
+    border-radius: .98rem !important;
+    padding: .58rem .62rem !important;
+    gap: .58rem !important;
+    min-height: 3.02rem !important;
+  }
+  .crewcheck-sidebar-item small,
+  .crewcheck-sidebar-group-btn small {
+    font-size: .61rem !important;
+    line-height: 1.05rem !important;
+  }
+  .crewcheck-sidebar-subitems {
+    gap: .18rem !important;
+  }
+  .crewcheck-premium-sidebar.is-mobile-open .crewcheck-sidebar-group.is-open .crewcheck-sidebar-subitems,
+  .crewcheck-premium-sidebar.is-expanded .crewcheck-sidebar-group.is-open .crewcheck-sidebar-subitems {
+    max-height: 24rem !important;
+    overflow: visible !important;
+    padding: .2rem 0 .18rem .42rem !important;
+  }
+  .crewcheck-sidebar-footer {
+    min-height: 2.65rem !important;
+    padding: .62rem .7rem !important;
+    border-radius: 1rem !important;
+  }
+}
+@media (max-height: 760px) and (max-width: 1023px) {
+  .crewcheck-sidebar-brand { min-height: 2.75rem !important; }
+  .crewcheck-sidebar-logo { width: 2.08rem !important; height: 2.08rem !important; }
+  .crewcheck-sidebar-group-btn,
+  .crewcheck-sidebar-item {
+    min-height: 2.62rem !important;
+    padding-top: .44rem !important;
+    padding-bottom: .44rem !important;
+  }
+  .crewcheck-sidebar-item small,
+  .crewcheck-sidebar-group-btn small { display: none !important; }
+  .crewcheck-sidebar-footer { min-height: 2.35rem !important; padding: .48rem .62rem !important; }
+}
+html.crewcheck-ios .crewcheck-premium-sidebar,
+html.crewcheck-ios .crewcheck-premium-sidebar.is-mobile-open {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+}
+html.crewcheck-ios .crewcheck-sidebar-nav {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
