@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.67",
+  "version": "11.0.69",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.67: resumo sem duplicidade visual, KPIs consolidados e ajuste do painel de resumo na Web/Android/iOS.",
+  "description": "CrewCheck v11.0.69: parser definitivo CrewRosterReport no PC, reconstrução por colunas do PDF e layout desktop premium da escala.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

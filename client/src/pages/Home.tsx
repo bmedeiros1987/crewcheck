@@ -108,7 +108,7 @@ type NativePdfPayload = {
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.67';
+const APP_VERSION = '11.0.69';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -3811,6 +3811,15 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
  onDemoMode: () => void;
  onLogout: () => void;
 }) {
+ const cloudFileInputRef = useRef<HTMLInputElement | null>(null);
+ const openCloudImport = () => {
+  const nativeBridge = (window as any).AndroidCrewCheckNative;
+  if (nativeBridge?.openGoogleDrivePdfPicker) {
+   try { nativeBridge.openGoogleDrivePdfPicker(); return; } catch {}
+  }
+  cloudFileInputRef.current?.click();
+  try { window.setTimeout(() => { if (document.visibilityState === 'visible' && !isProcessing) window.open('https://drive.google.com/drive/my-drive?hl=pt-br', '_blank', 'noopener,noreferrer'); }, 650); } catch {}
+ };
  return (
   <div className="min-h-screen overflow-x-hidden overflow-y-auto bg-[#07111F] text-white crewcheck-import-screen">
    <div className="pointer-events-none fixed inset-0">
@@ -3859,7 +3868,7 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
         </div>
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
          <label className="crewcheck-primary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-2xl transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Importar PDF agora</label>
-         <label className="crewcheck-secondary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-xl transition active:scale-[0.99]"><input type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><CloudUpload className="h-5 w-5" />Google Drive / iCloud</label>
+         <button type="button" onClick={openCloudImport} className="crewcheck-secondary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-xl transition active:scale-[0.99]"><input ref={cloudFileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="hidden" /><CloudUpload className="h-5 w-5" />Google Drive / iCloud</button>
         </div>
 
         <div className="mb-5 rounded-[1.2rem] border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-50/90">

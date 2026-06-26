@@ -61,6 +61,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     // CrewCheck v10.8.49 — Reliable Location, Web permissions, Routes/Directions fallback e iFlight compacto.
     private static final int FILE_CHOOSER_REQUEST_CODE = 4242;
+    private static final int NATIVE_PDF_PICKER_REQUEST_CODE = 4343;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 4545;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
@@ -686,6 +687,18 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean openGoogleDrivePdfPicker() {
+            runOnUiThread(() -> openNativePdfPicker(true));
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean openPdfPicker() {
+            runOnUiThread(() -> openNativePdfPicker(false));
+            return true;
+        }
+
+        @JavascriptInterface
         public boolean requestLocation() {
             runOnUiThread(() -> requestCrewCheckLocationPermission());
             return true;
@@ -1255,6 +1268,40 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException error) {
             Toast.makeText(this, "Não encontrei navegador instalado para abrir o iFlight.", Toast.LENGTH_LONG).show();
         } catch (Exception ignored) {}
+    }
+
+    private void openNativePdfPicker(boolean preferGoogleDrive) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/octet-stream"});
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+
+            if (preferGoogleDrive) {
+                try {
+                    Intent driveIntent = new Intent(intent);
+                    driveIntent.setPackage("com.google.android.apps.docs");
+                    if (driveIntent.resolveActivity(getPackageManager()) != null) {
+                        startActivityForResult(driveIntent, NATIVE_PDF_PICKER_REQUEST_CODE);
+                        Toast.makeText(this, "Abrindo Google Drive para escolher o PDF da escala...", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            Intent chooser = Intent.createChooser(intent, preferGoogleDrive ? "Google Drive / Arquivos - escolher PDF" : "Escolher PDF da escala");
+            startActivityForResult(chooser, NATIVE_PDF_PICKER_REQUEST_CODE);
+        } catch (Exception error) {
+            try {
+                Intent webDrive = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/my-drive?hl=pt-br"));
+                webDrive.addCategory(Intent.CATEGORY_BROWSABLE);
+                startActivity(webDrive);
+            } catch (Exception ignored) {
+                Toast.makeText(this, "Não consegui abrir o Google Drive ou o seletor de arquivos.", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private void handleIncomingPdfIntent(Intent intent) {
@@ -2179,6 +2226,23 @@ try{
             }
             filePathCallback.onReceiveValue(result);
             filePathCallback = null;
+            return;
+        }
+        if (requestCode == NATIVE_PDF_PICKER_REQUEST_CODE) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                Uri uri = data.getData();
+                try {
+                    final int takeFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    getContentResolver().takePersistableUriPermission(uri, takeFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+                try {
+                    readIncomingPdfUri(uri);
+                    Toast.makeText(this, "PDF recebido do Drive/Arquivos. Importando escala...", Toast.LENGTH_LONG).show();
+                } catch (Exception error) {
+                    Toast.makeText(this, error.getMessage() == null ? "Não consegui ler o PDF selecionado." : error.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            }
+            return;
         }
     }
 

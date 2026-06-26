@@ -1082,7 +1082,8 @@ async function parsePdfOnServer({ filename, dataBase64 }) {
  if (!dataBase64 || typeof dataBase64 !== 'string') throw new Error('PDF não recebido pelo servidor.');
  const bytes = decodeBase64PdfPayload(dataBase64);
  if (!bytes.length) throw new Error('PDF vazio.');
- const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
+ const pdfjsImport = await import('pdfjs-dist/legacy/build/pdf.js');
+ const pdfjs = pdfjsImport.default || pdfjsImport;
  const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true, isEvalSupported: false, disableFontFace: true }).promise;
  const pages = [];
  const allItems = [];
@@ -1239,7 +1240,7 @@ function looksLikeDurationV3(time) {
  const normalized = normalizeTimeToken(time);
  // Common duration columns in CrewRosterReport/AIMS. They should never be used
  // as the end time for MT/ASB/HSB/HSBE.
- return ['00:59','01:25','01:40','01:45','01:50','02:00','02:05','02:10','02:15','02:25','02:30','02:40','02:45','02:50','03:00','03:10','03:15','05:20','06:00','06:25','07:30','07:35','07:40','08:55','10:30','10:45','10:55','11:30'].includes(normalized);
+ return ['00:59','01:25','01:40','01:45','01:50','02:00','02:05','02:10','02:15','02:25','02:30','02:40','02:45','02:50','03:10','03:15','03:25','03:35','03:38','03:59','04:00','04:35','04:42','05:20','06:00','06:25','07:30','07:35','07:40','07:55','08:10','08:20','08:55','10:30','10:45','10:55','11:15','11:25','11:30'].includes(normalized);
 }
 
 function uniqueTimesV3(times) {
@@ -1410,16 +1411,196 @@ function inferAimsDebriefV3(tokens, lastLeg) {
  return after[0] || null;
 }
 
+
+function buildServerRosterColumnGroups(pages) {
+ const groups = [];
+ for (const page of pages || []) {
+  const relevant = (page.items || [])
+   .map((item) => ({ ...item, str: cleanRosterLineV3(item.str) }))
+   .filter((item) => item.str && item.x > 70 && item.y > 10 && !/^(LEGEND)$/i.test(item.str));
+  const columns = [];
+  for (const item of relevant.sort((a, b) => a.x - b.x || b.y - a.y)) {
+   let column = columns.find((col) => Math.abs(col.x - item.x) <= 18);
+   if (!column) {
+    column = { x: item.x, page: item.page || page.pageNo, items: [] };
+    columns.push(column);
+   }
+   column.items.push(item);
+   column.x = column.items.reduce((sum, it) => sum + it.x, 0) / column.items.length;
+  }
+  for (const column of columns.sort((a, b) => a.x - b.x)) {
+   const items = column.items.sort((a, b) => b.y - a.y || a.x - b.x);
+   const text = cleanRosterLineV3(items.map((item) => item.str).join(' '));
+   if (!text || /Roster Report|BRUNO|DH\s*:|FH\s*:|01-Jul-2026 to/i.test(text)) continue;
+   if (!/\b(LA\s?\d{3,4}|OP|PS|DH|HSBE?|ASB|RCFI|DOPR|DOP|DOF?|DR|OFF|VC|BSB|GRU|CGH|FOR|CNF|MAB|CPV|VCP|JPA|GYN|FLN|PMW|MAO|BEL|NAT|SSA|CWB|CXJ)\b/i.test(text)) continue;
+   groups.push({ page: column.page, x: column.x, items, text });
+  }
+ }
+ return groups;
+}
+
+function serverDateFromToken(token, fallbackMonth, fallbackYear) {
+ const match = String(token || '').match(/(\d{2})-([A-Za-z]{3})-(\d{4})/);
+ if (!match) return null;
+ return { day: Number(match[1]), month: monthNameToNum(match[2]) || fallbackMonth, year: Number(match[3]) || fallbackYear };
+}
+
+function addDaysToServerDate(marker, days) {
+ const d = new Date(marker.year, marker.month - 1, marker.day, 12, 0, 0, 0);
+ d.setDate(d.getDate() + Number(days || 0));
+ return { day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear() };
+}
+
+function serverDayOffsetFromToken(value) {
+ const m = String(value || '').match(/\(\+(\d+)\)/);
+ return m ? Number(m[1]) || 0 : 0;
+}
+
+function parseServerColumnarGroupToDay(group, currentMarker, base) {
+ const items = group.items || [];
+ const text = group.text || '';
+ if (!currentMarker) return null;
+ const flight = items.find((item) => /^LA\s?\d{3,4}$/i.test(item.str))?.str?.replace(/\s+/g, '').toUpperCase();
+ const activity = text.match(/\b(HSBE|HSB|ASB|RCFI|CRMBSB|CRMB|CRM|C\d{2,3}F|MT|CBF|EMER)\b/i)?.[1]?.toUpperCase();
+ const rest = text.match(/\b(DOPR|DOP|DOF|DO|DR|OFF|VC)\b/i)?.[1]?.toUpperCase();
+ if (flight) return parseServerColumnarFlightDay(group, currentMarker, base, flight);
+ if (activity) return parseServerColumnarActivityDay(group, currentMarker, base, activity);
+ if (rest) {
+  const marker = currentMarker;
+  const day = makeDay(marker.day, marker.month, marker.year, base);
+  day.rawText = text;
+  day.type = rest === 'OFF' || rest === 'VC' || rest.startsWith('DOP') ? 'DO' : rest;
+  day.pairingCode = rest;
+  day.dutyHours = 0;
+  day.flyingHours = 0;
+  return day;
+ }
+ return null;
+}
+
+function parseServerColumnarFlightDay(group, currentMarker, base, flightNumber) {
+ const items = group.items || [];
+ const text = group.text || '';
+ const flightIndex = items.findIndex((item) => /^LA\s?\d{3,4}$/i.test(item.str));
+ const depIndex = items.findIndex((item) => /^[A-Z]{3}\s+\d{1,2}:\d{2}(?:\(\+\d+\))?$/i.test(item.str));
+ if (depIndex < 0) return null;
+ const depMatch = items[depIndex].str.match(/^([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)$/i);
+ if (!depMatch) return null;
+ const origin = depMatch[1].toUpperCase();
+ const rawDeparture = depMatch[2];
+ let destination = '';
+ let rawArrival = '';
+ for (let i = depIndex - 1; i >= 0; i--) {
+  const value = String(items[i].str || '').toUpperCase();
+  if (!destination && /^[A-Z]{3}$/.test(value) && AIRPORTS.has(value)) {
+   destination = value;
+   continue;
+  }
+  if (destination && !rawArrival && /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(value)) {
+   rawArrival = value;
+   break;
+  }
+ }
+ if (!destination || !rawArrival) return null;
+ const offset = Math.max(serverDayOffsetFromToken(rawDeparture), serverDayOffsetFromToken(rawArrival), serverDayOffsetFromToken(items.slice(Math.max(0, flightIndex)).map((item) => item.str).join(' ')));
+ const marker = addDaysToServerDate(currentMarker, offset);
+ const day = makeDay(marker.day, marker.month, marker.year, base);
+ const departureTime = normalizeTimeToken(rawDeparture);
+ const arrivalTime = normalizeTimeToken(rawArrival);
+ const workType = items.find((item) => /^(OP|PS|DH)$/i.test(item.str))?.str?.toUpperCase() || 'OP';
+ const aircraftType = items.find((item) => /^(32S|31R|39R|328|319|320|321|32N)$/i.test(item.str))?.str?.toUpperCase();
+ const reportRaw = flightIndex >= 0 ? items.slice(flightIndex + 1).find((item) => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str))?.str : null;
+ const debriefRaw = items.slice(0, Math.max(0, depIndex - 1)).find((item) => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str) && !looksLikeDurationV3(normalizeTimeToken(item.str)) && normalizeTimeToken(item.str) !== arrivalTime)?.str || null;
+ const isNextDay = serverDayOffsetFromToken(rawArrival) > serverDayOffsetFromToken(rawDeparture) || toMin(arrivalTime) < toMin(departureTime);
+ day.rawText = text;
+ day.type = 'VOO';
+ day.pairingCode = flightNumber;
+ day.dutyReport = reportRaw ? normalizeTimeToken(reportRaw) : departureTime;
+ day.dutyDebrief = debriefRaw ? normalizeTimeToken(debriefRaw) : arrivalTime;
+ day.isNextDay = isNextDay || offset > 0;
+ day.legs = [{ flightNumber, origin, destination, departureTime, arrivalTime, workType, aircraftType, isNextDay, duration: diffHours(departureTime, arrivalTime) }];
+ day.flyingHours = day.legs[0].duration;
+ day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : null;
+ return day;
+}
+
+function parseServerColumnarActivityDay(group, currentMarker, base, rawCode) {
+ const text = group.text || '';
+ const code = rawCode === 'CRMBSB' || rawCode === 'CRMB' || /^C\d{2,3}F$/.test(rawCode) ? 'CRM' : rawCode;
+ const marker = currentMarker;
+ const day = makeDay(marker.day, marker.month, marker.year, base);
+ day.rawText = text;
+ day.pairingCode = code;
+ day.type = code === 'ASB' || code === 'HSB' || code === 'HSBE' ? code : (code === 'RCFI' || code === 'CRM' || code === 'MT' || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');
+ const times = [...text.matchAll(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g)]
+  .map((m) => normalizeTimeToken(m[0]))
+  .filter((time) => time !== '00:00' && !looksLikeDurationV3(time));
+ const unique = uniqueTimesV3(times).sort((a, b) => toMin(a) - toMin(b));
+ day.dutyReport = unique[0] || null;
+ day.dutyDebrief = unique.length > 1 ? unique[unique.length - 1] : null;
+ day.flyingHours = 0;
+ day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : null;
+ return day;
+}
+
+function parseServerRosterReportColumnGroups(pages, h) {
+ const groups = buildServerRosterColumnGroups(pages);
+ const days = [];
+ let currentMarker = null;
+ for (const group of groups) {
+  const dateToken = group.text.match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0] || null;
+  if (dateToken) currentMarker = serverDateFromToken(dateToken, h.month, h.year);
+  if (!currentMarker) continue;
+  if (group.text.includes('<==') && !dateToken) continue;
+  const day = parseServerColumnarGroupToDay(group, currentMarker, h.base);
+  if (!day) continue;
+  if (day.month < h.month - 6) day.year = h.year + 1;
+  days.push(day);
+ }
+ return mergeServerRosterColumnDays(days, h.month, h.year);
+}
+
+function mergeServerRosterColumnDays(days, referenceMonth, referenceYear) {
+ const buckets = new Map();
+ for (const day of days) {
+  if (!day || day.month !== referenceMonth || day.year !== referenceYear) continue;
+  const dateKey = day.date;
+  const minuteKey = day.dutyReport || (day.legs?.[0]?.departureTime) || '99:99';
+  const isFlight = day.type === 'VOO' && day.legs?.length;
+  const key = isFlight ? `${dateKey}|VOO|${minuteKey}` : `${dateKey}|${day.pairingCode || day.type}|${minuteKey}`;
+  const existing = buckets.get(key);
+  if (existing && isFlight) {
+   for (const leg of day.legs) if (!existing.legs.some((old) => old.flightNumber === leg.flightNumber && old.origin === leg.origin && old.departureTime === leg.departureTime)) existing.legs.push(leg);
+   existing.legs.sort((a, b) => toMin(a.departureTime) - toMin(b.departureTime));
+   existing.rawText = `${existing.rawText || ''} ${day.rawText || ''}`.trim();
+   existing.pairingCode = existing.legs[0]?.flightNumber || existing.pairingCode;
+   existing.flyingHours = existing.legs.reduce((sum, leg) => sum + (leg.duration || 0), 0);
+   buckets.set(key, existing);
+  } else if (!existing) {
+   buckets.set(key, day);
+  }
+ }
+ return Array.from(buckets.values());
+}
+
+function scoreServerRosterDays(days) {
+ return (days || []).reduce((score, day) => score + (day.legs?.length || 0) * 3 + (day.pairingCode ? 1 : 0) + (day.type !== 'OTHER' ? 1 : 0), 0);
+}
+
 function parseServerRosterReport(fullText, pages, filename='') {
  const h = parseServerHeader(fullText, filename);
  const blocks = buildRosterDateBlocksV3(fullText);
- const days = [];
+ const textDays = [];
  for (const block of blocks) {
   const month = monthNameToNum(block.monthToken) || h.month;
   const year = Number(block.yearToken) || h.year;
   const parsed = parseCrewRosterBlockV3(Number(block.dayToken), month, year, h.base, block.text);
-  days.push(...parsed);
+  textDays.push(...parsed);
  }
+ const columnDays = parseServerRosterReportColumnGroups(pages, h);
+ const columnFlightCount = columnDays.reduce((sum, day) => sum + (day.legs?.length || 0), 0);
+ const textFlightCount = textDays.reduce((sum, day) => sum + (day.legs?.length || 0), 0);
+ const days = columnDays.length >= 8 && columnFlightCount >= Math.max(4, textFlightCount * 0.55) ? columnDays : (scoreServerRosterDays(columnDays) >= scoreServerRosterDays(textDays) ? columnDays : textDays);
  return { ...h, days, rawText: fullText, totals: extractTotals(fullText) };
 }
 
@@ -13641,45 +13822,29 @@ function parseCrewRosterReportColumnarV108105(pages, fullText = '', filename = '
   header.month = monthNameToNum(periodMatch[2]) || header.month;
   header.year = Number(periodMatch[3]) || header.year;
  }
- const rows = buildColumnarVisualRowsV108105(pages);
- if (!rows.length) throw new Error('Layout columnar não encontrado.');
- const days = [];
- let current = null;
- let prelude = [];
- const pushCurrent = () => {
-  const finished = finalizeColumnarDayV108105(current);
-  if (finished) days.push(finished);
-  current = null;
- };
- for (const row of rows) {
-  const text = cleanColumnarTextV108105(row.text);
-  if (isColumnarIgnorableRowV108105(text)) continue;
-  const dateToken = primaryColumnarDateTokenV108105(text);
-  if (dateToken) {
-   pushCurrent();
-   const parts = dateTokenToPartsV108105(dateToken, header.month, header.year);
-   if (!parts) continue;
-   current = makeDay(parts.day, parts.month, parts.year, header.base);
-   const withoutDate = cleanColumnarTextV108105(text.replace(dateToken, ' '));
-   const raw = cleanColumnarTextV108105([...prelude.slice(-3), withoutDate].join(' '));
-   current.rawText = raw;
-   parseColumnarFlightsIntoDayV108105(current, raw);
-   parseColumnarActivityIntoDayV108105(current, raw);
-   prelude = [];
-   continue;
-  }
-  if (current && (isColumnarContinuationV108105(text) || /\b\d{1,2}:\d{2}(?:\(\+1\))?\b/.test(text) || /\b[A-Z]{3}\b/.test(text))) {
-   current.rawText = cleanColumnarTextV108105(`${current.rawText || ''} ${text}`);
-   parseColumnarFlightsIntoDayV108105(current, current.rawText);
-   parseColumnarActivityIntoDayV108105(current, text);
-  } else if (isColumnarPreludeV108105(text)) {
-   prelude.push(text);
-   if (prelude.length > 4) prelude = prelude.slice(-4);
-  }
+ const groups = buildServerRosterColumnGroups(pages);
+ if (!groups.length) throw new Error('Layout columnar não encontrado.');
+ if (!periodMatch) {
+  const firstToken = groups.map((group) => String(group.text || '').match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0]).find(Boolean);
+  const firstParts = firstToken ? serverDateFromToken(firstToken, header.month, header.year) : null;
+  if (firstParts) { header.month = firstParts.month; header.year = firstParts.year; }
  }
- pushCurrent();
+ const days = [];
+ let currentMarker = null;
+ for (const group of groups.sort((a, b) => a.page - b.page || a.x - b.x)) {
+  const text = cleanColumnarTextV108105(group.text);
+  if (isColumnarIgnorableRowV108105(text) || /Airport stand by|Instructor recycle|Home Stand by|Annual fixed day off|Day off|Requested day off|Pairing\/Flight extends/i.test(text)) continue;
+  const dateToken = text.match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0] || null;
+  if (dateToken) currentMarker = serverDateFromToken(dateToken, header.month, header.year);
+  if (!currentMarker) continue;
+  if (text.includes('<==') && !dateToken) continue;
+  const parsed = parseServerColumnarGroupToDay({ ...group, text }, currentMarker, header.base);
+  if (!parsed) continue;
+  if (parsed.month !== header.month || parsed.year !== header.year) continue;
+  days.push(parsed);
+ }
  const roster = { ...header, days: dedupeAndSortColumnarDaysV108105(days), rawText: fullText, totals: extractTotals(fullText) };
- if (process.env.CREWCHECK_DEBUG_PARSER === 'true') console.warn('CrewCheck columnar parser debug', { rows: rows.length, days: roster.days.length, sample: roster.days.map((d) => `${d.date} ${d.type} ${d.pairingCode} ${d.dutyReport || ''}-${d.dutyDebrief || ''} L${d.legs?.length || 0} ${(d.legs||[]).map(l=>l.flightNumber+':'+l.origin+'-'+l.destination+'@'+l.departureTime+'/'+l.arrivalTime).join(',')}`).slice(0, 32) });
+ if (process.env.CREWCHECK_DEBUG_PARSER === 'true') console.warn('CrewCheck columnar parser debug', { rows: groups.length, days: roster.days.length, sample: roster.days.map((d) => `${d.date} ${d.type} ${d.pairingCode} ${d.dutyReport || ''}-${d.dutyDebrief || ''} L${d.legs?.length || 0} ${(d.legs||[]).map(l=>l.flightNumber+':'+l.origin+'-'+l.destination+'@'+l.departureTime+'/'+l.arrivalTime).join(',')}`).slice(0, 42) });
  if (!roster.days.length) throw new Error('Nenhum evento lido no layout columnar CrewRosterReport.');
  return roster;
 }
@@ -13713,7 +13878,7 @@ parsePdfOnServer = async function parsePdfOnServerV108105({ filename, dataBase64
   visual = buildServerFullText(pages);
   linear = pages.map((page) => page.items.map((item) => item.str).join('\n')).join('\n');
   if (/Roster\s+Report/i.test(visual + '\n' + linear)) {
-   try { candidates.push({ source: 'crewroster-columnar-mac-v108105', roster: parseCrewRosterReportColumnarV108105(pages, visual || linear, filename) }); } catch (error) { tried.push(`crewroster-columnar-mac-v108105: ${error?.message || error}`); }
+   try { candidates.push({ source: 'crewroster-columnar-mac-v108105', roster: parseCrewRosterReportColumnarV108105(pages, `${visual || ''}\n${linear || ''}`, filename) }); } catch (error) { tried.push(`crewroster-columnar-mac-v108105: ${error?.message || error}`); }
   }
  } catch (error) {
   tried.push(`pdfjs-columnar: ${error?.message || error}`);

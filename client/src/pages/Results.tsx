@@ -139,6 +139,33 @@ type RosterDayGroup = {
   events: RosterEvent[];
 };
 
+type RosterMonthOption = { key: string; label: string; count: number };
+
+function rosterMonthKeyFromDate(date: Date | null | undefined): string {
+  if (!isValidCrewDateObject(date)) return 'unknown';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function rosterMonthLabelFromKey(key: string): string {
+  const [yearRaw, monthRaw] = String(key || '').split('-');
+  const month = Number(monthRaw);
+  const year = Number(yearRaw);
+  if (!month || !year) return 'Período não identificado';
+  return `${MONTHS_PT[month - 1] || String(month).padStart(2, '0')} ${year}`;
+}
+
+function buildRosterMonthOptions(events: RosterEvent[]): RosterMonthOption[] {
+  const map = new Map<string, RosterMonthOption>();
+  events.forEach((event) => {
+    const key = rosterMonthKeyFromDate(event.date);
+    if (key === 'unknown') return;
+    const current = map.get(key);
+    if (current) current.count += 1;
+    else map.set(key, { key, label: rosterMonthLabelFromKey(key), count: 1 });
+  });
+  return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
 const MONTHS_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const MONTHS_SHORT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 const WEEKDAYS_SHORT = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
@@ -183,6 +210,7 @@ export default function Results() {
   const [gym, setGym] = useState<GymRecommendation[]>([]);
   const [query, setQuery] = useState("");
   const [dutyType, setDutyType] = useState("Todos");
+  const [selectedMonthKey, setSelectedMonthKey] = useState("all");
   const [activeView, setActiveView] = useState<ViewKey>(() => loadInitialResultsView());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
@@ -314,17 +342,24 @@ export default function Results() {
   }, [roster]);
 
   const events = useMemo(() => (roster ? buildRosterEvents(roster) : []), [roster]);
+  const monthOptions = useMemo(() => buildRosterMonthOptions(events), [events]);
+  useEffect(() => {
+    if (selectedMonthKey === 'all') return;
+    if (!monthOptions.some((option) => option.key === selectedMonthKey)) setSelectedMonthKey('all');
+  }, [selectedMonthKey, monthOptions]);
   const rosterIsStale = useMemo(() => isRosterStaleForLive(roster), [roster]);
   const firstEventId = useMemo(() => (rosterIsStale ? undefined : getRosterFocusEvent(events)?.id), [events, rosterIsStale]);
 
   const filteredEvents = useMemo(() => {
     const normalizedQuery = normalize(query);
     return events.filter((event) => {
+      const eventMonthKey = rosterMonthKeyFromDate(event.date);
+      const matchesMonth = selectedMonthKey === 'all' || eventMonthKey === selectedMonthKey;
       const matchesType = dutyType === "Todos" || event.typeLabel === dutyType;
       const haystack = normalize(`${event.activity} ${event.subtitle} ${event.code} ${event.dateLabel} ${event.typeLabel}`);
-      return matchesType && (!normalizedQuery || haystack.includes(normalizedQuery));
+      return matchesMonth && matchesType && (!normalizedQuery || haystack.includes(normalizedQuery));
     });
-  }, [events, query, dutyType]);
+  }, [events, query, dutyType, selectedMonthKey]);
 
   const filteredDayGroups = useMemo(() => buildDailyRosterGroups(filteredEvents), [filteredEvents]);
 
@@ -670,8 +705,7 @@ export default function Results() {
               <section className="crewcheck-roster-workspace space-y-4">
                 {appMode && <AndroidFeatureShortcuts activeView={activeView} onChange={switchView} errors={errors.length} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />}
                 <RosterQuickToolbar onOpenSummary={() => switchView("summary")} onOpenFilters={() => { const box = document.getElementById("crewcheck-roster-filters"); box?.classList.toggle("hidden"); }} onDeleteMonth={handleDeleteCurrentMonth} />
-                <div id="crewcheck-roster-filters" className="hidden"><RosterFilters roster={roster} query={query} setQuery={setQuery} dutyType={dutyType} setDutyType={setDutyType} uniqueTypes={uniqueTypes} /></div>
-                <DesktopRosterTable groups={filteredDayGroups} todayId={firstEventId} routineSuggestions={routineSuggestions} />
+                <div id="crewcheck-roster-filters" className="hidden"><RosterFilters roster={roster} query={query} setQuery={setQuery} dutyType={dutyType} setDutyType={setDutyType} uniqueTypes={uniqueTypes} selectedMonthKey={selectedMonthKey} setSelectedMonthKey={setSelectedMonthKey} monthOptions={monthOptions} /></div>
                 <MobileRosterList groups={filteredDayGroups} todayId={firstEventId} roster={roster} routineSuggestions={routineSuggestions} />
               </section>
             )}
@@ -1026,34 +1060,37 @@ function LegalProfileBanner({ profile }: { profile: ComplianceResult['legalProfi
   );
 }
 
-function RosterFilters({ roster, query, setQuery, dutyType, setDutyType, uniqueTypes }: { roster: CrewRoster; query: string; setQuery: (value: string) => void; dutyType: string; setDutyType: (value: string) => void; uniqueTypes: string[] }) {
+function RosterFilters({ roster, query, setQuery, dutyType, setDutyType, uniqueTypes, selectedMonthKey, setSelectedMonthKey, monthOptions }: { roster: CrewRoster; query: string; setQuery: (value: string) => void; dutyType: string; setDutyType: (value: string) => void; uniqueTypes: string[]; selectedMonthKey: string; setSelectedMonthKey: (value: string) => void; monthOptions: RosterMonthOption[] }) {
   const sorted = [...roster.days].sort((a, b) => parseRosterDate(a.date, fallbackRosterDate(roster.month, roster.year)).getTime() - parseRosterDate(b.date, fallbackRosterDate(roster.month, roster.year)).getTime());
   const fromDate = sorted[0]?.date || `01/${String(roster.month).padStart(2, "0")}/${roster.year}`;
   const toDate = sorted[sorted.length - 1]?.date || `${daysInMonth(roster.month, roster.year)}/${String(roster.month).padStart(2, "0")}/${roster.year}`;
   return (
     <div className="rounded-[1.25rem] border border-white bg-white p-4 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <Field label="Month">
-          <div className="flex items-center justify-between rounded-xl border border-[#d8e4ee] bg-white px-3 py-2.5 text-sm font-semibold">
-            <span>{MONTHS_PT[roster.month - 1]} {roster.year}</span>
-            <ChevronDown className="h-4 w-4 text-[#7890a4]" />
+        <Field label="Mês / período">
+          <div className="relative">
+            <select value={selectedMonthKey} onChange={(event) => setSelectedMonthKey(event.target.value)} className="h-[42px] w-full appearance-none rounded-xl border border-[#d8e4ee] bg-white px-3 pr-9 text-sm font-semibold text-[#092846] outline-none focus:border-blue-400">
+              <option value="all">Todos os meses da escala</option>
+              {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label} · {option.count} item(ns)</option>)}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7890a4]" />
           </div>
         </Field>
-        <Field label="From Date">
+        <Field label="De">
           <div className="rounded-xl border border-[#d8e4ee] bg-white px-3 py-2.5 text-sm">{fromDate}</div>
         </Field>
-        <Field label="To Date">
+        <Field label="Até">
           <div className="rounded-xl border border-[#d8e4ee] bg-white px-3 py-2.5 text-sm">{toDate}</div>
         </Field>
-        <Field label="Duty Type">
+        <Field label="Tipo">
           <select value={dutyType} onChange={(event) => setDutyType(event.target.value)} className="h-[42px] w-full rounded-xl border border-[#d8e4ee] bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400">
             {uniqueTypes.map((type) => <option key={type}>{type}</option>)}
           </select>
         </Field>
-        <Field label="Search">
+        <Field label="Buscar">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7890a4]" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search flights, routes, codes..." className="h-[42px] w-full rounded-xl border border-[#d8e4ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar voo, rota, código ou data..." className="h-[42px] w-full rounded-xl border border-[#d8e4ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
           </div>
         </Field>
       </div>
@@ -2685,11 +2722,11 @@ function MobileRosterList({ groups, todayId, roster, routineSuggestions }: { gro
     return () => { window.clearTimeout(first); window.clearTimeout(second); };
   }, [todayId, targetDateLabel]);
   return (
-    <div ref={rootRef} className="lg:hidden android-roster-list">
+    <div ref={rootRef} className="android-roster-list crewcheck-roster-premium-list">
       <div className="mb-3 overflow-hidden rounded-[1.25rem] border border-white bg-white shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
         <div className="flex items-center justify-between px-4 py-3">
           <div>
-            <p className="text-[0.62rem] uppercase tracking-[0.24em] text-sky-600">Minha escala</p>
+            <p className="text-[0.62rem] font-black uppercase tracking-[0.24em] text-sky-600">Minha escala premium</p>
             <h2 className="text-lg font-black text-[#092846]">{MONTHS_PT[roster.month - 1]} {roster.year}</h2>
           </div>
           <span className="rounded-full bg-[#eef5fb] px-3 py-1 text-xs font-black text-[#425a72]">{groups.length} dias</span>
