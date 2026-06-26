@@ -1,0 +1,197 @@
+name: Build CrewCheck Android AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+env:
+  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+  ANDROID_HOME: ${{ github.workspace }}/android-sdk
+  GRADLE_VERSION: "8.10.2"
+  CREWCHECK_RELEASE_TAG: "crewcheck-android-v11.0.80-latest"
+  CREWCHECK_RELEASE_NAME: "CrewCheck Android v11.0.80 latest"
+
+jobs:
+  android:
+    name: Android signed APK/AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      KEYSTORE_B64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+      LEGACY_KEYSTORE_B64: ${{ secrets.CREWCHECK_UPLOAD_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout repository without JavaScript actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          git init -b main .
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
+          git log --oneline -1
+
+      - name: Validate required signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE_CONTENT="${KEYSTORE_B64:-${LEGACY_KEYSTORE_B64:-${ANDROID_KEYSTORE_B64:-$ANDROID_UPLOAD_KEYSTORE_B64}}}"
+          MISSING=0
+          if [ -z "${KEYSTORE_CONTENT}" ]; then echo "::error::Secret CREWCHECK_KEYSTORE_BASE64 não configurado."; MISSING=1; fi
+          STORE_PASSWORD="${STORE_PASSWORD:-$ANDROID_STORE_PASSWORD}"
+          KEY_ALIAS="${KEY_ALIAS:-$ANDROID_KEY_ALIAS}"
+          KEY_PASSWORD="${KEY_PASSWORD:-$ANDROID_KEY_PASSWORD}"
+          echo "STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          if [ -z "${STORE_PASSWORD:-}" ]; then echo "::error::Secret CREWCHECK_STORE_PASSWORD ou ANDROID_KEYSTORE_PASSWORD não configurado."; MISSING=1; fi
+          if [ -z "${KEY_ALIAS:-}" ]; then echo "::error::Secret CREWCHECK_KEY_ALIAS ou ANDROID_KEY_ALIAS não configurado."; MISSING=1; fi
+          if [ -z "${KEY_PASSWORD:-}" ]; then echo "::error::Secret CREWCHECK_KEY_PASSWORD ou ANDROID_KEY_PASSWORD não configurado."; MISSING=1; fi
+          if [ "$MISSING" -ne 0 ]; then
+            echo "Configure os 4 secrets em Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "Secrets de assinatura encontrados. Prosseguindo com build assinado."
+
+      - name: Install Java, Android SDK and Gradle without Node actions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip zip jq openjdk-17-jdk
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> "$GITHUB_ENV"
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> "$GITHUB_PATH"
+
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/android-cmdline-tools.zip
+          rm -rf /tmp/android-cmdline-tools
+          mkdir -p /tmp/android-cmdline-tools
+          unzip -q /tmp/android-cmdline-tools.zip -d /tmp/android-cmdline-tools
+          mv /tmp/android-cmdline-tools/cmdline-tools "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/build-tools/35.0.0" >> "$GITHUB_PATH"
+
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip
+          rm -rf "$HOME/gradle"
+          mkdir -p "$HOME/gradle"
+          unzip -q /tmp/gradle.zip -d "$HOME/gradle"
+          echo "$HOME/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Decode and validate signing keystore
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KEYSTORE_CONTENT="${KEYSTORE_B64:-${LEGACY_KEYSTORE_B64:-${ANDROID_KEYSTORE_B64:-$ANDROID_UPLOAD_KEYSTORE_B64}}}"
+          printf '%s' "$KEYSTORE_CONTENT" | base64 -d > "$GITHUB_WORKSPACE/crewcheck-upload.jks"
+          test -s "$GITHUB_WORKSPACE/crewcheck-upload.jks"
+          keytool -list \
+            -keystore "$GITHUB_WORKSPACE/crewcheck-upload.jks" \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            -v | tee /tmp/crewcheck-keystore-info.txt
+          grep -q "SHA256:" /tmp/crewcheck-keystore-info.txt
+
+      - name: Diagnostics
+        shell: bash
+        run: |
+          set -euxo pipefail
+          java -version
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --list | head -n 80 || true
+          "$HOME/gradle/gradle-${GRADLE_VERSION}/bin/gradle" -v
+          test -f android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          grep -n "versionCode\|versionName" android-wrapper/app/build.gradle
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$HOME/gradle/gradle-${GRADLE_VERSION}/bin/gradle" -p android-wrapper :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Build signed release APK/AAB
+        shell: bash
+        env:
+          CREWCHECK_STORE_FILE: ${{ github.workspace }}/crewcheck-upload.jks
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: |
+          set -euxo pipefail
+          "$HOME/gradle/gradle-${GRADLE_VERSION}/bin/gradle" -p android-wrapper :app:assembleRelease :app:bundleRelease --stacktrace --no-daemon \
+            -PCREWCHECK_STORE_FILE="$CREWCHECK_STORE_FILE" \
+            -PCREWCHECK_STORE_PASSWORD="$CREWCHECK_STORE_PASSWORD" \
+            -PCREWCHECK_KEY_ALIAS="$CREWCHECK_KEY_ALIAS" \
+            -PCREWCHECK_KEY_PASSWORD="$CREWCHECK_KEY_PASSWORD"
+
+      - name: Verify signed release outputs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          RELEASE_AAB="android-wrapper/app/build/outputs/bundle/release/app-release.aab"
+          RELEASE_APK="android-wrapper/app/build/outputs/apk/release/app-release.apk"
+          test -f "$RELEASE_AAB"
+          test -f "$RELEASE_APK"
+          jarsigner -verify -verbose -certs "$RELEASE_AAB" | tee /tmp/aab-verify.txt
+          grep -E "jar verified|s = signature was verified" /tmp/aab-verify.txt || true
+
+      - name: Collect APK/AAB files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf android-artifacts
+          mkdir -p android-artifacts
+          find android-wrapper/app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -print -exec cp {} android-artifacts/ \;
+          ls -lah android-artifacts
+          test "$(find android-artifacts -type f | wc -l)" -gt 0
+
+      - name: Publish APK/AAB as GitHub release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          TAG="$CREWCHECK_RELEASE_TAG"
+          NAME="$CREWCHECK_RELEASE_NAME"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+
+          EXISTING_ID="$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG" | jq -r '.id // empty')"
+          if [ -n "$EXISTING_ID" ]; then
+            curl -sS -X DELETE -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/$EXISTING_ID" || true
+          fi
+          git push origin ":refs/tags/$TAG" || true
+
+          RELEASE_JSON="$(jq -n --arg tag "$TAG" --arg name "$NAME" --arg target "$GITHUB_SHA" '{tag_name:$tag,name:$name,target_commitish:$target,body:"APK/AAB assinados gerados automaticamente pelo CrewCheck Android workflow.",draft:false,prerelease:false}')"
+          CREATED="$(curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -d "$RELEASE_JSON" "$API/releases")"
+          UPLOAD_URL="$(echo "$CREATED" | jq -r '.upload_url' | sed 's/{?name,label}//')"
+          test -n "$UPLOAD_URL"
+
+          for file in android-artifacts/*; do
+            name="$(basename "$file")"
+            curl -sS -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file" \
+              "$UPLOAD_URL?name=$name" | jq -r '.name // .message'
+          done
+
+          echo "Release publicado: https://github.com/${GITHUB_REPOSITORY}/releases/tag/$TAG"
