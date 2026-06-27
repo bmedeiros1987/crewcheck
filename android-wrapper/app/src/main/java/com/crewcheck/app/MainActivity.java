@@ -5,16 +5,13 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.ClipData;
 import android.app.PendingIntent;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.NotificationChannel;
 import android.graphics.Color;
 import android.net.Uri;
-import android.database.Cursor;
 import android.provider.Settings;
-import android.provider.OpenableColumns;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -632,7 +629,7 @@ public class MainActivity extends Activity {
                 "try{AndroidCrewCheckIFlight.openPortalAndImport(String(url),JSON.stringify(options||{}),id);}catch(e){resolve({ok:false,error:String(e&&e.message||e)});}" +
                 "});" +
                 "}};" +
-                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},openPdfPicker:function(){try{return AndroidCrewCheckNative.openPdfPicker();}catch(e){return false;}},openGoogleDrivePdfPicker:function(){try{return AndroidCrewCheckNative.openGoogleDrivePdfPicker();}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
                 "window.CrewCheckPremium=window.CrewCheckNative;" +
                 "try{window.dispatchEvent(new CustomEvent('crewcheck:native-ready',{detail:window.CrewCheckNative.permissionStatus()}));}catch(e){}" +
                 "})();";
@@ -1273,40 +1270,36 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
-    private Intent buildCloudPdfIntent(String action, boolean preferGoogleDrive, boolean drivePackage) {
-        Intent intent = new Intent(action);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/pdf");
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/octet-stream", "application/x-pdf", "*/*"});
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false);
-        intent.putExtra(Intent.EXTRA_LOCAL_ONLY, false);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        if (preferGoogleDrive && drivePackage) intent.setPackage("com.google.android.apps.docs");
-        return intent;
-    }
-
     private void openNativePdfPicker(boolean preferGoogleDrive) {
         try {
-            Intent baseIntent = buildCloudPdfIntent(Intent.ACTION_OPEN_DOCUMENT, preferGoogleDrive, false);
-            Intent chooser = Intent.createChooser(baseIntent, preferGoogleDrive ? "Escolher PDF no Drive / Arquivos" : "Escolher PDF da escala");
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/octet-stream"});
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+
             if (preferGoogleDrive) {
                 try {
-                    Intent driveIntent = buildCloudPdfIntent(Intent.ACTION_OPEN_DOCUMENT, true, true);
-                    Intent getContentIntent = buildCloudPdfIntent(Intent.ACTION_GET_CONTENT, false, false);
-                    chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{driveIntent, getContentIntent});
+                    Intent driveIntent = new Intent(intent);
+                    driveIntent.setPackage("com.google.android.apps.docs");
+                    if (driveIntent.resolveActivity(getPackageManager()) != null) {
+                        startActivityForResult(driveIntent, NATIVE_PDF_PICKER_REQUEST_CODE);
+                        Toast.makeText(this, "Abrindo Google Drive para escolher o PDF da escala...", Toast.LENGTH_LONG).show();
+                        return;
+                    }
                 } catch (Exception ignored) {}
             }
+
+            Intent chooser = Intent.createChooser(intent, preferGoogleDrive ? "Google Drive / Arquivos - escolher PDF" : "Escolher PDF da escala");
             startActivityForResult(chooser, NATIVE_PDF_PICKER_REQUEST_CODE);
-            Toast.makeText(this, "Selecione o PDF original da escala em Drive, Downloads, Arquivos ou iCloud. Não use somente a prévia.", Toast.LENGTH_LONG).show();
         } catch (Exception error) {
             try {
-                Intent fallback = buildCloudPdfIntent(Intent.ACTION_GET_CONTENT, false, false);
-                startActivityForResult(Intent.createChooser(fallback, "Escolher PDF da escala"), NATIVE_PDF_PICKER_REQUEST_CODE);
+                Intent webDrive = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/my-drive?hl=pt-br"));
+                webDrive.addCategory(Intent.CATEGORY_BROWSABLE);
+                startActivity(webDrive);
             } catch (Exception ignored) {
-                Toast.makeText(this, "Não consegui abrir Drive/Arquivos. Baixe o PDF e use Compartilhar > CrewCheck.", Toast.LENGTH_LONG).show();
-                dispatchNativePdfError("ANDROID_PICKER_UNAVAILABLE", "Não consegui abrir Drive/Arquivos. Baixe o PDF no aparelho e use Compartilhar > CrewCheck.");
+                Toast.makeText(this, "Não consegui abrir o Google Drive ou o seletor de arquivos.", Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -1319,101 +1312,39 @@ public class MainActivity extends Activity {
             if (Intent.ACTION_SEND.equals(action)) {
                 Object stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
                 if (stream instanceof Uri) uri = (Uri) stream;
-            } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
-                ClipData clipData = intent.getClipData();
-                if (clipData != null && clipData.getItemCount() > 0) uri = clipData.getItemAt(0).getUri();
             } else if (Intent.ACTION_VIEW.equals(action)) {
                 uri = intent.getData();
             }
-            if (uri == null && intent.getClipData() != null && intent.getClipData().getItemCount() > 0) {
-                uri = intent.getClipData().getItemAt(0).getUri();
-            }
             if (uri == null) return;
-            tryTakeReadPermission(intent, uri);
-            readIncomingPdfUriAsync(uri, "PDF recebido pelo compartilhamento. Importando no CrewCheck...", "ANDROID_SHARE_READ_FAILED");
+            readIncomingPdfUri(uri);
         } catch (Exception error) {
-            String message = error.getMessage() == null ? "Não consegui receber o PDF compartilhado." : error.getMessage();
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-            dispatchNativePdfError("ANDROID_SHARE_READ_FAILED", message);
+            Toast.makeText(this, "Não consegui receber o PDF compartilhado.", Toast.LENGTH_LONG).show();
         }
-    }
-
-    private void tryTakeReadPermission(Intent intent, Uri uri) {
-        try {
-            if (intent == null || uri == null) return;
-            final int takeFlags = intent.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            if ((takeFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
-                getContentResolver().takePersistableUriPermission(uri, takeFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private void readIncomingPdfUriAsync(final Uri uri, final String successToast, final String errorCode) {
-        new Thread(() -> {
-            try {
-                readIncomingPdfUri(uri);
-                runOnUiThread(() -> {
-                    try { Toast.makeText(this, successToast == null || successToast.trim().isEmpty() ? "PDF recebido. Importando no CrewCheck..." : successToast, Toast.LENGTH_LONG).show(); } catch (Exception ignored) {}
-                });
-            } catch (Exception error) {
-                final String message = error.getMessage() == null ? "Não consegui ler o PDF selecionado." : error.getMessage();
-                runOnUiThread(() -> {
-                    try { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); } catch (Exception ignored) {}
-                    dispatchNativePdfError(errorCode == null || errorCode.trim().isEmpty() ? "ANDROID_PDF_READ_FAILED" : errorCode, message);
-                });
-            }
-        }).start();
-    }
-
-    private String getDisplayNameForUri(Uri uri) {
-        String filename = null;
-        try {
-            Cursor cursor = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null);
-            if (cursor != null) {
-                try {
-                    if (cursor.moveToFirst()) {
-                        int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                        if (index >= 0) filename = cursor.getString(index);
-                    }
-                } finally {
-                    cursor.close();
-                }
-            }
-        } catch (Exception ignored) {}
-        if (filename == null || filename.trim().isEmpty()) {
-            String last = uri == null ? null : uri.getLastPathSegment();
-            if (last != null && last.trim().length() > 0) filename = last.substring(Math.max(0, last.lastIndexOf('/') + 1));
-        }
-        if (filename == null || filename.trim().isEmpty()) filename = "CrewCheck_escala.pdf";
-        filename = filename.replaceAll("[\r\n\t]+", " ").trim();
-        if (!filename.toLowerCase(Locale.US).endsWith(".pdf")) filename = filename + ".pdf";
-        return filename;
     }
 
     private void readIncomingPdfUri(Uri uri) throws Exception {
-        String filename = getDisplayNameForUri(uri);
+        String filename = "iFlight_RosterReport.pdf";
+        String last = uri.getLastPathSegment();
+        if (last != null && last.toLowerCase(Locale.US).contains("pdf")) filename = last.substring(Math.max(0, last.lastIndexOf('/') + 1));
         InputStream input = getContentResolver().openInputStream(uri);
-        if (input == null) throw new Exception("PDF sem conteúdo. Baixe o arquivo offline no aparelho e tente novamente.");
+        if (input == null) throw new Exception("PDF sem conteúdo.");
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
         int total = 0;
         int read;
-        try {
-            while ((read = input.read(buffer)) != -1) {
-                total += read;
-                if (total > MAX_PDF_BYTES) throw new Exception("PDF maior que 35 MB.");
-                output.write(buffer, 0, read);
-            }
-        } finally {
-            try { input.close(); } catch (Exception ignored) {}
+        while ((read = input.read(buffer)) != -1) {
+            total += read;
+            if (total > MAX_PDF_BYTES) throw new Exception("PDF maior que 35 MB.");
+            output.write(buffer, 0, read);
         }
+        input.close();
         byte[] bytes = output.toByteArray();
         if (bytes.length < 4 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F') {
-            throw new Exception("Arquivo recebido não parece ser PDF. No Drive, abra o menu do arquivo e use Baixar ou Compartilhar > CrewCheck.");
+            throw new Exception("Arquivo recebido não parece ser PDF.");
         }
         pendingSharedPdfName = filename;
         pendingSharedPdfBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
-        runOnUiThread(() -> dispatchPendingSharedPdf());
+        dispatchPendingSharedPdf();
     }
 
     private void returnPdfBase64FromPortal(final String filename, final String dataBase64) {
@@ -1474,41 +1405,19 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void dispatchNativePdfError(String code, String message) {
-        if (webView == null) return;
-        try {
-            JSONObject payload = new JSONObject();
-            payload.put("ok", false);
-            payload.put("code", code == null ? "ANDROID_PDF_ERROR" : code);
-            payload.put("message", message == null || message.trim().isEmpty() ? "Não consegui acessar o PDF selecionado." : message);
-            String js = "(function(){try{var payload=" + payload.toString() + ";" +
-                    "window.__crewcheckPendingNativePdfError=payload;" +
-                    "try{localStorage.setItem('crewcheck_pending_native_pdf_error_v1',JSON.stringify(payload));}catch(e){}" +
-                    "window.dispatchEvent(new CustomEvent('crewcheck:native-pdf-error',{detail:payload}));" +
-                    "if(location.pathname!=='/'&&location.pathname!==''){location.href='/?app=1&nativePdfError=1';}" +
-                    "}catch(e){}})();";
-            webView.evaluateJavascript(js, null);
-        } catch (Exception ignored) {}
-    }
-
     private void dispatchPendingSharedPdf() {
         if (webView == null || pendingSharedPdfBase64 == null) return;
         try {
             JSONObject payload = new JSONObject();
             payload.put("ok", true);
-            payload.put("filename", pendingSharedPdfName == null ? "CrewCheck_escala.pdf" : pendingSharedPdfName);
-            payload.put("sourceFileName", pendingSharedPdfName == null ? "CrewCheck_escala.pdf" : pendingSharedPdfName);
+            payload.put("filename", pendingSharedPdfName == null ? "iFlight_RosterReport.pdf" : pendingSharedPdfName);
+            payload.put("sourceFileName", pendingSharedPdfName == null ? "iFlight_RosterReport.pdf" : pendingSharedPdfName);
             payload.put("dataBase64", pendingSharedPdfBase64);
-            String js = "(function(){try{var payload=" + payload.toString() + ";" +
-                    "window.__crewcheckPendingNativePdf=payload;" +
-                    "try{localStorage.setItem('crewcheck_pending_native_pdf_v1',JSON.stringify(payload));}catch(e){}" +
-                    "if(location.pathname!=='/'&&location.pathname!==''){location.href='/?app=1&nativePdf=1';return;}" +
-                    "window.dispatchEvent(new CustomEvent('crewcheck:native-pdf',{detail:payload}));" +
-                    "}catch(e){}})();";
+            String js = "(function(){var payload=" + payload.toString() + ";window.__crewcheckPendingNativePdf=payload;window.dispatchEvent(new CustomEvent('crewcheck:native-pdf',{detail:payload}));})();";
             webView.evaluateJavascript(js, null);
             pendingSharedPdfBase64 = null;
             pendingSharedPdfName = null;
-            Toast.makeText(this, "PDF recebido. Importando no CrewCheck...", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Dados recebidos pelo CrewCheck. Importando escala...", Toast.LENGTH_LONG).show();
         } catch (Exception ignored) {}
     }
 
@@ -2320,19 +2229,18 @@ try{
             return;
         }
         if (requestCode == NATIVE_PDF_PICKER_REQUEST_CODE) {
-            if (resultCode == Activity.RESULT_OK && data != null) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
                 Uri uri = data.getData();
-                if (uri == null && data.getClipData() != null && data.getClipData().getItemCount() > 0) {
-                    uri = data.getClipData().getItemAt(0).getUri();
+                try {
+                    final int takeFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    getContentResolver().takePersistableUriPermission(uri, takeFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+                try {
+                    readIncomingPdfUri(uri);
+                    Toast.makeText(this, "PDF recebido do Drive/Arquivos. Importando escala...", Toast.LENGTH_LONG).show();
+                } catch (Exception error) {
+                    Toast.makeText(this, error.getMessage() == null ? "Não consegui ler o PDF selecionado." : error.getMessage(), Toast.LENGTH_LONG).show();
                 }
-                if (uri == null) {
-                    String message = "O Android não devolveu o arquivo selecionado. No Drive, use Baixar ou Compartilhar > CrewCheck.";
-                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-                    dispatchNativePdfError("ANDROID_PICKER_EMPTY_URI", message);
-                    return;
-                }
-                tryTakeReadPermission(data, uri);
-                readIncomingPdfUriAsync(uri, "PDF recebido do Drive/Arquivos. Importando escala...", "ANDROID_PICKER_READ_FAILED");
             }
             return;
         }

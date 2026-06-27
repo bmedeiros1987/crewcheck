@@ -1,4 +1,4 @@
-# CrewCheck v11.0.81 — Regulamentação de jornada e conformidade premium
+# CrewCheck v11.0.82 — Regulamentação de jornada e conformidade premium
 
 Esta versão refina o Concierge Telegram para soar como uma resposta direta de uma pessoa por áudio, sem ler a escala de forma literal. O áudio agora usa texto próprio para fala, mais curto e natural, enquanto a mensagem escrita continua completa para conferência.
 

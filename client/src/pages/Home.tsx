@@ -10,7 +10,6 @@ import {
  Building2,
  CalendarDays,
  Camera,
- Calculator,
  Car,
  CheckCircle2,
  ChevronRight,
@@ -66,10 +65,10 @@ import { analyzeCompliance, getGymRecommendations, type ComplianceResult, type G
 import { detectAndMarkLayovers } from '@/lib/layoverDetection';
 import { normalizeRosterSchedule } from '@/lib/rosterNormalizer';
 import type { CrewRoleSelection } from '@/lib/actRules';
-import { parsePDF, type CrewRoster, type RosterDay } from '@/lib/pdfParser';
+import { parsePDF, type CrewRoster } from '@/lib/pdfParser';
 import { getStoredUser, getToken, logout } from '@/lib/authClient';
 import { syncPendingRosters, getPendingOfflineCount, saveRosterOfflineFirst } from '@/lib/offlineSync';
-import { getDatabaseStatus, listSavedRosters, openSavedRoster, saveRosterAnalysis, type DatabaseStatus, type SavedRosterSummary } from '@/lib/databaseClient';
+import { getDatabaseStatus, listSavedRosters, openSavedRoster, saveRosterAnalysis, activateRosterAnalysis, deleteRosterAnalysis, type DatabaseStatus, type SavedRosterSummary } from '@/lib/databaseClient';
 import { exportReport } from '@/lib/pdfExport';
 import { applyDocumentLanguage, getSavedLanguage, saveCrewLanguage, type CrewLanguage } from '@/lib/i18n';
 import { downloadCalendarFile, generateICalendar } from '@/lib/calendarExport';
@@ -93,7 +92,7 @@ import IFlightIntegrationView from '../components/premium/IFlightIntegrationView
 import CabinChiefAssistant from '../components/premium/CabinChiefAssistant';
 import { cancelBillingSubscription, createBillingCheckout, formatBillingValue, getBillingStatus, regularizePremiumTrial, startPremiumTrial, billingStatusLabel, type BillingCheckoutBillingType, type BillingCheckoutResponse, type BillingStatus } from '@/lib/billingClient';
 
-type HomeView = 'home' | 'import' | 'history' | 'archiveview' | 'calendar' | 'billing' | 'iflight' | 'flightboard' | 'departure' | 'routine' | 'regulation' | 'perdiem' | 'salary' | 'currency' | 'parking' | 'c32f' | 'settings' | 'support' | 'notes' | 'chief' | 'medical' | 'bids' | 'admin' | 'systemstatus' | 'more';
+type HomeView = 'home' | 'import' | 'history' | 'calendar' | 'billing' | 'iflight' | 'flightboard' | 'departure' | 'routine' | 'perdiem' | 'salary' | 'currency' | 'parking' | 'c32f' | 'settings' | 'support' | 'notes' | 'chief' | 'medical' | 'bids' | 'admin' | 'systemstatus' | 'more';
 type CrewCheckBottomActive = 'home' | 'roster' | 'vivo' | 'iflight' | 'flightboard' | 'departure' | 'settings' | 'more';
 type CrewThemeMode = 'light' | 'dark' | 'system';
 type ResultsView = 'summary' | 'roster' | 'alerts' | 'irregularities' | 'gym' | 'fatigue' | 'metrics' | 'glossary' | 'statistics' | 'settings' | 'manual';
@@ -104,17 +103,12 @@ type NativePdfPayload = {
  filename?: string;
  sourceFileName?: string;
  dataBase64?: string;
- code?: string;
- message?: string;
 };
-
-const NATIVE_PDF_STORAGE_KEY = 'crewcheck_pending_native_pdf_v1';
-const NATIVE_PDF_ERROR_STORAGE_KEY = 'crewcheck_pending_native_pdf_error_v1';
 
 const RESULT_VIEWS = new Set<ResultsView>(['summary', 'roster', 'alerts', 'irregularities', 'gym', 'fatigue', 'metrics', 'glossary', 'statistics', 'settings', 'manual']);
 
 const C32F_ADMIN_EMAIL = normalizeEmail(import.meta.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
-const APP_VERSION = '11.0.87';
+const APP_VERSION = '11.0.82';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -166,36 +160,6 @@ function base64ToPdfFile(filename: string, dataBase64: string): File {
  return new File([bytes], filename || 'iFlight_RosterReport.pdf', { type: 'application/pdf' });
 }
 
-function readStoredNativePdfPayload(): NativePdfPayload | undefined {
- try {
-  const raw = localStorage.getItem(NATIVE_PDF_STORAGE_KEY);
-  if (!raw) return undefined;
-  const parsed = JSON.parse(raw) as NativePdfPayload;
-  return parsed?.dataBase64 ? parsed : undefined;
- } catch {
-  return undefined;
- }
-}
-
-function clearStoredNativePdfPayload() {
- try { localStorage.removeItem(NATIVE_PDF_STORAGE_KEY); } catch {}
-}
-
-function readStoredNativePdfError(): NativePdfPayload | undefined {
- try {
-  const raw = localStorage.getItem(NATIVE_PDF_ERROR_STORAGE_KEY);
-  if (!raw) return undefined;
-  const parsed = JSON.parse(raw) as NativePdfPayload;
-  return parsed?.message ? parsed : undefined;
- } catch {
-  return undefined;
- }
-}
-
-function clearStoredNativePdfError() {
- try { localStorage.removeItem(NATIVE_PDF_ERROR_STORAGE_KEY); } catch {}
-}
-
 async function parsePdfViaServer(file: File): Promise<CrewRoster> {
  const dataBase64 = await fileToBase64Payload(file);
  const response = await fetch('/api/parse-pdf', {
@@ -240,15 +204,6 @@ type SessionRosterBundle = {
  roster: CrewRoster;
  compliance: ComplianceResult;
  gym: GymRecommendation[];
-};
-
-type ArchivePreviewTab = 'roster' | 'perdiem' | 'salary';
-
-type ArchivePreviewState = {
- summary: SavedRosterSummary | null;
- bundle: SessionRosterBundle;
- sourceFileName: string;
- loadedAt: string;
 };
 
 type LocalProfileSettings = {
@@ -1621,8 +1576,6 @@ function Home() {
  const [fileName, setFileName] = useState<string | null>(null);
  const [roleSelection, setRoleSelection] = useState<CrewRoleSelection>('auto');
  const [savedRosters, setSavedRosters] = useState<SavedRosterSummary[]>([]);
- const [archivePreview, setArchivePreview] = useState<ArchivePreviewState | null>(null);
- const [archiveInitialTab, setArchiveInitialTab] = useState<ArchivePreviewTab>('roster');
  const [savedLoading, setSavedLoading] = useState(true);
  const [autoLatestLoaded, setAutoLatestLoaded] = useState(false);
  const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null);
@@ -1860,7 +1813,7 @@ function Home() {
    const storedTarget = window.localStorage.getItem('crewcheck_next_home_view');
    if (storedTarget) window.localStorage.removeItem('crewcheck_next_home_view');
    const target = storedTarget || params.get('view') || params.get('screen');
-   if (target && ['home','import','history','archiveview','calendar','billing','iflight','flightboard','departure','routine','perdiem','salary','currency','parking','c32f','settings','support','notes','more'].includes(target)) {
+   if (target && ['home','import','history','calendar','billing','iflight','flightboard','departure','routine','perdiem','salary','currency','parking','c32f','settings','support','notes','more'].includes(target)) {
     setCurrentView(target as HomeView);
     window.history.replaceState(null, '', window.location.pathname || '/');
    } else if (params.has('import') || params.has('newRoster')) {
@@ -1902,30 +1855,6 @@ function Home() {
   media?.addEventListener?.('change', onChange);
   return () => media?.removeEventListener?.('change', onChange);
  }, [themeMode]);
-
- const handlePreviewSavedRoster = useCallback(async (id: string, initialTab: ArchivePreviewTab = 'roster') => {
-  setOpeningSavedId(id);
-  try {
-   const data = await openSavedRoster(id);
-   const summary = savedRosters.find((item) => item.id === id) || null;
-   const roster = normalizeRosterSchedule(detectAndMarkLayovers(data.roster));
-   const compliance = data.compliance || analyzeCompliance(roster, roleSelection);
-   const gym = Array.isArray(data.gym) ? data.gym : getGymRecommendations(roster, roleSelection);
-   setArchivePreview({
-    summary,
-    bundle: { roster, compliance, gym },
-    sourceFileName: summary?.sourceFileName || 'Escala salva',
-    loadedAt: new Date().toISOString(),
-   });
-   setArchiveInitialTab(initialTab);
-   setCurrentView('archiveview');
-   toast.success('Escala antiga aberta só para visualização. O cockpit permanece na escala atual.');
-  } catch (error) {
-   toast.error(error instanceof Error ? error.message : 'Não foi possível abrir a escala antiga para visualização.');
-  } finally {
-   setOpeningSavedId(null);
-  }
- }, [roleSelection, savedRosters]);
 
  const handleOpenSavedRoster = useCallback(async (id: string, targetView: ResultsView = 'summary') => {
   setOpeningSavedId(id);
@@ -1973,6 +1902,45 @@ function Home() {
   } finally {
    sessionStorage.clear();
    setLocation('/login');
+  }
+ }
+
+
+ async function handleActivateSavedRoster(id: string) {
+  setOpeningSavedId(id);
+  try {
+   await activateRosterAnalysis(id);
+   const data = await openSavedRoster(id);
+   const summary = savedRosters.find((item) => item.id === id);
+   sessionStorage.setItem('crewcheck_roster', JSON.stringify(normalizeRosterSchedule(detectAndMarkLayovers(data.roster))));
+   sessionStorage.setItem('crewcheck_compliance', JSON.stringify(data.compliance));
+   sessionStorage.setItem('crewcheck_gym', JSON.stringify(data.gym || []));
+   sessionStorage.setItem('crewcheck_role_selection', roleSelection);
+   sessionStorage.setItem('crewcheck_source_file', summary?.sourceFileName || 'Escala ativa');
+   await refreshSavedRosters();
+   setDashboardClockTick(Date.now());
+   window.setTimeout(() => window.dispatchEvent(new CustomEvent('crewcheck:refresh-smart-departure')), 350);
+   toast.success('Escala ativa atualizada em todos os dispositivos.');
+  } catch (error) {
+   toast.error(error instanceof Error ? error.message : 'Não foi possível tornar esta escala ativa.');
+  } finally {
+   setOpeningSavedId(null);
+  }
+ }
+
+ async function handleDeleteSavedRoster(id: string) {
+  const item = savedRosters.find((saved) => saved.id === id);
+  const label = item ? `${monthLabel(item.month, item.year)} · ${item.sourceFileName || 'Escala'}` : 'esta escala';
+  if (!window.confirm(`Excluir ${label}? Essa ação remove a escala do gerenciador para evitar uso incorreto.`)) return;
+  setOpeningSavedId(id);
+  try {
+   await deleteRosterAnalysis(id);
+   await refreshSavedRosters();
+   toast.success('Escala excluída do gerenciador.');
+  } catch (error) {
+   toast.error(error instanceof Error ? error.message : 'Não foi possível excluir a escala.');
+  } finally {
+   setOpeningSavedId(null);
   }
  }
 
@@ -2046,7 +2014,7 @@ function Home() {
 
 
  const publishRosterSyncBundle = useCallback((roster: CrewRoster, compliance: ComplianceResult, gym: GymRecommendation[], sourceFileName: string) => {
-  const payload = { roster, compliance, gym, sourceFileName, updatedAt: new Date().toISOString(), source: 'crewcheck-unified-sync-v11087', userScope: crewcheckCurrentUserScope() };
+  const payload = { roster, compliance, gym, sourceFileName, updatedAt: new Date().toISOString(), source: 'crewcheck-unified-sync-v1109', userScope: crewcheckCurrentUserScope() };
   try {
    localStorage.setItem(crewcheckRosterSyncKey(), JSON.stringify(payload));
    localStorage.setItem(`crewcheck_latest_roster_bundle_${crewcheckCurrentUserScope()}`, JSON.stringify(payload));
@@ -2061,13 +2029,11 @@ function Home() {
   }
  }, []);
 
- const forceSyncRosterEverywhere = useCallback(async (roster: CrewRoster, compliance: ComplianceResult, gym: GymRecommendation[], sourceFileName: string) => {
+ const forceSyncRosterEverywhere = useCallback(async (roster: CrewRoster, compliance: ComplianceResult, gym: GymRecommendation[], sourceFileName: string, storageOptions?: { sourceFileDataBase64?: string | null; sourceMimeType?: string | null; sourceFileSize?: number | null }) => {
   publishRosterSyncBundle(roster, compliance, gym, sourceFileName);
-  let savedOnline = false;
   try {
-   const result = await saveRosterOfflineFirst({ roster, compliance, gym, sourceFileName }, { forceOnline: true });
+   const result = await saveRosterOfflineFirst({ roster, compliance, gym, sourceFileName, ...(storageOptions || {}) }, { forceOnline: true });
    setPendingOffline(result.pendingCount);
-   savedOnline = Boolean(result.savedOnline || result.deduplicatedLocal);
    if (result.savedOnline || result.deduplicatedLocal) {
     sessionStorage.removeItem('crewcheck_auto_db_save_pending');
     await refreshSavedRosters();
@@ -2077,24 +2043,6 @@ function Home() {
    }
   } catch {
    // Resultados continua com o salvamento offline-first como fallback.
-  }
-
-  try {
-   const response = await fetch('/api/telegram/roster-sync', {
-    method: 'POST',
-    headers: crewcheckAuthHeader({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ roster, compliance, gym, sourceFileName, force: true, source: 'auto-import-v11087' }),
-    cache: 'no-store',
-   });
-   const payload = await response.json().catch(() => null) as { ok?: boolean; status?: TelegramStatus; message?: string } | null;
-   if (response.ok && payload?.ok) {
-    sessionStorage.removeItem('crewcheck_auto_sync_pending');
-    try { if (payload.status) window.dispatchEvent(new CustomEvent('crewcheck:telegram-status-updated', { detail: payload.status })); } catch {}
-   } else if (!savedOnline) {
-    console.warn('Concierge Telegram sync pending:', payload?.message || response.statusText);
-   }
-  } catch (error) {
-   console.warn('Concierge Telegram auto-sync failed; local roster remains active.', error);
   }
  }, [publishRosterSyncBundle, refreshSavedRosters]);
 
@@ -2150,7 +2098,6 @@ function Home() {
    calendar: () => setCurrentView('calendar'),
    irregularities: () => goToResults('irregularities'),
    routine: () => goToResults('gym'),
-   regulation: () => setCurrentView('regulation'),
    c32f: () => canAccessC32FAcademy ? setCurrentView('c32f') : toast.info('Academia C32F restrita ao administrador.'),
    iflight: () => canAccessC32FAcademy ? setCurrentView('iflight') : (toast.info('Use a importação manual do PDF oficial para carregar sua escala.'), setCurrentView('import')),
    flightboard: () => setCurrentView('flightboard'),
@@ -2185,7 +2132,7 @@ function Home() {
   (map[view] || (() => setCurrentView('more')))();
  }, [canAccessC32FAcademy, goToResults, homeBillingStatus?.premiumAccess]);
 
- const commitRoster = useCallback(async (inputRoster: CrewRoster, sourceFileName: string, targetView: ResultsView = 'summary', options?: { demo?: boolean }) => {
+ const commitRoster = useCallback(async (inputRoster: CrewRoster, sourceFileName: string, targetView: ResultsView = 'summary', options?: { demo?: boolean; sourceFileDataBase64?: string | null; sourceMimeType?: string | null; sourceFileSize?: number | null }) => {
   const previousBundle = readCurrentRosterBundle();
   const roster = normalizeRosterSchedule(detectAndMarkLayovers(inputRoster));
   const changeSummary = buildRosterChangeSummaryV10867(previousBundle?.roster, roster);
@@ -2212,7 +2159,7 @@ function Home() {
    sessionStorage.setItem('crewcheck_auto_db_save_pending', '1');
   }
   setInitialResultsView(targetView);
-  if (!isDemo) void forceSyncRosterEverywhere(roster, compliance, gym, sourceFileName);
+  if (!isDemo) void forceSyncRosterEverywhere(roster, compliance, gym, sourceFileName, { sourceFileDataBase64: options?.sourceFileDataBase64 || null, sourceMimeType: options?.sourceMimeType || null, sourceFileSize: options?.sourceFileSize || null });
 
   toast.success(isDemo ? 'Modo demonstração carregado com dados fictícios.' : 'Escala interpretada com sucesso.');
   if (changeSummary && !isDemo) toast.info(changeSummary.message);
@@ -2284,6 +2231,8 @@ function Home() {
   setError(null);
 
   try {
+   let originalFileBase64: string | null = null;
+   try { originalFileBase64 = await fileToBase64Payload(file); } catch { originalFileBase64 = null; }
    let roster: CrewRoster;
    try {
     roster = await parsePdfViaServer(file);
@@ -2304,7 +2253,7 @@ function Home() {
     }
    }
    try { sessionStorage.removeItem('crewcheck_demo_active'); localStorage.removeItem('crewcheck_demo_active'); } catch {}
-   await commitRoster(roster, file.name, 'summary');
+   await commitRoster(roster, file.name, 'summary', { sourceFileDataBase64: originalFileBase64, sourceMimeType: file.type || 'application/pdf', sourceFileSize: file.size || null });
   } catch (err) {
    console.error('Error parsing PDF:', err);
    const message = err instanceof Error ? err.message : '';
@@ -2317,14 +2266,13 @@ function Home() {
  useEffect(() => {
   async function importNativePdf(payload?: NativePdfPayload) {
    if (!payload?.dataBase64 || nativePdfImportingRef.current) return;
-   clearStoredNativePdfPayload();
    nativePdfImportingRef.current = true;
-   const filename = payload.filename || payload.sourceFileName || 'CrewCheck_escala.pdf';
+   const filename = payload.filename || payload.sourceFileName || 'iFlight_RosterReport.pdf';
    setCurrentView('import');
    setFileName(filename);
    setIsProcessing(true);
    setError(null);
-   toast.info('PDF recebido do Android/Drive. Importando escala...');
+   toast.info('PDF recebido do iFlight. Importando escala...');
    try {
     const file = base64ToPdfFile(filename, payload.dataBase64);
     let roster: CrewRoster;
@@ -2339,11 +2287,11 @@ function Home() {
      roster = await parsePDF(file);
     }
     try { sessionStorage.removeItem('crewcheck_demo_active'); localStorage.removeItem('crewcheck_demo_active'); } catch {}
-    await commitRoster(roster, filename, 'roster');
+    await commitRoster(roster, filename, 'roster', { sourceFileDataBase64: payload.dataBase64, sourceMimeType: 'application/pdf', sourceFileSize: null });
    } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido.';
-    setError(`Recebi o PDF do Android/Drive, mas não consegui interpretar. Detalhe: ${message}`);
-    toast.error('Não consegui interpretar o PDF recebido do Android/Drive.');
+    setError(`Recebi o PDF do iFlight, mas não consegui interpretar. Detalhe: ${message}`);
+    toast.error('Não consegui interpretar o PDF recebido do iFlight.');
    } finally {
     setIsProcessing(false);
     const win = window as Window & { __crewcheckPendingNativePdf?: NativePdfPayload };
@@ -2355,29 +2303,11 @@ function Home() {
   const handler = (event: Event) => {
    void importNativePdf((event as CustomEvent<NativePdfPayload>).detail);
   };
-  const errorHandler = (event: Event) => {
-   const detail = (event as CustomEvent<NativePdfPayload>).detail;
-   clearStoredNativePdfError();
-   setCurrentView('import');
-   setIsProcessing(false);
-   const code = detail?.code ? ` [${detail.code}]` : '';
-   const message = detail?.message || 'Não consegui acessar o PDF selecionado.';
-   setError(`${message}${code} Baixe o PDF no aparelho ou use Compartilhar > CrewCheck.`);
-   toast.error('Não consegui acessar o PDF selecionado.');
-  };
 
   window.addEventListener('crewcheck:native-pdf', handler as EventListener);
-  window.addEventListener('crewcheck:native-pdf-error', errorHandler as EventListener);
-  const win = window as Window & { __crewcheckPendingNativePdf?: NativePdfPayload; __crewcheckPendingNativePdfError?: NativePdfPayload };
-  const storedPayload = readStoredNativePdfPayload();
-  const storedError = readStoredNativePdfError();
+  const win = window as Window & { __crewcheckPendingNativePdf?: NativePdfPayload };
   if (win.__crewcheckPendingNativePdf) void importNativePdf(win.__crewcheckPendingNativePdf);
-  else if (storedPayload) void importNativePdf(storedPayload);
-  if (storedError && !storedPayload) errorHandler(new CustomEvent('crewcheck:native-pdf-error', { detail: storedError }));
-  return () => {
-   window.removeEventListener('crewcheck:native-pdf', handler as EventListener);
-   window.removeEventListener('crewcheck:native-pdf-error', errorHandler as EventListener);
-  };
+  return () => window.removeEventListener('crewcheck:native-pdf', handler as EventListener);
  }, [commitRoster]);
 
  const handleDrop = useCallback((event: DragEvent) => {
@@ -2389,12 +2319,7 @@ function Home() {
 
  const handleFileInput = useCallback((event: ChangeEvent<HTMLInputElement>) => {
   const file = event.target.files?.[0];
-  if (file) {
-   void handleFile(file);
-  } else {
-   setCurrentView('import');
-   setError('Nenhum PDF foi devolvido pelo seletor. No Drive/iCloud, selecione o arquivo original ou use Compartilhar > CrewCheck, não apenas a prévia.');
-  }
+  if (file) void handleFile(file);
   event.target.value = '';
  }, [handleFile]);
 
@@ -2421,16 +2346,15 @@ function Home() {
  }
  if (currentView === 'flightboard') return renderWithMobileMenu(<FlightBoardScreen onBack={() => setCurrentView('home')} isAdmin={canAccessC32FAcademy} />, 'flightboard');
  if (currentView === 'departure') return renderWithMobileMenu(<SmartDepartureScreen nextEvent={dashboardNextEventLive} bundle={liveRosterBundle} userBase={profileSettings.base || user?.base || ''} hasRoster={Boolean(liveRosterBundle?.roster?.days?.length)} canAccessAdmin={canAccessC32FAcademy} onBack={() => setCurrentView('home')} onOpenRoster={() => goToResults('roster')} />, 'vivo');
- if (currentView === 'regulation') return renderWithMobileMenu(<RegulationCenterScreen bundle={currentRosterBundle} roleSelection={roleSelection} onBack={() => setCurrentView('home')} onOpenRoster={() => goToResults('roster')} onOpenAlerts={() => goToResults('irregularities')} />, 'more');
  if (currentView === 'chief') return renderWithMobileMenu(<CabinChiefAssistant bundle={currentRosterBundle} onBack={() => setCurrentView('home')} onOpenRoster={() => goToResults('roster')} initialFocus="chief" />, 'more');
  if (currentView === 'medical') return renderWithMobileMenu(<CabinChiefAssistant bundle={currentRosterBundle} onBack={() => setCurrentView('home')} onOpenRoster={() => goToResults('roster')} initialFocus="medical" />, 'more');
  if (currentView === 'bids') return renderWithMobileMenu(<BidsReminderScreen onBack={() => setCurrentView('home')} isInstructor={profileSettings.isInstructor} />, 'more');
  if (currentView === 'admin') return renderWithMobileMenu(<AdminDashboardScreen bundle={currentRosterBundle} savedRosters={savedRosters} dbStatus={dbStatus} pendingOffline={pendingOffline} onBack={() => setCurrentView('home')} />, 'settings');
  if (currentView === 'systemstatus') return renderWithMobileMenu(canAccessC32FAcademy ? <SystemStatusScreen onBack={() => setCurrentView('home')} /> : <SupportPanel onBack={() => setCurrentView('home')} onOpenSettings={() => setCurrentView('settings')} onOpenImport={() => setCurrentView('import')} />, 'settings');
 
- if (currentView === 'perdiem') return renderWithMobileMenu(<PerDiemForecastScreen bundle={currentRosterBundle} savedRosters={savedRosters} onOpenSavedRoster={(id) => handlePreviewSavedRoster(id, 'perdiem')} onBack={() => setCurrentView('home')} onOpenImport={() => setCurrentView('import')} />, 'more');
+ if (currentView === 'perdiem') return renderWithMobileMenu(<PerDiemForecastScreen bundle={currentRosterBundle} savedRosters={savedRosters} onOpenSavedRoster={handleLoadSavedRosterToHome} onBack={() => setCurrentView('home')} onOpenImport={() => setCurrentView('import')} />, 'more');
 
- if (currentView === 'salary') return renderWithMobileMenu(<SalaryForecastScreen bundle={currentRosterBundle} savedRosters={savedRosters} onOpenSavedRoster={(id) => handlePreviewSavedRoster(id, 'salary')} isAdmin={canAccessC32FAcademy} onBack={() => setCurrentView('home')} onOpenImport={() => setCurrentView('import')} />, 'more');
+ if (currentView === 'salary') return renderWithMobileMenu(<SalaryForecastScreen bundle={currentRosterBundle} savedRosters={savedRosters} onOpenSavedRoster={handleLoadSavedRosterToHome} isAdmin={canAccessC32FAcademy} onBack={() => setCurrentView('home')} onOpenImport={() => setCurrentView('import')} />, 'more');
 
  if (currentView === 'currency') return renderWithMobileMenu(<CurrencyConverterScreen bundle={currentRosterBundle} onBack={() => setCurrentView('home')} onOpenPerDiem={() => setCurrentView('perdiem')} />, 'more');
 
@@ -2461,16 +2385,8 @@ function Home() {
   );
  }
 
- if (currentView === 'archiveview') {
-  return renderWithMobileMenu(archivePreview
-   ? <ArchiveRosterPreviewScreen preview={archivePreview} initialTab={archiveInitialTab} savedRosters={savedRosters} openingId={openingSavedId} isAdmin={canAccessC32FAcademy} onBack={() => setCurrentView('history')} onHome={() => setCurrentView('home')} onActivate={(id) => void handleOpenSavedRoster(id, 'summary')} onOpenImport={() => setCurrentView('import')} onPreviewSavedRoster={handlePreviewSavedRoster} />
-   : <SimplePanel title="Escala antiga" icon={History} onBack={() => setCurrentView('history')} description="Selecione uma escala no histórico para abrir a visualização sem alterar o cockpit." actions={[{ label: 'Abrir histórico', onClick: () => setCurrentView('history') }]} />,
-   'more'
-  );
- }
-
  if (currentView === 'history') {
-  return renderWithMobileMenu(<HistoryScreen rosters={savedRosters} loading={savedLoading} dbStatus={dbStatus} openingId={openingSavedId} onBack={() => setCurrentView('home')} onOpen={(id) => void handleOpenSavedRoster(id, 'summary')} onPreview={(id) => void handlePreviewSavedRoster(id, 'roster')} onRefresh={refreshSavedRosters} />, 'more');
+  return renderWithMobileMenu(<HistoryScreen rosters={savedRosters} loading={savedLoading} dbStatus={dbStatus} openingId={openingSavedId} onBack={() => setCurrentView('home')} onOpen={(id) => void handleOpenSavedRoster(id, 'summary')} onActivate={(id) => void handleActivateSavedRoster(id)} onDelete={(id) => void handleDeleteSavedRoster(id)} onRefresh={refreshSavedRosters} />, 'more');
  }
 
  if (currentView === 'routine') {
@@ -2715,7 +2631,6 @@ function CrewCheckMobileMenu({ active, onNavigate, canAccessAdmin = false, drawe
    { label: 'Importar', icon: CloudUpload, view: 'import', activeId: 'roster', hint: 'PDF/manual' },
    { label: 'iFlight', icon: Monitor, view: 'iflight', activeId: 'iflight', admin: true, hint: 'varredura calendário' },
    { label: 'Saída', icon: Navigation, view: 'departure', activeId: 'vivo', hint: 'deslocamento' },
-   { label: 'Regulamentação', icon: Calculator, view: 'regulation', activeId: 'more', hint: 'RBAC 117' },
    { label: 'Meu carro', icon: Car, view: 'parking', activeId: 'more', hint: 'estacionamento' },
    { label: 'Extra', icon: Plane, view: 'departureExtra', activeId: 'vivo', hint: 'vivo de extra' },
    { label: 'Radar', icon: Radar, view: 'flightboard', activeId: 'flightboard', hint: 'voos e portão' },
@@ -2801,8 +2716,7 @@ function CrewCheckFloatingSpeedMenu({ active, onNavigate, canAccessC32FAcademy, 
   { label: 'Meu carro', hint: 'vaga, piso e GPS', icon: Car, view: 'parking' },
   { label: 'Diárias', hint: 'previsão mensal', icon: FileText, view: 'perdiem' },
   { label: 'Salário', hint: 'previsão variável', icon: TrendingUp, view: 'salary' },
-  { label: 'Histórico', hint: 'escalas salvas', icon: History, view: 'history' },
-  { label: 'Regulamentação', hint: 'jornada, repouso e sobreaviso', icon: Calculator, view: 'regulation' },
+  { label: 'Gerenciador', hint: 'escala ativa', icon: History, view: 'history' },
   { label: 'Ajuda e manuais', hint: 'PWA, suporte e PDFs', icon: Mail, view: 'support' },
   { label: 'Extra', hint: 'grátis quando usar dados locais', icon: Radar, view: 'departureExtra' },
   ...(canAccessC32FAcademy ? [
@@ -3947,14 +3861,12 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
 }) {
  const cloudFileInputRef = useRef<HTMLInputElement | null>(null);
  const openCloudImport = () => {
-  const nativeBridge = (window as any).CrewCheckNative || (window as any).AndroidCrewCheckNative;
+  const nativeBridge = (window as any).AndroidCrewCheckNative;
   if (nativeBridge?.openGoogleDrivePdfPicker) {
    try { nativeBridge.openGoogleDrivePdfPicker(); return; } catch {}
   }
-  if (nativeBridge?.openPdfPicker) {
-   try { nativeBridge.openPdfPicker(); return; } catch {}
-  }
   cloudFileInputRef.current?.click();
+  try { window.setTimeout(() => { if (document.visibilityState === 'visible' && !isProcessing) window.open('https://drive.google.com/drive/my-drive?hl=pt-br', '_blank', 'noopener,noreferrer'); }, 650); } catch {}
  };
  return (
   <div className="min-h-screen overflow-x-hidden overflow-y-auto bg-[#07111F] text-white crewcheck-import-screen">
@@ -3986,7 +3898,7 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
       <div className="cc-import-hero-panel">
        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100 shadow-lg shadow-cyan-950/30"><Sparkles className="h-4 w-4" /> Upload direto de PDF oficial com LGPD</div>
        <h2 className="max-w-4xl text-4xl font-black leading-[1.04] tracking-tight md:text-6xl">Envie sua escala em PDF e veja tudo organizado em segundos.</h2>
-       <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-200/80">Aceita PDF exportado pelo CrewTopia, CrewRosterReport/AIMS ou arquivo oficial disponível para o usuário. No Android, iCloud, Drive ou Arquivos, escolha o PDF original pelo seletor universal ou use Compartilhar &gt; CrewCheck. Ao importar, o Concierge Telegram é sincronizado automaticamente.</p>
+       <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-200/80">Aceita PDF exportado pelo CrewTopia, CrewRosterReport/AIMS ou arquivo oficial disponível para o usuário. O CrewCheck interpreta voos, folgas, sobreavisos, pernoites, treinamentos, rotina e alertas.</p>
        <div className="mt-8 grid max-w-3xl grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi icon={Radar} value="PDF" label="CrewTopia/AIMS" />
         <Kpi icon={Shield} value="ACT" label="piloto ou comissário" />
@@ -4003,8 +3915,8 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-300/15 text-cyan-200"><FileText className="h-6 w-6" /></div>
         </div>
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
-         <label className="crewcheck-primary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-2xl transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream,application/x-pdf,*/*" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Importar PDF agora</label>
-         <button type="button" onClick={openCloudImport} className="crewcheck-secondary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-xl transition active:scale-[0.99]"><input ref={cloudFileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream,application/x-pdf,*/*" onChange={onFileInput} className="hidden" /><CloudUpload className="h-5 w-5" />Drive / iCloud / Arquivos</button>
+         <label className="crewcheck-primary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-2xl transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Importar PDF agora</label>
+         <button type="button" onClick={openCloudImport} className="crewcheck-secondary-cta relative inline-flex cursor-pointer items-center justify-center gap-3 rounded-[1.35rem] px-5 py-4 text-sm font-black shadow-xl transition active:scale-[0.99]"><input ref={cloudFileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="hidden" /><CloudUpload className="h-5 w-5" />Google Drive / iCloud</button>
         </div>
 
         <div className="mb-5 rounded-[1.2rem] border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-50/90">
@@ -4032,7 +3944,7 @@ function ImportScreen({ userLabel, roleSelection, onRoleSelectionChange, isDragg
           <div className="flex flex-col items-center gap-5 py-4">
            <div className="flex h-20 w-20 items-center justify-center rounded-[1.7rem] bg-gradient-to-br from-cyan-300 to-fuchsia-400 text-[#07111F] shadow-xl shadow-cyan-500/25"><Upload className="h-9 w-9" /></div>
            <div><p className="text-xl font-black">Arraste sua escala em PDF aqui</p><p className="mt-2 text-sm text-slate-300">CrewRosterReport, CrewTopia ou AIMS — PDF oficial salvo em Arquivos</p></div>
-           <div className="flex flex-col items-center gap-3 sm:flex-row"><label className="crewcheck-premium-file-button relative inline-flex cursor-pointer items-center justify-center gap-3 px-7 py-4 text-sm font-black shadow-lg transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream,application/x-pdf,*/*" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Escolher PDF no dispositivo <ChevronRight className="h-5 w-5" /></label><button type="button" onClick={onDemoMode} className="rounded-[1.35rem] border border-cyan-300/25 bg-cyan-300/10 px-6 py-4 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-300/15"><Sparkles className="mr-2 inline h-4 w-4" />Ver demonstração</button></div>
+           <div className="flex flex-col items-center gap-3 sm:flex-row"><label className="crewcheck-premium-file-button relative inline-flex cursor-pointer items-center justify-center gap-3 px-7 py-4 text-sm font-black shadow-lg transition active:scale-[0.99]"><input ref={fileInputRef} type="file" accept="application/pdf,.pdf,application/octet-stream" onChange={onFileInput} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /><FileText className="h-5 w-5" />Escolher PDF no dispositivo <ChevronRight className="h-5 w-5" /></label><button type="button" onClick={onDemoMode} className="rounded-[1.35rem] border border-cyan-300/25 bg-cyan-300/10 px-6 py-4 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-300/15"><Sparkles className="mr-2 inline h-4 w-4" />Ver demonstração</button></div>
            <p className="max-w-md text-xs leading-5 text-slate-400">No iPad/iPhone, use o PDF oficial salvo em Arquivos. Para evitar escala fora de ordem, o CrewCheck prioriza a leitura segura do servidor e não usa leitura local quando isso puder gerar erro. A demonstração usa dados fictícios e é desativada ao importar sua primeira escala real.</p>
           </div>
          )}
@@ -4919,121 +4831,76 @@ function BoardEmpty({ error }: { error?: string }) {
  return <div className="flex min-h-[16rem] flex-col items-center justify-center gap-3 p-8 text-center text-cyan-100"><Building2 className="h-10 w-10" /><p className="font-black">Nenhum voo encontrado com estes filtros.</p><p className="max-w-lg text-sm text-cyan-50/65">{error || 'Sem retorno do monitor oficial/provedor aeroportuário para estes filtros. O fallback pela escala foi desativado para manter o radar fidedigno.'}</p></div>;
 }
 
-
-function ArchiveRosterPreviewScreen({ preview, initialTab, savedRosters, openingId, isAdmin, onBack, onHome, onActivate, onOpenImport, onPreviewSavedRoster }: {
- preview: ArchivePreviewState;
- initialTab: ArchivePreviewTab;
- savedRosters: SavedRosterSummary[];
- openingId: string | null;
- isAdmin: boolean;
- onBack: () => void;
- onHome: () => void;
- onActivate: (id: string) => void;
- onOpenImport: () => void;
- onPreviewSavedRoster: (id: string, initialTab?: ArchivePreviewTab) => Promise<void> | void;
-}) {
- const [tab, setTab] = useState<ArchivePreviewTab>(initialTab || 'roster');
- useEffect(() => { setTab(initialTab || 'roster'); }, [initialTab, preview.summary?.id]);
- if (tab === 'perdiem') {
-  return <PerDiemForecastScreen bundle={preview.bundle} savedRosters={savedRosters} onOpenSavedRoster={(id) => onPreviewSavedRoster(id, 'perdiem')} onBack={() => setTab('roster')} onOpenImport={onOpenImport} />;
- }
- if (tab === 'salary') {
-  return <SalaryForecastScreen bundle={preview.bundle} savedRosters={savedRosters} onOpenSavedRoster={(id) => onPreviewSavedRoster(id, 'salary')} isAdmin={isAdmin} onBack={() => setTab('roster')} onOpenImport={onOpenImport} />;
- }
- const roster = preview.bundle.roster;
- const source = preview.sourceFileName || preview.summary?.sourceFileName || 'Escala salva';
- return (
-  <div className="min-h-screen bg-[#08111f] px-5 py-8 pb-32 text-white">
-   <div className="mx-auto max-w-6xl">
-    <HeaderBack title="Escala antiga" subtitle="visualização segura · não altera cockpit" onBack={onBack} action={<button type="button" onClick={onHome} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-cyan-100">Cockpit atual</button>} />
-    <section className="mt-6 rounded-[2rem] border border-cyan-200/20 bg-cyan-300/10 p-5 shadow-2xl shadow-black/20">
-     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div>
-       <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-100/70">arquivo histórico</p>
-       <h2 className="mt-1 text-2xl font-black text-white">{monthLabel(roster.month, roster.year)} · {roster.base || preview.summary?.base || 'Base'}</h2>
-       <p className="mt-2 text-sm font-semibold leading-6 text-cyan-50/80">{roster.crewName || preview.summary?.crewName || 'Tripulante'} · {source}</p>
-       <p className="mt-2 text-xs font-semibold leading-5 text-emerald-100/80">Modo consulta: escala, diárias e salário recalculam este mês antigo sem trocar a escala usada pelo Cockpit, Saída Inteligente, Radar ou Concierge.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-       <button onClick={() => setTab('perdiem')} className="rounded-2xl bg-emerald-200 px-4 py-3 text-sm font-black text-[#07111f]">Diárias deste mês</button>
-       <button onClick={() => setTab('salary')} className="rounded-2xl bg-lime-200 px-4 py-3 text-sm font-black text-[#07111f]">Salário deste mês</button>
-       {preview.summary?.id && <button onClick={() => onActivate(preview.summary!.id)} disabled={openingId === preview.summary.id} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-black text-cyan-50 disabled:opacity-60">Usar no cockpit</button>}
-      </div>
-     </div>
-    </section>
-    <ArchiveRosterTimeline roster={roster} />
-   </div>
-  </div>
- );
+function formatRosterStorageSize(bytes?: number | null): string {
+ const value = Number(bytes || 0);
+ if (!value) return 'sem arquivo original';
+ if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+ return `${(value / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
 }
 
-function ArchiveRosterTimeline({ roster }: { roster: CrewRoster }) {
- const days = Array.isArray(roster.days) ? roster.days : [];
- const formatDayTitle = (day: CrewRoster['days'][number]) => {
-  const code = String(day.pairingCode || day.type || '').toUpperCase();
-  const label = code === 'DO' || code === 'DOF' || code === 'OFF' ? 'Folga' : code === 'HSB' ? 'Sobreaviso' : code === 'HSBE' ? 'Sobreaviso extra' : code === 'ASB' || code === 'RES' ? 'Reserva' : code === 'CRM' ? 'Treinamento CRM' : day.type === 'VOO' ? 'Voo' : code || day.type || 'Programação';
-  return label;
- };
- return (
-  <section className="mt-6 grid gap-3">
-   {days.map((day, index) => {
-    const legs = Array.isArray(day.legs) ? day.legs : [];
-    return (
-     <article key={`${day.date}-${day.pairingCode}-${index}`} className="rounded-[1.8rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/10">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-       <div>
-        <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-100/70">{day.dayOfWeek || ''} · {day.date}</p>
-        <h3 className="mt-1 text-xl font-black text-white">{formatDayTitle(day)}{day.pairingCode ? ` · ${day.pairingCode}` : ''}</h3>
-        <p className="mt-1 text-sm font-semibold text-slate-300">{day.dutyReport || '—'}{day.dutyDebrief ? ` → ${day.dutyDebrief}` : ''}{day.hotel ? ` · ${day.hotel}` : ''}</p>
-       </div>
-       <Badge className="rounded-full border-0 bg-cyan-200 text-[#07111f]">{legs.length ? `${legs.length} perna(s)` : day.type}</Badge>
-      </div>
-      {legs.length ? <div className="mt-4 grid gap-2">
-       {legs.map((leg, legIndex) => <div key={`${leg.flightNumber}-${legIndex}`} className="rounded-2xl border border-white/10 bg-black/15 p-3 text-sm font-semibold text-slate-100"><b>{leg.flightNumber || `Trecho ${legIndex + 1}`}</b> · {leg.origin || '—'} → {leg.destination || '—'} · {leg.departureTime || '—'}–{leg.arrivalTime || '—'}{leg.workType ? ` · ${leg.workType}` : ''}</div>)}
-      </div> : day.rawText ? <p className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-3 text-sm leading-6 text-slate-300">{String(day.rawText).slice(0, 260)}</p> : null}
-     </article>
-    );
-   })}
-   {!days.length && <StateCard icon={FolderOpen} title="Escala sem dias" text="Este arquivo salvo não trouxe dias interpretados. Reimporte a escala original para recalcular." />}
-  </section>
- );
-}
-
-function HistoryScreen({ rosters, loading, dbStatus, openingId, onBack, onOpen, onPreview, onRefresh }: {
+function HistoryScreen({ rosters, loading, dbStatus, openingId, onBack, onOpen, onActivate, onDelete, onRefresh }: {
  rosters: SavedRosterSummary[];
  loading: boolean;
  dbStatus: DatabaseStatus | null;
  openingId: string | null;
  onBack: () => void;
  onOpen: (id: string) => void;
- onPreview: (id: string) => void;
+ onActivate: (id: string) => void;
+ onDelete: (id: string) => void;
  onRefresh: () => void;
 }) {
  const dbOnline = Boolean(dbStatus?.connected || dbStatus?.ok);
+ const storage = dbStatus?.storage;
+ const activeRoster = rosters.find((item) => item.isActive) || null;
  return (
   <div className="min-h-screen bg-[#08111f] px-5 py-8 text-white">
-   <div className="mx-auto max-w-4xl">
-    <HeaderBack title="Histórico de escalas" subtitle={dbOnline ? 'Banco online' : 'Histórico local/offline'} onBack={onBack} action={<button onClick={onRefresh} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-cyan-100"><RefreshCw className="mr-2 inline h-4 w-4" />Atualizar</button>} />
+   <div className="mx-auto max-w-5xl">
+    <HeaderBack title="Gerenciador de Escalas" subtitle={dbOnline ? 'Escala ativa, histórico e nuvem privada' : 'Histórico local/offline'} onBack={onBack} action={<button onClick={onRefresh} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-cyan-100"><RefreshCw className="mr-2 inline h-4 w-4" />Atualizar</button>} />
+    <div className="mt-5 grid gap-3 md:grid-cols-3">
+     <div className="rounded-[1.4rem] border border-cyan-200/15 bg-cyan-300/10 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-100/70">Escala ativa</p>
+      <h3 className="mt-2 text-lg font-black text-white">{activeRoster ? monthLabel(activeRoster.month, activeRoster.year) : 'nenhuma definida'}</h3>
+      <p className="mt-1 text-xs font-semibold text-cyan-50/70">{activeRoster?.sourceFileName || 'Escolha uma escala abaixo para ativar.'}</p>
+     </div>
+     <div className="rounded-[1.4rem] border border-emerald-200/15 bg-emerald-300/10 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100/70">Cloud Storage</p>
+      <h3 className="mt-2 text-lg font-black text-white">{storage?.configured ? 'Supabase privado' : 'pendente'}</h3>
+      <p className="mt-1 text-xs font-semibold text-emerald-50/70">{storage?.configured ? 'PDF original salvo em bucket privado quando configurado.' : 'Configure as variáveis do Supabase no Render.'}</p>
+     </div>
+     <div className="rounded-[1.4rem] border border-violet-200/15 bg-violet-300/10 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-100/70">Organização</p>
+      <h3 className="mt-2 text-lg font-black text-white">{rosters.length} escala(s)</h3>
+      <p className="mt-1 text-xs font-semibold text-violet-50/70">Exclua importações erradas e mantenha só a escala correta como ativa.</p>
+     </div>
+    </div>
     {loading ? <StateCard icon={Loader2} title="Buscando escalas" text="Carregando histórico salvo..." spin /> : rosters.length ? (
      <div className="mt-6 grid gap-3">
-      {rosters.map((item) => (
-       <div key={item.id} className="rounded-3xl border border-white/10 bg-white/[0.05] p-5 shadow-xl shadow-black/10">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-         <button type="button" onClick={() => onPreview(item.id)} disabled={openingId === item.id} className="min-w-0 flex-1 text-left transition hover:opacity-90 disabled:opacity-60">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-100/70">{monthLabel(item.month, item.year)} · {item.base || 'Base'}</p>
-          <h3 className="mt-1 text-lg font-black">{item.crewName || 'Tripulante'}</h3>
-          <p className="mt-1 text-sm text-slate-400">{item.sourceFileName || 'Escala salva'} · score {item.score ?? '-'}</p>
-          <p className="mt-2 text-xs font-semibold text-emerald-100/80">Visualização segura: abre escala, diárias e salário sem alterar o cockpit.</p>
-         </button>
-         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => onPreview(item.id)} disabled={openingId === item.id} className="rounded-2xl bg-cyan-200 px-4 py-3 text-sm font-black text-[#07111f] disabled:opacity-60">{openingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Visualizar'}</button>
-          <button type="button" onClick={() => onOpen(item.id)} disabled={openingId === item.id} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-black text-cyan-50 disabled:opacity-60">Usar no cockpit</button>
+      {rosters.map((item) => {
+       const busy = openingId === item.id;
+       return (
+        <div key={item.id} className={`rounded-3xl border p-5 shadow-2xl shadow-black/10 ${item.isActive ? 'border-cyan-200/40 bg-cyan-300/10' : 'border-white/10 bg-white/[0.05]'}`}>
+         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+           <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-100/70">{monthLabel(item.month, item.year)} · {item.base || 'Base'}</p>
+            {item.isActive && <span className="rounded-full bg-cyan-300 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#07111f]">Ativa</span>}
+            {item.storageReady && <span className="rounded-full bg-emerald-300/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-100">Cloud</span>}
+            {item.importStatus === 'processed_storage_pending' && <span className="rounded-full bg-amber-300/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-amber-100">Storage pendente</span>}
+           </div>
+           <h3 className="mt-1 truncate text-lg font-black">{item.crewName || 'Tripulante'}</h3>
+           <p className="mt-1 text-sm text-slate-400">{item.sourceFileName || 'Escala salva'} · score {item.score ?? '-'} · {formatRosterStorageSize(item.sourceFileSizeBytes)}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 md:justify-end">
+           <button type="button" onClick={() => onOpen(item.id)} disabled={busy} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-[#07111f] disabled:opacity-60">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Abrir'}</button>
+           <button type="button" onClick={() => onActivate(item.id)} disabled={busy || item.isActive} className="rounded-2xl border border-cyan-200/25 bg-cyan-300/10 px-4 py-2 text-sm font-black text-cyan-50 disabled:opacity-40">Tornar ativa</button>
+           <button type="button" onClick={() => onDelete(item.id)} disabled={busy} className="rounded-2xl border border-rose-200/20 bg-rose-400/10 px-3 py-2 text-sm font-black text-rose-100 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
+          </div>
          </div>
         </div>
-       </div>
-      ))}
+       );
+      })}
      </div>
-    ) : <StateCard icon={FolderOpen} title="Nenhuma escala salva" text="Importe uma escala uma vez; ela ficará disponível aqui após o login." />}
+    ) : <StateCard icon={FolderOpen} title="Nenhuma escala salva" text="Importe uma escala uma vez; ela ficará disponível aqui após o login. Se a importação falhar, ela deve aparecer como pendente em versões futuras." />}
    </div>
   </div>
  );
@@ -5143,15 +5010,6 @@ function SettingsHomePanel({ userLabel, userEmail, profileSettings, avatar, pend
  const [telegramBusy, setTelegramBusy] = useState(false);
  const [telegramUsername, setTelegramUsername] = useState(() => normalizeTelegramUsernameInput(localStorage.getItem('crewcheck_profile_telegram_username') || ''));
  const [telegramConciergeName, setTelegramConciergeName] = useState(() => String(localStorage.getItem('crewcheck_telegram_concierge_name') || 'CrewCheck Concierge').replace(/\s+/g, ' ').trim().slice(0, 32));
-
- useEffect(() => {
-  const handler = (event: Event) => {
-   const detail = (event as CustomEvent<TelegramStatus>).detail;
-   if (detail?.ok !== false) setTelegramStatus(detail);
-  };
-  window.addEventListener('crewcheck:telegram-status-updated', handler as EventListener);
-  return () => window.removeEventListener('crewcheck:telegram-status-updated', handler as EventListener);
- }, []);
  const [settingsPermissionStatus, setSettingsPermissionStatus] = useState<CrewCheckPermissionStatus>(() => readCrewCheckPermissionStatus());
 const supportIsPremium = Boolean(billingStatus?.premiumAccess);
  const supportIsPaidPremium = Boolean(supportIsPremium && !['trialing', 'trial_expired'].includes(String(billingStatus?.status || '').toLowerCase()));
@@ -5885,7 +5743,7 @@ Calendário ICS gerado no dispositivo.`, 'ics'); }} className="rounded-2xl borde
   }
 
   return (
-   <SettingsCategoryCard eyebrow="Ajuda premium" title="Manuais, suporte e Android" description="O CrewCheck está focado em tripulantes LATAM neste lançamento e está aberto a expansão para outras empresas. O plano gratuito mantém manuais e FAQ; suporte direto é Premium.">
+   <SettingsCategoryCard eyebrow="Ajuda premium" title="Manuais, suporte e Android" description="O CrewCheck foi desenhado para tripulantes e segue em expansão para diferentes operações. O plano gratuito mantém manuais e FAQ; suporte direto é Premium.">
     <div className="mb-5 overflow-hidden rounded-[1.8rem] border border-cyan-200/20 bg-gradient-to-br from-cyan-300/12 via-white/[0.06] to-blue-500/10 p-5">
      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div>
@@ -6762,258 +6620,6 @@ function SystemStatusScreen({ onBack }: { onBack: () => void }) {
  );
 }
 
-
-type RegulationCrewType = 'simples' | 'composta' | 'revezamento';
-type RegulationOperatorProfile = 'transporte-publico' | 'outros-operadores';
-
-function regulationClockToMinutes(value: string): number | null {
- const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
- if (!match) return null;
- const h = Number(match[1]);
- const m = Number(match[2]);
- if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
- return h * 60 + m;
-}
-
-function regulationMinutesToClock(value: number): string {
- const total = Math.round(((value % 1440) + 1440) % 1440);
- return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-function regulationDurationHours(start: string, end: string): number {
- const s = regulationClockToMinutes(start);
- const e = regulationClockToMinutes(end);
- if (s === null || e === null) return 0;
- let diff = e - s;
- if (diff <= 0) diff += 1440;
- return diff / 60;
-}
-
-function regulationAddHours(start: string, hours: number): string {
- const s = regulationClockToMinutes(start);
- if (s === null) return '—';
- return regulationMinutesToClock(s + Math.round(hours * 60));
-}
-
-function regulationHourLabel(value: number): string {
- if (!Number.isFinite(value)) return '—';
- const h = Math.floor(value);
- const m = Math.round((value - h) * 60);
- return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-}
-
-function regulationDutyLimit(profile: RegulationOperatorProfile, crewType: RegulationCrewType): number {
- const table: Record<RegulationOperatorProfile, Record<RegulationCrewType, number>> = {
-  'transporte-publico': { simples: 9, composta: 12, revezamento: 16 },
-  'outros-operadores': { simples: 11, composta: 14, revezamento: 18 },
- };
- return table[profile][crewType];
-}
-
-function regulationFlightLimit(profile: RegulationOperatorProfile, crewType: RegulationCrewType): string {
- if (profile === 'outros-operadores') return crewType === 'simples' ? '9h30 de voo' : crewType === 'composta' ? '12h de voo' : '16h de voo';
- return crewType === 'simples' ? '8h de voo e 4 pousos' : crewType === 'composta' ? '11h de voo e 5 pousos' : '14h de voo e 4 pousos';
-}
-
-function regulationRestRequired(previousDutyHours: number, crossedTimezones = 0): number {
- const base = previousDutyHours > 15 ? 24 : previousDutyHours > 12 ? 16 : 12;
- return base + Math.max(0, crossedTimezones) * 2;
-}
-
-function regulationDayDutyHours(day: RosterDay): number {
- if (typeof day.dutyHours === 'number' && day.dutyHours > 0) return day.dutyHours;
- if (day.dutyReport && day.dutyDebrief) return regulationDurationHours(day.dutyReport, day.dutyDebrief);
- const firstLeg = day.legs?.[0];
- const lastLeg = day.legs?.[day.legs.length - 1];
- if (firstLeg?.departureTime && lastLeg?.arrivalTime) return regulationDurationHours(firstLeg.departureTime, lastLeg.arrivalTime);
- return 0;
-}
-
-function regulationKindForDay(day: RosterDay): string {
- const text = `${day.type || ''} ${day.pairingCode || ''} ${day.rawText || ''}`.toUpperCase();
- if (/\b(HSBE|HSB\s*EXTRA|HSB-X|HSB X)\b/.test(text)) return 'sobreaviso extra';
- if (/\bHSB\b/.test(text) || day.type === 'HSB') return 'sobreaviso';
- if (/\b(ASB|RES)\b/.test(text) || day.type === 'ASB' || day.type === 'RES') return 'reserva';
- if (day.legs?.length) return 'voo';
- if (/\b(CRM|C32F|CBF|EMER|EAD|TREIN|MT)\b/.test(text)) return 'treinamento/reunião';
- if (/\b(DO|DOF|DOP|OFF|DR|VC)\b/.test(text) || ['DO','DOF','OFF','DR'].includes(String(day.type))) return 'folga';
- return String(day.type || day.pairingCode || 'programação').toLowerCase();
-}
-
-function regulationAlertsForRoster(bundle: SessionRosterBundle | null): Array<{ title: string; text: string; tone: 'ok' | 'warn' | 'error' }> {
- if (!bundle?.roster) return [];
- const alerts: Array<{ title: string; text: string; tone: 'ok' | 'warn' | 'error' }> = [];
- const metrics = bundle.compliance?.metrics;
- const critical = (bundle.compliance?.alerts || []).filter((a) => a.severity === 'error').slice(0, 3);
- const warn = (bundle.compliance?.alerts || []).filter((a) => a.severity === 'warning').slice(0, 3);
- if (critical.length) critical.forEach((item) => alerts.push({ title: item.title, text: item.description, tone: 'error' }));
- if (!critical.length && warn.length) warn.forEach((item) => alerts.push({ title: item.title, text: item.description, tone: 'warn' }));
- if (metrics) {
-  alerts.push({ title: 'Mensal de trabalho', text: `${metrics.totalDutyHours || 0}h / 176h parametrizadas. Sobreaviso conta 1/3 e reserva conta integralmente quando disponível.`, tone: Number(metrics.totalDutyHours || 0) > 158 ? 'warn' : 'ok' });
-  alerts.push({ title: 'Horas de voo', text: `${metrics.totalFlightHours || 0}h / ${metrics.maxFlightHoursMonth || 80}h no mês da escala.`, tone: Number(metrics.totalFlightHours || 0) > Number(metrics.maxFlightHoursMonth || 80) * 0.9 ? 'warn' : 'ok' });
-  alerts.push({ title: 'Folgas e sobreavisos', text: `${metrics.totalDaysOff || 0} folga(s), ${metrics.totalStandby || 0} sobreaviso(s) e ${metrics.reserveCount || 0} reserva(s) identificados.`, tone: Number(metrics.totalDaysOff || 0) < 10 || Number(metrics.totalStandby || 0) > 8 ? 'warn' : 'ok' });
- }
- return alerts.slice(0, 8);
-}
-
-function RegulationCenterScreen({ bundle, roleSelection, onBack, onOpenRoster, onOpenAlerts }: { bundle: SessionRosterBundle | null; roleSelection: CrewRoleSelection; onBack: () => void; onOpenRoster: () => void; onOpenAlerts: () => void }) {
- const [tab, setTab] = useState<'jornada' | 'sobreaviso' | 'reserva' | 'repouso' | 'escala'>('jornada');
- const [crewType, setCrewType] = useState<RegulationCrewType>('simples');
- const [profile, setProfile] = useState<RegulationOperatorProfile>('transporte-publico');
- const [startTime, setStartTime] = useState('10:00');
- const [legs, setLegs] = useState(2);
- const [standbyStart, setStandbyStart] = useState('06:00');
- const [standbyEnd, setStandbyEnd] = useState('18:00');
- const [standbyTwoAirports, setStandbyTwoAirports] = useState(false);
- const [reserveStart, setReserveStart] = useState('06:00');
- const [reserveEnd, setReserveEnd] = useState('12:00');
- const [reserveProfile, setReserveProfile] = useState<RegulationOperatorProfile>('transporte-publico');
- const [previousDuty, setPreviousDuty] = useState(11);
- const [timezones, setTimezones] = useState(0);
- const dutyLimit = regulationDutyLimit(profile, crewType);
- const flightLimit = regulationFlightLimit(profile, crewType);
- const standbyHours = regulationDurationHours(standbyStart, standbyEnd);
- const reserveHours = regulationDurationHours(reserveStart, reserveEnd);
- const reserveMax = reserveProfile === 'transporte-publico' ? 6 : 10;
- const rest = regulationRestRequired(previousDuty, timezones);
- const rosterDays = bundle?.roster?.days || [];
- const scaleAlerts = regulationAlertsForRoster(bundle);
- const closestDays = rosterDays
-  .filter((day) => !['DO','DOF','OFF','DR'].includes(String(day.type)))
-  .slice(0, 6)
-  .map((day) => ({ day, hours: regulationDayDutyHours(day), kind: regulationKindForDay(day), legs: day.legs?.length || 0 }));
- const tabs: Array<{ key: typeof tab; label: string; icon: LucideIcon }> = [
-  { key: 'jornada', label: 'Jornada', icon: Clock },
-  { key: 'sobreaviso', label: 'Sobreaviso', icon: Bell },
-  { key: 'reserva', label: 'Reserva', icon: ClipboardList },
-  { key: 'repouso', label: 'Descanso', icon: Moon },
-  { key: 'escala', label: 'Minha escala', icon: AlertTriangle },
- ];
- return (
-  <div className="min-h-screen bg-[#08111f] px-5 py-8 text-white">
-   <div className="mx-auto max-w-6xl">
-    <HeaderBack title="Regulamentação" subtitle="RBAC 117 · Lei do Aeronauta · ACT configurável" onBack={onBack} />
-    <section className="mt-6 overflow-hidden rounded-[2rem] border border-cyan-300/15 bg-gradient-to-br from-cyan-300/14 via-white/[0.055] to-violet-300/10 p-5 shadow-2xl shadow-black/30">
-     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div>
-       <p className="text-[11px] font-black uppercase tracking-[0.26em] text-cyan-100/65">Centro regulatório CrewCheck</p>
-       <h2 className="mt-2 text-3xl font-black tracking-tight">Cálculos e alertas explicáveis</h2>
-       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Use como apoio para jornada, sobreaviso, reserva, descanso mínimo e limites mensais. O ACT fica parametrizável porque regras coletivas podem alterar detalhes conforme empresa, função e vigência.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-       <button onClick={onOpenRoster} className="rounded-2xl bg-cyan-200 px-4 py-3 text-sm font-black text-[#07111f]">Abrir escala</button>
-       <button onClick={onOpenAlerts} className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-black text-white">Ver alertas</button>
-      </div>
-     </div>
-     <div className="mt-5 grid gap-2 sm:grid-cols-5">
-      {tabs.map((item) => { const Icon = item.icon; const active = tab === item.key; return <button key={item.key} onClick={() => setTab(item.key)} className={`rounded-2xl border px-3 py-3 text-left text-sm font-black transition active:scale-[0.99] ${active ? 'border-cyan-200 bg-cyan-200 text-[#07111f]' : 'border-white/10 bg-white/[0.06] text-cyan-50 hover:bg-white/10'}`}><Icon className="mb-1 h-4 w-4" />{item.label}</button>; })}
-     </div>
-    </section>
-
-    {tab === 'jornada' && <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-     <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl">
-      <h3 className="text-2xl font-black">Limite de jornada</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-300">Tabela básica para apoio rápido. Para GRF/Apêndice B ou C, use o valor como referência conservadora e confira o manual/ACT aplicável.</p>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-       <label className="space-y-2 text-sm font-black">Tipo de tripulação<select value={crewType} onChange={(e) => setCrewType(e.target.value as RegulationCrewType)} className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white"><option value="simples">Simples</option><option value="composta">Composta</option><option value="revezamento">Revezamento</option></select></label>
-       <label className="space-y-2 text-sm font-black">Perfil operacional<select value={profile} onChange={(e) => setProfile(e.target.value as RegulationOperatorProfile)} className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white"><option value="transporte-publico">Transporte aéreo público regular/não regular</option><option value="outros-operadores">Outros operadores RBAC 117</option></select></label>
-       <label className="space-y-2 text-sm font-black">Apresentação<input value={startTime} onChange={(e) => setStartTime(e.target.value)} type="time" className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-       <label className="space-y-2 text-sm font-black">Etapas/pousos<input value={legs} onChange={(e) => setLegs(Math.max(1, Number(e.target.value) || 1))} type="number" min={1} max={10} className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-      </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-       <RegulationResultTile title="Jornada máxima" value={regulationHourLabel(dutyLimit)} text={`Término limite aproximado: ${regulationAddHours(startTime, dutyLimit)}.`} tone="cyan" />
-       <RegulationResultTile title="Voo/pousos" value={flightLimit} text={legs > 4 && crewType === 'simples' && profile === 'transporte-publico' ? 'Atenção: etapas acima do parâmetro de tripulação simples.' : 'Compare com a quantidade de pernas do dia.'} tone={legs > 4 && crewType === 'simples' ? 'amber' : 'emerald'} />
-       <RegulationResultTile title="Redutor noturno" value="52m30s" text="Trabalho noturno tem cômputo especial. O app marca como atenção quando a escala atravessa madrugada." tone="violet" />
-      </div>
-     </div>
-     <RegulationReferenceCard />
-    </section>}
-
-    {tab === 'sobreaviso' && <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-     <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl">
-      <h3 className="text-2xl font-black">Sobreaviso com acionamento</h3>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-       <label className="space-y-2 text-sm font-black">Início<input value={standbyStart} onChange={(e) => setStandbyStart(e.target.value)} type="time" className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-       <label className="space-y-2 text-sm font-black">Fim / deslocamento<input value={standbyEnd} onChange={(e) => setStandbyEnd(e.target.value)} type="time" className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-       <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0d1b30] px-4 py-3 text-sm font-black"><input type="checkbox" checked={standbyTwoAirports} onChange={(e) => setStandbyTwoAirports(e.target.checked)} /> Cidade com 2+ aeroportos</label>
-      </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-       <RegulationResultTile title="Duração" value={regulationHourLabel(standbyHours)} text={standbyHours < 3 ? 'Abaixo do mínimo de 3h.' : standbyHours > 12 ? 'Acima do máximo de 12h.' : 'Dentro da janela 3h–12h.'} tone={standbyHours < 3 || standbyHours > 12 ? 'amber' : 'emerald'} />
-       <RegulationResultTile title="Apresentação após acionamento" value={standbyTwoAirports ? '150 min' : '90 min'} text={standbyTwoAirports ? 'Quando o aeroporto de apresentação for diferente em município/conurbação com 2+ aeroportos.' : 'Prazo padrão após comunicação para nova tarefa.'} tone="cyan" />
-       <RegulationResultTile title="Sem acionamento" value="8h" text="Se não houver convocação, respeitar repouso mínimo antes de nova tarefa." tone="violet" />
-      </div>
-     </div>
-     <RegulationReferenceCard topic="sobreaviso" />
-    </section>}
-
-    {tab === 'reserva' && <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-     <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl">
-      <h3 className="text-2xl font-black">Reserva com acionamento</h3>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-       <label className="space-y-2 text-sm font-black">Início<input value={reserveStart} onChange={(e) => setReserveStart(e.target.value)} type="time" className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-       <label className="space-y-2 text-sm font-black">Fim<input value={reserveEnd} onChange={(e) => setReserveEnd(e.target.value)} type="time" className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-       <label className="space-y-2 text-sm font-black">Perfil<select value={reserveProfile} onChange={(e) => setReserveProfile(e.target.value as RegulationOperatorProfile)} className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white"><option value="transporte-publico">Transporte público</option><option value="outros-operadores">Outros operadores</option></select></label>
-      </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-       <RegulationResultTile title="Reserva calculada" value={regulationHourLabel(reserveHours)} text={reserveHours < 3 ? 'Abaixo do mínimo de 3h.' : reserveHours > reserveMax ? `Acima do máximo de ${reserveMax}h para este perfil.` : `Dentro do limite de 3h–${reserveMax}h.`} tone={reserveHours < 3 || reserveHours > reserveMax ? 'amber' : 'emerald'} />
-       <RegulationResultTile title="Limite aplicável" value={`${reserveMax}h`} text="3h–6h no transporte público; 3h–10h nos demais operadores do RBAC 117, quando aplicável." tone="cyan" />
-       <RegulationResultTile title="Acomodação" value="> 3h" text="Reserva superior a 3h exige acomodação adequada para reserva." tone="violet" />
-      </div>
-     </div>
-     <RegulationReferenceCard topic="reserva" />
-    </section>}
-
-    {tab === 'repouso' && <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-     <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl">
-      <h3 className="text-2xl font-black">Descanso mínimo</h3>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-       <label className="space-y-2 text-sm font-black">Jornada anterior<input value={previousDuty} onChange={(e) => setPreviousDuty(Math.max(0, Number(e.target.value) || 0))} type="number" step="0.5" min={0} max={24} className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-       <label className="space-y-2 text-sm font-black">Fusos cruzados<input value={timezones} onChange={(e) => setTimezones(Math.max(0, Number(e.target.value) || 0))} type="number" min={0} max={12} className="h-12 w-full rounded-2xl border border-white/10 bg-[#0d1b30] px-3 text-white" /></label>
-      </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-       <RegulationResultTile title="Repouso mínimo" value={regulationHourLabel(rest)} text={timezones >= 3 ? 'Inclui acréscimo de 2h por fuso cruzado na base contratual.' : 'Baseado na duração da jornada anterior.'} tone="emerald" />
-       <RegulationResultTile title="Até 12h de jornada" value="12h" text="Repouso mínimo após jornada de até 12h." tone="cyan" />
-       <RegulationResultTile title="Mais de 15h" value="24h" text="Repouso mínimo após jornada superior a 15h." tone="violet" />
-      </div>
-     </div>
-     <RegulationReferenceCard topic="repouso" />
-    </section>}
-
-    {tab === 'escala' && <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-     <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-2xl font-black">Alertas da escala</h3><p className="mt-2 text-sm leading-6 text-slate-300">O CrewCheck usa a escala importada para marcar pontos de atenção de jornada, repouso, madrugada, reserva, sobreaviso e limites mensais.</p></div><span className="rounded-full border border-cyan-200/20 bg-cyan-300/10 px-3 py-1 text-xs font-black text-cyan-100">{bundle?.roster?.days?.length || 0} dias</span></div>
-      {!bundle?.roster ? <StateCard icon={CloudUpload} title="Sem escala ativa" text="Importe uma escala para liberar alertas regulatórios automáticos." /> : <div className="mt-5 grid gap-3 md:grid-cols-2">{scaleAlerts.map((item) => <div key={`${item.title}-${item.text}`} className={`rounded-2xl border p-4 ${item.tone === 'error' ? 'border-rose-300/25 bg-rose-300/12' : item.tone === 'warn' ? 'border-amber-300/25 bg-amber-300/12' : 'border-emerald-300/25 bg-emerald-300/12'}`}><p className="font-black text-white">{item.title}</p><p className="mt-1 text-sm leading-6 text-slate-300">{item.text}</p></div>)}</div>}
-      {closestDays.length > 0 && <div className="mt-5 grid gap-2">{closestDays.map(({ day, hours, kind, legs }) => <button key={`${day.date}-${day.pairingCode}`} onClick={onOpenRoster} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 text-left transition hover:bg-white/[0.075]"><div className="flex items-center justify-between gap-3"><p className="font-black text-white">{day.date} · {kind}</p><span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black text-cyan-100">{legs} perna(s)</span></div><p className="mt-1 text-sm text-slate-300">Jornada estimada {hours ? regulationHourLabel(hours) : 'não identificada'} · apresentação {day.dutyReport || '—'} · término {day.dutyDebrief || '—'}.</p></button>)}</div>}
-     </div>
-     <RegulationReferenceCard topic="escala" />
-    </section>}
-
-    <section className="mt-5 rounded-[1.5rem] border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-50">
-     <b>Uso auxiliar:</b> este módulo não substitui a escala oficial, ACT vigente, SGRF/manual aprovado ou orientação sindical/jurídica. Para ACT específico da companhia, cadastre os parâmetros quando estiverem disponíveis ou envie o documento para eu incorporar em versão futura.
-    </section>
-   </div>
-  </div>
- );
-}
-
-function RegulationResultTile({ title, value, text, tone }: { title: string; value: string; text: string; tone: 'cyan' | 'emerald' | 'amber' | 'violet' }) {
- const color = tone === 'emerald' ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-50' : tone === 'amber' ? 'border-amber-300/25 bg-amber-300/12 text-amber-50' : tone === 'violet' ? 'border-violet-300/20 bg-violet-300/10 text-violet-50' : 'border-cyan-300/20 bg-cyan-300/10 text-cyan-50';
- return <div className={`rounded-[1.25rem] border p-4 ${color}`}><p className="text-[11px] font-black uppercase tracking-[0.18em] opacity-75">{title}</p><h4 className="mt-2 text-2xl font-black">{value}</h4><p className="mt-2 text-xs font-semibold leading-5 opacity-80">{text}</p></div>;
-}
-
-function RegulationReferenceCard({ topic = 'geral' }: { topic?: string }) {
- const refs = topic === 'sobreaviso'
-  ? ['Sobreaviso: mínimo 3h e máximo 12h.', 'Acionamento: apresentação em até 90 min, ou 150 min em município/conurbação com 2+ aeroportos quando o aeroporto for diferente.', 'Sem acionamento: repouso mínimo de 8h antes de nova tarefa.']
-  : topic === 'reserva'
-  ? ['Reserva: mínimo 3h.', 'Transporte público: máximo 6h.', 'Demais operadores RBAC 117 aplicáveis: máximo 10h.', 'Reserva superior a 3h exige acomodação adequada.']
-  : topic === 'repouso'
-  ? ['Repouso: 12h após jornada até 12h.', '16h após jornada maior que 12h e até 15h.', '24h após jornada maior que 15h.', 'Cruzamento de 3+ fusos: acréscimo de 2h por fuso na base contratual.']
-  : topic === 'escala'
-  ? ['O sistema cruza escala, horários, pernas, folgas, reserva, sobreaviso e alertas já calculados.', 'Alertas de leitura incerta aparecem como atenção, não como irregularidade confirmada.', 'Cards da escala são clicáveis para detalhes, tripulação, diárias e recomendações.']
-  : ['RBAC 117 EMD 01 e Lei 13.475/2017 são a base operacional.', 'ACT/Convenção podem alterar detalhes trabalhistas e precisam estar parametrizados.', 'O redutor noturno e GRF/Apêndices B/C podem mudar o cálculo aplicável.'];
- return <aside className="rounded-[1.7rem] border border-white/10 bg-white/[0.045] p-5 shadow-xl"><p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-100/65">Base normativa</p><h3 className="mt-1 text-xl font-black">Referências usadas</h3><ul className="mt-4 space-y-3 text-sm leading-6 text-slate-300">{refs.map((item) => <li key={item} className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">{item}</li>)}</ul><p className="mt-4 text-xs leading-5 text-slate-400">Fontes: RBAC 117 EMD 01, Lei 13.475/2017, CLT de forma subsidiária e parâmetros ACT configuráveis.</p></aside>;
-}
-
 function MorePanel({ onBack, onNavigate, onLogout, pendingOffline, hasRoster, canAccessC32FAcademy }: { onBack: () => void; onNavigate: (view: string) => void; onLogout: () => void; pendingOffline: number; hasRoster: boolean; canAccessC32FAcademy: boolean }) {
  return (
   <div className="min-h-screen bg-[#08111f] px-5 py-8 text-white">
@@ -7024,9 +6630,8 @@ function MorePanel({ onBack, onNavigate, onLogout, pendingOffline, hasRoster, ca
      <MenuAction icon={CloudUpload} title="Importar nova escala" text="PDF CrewRosterReport/AIMS ou Telegram" onClick={() => onNavigate('import')} />
      <MenuAction icon={CreditCard} title="Assinatura" text="Gerenciar Premium, planos e cobrança" onClick={() => onNavigate('billing')} />
      {canAccessC32FAcademy && <MenuAction icon={Plane} title="iFlight Admin" text="AutoPull admin" onClick={() => onNavigate('iflight')} />}
-     <MenuAction icon={History} title="Histórico" text="Abrir escalas salvas" onClick={() => onNavigate('history')} />
+     <MenuAction icon={History} title="Gerenciador de Escalas" text="Ver ativa, reprocessar ou excluir" onClick={() => onNavigate('history')} />
      <MenuAction icon={Bell} title="Alertas" text="Irregularidades e avisos" onClick={() => onNavigate('alerts')} />
-     <MenuAction icon={Calculator} title="Regulamentação" text="Jornada, sobreaviso, reserva, repouso e RBAC 117" onClick={() => onNavigate('regulation')} />
      <MenuAction icon={Monitor} title="Monitores de Voos" text="Painel estilo aeroporto, por localidade e companhia" onClick={() => onNavigate('flightboard')} />
      <MenuAction icon={Clock} title="Galaxy Watch" text="Atalho curto /w para relógio Samsung/Wear OS" onClick={() => { window.location.href = '/w'; }} />
      <MenuAction icon={Clock} title="Apple Watch" text="Atalho curto /aw para abrir escala compacta" onClick={() => { window.location.href = '/aw'; }} />

@@ -11,6 +11,16 @@ export interface DatabaseStatus {
   now?: string;
   message?: string;
   detail?: string;
+  storage?: {
+    provider?: string;
+    configured?: boolean;
+    bucket?: string | null;
+    urlConfigured?: boolean;
+    secretConfigured?: boolean;
+    publishableConfigured?: boolean;
+    jwksConfigured?: boolean;
+    maxFileBytes?: number;
+  };
 }
 
 export interface SavedRosterSummary {
@@ -29,6 +39,15 @@ export interface SavedRosterSummary {
   alertsCount: number;
   criticalAlertsCount: number;
   checksum: string | null;
+  isActive?: boolean;
+  activeAt?: string | null;
+  deletedAt?: string | null;
+  importStatus?: string | null;
+  storageProvider?: string | null;
+  sourceStoragePath?: string | null;
+  sourceFileSizeBytes?: number | null;
+  storageUploadedAt?: string | null;
+  storageReady?: boolean;
 }
 
 export interface SaveRosterPayload {
@@ -37,6 +56,9 @@ export interface SaveRosterPayload {
   gym: GymRecommendation[];
   sourceFileName?: string | null;
   checksum?: string;
+  sourceFileDataBase64?: string | null;
+  sourceMimeType?: string | null;
+  sourceFileSize?: number | null;
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -50,7 +72,7 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
 export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]> {
   const local = getLocalRosterSummaries(limit);
   try {
-    const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}`);
+    const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
     const online = payload.rosters || [];
     const seen = new Set<string>();
     const merged: SavedRosterSummary[] = [];
@@ -106,6 +128,12 @@ export async function deleteRosterAnalysis(id: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+export async function activateRosterAnalysis(id: string): Promise<SavedRosterSummary | null> {
+  if (id.startsWith('local-') || id.startsWith('offline-')) return null;
+  const payload = await jsonFetch<{ ok: boolean; roster?: SavedRosterSummary }>(`/api/rosters/${id}/activate`, { method: 'POST' });
+  return payload.roster || null;
 }
 
 export interface StoredPeriodStats {
@@ -234,6 +262,9 @@ function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
     alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.length : 0,
     criticalAlertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter((a: any) => a?.severity === 'error').length : 0,
     checksum: item.checksum,
+    isActive: false,
+    importStatus: 'local',
+    storageReady: false,
   }));
 }
 

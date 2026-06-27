@@ -145,11 +145,15 @@ export async function saveRosterOfflineFirst(payload: {
   compliance: ComplianceResult;
   gym: GymRecommendation[];
   sourceFileName?: string | null;
+  sourceFileDataBase64?: string | null;
+  sourceMimeType?: string | null;
+  sourceFileSize?: number | null;
 }, options: { forceOnline?: boolean } = {}): Promise<OfflineSaveResult> {
   const checksum = await checksumRoster(payload);
   const alreadySavedLocal = readSavedChecksums().includes(checksum);
   const queuedDuplicate = readQueue().some((item) => item.checksum === checksum);
-  rememberLocalHistory({ ...payload, checksum });
+  const { sourceFileDataBase64, sourceMimeType, sourceFileSize, ...localPayload } = payload;
+  rememberLocalHistory({ ...localPayload, checksum });
 
   if (alreadySavedLocal && !options.forceOnline) {
     return { savedOnline: false, queued: false, deduplicatedLocal: true, checksum, pendingCount: getPendingOfflineCount() };
@@ -161,7 +165,7 @@ export async function saveRosterOfflineFirst(payload: {
     return { savedOnline: true, queued: false, deduplicatedLocal: Boolean((summary as any)?.deduplicated), summary, checksum, pendingCount: getPendingOfflineCount() };
   } catch (error) {
     if (!queuedDuplicate) {
-      await queueRosterOffline({ ...payload, checksum });
+      await queueRosterOffline({ ...localPayload, checksum });
     }
     return { savedOnline: false, queued: true, deduplicatedLocal: queuedDuplicate, checksum, pendingCount: getPendingOfflineCount() };
   }

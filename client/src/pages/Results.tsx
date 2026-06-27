@@ -872,7 +872,9 @@ function MetricsPanel({ compliance, load, stats, roster }: { compliance: Complia
     ['Horas de voo', `${stats.flightHours.toFixed(1)}h`, 'Soma dos trechos lidos.'],
     ['Horas de jornada', `${stats.dutyHours.toFixed(1)}h`, 'Apresentação até corte/fim de jornada.'],
     ['Folgas', String(stats.daysOff), 'Inclui DO, DR, DOF, DOP, DOPR e VC quando classificados como folga.'],
-    ['Reserva/Sobreaviso', String(stats.reserveDays), 'ASB/HSB/HSBE agrupados e deduplicados.'],
+    ['Reserva/Sobreaviso', String(stats.reserveDays), 'ASB/HSB/HSBE agrupados e deduplicados; valida janelas 3h–12h, limite mensal e acionamento.'],
+    ['Jornada semanal', '44h', 'Ponto de atenção em janela móvel de 7 dias conforme Lei do Aeronauta e ACT.'],
+    ['Alertas operacionais', 'Premium', 'PNAE/POB, NOTOC/DG, POC, DEPA/DEPU, animal em cabine e abastecimento com pax.'],
     ['Carga da escala', `${load.intensityScore}/100`, load.summary],
     ['Dias carregados', String(roster.days.length), 'Quantidade de dias interpretados pelo parser.'],
   ];
@@ -888,6 +890,12 @@ function GlossaryPanel() {
     ['ASB', 'Reserva/Airport Stand By.'],
     ['PS', 'Extra/PS; ícone de voo em cinza.'],
     ['C32F', 'Check A32F; fica separado de Extra.'],
+    ['PNAE / WCH / UMNR', 'Atendimento especial: conferir Nimbus e P.O.B. antes do fechamento de portas.'],
+    ['NOTOC / DG', 'Artigos perigosos: ciência da cabine e fluxo de reporte em discrepância/incidente.'],
+    ['DEPA / DEPU', 'Passageiro deportado/acompanhado: aplicar briefing de Security, assentos e escoltas.'],
+    ['POC', 'Concentrador portátil de oxigênio: validar bateria 150%, assento e acomodação.'],
+    ['PETC / ESAN / SVAN', 'Animal em cabine/serviço: conferir limite, assento e obstrução de corredor/saída.'],
+    ['KME / KIM / MedAire', 'Ocorrência médica: abertura, lacres, autorização e MOR conforme procedimento.'],
     ['Inativo/Pernoite', 'Dia em branco após programação ou hotel/localidade.'],
   ];
   return <section className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]"><h3 className="text-2xl font-black text-[#092846]">Glossário</h3><div className="mt-4 grid gap-3 md:grid-cols-2">{terms.map(([code, text]) => <div key={code} className="rounded-2xl border border-[#e5edf5] bg-[#f8fbfd] p-4"><b className="text-[#092846]">{code}</b><p className="mt-1 text-sm text-[#60758a]">{text}</p></div>)}</div></section>;
@@ -1702,7 +1710,7 @@ function IrregularitiesPanel({ compliance, errors, warnings, onOpenAlert }: { co
           <ScoreCard title="Pontos de atenção" value={String(warnings.length)} icon={Sparkles} tone="#f97316" description="Itens que exigem revisão." />
         </div>
         <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
-          <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="text-xl font-black">Irregularidades e alertas</h3><p className="mt-1 text-sm text-[#60758a]">Baseado no RBAC 117, Lei do Aeronauta, CLT e ACT selecionada conforme piloto ou comissário.</p></div></div>
+          <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="text-xl font-black">Irregularidades e alertas</h3><p className="mt-1 text-sm text-[#60758a]">Baseado em parâmetros regulatórios e operacionais configurados, com foco em jornada, repouso, sobreaviso, reserva e acionamentos.</p></div></div>
           {compliance.alerts.length === 0 ? (
             <div className="rounded-2xl bg-emerald-50 p-5 text-emerald-800"><CheckCircle2 className="mb-2 h-6 w-6" /><b>Nenhuma irregularidade automática encontrada.</b><p className="mt-1 text-sm">Ainda assim, revise ACT/CCT, escalas publicadas e eventuais extensões operacionais.</p></div>
           ) : (
@@ -1733,12 +1741,15 @@ function IrregularitiesPanel({ compliance, errors, warnings, onOpenAlert }: { co
             <LegalLine title="Solo entre etapas" text="Máximo de 180min no período diurno e 120min no período noturno." />
             <LegalLine title="Horas de voo" text="90h/28d e 900h/365d em A32F/Embraer; 100h/28d e 1000h/365d em Wide Body." />
             <LegalLine title="Madrugadas" text="2 consecutivas e 4 em janela móvel de 168h, com reset após 48h livres." />
-            <LegalLine title="Sobreaviso/reserva" text="Sobreaviso 3h–12h e até 8 mensais; reserva em local de trabalho 3h–6h." />
+            <LegalLine title="Sobreaviso/reserva" text="Sobreaviso 3h–12h e até 8 mensais; reserva em local de trabalho 3h–6h; quando houver acionamento, destaca SAV + jornada." />
+            <LegalLine title="Jornada semanal" text="Alerta de 44h em janela móvel de 7 dias e 176h mensais, com leitura cautelosa de horários." />
+            <LegalLine title="Pontos operacionais" text="PNAE/POB, NOTOC/DG, POC, DEPA/DEPU, animal em cabine, abastecimento com pax e ocorrência médica entram como lembretes de apoio, sem gerar irregularidade automática." />
+            <LegalLine title="SGSO e reportes" text="Inclui lembretes de Safety Alert, MOR/ASR e ações após incidente/acidente quando termos aparecem na escala ou no texto importado." />
           </div>
         </div>
         <div className="rounded-[1.25rem] border border-red-100 bg-red-50 p-5 text-sm leading-6 text-red-900">
           <h3 className="font-black">Importante</h3>
-          <p className="mt-2">O sistema agora separa “irregularidade confirmada”, “ponto de atenção” e “leitura incerta”. Se o PDF tiver horário invertido, coluna misturada ou duty inconsistente, o alerta não entra como irregularidade crítica até conferência do dia citado.</p>
+          <p className="mt-2">O sistema separa “irregularidade confirmada”, “ponto de atenção” e “leitura incerta”. Os alertas operacionais são lembretes de apoio e não substituem norma vigente, briefing, NOTOC, procedimento oficial, ANAC ou orientação da empresa.</p>
         </div>
       </aside>
     </div>
@@ -2767,13 +2778,13 @@ function MobileRosterSubEvent({ event, routineSuggestions, isTarget = false }: {
   const Icon = style.icon;
   const crewSummary = crewSummaryForRosterEvent(event);
   return (
-    <div data-roster-event-id={event.id} data-roster-event-target={isTarget ? 'true' : undefined} className={`cc-roster-event ${toneClass} w-full overflow-hidden rounded-[1rem] border text-left transition ${isTarget ? 'ring-2 ring-blue-200' : ''} hover:shadow-[0_18px_40px_rgba(20,54,84,0.13)]`}>
-      <button type="button" onClick={() => setOpen(!open)} className="cc-roster-event-trigger-v11023 w-full p-2.5 text-left transition active:scale-[0.99]" aria-expanded={open}>
+    <div data-roster-event-id={event.id} data-roster-event-target={isTarget ? 'true' : undefined} className={`cc-roster-event ${toneClass} w-full overflow-hidden rounded-[1rem] border text-left transition ${isTarget ? 'ring-2 ring-blue-200' : ''}`}>
+      <button type="button" onClick={() => setOpen(!open)} className="cc-roster-event-trigger-v11023 w-full p-2.5 text-left transition active:scale-[0.99]">
         <div className="cc-roster-event-grid-v11023 grid grid-cols-[2.7rem_minmax(4.4rem,5rem)_minmax(0,1fr)_1.35rem] items-center gap-2.5">
           <div className="cc-roster-event-icon flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-sm" style={{ backgroundColor: style.solid }}><Icon className="h-5 w-5" /></div>
           <div className="cc-roster-event-time text-[0.86rem] font-black leading-tight tabular-nums">{formatStackedTime(event.time)}</div>
           <div className="cc-roster-event-text-v11023 min-w-0"><p className="cc-roster-event-title truncate text-[1.05rem] font-black leading-tight">{event.activity}</p><p className="cc-roster-event-subtitle mt-0.5 line-clamp-2 text-[0.82rem] leading-tight">{event.subtitle}</p>{crewSummary && <p className="cc-roster-crew-summary mt-1 truncate text-[0.68rem] font-black text-sky-700">Tripulação: {crewSummary}</p>}</div>
-          <div className="flex flex-col items-center gap-1"><span className="rounded-full bg-white/40 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] text-[#092846]/70">abrir</span><ChevronDown className={`cc-roster-chevron h-4 w-4 transition ${open ? 'rotate-180' : ''}`} /></div>
+          <ChevronDown className={`cc-roster-chevron h-4 w-4 transition ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
       {open && <div className="border-t border-white/10 px-2.5 pb-2.5"><MobileRosterEventDetails event={event} routineSuggestions={routineSuggestions} /></div>}
@@ -3074,7 +3085,6 @@ function MobileRosterEventDetails({ event, routineSuggestions }: { event: Roster
       {isFlight && <p className="mt-2 text-[11px] font-semibold opacity-75">Dados do voo: {flight.source || 'dados online ainda não disponíveis'}{flight.updatedAt ? ` · Atualizado ${formatFlightStatusUpdatedAt(flight.updatedAt)}` : ''}</p>}
       {isFlight && <CrewListBox event={event} />}
       <div className="cc-roster-info-box mt-2 rounded-lg p-2"><b>Mais informações:</b> {rosterEventRecommendation(event)}</div>
-      <div className="cc-roster-routine-box mt-2 rounded-lg border border-cyan-100 bg-cyan-50 p-2 text-cyan-950"><b>Regulamentação:</b><ul className="mt-1 space-y-1">{rosterEventRegulationNotes(event).map((item) => <li key={item}>{item}</li>)}</ul></div>
       {routineOnly.length > 0 && <div className="cc-roster-routine-box mt-2 rounded-lg border p-2"><b>Rotina sugerida:</b><ul className="mt-1 space-y-1">{routineOnly.slice(0, 4).map((item) => <li key={item.id}>{item.startTime}–{item.endTime} · {item.activityName} · {item.suitability}</li>)}</ul></div>}
       {recoveryOnly.length > 0 && <div className="cc-roster-routine-box mt-2 rounded-lg border border-violet-100 bg-violet-50 p-2 text-violet-900"><b>Descanso/recuperação:</b><ul className="mt-1 space-y-1">{recoveryOnly.slice(0, 3).map((item) => <li key={item.id}>{item.startTime}–{item.endTime} · {item.activityName}</li>)}</ul></div>}
       {mealOnly.length > 0
@@ -3160,38 +3170,6 @@ function rosterEventRecommendation(event: RosterEvent): string {
   return 'Toque em Rotina para ver sugestões calculadas considerando descanso, jornada e carga do mês.';
 }
 
-
-
-function eventDurationHoursForRegulation(event: RosterEvent): number {
-  const start = extractStartTime(event.time) || event.day.dutyReport || event.leg?.departureTime || '';
-  const end = extractEndTime(event.time) || event.day.dutyDebrief || event.leg?.arrivalTime || '';
-  const a = timeToSortValue(start);
-  const bRaw = timeToSortValue(end);
-  if (!Number.isFinite(a) || !Number.isFinite(bRaw)) return 0;
-  const b = normalizeDisplayEnd(a, bRaw);
-  return Math.max(0, (b - a) / 60);
-}
-
-function rosterEventRegulationNotes(event: RosterEvent): string[] {
-  const code = normalizeEventCode(event);
-  const legs = event.day?.legs?.length || event.legs?.length || (event.leg ? 1 : 0);
-  const duty = eventDurationHoursForRegulation(event);
-  if (event.typeLabel === 'Flight' || legs > 0) {
-    const notes = [`${legs} perna(s) · jornada estimada ${duty ? duty.toFixed(1).replace('.', ',') + 'h' : 'não calculada'}.`];
-    notes.push(legs > 4 ? 'Atenção: muitas etapas; conferir limite de pousos conforme tipo de tripulação.' : 'Compare com o tipo de tripulação e limite de pousos aplicável.');
-    if (event.day?.isNextDay) notes.push('Vira o dia/madrugada: conferir redutor noturno, repouso e limite de madrugadas.');
-    return notes;
-  }
-  if (/^(HSB|HSBE)$/.test(code) || /SOBREAVISO|STANDBY/i.test(`${event.activity} ${event.subtitle}`)) {
-    return ['Sobreaviso: janela de 3h a 12h.', 'Acionamento: apresentação em até 90min; pode ser 150min em cidade/conurbação com dois ou mais aeroportos.', 'Sem acionamento: repouso mínimo de 8h antes de nova tarefa.'];
-  }
-  if (/^(ASB|RES)$/.test(code) || /RESERVA|AIRPORT STAND BY/i.test(`${event.activity} ${event.subtitle}`)) {
-    return ['Reserva: mínimo 3h e máximo 6h no transporte público regular/não regular.', 'Demais operadores RBAC 117 aplicáveis podem usar até 10h.', 'Reserva acima de 3h exige acomodação adequada.'];
-  }
-  if (/^(DO|DOF|DOP|OFF|DR|VC)$/.test(code) || /FOLGA|DAY OFF/i.test(`${event.activity} ${event.subtitle}`)) return ['Folga: deve iniciar após o repouso regulamentar da jornada anterior.', 'A escala mensal deve respeitar o número mínimo de folgas aplicável e eventuais regras ACT.'];
-  if (/CRM|TREIN|REUNI|EAD|C32F|CBF|EMER/i.test(`${code} ${event.activity} ${event.subtitle}`)) return ['Treinamento/reunião entra no cômputo de duração do trabalho quando escalado.', 'Verificar repouso antes/depois se houver atividade operacional próxima.'];
-  return ['Regra geral: verificar jornada, repouso, limite semanal/mensal e ACT aplicável conforme a atividade.'];
-}
 
 function getRosterFocusEvent(events: RosterEvent[]): RosterEvent | undefined {
   if (!events.length) return undefined;
@@ -3591,11 +3569,6 @@ function parseDisplayTimeRange(time: string): { start: number; end: number } | n
 
 function extractStartTime(time: string): string {
   return String(time || '').match(/\b\d{1,2}:\d{2}\b/)?.[0] || '';
-}
-
-function extractEndTime(time: string): string {
-  const matches = String(time || '').match(/\b\d{1,2}:\d{2}\b/g);
-  return matches && matches.length > 1 ? matches[matches.length - 1] : '';
 }
 
 function normalizeDisplayEnd(start: number, end: number): number {

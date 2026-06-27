@@ -73,10 +73,19 @@ create table if not exists crewcheck_rosters (
   alerts_count int not null default 0,
   critical_alerts_count int not null default 0,
   checksum varchar(128),
+  is_active tinyint(1) not null default 0,
+  active_at timestamp null,
+  deleted_at timestamp null,
+  import_status varchar(48) not null default 'processed',
+  storage_provider varchar(48),
+  source_storage_path text,
+  source_file_size_bytes bigint,
+  storage_uploaded_at timestamp null,
   key crewcheck_rosters_created_at_idx (created_at),
   key crewcheck_rosters_crew_id_idx (crew_id),
   key crewcheck_rosters_period_idx (period_year, period_month),
   key crewcheck_rosters_user_idx (user_id, created_at),
+  key crewcheck_rosters_active_idx (user_id, is_active, deleted_at, updated_at),
   key crewcheck_rosters_checksum_idx (checksum)
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
 

@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.87",
+  "version": "11.0.82",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.87: Regulamentação RBAC 117, alertas na escala e Concierge regulatório Premium.",
+  "description": "CrewCheck v11.0.82: gerenciador de escalas com escala ativa, exclusão segura e Supabase Storage privado.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

@@ -44,6 +44,16 @@ const AUTO_MIGRATE = String(process.env.CREWCHECK_AUTO_MIGRATE || 'true').toLowe
 const AUTH_REQUIRED = String(process.env.CREWCHECK_AUTH_REQUIRED || 'true').toLowerCase() !== 'false';
 const SESSION_DAYS = Number(process.env.CREWCHECK_SESSION_DAYS || 30);
 
+// Cloud Storage privado para arquivos originais de escala. Nunca grave chaves no código;
+// use variáveis de ambiente do Render/Supabase.
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const SUPABASE_PUBLISHABLE_KEY = String(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const SUPABASE_JWKS_URL = String(process.env.SUPABASE_JWKS_URL || '').trim();
+const CREWCHECK_STORAGE_PROVIDER = String(process.env.CREWCHECK_STORAGE_PROVIDER || (SUPABASE_URL && SUPABASE_SECRET_KEY ? 'supabase' : 'database')).trim().toLowerCase();
+const CREWCHECK_SUPABASE_BUCKET_ROSTERS = String(process.env.CREWCHECK_SUPABASE_BUCKET_ROSTERS || process.env.SUPABASE_BUCKET_ROSTERS || 'crewcheck-rosters').trim();
+const CREWCHECK_STORAGE_MAX_FILE_BYTES = Math.max(512_000, Number(process.env.CREWCHECK_STORAGE_MAX_FILE_BYTES || 15 * 1024 * 1024));
+
 const BILLING_TRIAL_DAYS = Math.max(1, Number(process.env.CREWCHECK_TRIAL_DAYS || 7));
 const BILLING_CURRENCY = 'BRL';
 const CREWCHECK_DIARIA_REFERENCE_VALUE = Number(process.env.CREWCHECK_DIARIA_REFERENCE_VALUE || process.env.CREWCHECK_DIARIA_PRINCIPAL_VALUE || 109.44);
@@ -68,7 +78,7 @@ function isLaunchPromoActive() {
 const BILLING_PROMO_ACTIVE = isLaunchPromoActive();
 const BILLING_MONTHLY_VALUE = Number(process.env.CREWCHECK_BILLING_MONTHLY_VALUE || (BILLING_PROMO_ACTIVE ? BILLING_MONTHLY_PROMO_VALUE : BILLING_MONTHLY_ORIGINAL_VALUE));
 const BILLING_YEARLY_VALUE = Number(process.env.CREWCHECK_BILLING_YEARLY_VALUE || (BILLING_PROMO_ACTIVE ? BILLING_YEARLY_PROMO_VALUE : BILLING_YEARLY_ORIGINAL_VALUE));
-const BILLING_PRICE_POLICY_NOTICE = `Preço promocional de lançamento válido para contratação até ${BILLING_LAUNCH_PROMO_END_DATE}. No mensal, quem contratar na promoção mantém o valor promocional pelos ${BILLING_MONTHLY_PROMO_MONTHS} primeiros meses; depois, passa ao valor regular de R$ ${BILLING_MONTHLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/mês. No anual, o desconto vale para o primeiro ano; a renovação segue o valor regular de R$ ${BILLING_YEARLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/ano, salvo nova promoção vigente. O CrewCheck está focado em tripulantes LATAM neste lançamento e aberto à expansão para outras empresas.`;
+const BILLING_PRICE_POLICY_NOTICE = `Preço promocional de lançamento válido para contratação até ${BILLING_LAUNCH_PROMO_END_DATE}. No mensal, quem contratar na promoção mantém o valor promocional pelos ${BILLING_MONTHLY_PROMO_MONTHS} primeiros meses; depois, passa ao valor regular de R$ ${BILLING_MONTHLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/mês. No anual, o desconto vale para o primeiro ano; a renovação segue o valor regular de R$ ${BILLING_YEARLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/ano, salvo nova promoção vigente. O CrewCheck está focado em tripulantes neste lançamento e aberto à expansão para diferentes operações.`;
 const CREWCHECK_SUPPORT_DESTINATION_EMAIL = normalizeEmail(process.env.SUPPORT_DESTINATION_EMAIL || process.env.CREWCHECK_SUPPORT_EMAIL || '');
 const CREWCHECK_SUPPORT_FROM_LABEL = process.env.CREWCHECK_SUPPORT_FROM_LABEL || 'Equipe CrewCheck';
 const CREWCHECK_SUPPORT_WHATSAPP_URL = String(process.env.SUPPORT_WHATSAPP_URL || process.env.CREWCHECK_SUPPORT_WHATSAPP_URL || '').trim();
@@ -182,16 +192,11 @@ const ELEVENLABS_TTS_STYLE = Math.min(1, Math.max(0, Number(process.env.ELEVENLA
 const ELEVENLABS_TTS_SPEAKER_BOOST = String(process.env.ELEVENLABS_TTS_SPEAKER_BOOST || 'true').toLowerCase() !== 'false';
 const TELEGRAM_CONCIERGE_AUDIO_SEND_MODE = String(process.env.TELEGRAM_CONCIERGE_AUDIO_SEND_MODE || 'voice').trim().toLowerCase();
 const TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS = Math.max(420, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS || 1150));
-const TELEGRAM_CONCIERGE_AUDIO_VARIATION = String(process.env.TELEGRAM_CONCIERGE_AUDIO_VARIATION || 'true').toLowerCase() !== 'false';
-const TELEGRAM_CONCIERGE_AUDIO_SMART_TIPS = String(process.env.TELEGRAM_CONCIERGE_AUDIO_SMART_TIPS || 'true').toLowerCase() !== 'false';
-const TELEGRAM_CONCIERGE_AUDIO_PERSONALITY = String(process.env.TELEGRAM_CONCIERGE_AUDIO_PERSONALITY || 'casual-premium').trim().toLowerCase();
 const TELEGRAM_CONCIERGE_VOICE_ENABLED = String(process.env.TELEGRAM_CONCIERGE_VOICE_ENABLED || 'true').toLowerCase() !== 'false';
 const TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY = String(process.env.TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || 'false').toLowerCase() === 'true';
 const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT = (TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('eleven') || TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('openai')) ? 180 : 60;
 const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS = Math.max(20, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS || TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT));
 const TELEGRAM_DEFAULT_CONCIERGE_NAME = 'CrewCheck Concierge';
-const TELEGRAM_WELCOME_CONCIERGE_NAME = String(process.env.TELEGRAM_WELCOME_CONCIERGE_NAME || process.env.CREWCHECK_TELEGRAM_WELCOME_CONCIERGE_NAME || 'Bruno Saraiva').replace(/\s+/g, ' ').trim().slice(0, 48) || 'Bruno Saraiva';
-const TELEGRAM_PREMIUM_SUPPORT_USERNAME = normalizeTelegramUsername(process.env.TELEGRAM_PREMIUM_SUPPORT_USERNAME || process.env.CREWCHECK_PREMIUM_SUPPORT_USERNAME || 'bmedeiros1987');
 const TELEGRAM_DEFAULT_PREFERENCES = {
  smartDeparture: true,
  roster: true,
@@ -449,16 +454,25 @@ async function mysqlQuery(mysqlPool, originalSql, params = []) {
   const id = params[17];
   await mysqlPool.execute(normalizeMysqlSql(sql.replace(/\s+returning[\s\S]*$/i, '')), normalizeMysqlParams(mysqlParams));
   const [rows] = await mysqlPool.execute(normalizeMysqlSql(`select id, created_at, updated_at, crew_name, crew_id, base, \`rank\`, airline, period_year, period_month,
-   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
+   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum, is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path, source_file_size_bytes, storage_uploaded_at from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
   return { rows: rows.map(normalizeMysqlRow), rowCount: rows.length };
  }
 
- if (compact.startsWith('update crewcheck_rosters') && /returning/i.test(originalSql)) {
+ if (compact.startsWith('update crewcheck_rosters') && /returning/i.test(originalSql) && params.length >= 18) {
   const id = params[17];
   await mysqlPool.execute(normalizeMysqlSql(sql.replace(/\s+returning[\s\S]*$/i, '')), normalizeMysqlParams(mysqlParams));
   const [rows] = await mysqlPool.execute(normalizeMysqlSql(`select id, created_at, updated_at, crew_name, crew_id, base, \`rank\`, airline, period_year, period_month,
-   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
+   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum, is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path, source_file_size_bytes, storage_uploaded_at from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
   return { rows: rows.map(normalizeMysqlRow), rowCount: rows.length };
+ }
+
+ if (compact.startsWith('update crewcheck_rosters set deleted_at') && /returning/i.test(originalSql)) {
+  const rosterId = params[0];
+  const userId = params[1];
+  const [before] = await mysqlPool.execute(normalizeMysqlSql('select id from crewcheck_rosters where id = ? and user_id = ? and deleted_at is null limit 1'), normalizeMysqlParams([rosterId, userId]));
+  if (!before.length) return { rows: [], rowCount: 0 };
+  await mysqlPool.execute(normalizeMysqlSql('update crewcheck_rosters set deleted_at = CURRENT_TIMESTAMP, is_active = 0, updated_at = CURRENT_TIMESTAMP, import_status = ? where id = ? and user_id = ? and deleted_at is null'), normalizeMysqlParams([params[2] || 'deleted_by_user', rosterId, userId]));
+  return { rows: before, rowCount: before.length };
  }
 
  if (compact.startsWith('delete from crewcheck_rosters') && /returning/i.test(originalSql)) {
@@ -719,6 +733,14 @@ async function ensureSchema() {
       alerts_count int not null default 0,
       critical_alerts_count int not null default 0,
       checksum varchar(128),
+      is_active tinyint(1) not null default 0,
+      active_at timestamp null,
+      deleted_at timestamp null,
+      import_status varchar(48) not null default 'processed',
+      storage_provider varchar(48),
+      source_storage_path text,
+      source_file_size_bytes bigint,
+      storage_uploaded_at timestamp null,
       key crewcheck_rosters_created_at_idx (created_at),
       key crewcheck_rosters_crew_id_idx (crew_id),
       key crewcheck_rosters_period_idx (period_year, period_month),
@@ -726,6 +748,16 @@ async function ensureSchema() {
       key crewcheck_rosters_checksum_idx (checksum)
      ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
     `);
+
+    await db.query(`alter table crewcheck_rosters add column is_active tinyint(1) not null default 0`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column active_at timestamp null`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column deleted_at timestamp null`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column import_status varchar(48) not null default 'processed'`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column storage_provider varchar(48)`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column source_storage_path text`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column source_file_size_bytes bigint`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column storage_uploaded_at timestamp null`).catch(() => null);
+    await db.query(`create index crewcheck_rosters_active_idx on crewcheck_rosters (user_id, is_active, deleted_at, updated_at)`).catch(() => null);
 
     await db.query(`
      create table if not exists crewcheck_audit_logs (
@@ -958,7 +990,15 @@ async function ensureSchema() {
      intensity_score integer,
      alerts_count integer not null default 0,
      critical_alerts_count integer not null default 0,
-     checksum text
+     checksum text,
+     is_active boolean not null default false,
+     active_at timestamptz,
+     deleted_at timestamptz,
+     import_status text not null default 'processed',
+     storage_provider text,
+     source_storage_path text,
+     source_file_size_bytes bigint,
+     storage_uploaded_at timestamptz
     );
    `);
    await db.query(`alter table crewcheck_rosters add column if not exists updated_at timestamptz not null default now();`);
@@ -969,6 +1009,15 @@ async function ensureSchema() {
    await db.query(`alter table crewcheck_rosters add column if not exists intensity_score integer;`);
    await db.query(`alter table crewcheck_rosters add column if not exists alerts_count integer not null default 0;`);
    await db.query(`alter table crewcheck_rosters add column if not exists critical_alerts_count integer not null default 0;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists is_active boolean not null default false;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists active_at timestamptz;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists deleted_at timestamptz;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists import_status text not null default 'processed';`);
+   await db.query(`alter table crewcheck_rosters add column if not exists storage_provider text;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists source_storage_path text;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists source_file_size_bytes bigint;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists storage_uploaded_at timestamptz;`);
+   await db.query(`create index if not exists crewcheck_rosters_active_idx on crewcheck_rosters (user_id, is_active, deleted_at, updated_at desc);`).catch(() => null);
    await db.query(`create index if not exists crewcheck_rosters_created_at_idx on crewcheck_rosters (created_at desc);`).catch(() => null);
    await db.query(`create index if not exists crewcheck_rosters_crew_id_idx on crewcheck_rosters (crew_id);`).catch(() => null);
    await db.query(`create index if not exists crewcheck_rosters_period_idx on crewcheck_rosters (period_year, period_month);`).catch(() => null);
@@ -2870,6 +2919,15 @@ function summarizeRosterRow(row) {
   alertsCount: row.alerts_count,
   criticalAlertsCount: row.critical_alerts_count,
   checksum: row.checksum,
+  isActive: Boolean(row.is_active),
+  activeAt: row.active_at || null,
+  deletedAt: row.deleted_at || null,
+  importStatus: row.import_status || 'processed',
+  storageProvider: row.storage_provider || null,
+  sourceStoragePath: row.source_storage_path ? String(row.source_storage_path).split('/').slice(0, 3).join('/') + '/…' : null,
+  sourceFileSizeBytes: Number(row.source_file_size_bytes || 0) || null,
+  storageUploadedAt: row.storage_uploaded_at || null,
+  storageReady: Boolean(row.storage_provider && row.source_storage_path),
  };
 }
 
@@ -8670,7 +8728,7 @@ async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mim
     'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
     'Content-Type': contentType,
     'Accept': 'application/json',
-    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.87',
+    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.82',
    },
    body: buffer,
    signal: controller.signal,
@@ -8885,7 +8943,7 @@ async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, st
      'Content-Type': 'application/ssml+xml',
      'X-Microsoft-OutputFormat': AZURE_TTS_OUTPUT_FORMAT,
      'Accept': 'audio/mpeg',
-     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.87',
+     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.82',
     },
     body: azureSpeechBuildSsml(input, { voice, style: attemptStyle }),
     signal: controller.signal,
@@ -8944,7 +9002,89 @@ async function textToSpeechBuffer(text, options = {}) {
  throw failures[0] || new Error('Falha ao gerar áudio.');
 }
 
-async function saveRosterForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, importSource = 'api' }) {
+
+function safeSupabaseStorageName(value, fallback = 'escala.pdf') {
+ const raw = String(value || fallback).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 120);
+ return raw || fallback;
+}
+
+function supabaseStorageConfigured() {
+ return CREWCHECK_STORAGE_PROVIDER.includes('supabase') && Boolean(SUPABASE_URL && SUPABASE_SECRET_KEY && CREWCHECK_SUPABASE_BUCKET_ROSTERS);
+}
+
+function summarizeStorageStatus() {
+ return {
+  provider: supabaseStorageConfigured() ? 'supabase' : 'database',
+  configured: supabaseStorageConfigured(),
+  bucket: supabaseStorageConfigured() ? CREWCHECK_SUPABASE_BUCKET_ROSTERS : null,
+  urlConfigured: Boolean(SUPABASE_URL),
+  secretConfigured: Boolean(SUPABASE_SECRET_KEY),
+  publishableConfigured: Boolean(SUPABASE_PUBLISHABLE_KEY),
+  jwksConfigured: Boolean(SUPABASE_JWKS_URL),
+  maxFileBytes: CREWCHECK_STORAGE_MAX_FILE_BYTES,
+ };
+}
+
+function normalizeBase64Input(value = '') {
+ return String(value || '').replace(/^data:[^;]+;base64,/i, '').replace(/\s+/g, '');
+}
+
+async function uploadRosterOriginalToSupabase(user, rosterId, filePayload = {}) {
+ if (!supabaseStorageConfigured()) return { ok: false, skipped: true, reason: 'storage_not_configured' };
+ const dataBase64 = normalizeBase64Input(filePayload.sourceFileDataBase64 || filePayload.dataBase64 || '');
+ if (!dataBase64) return { ok: false, skipped: true, reason: 'no_file_payload' };
+ const buffer = Buffer.from(dataBase64, 'base64');
+ if (!buffer.length) return { ok: false, skipped: true, reason: 'empty_file' };
+ if (buffer.length > CREWCHECK_STORAGE_MAX_FILE_BYTES) {
+  return { ok: false, skipped: true, reason: 'file_too_large', size: buffer.length, max: CREWCHECK_STORAGE_MAX_FILE_BYTES };
+ }
+ const fileName = safeSupabaseStorageName(filePayload.sourceFileName || filePayload.filename || 'escala.pdf');
+ const mimeType = String(filePayload.sourceMimeType || filePayload.mimeType || (fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream')).trim();
+ const userId = safeSupabaseStorageName(user?.id || 'anon', 'anon');
+ const objectPath = `users/${userId}/rosters/${rosterId}/${Date.now()}-${fileName}`;
+ const endpoint = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(CREWCHECK_SUPABASE_BUCKET_ROSTERS)}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
+ const response = await fetch(endpoint, {
+  method: 'POST',
+  headers: {
+   authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+   apikey: SUPABASE_SECRET_KEY,
+   'content-type': mimeType,
+   'x-upsert': 'true',
+  },
+  body: buffer,
+  signal: AbortSignal.timeout(Number(process.env.CREWCHECK_STORAGE_UPLOAD_TIMEOUT_MS || 20000)),
+ });
+ const text = await response.text().catch(() => '');
+ if (!response.ok) {
+  const error = new Error(`Falha no armazenamento seguro da escala (${response.status}).`);
+  error.statusCode = response.status;
+  error.detail = text.slice(0, 500);
+  throw error;
+ }
+ return { ok: true, provider: 'supabase', bucket: CREWCHECK_SUPABASE_BUCKET_ROSTERS, path: objectPath, size: buffer.length, mimeType };
+}
+
+async function markRosterActive(db, userId, rosterId) {
+ if (!userId || !rosterId) return;
+ await db.query('update crewcheck_rosters set is_active = false, updated_at = now() where user_id = $1 and id <> $2 and deleted_at is null', [userId, rosterId]).catch(() => null);
+ await db.query("update crewcheck_rosters set is_active = true, active_at = now(), updated_at = now(), import_status = coalesce(nullif(import_status, ''), 'processed') where id = $1 and user_id = $2 and deleted_at is null", [rosterId, userId]).catch(() => null);
+}
+
+async function refreshRosterSummaryRow(db, userId, rosterId) {
+ const result = await db.query(
+  `select id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
+      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+      is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+      source_file_size_bytes, storage_uploaded_at
+    from crewcheck_rosters
+   where id = $1 and (($2::uuid is null and user_id is null) or user_id = $2)
+   limit 1`,
+  [rosterId, userId || null],
+ );
+ return result.rows?.[0] || null;
+}
+
+async function saveRosterForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, importSource = 'api', sourceFileDataBase64 = null, sourceMimeType = null, sourceFileSize = null }) {
  if (!db || !user?.id) throw new Error('Usuário não identificado para salvar a escala.');
  if (!roster || !Array.isArray(roster.days)) throw new Error('PDF interpretado, mas não retornou uma escala válida.');
  await assertRosterBelongsToPremiumUser(db, user, roster, sourceFileName || null);
@@ -8964,7 +9104,7 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
  const payloadChecksum = checksumPayload({ roster, compliance, gym, sourceFileName: sourceFileName || null });
  const existing = await db.query(
   `select id from crewcheck_rosters
-   where checksum = $1 and (($2::uuid is null and user_id is null) or user_id = $2)
+   where checksum = $1 and deleted_at is null and (($2::uuid is null and user_id is null) or user_id = $2)
    limit 1`,
   [payloadChecksum, user.id || null],
  );
@@ -8998,7 +9138,9 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
           alerts_count = $15, critical_alerts_count = $16, checksum = $17
     where id = $18
     returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+      is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+      source_file_size_bytes, storage_uploaded_at`,
    [...params, existing.rows[0].id],
   );
   action = 'roster.updated_dedup';
@@ -9009,10 +9151,28 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
       roster_json, compliance_json, gym_json, score, intensity_score, alerts_count, critical_alerts_count, checksum
     ) values ($18,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17)
     returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+      is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+      source_file_size_bytes, storage_uploaded_at`,
    [...params, newId()],
   );
  }
+ await markRosterActive(db, user.id || null, result.rows[0].id);
+ let storageResult = null;
+ if (sourceFileDataBase64) {
+  try {
+   storageResult = await uploadRosterOriginalToSupabase(user, result.rows[0].id, { sourceFileDataBase64, sourceFileName, sourceMimeType, sourceFileSize });
+   if (storageResult?.ok) {
+    await db.query('update crewcheck_rosters set storage_provider = $3, source_storage_path = $4, source_file_size_bytes = $5, storage_uploaded_at = now(), import_status = $6, updated_at = now() where id = $1 and user_id = $2', [result.rows[0].id, user.id || null, storageResult.provider, storageResult.path, storageResult.size, 'stored']);
+   }
+  } catch (storageError) {
+   storageResult = { ok: false, message: storageError?.message || 'Falha no armazenamento seguro.' };
+   await db.query('update crewcheck_rosters set import_status = $3, updated_at = now() where id = $1 and user_id = $2', [result.rows[0].id, user.id || null, 'processed_storage_pending']).catch(() => null);
+  }
+ }
+ const refreshedRow = await refreshRosterSummaryRow(db, user.id || null, result.rows[0].id).catch(() => null);
+ if (refreshedRow) result.rows[0] = refreshedRow;
+
  if (user.id && (roster.crewId || roster.base || roster.rank || roster.crewName)) {
   await db.query(
    `update crewcheck_users
@@ -9027,7 +9187,7 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
  }
  await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [
   newId(), user.id || null, action, result.rows[0].id,
-  JSON.stringify({ sourceFileName: sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, importSource }),
+  JSON.stringify({ sourceFileName: sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, importSource, storage: storageResult || null }),
  ]).catch(() => null);
  await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName, checksum: payloadChecksum }).catch(() => null);
  return { row: result.rows[0], deduplicated: Boolean(existing.rowCount), alerts, criticalAlerts, checksum: payloadChecksum };
@@ -9145,32 +9305,6 @@ async function telegramSendMessage(chatId, text, options = {}) {
  return { ok: true, result };
 }
 
-
-function telegramConciergeDirectText(value = '') {
- return String(value || '')
-  .replace(/<[^>]*>/g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .slice(0, 900);
-}
-
-async function telegramSendDirectText(chatId, text = '') {
- const clean = telegramConciergeDirectText(text) || 'Não consegui concluir agora. Envie esta mensagem ao suporte do CrewCheck.';
- return telegramSendMessage(chatId, telegramEscapeHtml(clean), { reply_markup: undefined });
-}
-
-function telegramConciergeSupportErrorText(error = {}, codePrefix = 'CONCIERGE_AUDIO') {
- const code = String(error?.code || error?.kind || error?.statusCode || error?.status || 'ERRO').toUpperCase().replace(/[^A-Z0-9_]+/g, '_').slice(0, 48);
- const provider = String(error?.provider || '').trim();
- const detail = sanitizePublicError(error?.message || error?.log || String(error || 'Erro desconhecido')).slice(0, 240);
- return [`Não consegui processar o áudio agora.`, `Código: ${codePrefix}_${code}${provider ? `_${provider.toUpperCase()}` : ''}.`, `Detalhe: ${detail}`, `Pode enviar este texto ao suporte.`].join(' ');
-}
-
-function telegramConciergeIsNoResultReply(title = '', lines = []) {
- const text = telegramConciergeNormalizeText([title, ...(Array.isArray(lines) ? lines : [lines])].join(' '));
- return /nao encontrei|sem escala|escala nao sincronizada|nao achei|nao localizei|tente reimportar|precisa ser reimportada|sincronizar escala/.test(text);
-}
-
 async function telegramApiMultipart(method, form) {
  if (!telegramIsConfigured()) {
   const err = new Error('TELEGRAM_BOT_TOKEN não configurado no Render.');
@@ -9234,85 +9368,6 @@ function telegramConciergeDisplayName(row = null, user = null) {
  return TELEGRAM_DEFAULT_CONCIERGE_NAME;
 }
 
-function telegramPremiumSupportMention(user = null) {
- if (!TELEGRAM_PREMIUM_SUPPORT_USERNAME) return '';
- return (telegramConciergeIsPremium(user) || isBillingAdmin(user)) ? `@${TELEGRAM_PREMIUM_SUPPORT_USERNAME}` : '';
-}
-
-function telegramConciergeWelcomeLines(user = null, row = null) {
- const firstName = telegramFirstNameFromUser(user, row, null);
- const premium = telegramConciergeIsPremium(user) || isBillingAdmin(user);
- const conciergeName = telegramConciergeDisplayName(row, user);
- const support = telegramPremiumSupportMention(user);
- const hello = firstName ? `Olá, ${firstName}!` : 'Olá!';
- const identity = premium
-  ? `${hello} Me chamo ${conciergeName === TELEGRAM_DEFAULT_CONCIERGE_NAME ? TELEGRAM_WELCOME_CONCIERGE_NAME : conciergeName} e sou seu concierge da escala.`
-  : `${hello} Eu sou o Concierge CrewCheck e vou te ajudar com sua escala.`;
- const lines = [
-  identity,
-  'Pode mandar texto ou áudio. Eu entendo perguntas como: “o que tenho hoje?”, “minha programação de amanhã”, “dia primeiro de julho”, “próximas programações” e “que horas sair de casa?”.',
-  premium
-   ? 'Comandos Premium: /hoje, /amanha, /proximo, /portao, /saida, /diarias, /rotina, /comandos e /suporte.'
-   : 'No gratuito: /hoje, /amanha, /proximo, /comandos e ajuda básica. Voz, portão, saída, diárias, rotina e suporte direto ficam no Premium.',
-  'Você também pode enviar o PDF original da escala aqui pelo Telegram que eu tento importar e sincronizar com o app.',
- ];
- if (premium && support) {
-  lines.push(`Se precisar de ajuda, mande “suporte” por aqui. Se for algo urgente, me chama no Telegram: ${support}.`);
- } else {
-  lines.push('Se precisar de ajuda, mande “suporte” por aqui. Eu te mostro o melhor caminho pelo app.');
- }
- return lines;
-}
-
-function telegramConciergeSupportLines(user = null, row = null) {
- const premium = telegramConciergeIsPremium(user) || isBillingAdmin(user);
- const support = telegramPremiumSupportMention(user);
- if (premium) {
-  return [
-   'Suporte Premium liberado para sua conta.',
-   support ? `Pode me chamar no Telegram: ${support}.` : 'Abra o CrewCheck e envie a mensagem pela área de Ajuda e suporte.',
-   'Para agilizar, envie junto: e-mail da conta, print do erro, horário aproximado e o que você tentou fazer.',
-   'Se for escala, mande também o PDF original ou diga se importou pelo app, Drive, iCloud ou Telegram.',
-  ];
- }
- return [
-  'O suporte direto pelo Telegram é um recurso Premium.',
-  'No plano gratuito, use Ajuda e manuais dentro do CrewCheck e envie a mensagem pela área de suporte quando disponível.',
-  'Para resolver mais rápido, tente primeiro reimportar a escala pelo app ou enviar o PDF original aqui no bot.',
-  'Premium libera atendimento direto, voz completa, portão/radar, Saída Inteligente, diárias e rotina.',
- ];
-}
-
-function telegramConciergeCommandLines(user = null, row = null) {
- const premium = telegramConciergeIsPremium(user) || isBillingAdmin(user);
- return premium ? [
-  'Comandos por texto ou voz:',
-  '/hoje — programação de hoje.',
-  '/amanha — programação de amanhã.',
-  '/proximo — próxima programação real da escala.',
-  '/portao — portão/status do próximo voo, quando disponível.',
-  '/saida — Saída Inteligente e deslocamento.',
-  '/diarias — prévia de diárias.',
-  '/salario — resumo financeiro do mês salvo.',
-  '/regulamentacao — jornada, repouso, sobreaviso, reserva e RBAC 117.',
-  '/mes julho 2026 — resumo de uma escala antiga sem mexer no cockpit.',
-  '/historico — lista meses/escalas salvos.',
-  '/rotina — sugestão de rotina baseada na escala.',
-  '/suporte — atendimento Premium.',
-  'Também pode falar natural: “qual meu descanso mínimo?”, “limite de sobreaviso”, “tenho irregularidade?”, “o que tenho dia primeiro de julho?”.',
- ] : [
-  'Comandos do plano gratuito:',
-  '/hoje — programação de hoje.',
-  '/amanha — programação de amanhã.',
-  '/proximo — próxima programação básica.',
-  '/regulamentacao — resumo básico de jornada e repouso.',
-  '/historico — últimos meses salvos, em modo limitado.',
-  '/comandos — ver esta lista.',
-  'Premium libera voz completa, alertas regulatórios da escala, portão/radar, Saída Inteligente, diárias, salário, rotina, consulta por mês antigo e suporte direto.',
- ];
-}
-
-
 function telegramConciergeHumanizeLines(lines = [], { userName = '', inputMode = 'text' } = {}) {
  const cleanLines = (Array.isArray(lines) ? lines : [lines])
   .map((line) => telegramConciergeTranslateRosterAbbreviations(String(line || '').trim()))
@@ -9330,10 +9385,6 @@ async function telegramSendConciergeReply(chatId, { row = null, user = null, tit
  const userName = telegramFirstNameFromUser(user, row, null);
  const conciergeName = telegramConciergeDisplayName(row, user);
  const humanLines = telegramConciergeHumanizeLines(lines, { userName, inputMode });
- const isAudioRequest = inputMode === 'audio' || preferAudio;
- if (isAudioRequest && telegramConciergeIsNoResultReply(title, humanLines)) {
-  return await telegramSendDirectText(chatId, 'Não encontrei nada. Tente reimportar sua escala.');
- }
  const messageText = telegramPremiumMessage('concierge', title, humanLines, { footer: footer || TELEGRAM_PREMIUM_CATEGORIES.concierge.footer, conciergeName });
  const reply_markup = telegramPremiumReplyMarkup(actionLabel);
  const maySendAudio = Boolean(preferAudio && TELEGRAM_CONCIERGE_VOICE_ENABLED && preferences.conciergeAudioReplies !== false && (!TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || premium));
@@ -9342,17 +9393,17 @@ async function telegramSendConciergeReply(chatId, { row = null, user = null, tit
    await telegramApi('sendChatAction', { chat_id: String(chatId), action: TELEGRAM_CONCIERGE_AUDIO_SEND_MODE === 'audio' ? 'upload_voice' : 'record_voice' }).catch(() => null);
    const spokenText = telegramConciergeSpokenTextFromReply({ title, lines, userName, inputMode, conciergeName, user, row, audioContext });
    const audio = await textToSpeechBuffer(spokenText, { userName, conciergeName });
+   const caption = telegramEscapeHtml(`${conciergeName}: ${telegramPlainTextFromPremiumMessage(title).slice(0, 80)}`);
    if (TELEGRAM_CONCIERGE_AUDIO_SEND_MODE !== 'audio') {
     try {
-     return await telegramSendVoice(chatId, audio, { caption: '', filename: 'crewcheck-concierge-voz.mp3', reply_markup: undefined });
+     return await telegramSendVoice(chatId, audio, { caption, filename: 'crewcheck-concierge-voz.mp3', reply_markup });
     } catch (voiceError) {
      console.warn('[telegram] sendVoice falhou; enviando como áudio', voiceError?.message || voiceError);
     }
    }
-   return await telegramSendAudio(chatId, audio, { caption: '', filename: 'crewcheck-concierge-leve.mp3', reply_markup: undefined });
+   return await telegramSendAudio(chatId, audio, { caption, filename: 'crewcheck-concierge-leve.mp3', reply_markup });
   } catch (error) {
-   console.warn('[telegram] falha ao gerar/enviar áudio; usando erro direto em texto', error?.message || error);
-   return await telegramSendDirectText(chatId, telegramConciergeSupportErrorText(error, 'CONCIERGE_TTS'));
+   console.warn('[telegram] falha ao gerar/enviar áudio; usando texto', error?.message || error);
   }
  }
  return await telegramSendMessage(chatId, messageText, { reply_markup });
@@ -9444,17 +9495,6 @@ function telegramConciergeIsHelp(text = '') {
  return !clean || /^\/(start|help|ajuda|menu|comandos)(@\w+)?\b/.test(clean) || /\b(ajuda|comandos|o que posso perguntar|como usar)\b/.test(clean);
 }
 
-
-function telegramConciergeIsSupportRequest(text = '') {
- const clean = telegramConciergeNormalizeText(text);
- return /^\/(suporte|support|atendimento)(@\w+)?\b/.test(clean) || /\b(suporte|atendimento|falar com suporte|chamar suporte|bruno saraiva|bmedeiros1987)\b/.test(clean);
-}
-
-function telegramConciergeIsCommandListRequest(text = '') {
- const clean = telegramConciergeNormalizeText(text);
- return /^\/(comandos|menu)(@\w+)?\b/.test(clean) || /\b(lista de comandos|quais comandos|comandos de voz|comandos de texto)\b/.test(clean);
-}
-
 function telegramConciergeFreeUsage(row, increment = false) {
  const chat = String(row?.chat_id || row?.chatId || 'chat');
  const key = `${row?.user_id || row?.userId || 'user'}::${chat}::${telegramConciergeDayKey()}`;
@@ -9484,12 +9524,7 @@ async function telegramConciergeLatestRosters(db, userOrId, limit = 8, linkRow =
  if (!db || !userOrId) return [];
  const user = typeof userOrId === 'object' ? userOrId : { id: userOrId };
  const userId = user.id || user.user_id || linkRow?.user_id || null;
- let freshestLinkRow = linkRow;
- if (userId) {
-  const reloaded = await telegramLinkForUser(db, userId).catch(() => null);
-  if (reloaded?.id) freshestLinkRow = reloaded;
- }
- const linkSnapshot = telegramConciergeRosterSnapshotFromLink(freshestLinkRow);
+ const linkSnapshot = telegramConciergeRosterSnapshotFromLink(linkRow);
  const normalizeRows = (rows = []) => (rows || []).map((row) => ({
   ...row,
   roster: telegramConciergeSafeJson(row.roster_json, row.roster_json || null),
@@ -9497,18 +9532,10 @@ async function telegramConciergeLatestRosters(db, userOrId, limit = 8, linkRow =
   gym: telegramConciergeSafeJson(row.gym_json, row.gym_json || []),
  })).filter((row) => row.roster && Array.isArray(row.roster.days));
  const run = (sql, params = []) => db.query(sql, params).catch(() => ({ rows: [] }));
- const rosterSortTime = (item = {}) => {
-  const updated = Date.parse(item?.updated_at || item?.updatedAt || item?.created_at || item?.createdAt || '');
-  if (Number.isFinite(updated)) return updated;
-  const y = Number(item?.period_year || item?.roster?.year || 0);
-  const m = Number(item?.period_month || item?.roster?.month || 0);
-  return y && m ? Date.UTC(y, m - 1, 1) : 0;
- };
  const unique = (items = []) => {
   const seen = new Set();
   const out = [];
-  const ordered = [...(items || [])].sort((a, b) => rosterSortTime(b) - rosterSortTime(a));
-  for (const item of ordered) {
+  for (const item of items) {
    const key = String(item?.id || item?.checksum || JSON.stringify([item?.period_year, item?.period_month, item?.updated_at]).slice(0, 120));
    if (!key || seen.has(key)) continue;
    seen.add(key);
@@ -9620,269 +9647,14 @@ function telegramConciergeDatePlus(days = 0) {
  return telegramConciergeIsoDateFromParts(shifted.year, shifted.month, shifted.day);
 }
 
-
-function telegramConciergeMonthNumberFromWord(value = '') {
- const token = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
- const map = {
-  jan: 1, janeiro: 1,
-  fev: 2, fevereiro: 2,
-  mar: 3, marco: 3, março: 3,
-  abr: 4, abril: 4,
-  mai: 5, maio: 5,
-  jun: 6, junho: 6,
-  jul: 7, julho: 7,
-  ago: 8, agosto: 8,
-  set: 9, setembro: 9,
-  out: 10, outubro: 10,
-  nov: 11, novembro: 11,
-  dez: 12, dezembro: 12,
- };
- return map[token] || 0;
-}
-
-
-function telegramConciergeMonthLabel(month = 0, year = '') {
- const names = ['','janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
- const m = Number(month || 0);
- const label = names[m] || `mês ${m || '—'}`;
- return year ? `${label} de ${year}` : label;
-}
-
-function telegramConciergeMonthFromText(text = '', rosters = []) {
- const raw = String(text || '');
- const normalized = telegramConciergeNormalizeText(raw);
- const numeric = normalized.match(/\b(0?[1-9]|1[0-2])[\/\-.](20\d{2})\b/);
- if (numeric) return { month: Number(numeric[1]), year: Number(numeric[2]), label: telegramConciergeMonthLabel(Number(numeric[1]), Number(numeric[2])) };
- const monthWords = normalized.split(/\s+/).filter(Boolean);
- for (let i = 0; i < monthWords.length; i += 1) {
-  const month = telegramConciergeMonthNumberFromWord(monthWords[i]);
-  if (!month) continue;
-  const local = monthWords.slice(Math.max(0, i - 4), Math.min(monthWords.length, i + 5));
-  const explicitYear = Number((local.find((token) => /^20\d{2}$/.test(token)) || '').trim());
-  const rosterYear = explicitYear || Number((rosters || []).find((item) => Number(item?.period_month || item?.roster?.month) === month)?.period_year || (rosters || []).find((item) => Number(item?.roster?.month) === month)?.roster?.year || 0);
-  const today = telegramConciergeSaoPauloDateParts(new Date());
-  return { month, year: rosterYear || today.year, label: telegramConciergeMonthLabel(month, rosterYear || today.year) };
- }
- if (/\b(mes|mês)\s+atual\b/.test(normalized)) {
-  const today = telegramConciergeSaoPauloDateParts(new Date());
-  return { month: today.month, year: today.year, label: telegramConciergeMonthLabel(today.month, today.year) };
- }
- if (/\b(mes|mês)\s+passado\b/.test(normalized)) {
-  const today = telegramConciergeSaoPauloDateParts(new Date());
-  const date = new Date(Date.UTC(today.year, today.month - 2, 1, 12, 0, 0));
-  return { month: date.getUTCMonth() + 1, year: date.getUTCFullYear(), label: telegramConciergeMonthLabel(date.getUTCMonth() + 1, date.getUTCFullYear()) };
- }
- return null;
-}
-
-function telegramConciergeFindRosterByMonth(rosters = [], target = null) {
- if (!target?.month || !target?.year) return null;
- const matches = (rosters || []).filter((item) => Number(item?.period_month || item?.roster?.month) === Number(target.month) && Number(item?.period_year || item?.roster?.year) === Number(target.year));
- if (matches.length) return matches[0];
- return (rosters || []).find((item) => Number(item?.period_month || item?.roster?.month) === Number(target.month)) || null;
-}
-
-function telegramConciergeRosterStats(roster = {}) {
- const days = Array.isArray(roster.days) ? roster.days : [];
- let legs = 0;
- let flightDays = 0;
- let standby = 0;
- let reserve = 0;
- let off = 0;
- let training = 0;
- let layover = 0;
- for (const day of days) {
-  const kind = telegramConciergeDayKind(day);
-  const dayLegs = telegramConciergeDayLegs(day);
-  legs += dayLegs.length;
-  if (dayLegs.length || kind.isFlight || kind.isExtra) flightDays += 1;
-  if (kind.isStandby || kind.isStandbyExtra) standby += 1;
-  if (kind.isReserve) reserve += 1;
-  if (kind.isOff || kind.isVacation) off += 1;
-  if (kind.isTraining || kind.isOnlineTraining || kind.isMeeting) training += 1;
-  if (/pernoite|hotel|layover|inativo/i.test(`${day.hotel || ''} ${day.rawText || ''} ${day.type || ''}`)) layover += 1;
- }
- return { days: days.length, legs, flightDays, standby, reserve, off, training, layover };
-}
-
-function telegramConciergeRosterOverviewLines(item = null, target = null) {
- const roster = item?.roster || {};
- const stats = telegramConciergeRosterStats(roster);
- const period = telegramConciergeMonthLabel(roster.month || item?.period_month || target?.month, roster.year || item?.period_year || target?.year);
- const flightHours = roster?.totals?.flightHours ? `${Number(roster.totals.flightHours).toFixed(1).replace('.', ',')}h de voo` : '';
- const dutyHours = roster?.totals?.dutyHours ? `${Number(roster.totals.dutyHours).toFixed(1).replace('.', ',')}h de jornada` : '';
- return [
-  `${period} · ${roster.base || item?.base || 'base não informada'}`,
-  `${stats.days} dia(s) lido(s), ${stats.flightDays} dia(s) com voo e ${stats.legs} perna(s).`,
-  [flightHours, dutyHours].filter(Boolean).join(' · '),
-  stats.standby ? `Sobreaviso: ${stats.standby} dia(s).` : '',
-  stats.reserve ? `Reserva/extra: ${stats.reserve} dia(s).` : '',
-  stats.layover ? `Pernoite/inativo fora de base: ${stats.layover} ocorrência(s).` : '',
-  stats.training ? `Treinamento/reunião: ${stats.training} dia(s).` : '',
-  stats.off ? `Folgas/férias: ${stats.off} dia(s).` : '',
-  'No app, abra Histórico > Visualizar para conferir escala, diárias e salário sem alterar o cockpit.',
- ].filter(Boolean);
-}
-
-function telegramConciergeRosterHistoryLines(rosters = [], { premium = false } = {}) {
- const limited = (rosters || []).slice(0, premium ? 8 : 3);
- if (!limited.length) return ['Não encontrei escalas salvas no servidor. Envie o PDF da escala aqui ou sincronize pelo app.'];
- const lines = ['Escalas salvas disponíveis:'];
- for (const item of limited) {
-  const roster = item.roster || {};
-  const stats = telegramConciergeRosterStats(roster);
-  lines.push(`${telegramConciergeMonthLabel(item.period_month || roster.month, item.period_year || roster.year)} · ${roster.base || 'base'} · ${stats.legs} perna(s) · ${stats.days} dia(s).`);
- }
- if (!premium && (rosters || []).length > limited.length) lines.push('Premium mostra mais meses e libera consultas completas por mês antigo.');
- else lines.push('Para abrir sem mudar o cockpit: Histórico > Visualizar no app.');
- return lines;
-}
-
-function telegramConciergeSalaryBriefLines(item = null, target = null) {
- if (!item?.roster) return ['Não encontrei esse mês salvo para estimar salário.', 'Abra Histórico no app ou reimporte a escala.'];
- const stats = telegramConciergeRosterStats(item.roster);
- const period = telegramConciergeMonthLabel(item.roster.month || item.period_month || target?.month, item.roster.year || item.period_year || target?.year);
- return [
-  `Resumo financeiro de ${period}:`,
-  `${stats.legs} perna(s), ${stats.flightDays} dia(s) com voo, ${stats.reserve} reserva/extra e ${stats.standby} sobreaviso.`,
-  'A previsão exata de salário depende das regras, adicionais e calibragem do app.',
-  'No app, use Histórico > Visualizar > Salário para recalcular esse mês antigo sem alterar o cockpit.',
- ];
-}
-
-function telegramConciergeDayNumberFromPortuguese(value = '') {
- const clean = String(value || '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .replace(/\b(primeira)\b/g, 'primeiro')
-  .replace(/\b(segunda)\b/g, 'segundo')
-  .replace(/\b(duas)\b/g, 'dois')
-  .replace(/\b(uma)\b/g, 'um')
-  .replace(/[^a-z0-9]+/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
- if (!clean) return 0;
- const numeric = clean.match(/\b(0?[1-9]|[12]\d|3[01])\b/);
- if (numeric) return Number(numeric[1]);
- const words = clean.split(' ').filter((word) => word && !['dia','de','do','da','dos','das','no','na','nos','nas','para','pra','programacao','programacoes','escala','agenda','minha','meu','a','o','e'].includes(word));
- const phrase = words.join(' ');
- const direct = {
-  primeiro: 1, um: 1,
-  segundo: 2, dois: 2,
-  terceiro: 3, tres: 3,
-  quarto: 4, quatro: 4,
-  quinto: 5, cinco: 5,
-  sexto: 6, seis: 6,
-  setimo: 7, sete: 7,
-  oitavo: 8, oito: 8,
-  nono: 9, nove: 9,
-  decimo: 10, dez: 10,
-  onze: 11,
-  doze: 12,
-  treze: 13,
-  quatorze: 14, catorze: 14,
-  quinze: 15,
-  dezesseis: 16, dezasseis: 16,
-  dezessete: 17, dezassete: 17,
-  dezoito: 18,
-  dezenove: 19, dezanove: 19,
-  vinte: 20,
-  trinta: 30,
- };
- if (direct[phrase] && direct[phrase] <= 31) return direct[phrase];
- const tokens = phrase.split(' ').filter(Boolean);
- let total = 0;
- for (const token of tokens) {
-  if (token === 'e') continue;
-  const valueNum = direct[token] || 0;
-  if (!valueNum) continue;
-  total += valueNum;
- }
- if (total >= 1 && total <= 31) return total;
- return 0;
-}
-
-function telegramConciergeRosterMatchesMonthDay(rosters = [], month = 0, day = 0) {
- const matches = [];
- for (const item of rosters || []) {
-  const roster = item?.roster || {};
-  for (const rosterDay of roster.days || []) {
-   const iso = telegramConciergeDateFromDay(rosterDay, roster);
-   if (!iso) continue;
-   if (Number(iso.slice(5, 7)) === Number(month) && Number(iso.slice(8, 10)) === Number(day)) matches.push(iso);
-  }
- }
- return [...new Set(matches)].sort();
-}
-
-function telegramConciergeInferYearForMonthDay(month = 0, day = 0, rosters = [], explicitYear = '') {
- const year = Number(explicitYear || 0);
- if (year) return year;
- const rosterMatches = telegramConciergeRosterMatchesMonthDay(rosters, month, day);
- const today = telegramConciergeDatePlus(0);
- const futureRoster = rosterMatches.find((iso) => iso >= today);
- if (futureRoster) return Number(futureRoster.slice(0, 4));
- if (rosterMatches[0]) return Number(rosterMatches[0].slice(0, 4));
- const todayParts = telegramConciergeSaoPauloDateParts(new Date());
- const candidate = telegramConciergeIsoDateFromParts(todayParts.year, month, day);
- return candidate && candidate < today ? todayParts.year + 1 : todayParts.year;
-}
-
-function telegramConciergeDateFromSpokenMonth(text = '', rosters = []) {
- const raw = String(text || '');
- const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
- const tokens = normalized.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
- if (!tokens.length) return null;
- const noise = new Set(['de','do','da','dos','das','no','na','nos','nas','para','pra','pro','a','o','e','em','minha','meu','qual','programacao','programacoes','escala','agenda']);
- const monthIndexes = [];
- tokens.forEach((token, index) => {
-  if (telegramConciergeMonthNumberFromWord(token)) monthIndexes.push(index);
- });
- for (const monthIndex of monthIndexes) {
-  const month = telegramConciergeMonthNumberFromWord(tokens[monthIndex]);
-  const before = tokens.slice(Math.max(0, monthIndex - 8), monthIndex);
-  const after = tokens.slice(monthIndex + 1, Math.min(tokens.length, monthIndex + 7));
-  const afterYear = after.find((token) => /^20\d{2}$/.test(token)) || '';
-  const beforeYear = before.find((token) => /^20\d{2}$/.test(token)) || '';
-  const explicitYear = afterYear || beforeYear || '';
-  const beforeClean = before.filter((token) => !/^20\d{2}$/.test(token));
-  for (let size = Math.min(5, beforeClean.length); size >= 1; size -= 1) {
-   const chunk = beforeClean.slice(beforeClean.length - size).filter((token) => !noise.has(token));
-   const day = telegramConciergeDayNumberFromPortuguese(chunk.join(' '));
-   if (day) {
-    const year = telegramConciergeInferYearForMonthDay(month, day, rosters, explicitYear);
-    return { iso: telegramConciergeIsoDateFromParts(year, month, day), label: `dia ${day} de ${tokens[monthIndex]}` };
-   }
-  }
-  for (let size = 1; size <= Math.min(5, after.length); size += 1) {
-   const chunk = after.slice(0, size).filter((token) => !noise.has(token) && !/^20\d{2}$/.test(token));
-   const day = telegramConciergeDayNumberFromPortuguese(chunk.join(' '));
-   if (day) {
-    const year = telegramConciergeInferYearForMonthDay(month, day, rosters, explicitYear);
-    return { iso: telegramConciergeIsoDateFromParts(year, month, day), label: `dia ${day} de ${tokens[monthIndex]}` };
-   }
-  }
- }
- return null;
-}
-
 function telegramConciergeDateFromText(text = '', rosters = []) {
- const rawText = String(text || '');
- const clean = telegramConciergeNormalizeText(rawText);
- const nowParts = telegramConciergeSaoPauloDateParts(new Date());
+ const clean = telegramConciergeNormalizeText(text);
+ const now = new Date();
  if (/\b(hoje|agora|atual)\b/.test(clean)) return { iso: telegramConciergeDatePlus(0), label: 'hoje' };
- if (/\b(depois de amanha|depois de amanhã)\b/.test(rawText.toLowerCase()) || /\bdepois de amanha\b/.test(clean)) return { iso: telegramConciergeDatePlus(2), label: 'depois de amanhã' };
- if (/\b(amanha|amanhã)\b/.test(rawText.toLowerCase()) || /\bamanha\b/.test(clean)) return { iso: telegramConciergeDatePlus(1), label: 'amanhã' };
- const spokenMonth = telegramConciergeDateFromSpokenMonth(rawText, rosters);
- if (spokenMonth?.iso) return spokenMonth;
+ if (/\b(amanha|amanhã)\b/.test(String(text || '').toLowerCase()) || /\bamanha\b/.test(clean)) return { iso: telegramConciergeDatePlus(1), label: 'amanhã' };
+ if (/\b(depois de amanha|depois de amanhã)\b/.test(String(text || '').toLowerCase()) || /\bdepois de amanha\b/.test(clean)) return { iso: telegramConciergeDatePlus(2), label: 'depois de amanhã' };
  const br = clean.match(/\b(?:dia\s*)?(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](20\d{2}))?\b/);
- if (br) {
-  const month = Number(br[2]);
-  const day = Number(br[1]);
-  const year = telegramConciergeInferYearForMonthDay(month, day, rosters, br[3] || '');
-  return { iso: telegramConciergeIsoDateFromParts(year, month, day), label: `${telegramConciergePad2(day)}/${telegramConciergePad2(month)}` };
- }
+ if (br) return { iso: telegramConciergeIsoDateFromParts(br[3] || now.getFullYear(), br[2], br[1]), label: `${telegramConciergePad2(br[1])}/${telegramConciergePad2(br[2])}` };
  const dayOnly = clean.match(/\bdia\s+(\d{1,2})\b/) || clean.match(/\b(\d{1,2})\b/);
  if (dayOnly) {
   const day = Number(dayOnly[1]);
@@ -9893,27 +9665,9 @@ function telegramConciergeDateFromText(text = '', rosters = []) {
     if (iso && Number(iso.slice(8, 10)) === day) matches.push(iso);
    }
   }
-  const today = telegramConciergeDatePlus(0);
-  const future = matches.find((iso) => iso >= today);
+  const future = matches.find((iso) => iso >= telegramConciergeDatePlus(0));
   if (future || matches[0]) return { iso: future || matches[0], label: `dia ${day}` };
-  return { iso: telegramConciergeIsoDateFromParts(nowParts.year, nowParts.month, day), label: `dia ${day}` };
- }
- const spokenDayOnly = clean.match(/\bdia\s+([a-z\s]+?)\b(?:da|do|de|para|pra|$)/i);
- if (spokenDayOnly) {
-  const day = telegramConciergeDayNumberFromPortuguese(spokenDayOnly[1]);
-  if (day) {
-   const matches = [];
-   for (const item of rosters) {
-    for (const d of item.roster.days || []) {
-     const iso = telegramConciergeDateFromDay(d, item.roster);
-     if (iso && Number(iso.slice(8, 10)) === day) matches.push(iso);
-    }
-   }
-   const today = telegramConciergeDatePlus(0);
-   const future = matches.find((iso) => iso >= today);
-   if (future || matches[0]) return { iso: future || matches[0], label: `dia ${day}` };
-   return { iso: telegramConciergeIsoDateFromParts(nowParts.year, nowParts.month, day), label: `dia ${day}` };
-  }
+  return { iso: telegramConciergeIsoDateFromParts(now.getFullYear(), now.getMonth() + 1, day), label: `dia ${day}` };
  }
  return { iso: telegramConciergeDatePlus(0), label: 'hoje' };
 }
@@ -10015,7 +9769,6 @@ function telegramConciergeDayEndPlace(day = {}, lastLeg = {}) {
  return telegramConciergeAirportName(lastLeg.destination || lastLeg.to || day.destination || day.to || day.endLocation || day.location || day.airport || day.base || 'local não informado');
 }
 
-
 function telegramConciergeVocativeFromUser(user = null, row = null, context = {}) {
  const first = telegramFirstNameFromUser(user, row, null) || 'comandante';
  const roster = context?.roster || context?.found?.roster || context?.row?.roster || {};
@@ -10028,35 +9781,11 @@ function telegramConciergeVocativeFromUser(user = null, row = null, context = {}
  return first;
 }
 
-function telegramConciergeRandomIndex(seed = '', length = 1) {
- const size = Math.max(1, Number(length) || 1);
- if (!TELEGRAM_CONCIERGE_AUDIO_VARIATION) {
-  const text = String(seed || 'crewcheck');
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) hash = ((hash << 5) - hash) + text.charCodeAt(i);
-  return Math.abs(hash) % size;
- }
- const timeBucket = Math.floor(Date.now() / 30_000);
- const random = Math.floor(Math.random() * size);
- const text = `${seed}|${timeBucket}|${random}`;
- let hash = 0;
- for (let i = 0; i < text.length; i += 1) hash = ((hash << 5) - hash) + text.charCodeAt(i);
- return Math.abs(hash) % size;
-}
-
-function telegramConciergePickVariant(variants = [], seed = '') {
- const list = (Array.isArray(variants) ? variants : [variants]).map((item) => String(item || '').trim()).filter(Boolean);
- if (!list.length) return '';
- return list[telegramConciergeRandomIndex(seed, list.length)] || list[0];
-}
-
 function telegramConciergeAudioGreeting({ user = null, row = null, context = {}, title = '', text = '' } = {}) {
  const vocative = telegramConciergeVocativeFromUser(user, row, context);
- const seed = `${title}|${text}|${vocative}|${context?.kind || ''}`;
- const variants = TELEGRAM_CONCIERGE_AUDIO_PERSONALITY.includes('formal')
-  ? [`Olá, ${vocative}.`, `Pronto, ${vocative}.`, `Tudo certo, ${vocative}.`]
-  : [`E aí, ${vocative}.`, `Fala, ${vocative}.`, `Pronto, ${vocative}.`, `Boa, ${vocative}.`, `Opa, ${vocative}.`];
- return telegramConciergePickVariant(variants, seed);
+ const seed = String(`${title} ${text} ${vocative}`).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+ const variants = [`E aí, ${vocative}.`, `Boa, ${vocative}.`, `Fala, ${vocative}.`, `Pronto, ${vocative}.`];
+ return variants[Math.abs(seed) % variants.length];
 }
 
 function telegramConciergeDateLabelForSpeech(iso = '', label = '') {
@@ -10066,29 +9795,6 @@ function telegramConciergeDateLabelForSpeech(iso = '', label = '') {
  if (clean.includes('depois de amanha')) return 'depois de amanhã';
  const readable = telegramConciergeReadableDate(iso);
  return readable ? `no dia ${readable.slice(0, 5)}` : (label || 'nessa data');
-}
-
-function telegramConciergeAudioMaybeTip(day = {}, kind = {}, legs = [], { start = '', includeAdvice = true } = {}) {
- if (!includeAdvice || !TELEGRAM_CONCIERGE_AUDIO_SMART_TIPS) return '';
- const cleanKind = String(kind?.key || '').toLowerCase();
- const tips = [];
- const hour = Number(String(start || '').match(/^(\d{1,2})/)?.[1] || NaN);
- if (['flight', 'extra', 'reserve'].includes(cleanKind)) {
-  tips.push('Confere documento, uniforme e a escala oficial antes de sair.');
-  tips.push('Já deixa o check-in e o deslocamento no radar para não correr.');
-  tips.push('Dá uma última olhada no portão e no status antes de sair para o aeroporto.');
-  if (Number.isFinite(hour) && hour < 8) tips.push('Como é cedo, eu já deixaria despertador extra e tudo separado hoje.');
-  if (legs.length > 3) tips.push('Como são várias pernas, tenta se hidratar e comer nas janelas boas.');
- }
- if (cleanKind === 'standby' || cleanKind === 'standby_extra') {
-  tips.push('Deixa o celular carregado e o volume ligado.');
-  tips.push('Se tocar, já confere apresentação, base e deslocamento antes de sair.');
- }
- if (cleanKind === 'off' || cleanKind === 'off_after_vacation' || cleanKind === 'vacation') {
-  tips.push('Aproveita para descansar sem culpa.');
-  tips.push('Bom dia para recuperar energia.');
- }
- return telegramConciergePickVariant(tips, `${cleanKind}|${start}|${legs.length}|tip`);
 }
 
 function telegramConciergeAudioDaySummary(day = {}, iso = '', { label = '', concise = false, includeAdvice = true } = {}) {
@@ -10103,89 +9809,33 @@ function telegramConciergeAudioDaySummary(day = {}, iso = '', { label = '', conc
  const dateLabel = telegramConciergeDateLabelForSpeech(iso, label);
  const startPhrase = start ? `às ${telegramConciergeSpeakClock(start)}` : 'sem horário de início localizado';
  const endPhrase = end ? `às ${telegramConciergeSpeakClock(end)}` : 'sem horário de término localizado';
- const dateIsToday = dateLabel === 'hoje';
- const seed = `${iso}|${label}|${kind.key}|${legs.length}|${start}|${end}|${startPlace}|${endPlace}`;
- const maybeTip = telegramConciergeAudioMaybeTip(day, kind, legs, { start, includeAdvice: includeAdvice && !concise });
- const suffix = maybeTip ? ` ${maybeTip}` : '';
+ const checkinAdvice = includeAdvice ? 'Se estiver na base, não esquece de enviar o formulário de check-in.' : '';
  if (kind.key === 'standby' || kind.key === 'standby_extra') {
-  const variants = [
-   `Ah, que o melhor aconteça! Você está de ${kind.label} ${dateLabel}, das ${telegramConciergeSpeakClock(start)} até ${telegramConciergeSpeakClock(end)}. Fica de olho no celular.`,
-   `Tomara que fique tranquilo: ${dateLabel}, você está de ${kind.label} das ${telegramConciergeSpeakClock(start)} até ${telegramConciergeSpeakClock(end)}. Celular carregado e por perto, tá?`,
-   `Hoje o jogo é esperar. ${dateLabel}, ${kind.label} das ${telegramConciergeSpeakClock(start)} até ${telegramConciergeSpeakClock(end)}. Qualquer acionamento, confere a escala oficial antes de sair.`,
-   `Você está de ${kind.label} ${dateLabel}, das ${telegramConciergeSpeakClock(start)} até ${telegramConciergeSpeakClock(end)}. Torcendo para não tocar, mas fica atento no celular.`
-  ];
-  return `${telegramConciergePickVariant(variants, seed)}${suffix}`;
+  return `Ah, que o melhor aconteça! Você está de ${kind.label} ${dateLabel}, das ${telegramConciergeSpeakClock(start)} até ${telegramConciergeSpeakClock(end)}. Fica de olho no celular.`;
  }
  if (kind.key === 'reserve' || kind.key === 'extra') {
-  const checkinAdvice = includeAdvice ? 'Se estiver na base, não esquece de enviar o formulário de check-in.' : '';
-  const variants = [
-   `Você está de ${kind.label} ${dateLabel}, se apresentando ${startPhrase}. ${checkinAdvice}`,
-   `Para ${dateLabel}, consta ${kind.label}. Apresentação ${startPhrase}. ${checkinAdvice}`,
-   `Sua programação é ${kind.label} ${dateLabel}. A apresentação está ${startPhrase}. ${checkinAdvice}`,
-   `${dateIsToday ? 'Hoje é' : `Para ${dateLabel}, é`} ${kind.label}: apresentação ${startPhrase}. ${checkinAdvice}`
-  ];
-  return `${telegramConciergePickVariant(variants, seed)}${suffix}`;
+  return [`Ah, você está de ${kind.label} ${dateLabel}, se apresentando ${startPhrase}.`, checkinAdvice].filter(Boolean).join(' ');
  }
  if (kind.key === 'off' || kind.key === 'off_after_vacation') {
-  const variants = [
-   `${dateIsToday ? 'Hoje' : `Você tem ${kind.label} ${dateLabel}`}. É ${kind.label}; aproveita para descansar e recuperar energia.`,
-   `${dateIsToday ? 'Hoje' : dateLabel} está de ${kind.label}. Pode respirar um pouco e descansar.`,
-   `Boa notícia: ${dateIsToday ? 'hoje' : dateLabel} é ${kind.label}. Aproveita para recarregar a bateria.`
-  ];
-  return telegramConciergePickVariant(variants, seed);
+  return `${dateLabel === 'hoje' ? 'Hoje' : `Você tem ${kind.label} ${dateLabel}`}. É ${kind.label}; aproveita para descansar e recuperar energia.`;
  }
  if (kind.key === 'vacation') {
-  const variants = [
-   `${dateIsToday ? 'Hoje' : dateLabel} você segue de férias. Aproveita para descansar.`,
-   `Férias confirmadas ${dateLabel}. Esquece escala um pouquinho e aproveita.`,
-   `${dateIsToday ? 'Hoje' : dateLabel} é férias. Nada de inventar moda com escala, vai descansar.`
-  ];
-  return telegramConciergePickVariant(variants, seed);
+  return `${dateLabel === 'hoje' ? 'Hoje' : dateLabel} você segue de férias. Aproveita para descansar.`;
  }
  if (kind.key === 'crm' || kind.key === 'ead' || kind.key === 'meeting') {
   const local = startPlace && startPlace !== 'local não informado' ? ` em ${startPlace}` : '';
-  const variants = [
-   `Você tem ${kind.label} ${dateLabel}${local}, começando ${startPhrase}${end ? ` e terminando ${endPhrase}` : ''}.`,
-   `${dateLabel}, aparece ${kind.label}${local}. Começa ${startPhrase}${end ? ` e fecha ${endPhrase}` : ''}.`,
-   `Sua atividade ${dateLabel} é ${kind.label}${local}. Início ${startPhrase}${end ? `, término ${endPhrase}` : ''}.`
-  ];
-  return `${telegramConciergePickVariant(variants, seed)}${suffix}`;
+  return `Você tem ${kind.label} ${dateLabel}${local}, começando ${startPhrase}${end ? ` e terminando ${endPhrase}` : ''}.`;
  }
  if (legs.length) {
   const count = legs.length;
   const legWord = telegramConciergePlural(count, 'perna', 'pernas');
   const route = `começando em ${startPlace} ${startPhrase}, e terminando em ${endPlace} ${endPhrase}`;
-  let variants;
-  if (count > 3) {
-   variants = [
-    `Nossa, ${dateIsToday ? 'hoje' : dateLabel} tá puxado: você tem ${count} ${legWord}, ${route}.`,
-    `Segura essa: ${dateIsToday ? 'hoje' : dateLabel} vem pesado, com ${count} ${legWord}, ${route}.`,
-    `Dia cheio no radar: ${count} ${legWord} ${dateLabel}, ${route}.`,
-    `${dateIsToday ? 'Hoje' : dateLabel} não está para brincadeira: são ${count} ${legWord}, ${route}.`
-   ];
-  } else if (count < 3) {
-   variants = [
-    `Ah, ${dateIsToday ? 'hoje' : dateLabel} está tranquilo: você tem ${count} ${legWord}, ${route}.`,
-    `${dateIsToday ? 'Hoje' : dateLabel} está bem de boa: ${count} ${legWord}, ${route}.`,
-    `Programação leve ${dateLabel}: ${count} ${legWord}, ${route}.`,
-    `${dateIsToday ? 'Hoje parece' : dateLabel + ' parece'} mais redondo: ${count} ${legWord}, ${route}.`
-   ];
-  } else {
-   variants = [
-    `${dateIsToday ? 'Hoje' : `Nesse ${dateLabel}`} está no meio termo: você tem ${count} ${legWord}, ${route}.`,
-    `${dateLabel} vem equilibrado: ${count} ${legWord}, ${route}.`,
-    `Para ${dateLabel}, são ${count} ${legWord}. Começa em ${startPlace} ${startPhrase} e termina em ${endPlace} ${endPhrase}.`
-   ];
-  }
-  return `${telegramConciergePickVariant(variants, seed)}${suffix}`;
+  if (count > 3) return `Nossa, ${dateLabel === 'hoje' ? 'hoje' : dateLabel} tá puxado: você tem ${count} ${legWord}, ${route}.`;
+  if (count < 3) return `Ah, ${dateLabel === 'hoje' ? 'hoje' : dateLabel} está tranquilo: você tem ${count} ${legWord}, ${route}.`;
+  return `${dateLabel === 'hoje' ? 'Hoje' : `Nesse ${dateLabel}`} está bem redondinho: você tem ${count} ${legWord}, ${route}.`;
  }
  const type = kind.label || 'programação';
- const variants = [
-  `Você tem ${type} ${dateLabel}${start ? `, começando ${startPhrase}` : ''}${end ? ` e terminando ${endPhrase}` : ''}.`,
-  `Consta ${type} ${dateLabel}${start ? `, início ${startPhrase}` : ''}${end ? ` e término ${endPhrase}` : ''}.`,
-  `${dateLabel}, apareceu ${type}${start ? ` começando ${startPhrase}` : ''}${end ? ` e encerrando ${endPhrase}` : ''}.`
- ];
- return telegramConciergePickVariant(variants, seed);
+ return `Você tem ${type} ${dateLabel}${start ? `, começando ${startPhrase}` : ''}${end ? ` e terminando ${endPhrase}` : ''}.`;
 }
 
 function telegramConciergeDayShortLine(day = {}, iso = '') {
@@ -10233,6 +9883,36 @@ function telegramConciergeWantsUpcoming(text = '') {
  if (/\b(proximas|proximos|proximas programacoes|proximos voos|minhas programacoes|meus voos|minha escala|minha agenda|programacoes da semana|escala da semana|semana)\b/.test(clean)) return true;
  if (/\b(programacoes|programações)\b/.test(String(text || '').toLowerCase()) && !/\b(hoje|amanha|amanhã|dia\s+\d{1,2}|\d{1,2}[\/\-.]\d{1,2})\b/i.test(String(text || ''))) return true;
  return false;
+}
+
+
+function telegramConciergeWantsRegulation(text = '') {
+ const clean = telegramConciergeNormalizeText(text);
+ return /\b(regulamentacao|regulamentação|conformidade|irregularidade|irregularidades|alertas?|rbac|lei do aeronauta|mcmsv|manual|notoc|pnae|pob|poc|depa|depu|custodia|custódia|madrugada|sobreaviso|reserva|repouso|jornada|artigo perigoso|artigos perigosos)\b/i.test(clean);
+}
+
+function telegramConciergeRegulationLines(rosters = [], { premium = false } = {}) {
+ const text = rosters.map(item => `${item.roster?.rawText || ''} ${(item.roster?.days || []).map(day => `${day.rawText || ''} ${day.pairingCode || ''} ${day.type || ''}`).join(' ')}`).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+ const hits = [];
+ const add = (condition, line) => { if (condition) hits.push(line); };
+ add(/\b(WCH|WCHR|WCHS|WCHC|WCBD|BLND|DEAF|UMNR|PNAE)\b/.test(text), 'PNAE/atendimento especial: conferir Nimbus; se houver divergência persistente, inserir o adicional no P.O.B. e avisar cockpit.');
+ add(/\b(NOTOC|DG|DGR|ARTIGOS? PERIGOSOS?|DANGEROUS GOODS)\b/.test(text), 'NOTOC/artigos perigosos: garantir ciência do CSB/CF e cabine; em discrepância, seguir reporte operacional.');
+ add(/\b(POC|CONCENTRADOR)\b/.test(text), 'POC: validar bateria de 150% do voo, assento adequado e sem obstruir evacuação.');
+ add(/\b(DEPA|DEPU|CUSTODIAD|CUSTODIA|ESCOLTA)\b/.test(text), 'Security: DEPA/DEPU/custodiado exigem briefing, assento no final da cabine, escolta e restrição de serviço conforme caso.');
+ add(/\b(PETC|ESAN|SVAN|AVIH)\b/.test(text), 'Animal em cabine/serviço: conferir categoria, limite, assento e se não bloqueia corredor ou saída.');
+ add(/\b(HSB|HSBE|SOBREAVISO)\b/.test(text), 'Sobreaviso: janela de 3h a 12h, até 8 mensais; em acionamento, conferir apresentação e SAV + jornada.');
+ add(/\b(ASB|RES|RESERVA)\b/.test(text), 'Reserva: janela de 3h a 6h em local de trabalho; horários incompletos ficam como leitura incerta.');
+ add(/\b(KME|KIM|MEDAIRE|OCORRENCIA MEDICA)\b/.test(text), 'Ocorrência médica: KME/KIM, autorização MedAire/Comandante e MOR quando aplicável.');
+ const base = [
+  'Motor de conformidade refinado: foco em jornada, repouso, sobreaviso/reserva acionados e redução de falsos positivos.',
+  'Também passei a marcar como ponto de atenção itens operacionais, e não só jornada/repouso.',
+ ];
+ const lines = base.concat(hits.length ? hits : [
+  'Na escala salva não encontrei códigos especiais evidentes como PNAE, NOTOC, POC, DEPA/DEPU ou PETC, mas o motor já fica pronto para alertar quando aparecerem.',
+  'Continuo validando folgas, repouso, sobreaviso, reserva, madrugadas, horas de voo, jornada mensal e tempo em solo.',
+ ]);
+ if (!premium) lines.push('No gratuito, deixo só o resumo. O Premium mostra os alertas detalhados e histórico de conformidade.');
+ return lines.slice(0, premium ? 10 : 5);
 }
 
 function telegramConciergeIsGenericGreetingLine(line = '', userName = '') {
@@ -10379,68 +10059,42 @@ function telegramConciergeTrimAudioText(text = '', maxChars = TELEGRAM_CONCIERGE
  return `${sliced.slice(0, cut > 360 ? cut : maxChars).trim()}. O restante eu deixei escrito no Telegram.`;
 }
 
-
 function telegramConciergeAudioBodyFromContext(context = {}) {
  if (!context || typeof context !== 'object') return '';
  if (context.kind === 'day' && context.day) return telegramConciergeAudioDaySummary(context.day, context.iso || '', { label: context.label || '', includeAdvice: true });
- if (context.kind === 'next' && context.day) {
-  const variants = ['Sua próxima programação é essa:', 'A próxima que eu encontrei foi essa:', 'Olhei aqui, a próxima é assim:'];
-  return `${telegramConciergePickVariant(variants, `${context.iso}|next`)} ${telegramConciergeAudioDaySummary(context.day, context.iso || '', { label: context.label || 'próxima', includeAdvice: true })}`;
- }
+ if (context.kind === 'next' && context.day) return `Sua próxima programação é ${telegramConciergeAudioDaySummary(context.day, context.iso || '', { label: context.label || 'próxima', includeAdvice: true })}`;
  if (context.kind === 'upcoming') {
   const items = Array.isArray(context.items) ? context.items : [];
   if (!items.length) return 'Não encontrei próximas programações salvas. Sincronize a escala mais recente no CrewCheck.';
   const maxAudio = Math.min(Number(context.audioLimit || 3), items.length);
-  const intros = [
-   `Separei as próximas ${maxAudio} programações para você.`,
-   `Peguei aqui um resumo rápido das próximas ${maxAudio}.`,
-   `Olhei sua agenda e vou te falar as próximas ${maxAudio}, bem direto.`,
-   `Tenho aqui as próximas ${maxAudio} da escala.`
-  ];
+  const intro = `Separei suas próximas ${maxAudio} programações.`;
   const pieces = items.slice(0, maxAudio).map((item) => telegramConciergeAudioDaySummary(item.day, item.iso, { label: item.label || '', concise: true, includeAdvice: false }));
-  const more = items.length > maxAudio ? telegramConciergePickVariant(['O restante eu deixei escrito no Telegram.', 'As outras eu deixei no texto para não ficar áudio gigante.', 'Deixei o complemento por escrito aqui embaixo.'], `more|${items.length}`) : '';
-  return [telegramConciergePickVariant(intros, `upcoming|${items.length}|${maxAudio}`), ...pieces, more].filter(Boolean).join(' ');
- }
- if (context.kind === 'regulation') {
-  const lines = Array.isArray(context.lines) ? context.lines.filter(Boolean).slice(0, 4) : [];
-  if (!lines.length) return 'Não encontrei dados regulatórios salvos. Reimporte sua escala e tente de novo.';
-  return `Sobre regulamentação: ${lines.map((line) => telegramConciergeNaturalizeForAudio(telegramConciergeTranslateRosterAbbreviations(String(line || '')))).join('. ')}`;
+  const more = items.length > maxAudio ? 'O restante eu deixei escrito no Telegram.' : '';
+  return [intro, ...pieces, more].filter(Boolean).join(' ');
  }
  if (context.kind === 'gate' && context.found) {
   const leg = context.leg || context.found.leg || {};
   const flight = telegramConciergeNaturalizeForAudio(telegramConciergeLegNumber(leg) || 'seu voo');
   const route = [telegramConciergeAirportName(leg.origin || leg.from), telegramConciergeAirportName(leg.destination || leg.to)].filter(Boolean).join(' para ');
   const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
-  const gate = leg.gate ? `O portão é ${leg.gate}.` : telegramConciergePickVariant(['O portão ainda não apareceu no radar salvo.', 'Ainda não tenho portão confirmado salvo aqui.', 'Portão, por enquanto, ainda não está disponível no CrewCheck.'], `${flight}|gate`);
+  const gate = leg.gate ? `O portão é ${leg.gate}.` : 'O portão ainda não apareceu no radar salvo.';
   const terminal = leg.terminal ? `Terminal ${leg.terminal}.` : '';
-  const tip = TELEGRAM_CONCIERGE_AUDIO_SMART_TIPS ? 'Confere o monitor do aeroporto quando estiver perto do embarque.' : '';
-  return `Sobre o ${flight}${route ? `, de ${route}` : ''}${dep ? `, saindo às ${telegramConciergeSpeakClock(dep)}` : ''}. ${gate} ${terminal} ${tip}`.trim();
+  return `Sobre o ${flight}${route ? `, de ${route}` : ''}${dep ? `, saindo às ${telegramConciergeSpeakClock(dep)}` : ''}. ${gate} ${terminal}`.trim();
  }
  if (context.kind === 'departure' && context.found) {
   const leg = context.leg || context.found.leg || {};
   const report = telegramConciergeFormatTime(leg.dutyReport || leg.reportTime || leg.presentationTime || context.found.day?.startTime || '');
   const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
   const origin = telegramConciergeAirportName(leg.origin || leg.from || context.found.day?.location || 'origem não informada');
-  const variants = [
-   `Para a saída inteligente, encontrei a programação saindo de ${origin}. ${report ? `A apresentação está às ${telegramConciergeSpeakClock(report)}.` : dep ? `A decolagem está às ${telegramConciergeSpeakClock(dep)}.` : 'Não achei o horário de apresentação na escala.'}`,
-   `Sobre sair de casa: a referência que eu achei é ${origin}. ${report ? `Apresentação às ${telegramConciergeSpeakClock(report)}.` : dep ? `Decolagem às ${telegramConciergeSpeakClock(dep)}.` : 'Sem horário confiável de apresentação na escala.'}`,
-   `Para não apertar, eu usaria ${origin} como origem operacional. ${report ? `A apresentação está às ${telegramConciergeSpeakClock(report)}.` : dep ? `O voo sai às ${telegramConciergeSpeakClock(dep)}.` : 'Não achei horário fechado na escala.'}`
-  ];
-  const tip = TELEGRAM_CONCIERGE_AUDIO_SMART_TIPS ? 'Para trânsito real, calcula uma vez no app com a localização ativa.' : '';
-  return `${telegramConciergePickVariant(variants, `${origin}|${report}|${dep}`)} ${tip}`.trim();
+  return `Para a saída inteligente, encontrei a programação saindo de ${origin}. ${report ? `A apresentação está às ${telegramConciergeSpeakClock(report)}.` : dep ? `A decolagem está às ${telegramConciergeSpeakClock(dep)}.` : 'Não achei o horário de apresentação na escala.'} Para trânsito real, calcula uma vez no app com a localização ativa.`;
  }
  if (context.kind === 'perdiem') {
   const target = context.target?.label || 'essa data';
   const lines = Array.isArray(context.lines) ? context.lines.filter(Boolean).slice(1, 4) : [];
   return lines.length ? `Sobre as diárias de ${target}: ${lines.map(telegramConciergeNaturalizeForAudio).join('. ')}.` : `Não achei diária calculada para ${target}.`;
  }
- if (['history', 'month', 'salary'].includes(context.kind)) {
-  const lines = Array.isArray(context.lines) ? context.lines.filter(Boolean).slice(0, 5) : [];
-  return lines.length ? lines.map(telegramConciergeNaturalizeForAudio).join('. ') : '';
- }
  return '';
 }
-
 
 function telegramConciergeSpokenTextFromReply({ title = '', lines = [], userName = '', inputMode = 'text', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME, user = null, row = null, audioContext = null } = {}) {
  const contextBody = telegramConciergeAudioBodyFromContext(audioContext || {});
@@ -10449,18 +10103,10 @@ function telegramConciergeSpokenTextFromReply({ title = '', lines = [], userName
  const cleanLines = filteredLines.map((line) => telegramConciergeNaturalizeForAudio(line)).filter(Boolean);
  const greeting = telegramConciergeAudioGreeting({ user, row, context: audioContext || {}, title, text: cleanLines.join(' ') });
  const readableTitle = telegramConciergeNaturalizeForAudio(title).replace(/^Programação\s*[·-]\s*/i, 'programação de ');
- const body = contextBody || [readableTitle && !/concierge|programação\s*de\s*programação/i.test(readableTitle) ? readableTitle : '', cleanLines.slice(0, 4).join('. ')].filter(Boolean).join('. ');
- const needsSafety = /voo|perna|portão|saída|apresentação|reserva|extra|sobreaviso|radar|diárias/i.test(body);
- const safety = needsSafety ? telegramConciergePickVariant([
-  'Confere a escala oficial também, tá?',
-  'Só confirma na escala oficial antes de agir.',
-  'E claro: vale validar nos canais oficiais.',
-  'Eu te ajudo no resumo, mas a escala oficial manda.'
- ], `${body}|safety`) : '';
- const text = [greeting, body, safety].filter(Boolean).join(' ')
-  .replace(/\b(Boa|E aí|Fala|Opa|Pronto),\s+([^\.]+)\.\s+(Boa|E aí|Fala|Opa|Pronto),\s+\2\./i, '$1, $2.')
-  .replace(/\s+/g, ' ')
-  .trim();
+ const body = contextBody || [readableTitle && !/concierge/i.test(readableTitle) ? readableTitle : '', cleanLines.slice(0, 5).join('. ')].filter(Boolean).join('. ');
+ const needsSafety = /voo|perna|portão|saída|apresentação|reserva|extra|sobreaviso|radar/i.test(body);
+ const safety = needsSafety ? 'Confere a escala oficial também, tá?' : '';
+ const text = [greeting, body, safety].filter(Boolean).join(' ');
  return telegramConciergeTrimAudioText(text);
 }
 
@@ -10561,92 +10207,8 @@ function telegramConciergeFreeBlockedLines() {
  return [
   'Este recurso é Premium no Concierge Telegram.',
   'No gratuito, mantive consultas básicas: /ajuda, hoje, amanhã e próxima programação.',
-  'Premium libera portão/radar, saída inteligente, trânsito, diárias, salário, rotina, consulta por mês antigo e perguntas por data.',
+  'Premium libera portão/radar, saída inteligente, trânsito, diárias, rotina e perguntas por data.',
  ];
-}
-
-
-function telegramConciergeWantsRegulation(text = '') {
- const clean = telegramConciergeNormalizeText(text);
- return /^\/(regulamentacao|regulamentação|regulacao|regulação|rbac|lei|jornada|repouso|descanso|sobreaviso|reserva)(@\w+)?\b/.test(clean)
-  || /\b(regulamentacao|regulamentação|regulacao|regulação|rbac\s*117|lei do aeronauta|limite de jornada|limite jornada|jornada maxima|jornada máxima|descanso minimo|descanso mínimo|repouso minimo|repouso mínimo|sobreaviso|acionamento|reserva|clt|act|conformidade|irregularidade|irregularidades|alerta regulatorio|alerta regulatório)\b/.test(clean);
-}
-
-function telegramConciergeRegulationLatestItem(rosters = []) {
- return Array.isArray(rosters) && rosters.length ? rosters[0] : null;
-}
-
-function telegramConciergeRegulationCompliance(item = null) {
- const raw = item?.compliance || item?.compliance_json || null;
- if (!raw) return {};
- if (typeof raw === 'string') {
-  try { return JSON.parse(raw); } catch { return {}; }
- }
- return typeof raw === 'object' ? raw : {};
-}
-
-function telegramConciergeRegulationAlerts(item = null, { premium = false } = {}) {
- const compliance = telegramConciergeRegulationCompliance(item);
- const alerts = Array.isArray(compliance.alerts) ? compliance.alerts : [];
- const filtered = alerts
-  .filter((alert) => alert && /critical|error|warning|warn|grave|atenção|atencao/i.test(String(alert.severity || alert.level || alert.type || alert.title || alert.message || '')))
-  .slice(0, premium ? 5 : 2)
-  .map((alert) => {
-   const title = alert.title || alert.rule || alert.code || 'Alerta';
-   const msg = alert.message || alert.description || alert.detail || '';
-   return `${title}${msg ? `: ${msg}` : ''}`.replace(/\s+/g, ' ').trim();
-  });
- return filtered;
-}
-
-function telegramConciergeRegulationMonthLabel(item = null) {
- const y = Number(item?.period_year || item?.roster?.year || item?.roster_json?.year || 0);
- const m = Number(item?.period_month || item?.roster?.month || item?.roster_json?.month || 0);
- if (!y || !m) return 'escala mais recente';
- const date = new Date(Date.UTC(y, m - 1, 1));
- return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-}
-
-function telegramConciergeRegulationLines(rosters = [], text = '', { premium = false } = {}) {
- const clean = telegramConciergeNormalizeText(text);
- const item = telegramConciergeRegulationLatestItem(rosters);
- const label = telegramConciergeRegulationMonthLabel(item);
- const alerts = telegramConciergeRegulationAlerts(item, { premium });
- const baseFooter = premium
-  ? 'No app, abra Regulamentação para calcular com horários, tipo de tripulação, acionamento, repouso e alertas da escala.'
-  : 'No gratuito eu mostro o básico. Premium calcula com sua escala, alertas, diárias, salário e Concierge por voz.';
- const out = [];
- if (/sobreaviso|hsb|acionamento/.test(clean)) {
-  out.push('Sobreaviso: janela normalmente entre 3h e 12h. Com acionamento, o limite passa a considerar o tempo até a apresentação e depois a jornada acionada.');
-  out.push('Regra prática no CrewCheck: informe início/fim do sobreaviso, horário do acionamento e apresentação para calcular o limite e o descanso depois.');
-  out.push('Se não houver acionamento, o sistema usa repouso mínimo de referência antes da próxima tarefa.');
- } else if (/reserva|airport stand|asb/.test(clean)) {
-  out.push('Reserva: o CrewCheck calcula duração da reserva, acionamento e a jornada que nasce a partir dela.');
-  out.push('Para operador de transporte público regular/não regular, use 3h a 6h como referência inicial; em outros enquadramentos RBAC, o limite pode chegar a 10h.');
-  out.push('Se a reserva passar de 3h, o app marca atenção para acomodação adequada.');
- } else if (/repouso|descanso|folga/.test(clean)) {
-  out.push('Descanso mínimo: o cálculo varia conforme a jornada anterior. O app usa faixas de 12h, 16h ou 24h conforme a duração da jornada.');
-  out.push('Se a programação cruzar madrugada, virar o dia ou tiver fusos, o alerta fica mais conservador para o tripulante conferir antes de aceitar alteração.');
- } else if (/jornada|voo|vôo|pouso|perna|etapa/.test(clean)) {
-  out.push('Jornada: o limite depende do tipo de tripulação, horário de apresentação, quantidade de pernas/pousos e redutor noturno.');
-  out.push('Referência rápida: tripulação mínima costuma usar limite base de 9h; simples 11h; composta 14h; revezamento 18h, conforme enquadramento RBAC aplicável.');
-  out.push('O CrewCheck também compara quantidade de pernas e tempo de voo quando a escala tiver esses dados.');
- } else if (/clt|act|lei|mensal|semanal|176|44/.test(clean)) {
-  out.push('Duração de trabalho: o app mostra referência semanal/mensal e diferencia jornada, reserva e sobreaviso para evitar misturar métricas.');
-  out.push('ACT/CCT e regras internas podem ser mais benéficas ou específicas; por isso os alertas aparecem como conferência operacional, não como decisão jurídica automática.');
- } else {
-  out.push('Regulamentação disponível: limite de jornada, tempo de voo, quantidade de pernas, sobreaviso com acionamento, reserva com acionamento, repouso mínimo, folgas e alertas da escala.');
-  out.push(`Estou usando a ${label} como base para os alertas do Concierge.`);
- }
- if (alerts.length) {
-  out.push(premium ? `Alertas encontrados na escala: ${alerts.join(' | ')}` : `Encontrei ${alerts.length} alerta(s) na escala. Premium mostra o detalhe completo pelo Concierge.`);
- } else if (item) {
-  out.push('Não encontrei alerta regulatório crítico salvo nessa escala até agora.');
- } else {
-  out.push('Não encontrei escala sincronizada para aplicar os cálculos. Tente reimportar ou enviar o PDF aqui no Telegram.');
- }
- out.push(baseFooter);
- return out.filter(Boolean).slice(0, premium ? 8 : 5);
 }
 
 async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
@@ -10658,8 +10220,6 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Conta não localizada', ['Não encontrei sua conta CrewCheck vinculada a este Telegram.', 'Abra o app e conecte novamente em Configurações > Telegram.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: false, reason: 'user not found' };
  }
- const freshRow = await telegramLinkForChat(db, chat.id).catch(() => null) || await telegramLinkForUser(db, row.user_id).catch(() => null);
- if (freshRow?.id) row = freshRow;
  const preferences = normalizeTelegramPreferences(row.preferences_json || {});
  const premium = telegramConciergeIsPremium(user);
  const reply = async (title, lines = [], options = {}) => telegramSendConciergeReply(chat.id, {
@@ -10691,27 +10251,18 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
  }
  const rosters = await telegramConciergeLatestRosters(db, user, 24, row);
  const usageAfter = !premium && !isHelp ? telegramConciergeFreeUsage(row, true) : telegramConciergeFreeUsage(row, false);
- if (telegramConciergeIsSupportRequest(text)) {
-  await reply(premium ? 'Suporte Premium' : 'Suporte', telegramConciergeSupportLines(user, row), { actionLabel: premium ? 'Abrir suporte' : 'Conhecer Premium' });
-  return { ok: true, support: true };
- }
  if (isHelp) {
-  const lines = telegramConciergeIsCommandListRequest(text)
-   ? telegramConciergeCommandLines(user, row)
-   : [
-    ...telegramConciergeCommandLines(user, row).slice(0, premium ? 9 : 6),
-    premium ? `Nome atual do Concierge: ${telegramConciergeDisplayName(row, user)}. Você pode alterar em Configurações > Telegram.` : `Limite gratuito: ${usageAfter.used}/${usageAfter.limit} consultas hoje.`,
-   ];
-  await reply(premium ? 'Concierge Premium' : 'Concierge gratuito', lines, { actionLabel: premium ? 'Abrir CrewCheck' : 'Conhecer Premium' });
+  const lines = premium ? [
+   'Pergunte por texto ou áudio: “minha programação de hoje”, “dia 25”, “qual meu portão?”, “que horas sair de casa?”, “diárias da semana”, “que horas tenho que acordar?”.',
+   'Comandos rápidos: /hoje, /amanha, /proximo, /portao, /saida, /diarias, /rotina, /conformidade.',
+   `Nome atual do Concierge: ${telegramConciergeDisplayName(row, user)}. Você pode alterar em Configurações > Telegram.`,
+  ] : [
+   'Plano gratuito: /hoje, /amanha, /proximo e ajuda básica.',
+   `Limite gratuito: ${usageAfter.used}/${usageAfter.limit} consultas hoje.`,
+   'Premium libera voz, portão/radar, Saída Inteligente, trânsito, diárias, rotina e perguntas por data.',
+  ];
+  await reply(premium ? 'Concierge Premium' : 'Concierge gratuito', lines);
   return { ok: true, help: true };
- }
- if (telegramConciergeWantsRegulation(text)) {
-  const lines = telegramConciergeRegulationLines(rosters, text, { premium });
-  await reply(premium ? 'Regulamentação operacional' : 'Regulamentação básica', lines, {
-   actionLabel: premium ? 'Abrir Regulamentação' : 'Conhecer Premium',
-   audioContext: { kind: 'regulation', lines },
-  });
-  return { ok: true, intent: 'regulation' };
  }
  if (!rosters.length) {
   await reply('Escala não sincronizada', [
@@ -10720,35 +10271,6 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
    'Alternativa: envie o PDF original da escala aqui no Telegram para eu importar direto no Concierge.',
   ], { footer: 'Sem escala no servidor, o Concierge não chuta programação.', actionLabel: 'Sincronizar escala' });
   return { ok: true, noRoster: true };
- }
- const wantsHistory = /^\/(historico|histórico|meses|escalas)/i.test(String(text || '')) || /\b(historico|histórico|escalas salvas|meses salvos|escala antiga|escalas antigas)\b/i.test(clean);
- if (wantsHistory) {
-  const lines = telegramConciergeRosterHistoryLines(rosters, { premium });
-  await reply(premium ? 'Histórico de escalas' : 'Histórico · gratuito', lines, { actionLabel: premium ? 'Abrir histórico' : 'Conhecer Premium', audioContext: { kind: 'history', lines } });
-  return { ok: true, intent: 'history' };
- }
- const monthTarget = telegramConciergeMonthFromText(text, rosters);
- const wantsMonthOverview = Boolean(monthTarget) && (/^\/(mes|mês|escala)/i.test(String(text || '')) || /\b(mes|mês|resumo do mes|resumo do mês|escala de|escala do mes|escala do mês|escala antiga|programacao do mes|programação do mês)\b/i.test(clean));
- if (wantsMonthOverview) {
-  if (!premium) {
-   await reply('Consulta por mês é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
-   return { ok: true, premiumBlocked: true };
-  }
-  const item = telegramConciergeFindRosterByMonth(rosters, monthTarget);
-  const lines = item ? telegramConciergeRosterOverviewLines(item, monthTarget) : [`Não encontrei escala salva para ${monthTarget.label}.`, 'Abra Histórico no app ou reimporte o PDF desse mês.'];
-  await reply(`Resumo · ${monthTarget.label}`, lines, { actionLabel: 'Abrir histórico', audioContext: { kind: 'month', lines } });
-  return { ok: true, intent: 'month' };
- }
- if (/^\/(salario|salário)|\b(salario|salário|financeiro|holerite|contracheque|bruto|liquido|líquido)\b/i.test(clean)) {
-  if (!premium) {
-   await reply('Salário é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
-   return { ok: true, premiumBlocked: true };
-  }
-  const targetMonth = monthTarget || telegramConciergeMonthFromText('mes atual', rosters);
-  const item = telegramConciergeFindRosterByMonth(rosters, targetMonth) || rosters[0];
-  const lines = telegramConciergeSalaryBriefLines(item, targetMonth);
-  await reply('Resumo financeiro', lines, { actionLabel: 'Abrir salário', audioContext: { kind: 'salary', lines } });
-  return { ok: true, intent: 'salary' };
  }
  const wantsUpcoming = telegramConciergeWantsUpcoming(text);
  if (wantsUpcoming) {
@@ -10759,6 +10281,14 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
    audioContext: { kind: 'upcoming', items, audioLimit: premium ? 3 : 1 },
   });
   return { ok: true, intent: 'upcoming' };
+ }
+ if (telegramConciergeWantsRegulation(text) || /^\/(conformidade|regulamentacao|regulamentação|alertas|irregularidades)\b/i.test(String(text || ''))) {
+  const lines = telegramConciergeRegulationLines(rosters, { premium });
+  await reply(premium ? 'Conformidade e regulamentação' : 'Conformidade · gratuito', lines, {
+   actionLabel: premium ? 'Abrir conformidade' : 'Assinar Premium',
+   audioContext: { kind: 'generic', lines, title: 'Conformidade e regulamentação' },
+  });
+  return { ok: true, intent: 'regulation' };
  }
  const basicAllowed = /\b(hoje|amanha|amanhã|proximo|próximo|programacao|programação|escala)\b/.test(String(text || '').toLowerCase()) || /^\/(hoje|amanha|amanhã|proximo|próximo)/i.test(String(text || ''));
  const premiumIntent = /\b(portao|portão|terminal|radar|transito|trânsito|sair|saida|saída|casa|diaria|diária|diarias|diárias|rotina|acordar|treinar|comer|hotel|pernoite)\b/.test(clean);
@@ -10855,19 +10385,19 @@ async function handleTelegramConciergeAudio(db, row, chat, message = {}) {
  const preferences = normalizeTelegramPreferences(row.preferences_json || {});
  const premium = telegramConciergeIsPremium(user);
  if (!TELEGRAM_CONCIERGE_VOICE_ENABLED || preferences.conciergeVoice === false) {
-  await telegramSendDirectText(chat.id, 'Áudio desativado no Concierge. Ative em Configurações > Telegram ou envie por texto.');
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio desativado', ['Perguntas por áudio estão desligadas neste Concierge.', 'Ative em Configurações > Telegram ou envie a pergunta digitada.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: true, voiceDisabled: true };
  }
  if (TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY && !premium) {
-  await telegramSendDirectText(chat.id, 'Voz no Telegram é Premium. No gratuito, envie por texto ou use /hoje, /amanha e /proximo.');
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz é Premium', telegramConciergeFreeBlockedLines()), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
   return { ok: true, premiumBlocked: true };
  }
  if (audio.duration && audio.duration > TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS) {
-  await telegramSendDirectText(chat.id, `Áudio muito longo. Envie perguntas de até ${TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS} segundos ou mande por texto.`);
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio muito longo', [`Envie perguntas de até ${TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS} segundos para manter o Concierge rápido.`, 'Para assuntos longos, envie por texto ou divida em partes.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: true, audioTooLong: true };
  }
  if (!telegramSpeechHasProvider('stt')) {
-  await telegramSendDirectText(chat.id, 'Voz não configurada no servidor. Código: CONCIERGE_STT_NOT_CONFIGURED. Configure ELEVENLABS_API_KEY, AZURE_SPEECH_KEY ou OPENAI_API_KEY no Render.');
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz não configurada', ['Configure ELEVENLABS_API_KEY no Render para usar ElevenLabs.', 'Também é possível usar AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY como fallback. Enquanto isso, envie por texto.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: false, speechNotConfigured: true };
  }
  try {
@@ -10879,7 +10409,7 @@ async function handleTelegramConciergeAudio(db, row, chat, message = {}) {
  } catch (error) {
   const publicAudioError = classifySpeechAudioError(error);
   console.warn('[telegram] falha ao processar áudio do Concierge', publicAudioError.kind, publicAudioError.log);
-  await telegramSendDirectText(chat.id, telegramConciergeSupportErrorText({ ...error, kind: publicAudioError.kind, message: publicAudioError.log || error?.message }, 'CONCIERGE_STT')).catch(() => null);
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', publicAudioError.title, publicAudioError.lines, { footer: 'Nenhuma ação operacional foi tomada.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') }).catch(() => null);
   return { ok: false, audioError: publicAudioError.kind };
  }
 }
@@ -10949,14 +10479,8 @@ async function handleTelegramWebhookUpdate(update) {
    where id = $5`,
   [String(chat.id), chat.username || null, chat.first_name || null, chat.last_name || null, row.id],
  );
- const connectedUser = await reloadUserById(db, row.user_id).catch(() => null);
- const connectedRow = await telegramLinkForUser(db, row.user_id).catch(() => null) || row;
- if (!wasTelegramActive) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Boas-vindas ao Concierge', telegramConciergeWelcomeLines(connectedUser, connectedRow), { footer: 'Canal conectado. As respostas ajudam na rotina, mas a escala publicada segue sendo a referência oficial.', conciergeName: telegramConciergeDisplayName(connectedRow, connectedUser) }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
- } else {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('default', 'Telegram conectado com sucesso', ['Seu CrewCheck Bot está ativo.', 'A partir de agora, você pode perguntar por texto ou áudio sobre programação, portão, saída, diárias e rotina.', telegramConciergeIsPremium(connectedUser) ? 'Suporte Premium: mande /suporte quando precisar.' : 'No gratuito, mande /comandos para ver o que está liberado.'], { footer: 'Você controla alertas e Concierge em Configurações > Telegram.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
- }
- return { ok: true, connected: true, firstConnection: !wasTelegramActive, userId: row.user_id };
+ await telegramSendMessage(chat.id, telegramPremiumMessage('default', 'Telegram conectado com sucesso', ['Seu CrewCheck Bot está ativo.', 'A partir de agora, você pode perguntar por texto: programação, portão, saída, diárias e rotina.', 'Você controla alertas e Concierge em Conta > Permissões > Telegram Premium.'], { footer: 'Canal extra Premium ativo. Notificações oficiais continuam sendo prioridade.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+ return { ok: true, connected: true, userId: row.user_id };
 }
 
 async function handleApi(req, res, url) {
@@ -12780,9 +12304,9 @@ async function handleApi(req, res, url) {
     ? await db.query(`select now() as now, database() as database_name, current_user() as user_name, @@hostname as server_name, @@port as server_port`)
     : await db.query(`select now() as now, current_database() as database, current_user as user_name,
         inet_server_addr()::text as server_addr, inet_server_port() as server_port`);
-   sendJson(res, 200, { ok: true, connected: true, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, ...result.rows[0] });
+   sendJson(res, 200, { ok: true, connected: true, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, storage: summarizeStorageStatus(), ...result.rows[0] });
   } catch (error) {
-   sendJson(res, 500, { ok: false, connected: false, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, message: 'Falha ao conectar ou migrar a base de dados.', detail: error.message, code: error.code, db: dbErrorInfo(error) });
+   sendJson(res, 500, { ok: false, connected: false, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, storage: summarizeStorageStatus(), message: 'Falha ao conectar ou migrar a base de dados.', detail: error.message, code: error.code, db: dbErrorInfo(error) });
   }
   return true;
  }
@@ -12835,16 +12359,20 @@ async function handleApi(req, res, url) {
     return true;
    }
    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 20), 1), 100);
+   const managerMode = /^(1|true|yes|sim)$/i.test(String(url.searchParams.get('manager') || url.searchParams.get('allVersions') || '').trim());
    const result = await db.query(
     `select id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-        source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum
+        source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+        is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+        source_file_size_bytes, storage_uploaded_at
       from crewcheck_rosters
-     where user_id = $2
-     order by created_at desc
+     where user_id = $2 and deleted_at is null
+     order by is_active desc, coalesce(active_at, updated_at, created_at) desc, created_at desc
      limit $1`,
     [limit, user.id],
    );
-   sendJson(res, 200, { ok: true, rosters: dedupeRosterRowsByPeriod(result.rows).map(summarizeRosterRow) });
+   const rows = managerMode ? result.rows : dedupeRosterRowsByPeriod(result.rows);
+   sendJson(res, 200, { ok: true, storage: summarizeStorageStatus(), rosters: rows.map(summarizeRosterRow) });
   } catch (error) {
    sendJson(res, 500, { ok: false, message: 'Não foi possível listar as escalas salvas.', detail: error.message });
   }
@@ -12880,11 +12408,14 @@ async function handleApi(req, res, url) {
    const gym = Array.isArray(body.gym) ? body.gym : [];
    const alerts = Array.isArray(compliance?.alerts) ? compliance.alerts : [];
    const criticalAlerts = alerts.filter((alert) => alert?.severity === 'error');
+   const sourceFileDataBase64 = typeof body.sourceFileDataBase64 === 'string' ? body.sourceFileDataBase64 : null;
+   const sourceMimeType = typeof body.sourceMimeType === 'string' ? body.sourceMimeType : null;
+   const sourceFileSize = Number(body.sourceFileSize || 0) || null;
    const payloadChecksum = body.checksum || checksumPayload({ roster, compliance, gym, sourceFileName: body.sourceFileName || null });
 
    const existing = await db.query(
     `select id from crewcheck_rosters
-     where checksum = $1 and (($2::uuid is null and user_id is null) or user_id = $2)
+     where checksum = $1 and deleted_at is null and (($2::uuid is null and user_id is null) or user_id = $2)
      limit 1`,
     [payloadChecksum, user.id || null],
    );
@@ -12934,7 +12465,9 @@ async function handleApi(req, res, url) {
          checksum = $17
       where id = $18
       returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+           is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+           source_file_size_bytes, storage_uploaded_at`,
      [...params, existing.rows[0].id],
     );
     action = 'roster.updated_dedup';
@@ -12946,10 +12479,28 @@ async function handleApi(req, res, url) {
        alerts_count, critical_alerts_count, checksum
       ) values ($18,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17)
       returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+           is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+           source_file_size_bytes, storage_uploaded_at`,
      [...params, newId()],
     );
    }
+
+   await markRosterActive(db, user.id || null, result.rows[0].id);
+   let storageResult = null;
+   if (sourceFileDataBase64) {
+    try {
+     storageResult = await uploadRosterOriginalToSupabase(user, result.rows[0].id, { sourceFileDataBase64, sourceFileName: body.sourceFileName || null, sourceMimeType, sourceFileSize });
+     if (storageResult?.ok) {
+      await db.query('update crewcheck_rosters set storage_provider = $3, source_storage_path = $4, source_file_size_bytes = $5, storage_uploaded_at = now(), import_status = $6, updated_at = now() where id = $1 and user_id = $2', [result.rows[0].id, user.id || null, storageResult.provider, storageResult.path, storageResult.size, 'stored']);
+     }
+    } catch (storageError) {
+     storageResult = { ok: false, message: storageError?.message || 'Falha no armazenamento seguro.' };
+     await db.query('update crewcheck_rosters set import_status = $3, updated_at = now() where id = $1 and user_id = $2', [result.rows[0].id, user.id || null, 'processed_storage_pending']).catch(() => null);
+    }
+   }
+   const refreshedRow = await refreshRosterSummaryRow(db, user.id || null, result.rows[0].id).catch(() => null);
+   if (refreshedRow) result.rows[0] = refreshedRow;
 
    if (user.id && (roster.crewId || roster.base || roster.rank || roster.crewName)) {
     await db.query(
@@ -12969,7 +12520,7 @@ async function handleApi(req, res, url) {
     user.id || null,
     action,
     result.rows[0].id,
-    JSON.stringify({ sourceFileName: body.sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum }),
+    JSON.stringify({ sourceFileName: body.sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, storage: storageResult || null }),
    ]);
 
    await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName: body.sourceFileName || null, checksum: payloadChecksum }).catch(() => null);
@@ -13004,7 +12555,7 @@ async function handleApi(req, res, url) {
   try {
    await ensureSchema();
    const result = await db.query(
-    'select * from crewcheck_rosters where id = $1 and user_id = $2',
+    'select * from crewcheck_rosters where id = $1 and user_id = $2 and deleted_at is null',
     [rosterMatch[1], user.id],
    );
    if (!result.rowCount) {
@@ -13027,6 +12578,38 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+
+ if (rosterMatch && (req.method === 'PATCH' || req.method === 'POST') && url.pathname.endsWith('/activate') === false) {
+  // Mantido para compatibilidade futura; ações específicas ficam em /activate.
+ }
+
+ const rosterActivateMatch = url.pathname.match(/^\/api\/rosters\/([0-9a-f-]{36})\/activate$/i);
+ if (rosterActivateMatch && (req.method === 'POST' || req.method === 'PATCH')) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  if (!user.id) {
+   sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const exists = await db.query('select id from crewcheck_rosters where id = $1 and user_id = $2 and deleted_at is null limit 1', [rosterActivateMatch[1], user.id]);
+   if (!exists.rowCount) {
+    sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+    return true;
+   }
+   await markRosterActive(db, user.id, rosterActivateMatch[1]);
+   const row = await refreshRosterSummaryRow(db, user.id, rosterActivateMatch[1]);
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [newId(), user.id, 'roster.activated', rosterActivateMatch[1], JSON.stringify({ source: 'manager' })]).catch(() => null);
+   sendJson(res, 200, { ok: true, roster: summarizeRosterRow(row) });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível tornar esta escala ativa.', detail: error.message });
+  }
+  return true;
+ }
+
  if (rosterMatch && req.method === 'DELETE') {
   const user = await requireAuth(req, res);
   if (!user) return true;
@@ -13038,7 +12621,8 @@ async function handleApi(req, res, url) {
   }
   try {
    await ensureSchema();
-   const result = await db.query('delete from crewcheck_rosters where id = $1 and user_id = $2 returning id', [rosterMatch[1], user.id]);
+   const result = await db.query('update crewcheck_rosters set deleted_at = now(), is_active = false, updated_at = now(), import_status = $3 where id = $1 and user_id = $2 and deleted_at is null returning id', [rosterMatch[1], user.id, 'deleted_by_user']);
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [newId(), user.id, 'roster.deleted_by_user', rosterMatch[1], JSON.stringify({ softDelete: true })]).catch(() => null);
    sendJson(res, result.rowCount ? 200 : 404, { ok: Boolean(result.rowCount) });
   } catch (error) {
    sendJson(res, 500, { ok: false, message: 'Não foi possível apagar a escala.', detail: error.message });
