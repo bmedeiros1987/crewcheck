@@ -8733,7 +8733,7 @@ async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mim
     'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
     'Content-Type': contentType,
     'Accept': 'application/json',
-    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.89',
+    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.90',
    },
    body: buffer,
    signal: controller.signal,
@@ -8948,7 +8948,7 @@ async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, st
      'Content-Type': 'application/ssml+xml',
      'X-Microsoft-OutputFormat': AZURE_TTS_OUTPUT_FORMAT,
      'Accept': 'audio/mpeg',
-     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.89',
+     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.90',
     },
     body: azureSpeechBuildSsml(input, { voice, style: attemptStyle }),
     signal: controller.signal,
@@ -10086,7 +10086,7 @@ function telegramConciergeRegulationLines(rosters = [], { premium = false } = {}
  ];
  const lines = base.concat(hits.length ? hits : [
   'Na escala salva não encontrei códigos especiais evidentes como PNAE, NOTOC, POC, DEPA/DEPU ou PETC, mas o motor já fica pronto para alertar quando aparecerem.',
-  'Continuo validando folgas, repouso, sobreaviso, reserva, madrugadas, horas de voo, jornada mensal e tempo em solo.',
+  'Continuo validando folgas, repouso, sobreaviso, reserva acionada, madrugadas, horas de voo e jornada líquida sem somar solo entre etapas.',
  ]);
  if (!premium) lines.push('No gratuito, deixo só o resumo. O Premium mostra os alertas detalhados e histórico de conformidade.');
  return lines.slice(0, premium ? 10 : 5);

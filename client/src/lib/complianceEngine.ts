@@ -159,6 +159,46 @@ function getLegHours(leg: FlightLeg): number {
   return diffHours(leg.departureTime, leg.arrivalTime, Boolean(leg.isNextDay));
 }
 
+function getDutyWindowHours(day: RosterDay): number {
+  if (!day.dutyReport || !day.dutyDebrief) return 0;
+  return diffHours(day.dutyReport, day.dutyDebrief, day.isNextDay);
+}
+
+function getGroundIntervalHours(day: RosterDay): number {
+  if (!day.legs || day.legs.length < 2) return 0;
+  const totalMinutes = getGroundIntervals(day).reduce((sum, interval) => sum + interval.minutes, 0);
+  return round1(totalMinutes / 60);
+}
+
+function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; groundHours: number; dutyHours: number; mode: 'liquida_sem_solo' | 'janela' | 'indisponivel' } {
+  if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) {
+    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+  }
+
+  const dutyWindowHours = getDutyWindowHours(day);
+
+  if (day.type === 'VOO' && (day.legs || []).length > 0) {
+    const groundHours = getGroundIntervalHours(day);
+    const flightHours = getFlightHours(day);
+    // Regra operacional CrewCheck v11.0.90: tempo em solo entre etapas não entra
+    // como jornada automática para irregularidade. Mantemos apresentação/corte
+    // quando disponíveis, mas abatemos os intervalos entre pouso e nova decolagem.
+    // Nunca deixamos a jornada regulatória ficar abaixo do tempo real de voo lido.
+    const netDuty = dutyWindowHours > 0 ? Math.max(flightHours, dutyWindowHours - groundHours) : flightHours;
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(netDuty), mode: 'liquida_sem_solo' };
+  }
+
+  if (typeof day.dutyHours === 'number' && day.dutyHours > 0 && !day.legs?.length) {
+    return { dutyWindowHours: round1(day.dutyHours), groundHours: 0, dutyHours: round1(day.dutyHours), mode: 'janela' };
+  }
+
+  if (dutyWindowHours > 0) {
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: 0, dutyHours: round1(dutyWindowHours), mode: 'janela' };
+  }
+
+  return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+}
+
 
 function isValidClockTime(value: string | null | undefined): value is string {
   if (!value) return false;
@@ -262,9 +302,7 @@ function getPrimaryBlockingWindow(day: RosterDay): BlockingWindow | null {
 }
 
 function getDutyHours(day: RosterDay): number {
-  if (typeof day.dutyHours === 'number') return day.dutyHours;
-  if (!day.dutyReport || !day.dutyDebrief) return 0;
-  return diffHours(day.dutyReport, day.dutyDebrief, day.isNextDay);
+  return getRegulatoryDutyBreakdown(day).dutyHours;
 }
 
 function getEffectiveStandbyHours(day: RosterDay): number {
@@ -357,11 +395,21 @@ function isTrainingOrGround(day: RosterDay): boolean {
 }
 
 function isNightLeg(leg: FlightLeg): boolean {
-  const dep = parseTime(leg.departureTime);
-  const arr = parseTime(leg.arrivalTime);
-  const depNight = dep ? dep.hours >= 18 || dep.hours < 6 : false;
-  const arrNight = arr ? arr.hours >= 18 || arr.hours < 6 : false;
-  return depNight || arrNight || Boolean(leg.isNextDay);
+  return legTouchesMadrugada(leg);
+}
+
+function legTouchesMadrugada(leg: FlightLeg): boolean {
+  const dep = minutesOfDay(leg.departureTime);
+  const arr = minutesOfDay(leg.arrivalTime);
+  if (dep === null || arr === null) return Boolean(leg.isNextDay);
+  let start = dep;
+  let end = arr;
+  if (end <= start || leg.isNextDay) end += 24 * 60;
+  const windows: Array<[number, number]> = [
+    [0, 6 * 60],
+    [24 * 60, 30 * 60],
+  ];
+  return windows.some(([windowStart, windowEnd]) => start < windowEnd && end > windowStart);
 }
 
 function startsInEarlyWindow(day: RosterDay): boolean {
@@ -451,12 +499,32 @@ function formatDate(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
-function countNightOpsInRolling168h(days: RosterDay[]): number {
-  const nightDates = days
-    .filter(day => hasMadrugadaDuty(day))
-    .map(day => parseDate(day.date).getTime())
-    .sort((a, b) => a - b);
+function getMadrugadaKeys(days: RosterDay[]): number[] {
+  const sorted = sortDays(days);
+  const keys: number[] = [];
+  let previousDay: RosterDay | null = null;
 
+  for (const day of sorted) {
+    if (!hasMadrugadaDuty(day)) {
+      previousDay = day;
+      continue;
+    }
+
+    const date = parseDate(day.date);
+    const firstStart = getFirstOperationalStart(day).time;
+    const startsBeforeSix = (minutesOfDay(firstStart) ?? 9999) < 6 * 60;
+    const sameNightAsPrevious = Boolean(previousDay && hasMadrugadaDuty(previousDay) && previousDay.isNextDay && startsBeforeSix && !isRecoveryDay(previousDay));
+    const keyDate = sameNightAsPrevious ? parseDate(previousDay!.date) : date;
+    const key = keyDate.getTime();
+    if (!keys.includes(key)) keys.push(key);
+    previousDay = day;
+  }
+
+  return keys.sort((a, b) => a - b);
+}
+
+function countNightOpsInRolling168h(days: RosterDay[]): number {
+  const nightDates = getMadrugadaKeys(days);
   let max = 0;
   for (let i = 0; i < nightDates.length; i++) {
     const start = nightDates[i];
@@ -468,27 +536,36 @@ function countNightOpsInRolling168h(days: RosterDay[]): number {
 }
 
 function countMaxConsecutiveMadrugadas(days: RosterDay[]): number {
-  let current = 0;
-  let max = 0;
-  for (const day of days) {
-    if (hasMadrugadaDuty(day)) {
-      current += 1;
-      max = Math.max(max, current);
-    } else if (isActiveDuty(day) || isRecoveryDay(day)) {
-      current = 0;
-    }
+  const keys = getMadrugadaKeys(days);
+  if (!keys.length) return 0;
+  let current = 1;
+  let max = 1;
+  for (let i = 1; i < keys.length; i++) {
+    const dayGap = Math.round((keys[i] - keys[i - 1]) / (24 * 60 * 60 * 1000));
+    if (dayGap === 1) current += 1;
+    else current = 1;
+    max = Math.max(max, current);
   }
   return max;
 }
 
 function hasMadrugadaDuty(day: RosterDay): boolean {
+  if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) return false;
+  const legs = day.legs || [];
+  if (legs.length > 0) {
+    if (legs.some(legTouchesMadrugada)) return true;
+    const report = minutesOfDay(day.dutyReport);
+    const firstDeparture = minutesOfDay(legs[0]?.departureTime);
+    return Boolean(report !== null && report < 6 * 60 && firstDeparture !== null && firstDeparture < 7 * 60);
+  }
+  // Sobreaviso/reserva sem acionamento não vira madrugada operacional.
+  // Só entra na regra de madrugada quando houver voo/acionamento ou atividade operacional inequívoca.
+  if (isStandby(day) || isReserve(day)) return false;
   if (!isActiveDuty(day)) return false;
-  if (day.legs?.some(leg => Boolean(leg.isNextDay))) return true;
   const report = minutesOfDay(day.dutyReport);
   const debrief = minutesOfDay(day.dutyDebrief);
-  if (report === null || debrief === null) return (day.legs || []).some(isNightLeg);
-  if (day.isNextDay) return true;
-  return report < 6 * 60 || debrief <= 6 * 60;
+  if (report === null || debrief === null) return false;
+  return Boolean(day.isNextDay || report < 6 * 60 || debrief <= 6 * 60);
 }
 
 function pushAlert(alerts: ComplianceAlert[], alert: Omit<ComplianceAlert, 'id'>): void {
@@ -972,7 +1049,7 @@ function rollingDutyWindow(days: RosterDay[], windowDays = 7): { hours: number; 
 
 function auditAlertConfidence(alerts: ComplianceAlert[], days: RosterDay[]): ComplianceAlert[] {
   const dayByDate = new Map(days.map(day => [day.date, day]));
-  const timingCritical = /repouso|jornada|sobreaviso|reserva|madrugada|solo entre etapas|tempo em solo|voo diário|pousos|trechos/i;
+  const timingCritical = /repouso|jornada|sobreaviso|reserva|madrugada|voo diário|pousos|trechos/i;
 
   return alerts
     .filter((alert) => !isFalsePositiveLayoverMaximumAlert(alert))
@@ -1169,21 +1246,9 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
     if (hasMadrugada) metrics.nightOperations += 1;
 
-    if (day.legs?.length > 1) {
-      getGroundIntervals(day).forEach((interval) => {
-        const maxGround = interval.period === 'noturno' ? actRules.groundBetweenLegs.maxNightMinutes : actRules.groundBetweenLegs.maxDayMinutes;
-        if (interval.minutes > maxGround) {
-          pushAlert(alerts, {
-            severity: 'warning',
-            title: 'Tempo em solo entre etapas acima do ACT',
-            description: `${day.date}: intervalo de ${interval.minutes}min entre ${interval.previousArrival} e ${interval.nextDeparture}; limite ${interval.period}: ${maxGround}min.`,
-            details: 'O ACT diferencia período diurno e noturno conforme horário da base contratual; confirmar fuso/base se houver divergência.',
-            legalReference: actRules.groundBetweenLegs.legalReference,
-            date: day.date,
-          });
-        }
-      });
-    }
+    // v11.0.90: tempo em solo entre etapas deixou de gerar alerta automático.
+    // Ele permanece visível nos detalhes da escala, mas não entra como irregularidade
+    // nem infla a jornada regulatória automática para evitar falsos positivos.
 
     if (isLikelySingleDayOff(sortedDays, index)) {
       const nextDay = sortedDays[index + 1];
@@ -1205,8 +1270,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
         pushAlert(alerts, {
           severity: 'error',
           title: 'Jornada diária acima do teto absoluto parametrizado',
-          description: `${day.date}: jornada calculada de ${dutyHours.toFixed(1)}h.`,
-          details: `${day.dutyReport || '--'} até ${day.dutyDebrief || '--'} · ${day.legs.length} trecho(s).`,
+          description: `${day.date}: jornada líquida calculada de ${dutyHours.toFixed(1)}h, sem somar tempo em solo entre etapas.`,
+          details: `${day.dutyReport || '--'} até ${day.dutyDebrief || '--'} · ${day.legs.length} trecho(s). Solo entre etapas fica fora do cálculo automático de irregularidade.`,
           legalReference: 'RBAC 117, Apêndice A, A117.15',
           date: day.date,
         });
@@ -1214,8 +1279,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
         pushAlert(alerts, {
           severity: 'warning',
           title: 'Jornada diária acima de 14h — verificar tipo de tripulação/GRF',
-          description: `${day.date}: jornada calculada de ${dutyHours.toFixed(1)}h.`,
-          details: 'Pode ser regular apenas em hipóteses específicas, tripulação/revezamento, extensão registrada, ACT/manual aplicável ou GRF aprovado.',
+          description: `${day.date}: jornada líquida calculada de ${dutyHours.toFixed(1)}h, sem somar tempo em solo entre etapas.`,
+          details: 'Ponto de atenção apenas quando a jornada líquida ultrapassa o parâmetro. Solo entre etapas não é usado para gerar irregularidade automática.',
           legalReference: 'RBAC 117, Apêndice A, A117.15; Lei 13.475/2017',
           date: day.date,
         });
@@ -1223,8 +1288,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
         pushAlert(alerts, {
           severity: 'warning',
           title: 'Jornada superior a 11h — ponto de atenção',
-          description: `${day.date}: jornada calculada de ${dutyHours.toFixed(1)}h.`,
-          details: 'O limite aplicável depende do tipo de tripulação e do enquadramento operacional; revisar se a escala indica tripulação composta/revezamento.',
+          description: `${day.date}: jornada líquida calculada de ${dutyHours.toFixed(1)}h, sem somar tempo em solo entre etapas.`,
+          details: 'O limite aplicável depende do tipo de tripulação e do enquadramento operacional. Solo entre etapas foi abatido para reduzir falso positivo.',
           legalReference: 'RBAC 117, Apêndice A, Tabelas A.4 e A.5',
           date: day.date,
         });
@@ -1313,7 +1378,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       severity: 'warning',
       title: 'Jornada semanal acima de 44 horas — revisar janela móvel',
       description: `${weeklyDuty.startDate} a ${weeklyDuty.endDate}: ${weeklyDuty.hours.toFixed(1)}h de jornada calculada em 7 dias.`,
-      details: 'A leitura considera os horários de apresentação/corte extraídos da escala. Confirme eventuais períodos não computáveis, alteração publicada e enquadramento ACT/RBAC.',
+      details: 'A leitura usa jornada líquida operacional e abate solo entre etapas para evitar falso positivo. Confirme alteração publicada, extensão, composição de tripulação e enquadramento aplicável.',
       legalReference: 'Lei 13.475/2017 · jornada semanal máxima',
     });
   }
@@ -1338,14 +1403,14 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     pushAlert(alerts, {
       severity: 'error',
       title: 'Limite mensal de horas de trabalho excedido',
-      description: `${metrics.totalDutyHours.toFixed(1)}h de jornada no mês. Limite usado pelo sistema: ${limits.maxDutyHoursMonth}h.`,
+      description: `${metrics.totalDutyHours.toFixed(1)}h de jornada líquida no mês, sem somar solo entre etapas. Limite usado pelo sistema: ${limits.maxDutyHoursMonth}h.`,
       legalReference: 'RBAC 117, Apêndice A, A117.15(i) / Lei 13.475/2017',
     });
   } else if (metrics.totalDutyHours > limits.maxDutyHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
       title: 'Horas de trabalho próximas do limite mensal',
-      description: `${metrics.totalDutyHours.toFixed(1)}h de jornada, equivalente a ${((metrics.totalDutyHours / limits.maxDutyHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
+      description: `${metrics.totalDutyHours.toFixed(1)}h de jornada líquida, equivalente a ${((metrics.totalDutyHours / limits.maxDutyHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
       legalReference: 'RBAC 117, Apêndice A, A117.15(i) / Lei 13.475/2017',
     });
   }
@@ -1507,8 +1572,7 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     }
     const longGroundIntervals = day.legs?.length > 1 ? getGroundIntervals(day).filter((interval) => interval.minutes >= 150) : [];
     if (longGroundIntervals.length) {
-      score += Math.min(18, longGroundIntervals.reduce((sum, interval) => sum + Math.max(0, interval.minutes - 120) / 30, 0));
-      reasons.push(`tempo em solo elevado (${longGroundIntervals.length} intervalo(s))`);
+      reasons.push(`solo entre etapas ignorado no cálculo regulatório (${longGroundIntervals.length} intervalo(s))`);
     }
 
     if (early) {
@@ -1830,7 +1894,7 @@ function makeLoadSummary(score: number, hardestDays: DayLoadAnalysis[]): string 
   const main = scaleGrade(score).toLowerCase();
   const top = hardestDays[0];
   if (!top) return `Escala ${main}, sem dias críticos identificados.`;
-  return `Escala ${main}. A classificação de puxada considera principalmente sequência, mais de 3 pernas, tempo em solo e repouso; duas pernas na madrugada são tratadas como rotina operacional normal. Dia de maior carga: ${top.date} (${top.label}), nota ${top.fatigueScore}/100.`;
+  return `Escala ${main}. A classificação de puxada considera sequência, mais de 3 pernas, voo efetivo, madrugada operacional e repouso; tempo em solo entre etapas não gera irregularidade automática. Dia de maior carga: ${top.date} (${top.label}), nota ${top.fatigueScore}/100.`;
 }
 
 function addHours(time: string, hours: number): string {

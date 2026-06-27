@@ -16,8 +16,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 26
         targetSdk 35
-        versionCode 11089
-        versionName '11.0.89'
+        versionCode 11090
+        versionName '11.0.90'
     }
 
     def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')

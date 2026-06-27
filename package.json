@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.0.89",
+  "version": "11.0.90",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.0.89: Telegram conecta e importa PDF na mesma mensagem, Gerenciador recebe a escala e backup Supabase prioriza Premium com limite para gratuito.",
+  "description": "CrewCheck v11.0.90: motor de regulamentação refinado para jornada líquida sem solo entre etapas, quebra correta de madrugada e redução de falsos positivos.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
