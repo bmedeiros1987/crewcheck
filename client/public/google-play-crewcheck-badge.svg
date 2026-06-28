@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="190" viewBox="0 0 640 190" role="img" aria-label="Disponível no Google Play - CrewCheck Android">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#061526"/>
+      <stop offset="1" stop-color="#020817"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#020617" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect x="10" y="10" width="620" height="170" rx="32" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="12" y="12" width="616" height="166" rx="30" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2"/>
+  <circle cx="584" cy="30" r="72" fill="#0ea5e9" opacity=".18"/>
+  <circle cx="34" cy="184" r="82" fill="#10b981" opacity=".13"/>
+  <g transform="translate(58 48)">
+    <path d="M2 0 53 47 2 94Z" fill="#60a5fa"/>
+    <path d="M2 0 118 47 53 47Z" fill="#facc15"/>
+    <path d="M2 94 53 47 118 47Z" fill="#fb7185"/>
+    <path d="M2 0 53 47 2 94Z" fill="#34d399" opacity=".55"/>
+    <path d="M2 0 118 47 2 94" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1.5"/>
+  </g>
+  <g font-family="Inter, Arial, sans-serif">
+    <text x="215" y="70" fill="#cbd5e1" font-size="24" font-weight="900" letter-spacing="2.5">DISPONÍVEL NO</text>
+    <text x="214" y="126" fill="#fff" font-size="47" font-weight="900">Google Play</text>
+    <text x="217" y="158" fill="#cbd5e1" font-size="19" font-weight="700">CrewCheck Android</text>
+  </g>
+</svg>
