@@ -45,54 +45,89 @@ const RosterView: React.FC<RosterViewProps> = ({ onBack }) => {
 
       {/* Roster List */}
       <section className="px-6 py-4 space-y-4">
-        {/* Day Item - Active/Flight */}
-        <div className="flex gap-4">
-          <div className="flex flex-col items-center pt-2">
-            <span className="text-[10px] font-black text-slate-500 uppercase">Dom</span>
-            <span className="text-2xl font-black">21</span>
-            <span className="text-[10px] font-black text-slate-500 uppercase">Jun</span>
+        {/* White Card Theme based on screenshot */}
+        <div className="bg-white rounded-[32px] p-5 shadow-sm text-slate-900">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <span className="text-[14px] font-black text-slate-800 uppercase block leading-none">SEG</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-[40px] font-black text-[#071D33] leading-none tracking-tighter">06</span>
+                <span className="text-[14px] font-black text-[#071D33] uppercase leading-none">JUL</span>
+              </div>
+            </div>
+            <div className="w-full max-w-[200px] h-1 rounded-full bg-gradient-to-r from-emerald-400 to-blue-500 mt-2"></div>
           </div>
           
-          <div className="flex-1 space-y-3">
-            <div className="bg-blue-600/10 border border-blue-500/20 rounded-3xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-blue-400">
-                  <Plane className="h-4 w-4 rotate-45" />
-                  <span className="text-xs font-bold">Apresentação: 13:45</span>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <FlightRow flight="LA3818" from="BSB" to="FLN" dep="14:40" arr="16:55" />
-                <FlightRow flight="LA3819" from="FLN" to="BSB" dep="17:50" arr="20:00" />
-                <FlightRow flight="LA3500" from="BSB" to="MAB" dep="22:55" arr="00:45" nextDay />
-              </div>
+          <div className="flex gap-3 mb-6">
+            <div className="flex-1 bg-[#20C997] rounded-full py-2.5 px-4 flex items-center justify-center shadow-[0_4px_12px_rgba(32,201,151,0.3)]">
+              <span className="text-xs font-bold text-white">Diárias R$ 355,68</span>
+            </div>
+            <div className="flex-1 bg-[#6366F1] rounded-full py-2.5 px-4 flex items-center justify-center shadow-[0_4px_12px_rgba(99,102,241,0.3)]">
+              <span className="text-xs font-bold text-white">Ganhos R$ 458,23</span>
+            </div>
+          </div>
 
-              <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <div className="h-8 w-8 rounded-xl bg-white/5 flex items-center justify-center text-[10px] font-bold text-slate-400">OP</div>
+          <div className="space-y-3">
+            {/* Flight Item */}
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex gap-4 shadow-sm relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#0ea5e9]"></div>
+              <div className="flex flex-col items-center justify-center min-w-[48px]">
+                <Plane className="h-5 w-5 text-slate-800 mb-1" />
+                <span className="text-lg font-black text-slate-800 leading-none">04:45</span>
+                <span className="text-lg font-black text-slate-800 leading-none">08:20</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-black text-slate-800 tracking-tight">LA3455 · FOR → GRU</h3>
+                  <ChevronRight className="h-5 w-5 text-slate-400 rotate-90" />
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase">Fim de Jornada</p>
-                  <p className="text-lg font-black">01:15</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase">22/06</p>
+                <p className="text-sm text-slate-600 font-medium mt-1">Apres. 04:15 · Chegada 08:20 · Solo 15h15 ·...</p>
+                <div className="mt-3 bg-[#f1f5f9] rounded-2xl p-3 flex gap-2 items-start border border-slate-200">
+                  <div className="mt-0.5"><div className="w-3.5 h-3.5 rounded-full border border-slate-400 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div></div></div>
+                  <p className="text-[11px] font-bold text-slate-600 leading-tight">RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo</p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Day Item - Continuity */}
-        <div className="flex gap-4">
-          <div className="flex flex-col items-center pt-2">
-            <span className="text-[10px] font-black text-slate-500 uppercase">Seg</span>
-            <span className="text-2xl font-black">22</span>
-            <span className="text-[10px] font-black text-slate-500 uppercase">Jun</span>
-          </div>
-          <div className="flex-1">
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-3xl p-5 flex items-center gap-3">
-              <Moon className="h-5 w-5 text-emerald-400" />
-              <span className="font-bold text-emerald-100">Continuação da Jornada</span>
+            {/* Layover Item */}
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex gap-4 shadow-sm relative overflow-hidden">
+              <div className="flex flex-col items-center justify-center min-w-[48px]">
+                <Moon className="h-5 w-5 text-slate-800 mb-1" />
+                <span className="text-lg font-black text-slate-800 leading-none">15h</span>
+                <span className="text-lg font-black text-slate-800 leading-none">15min</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-black text-slate-800 tracking-tight">Pernoite diurno · GRU</h3>
+                  <ChevronRight className="h-5 w-5 text-slate-400 rotate-90" />
+                </div>
+                <p className="text-sm text-slate-600 font-medium mt-1">Pernoite diurno em Guarulhos · 15h 15min ·...</p>
+                <div className="mt-3 bg-[#f1f5f9] rounded-2xl p-3 flex gap-2 items-start border border-slate-200">
+                  <div className="mt-0.5"><div className="w-3.5 h-3.5 rounded-full border border-slate-400 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div></div></div>
+                  <p className="text-[11px] font-bold text-slate-600 leading-tight">RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Flight Item 2 */}
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex gap-4 shadow-sm relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#0ea5e9]"></div>
+              <div className="flex flex-col items-center justify-center min-w-[48px]">
+                <Plane className="h-5 w-5 text-slate-800 mb-1" />
+                <span className="text-lg font-black text-slate-800 leading-none">23:35</span>
+                <span className="text-lg font-black text-slate-800 leading-none">02:00</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-black text-slate-800 tracking-tight">LA3394 · GRU → PMW</h3>
+                  <ChevronRight className="h-5 w-5 text-slate-400 rotate-90" />
+                </div>
+                <p className="text-sm text-slate-600 font-medium mt-1">Decolagem 23:35 · Chegada 02:00 +1 · Após...</p>
+                <div className="mt-3 bg-[#f1f5f9] rounded-2xl p-3 flex gap-2 items-start border border-slate-200">
+                  <div className="mt-0.5"><div className="w-3.5 h-3.5 rounded-full border border-slate-400 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div></div></div>
+                  <p className="text-[11px] font-bold text-slate-600 leading-tight">RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

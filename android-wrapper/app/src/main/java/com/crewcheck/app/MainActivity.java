@@ -27,6 +27,13 @@ import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
+import android.provider.Telephony;
+import android.telephony.SmsMessage;
+import android.content.pm.PackageManager;
+import androidx.core.content.ContextCompat;
+import androidx.core.app.ActivityCompat;
 import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.webkit.CookieManager;
@@ -61,6 +68,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     // CrewCheck v10.8.49 — Reliable Location, Web permissions, Routes/Directions fallback e iFlight compacto.
     private static final int FILE_CHOOSER_REQUEST_CODE = 4242;
+    private static final int NATIVE_PDF_PICKER_REQUEST_CODE = 4343;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 4545;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
@@ -87,6 +95,7 @@ public class MainActivity extends Activity {
     private GeolocationPermissions.Callback pendingGeolocationCallback;
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
+    private BroadcastReceiver smsReceiver;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -211,6 +220,40 @@ public class MainActivity extends Activity {
         dispatchCrewCheckPermissionStatus();
         webView.postDelayed(() -> dispatchCrewCheckPermissionStatus(), 900);
         webView.postDelayed(() -> requestInitialCrewCheckPermissions(), 1600);
+        
+        requestSmsPermission();
+        registerSmsReceiver();
+    }
+
+    private void requestSmsPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS}, 101);
+            }
+        }
+    }
+
+    private void registerSmsReceiver() {
+        smsReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (Telephony.Sms.Intents.SMS_RECEIVED_ACTION.equals(intent.getAction())) {
+                    for (SmsMessage smsMessage : Telephony.Sms.Intents.getMessagesFromIntent(intent)) {
+                        String messageBody = smsMessage.getMessageBody();
+                        // Try to find a 6-digit code typical for MFA
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b\\d{6}\\b").matcher(messageBody);
+                        if (m.find() && portalWebView != null) {
+                            String code = m.group();
+                            // Inject code into the MFA input field
+                            portalWebView.evaluateJavascript(
+                                "var input = document.querySelector('input[type=\"text\"], input[type=\"number\"], input[name*=\"code\"], input[id*=\"code\"], input[name*=\"mfa\"], input[id*=\"mfa\"], input[name*=\"otp\"], input[id*=\"otp\"]');" +
+                                "if(input) { input.value = '" + code + "'; input.dispatchEvent(new Event('input', { bubbles: true })); }", null);
+                        }
+                    }
+                }
+            }
+        };
+        registerReceiver(smsReceiver, new IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION));
     }
 
 
@@ -682,6 +725,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean openExternal(final String url) {
             runOnUiThread(() -> openExternalUrl(url));
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean openGoogleDrivePdfPicker() {
+            runOnUiThread(() -> openNativePdfPicker(true));
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean openPdfPicker() {
+            runOnUiThread(() -> openNativePdfPicker(false));
             return true;
         }
 
@@ -1257,6 +1312,40 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private void openNativePdfPicker(boolean preferGoogleDrive) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/octet-stream"});
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+
+            if (preferGoogleDrive) {
+                try {
+                    Intent driveIntent = new Intent(intent);
+                    driveIntent.setPackage("com.google.android.apps.docs");
+                    if (driveIntent.resolveActivity(getPackageManager()) != null) {
+                        startActivityForResult(driveIntent, NATIVE_PDF_PICKER_REQUEST_CODE);
+                        Toast.makeText(this, "Abrindo Google Drive para escolher o PDF da escala...", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            Intent chooser = Intent.createChooser(intent, preferGoogleDrive ? "Google Drive / Arquivos - escolher PDF" : "Escolher PDF da escala");
+            startActivityForResult(chooser, NATIVE_PDF_PICKER_REQUEST_CODE);
+        } catch (Exception error) {
+            try {
+                Intent webDrive = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/my-drive?hl=pt-br"));
+                webDrive.addCategory(Intent.CATEGORY_BROWSABLE);
+                startActivity(webDrive);
+            } catch (Exception ignored) {
+                Toast.makeText(this, "Não consegui abrir o Google Drive ou o seletor de arquivos.", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
     private void handleIncomingPdfIntent(Intent intent) {
         if (intent == null) return;
         try {
@@ -1737,7 +1826,7 @@ try{
         var sels='[role=dialog],.modal,.popover,.tooltip,.x-tip,.x-window,.x-panel,.detail,.details,.crew,.tripulation,.tripulacao,.crew-list,.crewList';
         Array.prototype.slice.call(d.querySelectorAll(sels)).forEach(function(el){
           if(!visible(el)) return;
-          var t=(txt(el)+' '+attrs(el)).replace(/\\s+/g,' ').trim();
+          var t=(txt(el)+' '+attrs(el)).replace(/\s+/g,' ').trim();
           if(t && t.length>20) chunks.push(t);
         });
       });
@@ -1748,10 +1837,10 @@ try{
     var list=[];
     try{
       list=all().filter(visible).filter(function(el){
-        var t=(txt(el)+' '+attrs(el)).replace(/\\s+/g,' ').trim();
+        var t=(txt(el)+' '+attrs(el)).replace(/\s+/g,' ').trim();
         if(!t || t.length<2 || t.length>260) return false;
         if(/Roster Calendar|Statistics|Current|Welcome|Copyright|Home|Profile|Airport|Alert History|Swap|Roster Report/i.test(t)) return false;
-        return /(\\bLA\\s*\\d{3,4}\\b|\\bLA\\d{3,4}\\b|\\bASB\\b|\\bHSBE?\\b|\\bDO\\b|\\bDR\\b|\\bMT\\b|\\bCBF\\b|\\bEMER\\b|\\bCRM\\b|\\bC\\d{2,3}F\\b|\\d{1,2}:\\d{2})/i.test(t);
+        return /(LA *[0-9]{3,4}|LA[0-9]{3,4}|ASB|HSB|HSBE|DO|DR|MT|CBF|EMER|CRM|C[0-9]{2,3}F|[0-9]{1,2}:[0-9]{2})/i.test(t);
       }).slice(0,60);
     }catch(e){}
     return list;
@@ -1999,7 +2088,7 @@ try{
   setTimeout(step,450);
 }catch(e){ console.log('CrewCheck iFlight automation',e); }
 })(
-""" + (activeIFlightConfigJson != null ? activeIFlightConfigJson : "{}") + """
+""" + activeIFlightConfigJson + """
 );
 """;
         try {
@@ -2179,6 +2268,23 @@ try{
             }
             filePathCallback.onReceiveValue(result);
             filePathCallback = null;
+            return;
+        }
+        if (requestCode == NATIVE_PDF_PICKER_REQUEST_CODE) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                Uri uri = data.getData();
+                try {
+                    final int takeFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    getContentResolver().takePersistableUriPermission(uri, takeFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+                try {
+                    readIncomingPdfUri(uri);
+                    Toast.makeText(this, "PDF recebido do Drive/Arquivos. Importando escala...", Toast.LENGTH_LONG).show();
+                } catch (Exception error) {
+                    Toast.makeText(this, error.getMessage() == null ? "Não consegui ler o PDF selecionado." : error.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            }
+            return;
         }
     }
 
@@ -2195,6 +2301,9 @@ try{
 
     @Override
     protected void onDestroy() {
+        if (smsReceiver != null) {
+            unregisterReceiver(smsReceiver);
+        }
         closePortalOnly();
         if (webView != null) {
             webView.destroy();

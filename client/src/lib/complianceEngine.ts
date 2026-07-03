@@ -71,6 +71,7 @@ export interface LoadAnalysis {
 }
 
 export interface ComplianceResult {
+  engineVersion?: string;
   alerts: ComplianceAlert[];
   metrics: Metrics;
   overallStatus: 'compliant' | 'warning' | 'violation';
@@ -100,6 +101,9 @@ export interface GymRecommendation {
   recoveryScore: number;
   loadScore: number;
 }
+
+const COMPLIANCE_ENGINE_VERSION = '11.1.95';
+const SHOW_TECHNICAL_CODE_ALERTS = false;
 
 const LIMITS = {
   maxFlightHoursMonth: 80,
@@ -150,8 +154,15 @@ function diffHours(start: string, end: string, forceNextDay = false): number {
 }
 
 function getFlightHours(day: RosterDay): number {
-  if (typeof day.flyingHours === 'number') return day.flyingHours;
-  return (day.legs || []).reduce((sum, leg) => sum + getLegHours(leg), 0);
+  const legs = day.legs || [];
+  if (legs.length) {
+    const legSum = legs.reduce((sum, leg) => sum + getLegHours(leg), 0);
+    // v11.0.98: o total de flyingHours vindo do PDF convertido pode herdar
+    // janela/pernoite e virar 20h+. Para regulamentação automática, pernas
+    // legíveis são mais confiáveis que o total agregado do PDF.
+    return round1(legSum);
+  }
+  return typeof day.flyingHours === 'number' ? round1(day.flyingHours) : 0;
 }
 
 function getLegHours(leg: FlightLeg): number {
@@ -159,6 +170,145 @@ function getLegHours(leg: FlightLeg): number {
   return diffHours(leg.departureTime, leg.arrivalTime, Boolean(leg.isNextDay));
 }
 
+function getDutyWindowHours(day: RosterDay): number {
+  if (!day.dutyReport || !day.dutyDebrief) return 0;
+  return diffHours(day.dutyReport, day.dutyDebrief, day.isNextDay);
+}
+
+function getGroundIntervalHours(day: RosterDay): number {
+  if (!day.legs || day.legs.length < 2) return 0;
+  const totalMinutes = getGroundIntervals(day).reduce((sum, interval) => sum + interval.minutes, 0);
+  return round1(totalMinutes / 60);
+}
+
+function getLegDutyEnvelopeHours(day: RosterDay): number {
+  const legs = day.legs || [];
+  if (!legs.length) return 0;
+
+  const start = cleanClockTime(day.dutyReport) || cleanClockTime(legs[0]?.departureTime);
+  const lastLeg = legs[legs.length - 1];
+  const lastArrival = cleanClockTime(lastLeg?.arrivalTime);
+  if (!start || !lastArrival) return getFlightHours(day);
+
+  const firstDeparture = minutesOfDay(legs[0]?.departureTime);
+  const lastArrivalMin = minutesOfDay(lastArrival);
+  const lastIsNextDay = Boolean(day.isNextDay || lastLeg?.isNextDay || (firstDeparture !== null && lastArrivalMin !== null && lastArrivalMin <= firstDeparture));
+  const flightEnvelope = diffHours(start, lastArrival, lastIsNextDay);
+  // Corte operacional estimado: 30 minutos após o último pouso quando o PDF parece
+  // ter puxado o debrief de outro dia/perna. Isso evita jornadas absurdas de 20h+.
+  return round1(flightEnvelope + 0.5);
+}
+
+
+function getDutyMarginsWithoutGround(day: RosterDay): { reportMargin: number; debriefMargin: number; sectorDutyHours: number; evidence: string } {
+  const legs = day.legs || [];
+  const flightHours = getFlightHours(day);
+  if (!legs.length) {
+    return { reportMargin: 0, debriefMargin: 0, sectorDutyHours: round1(flightHours), evidence: 'sem pernas de voo' };
+  }
+
+  const firstLeg = legs[0];
+  const lastLeg = legs[legs.length - 1];
+  const report = cleanClockTime(day.dutyReport);
+  const firstDeparture = cleanClockTime(firstLeg?.departureTime);
+  const lastArrival = cleanClockTime(lastLeg?.arrivalTime);
+  const debrief = cleanClockTime(day.dutyDebrief);
+
+  let reportMargin = 0.83; // apresentação típica quando a coluna está contaminada ou ausente
+  if (report && firstDeparture) {
+    const minutes = windowDurationMinutes(report, firstDeparture, false);
+    // Só aceitar margem de apresentação plausível. Valores altos quase sempre indicam
+    // que o PDF juntou pernoite/continuação no mesmo dia.
+    if (minutes >= 0 && minutes <= 180) reportMargin = minutes / 60;
+  }
+
+  let debriefMargin = 0.5; // corte padrão de 30 min após último pouso
+  if (lastArrival && debrief) {
+    const explicitNextDay = Boolean(day.isNextDay || lastLeg?.isNextDay);
+    const minutes = windowDurationMinutes(lastArrival, debrief, explicitNextDay);
+    // Aceitar apenas corte plausível; se o corte cair horas depois, é contaminação
+    // de pernoite/coluna e não deve inflar a métrica regulatória.
+    if (minutes >= 0 && minutes <= 120) debriefMargin = minutes / 60;
+  }
+
+  return {
+    reportMargin: round1(reportMargin),
+    debriefMargin: round1(debriefMargin),
+    sectorDutyHours: round1(flightHours + reportMargin + debriefMargin),
+    evidence: `voo ${flightHours.toFixed(1)}h + apresentação ${reportMargin.toFixed(1)}h + corte ${debriefMargin.toFixed(1)}h`,
+  };
+}
+
+function isLikelyParserMergedDutyWindow(day: RosterDay, dutyWindowHours: number, groundHours: number, flightHours: number): boolean {
+  const legs = day.legs || [];
+  if (!legs.length) return false;
+  if (dutyWindowHours <= 0) return false;
+  const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.toUpperCase();
+  const noGroundDuty = getDutyMarginsWithoutGround(day).sectorDutyHours;
+
+  // AIMS convertido frequentemente traz o corte do dia seguinte no dia anterior
+  // (ex.: 09:30 até 08:50), gerando 20h+ artificiais. Quando a janela excede
+  // muito o bloco de voo + apresentação/corte plausíveis, tratamos como parser.
+  if (dutyWindowHours >= 16 && dutyWindowHours > noGroundDuty + 4) return true;
+
+  // Um ou dois trechos com janela gigante quase sempre são pernoite/continuação
+  // visualmente colados, não uma jornada diária real.
+  if (legs.length <= 2 && dutyWindowHours > 14 && flightHours <= 7) return true;
+
+  // Se o raw traz continuação visual "(...)" ou aeroportos soltos, aumenta a chance
+  // de o parser ter herdado horários de outro bloco.
+  if (dutyWindowHours > 13 && /\.\.\.|CONTINUA|CONTINUACAO|CONTINUAÇÃO/.test(raw) && flightHours <= 8) return true;
+
+  // Solo diurno longo não deve virar jornada. Se a diferença entre janela e voo é
+  // majoritariamente solo/espera, deixe como leitura estimada, não irregularidade.
+  if (groundHours >= 3 && dutyWindowHours > noGroundDuty + groundHours - 0.2) return true;
+
+  return false;
+}
+
+function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; groundHours: number; dutyHours: number; mode: 'liquida_sem_solo' | 'janela' | 'estimada_parser' | 'indisponivel' } {
+  if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) {
+    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+  }
+
+  const dutyWindowHours = getDutyWindowHours(day);
+
+  if (day.type === 'VOO' && (day.legs || []).length > 0) {
+    const groundHours = getGroundIntervalHours(day);
+    const flightHours = getFlightHours(day);
+    const noGroundDuty = getDutyMarginsWithoutGround(day).sectorDutyHours;
+
+    if (isLikelyParserMergedDutyWindow(day, dutyWindowHours, groundHours, flightHours)) {
+      // Em leitura contaminada, não usar report/debrief bruto. A métrica segura é:
+      // horas de voo + apresentação plausível + corte plausível, sem solo/pernoite.
+      return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(noGroundDuty), mode: 'estimada_parser' };
+    }
+
+    // Tempo em solo entre etapas não entra como jornada automática. Mesmo quando o
+    // report/debrief forem confiáveis, a régua de alerta usa voo + apresentação/corte
+    // plausíveis para evitar que conexão longa vire irregularidade falsa.
+    const netDuty = dutyWindowHours > 0
+      ? Math.max(flightHours, Math.min(Math.max(0, dutyWindowHours - groundHours), noGroundDuty + 0.3))
+      : Math.max(flightHours, noGroundDuty);
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(netDuty), mode: 'liquida_sem_solo' };
+  }
+
+  if (isStandby(day) && !hasStandbyActivationCombination(day)) {
+    // Sobreaviso sem acionamento é validado pela própria janela de SAV, mas não entra
+    // como jornada de voo/trabalho para alertas de jornada diária/semanal/mensal.
+    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+  }
+
+  if (typeof day.dutyHours === 'number' && day.dutyHours > 0 && !day.legs?.length) {
+    return { dutyWindowHours: round1(day.dutyHours), groundHours: 0, dutyHours: round1(day.dutyHours), mode: 'janela' };
+  }
+
+  if (dutyWindowHours > 0) {
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: 0, dutyHours: round1(dutyWindowHours), mode: 'janela' };
+  }
+
+  return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+}
 
 function isValidClockTime(value: string | null | undefined): value is string {
   if (!value) return false;
@@ -262,9 +412,7 @@ function getPrimaryBlockingWindow(day: RosterDay): BlockingWindow | null {
 }
 
 function getDutyHours(day: RosterDay): number {
-  if (typeof day.dutyHours === 'number') return day.dutyHours;
-  if (!day.dutyReport || !day.dutyDebrief) return 0;
-  return diffHours(day.dutyReport, day.dutyDebrief, day.isNextDay);
+  return getRegulatoryDutyBreakdown(day).dutyHours;
 }
 
 function getEffectiveStandbyHours(day: RosterDay): number {
@@ -357,11 +505,21 @@ function isTrainingOrGround(day: RosterDay): boolean {
 }
 
 function isNightLeg(leg: FlightLeg): boolean {
-  const dep = parseTime(leg.departureTime);
-  const arr = parseTime(leg.arrivalTime);
-  const depNight = dep ? dep.hours >= 18 || dep.hours < 6 : false;
-  const arrNight = arr ? arr.hours >= 18 || arr.hours < 6 : false;
-  return depNight || arrNight || Boolean(leg.isNextDay);
+  return legTouchesMadrugada(leg);
+}
+
+function legTouchesMadrugada(leg: FlightLeg): boolean {
+  const dep = minutesOfDay(leg.departureTime);
+  const arr = minutesOfDay(leg.arrivalTime);
+  if (dep === null || arr === null) return Boolean(leg.isNextDay);
+  let start = dep;
+  let end = arr;
+  if (end <= start || leg.isNextDay) end += 24 * 60;
+  const windows: Array<[number, number]> = [
+    [0, 6 * 60],
+    [24 * 60, 30 * 60],
+  ];
+  return windows.some(([windowStart, windowEnd]) => start < windowEnd && end > windowStart);
 }
 
 function startsInEarlyWindow(day: RosterDay): boolean {
@@ -390,11 +548,32 @@ function getRestBetween(prev: RosterDay, next: RosterDay): number | null {
   return round1(rest);
 }
 
+function isSameOperationalContinuation(prev: RosterDay, next: RosterDay): boolean {
+  if (!prev || !next) return false;
+  if (!isActiveDuty(prev) || !isActiveDuty(next)) return false;
+  const rest = getRestBetween(prev, next);
+  if (rest === null || rest < 0 || rest > 5) return false;
+
+  const prevLast = prev.legs?.[prev.legs.length - 1];
+  const nextFirst = next.legs?.[0];
+  const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
+  const nextStartsEarly = (minutesOfDay(next.dutyReport || nextFirst?.departureTime) ?? 9999) < 7 * 60;
+  const previousEndedAfterMidnight = Boolean(prev.isNextDay || prevLast?.isNextDay || (minutesOfDay(prev.dutyDebrief || prevLast?.arrivalTime) ?? 9999) <= 6 * 60);
+
+  // Escalas AIMS frequentemente quebram a mesma missão na virada do dia. Se o "repouso"
+  // calculado é 1h/2h entre pouso e nova decolagem/apresentação cedo, não é repouso:
+  // é continuação operacional/solo curto e não deve gerar alerta de repouso mínimo.
+  const explicitContinuation = /continua[cç][aã]o operacional|\(\.\.\.\)|fim de jornada anterior|mesma jornada/i.test(`${next.rawText || ''} ${prev.rawText || ''}`);
+  if (rest <= 5 && (nextStartsEarly || explicitContinuation) && (prev.legs?.length || 0) > 0 && (next.legs?.length || 0) > 0) return true;
+  return Boolean((sameStation || previousEndedAfterMidnight || explicitContinuation) && nextStartsEarly);
+}
+
 function shouldEvaluateMinimumRest(prev: RosterDay, next: RosterDay): boolean {
   // CBF + EMER, cursos sequenciais, check + voo e outras atividades do mesmo dia
   // são subprogramações de um mesmo bloco operacional/agenda. Não devem gerar
   // falso positivo de repouso mínimo de 12h entre elas.
   if (prev.date === next.date) return false;
+  if (isSameOperationalContinuation(prev, next)) return false;
 
   // Dias sem programação lida, folgas, OFF e pernoite/inativo não iniciam nova
   // jornada para fins de comparação automática de repouso mínimo.
@@ -428,6 +607,47 @@ function isActivationOrScheduleChange(day?: RosterDay): boolean {
   return Boolean((day.legs || []).some((leg) => /\b(PS|EXTRA|OP|ACIONADO|ALTERADO)\b/i.test(String(leg.workType || ''))));
 }
 
+
+function isActivatedStandbyOrReserve(day?: RosterDay): boolean {
+  if (!day) return false;
+  if (!(isStandby(day) || isReserve(day))) return false;
+  if ((day.legs || []).length > 0) return true;
+  const raw = `${day.rawText || ''} ${day.type || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /\b(ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|CALL-OUT|ATIVAD[OA]|CONVOCAD[OA]|REPROGRAMAD[OA]|ALTERACAO|ALTERAD[OA]|MUDANCA|MUDADO|VOO|LA\s*\d{3,4}|PS|EXTRA|ASB|RESERVA)\b/.test(raw);
+}
+
+function isActivationLikeDuty(day?: RosterDay): boolean {
+  if (!day) return false;
+  if ((day.legs || []).length > 0) return true;
+  if (day.type === 'VOO' || isReserve(day)) return true;
+  const raw = `${day.rawText || ''} ${day.type || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /\b(LA\s*\d{3,4}|PS|EXTRA|ASB|RES|RESERVA|ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|VOO)\b/.test(raw);
+}
+
+function hasLinkedActivationInRoster(days: RosterDay[], day: RosterDay, index: number): boolean {
+  if (!(isStandby(day) || isReserve(day))) return false;
+  if (isActivatedStandbyOrReserve(day)) return true;
+  const dayStart = minutesOfDay(day.dutyReport);
+  const dayEnd = minutesOfDay(day.dutyDebrief);
+  return days.some((candidate, candidateIndex) => {
+    if (candidateIndex === index || candidate.date !== day.date) return false;
+    if (isRecoveryDay(candidate) || isEmptyCalendarDay(candidate)) return false;
+    if (!isActivationLikeDuty(candidate)) return false;
+    const candidateStart = minutesOfDay(candidate.dutyReport || candidate.legs?.[0]?.departureTime);
+    if (dayEnd !== null && candidateStart !== null) {
+      const normalizedCandidate = candidateStart < dayEnd ? candidateStart + 24 * 60 : candidateStart;
+      const gap = normalizedCandidate - dayEnd;
+      // Acionamento típico: reserva/voo começa logo após o sobreaviso/reserva,
+      // mas o PDF pode quebrar ou arredondar horário. Aceita até 6h para não gerar falso positivo.
+      if (gap >= -15 && gap <= 6 * 60) return true;
+    }
+    if (dayStart !== null && candidateStart !== null) {
+      return Math.abs(candidateStart - dayStart) <= 12 * 60;
+    }
+    return true;
+  });
+}
+
 function calculateWeekendPairs(days: RosterDay[]): number {
   const offByDate = new Set(days.filter(isDayOff).map(day => day.date));
   const weekends = new Set<string>();
@@ -451,12 +671,32 @@ function formatDate(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
-function countNightOpsInRolling168h(days: RosterDay[]): number {
-  const nightDates = days
-    .filter(day => hasMadrugadaDuty(day))
-    .map(day => parseDate(day.date).getTime())
-    .sort((a, b) => a - b);
+function getMadrugadaKeys(days: RosterDay[]): number[] {
+  const sorted = sortDays(days);
+  const keys: number[] = [];
+  let previousDay: RosterDay | null = null;
 
+  for (const day of sorted) {
+    if (!hasMadrugadaDuty(day)) {
+      previousDay = day;
+      continue;
+    }
+
+    const date = parseDate(day.date);
+    const firstStart = getFirstOperationalStart(day).time;
+    const startsBeforeSix = (minutesOfDay(firstStart) ?? 9999) < 6 * 60;
+    const sameNightAsPrevious = Boolean(previousDay && hasMadrugadaDuty(previousDay) && previousDay.isNextDay && startsBeforeSix && !isRecoveryDay(previousDay));
+    const keyDate = sameNightAsPrevious ? parseDate(previousDay!.date) : date;
+    const key = keyDate.getTime();
+    if (!keys.includes(key)) keys.push(key);
+    previousDay = day;
+  }
+
+  return keys.sort((a, b) => a - b);
+}
+
+function countNightOpsInRolling168h(days: RosterDay[]): number {
+  const nightDates = getMadrugadaKeys(days);
   let max = 0;
   for (let i = 0; i < nightDates.length; i++) {
     const start = nightDates[i];
@@ -468,27 +708,42 @@ function countNightOpsInRolling168h(days: RosterDay[]): number {
 }
 
 function countMaxConsecutiveMadrugadas(days: RosterDay[]): number {
-  let current = 0;
-  let max = 0;
-  for (const day of days) {
-    if (hasMadrugadaDuty(day)) {
-      current += 1;
-      max = Math.max(max, current);
-    } else if (isActiveDuty(day) || isRecoveryDay(day)) {
-      current = 0;
-    }
+  const keys = getMadrugadaKeys(days);
+  if (!keys.length) return 0;
+  let current = 1;
+  let max = 1;
+  for (let i = 1; i < keys.length; i++) {
+    const dayGap = Math.round((keys[i] - keys[i - 1]) / (24 * 60 * 60 * 1000));
+    if (dayGap === 1) current += 1;
+    else current = 1;
+    max = Math.max(max, current);
   }
   return max;
 }
 
 function hasMadrugadaDuty(day: RosterDay): boolean {
+  if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) return false;
+  const legs = day.legs || [];
+  if (legs.length > 0) {
+    // Madrugada regulatória por voo: conta somente quando a perna toca 00:00–06:00.
+    // Voo sem madrugada continua quebrando a sequência para reduzir falso positivo.
+    return legs.some(legTouchesMadrugada);
+  }
+  if (isStandby(day)) {
+    // Regra operacional ajustada: sobreaviso conta para o limite de madrugada
+    // quando a janela COMEÇA na madrugada, mesmo sem acionamento. Ele continua
+    // não entrando como jornada de voo/trabalho, apenas na métrica de madrugadas.
+    const report = minutesOfDay(day.dutyReport);
+    return report !== null && report < 6 * 60;
+  }
+  if (isReserve(day)) return false;
   if (!isActiveDuty(day)) return false;
-  if (day.legs?.some(leg => Boolean(leg.isNextDay))) return true;
   const report = minutesOfDay(day.dutyReport);
   const debrief = minutesOfDay(day.dutyDebrief);
-  if (report === null || debrief === null) return (day.legs || []).some(isNightLeg);
-  if (day.isNextDay) return true;
-  return report < 6 * 60 || debrief <= 6 * 60;
+  if (report === null || debrief === null) return false;
+  // Solo/treinamento/reunião só entram como madrugada quando a atividade inteira é
+  // inequivocamente operacional e atravessa a madrugada. Isso fica como exceção.
+  return Boolean(day.isNextDay || (report < 6 * 60 && debrief <= 6 * 60));
 }
 
 function pushAlert(alerts: ComplianceAlert[], alert: Omit<ComplianceAlert, 'id'>): void {
@@ -532,9 +787,11 @@ function collectUnclassifiedCodes(roster: CrewRoster): Array<{ code: string; dat
     'DO', 'DR', 'DOF', 'OFF', 'HSB', 'HSBE', 'ASB', 'RES', 'CRM', 'CBF', 'EMER', 'MT', 'C32F',
     'NS', 'NSJ', 'IJ', 'DM',
     'VOO', 'LA', 'OP', 'PS', 'DH', 'CC', 'CCM', 'CP', 'CM', 'FO', 'CMT', 'CMD',
-    'BSB', 'GRU', 'CGH', 'VCP', 'NAT', 'MCZ', 'FOR', 'CNF', 'PMW', 'FLN', 'MAB', 'CPV', 'GYN', 'JPA', 'EZE',
+    'WCH', 'WCHR', 'WCHS', 'WCHC', 'WCBD', 'BLND', 'DEAF', 'UMNR', 'PNAE', 'POB',
+    'NOTOC', 'DG', 'DGR', 'DEPA', 'DEPU', 'PETC', 'ESAN', 'SVAN', 'AVIH', 'POC', 'KME', 'KIM', 'MOR', 'ASR',
+    'BSB', 'GRU', 'CGH', 'VCP', 'NAT', 'MCZ', 'FOR', 'CNF', 'PMW', 'FLN', 'MAB', 'CPV', 'GYN', 'JPA', 'EZE', 'CWB', 'BEL', 'SSA', 'CXJ', 'MAO', 'SDU', 'GIG', 'REC', 'AJU', 'THE', 'SLZ', 'BPS', 'IOS',
     'SDC', 'ACY', 'REP', 'DEB', 'UTC', 'FH', 'RANK', 'AERO', 'TAM', 'SNA', 'INATIVO',
-    'DIA', 'EM', 'NA', 'NO', 'APOS', 'APÓS', 'ESCALA', 'BRANCO', 'PERNOITE', 'PROGRAMACAO', 'PROGRAMAÇÃO', 'LIDA', 'PDF', 'PARA', 'ESTE', 'SEM', 'BASE',
+    'DIA', 'EM', 'NA', 'NO', 'DA', 'DAS', 'DE', 'DO', 'DOS', 'BRAS', 'BRASILIA', 'BRASÍLIA', 'APOS', 'APÓS', 'ESCALA', 'BRANCO', 'PERNOITE', 'PROGRAMACAO', 'PROGRAMAÇÃO', 'LIDA', 'PDF', 'PARA', 'ESTE', 'SEM', 'BASE',
     // Calendário/datas: nunca devem virar siglas operacionais desconhecidas.
     'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
     'FEV', 'ABR', 'MAI', 'AGO', 'SET', 'OUT', 'DEZ',
@@ -577,7 +834,8 @@ type TimingConfidence = {
 function getDayTimingConfidence(day: RosterDay): TimingConfidence {
   const notes: string[] = [];
   const active = isActiveDuty(day);
-  const dutyHours = getDutyHours(day);
+  const dutyBreakdown = getRegulatoryDutyBreakdown(day);
+  const dutyHours = dutyBreakdown.dutyHours;
   const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.toUpperCase();
   const extractedTimes = raw.match(/\b\d{1,2}:\d{2}(?:\(\+1\))?\b/g) || [];
 
@@ -592,6 +850,10 @@ function getDayTimingConfidence(day: RosterDay): TimingConfidence {
 
   if (!day.dutyReport || !day.dutyDebrief) {
     notes.push('atividade sem duty report/debrief confiável no PDF');
+  }
+
+  if (dutyBreakdown.mode === 'estimada_parser') {
+    notes.push('janela de apresentação/corte parece contaminada por continuação/pernoite; usando estimativa pelos trechos para evitar falso positivo');
   }
 
   if (day.dutyReport && day.dutyDebrief) {
@@ -646,9 +908,452 @@ function isFalsePositiveLayoverMaximumAlert(alert: ComplianceAlert): boolean {
   return /pernoite|inativo|layover/.test(text) && /(maior|acima|superior|exced)/.test(text) && /20\s*h/.test(text);
 }
 
+
+
+type OperationalManualRule = {
+  id: string;
+  pattern: RegExp;
+  title: string;
+  description: (day: RosterDay, matches: string[]) => string;
+  details: string;
+  legalReference: string;
+  confidence?: ComplianceAlert['confidence'];
+};
+
+const OPERATIONAL_CONTEXT_RULES: OperationalManualRule[] = [
+  {
+    id: 'pnae-pob',
+    pattern: /\b(WCH(?:R|S|C)?|WCBD|BLND|DEAF|UMNR|PNAE|ATENDIMENTO\s+ESPECIAL)\b/gi,
+    title: 'PNAE/atendimento especial — conferir Nimbus, P.O.B. e cockpit',
+    description: (day, matches) => `${day.date}: indício de atendimento especial (${dedupe(matches).join(', ')}).`,
+    details: 'Confirmar a sigla correta no sistema/Nimbus. Se houver atendimento especial adicional ou divergente e a inconsistência persistir, inserir apenas o adicional no P.O.B. e entregar ao cockpit no fechamento de portas. Em caso de necessidade identificada em voo para desembarque, informar imediatamente os pilotos.',
+    legalReference: 'RBAC 121.586 · procedimento operacional de atendimento especial',
+  },
+  {
+    id: 'poc',
+    pattern: /\b(POC|CONCENTRADOR\s+PORT[ÁA]TIL\s+DE\s+OXIG[ÊE]NIO)\b/gi,
+    title: 'POC — validar bateria, acomodação e restrição de assento',
+    description: (day) => `${day.date}: possível passageiro com concentrador portátil de oxigênio.`,
+    details: 'Verificar autonomia de bateria de 150% do tempo máximo estimado de voo, acomodação sem obstruir evacuação, sem bin/doghouse durante uso, preferência por janela e restrição para primeira fileira/saída de emergência.',
+    legalReference: 'IAC 3134 · procedimento operacional de oxigênio portátil',
+  },
+  {
+    id: 'notoc-dg',
+    pattern: /\b(NOTOC|DGR|DG|ARTIGOS?\s+PERIGOSOS?|DANGEROUS\s+GOODS|MATERIAL\s+PERIGOSO|BATERIA\s+DE\s+L[ÍI]TIO)\b/gi,
+    title: 'Artigos perigosos/NOTOC — ciência da cabine e reporte correto',
+    description: (day, matches) => `${day.date}: indício de NOTOC/artigo perigoso (${dedupe(matches).join(', ')}).`,
+    details: 'A NOTOC deve ser repassada pelo Comandante ao CSB/CF para ciência da cabine. Em discrepância/incidente com artigos perigosos, seguir o fluxo de reporte previsto e comunicar conforme procedimento operacional.',
+    legalReference: 'Procedimento operacional de artigos perigosos/NOTOC',
+  },
+  {
+    id: 'security-depa-depu',
+    pattern: /\b(DEPA|DEPU|CUST[ÓO]DIA|CUSTODIAD[OA]|ESCOLTAS?)\b/gi,
+    title: 'Security — DEPA/DEPU/custodiado exige briefing e acomodação específica',
+    description: (day, matches) => `${day.date}: código/termo de security identificado (${dedupe(matches).join(', ')}).`,
+    details: 'Conferir briefing do agente, assentos no final da cabine, escolta entre passageiro e corredor quando aplicável, embarque/desembarque conforme regra e restrição de bebidas quentes/alcoólicas para DEPA/custodiado.',
+    legalReference: 'Resolução 461, art. 66 · procedimento operacional de security',
+  },
+  {
+    id: 'pet-animal',
+    pattern: /\b(PETC|PET-C|ESAN|SVAN|AVIH|ANIMAL\s+(?:DE\s+)?(?:SERVI[ÇC]O|APOIO))\b/gi,
+    title: 'Animal em cabine/serviço — conferir assento, limite e obstrução',
+    description: (day, matches) => `${day.date}: indício de animal em cabine/serviço (${dedupe(matches).join(', ')}).`,
+    details: 'Conferir categoria do animal, peso/limite, acomodação aos pés do passageiro, sem bloquear corredores ou saída de emergência, e observações específicas de ESAN/SVAN/PETC.',
+    legalReference: 'Procedimento operacional de animal em cabine/serviço',
+  },
+  {
+    id: 'refueling-pax',
+    pattern: /\b(ABASTEC(?:IMENTO|ENDO)?|REFUEL(?:ING)?|FUEL)\b/gi,
+    title: 'Abastecimento com passageiros a bordo — portas e monitoramento',
+    description: (day) => `${day.date}: possível abastecimento com passageiros a bordo.`,
+    details: 'Confirmar porta primária 1L acoplada ao finger/escada e porta secundária 4L desobstruída, desarmada e monitorada por tripulante.',
+    legalReference: 'Procedimento operacional de abastecimento com passageiros a bordo',
+  },
+  {
+    id: 'medical-kme',
+    pattern: /\b(KME|KIM|MEDAIRE|OCORR[ÊE]NCIA\s+M[ÉE]DICA|FORMUL[ÁA]RIO\s+M[ÉE]DICO)\b/gi,
+    title: 'Ocorrência médica — KME/KIM, MedAire e MOR',
+    description: (day, matches) => `${day.date}: indício médico (${dedupe(matches).join(', ')}).`,
+    details: 'KME somente por médico com CRM/identificação ou, para enfermagem/tripulação, mediante autorização prévia do MedAire e Comandante. Formulário médico deve seguir fluxo interno e anexação ao MOR quando aplicável.',
+    legalReference: 'Procedimento operacional de atendimento médico a bordo',
+  },
+  {
+    id: 'exit-seat',
+    pattern: /\b(EXIT\s+ROW|SA[ÍI]DA\s+DE\s+EMERG[ÊE]NCIA|ASSENTO\s+DE\s+SA[ÍI]DA)\b/gi,
+    title: 'Assento de saída de emergência — briefing verbal obrigatório',
+    description: (day) => `${day.date}: possível briefing de assento de saída de emergência.`,
+    details: 'Determinar visualmente os requisitos, entregar cartão, perguntar se o passageiro é capaz e está disposto a operar a saída. Cada passageiro deve responder verbalmente; resposta negativa exige reacomodação antes do fechamento da porta.',
+    legalReference: 'RBAC 121 · procedimento operacional de assento de saída de emergência',
+  },
+];
+
+function normalizeOperationalText(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+
+function dedupe(values: string[]): string[] {
+  return [...new Set(values.map(item => item.toUpperCase().replace(/\s+/g, ' ').trim()))].slice(0, 6);
+}
+
+function addOperationalContextAlerts(alerts: ComplianceAlert[], day: RosterDay) {
+  const raw = normalizeOperationalText(`${day.rawText || ''} ${day.pairingCode || ''} ${day.type || ''}`);
+  if (!raw.trim()) return;
+
+  OPERATIONAL_CONTEXT_RULES.forEach((rule) => {
+    const matches = [...raw.matchAll(rule.pattern)].map((match) => match[0]);
+    if (!matches.length) return;
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: rule.title,
+      description: rule.description(day, matches),
+      details: rule.details,
+      legalReference: rule.legalReference,
+      date: day.date,
+      confidence: rule.confidence || 'media',
+      classification: 'atencao',
+      evidence: `Texto da escala: ${String(day.rawText || day.pairingCode || day.type || '').slice(0, 240)}`,
+    });
+  });
+}
+
+function hasStandbyActivationCombination(day: RosterDay): boolean {
+  const raw = normalizeOperationalText(`${day.rawText || ''} ${day.pairingCode || ''} ${day.type || ''}`);
+  const hasStandbyToken = /\bHSBE?\b|SOBREAVISO/.test(raw) || isStandby(day);
+  const hasExplicitActivationToken = /\b(PS|EXTRA|ACIONAD[OA]|ACIONAMENTO|CALL\s*OUT|CHAMAD[OA]|VOO)\b/.test(raw);
+  return hasStandbyToken && (hasExplicitActivationToken || Boolean(day.legs?.length));
+}
+
+const DUTY_LIMITS_117 = {
+  // Referência segura/padrão: tripulação mínima/simples aclimatada do RBAC 117, Apêndice B, Tabela B.1.
+  // Não usar 16h como limite padrão para reserva acionada. 16h só pode aparecer em contextos específicos
+  // de tripulação composta/revezamento ou jornada interrompida, quando houver evidência clara na escala/GRF.
+  standbyActivationSimpleCombined: 16,
+};
+
+type Rbac117SectorsBucket = '1-2' | '3-4' | '5' | '6' | '7+';
+type Rbac117DutyLimit = {
+  startBucket: string;
+  sectorsBucket: Rbac117SectorsBucket;
+  maxDutyHours: number;
+  maxFlightHours: number;
+  table: 'B.1';
+  legalReference: string;
+};
+
+type EffectiveDutyLimit = Rbac117DutyLimit & { appliedRule: string; actChecked: boolean };
+
+function applyMostRestrictiveDutyLimit(limit: Rbac117DutyLimit | null, profile?: LegalProfileSummary | null): EffectiveDutyLimit | null {
+  if (!limit) return null;
+  // Os ACTs 2025/2027 parametrizados no CrewCheck hoje são mais restritivos em
+  // sobreaviso, reserva, solo entre etapas, madrugadas e limites semanais/mensais.
+  // Para a duração diária da tripulação simples, o ACT remete ao limite
+  // regulamentar; por isso a Tabela B.1 permanece como teto diário, e futuras
+  // exceções ACT/SGRF devem entrar aqui como min(RBAC, ACT).
+  return {
+    ...limit,
+    legalReference: profile?.actName ? `${limit.legalReference}; ${profile.actName} aplicado quando mais restritivo` : limit.legalReference,
+    appliedRule: profile?.actName ? `Mais restritivo entre RBAC 117 B.1 e ${profile.actName}` : 'RBAC 117 B.1',
+    actChecked: Boolean(profile?.actName),
+  };
+}
+
+const RBAC117_B1_SIMPLE_TABLE: Array<{ start: number; end: number; label: string; duty: [number, number, number, number, number]; flight: [number, number, number, number, number] }> = [
+  { start: 6 * 60, end: 6 * 60 + 59, label: '06h00-06h59', duty: [11, 11, 10, 9, 9], flight: [9, 9, 8, 8, 8] },
+  { start: 7 * 60, end: 7 * 60 + 59, label: '07h00-07h59', duty: [13, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
+  { start: 8 * 60, end: 11 * 60 + 59, label: '08h00-11h59', duty: [13, 13, 12, 11, 10], flight: [10, 9.5, 9, 9, 8] },
+  { start: 12 * 60, end: 13 * 60 + 59, label: '12h00-13h59', duty: [12, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
+  { start: 14 * 60, end: 15 * 60 + 59, label: '14h00-15h59', duty: [11, 11, 10, 9, 9], flight: [9, 9, 8, 8, 8] },
+  { start: 16 * 60, end: 17 * 60 + 59, label: '16h00-17h59', duty: [10, 10, 9, 9, 9], flight: [8, 8, 8, 8, 8] },
+  { start: 18 * 60, end: 24 * 60 + 5 * 60 + 59, label: '18h00-05h59', duty: [9, 9, 9, 9, 9], flight: [8, 8, 7, 7, 7] },
+];
+
+function getSectorsBucket(sectors: number): { bucket: Rbac117SectorsBucket; index: 0 | 1 | 2 | 3 | 4 } {
+  if (sectors <= 2) return { bucket: '1-2', index: 0 };
+  if (sectors <= 4) return { bucket: '3-4', index: 1 };
+  if (sectors === 5) return { bucket: '5', index: 2 };
+  if (sectors === 6) return { bucket: '6', index: 3 };
+  return { bucket: '7+', index: 4 };
+}
+
+function getRbac117B1SimpleDutyLimit(startTime: string | null | undefined, sectors: number): Rbac117DutyLimit | null {
+  const start = minutesOfDay(startTime);
+  if (start === null) return null;
+  const normalizedStart = start < 6 * 60 ? start + 24 * 60 : start;
+  const row = RBAC117_B1_SIMPLE_TABLE.find(item => normalizedStart >= item.start && normalizedStart <= item.end);
+  if (!row) return null;
+  const { bucket, index } = getSectorsBucket(Math.max(1, sectors || 1));
+  return {
+    startBucket: row.label,
+    sectorsBucket: bucket,
+    maxDutyHours: row.duty[index],
+    maxFlightHours: row.flight[index],
+    table: 'B.1',
+    legalReference: 'RBAC 117, Apêndice B, B117.7, Tabela B.1',
+  };
+}
+
+function describeRbac117Limit(limit: Rbac117DutyLimit | EffectiveDutyLimit): string {
+  const applied = 'appliedRule' in limit ? ` · ${limit.appliedRule}` : '';
+  return `Tabela ${limit.table}: início ${limit.startBucket}, ${limit.sectorsBucket} etapa(s) → jornada máxima ${formatHoursForAlert(limit.maxDutyHours)} e voo máximo ${formatHoursForAlert(limit.maxFlightHours)}${applied}.`;
+}
+
+function addMinutesToClock(time: string, minutesToAdd: number, explicitNextDay = false): { time: string; isNextDay: boolean } | null {
+  const base = minutesOfDay(time);
+  if (base === null) return null;
+  let total = base + minutesToAdd;
+  let isNextDay = Boolean(explicitNextDay || total >= 24 * 60);
+  total %= 24 * 60;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return { time: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, isNextDay };
+}
+
+function getLastOperationalEndForDutyLimit(day: RosterDay): { time: string | null; isNextDay: boolean; source: string } {
+  if (day.dutyDebrief) return { time: day.dutyDebrief, isNextDay: Boolean(day.isNextDay), source: 'corte/debrief publicado' };
+  const lastLeg = (day.legs || [])[day.legs.length - 1];
+  if (lastLeg?.arrivalTime) {
+    const estimated = addMinutesToClock(lastLeg.arrivalTime, 30, Boolean(day.isNextDay || lastLeg.isNextDay));
+    if (estimated) return { time: estimated.time, isNextDay: estimated.isNextDay, source: 'chegada do último trecho + 30 min de corte estimado' };
+  }
+  return getLastOperationalEnd(day);
+}
+
+function formatHoursForAlert(hours: number): string {
+  if (!Number.isFinite(hours)) return '--';
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = Math.abs(totalMinutes % 60);
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`;
+}
+
+function getLastOperationalEnd(day: RosterDay): { time: string | null; isNextDay: boolean; source: string } {
+  if (day.dutyDebrief) return { time: day.dutyDebrief, isNextDay: Boolean(day.isNextDay), source: 'corte/debrief publicado' };
+  const lastLeg = (day.legs || [])[day.legs.length - 1];
+  if (lastLeg?.arrivalTime) return { time: lastLeg.arrivalTime, isNextDay: Boolean(day.isNextDay || lastLeg.isNextDay), source: 'chegada do último trecho' };
+  const lastWindow = [...getDayBlockingWindows(day)].sort((a, b) => (minutesOfDay(b.endTime) ?? 0) - (minutesOfDay(a.endTime) ?? 0))[0];
+  return lastWindow ? { time: lastWindow.endTime, isNextDay: Boolean(lastWindow.isNextDay), source: lastWindow.label } : { time: null, isNextDay: false, source: 'sem horário final confiável' };
+}
+
+function getFirstOperationalStart(day: RosterDay): { time: string | null; source: string } {
+  if (day.dutyReport) return { time: day.dutyReport, source: 'apresentação publicada' };
+  const firstWindow = getDayBlockingWindows(day)[0];
+  if (firstWindow?.startTime) return { time: firstWindow.startTime, source: firstWindow.label };
+  const firstLeg = (day.legs || [])[0];
+  return firstLeg?.departureTime ? { time: firstLeg.departureTime, source: 'decolagem do primeiro trecho' } : { time: null, source: 'sem horário inicial confiável' };
+}
+
+function getStandbyWindowForCompliance(day: RosterDay): BlockingWindow | null {
+  const standby = getDayBlockingWindows(day).find(item => item.source === 'standby');
+  if (standby) return standby;
+  if (isStandby(day)) return makeBlockingWindow(day.dutyReport, day.dutyDebrief, 'sobreaviso', 'standby', day.isNextDay);
+  const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.toUpperCase();
+  const afterCode = raw.replace(/.*\bHSBE?\b/, '');
+  const times = [...afterCode.matchAll(/\b(\d{1,2}:\d{2})(?:\(\+1\))?\b/g)].map(match => match[0]);
+  if (times.length >= 2) return makeBlockingWindow(times[0], times[1], 'sobreaviso', 'standby', times[1].includes('(+1)'));
+  return null;
+}
+
+function getReserveWindowForCompliance(day: RosterDay): BlockingWindow | null {
+  const reserve = getDayBlockingWindows(day).find(item => item.source === 'reserve');
+  if (reserve) return reserve;
+  if (isReserve(day)) return makeBlockingWindow(day.dutyReport, day.dutyDebrief, 'reserva', 'reserve', day.isNextDay);
+  return null;
+}
+
+function inferCalloutMinutesForCompliance(roster: CrewRoster, actRules: ReturnType<typeof getActRulesForProfile>): number {
+  const base = String(roster.base || '').toUpperCase().trim();
+  // Quando o usuário configurar base com dois aeroportos no perfil, o motor deve trocar para 150 min.
+  // Enquanto essa preferência não existe no PDF, BSB e bases de aeroporto único usam 90 min.
+  if (/\b(SAO|CGH\/GRU|GRU\/CGH|RIO|SDU\/GIG|GIG\/SDU)\b/.test(base)) return actRules.standby.calloutMinutesMultiAirport;
+  return actRules.standby.calloutMinutesDefault;
+}
+
+function addStandbyActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: RosterDay, roster: CrewRoster, actRules: ReturnType<typeof getActRulesForProfile>) {
+  if (!hasStandbyActivationCombination(day)) return;
+  const standbyWindow = getStandbyWindowForCompliance(day);
+  const end = getLastOperationalEnd(day);
+  if (!standbyWindow || !end.time) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Sobreaviso acionado — cálculo de jornada incompleto',
+      description: `${day.date}: há indício de acionamento durante sobreaviso, mas o início/fim confiável da jornada não foi lido.`,
+      details: 'Sem horários suficientes, o CrewCheck mantém como leitura incerta e não confirma irregularidade. Confira a linha da escala e o horário real de corte.',
+      legalReference: 'RBAC 117, A117.17 e B/C/E117.19 · limite combinado de sobreaviso acionado',
+      date: day.date,
+      confidence: 'baixa',
+      classification: 'leitura_inconsistente',
+    });
+    return;
+  }
+
+  const calloutMinutes = inferCalloutMinutesForCompliance(roster, actRules);
+  const grossHours = diffHours(standbyWindow.startTime, end.time, Boolean(standbyWindow.isNextDay || end.isNextDay));
+  const regulatedHours = Math.max(0, round1(grossHours - calloutMinutes / 60));
+  const remaining = round1(DUTY_LIMITS_117.standbyActivationSimpleCombined - regulatedHours);
+  const details = [
+    `Cálculo: início do sobreaviso ${standbyWindow.startTime} até ${end.time}${end.isNextDay ? ' (+1)' : ''}, abatendo ${calloutMinutes} min de deslocamento.`,
+    `Resultado regulatório estimado: ${formatHoursForAlert(regulatedHours)} de limite combinado.`,
+    `Limite usado: ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h (RBAC 117). O ACT ${actRules.actName} não amplia esse limite diário, apenas regula o teto do sobreaviso isolado.`,
+    'Este alerta só vira irregularidade quando há horários suficientes; caso contrário, fica como leitura incerta para evitar falso positivo.',
+  ].join(' ');
+
+  if (regulatedHours > DUTY_LIMITS_117.standbyActivationSimpleCombined) {
+    pushAlert(alerts, {
+      severity: 'error',
+      title: 'Sobreaviso acionado acima do limite combinado de jornada',
+      description: `${day.date}: SAV + jornada – deslocamento = ${formatHoursForAlert(regulatedHours)}; limite aplicado: ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h.`,
+      details,
+      legalReference: 'RBAC 117, B/C/E117.19 · sobreaviso acionado',
+      date: day.date,
+      confidence: 'media',
+      classification: 'confirmada',
+      evidence: `SAV ${standbyWindow.startTime}-${standbyWindow.endTime}; fim ${end.time}; fonte: ${end.source}.`,
+    });
+  } else if (remaining <= 1) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Sobreaviso acionado próximo do limite de jornada',
+      description: `${day.date}: margem estimada de ${formatHoursForAlert(remaining)} antes do limite combinado de ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h.`,
+      details,
+      legalReference: 'RBAC 117, B/C/E117.19 · sobreaviso acionado',
+      date: day.date,
+      confidence: 'media',
+      classification: 'atencao',
+      evidence: `SAV ${standbyWindow.startTime}-${standbyWindow.endTime}; fim ${end.time}; fonte: ${end.source}.`,
+    });
+  }
+}
+
+function addReserveActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: RosterDay, actRules: ReturnType<typeof getActRulesForProfile>, profile?: LegalProfileSummary) {
+  if (!isReserve(day)) return;
+  const hasActivation = Boolean(day.legs?.length) || /\b(PS|EXTRA|ACIONAD[OA]|ACIONAMENTO|CALL\s*OUT|CHAMAD[OA]|VOO|LA\d{3,4})\b/i.test(`${day.rawText || ''} ${day.pairingCode || ''}`);
+  if (!hasActivation) return;
+  const reserveWindow = getReserveWindowForCompliance(day);
+  const end = getLastOperationalEndForDutyLimit(day);
+  const start = reserveWindow?.startTime || getFirstOperationalStart(day).time;
+  if (!start || !end.time) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Reserva acionada — cálculo de jornada incompleto',
+      description: `${day.date}: há indício de reserva com acionamento, mas faltou horário confiável de início ou fim.`,
+      details: 'Sem horários suficientes, o CrewCheck não confirma irregularidade. Confira início da reserva, apresentação do voo e corte real.',
+      legalReference: 'RBAC 117, Apêndice B, B117.7; A117.19 · reserva acionada',
+      date: day.date,
+      confidence: 'baixa',
+      classification: 'leitura_inconsistente',
+    });
+    return;
+  }
+
+  const sectors = Math.max(1, day.legs?.length || 1);
+  const flightHours = getFlightHours(day);
+  const combinedHours = round1(diffHours(start, end.time, Boolean(end.isNextDay)));
+  const rbacLimit = getRbac117B1SimpleDutyLimit(start, sectors);
+  // CrewCheck Fix: Apply ACT rules over RBAC 117 for reserve limit if applicable
+  const actLimitHours = actRules.reserve.maxHours + 11; // ACT limits reserve to 6h, plus 11h max duty = 17h theoretical max, but RBAC is more restrictive
+  const limit = applyMostRestrictiveDutyLimit(rbacLimit, profile);
+  const details = [
+    `Cálculo: início da reserva/apresentação ${start} até ${end.time}${end.isNextDay ? ' (+1)' : ''} (${end.source}).`,
+    `Reserva acionada é analisada como jornada completa a partir do início da reserva, e não a partir do horário do acionamento/voo.`,
+    limit ? describeRbac117Limit(limit) : 'Não foi possível enquadrar automaticamente a Tabela B.1 porque o horário de início não ficou confiável.',
+    'O CrewCheck usa como padrão conservador a Tabela B.1 para tripulação mínima/simples aclimatada. Limites de 16h não são usados como padrão de reserva; só podem ser considerados quando houver evidência clara de tripulação composta/revezamento, GRF ou jornada interrompida aplicável.',
+  ].join(' ');
+
+  if (!limit) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Reserva acionada — limite B.1 não enquadrado automaticamente',
+      description: `${day.date}: reserva + acionamento = ${formatHoursForAlert(combinedHours)}, mas o início da jornada não permitiu selecionar a faixa da Tabela B.1.`,
+      details,
+      legalReference: 'RBAC 117, Apêndice B, B117.7; A117.19 · reserva acionada',
+      date: day.date,
+      confidence: 'baixa',
+      classification: 'leitura_inconsistente',
+    });
+    return;
+  }
+
+  const dutyRemaining = round1(limit.maxDutyHours - combinedHours);
+  const flightRemaining = round1(limit.maxFlightHours - flightHours);
+
+  if (combinedHours > limit.maxDutyHours) {
+    pushAlert(alerts, {
+      severity: 'error',
+      title: 'Reserva acionada acima do limite de jornada RBAC 117',
+      description: `${day.date}: reserva + acionamento = ${formatHoursForAlert(combinedHours)}; limite B.1 aplicado: ${formatHoursForAlert(limit.maxDutyHours)}.`,
+      details,
+      legalReference: limit.legalReference,
+      date: day.date,
+      confidence: 'alta',
+      classification: 'confirmada',
+      evidence: `Reserva ${start}; fim ${end.time}; etapas ${sectors}; voo ${formatHoursForAlert(flightHours)}; ${describeRbac117Limit(limit)}`,
+    });
+  } else if (dutyRemaining <= 1) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Reserva acionada próxima do limite de jornada RBAC 117',
+      description: `${day.date}: margem estimada de ${formatHoursForAlert(dutyRemaining)} antes do limite B.1 de ${formatHoursForAlert(limit.maxDutyHours)}.`,
+      details,
+      legalReference: limit.legalReference,
+      date: day.date,
+      confidence: 'alta',
+      classification: 'atencao',
+      evidence: `Reserva ${start}; fim ${end.time}; etapas ${sectors}; ${describeRbac117Limit(limit)}`,
+    });
+  }
+
+  if (flightHours > limit.maxFlightHours) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Reserva acionada com tempo de voo acima da Tabela B.1',
+      description: `${day.date}: tempo de voo ${formatHoursForAlert(flightHours)}; limite B.1 aplicado: ${formatHoursForAlert(limit.maxFlightHours)}.`,
+      details,
+      legalReference: limit.legalReference,
+      date: day.date,
+      confidence: 'media',
+      classification: 'atencao',
+      evidence: `Etapas ${sectors}; ${describeRbac117Limit(limit)}`,
+    });
+  } else if (flightRemaining <= 0.5 && flightHours > 0) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Reserva acionada próxima do limite de tempo de voo',
+      description: `${day.date}: margem estimada de ${formatHoursForAlert(flightRemaining)} antes do limite de voo B.1.`,
+      details,
+      legalReference: limit.legalReference,
+      date: day.date,
+      confidence: 'media',
+      classification: 'atencao',
+    });
+  }
+}
+
+function getRegulatoryWorkHoursForTotals(day: RosterDay): number {
+  if (isRecoveryDay(day) || isEmptyCalendarDay(day) || isNonOperationalAbsence(day)) return 0;
+  if (isStandby(day) && !hasStandbyActivationCombination(day)) return 0;
+  return getDutyHours(day);
+}
+
+function rollingDutyWindow(days: RosterDay[], windowDays = 7): { hours: number; startDate: string; endDate: string } {
+  const sorted = sortDays(days);
+  let best = { hours: 0, startDate: sorted[0]?.date || '', endDate: sorted[0]?.date || '' };
+  sorted.forEach((startDay) => {
+    const start = parseDate(startDay.date);
+    const end = new Date(start);
+    end.setDate(start.getDate() + windowDays - 1);
+    const hours = sorted.reduce((sum, candidate) => {
+      const current = parseDate(candidate.date);
+      if (current >= start && current <= end) return sum + getRegulatoryWorkHoursForTotals(candidate);
+      return sum;
+    }, 0);
+    if (hours > best.hours) best = { hours: round1(hours), startDate: formatDate(start), endDate: formatDate(end) };
+  });
+  return best;
+}
+
 function auditAlertConfidence(alerts: ComplianceAlert[], days: RosterDay[]): ComplianceAlert[] {
   const dayByDate = new Map(days.map(day => [day.date, day]));
-  const timingCritical = /repouso|jornada|sobreaviso|reserva|madrugada|solo entre etapas|tempo em solo|voo diário|pousos|trechos/i;
+  const timingCritical = /repouso|jornada|sobreaviso|reserva|madrugada|voo diário|pousos|trechos/i;
 
   return alerts
     .filter((alert) => !isFalsePositiveLayoverMaximumAlert(alert))
@@ -697,6 +1402,47 @@ function auditAlertConfidence(alerts: ComplianceAlert[], days: RosterDay[]): Com
 }
 
 
+function sanitizeComplianceAlertsForProduction(alerts: ComplianceAlert[]): ComplianceAlert[] {
+  const hiddenPatterns = [
+    /tempo em solo entre etapas/i,
+    /siglas não classificadas/i,
+    /jornada semanal acima/i,
+    /limite mensal de horas de trabalho/i,
+    /jornada diária acima do teto absoluto parametrizado/i,
+    /repouso entre jornadas muito justo/i,
+    /número de pousos\/trechos elevado/i,
+  ];
+
+  return alerts.filter((alert) => {
+    const haystack = `${alert.title} ${alert.description} ${alert.details || ''}`;
+    if (hiddenPatterns.some((pattern) => pattern.test(haystack))) return false;
+    // Leitura incerta é diagnóstico interno: não deve aparecer como irregularidade
+    // para o usuário final, porque polui a tela e reduz confiança.
+    if (alert.classification === 'leitura_inconsistente') return false;
+    if (/leitura incerta/i.test(alert.title)) return false;
+    return true;
+  });
+}
+
+function complianceDayMonthKey(day: RosterDay): string {
+  try {
+    const parsed = parseDate(String(day.date || ''));
+    if (Number.isFinite(parsed.getTime())) return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  } catch {}
+  return 'unknown';
+}
+
+function flightHoursByRosterMonth(days: RosterDay[]): Array<{ key: string; flightHours: number }> {
+  const map = new Map<string, number>();
+  for (const day of days) {
+    const key = complianceDayMonthKey(day);
+    if (key === 'unknown') continue;
+    map.set(key, round1((map.get(key) || 0) + getFlightHours(day)));
+  }
+  return Array.from(map.entries()).map(([key, flightHours]) => ({ key, flightHours })).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+
 export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): ComplianceResult {
   let alerts: ComplianceAlert[] = [];
   const legalProfile = getLegalProfile(roster, roleSelection);
@@ -725,7 +1471,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     });
   }
 
-  const unknownCodes = collectUnclassifiedCodes(roster);
+  const unknownCodes = SHOW_TECHNICAL_CODE_ALERTS ? collectUnclassifiedCodes(roster) : [];
   if (unknownCodes.length > 0) {
     pushAlert(alerts, {
       severity: 'warning',
@@ -766,8 +1512,10 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     const flightHours = getFlightHours(day);
     const hasMadrugada = hasMadrugadaDuty(day);
 
+    addOperationalContextAlerts(alerts, day);
+
     metrics.totalFlightHours += flightHours;
-    metrics.totalDutyHours += dutyHours;
+    metrics.totalDutyHours += getRegulatoryWorkHoursForTotals(day);
 
     if (isFormalDayOff(day)) {
       metrics.totalDaysOff += 1;
@@ -795,7 +1543,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       metrics.totalStandby += 1;
       metrics.standbyCount += 1;
       const standbyHours = getEffectiveStandbyHours(day);
-      if (standbyHours > limits.maxStandbyHours) {
+      const activatedStandby = hasLinkedActivationInRoster(sortedDays, day, index);
+      if (!activatedStandby && standbyHours > limits.maxStandbyHours) {
         pushAlert(alerts, {
           severity: 'error',
           title: 'Sobreaviso acima de 12 horas',
@@ -804,12 +1553,23 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
           legalReference: actRules.standby.legalReference,
           date: day.date,
         });
+      } else if (!activatedStandby && standbyHours > 0 && standbyHours < actRules.standby.minHours) {
+        pushAlert(alerts, {
+          severity: 'warning',
+          title: 'Sobreaviso abaixo de 3 horas — revisar leitura',
+          description: `${day.date}: sobreaviso calculado de ${standbyHours.toFixed(1)}h; parâmetro ACT mínimo: ${actRules.standby.minHours}h.`,
+          details: 'Pode ser falha de leitura do PDF, janela incompleta ou outro código operacional confundido com HSB/HSBE. Quando houver acionamento, o CrewCheck ignora o mínimo isolado de 3h e valida apenas a regra combinada de jornada.',
+          legalReference: actRules.standby.legalReference,
+          date: day.date,
+        });
       }
+      addStandbyActivationDutyLimitAlerts(alerts, day, roster, actRules);
     }
 
     if (isReserve(day)) {
       metrics.reserveCount += 1;
-      if (dutyHours > limits.maxReserveHoursOther) {
+      const activatedReserve = hasLinkedActivationInRoster(sortedDays, day, index);
+      if (!activatedReserve && dutyHours > limits.maxReserveHoursOther) {
         pushAlert(alerts, {
           severity: 'warning',
           title: 'Reserva acima de 6 horas',
@@ -818,26 +1578,24 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
           legalReference: actRules.reserve.legalReference,
           date: day.date,
         });
+      } else if (!activatedReserve && dutyHours > 0 && dutyHours < actRules.reserve.minHours) {
+        pushAlert(alerts, {
+          severity: 'warning',
+          title: 'Reserva abaixo de 3 horas — revisar leitura',
+          description: `${day.date}: reserva calculada de ${dutyHours.toFixed(1)}h; parâmetro ACT mínimo: ${actRules.reserve.minHours}h.`,
+          details: 'Pode ser reserva parcial, falha de parser ou programação operacional classificada incorretamente como ASB/RES. Quando houver acionamento, o CrewCheck ignora o mínimo isolado de 3h e valida apenas a regra combinada de jornada.',
+          legalReference: actRules.reserve.legalReference,
+          date: day.date,
+        });
       }
+      addReserveActivationDutyLimitAlerts(alerts, day, actRules, legalProfile);
     }
 
     if (hasMadrugada) metrics.nightOperations += 1;
 
-    if (day.legs?.length > 1) {
-      getGroundIntervals(day).forEach((interval) => {
-        const maxGround = interval.period === 'noturno' ? actRules.groundBetweenLegs.maxNightMinutes : actRules.groundBetweenLegs.maxDayMinutes;
-        if (interval.minutes > maxGround) {
-          pushAlert(alerts, {
-            severity: 'warning',
-            title: 'Tempo em solo entre etapas acima do ACT',
-            description: `${day.date}: intervalo de ${interval.minutes}min entre ${interval.previousArrival} e ${interval.nextDeparture}; limite ${interval.period}: ${maxGround}min.`,
-            details: 'O ACT diferencia período diurno e noturno conforme horário da base contratual; confirmar fuso/base se houver divergência.',
-            legalReference: actRules.groundBetweenLegs.legalReference,
-            date: day.date,
-          });
-        }
-      });
-    }
+    // v11.0.98: tempo em solo entre etapas deixou de gerar alerta automático.
+    // Ele permanece visível nos detalhes da escala, mas não entra como irregularidade
+    // nem infla a jornada regulatória automática para evitar falsos positivos.
 
     if (isLikelySingleDayOff(sortedDays, index)) {
       const nextDay = sortedDays[index + 1];
@@ -855,47 +1613,74 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     }
 
     if (day.type === 'VOO') {
-      if (dutyHours > limits.absoluteDailyDutyLimit) {
-        pushAlert(alerts, {
-          severity: 'error',
-          title: 'Jornada diária acima do teto absoluto parametrizado',
-          description: `${day.date}: jornada calculada de ${dutyHours.toFixed(1)}h.`,
-          details: `${day.dutyReport || '--'} até ${day.dutyDebrief || '--'} · ${day.legs.length} trecho(s).`,
-          legalReference: 'RBAC 117, Apêndice A, A117.15',
-          date: day.date,
-        });
-      } else if (dutyHours > limits.maxDailyDutyHoursComposite) {
+      const breakdown = getRegulatoryDutyBreakdown(day);
+      const startForLimit = getFirstOperationalStart(day).time;
+      const sectorsForLimit = Math.max(1, day.legs?.length || 1);
+      const b1Limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(startForLimit, sectorsForLimit), legalProfile);
+      // v11.1.91: regra padrão passa a usar a Tabela B.1 do RBAC 117 para tripulação mínima/simples.
+      // Isso evita o erro de usar 16h como régua genérica; 16h só aparece com evidência de composta/revezamento/GRF/interrompida.
+      if (breakdown.mode !== 'estimada_parser' && b1Limit) {
+        const remaining = round1(b1Limit.maxDutyHours - dutyHours);
+        const detail = [
+          describeRbac117Limit(b1Limit),
+          `Cálculo usado: jornada líquida ${formatHoursForAlert(dutyHours)}; início ${startForLimit || '--'}; ${sectorsForLimit} etapa(s).`,
+          b1Limit?.appliedRule ? `Regra efetiva: ${b1Limit.appliedRule}.` : '',
+          'Solo/pernoite/continuação visual não é somado automaticamente quando o parser detectar contaminação; nesse caso o alerta fica como revisão, não irregularidade confirmada.',
+        ].join(' ');
+        if (dutyHours > b1Limit.maxDutyHours) {
+          pushAlert(alerts, {
+            severity: 'error',
+            title: 'Jornada acima do limite RBAC 117 — Tabela B.1',
+            description: `${day.date}: jornada calculada de ${formatHoursForAlert(dutyHours)}; limite aplicado: ${formatHoursForAlert(b1Limit.maxDutyHours)}.`,
+            details: detail,
+            legalReference: b1Limit.legalReference,
+            date: day.date,
+            confidence: 'alta',
+            classification: 'confirmada',
+            evidence: `${day.dutyReport || '--'} até ${day.dutyDebrief || '--'} · ${day.legs.length} trecho(s).`,
+          });
+        } else if (remaining <= 1) {
+          pushAlert(alerts, {
+            severity: 'warning',
+            title: 'Jornada próxima do limite RBAC 117 — Tabela B.1',
+            description: `${day.date}: margem estimada de ${formatHoursForAlert(remaining)} antes do limite de ${formatHoursForAlert(b1Limit.maxDutyHours)}.`,
+            details: detail,
+            legalReference: b1Limit.legalReference,
+            date: day.date,
+            confidence: 'alta',
+            classification: 'atencao',
+          });
+        }
+      } else if (breakdown.mode !== 'estimada_parser' && dutyHours > limits.absoluteDailyDutyLimit) {
         pushAlert(alerts, {
           severity: 'warning',
-          title: 'Jornada diária acima de 14h — verificar tipo de tripulação/GRF',
-          description: `${day.date}: jornada calculada de ${dutyHours.toFixed(1)}h.`,
-          details: 'Pode ser regular apenas em hipóteses específicas, tripulação/revezamento, extensão registrada, ACT/manual aplicável ou GRF aprovado.',
-          legalReference: 'RBAC 117, Apêndice A, A117.15; Lei 13.475/2017',
+          title: 'Jornada diária muito acima do parâmetro — revisar leitura',
+          description: `${day.date}: jornada líquida calculada de ${dutyHours.toFixed(1)}h.`,
+          details: `${day.dutyReport || '--'} até ${day.dutyDebrief || '--'} · ${day.legs.length} trecho(s). Se houver pernoite/continuação, use a calculadora manual de Regulamentação para auditar o horário de apresentação e o corte real.`,
+          legalReference: 'RBAC 117, Apêndice B, B117.7, Tabela B.1',
           date: day.date,
-        });
-      } else if (dutyHours > limits.maxDailyDutyHoursSimpleAttention) {
-        pushAlert(alerts, {
-          severity: 'warning',
-          title: 'Jornada superior a 11h — ponto de atenção',
-          description: `${day.date}: jornada calculada de ${dutyHours.toFixed(1)}h.`,
-          details: 'O limite aplicável depende do tipo de tripulação e do enquadramento operacional; revisar se a escala indica tripulação composta/revezamento.',
-          legalReference: 'RBAC 117, Apêndice A, Tabelas A.4 e A.5',
-          date: day.date,
+          confidence: 'baixa',
+          classification: 'leitura_inconsistente',
         });
       }
 
-      if (flightHours > limits.maxDailyFlightHoursSimple) {
+      const startForFlightLimit = getFirstOperationalStart(day).time;
+      const sectorsForFlightLimit = Math.max(1, day.legs?.length || 1);
+      const b1FlightLimit = getRbac117B1SimpleDutyLimit(startForFlightLimit, sectorsForFlightLimit);
+      if (b1FlightLimit && flightHours > b1FlightLimit.maxFlightHours) {
         pushAlert(alerts, {
           severity: 'warning',
-          title: 'Tempo de voo diário acima de 8h — verificar enquadramento',
-          description: `${day.date}: tempo de voo calculado de ${flightHours.toFixed(1)}h.`,
-          details: 'A validação exata depende do tipo de tripulação, classe da aeronave, ACT/manual e autorização operacional.',
-          legalReference: 'RBAC 117, Apêndice A, A117.13, Tabelas A.1 e A.2',
+          title: 'Tempo de voo acima do limite RBAC 117 — Tabela B.1',
+          description: `${day.date}: voo calculado de ${formatHoursForAlert(flightHours)}; limite aplicado: ${formatHoursForAlert(b1FlightLimit.maxFlightHours)}.`,
+          details: describeRbac117Limit(b1FlightLimit),
+          legalReference: b1FlightLimit.legalReference,
           date: day.date,
+          confidence: 'media',
+          classification: 'atencao',
         });
       }
 
-      if ((day.legs || []).length > limits.maxDailyLandingsSimple) {
+      if ((day.legs || []).length > 6) {
         pushAlert(alerts, {
           severity: 'warning',
           title: 'Número de pousos/trechos elevado',
@@ -959,39 +1744,43 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   const maxNightOpsWindow = countNightOpsInRolling168h(sortedDays);
 
   if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;
-  if (roster.totals?.dutyHours) metrics.totalDutyHours = roster.totals.dutyHours;
+  // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode
+  // incluir solo/pernoite/continuação e inflar a escala. Mantemos cálculo próprio.
 
-  if (metrics.totalFlightHours > limits.maxFlightHoursMonth) {
+  const weeklyDuty = rollingDutyWindow(sortedDays, 7);
+  // v11.0.98: jornada semanal é mantida como métrica interna. Não vira alerta
+  // automático porque escalas com pernoite/continuação e reservas podem distorcer
+  // a janela móvel e gerar falsos positivos.
+
+  const monthlyFlightBuckets = flightHoursByRosterMonth(sortedDays);
+  const isMultiMonthRoster = monthlyFlightBuckets.length > 1;
+  const monthlyBucketToEvaluate = isMultiMonthRoster
+    ? monthlyFlightBuckets.reduce((best, item) => item.flightHours > best.flightHours ? item : best, { key: '', flightHours: 0 })
+    : { key: `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`, flightHours: metrics.totalFlightHours };
+  const monthlyFlightHoursForAlert = monthlyBucketToEvaluate.flightHours;
+
+  if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth) {
     pushAlert(alerts, {
       severity: 'error',
       title: 'Limite mensal de horas de voo excedido',
-      description: `${metrics.totalFlightHours.toFixed(1)}h de voo no mês. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
+      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
+      details: isMultiMonthRoster ? `A escala visual pode estar com mês atual + subsequente anexado. O CrewCheck avaliou cada mês separadamente e não somou os meses para gerar este alerta.` : undefined,
       legalReference: actRules.flightLimits.legalReference,
     });
-  } else if (metrics.totalFlightHours > limits.maxFlightHoursMonth * 0.9) {
+  } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
       title: 'Horas de voo próximas do limite mensal',
-      description: `${metrics.totalFlightHours.toFixed(1)}h de voo, equivalente a ${((metrics.totalFlightHours / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
+      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
+      details: isMultiMonthRoster ? 'Cálculo separado por mês para evitar falso positivo ao visualizar escala atual + subsequente.' : undefined,
       legalReference: actRules.flightLimits.legalReference,
     });
   }
 
-  if (metrics.totalDutyHours > limits.maxDutyHoursMonth) {
-    pushAlert(alerts, {
-      severity: 'error',
-      title: 'Limite mensal de horas de trabalho excedido',
-      description: `${metrics.totalDutyHours.toFixed(1)}h de jornada no mês. Limite usado pelo sistema: ${limits.maxDutyHoursMonth}h.`,
-      legalReference: 'RBAC 117, Apêndice A, A117.15(i) / Lei 13.475/2017',
-    });
-  } else if (metrics.totalDutyHours > limits.maxDutyHoursMonth * 0.9) {
-    pushAlert(alerts, {
-      severity: 'warning',
-      title: 'Horas de trabalho próximas do limite mensal',
-      description: `${metrics.totalDutyHours.toFixed(1)}h de jornada, equivalente a ${((metrics.totalDutyHours / limits.maxDutyHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
-      legalReference: 'RBAC 117, Apêndice A, A117.15(i) / Lei 13.475/2017',
-    });
-  }
+  // v11.0.98: limite mensal de jornada/trabalho fica como métrica, não como
+  // irregularidade confirmada automática. O objetivo principal do módulo é validar
+  // jornada por programação, repouso real, reserva/sobreaviso com acionamento e
+  // madrugada, evitando travar a confiança com totais mensais contaminados.
 
   if (metrics.totalDaysOff < limits.minDaysOffFallback) {
     pushAlert(alerts, {
@@ -1031,19 +1820,25 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   if (maxNightOpsWindow > limits.maxNightOps168h) {
     pushAlert(alerts, {
-      severity: 'error',
-      title: 'Operações na madrugada acima do limite em janela de 168h',
-      description: `Foram identificadas até ${maxNightOpsWindow} madrugadas em uma janela móvel de 168h.`,
+      severity: 'warning',
+      title: 'Madrugadas em 168h — revisar janela real',
+      description: `Foram identificadas até ${maxNightOpsWindow} operações com voo em madrugada em janela móvel de 168h.`,
+      details: 'O sistema conta voo que toca 00:00–06:00 e sobreaviso que começa na madrugada; folga, reserva sem voo e voo sem madrugada quebram sequência. Mantido como atenção para evitar falso positivo.',
       legalReference: actRules.nightOps.legalReference,
+      confidence: 'media',
+      classification: 'atencao',
     });
   }
 
   if (metrics.maxConsecutiveNights > limits.maxConsecutiveNightOps) {
     pushAlert(alerts, {
-      severity: 'error',
-      title: 'Mais de 2 madrugadas consecutivas',
-      description: `Foram identificadas ${metrics.maxConsecutiveNights} madrugadas consecutivas.`,
+      severity: 'warning',
+      title: 'Madrugadas consecutivas — revisar sequência real',
+      description: `Foram identificadas ${metrics.maxConsecutiveNights} madrugadas consecutivas por voo efetivo.`,
+      details: 'Folga, pernoite/inativo, reserva sem voo e voo sem madrugada quebram a sequência; sobreaviso só conta quando começa na madrugada.',
       legalReference: actRules.nightOps.legalReference,
+      confidence: 'media',
+      classification: 'atencao',
     });
   }
 
@@ -1057,7 +1852,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     });
   }
 
-  alerts = auditAlertConfidence(alerts, sortedDays);
+  alerts = sanitizeComplianceAlertsForProduction(auditAlertConfidence(alerts, sortedDays));
 
   const loadAnalysis = analyzeDayLoads(roster);
   const errorCount = alerts.filter(alert => alert.severity === 'error').length;
@@ -1071,6 +1866,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       : `A escala não apresentou alertas nos parâmetros automáticos. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`;
 
   return {
+    engineVersion: COMPLIANCE_ENGINE_VERSION,
     alerts,
     metrics: {
       ...metrics,
@@ -1150,8 +1946,7 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     }
     const longGroundIntervals = day.legs?.length > 1 ? getGroundIntervals(day).filter((interval) => interval.minutes >= 150) : [];
     if (longGroundIntervals.length) {
-      score += Math.min(18, longGroundIntervals.reduce((sum, interval) => sum + Math.max(0, interval.minutes - 120) / 30, 0));
-      reasons.push(`tempo em solo elevado (${longGroundIntervals.length} intervalo(s))`);
+      reasons.push(`solo entre etapas ignorado no cálculo regulatório (${longGroundIntervals.length} intervalo(s))`);
     }
 
     if (early) {
@@ -1473,7 +2268,7 @@ function makeLoadSummary(score: number, hardestDays: DayLoadAnalysis[]): string 
   const main = scaleGrade(score).toLowerCase();
   const top = hardestDays[0];
   if (!top) return `Escala ${main}, sem dias críticos identificados.`;
-  return `Escala ${main}. A classificação de puxada considera principalmente sequência, mais de 3 pernas, tempo em solo e repouso; duas pernas na madrugada são tratadas como rotina operacional normal. Dia de maior carga: ${top.date} (${top.label}), nota ${top.fatigueScore}/100.`;
+  return `Escala ${main}. A classificação de puxada considera sequência, mais de 3 pernas, voo efetivo, madrugada operacional e repouso; tempo em solo entre etapas não gera irregularidade automática. Dia de maior carga: ${top.date} (${top.label}), nota ${top.fatigueScore}/100.`;
 }
 
 function addHours(time: string, hours: number): string {

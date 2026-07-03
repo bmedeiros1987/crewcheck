@@ -38,11 +38,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
 const port = Number(process.env.PORT || 4173);
 
-const DATABASE_URL = (process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DATABASE_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || '').trim();
+const DATABASE_URL = (process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || '').trim();
 const DB_KIND = DATABASE_URL.toLowerCase().startsWith('mysql://') || DATABASE_URL.toLowerCase().startsWith('mysql2://') ? 'mysql' : 'postgres';
 const AUTO_MIGRATE = String(process.env.CREWCHECK_AUTO_MIGRATE || 'true').toLowerCase() !== 'false';
 const AUTH_REQUIRED = String(process.env.CREWCHECK_AUTH_REQUIRED || 'true').toLowerCase() !== 'false';
 const SESSION_DAYS = Number(process.env.CREWCHECK_SESSION_DAYS || 30);
+
+// Cloud Storage opcional somente para backup/redundância do arquivo original da escala.
+// O banco atual do CrewCheck permanece como fonte principal de dados processados, escala ativa e histórico.
+// Nunca grave chaves no código; use variáveis de ambiente do Render/Supabase Storage.
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const SUPABASE_PUBLISHABLE_KEY = String(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const SUPABASE_JWKS_URL = String(process.env.SUPABASE_JWKS_URL || '').trim();
+const CREWCHECK_STORAGE_PROVIDER = String(process.env.CREWCHECK_STORAGE_PROVIDER || (SUPABASE_URL && SUPABASE_SECRET_KEY ? 'supabase' : 'database')).trim().toLowerCase();
+const CREWCHECK_STORAGE_MODE = String(process.env.CREWCHECK_STORAGE_MODE || process.env.CREWCHECK_ROSTER_STORAGE_MODE || 'backup').trim().toLowerCase();
+const CREWCHECK_SUPABASE_BUCKET_ROSTERS = String(process.env.CREWCHECK_SUPABASE_BUCKET_ROSTERS || process.env.SUPABASE_BUCKET_ROSTERS || 'crewcheck-rosters').trim();
+const CREWCHECK_STORAGE_MAX_FILE_BYTES = Math.max(512_000, Number(process.env.CREWCHECK_STORAGE_MAX_FILE_BYTES || 15 * 1024 * 1024));
+const CREWCHECK_FREE_STORAGE_BACKUP_LIMIT = Math.max(0, Number(process.env.CREWCHECK_FREE_STORAGE_BACKUP_LIMIT || 0));
+const CREWCHECK_FREE_TELEGRAM_STORAGE_BACKUP_LIMIT = Math.max(0, Number(process.env.CREWCHECK_FREE_TELEGRAM_STORAGE_BACKUP_LIMIT || CREWCHECK_FREE_STORAGE_BACKUP_LIMIT || 0));
 
 const BILLING_TRIAL_DAYS = Math.max(1, Number(process.env.CREWCHECK_TRIAL_DAYS || 7));
 const BILLING_CURRENCY = 'BRL';
@@ -68,10 +82,25 @@ function isLaunchPromoActive() {
 const BILLING_PROMO_ACTIVE = isLaunchPromoActive();
 const BILLING_MONTHLY_VALUE = Number(process.env.CREWCHECK_BILLING_MONTHLY_VALUE || (BILLING_PROMO_ACTIVE ? BILLING_MONTHLY_PROMO_VALUE : BILLING_MONTHLY_ORIGINAL_VALUE));
 const BILLING_YEARLY_VALUE = Number(process.env.CREWCHECK_BILLING_YEARLY_VALUE || (BILLING_PROMO_ACTIVE ? BILLING_YEARLY_PROMO_VALUE : BILLING_YEARLY_ORIGINAL_VALUE));
-const BILLING_PRICE_POLICY_NOTICE = `Preço promocional de lançamento válido para contratação até ${BILLING_LAUNCH_PROMO_END_DATE}. No mensal, quem contratar na promoção mantém o valor promocional pelos ${BILLING_MONTHLY_PROMO_MONTHS} primeiros meses; depois, passa ao valor regular de R$ ${BILLING_MONTHLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/mês. No anual, o desconto vale para o primeiro ano; a renovação segue o valor regular de R$ ${BILLING_YEARLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/ano, salvo nova promoção vigente. O CrewCheck está focado em tripulantes LATAM neste lançamento e aberto à expansão para outras empresas.`;
+const BILLING_PRICE_POLICY_NOTICE = `Preço promocional de lançamento válido para contratação até ${BILLING_LAUNCH_PROMO_END_DATE}. No mensal, quem contratar na promoção mantém o valor promocional pelos ${BILLING_MONTHLY_PROMO_MONTHS} primeiros meses; depois, passa ao valor regular de R$ ${BILLING_MONTHLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/mês. No anual, o desconto vale para o primeiro ano; a renovação segue o valor regular de R$ ${BILLING_YEARLY_ORIGINAL_VALUE.toFixed(2).replace('.', ',')}/ano, salvo nova promoção vigente. O CrewCheck está focado em tripulantes neste lançamento e aberto à expansão para diferentes operações.`;
 const CREWCHECK_SUPPORT_DESTINATION_EMAIL = normalizeEmail(process.env.SUPPORT_DESTINATION_EMAIL || process.env.CREWCHECK_SUPPORT_EMAIL || '');
 const CREWCHECK_SUPPORT_FROM_LABEL = process.env.CREWCHECK_SUPPORT_FROM_LABEL || 'Equipe CrewCheck';
 const CREWCHECK_SUPPORT_WHATSAPP_URL = String(process.env.SUPPORT_WHATSAPP_URL || process.env.CREWCHECK_SUPPORT_WHATSAPP_URL || '').trim();
+// CrewCheck v11.1.98 — BIDS Restaurado e Menu da Escala Padronizado, com agregação anti-redundância.
+const CREWCHECK_WHATSAPP_CONCIERGE_ENABLED = String(process.env.CREWCHECK_WHATSAPP_CONCIERGE_ENABLED || process.env.WHATSAPP_CONCIERGE_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WHATSAPP_PREMIUM_ONLY = String(process.env.CREWCHECK_WHATSAPP_PREMIUM_ONLY || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WHATSAPP_API_KEY = String(process.env.CREWCHECK_WHATSAPP_API_KEY || process.env.WHATSAPP_API_KEY || '').trim();
+const CREWCHECK_WHATSAPP_API_URL = String(process.env.CREWCHECK_WHATSAPP_API_URL || '').trim();
+const CREWCHECK_WHATSAPP_PROVIDER = String(process.env.CREWCHECK_WHATSAPP_PROVIDER || 'callmebot').trim().toLowerCase();
+const CREWCHECK_WHATSAPP_NUMBER_RAW = String(process.env.CREWCHECK_WHATSAPP_NUMBER || process.env.WHATSAPP_SYSTEM_NUMBER || process.env.CREWCHECK_CONCIERGE_WHATSAPP_NUMBER || '').trim();
+const CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT = Math.max(0, Number(process.env.CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT || 3));
+const CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT = Math.max(0, Number(process.env.CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT || 15));
+const CREWCHECK_WHATSAPP_MAX_TEXT_CHARS = Math.max(800, Number(process.env.CREWCHECK_WHATSAPP_MAX_TEXT_CHARS || 3500));
+const CREWCHECK_WHATSAPP_IMPORT_ENABLED = String(process.env.CREWCHECK_WHATSAPP_IMPORT_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WHATSAPP_IMPORT_PREMIUM_ONLY = String(process.env.CREWCHECK_WHATSAPP_IMPORT_PREMIUM_ONLY || CREWCHECK_WHATSAPP_PREMIUM_ONLY || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WHATSAPP_WEBHOOK_TOKEN = String(process.env.CREWCHECK_WHATSAPP_WEBHOOK_TOKEN || process.env.WHATSAPP_WEBHOOK_TOKEN || '').trim();
+const CREWCHECK_WHATSAPP_MEDIA_TOKEN = String(process.env.CREWCHECK_WHATSAPP_MEDIA_TOKEN || process.env.WHATSAPP_CLOUD_TOKEN || process.env.META_WHATSAPP_TOKEN || '').trim();
+const CREWCHECK_WHATSAPP_INBOUND_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CREWCHECK_WHATSAPP_INBOUND_MAX_BYTES || 25 * 1024 * 1024));
 const CREWCHECK_COST_RENDER_MONTHLY = Number(process.env.CREWCHECK_COST_RENDER_MONTHLY || 0);
 const CREWCHECK_COST_FLIGHT_DATA_MONTHLY = Number(process.env.CREWCHECK_COST_FLIGHT_DATA_MONTHLY || 0);
 const CREWCHECK_COST_EMAIL_MONTHLY = Number(process.env.CREWCHECK_COST_EMAIL_MONTHLY || 0);
@@ -104,6 +133,9 @@ const SEARCHAPI_API_BASE = String(process.env.SEARCHAPI_API_BASE || 'https://www
 const SEARCHAPI_EXTRA_ENABLED = String(process.env.SEARCHAPI_EXTRA_ENABLED || 'true').toLowerCase() !== 'false';
 const SEARCHAPI_EXTRA_INCLUDED_AIRLINES = String(process.env.SEARCHAPI_EXTRA_INCLUDED_AIRLINES || 'LA,G3,AD,TP,TOTAL,SIDERAL,TTL,SID').toUpperCase().replace(/[^A-Z0-9,]/g, '');
 const SEARCHAPI_EXTRA_ENRICH_RADAR = String(process.env.SEARCHAPI_EXTRA_ENRICH_RADAR || 'true').toLowerCase() !== 'false';
+const EXTRA_STAFF_LOAD_ENABLED = String(process.env.EXTRA_STAFF_LOAD_ENABLED || 'true').toLowerCase() !== 'false';
+const EXTRA_STAFF_LOAD_MANUAL_REPORTS_ENABLED = String(process.env.EXTRA_STAFF_LOAD_MANUAL_REPORTS_ENABLED || 'true').toLowerCase() !== 'false';
+const EXTRA_STAFF_LOAD_EXACT_SOURCE_LABEL = String(process.env.EXTRA_STAFF_LOAD_EXACT_SOURCE_LABEL || 'portal oficial / StaffTravel autorizado').trim();
 
 // SerpAPI / Google Flights: fonte que vinha funcionando melhor no Vivo de Extra.
 // Fica backend-only e pode operar como fonte principal, com SearchAPI.io como fallback.
@@ -148,11 +180,74 @@ const AIRPORT_BOARD_CACHE_CURRENT_DAY_ONLY = String(process.env.AIRPORT_BOARD_CA
 const AIRPORT_BOARD_DEFAULT_AIRPORTS = String(process.env.AIRPORT_BOARD_DEFAULT_AIRPORTS || 'BSB,GRU,CGH,GIG,SDU,VCP,CNF,POA,REC,SSA,FOR,NAT').split(',').map((item) => item.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)).filter(Boolean);
 const AIRPORT_BOARD_API_FIRST = String(process.env.AIRPORT_BOARD_API_FIRST || 'true').toLowerCase() !== 'false';
 const AIRPORT_BOARD_STORE_EMPTY_CACHE = String(process.env.AIRPORT_BOARD_STORE_EMPTY_CACHE || 'false').toLowerCase() === 'true';
-const AIRPORT_BOARD_API_PROVIDER_ORDER = String(process.env.AIRPORT_BOARD_API_PROVIDER_ORDER || 'FLIGHTAWARE,FLIGHTSTATS,AERODATABOX,AVIATIONSTACK,OFFICIAL').split(',').map((item) => item.trim().toUpperCase()).filter(Boolean);
+const AIRPORT_BOARD_API_PROVIDER_ORDER = String(process.env.AIRPORT_BOARD_API_PROVIDER_ORDER || 'FLIGHTAWARE,FLIGHTSTATS,CIRIUM,AERODATABOX,AIRLABS,AVIATIONSTACK,OFFICIAL').split(',').map((item) => item.trim().toUpperCase()).filter(Boolean);
+const CREWCHECK_RADAR_AGGREGATE_PROVIDERS = String(process.env.CREWCHECK_RADAR_AGGREGATE_PROVIDERS || 'true').toLowerCase() !== 'false';
+const CREWCHECK_RADAR_STATUS_PROVIDER_ORDER = String(process.env.CREWCHECK_RADAR_STATUS_PROVIDER_ORDER || 'FLIGHTAWARE,FLIGHTSTATS,CIRIUM,AERODATABOX,AIRLABS,AVIATIONSTACK,AMADEUS,OFFICIAL,CUSTOM').split(',').map((item) => item.trim().toUpperCase()).filter(Boolean);
+const CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS = Math.max(4, Number(process.env.CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS || 12));
+const CREWCHECK_RADAR_PREMIUM_BATCH_MAX_FLIGHTS = Math.max(CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS, Number(process.env.CREWCHECK_RADAR_PREMIUM_BATCH_MAX_FLIGHTS || 120));
+const CREWCHECK_RADAR_PREMIUM_AIRPORT_REFRESH_MAX = Math.max(12, Number(process.env.CREWCHECK_RADAR_PREMIUM_AIRPORT_REFRESH_MAX || 80));
+const AIRLABS_API_KEY = String(process.env.AIRLABS_API_KEY || process.env.AIRLABS_ACCESS_KEY || '').trim();
+const AIRLABS_API_BASE = String(process.env.AIRLABS_API_BASE || 'https://airlabs.co/api/v9').replace(/\/+$/, '');
+const AIRLABS_ENABLED = String(process.env.AIRLABS_ENABLED || 'true').toLowerCase() !== 'false';
+const AIRLABS_CACHE_TTL_MS = Number(process.env.AIRLABS_CACHE_TTL_MS || 5 * 60 * 1000);
+const AVIATION_CATALOG_ENABLED = String(process.env.AVIATION_CATALOG_ENABLED || 'true').toLowerCase() !== 'false';
+const AIRLINE_CATALOG_SOURCE_URL = String(process.env.AIRLINE_CATALOG_SOURCE_URL || 'https://raw.githubusercontent.com/dotmarn/Airlines/master/passenger.json').trim();
+const AIRLINE_CATALOG_SECONDARY_SOURCE_URL = String(process.env.AIRLINE_CATALOG_SECONDARY_SOURCE_URL || 'https://raw.githubusercontent.com/dotmarn/Airlines/master/airlines.json').trim();
+const AIRPORT_CATALOG_SOURCE_URL = String(process.env.AIRPORT_CATALOG_SOURCE_URL || 'https://raw.githubusercontent.com/ip2location/ip2location-iata-icao/master/iata-icao.csv').trim();
+const AVIATION_CATALOG_CACHE_TTL_MS = Number(process.env.AVIATION_CATALOG_CACHE_TTL_MS || 24 * 60 * 60 * 1000);
 const PUBLIC_APP_URL = String(process.env.PUBLIC_APP_URL || process.env.RENDER_EXTERNAL_URL || process.env.CREWCHECK_PUBLIC_URL || 'https://crewcheck.online').replace(/\/+$/, '');
 const TELEGRAM_BOT_TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim();
 const TELEGRAM_WEBHOOK_SECRET = String(process.env.TELEGRAM_WEBHOOK_SECRET || process.env.CREWCHECK_TELEGRAM_WEBHOOK_SECRET || '').trim();
 const TELEGRAM_API_BASE = TELEGRAM_BOT_TOKEN ? `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` : '';
+const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || process.env.CREWCHECK_OPENAI_API_KEY || '').trim();
+const OPENAI_AUDIO_API_BASE = String(process.env.OPENAI_AUDIO_API_BASE || 'https://api.openai.com/v1').replace(/\/+$/, '');
+const OPENAI_TRANSCRIBE_MODEL = String(process.env.OPENAI_TRANSCRIBE_MODEL || process.env.OPENAI_STT_MODEL || 'gpt-4o-mini-transcribe').trim();
+const OPENAI_TTS_MODEL = String(process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts').trim();
+const OPENAI_TTS_VOICE = String(process.env.OPENAI_TTS_VOICE || 'nova').trim();
+const OPENAI_TTS_SPEED = Math.min(1.10, Math.max(0.82, Number(process.env.OPENAI_TTS_SPEED || 0.98)));  // v11.1.07: fala em ritmo natural, sem cadência de boletim
+const TELEGRAM_CONCIERGE_SPEECH_PROVIDER = String(process.env.TELEGRAM_CONCIERGE_SPEECH_PROVIDER || process.env.CREWCHECK_SPEECH_PROVIDER || process.env.SPEECH_PROVIDER || process.env.TTS_PROVIDER || 'auto').trim().toLowerCase();
+const SGLKC_TTS_API_ENABLED = String(process.env.SGLKC_TTS_API_ENABLED || process.env.TTS_API_ENABLED || 'true').toLowerCase() !== 'false';
+const SGLKC_TTS_API_BASE = String(process.env.SGLKC_TTS_API_BASE || process.env.TTS_API_BASE || 'https://tts-api.netlify.app').trim().replace(/\/+$/, '');
+const SGLKC_TTS_API_LANG = String(process.env.SGLKC_TTS_API_LANG || process.env.TTS_API_LANG || 'pt').trim();
+const SGLKC_TTS_API_SPEED = Math.min(1.35, Math.max(0.65, Number(process.env.SGLKC_TTS_API_SPEED || process.env.TTS_API_SPEED || 0.98)));
+const SGLKC_TTS_API_PITCH = Math.min(1.35, Math.max(0.65, Number(process.env.SGLKC_TTS_API_PITCH || process.env.TTS_API_PITCH || 0.96)));
+const SGLKC_TTS_API_TIMEOUT_MS = Number(process.env.SGLKC_TTS_API_TIMEOUT_MS || process.env.TTS_API_TIMEOUT_MS || 45000);
+const AZURE_SPEECH_KEY = String(process.env.AZURE_SPEECH_KEY || process.env.CREWCHECK_AZURE_SPEECH_KEY || process.env.SPEECH_KEY || '').trim();
+const AZURE_SPEECH_REGION = String(process.env.AZURE_SPEECH_REGION || process.env.CREWCHECK_AZURE_SPEECH_REGION || process.env.SPEECH_REGION || 'brazilsouth').trim().toLowerCase();
+const AZURE_SPEECH_ENDPOINT = String(process.env.AZURE_SPEECH_ENDPOINT || process.env.CREWCHECK_AZURE_SPEECH_ENDPOINT || '').trim().replace(/\/+$/, '');
+const AZURE_STT_LANGUAGE = String(process.env.AZURE_STT_LANGUAGE || 'pt-BR').trim();
+const AZURE_TTS_VOICE = String(process.env.AZURE_TTS_VOICE || 'pt-BR-FranciscaNeural').trim();
+const AZURE_TTS_STYLE = String(process.env.AZURE_TTS_STYLE || 'calm').trim();
+const AZURE_TTS_RATE = String(process.env.AZURE_TTS_RATE || '+2%').trim();
+const AZURE_TTS_PITCH = String(process.env.AZURE_TTS_PITCH || '+0%').trim();
+const AZURE_TTS_OUTPUT_FORMAT = String(process.env.AZURE_TTS_OUTPUT_FORMAT || 'audio-24khz-96kbitrate-mono-mp3').trim();  // v11.1.07: mantém qualidade, mas conteúdo fica mais natural
+const ELEVENLABS_API_KEY = String(process.env.ELEVENLABS_API_KEY || process.env.CREWCHECK_ELEVENLABS_API_KEY || process.env.XI_API_KEY || '').trim();
+const ELEVENLABS_API_BASE = String(process.env.ELEVENLABS_API_BASE || 'https://api.elevenlabs.io/v1').replace(/\/+$/, '');
+const ELEVENLABS_STT_MODEL = String(process.env.ELEVENLABS_STT_MODEL || 'scribe_v2').trim();
+const ELEVENLABS_STT_LANGUAGE = String(process.env.ELEVENLABS_STT_LANGUAGE || 'pt').trim();
+const ELEVENLABS_TTS_MODEL = String(process.env.ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2').trim();
+const ELEVENLABS_TTS_VOICE_ID = String(process.env.ELEVENLABS_TTS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || 'Qrdut83w0Cr152Yb4Xn3').trim();
+const ELEVENLABS_TTS_OUTPUT_FORMAT = String(process.env.ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_44100_128').trim();  // v11.1.07: mantém qualidade, mas conteúdo fica mais natural
+const ELEVENLABS_TTS_STABILITY = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STABILITY || 0.30)));  // v11.1.07: mais espontâneo 
+const ELEVENLABS_TTS_SIMILARITY_BOOST = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_SIMILARITY_BOOST || 0.82))); 
+const ELEVENLABS_TTS_STYLE = Math.min(1, Math.max(0, Number(process.env.ELEVENLABS_TTS_STYLE || 0.70)));  // v11.1.07: mais conversa de áudio 
+const ELEVENLABS_TTS_SPEAKER_BOOST = String(process.env.ELEVENLABS_TTS_SPEAKER_BOOST || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WAKEUP_TIMEZONE = String(process.env.CREWCHECK_WAKEUP_TIMEZONE || 'America/Sao_Paulo').trim() || 'America/Sao_Paulo';
+const CREWCHECK_WAKEUP_ELEVENLABS_ADMIN_ONLY = String(process.env.CREWCHECK_WAKEUP_ELEVENLABS_ADMIN_ONLY || 'true').toLowerCase() !== 'false';
+// v11.1.91: voz premium por arquivo MP3 fica restrita ao admin no Despertador Inteligente.
+const CREWCHECK_WAKEUP_ELEVENLABS_PHONE_CALL_ADMIN_ONLY = String(process.env.CREWCHECK_WAKEUP_ELEVENLABS_PHONE_CALL_ADMIN_ONLY || process.env.CREWCHECK_WAKEUP_ELEVENLABS_ADMIN_ONLY_FOR_CALL || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WAKEUP_ADMIN_PREFER_ELEVENLABS = String(process.env.CREWCHECK_WAKEUP_ADMIN_PREFER_ELEVENLABS || 'true').toLowerCase() === 'true';
+const CREWCHECK_WAKEUP_ELEVENLABS_ENABLED = String(process.env.CREWCHECK_WAKEUP_ELEVENLABS_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WAKEUP_ELEVENLABS_SEND_TELEGRAM_VOICE = String(process.env.CREWCHECK_WAKEUP_ELEVENLABS_SEND_TELEGRAM_VOICE || 'false').toLowerCase() === 'true';
+const CREWCHECK_WAKEUP_ELEVENLABS_USE_MP3_CALL = String(process.env.CREWCHECK_WAKEUP_ELEVENLABS_USE_MP3_CALL || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WAKEUP_VOICE_FILE_TTL_MS = Math.max(60_000, Number(process.env.CREWCHECK_WAKEUP_VOICE_FILE_TTL_MS || 10 * 60 * 1000));
+const TELEGRAM_CONCIERGE_AUDIO_SEND_MODE = String(process.env.TELEGRAM_CONCIERGE_AUDIO_SEND_MODE || 'voice').trim().toLowerCase();  // v11.1.07: padrão voice note; áudio mais natural no Telegram
+const TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS = Math.max(420, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS || 1150));
+const TELEGRAM_CONCIERGE_VOICE_ENABLED = String(process.env.TELEGRAM_CONCIERGE_VOICE_ENABLED || 'true').toLowerCase() !== 'false';
+const TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY = String(process.env.TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || 'false').toLowerCase() === 'true';
+const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT = (TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('eleven') || TELEGRAM_CONCIERGE_SPEECH_PROVIDER.includes('openai')) ? 180 : 60;
+const TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS = Math.max(20, Number(process.env.TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS || TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS_DEFAULT));
+const TELEGRAM_DEFAULT_CONCIERGE_NAME = 'CrewCheck Concierge';
 const TELEGRAM_DEFAULT_PREFERENCES = {
  smartDeparture: true,
  roster: true,
@@ -165,6 +260,25 @@ const TELEGRAM_DEFAULT_PREFERENCES = {
  concierge: true,
  conciergePremiumText: true,
  conciergeFreeDailyLimit: true,
+ conciergeVoice: true,
+ conciergeAudioReplies: true,
+ conciergeName: TELEGRAM_DEFAULT_CONCIERGE_NAME,
+ overnightWakeup: true,
+ wakeupCallEnabled: true,
+ wakeupCallProvider: 'auto',
+ wakeupNotificationMode: 'call_telegram',
+ overnightWakeupSnoozeMinutes: '10',
+ wakeupMaxCalls: '2',
+ wakeupCallAfterSnoozes: '2',
+ wakeupMaxSnoozes: '6',
+ infobipPhone: '',
+ twilioPhone: '',
+ callmebotMode: 'telegram',
+ callmebotPhone: '',
+ callmebotTelegramUser: '',
+ callmebotLang: 'pt-BR-Standard-A',
+ callmebotRepeat: '2',
+ crewcheckVoiceProviderAuthorized: false,
  radarImportantOnly: true,
  radarQuiet: false,
  admin: false,
@@ -173,9 +287,16 @@ const TELEGRAM_DEFAULT_PREFERENCES = {
 const TELEGRAM_DEDUP_TTL_MS = Number(process.env.TELEGRAM_DEDUP_TTL_MS || 10 * 60 * 1000);
 const TELEGRAM_RADAR_UNCHANGED_TTL_MS = Number(process.env.TELEGRAM_RADAR_UNCHANGED_TTL_MS || 90 * 60 * 1000);
 const TELEGRAM_RADAR_STATE_TTL_MS = Number(process.env.TELEGRAM_RADAR_STATE_TTL_MS || 14 * 60 * 60 * 1000);
+const CREWCHECK_OPERATIONAL_ALERTS_ENABLED = String(process.env.CREWCHECK_OPERATIONAL_ALERTS_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_OPERATIONAL_ALERTS_LOOKAHEAD_HOURS = Math.max(2, Math.min(72, Number(process.env.CREWCHECK_OPERATIONAL_ALERTS_LOOKAHEAD_HOURS || 30)));
+const CREWCHECK_OPERATIONAL_ALERTS_LOOKBACK_HOURS = Math.max(0, Math.min(12, Number(process.env.CREWCHECK_OPERATIONAL_ALERTS_LOOKBACK_HOURS || 2)));
+const CREWCHECK_OPERATIONAL_ALERTS_MAX_FLIGHTS = Math.max(2, Math.min(24, Number(process.env.CREWCHECK_OPERATIONAL_ALERTS_MAX_FLIGHTS || 10)));
+const CREWCHECK_OPERATIONAL_ALERTS_WEATHER_LOOKAHEAD_HOURS = Math.max(2, Math.min(72, Number(process.env.CREWCHECK_OPERATIONAL_ALERTS_WEATHER_LOOKAHEAD_HOURS || 18)));
+const CREWCHECK_OPERATIONAL_ALERTS_PUSH_TELEGRAM_DEFAULT = String(process.env.CREWCHECK_OPERATIONAL_ALERTS_PUSH_TELEGRAM_DEFAULT || 'true').toLowerCase() !== 'false';
 const telegramNotificationDedupe = new Map();
 const telegramRadarState = new Map();
 const telegramConciergeUsage = new Map();
+const telegramConciergeGreetingState = new Map();
 
 function telegramNormalizeDedupePart(value) {
  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 600);
@@ -239,6 +360,22 @@ function radarTelegramHasUsefulOperationalData(status = {}) {
  return Boolean(st && !radarTelegramStatusIsScheduledOnly(st));
 }
 
+function telegramRadarRequestWantsPush(params = {}) {
+ const get = (key) => typeof params.get === 'function' ? params.get(key) : params?.[key];
+ return /^(1|true|yes|sim)$/i.test(String(get('notifyTelegram') || get('telegramPush') || get('telegram') || '').trim());
+}
+
+function radarTelegramIsPastOrClosed(status = {}, params = {}) {
+ const get = (key) => typeof params.get === 'function' ? params.get(key) : params?.[key];
+ const origin = normalizeRadarTelegramValue(get('origin') || status.origin || status.departureAirport || 'BSB').toUpperCase();
+ const dateKey = radarIsoDate(get('date') || status.date || '');
+ const today = todayIsoForAirportServer(origin || 'BSB');
+ if (dateKey < today) return true;
+ const statusLabel = normalizeRadarTelegramValue(status.status || '');
+ if (/(pousou|landed|arrived|chegou|finalizado|finished|completed|encerrado|closed)$/i.test(statusLabel)) return true;
+ return false;
+}
+
 async function notifyTelegramRadarForUser(db, userId, status = {}, params = {}) {
  if (!telegramIsConfigured() || !db || !userId) return { ok: false, skipped: true };
  const row = await telegramLinkForUser(db, userId).catch(() => null);
@@ -247,6 +384,8 @@ async function notifyTelegramRadarForUser(db, userId, status = {}, params = {}) 
  if (preferences.radar === false || preferences.radarQuiet === true) return { ok: false, skipped: true, reason: 'radar silenciado' };
  const flight = normalizeFlightToken(params.flight || params.flightNumber || status.flightNumber || status.matchedFlight || '');
  const statusLabel = normalizeRadarTelegramValue(status.status || '');
+ if (!telegramRadarRequestWantsPush(params)) return { ok: false, skipped: true, reason: 'consulta radar sem push Telegram' };
+ if (radarTelegramIsPastOrClosed(status, params)) return { ok: false, skipped: true, reason: 'voo passado/finalizado não notificado' };
  const importantOnly = preferences.radarImportantOnly !== false;
  if (importantOnly && !radarTelegramHasUsefulOperationalData(status)) return { ok: false, skipped: true, reason: 'sem mudança operacional relevante' };
  const dateKey = radarIsoDate(params.date || status.date || new Date().toISOString().slice(0, 10));
@@ -272,7 +411,158 @@ async function notifyTelegramRadarForUser(db, userId, status = {}, params = {}) 
  ];
  return notifyTelegramForUser(db, userId, 'radar', `Radar CrewCheck · ${flight || 'voo'}`, lines);
 }
-const CREWCHECK_ANDROID_PLAY_URL = String(process.env.CREWCHECK_ANDROID_PLAY_URL || 'https://play.google.com/apps/test/com.crewcheck.app/10527').trim();
+const CALLMEBOT_PHONE = String(process.env.CALLMEBOT_PHONE || process.env.CALLMEBOT_CALL_PHONE || '').replace(/[^+\d]/g, '').trim();
+const CALLMEBOT_API_KEY = String(process.env.CALLMEBOT_API_KEY || '').replace(/\s+/g, '').trim();
+const CALLMEBOT_TELEGRAM_CALL_USER = String(process.env.CALLMEBOT_TELEGRAM_CALL_USER || process.env.CALLMEBOT_USER || (CALLMEBOT_PHONE ? `+${CALLMEBOT_PHONE.replace(/\D/g, '')}` : '')).trim();
+const CALLMEBOT_DEFAULT_MODE = String(process.env.CALLMEBOT_MODE || process.env.CALLMEBOT_CALL_MODE || (CALLMEBOT_PHONE && CALLMEBOT_API_KEY ? 'phone' : 'telegram')).trim().toLowerCase();
+const CALLMEBOT_DEFAULT_LANG = String(process.env.CALLMEBOT_LANG || 'pt-BR-Standard-A').trim();
+const CALLMEBOT_DEFAULT_REPEAT = Math.max(1, Math.min(5, Number(process.env.CALLMEBOT_REPEAT || 2) || 2));
+// v11.1.91: Infobip pode ser usado como canal VOIP principal e exclusivo.
+// Quando CREWCHECK_WAKEUP_CALL_PROVIDER=infobip ou CREWCHECK_INFOBIP_ONLY=true,
+// o CrewCheck não tenta InOut/CallMeBot como VOIP direto, mesmo que existam variáveis antigas no Render.
+const CREWCHECK_WAKEUP_FORCE_INFOBIP = ['infobip', 'info-bip'].includes(String(process.env.CREWCHECK_WAKEUP_CALL_PROVIDER || process.env.CREWCHECK_VOIP_PROVIDER || '').trim().toLowerCase()) || String(process.env.CREWCHECK_INFOBIP_ONLY || process.env.INFOBIP_ONLY || '').toLowerCase() === 'true';
+const CREWCHECK_VOIP_DIRECT_PROVIDER = String(process.env.CREWCHECK_VOIP_DIRECT_PROVIDER || process.env.CREWCHECK_WAKEUP_DIRECT_PROVIDER || (CREWCHECK_WAKEUP_FORCE_INFOBIP ? 'off' : 'inout')).trim().toLowerCase();
+const INOUT_CALL_ENABLED = !CREWCHECK_WAKEUP_FORCE_INFOBIP && String(process.env.INOUT_CALL_ENABLED || process.env.CREWCHECK_VOIP_DIRECT_ENABLED || 'true').toLowerCase() !== 'false';
+const INOUT_CALL_API_BASE = String(process.env.INOUT_CALL_API_BASE || process.env.CREWCHECK_VOIP_API_BASE || 'https://api.inout.bot').trim().replace(/\/+$/, '');
+const INOUT_CALL_PHONE = String(process.env.INOUT_CALL_PHONE || process.env.INOUT_PHONE || process.env.CREWCHECK_VOIP_PHONE || '').replace(/[^+\d]/g, '').trim();
+const INOUT_CALL_API_KEY = String(process.env.INOUT_CALL_API_KEY || process.env.INOUT_API_KEY || process.env.CREWCHECK_VOIP_API_KEY || '').replace(/\s+/g, '').trim();
+const INOUT_CALL_LANGUAGE = String(process.env.INOUT_CALL_LANGUAGE || process.env.CREWCHECK_VOIP_LANGUAGE || 'pt-BR').trim();
+const INOUT_CALL_STYLE = String(process.env.INOUT_CALL_STYLE || process.env.CREWCHECK_VOIP_STYLE || '').trim();
+const INFOBIP_BASE_URL = (() => {
+ const raw = String(process.env.INFOBIP_BASE_URL || process.env.INFOBIP_API_BASE_URL || '').trim().replace(/\/+$/, '');
+ if (!raw) return '';
+ return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+})();
+const INFOBIP_API_KEY = String(process.env.INFOBIP_API_KEY || process.env.CREWCHECK_INFOBIP_API_KEY || '').replace(/\s+/g, '').trim();
+const INFOBIP_FROM_NUMBER = String(process.env.INFOBIP_FROM_NUMBER || process.env.INFOBIP_SENDER || process.env.INFOBIP_CALLER_ID || '').replace(/[^+\d]/g, '').replace(/^\+/, '').slice(0, 24);
+const INFOBIP_TO_PHONE = String(process.env.INFOBIP_TO_PHONE || '').replace(/[^+\d]/g, '').replace(/^\+/, '').slice(0, 24);
+function normalizeInfobipTtsLanguage(value = '') {
+ const raw = String(value || '').trim().replace(/_/g, '-');
+ const lower = raw.toLowerCase();
+ if (!lower || ['auto', 'detect', 'detectar', 'default', 'none', 'null', 'off'].includes(lower)) return 'auto';
+ if (lower === 'br-pt') return 'pt-BR';
+ if (lower === 'ptbr' || lower === 'pt-brazil' || lower === 'portuguese-br') return 'pt-BR';
+ if (lower === 'pt-br' || lower === 'pt-pt') return raw.slice(0, 2).toLowerCase() + '-' + raw.slice(3, 5).toUpperCase();
+ if (lower === 'pt') return 'pt';
+ if (lower.startsWith('en')) return lower === 'en' ? 'en' : raw.slice(0, 2).toLowerCase() + (raw.length > 2 ? '-' + raw.slice(3, 5).toUpperCase() : '');
+ if (lower.startsWith('es')) return lower === 'es' ? 'es' : raw.slice(0, 2).toLowerCase() + (raw.length > 2 ? '-' + raw.slice(3, 5).toUpperCase() : '');
+ if (lower.startsWith('fr') || lower.startsWith('it') || lower.startsWith('de')) return lower.split('-')[0].slice(0, 2);
+ return raw.replace(/[^A-Za-z-]/g, '').slice(0, 12) || 'auto';
+}
+
+function infobipLanguageCandidateList() {
+ const rawList = String(process.env.INFOBIP_LANGUAGE_RETRY || process.env.INFOBIP_TTS_LANGUAGE_RETRY || '').trim();
+ const portugueseFirst = String(process.env.CREWCHECK_INFOBIP_PORTUGUESE_FIRST || 'true').toLowerCase() !== 'false';
+ const seed = rawList
+  ? rawList.split(/[;,|]/g)
+  : [INFOBIP_LANGUAGE || 'pt-BR', 'pt-BR', 'pt'];
+ const seen = new Set();
+ let normalizedList = [];
+ for (const item of seed) {
+  const normalized = normalizeInfobipTtsLanguage(item);
+  const key = normalized.toLowerCase();
+  if (!normalized || seen.has(key)) continue;
+  seen.add(key);
+  normalizedList.push(normalized);
+ }
+ if (portugueseFirst) normalizedList = ['pt-BR', 'pt', ...normalizedList];
+ if (!CREWCHECK_INFOBIP_ALLOW_AUTO_TTS_FALLBACK) normalizedList = normalizedList.filter((item) => String(item).toLowerCase() !== 'auto');
+ if (!CREWCHECK_INFOBIP_ALLOW_ENGLISH_FALLBACK) normalizedList = normalizedList.filter((item) => !String(item).toLowerCase().startsWith('en'));
+ const order = { 'pt-br': 0, pt: 1, auto: 2, en: 3 };
+ const list = Array.from(new Map(normalizedList.map((item) => [String(item).toLowerCase(), item])).values())
+  .sort((a, b) => (order[String(a).toLowerCase()] ?? 20) - (order[String(b).toLowerCase()] ?? 20));
+ return list.length ? list : ['pt-BR', 'pt'];
+}
+
+function normalizeInfobipVoiceName(value = '') {
+ const cleaned = String(value || '').replace(/[^A-Za-z0-9 _.-]/g, '').trim().slice(0, 40);
+ const normalized = cleaned.toLowerCase().replace(/[_. ]+/g, '-');
+ // br-pt e códigos de idioma não são nomes de voz válidos.
+ // Vozes brasileiras comuns em provedores TTS integrados: Camila, Vitoria/Vitória e Ricardo.
+ if (!normalized || ['br-pt', 'pt-br', 'pt', 'portuguese', 'portugues'].includes(normalized)) return '';
+ if (normalized === 'vitoria') return 'Vitoria';
+ if (normalized === 'vitória') return 'Vitoria';
+ if (normalized === 'camila') return 'Camila';
+ if (normalized === 'ricardo') return 'Ricardo';
+ return cleaned;
+}
+
+function infobipVoiceCandidateList(language = 'auto') {
+ const rawList = String(process.env.INFOBIP_VOICE_RETRY || process.env.INFOBIP_TTS_VOICE_RETRY || '').trim();
+ const normalizedLanguage = String(language || 'auto').toLowerCase();
+ const configured = normalizeInfobipVoiceName(process.env.INFOBIP_VOICE_NAME || process.env.INFOBIP_TTS_VOICE || '');
+ const seed = rawList
+  ? rawList.split(/[;,|]/g)
+  : (normalizedLanguage.startsWith('pt')
+   ? [configured || 'Camila', 'Vitoria', 'Ricardo', '']
+   : (normalizedLanguage.startsWith('en') ? [configured || 'Joanna', ''] : ['']));
+ const seen = new Set();
+ const list = [];
+ for (const item of seed) {
+  const voice = normalizeInfobipVoiceName(item);
+  const key = voice.toLowerCase();
+  if (seen.has(key)) continue;
+  seen.add(key);
+  list.push(voice);
+ }
+ if (!list.includes('')) list.push('');
+ return list;
+}
+
+const INFOBIP_LANGUAGE = normalizeInfobipTtsLanguage(process.env.INFOBIP_LANGUAGE || process.env.INFOBIP_TTS_LANGUAGE || 'auto');
+const INFOBIP_VOICE_NAME = normalizeInfobipVoiceName(process.env.INFOBIP_VOICE_NAME || process.env.INFOBIP_TTS_VOICE || '');
+const INFOBIP_VOICE_GENDER = String(process.env.INFOBIP_VOICE_GENDER || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 12);
+const INFOBIP_SPEECH_RATE = Math.max(0.5, Math.min(2, Number(process.env.INFOBIP_SPEECH_RATE || 1) || 1));
+const INFOBIP_RING_TIMEOUT = Math.max(10, Math.min(90, Number(process.env.INFOBIP_RING_TIMEOUT || 45) || 45));
+const INFOBIP_CALL_TIMEOUT = Math.max(20, Math.min(180, Number(process.env.INFOBIP_CALL_TIMEOUT || 120) || 120));
+const INFOBIP_VALIDITY_PERIOD = Math.max(5, Math.min(1440, Number(process.env.INFOBIP_VALIDITY_PERIOD || 120) || 120));
+const INFOBIP_NOTIFY_URL = String(process.env.INFOBIP_NOTIFY_URL || (PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/api/webhooks/infobip/wakeup-status` : '')).trim().slice(0, 240);
+const CREWCHECK_INFOBIP_AUDIO_PREFLIGHT = String(process.env.CREWCHECK_INFOBIP_AUDIO_PREFLIGHT || 'true').toLowerCase() !== 'false';
+const CREWCHECK_INFOBIP_AUDIO_MAX_BYTES = Math.max(64 * 1024, Math.min(4 * 1024 * 1024, Number(process.env.CREWCHECK_INFOBIP_AUDIO_MAX_BYTES || 3900000) || 3900000));
+const CREWCHECK_INFOBIP_TEST_WAIT_STATUS_MS = Math.max(0, Math.min(28_000, Number(process.env.CREWCHECK_INFOBIP_TEST_WAIT_STATUS_SECONDS || process.env.INFOBIP_TEST_WAIT_STATUS_SECONDS || 18) * 1000 || 18_000));
+const CREWCHECK_INFOBIP_STATUS_TTL_MS = Math.max(60_000, Math.min(24 * 60 * 60_000, Number(process.env.CREWCHECK_INFOBIP_STATUS_TTL_MS || 2 * 60 * 60_000) || 2 * 60 * 60_000));
+// v11.1.91: em teste manual, resposta HTTP 2xx/ACCEPTED da Infobip já significa que a ligação entrou na fila.
+// Webhook de entrega/atendimento é desejável, mas não pode transformar 'Message accepted, pending for delivery' em erro de MP3.
+const CREWCHECK_INFOBIP_REQUIRE_DELIVERY_CALLBACK = String(process.env.CREWCHECK_INFOBIP_REQUIRE_DELIVERY_CALLBACK || process.env.INFOBIP_REQUIRE_DELIVERY_CALLBACK || 'false').toLowerCase() === 'true';
+const CREWCHECK_INFOBIP_AUDIO_PROVIDER = String(process.env.CREWCHECK_INFOBIP_AUDIO_PROVIDER || process.env.INFOBIP_AUDIO_PROVIDER || 'elevenlabs').trim().toLowerCase();
+const CREWCHECK_INFOBIP_DISABLE_LEGACY_V1 = String(process.env.CREWCHECK_INFOBIP_DISABLE_LEGACY_V1 || process.env.INFOBIP_DISABLE_LEGACY_V1 || 'true').toLowerCase() !== 'false';
+const INFOBIP_AUDIO_PAYLOAD_VARIANTS = String(process.env.INFOBIP_AUDIO_PAYLOAD_VARIANTS || 'voiceFileUrl-v3,audioFileUrl-v3').split(',').map((item) => item.trim()).filter(Boolean).filter((item) => !(CREWCHECK_INFOBIP_DISABLE_LEGACY_V1 && /legacy|v1/i.test(String(item))));
+const INFOBIP_LEGACY_TTS_ENDPOINT_PATH = String(process.env.INFOBIP_LEGACY_TTS_ENDPOINT_PATH || '').trim();
+const CREWCHECK_INFOBIP_AUDIO_URL_FIELD = String(process.env.CREWCHECK_INFOBIP_AUDIO_URL_FIELD || process.env.INFOBIP_AUDIO_URL_FIELD || 'voiceFileUrl').trim() || 'voiceFileUrl';
+const CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO = String(process.env.CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO || process.env.INFOBIP_USE_GOOGLE_TTS_AUDIO || 'false').toLowerCase() !== 'false';
+const CREWCHECK_INFOBIP_GOOGLE_TTS_REQUIRED = String(process.env.CREWCHECK_INFOBIP_GOOGLE_TTS_REQUIRED || process.env.INFOBIP_GOOGLE_TTS_REQUIRED || 'false').toLowerCase() !== 'false';
+const CREWCHECK_INFOBIP_USE_ELEVENLABS_AUDIO = String(process.env.CREWCHECK_INFOBIP_USE_ELEVENLABS_AUDIO || process.env.INFOBIP_USE_ELEVENLABS_AUDIO || 'true').toLowerCase() !== 'false';
+// v11.1.77: Infobip faz a ligação, mas o áudio em português vem de MP3 gerado pela ElevenLabs.
+// Não cair automaticamente para TTS inglês/americano. Português natural é obrigatório por padrão.
+const CREWCHECK_INFOBIP_TTS_FALLBACK = String(process.env.CREWCHECK_INFOBIP_TTS_FALLBACK || process.env.INFOBIP_TTS_FALLBACK || 'false').toLowerCase() === 'true';
+const CREWCHECK_INFOBIP_ALLOW_AUTO_TTS_FALLBACK = String(process.env.CREWCHECK_INFOBIP_ALLOW_AUTO_TTS_FALLBACK || 'false').toLowerCase() === 'true';
+const CREWCHECK_INFOBIP_ALLOW_ENGLISH_FALLBACK = String(process.env.CREWCHECK_INFOBIP_ALLOW_ENGLISH_FALLBACK || process.env.CREWCHECK_INFOBIP_AUTO_USE_ENGLISH_FALLBACK || 'false').toLowerCase() === 'true';
+const CREWCHECK_INFOBIP_AUDIO_FIRST_MESSAGE = 'Ligação Infobip v3 com áudio MP3 em português gerado pela ElevenLabs.';
+const TWILIO_ACCOUNT_SID = String(process.env.TWILIO_ACCOUNT_SID || process.env.CREWCHECK_TWILIO_ACCOUNT_SID || '').trim();
+const TWILIO_AUTH_TOKEN = String(process.env.TWILIO_AUTH_TOKEN || process.env.CREWCHECK_TWILIO_AUTH_TOKEN || '').trim();
+const TWILIO_FROM_NUMBER = String(process.env.TWILIO_FROM_NUMBER || process.env.CREWCHECK_TWILIO_FROM_NUMBER || '').trim();
+const TWILIO_TO_PHONE = String(process.env.TWILIO_TO_PHONE || process.env.CREWCHECK_TWILIO_TO_PHONE || '').trim();
+const TWILIO_ENABLED = String(process.env.TWILIO_ENABLED || (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER ? 'true' : 'false')).toLowerCase() !== 'false';
+const TWILIO_TIMEOUT_SECONDS = Math.max(10, Math.min(120, Number(process.env.TWILIO_TIMEOUT_SECONDS || process.env.TWILIO_CALL_TIMEOUT_SECONDS || 45) || 45));
+const TWILIO_STATUS_CALLBACK_ENABLED = String(process.env.TWILIO_STATUS_CALLBACK_ENABLED || 'true').toLowerCase() !== 'false';
+const TWILIO_STATUS_CALLBACK_URL = String(process.env.TWILIO_STATUS_CALLBACK_URL || '').trim();
+const CREWCHECK_TWILIO_USE_ELEVENLABS_AUDIO = String(process.env.CREWCHECK_TWILIO_USE_ELEVENLABS_AUDIO || process.env.TWILIO_USE_ELEVENLABS_AUDIO || 'true').toLowerCase() !== 'false';
+// v11.1.77: se a ElevenLabs ficar sem cota, o Twilio não deve cair para inglês nem bloquear o teste.
+// Ele deve usar <Say> em pt-BR com voz brasileira como fallback nativo.
+const CREWCHECK_TWILIO_TTS_FALLBACK = String(process.env.CREWCHECK_TWILIO_TTS_FALLBACK || process.env.TWILIO_TTS_FALLBACK || 'true').toLowerCase() !== 'false';
+const CREWCHECK_TWILIO_ALLOW_ENGLISH_FALLBACK = String(process.env.CREWCHECK_TWILIO_ALLOW_ENGLISH_FALLBACK || process.env.TWILIO_ALLOW_ENGLISH_FALLBACK || 'false').toLowerCase() === 'true';
+const TWILIO_SAY_LANGUAGE = String(process.env.TWILIO_SAY_LANGUAGE || process.env.TWILIO_TTS_LANGUAGE || 'pt-BR').trim() || 'pt-BR';
+const TWILIO_SAY_VOICE = String(process.env.TWILIO_SAY_VOICE || process.env.TWILIO_TTS_VOICE || 'Polly.Camila').trim();
+const TWILIO_SAY_FALLBACK_VOICE = String(process.env.TWILIO_SAY_FALLBACK_VOICE || 'woman').trim();
+const CREWCHECK_TWILIO_AUDIO_FIRST_MESSAGE = 'Ligação Twilio com voz em português brasileiro.';
+const CREWCHECK_WAKEUP_CALL_PROVIDER = String(process.env.CREWCHECK_WAKEUP_CALL_PROVIDER || (INFOBIP_BASE_URL && INFOBIP_API_KEY ? 'infobip' : ((CALLMEBOT_PHONE && CALLMEBOT_API_KEY) || CALLMEBOT_TELEGRAM_CALL_USER ? 'callmebot' : (TWILIO_ENABLED && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER ? 'twilio' : 'auto')))).trim().toLowerCase();
+const CREWCHECK_WAKEUP_FALLBACK_PROVIDER = String(process.env.CREWCHECK_WAKEUP_FALLBACK_PROVIDER || process.env.CREWCHECK_WAKEUP_FALLBACK || (CREWCHECK_WAKEUP_FORCE_INFOBIP ? 'none' : 'callmebot')).trim().toLowerCase();
+const CREWCHECK_WAKEUP_CALL_PREMIUM_ONLY = String(process.env.CREWCHECK_WAKEUP_CALL_PREMIUM_ONLY || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE = 'No plano gratuito, o despertador usa apenas Telegram. Ligações telefônicas/voz ficam exclusivas para usuários Premium.';
+const CREWCHECK_WAKEUP_BRAND = String(process.env.CREWCHECK_WAKEUP_BRAND || 'CrewCheck Voice').replace(/\s+/g, ' ').trim().slice(0, 40) || 'CrewCheck Voice';
+const CREWCHECK_WAKEUP_AUTHORIZE_URL = String(process.env.CREWCHECK_WAKEUP_AUTHORIZE_URL || process.env.CALLMEBOT_TELEGRAM_AUTHORIZE_URL || 'https://t.me/CallMeBot_API').trim();
+
+const CREWCHECK_ANDROID_PLAY_URL = String(process.env.CREWCHECK_ANDROID_PLAY_URL || 'https://play.google.com/apps/testing/com.crewcheck.app').trim();
 const CREWCHECK_ANDROID_APK_URL = String(process.env.CREWCHECK_ANDROID_APK_URL || CREWCHECK_ANDROID_PLAY_URL).trim();
 const AUTH_REGISTER_RATE_LIMIT_MAX = Math.max(3, Number(process.env.CREWCHECK_REGISTER_RATE_LIMIT_MAX || 10));
 const AUTH_REGISTER_RATE_LIMIT_WINDOW_MS = Math.max(60_000, Number(process.env.CREWCHECK_REGISTER_RATE_LIMIT_WINDOW_MS || 60 * 60 * 1000));
@@ -389,16 +679,25 @@ async function mysqlQuery(mysqlPool, originalSql, params = []) {
   const id = params[17];
   await mysqlPool.execute(normalizeMysqlSql(sql.replace(/\s+returning[\s\S]*$/i, '')), normalizeMysqlParams(mysqlParams));
   const [rows] = await mysqlPool.execute(normalizeMysqlSql(`select id, created_at, updated_at, crew_name, crew_id, base, \`rank\`, airline, period_year, period_month,
-   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
+   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum, is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path, source_file_size_bytes, storage_uploaded_at from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
   return { rows: rows.map(normalizeMysqlRow), rowCount: rows.length };
  }
 
- if (compact.startsWith('update crewcheck_rosters') && /returning/i.test(originalSql)) {
+ if (compact.startsWith('update crewcheck_rosters') && /returning/i.test(originalSql) && params.length >= 18) {
   const id = params[17];
   await mysqlPool.execute(normalizeMysqlSql(sql.replace(/\s+returning[\s\S]*$/i, '')), normalizeMysqlParams(mysqlParams));
   const [rows] = await mysqlPool.execute(normalizeMysqlSql(`select id, created_at, updated_at, crew_name, crew_id, base, \`rank\`, airline, period_year, period_month,
-   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
+   source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum, is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path, source_file_size_bytes, storage_uploaded_at from crewcheck_rosters where id = ? limit 1`), normalizeMysqlParams([id]));
   return { rows: rows.map(normalizeMysqlRow), rowCount: rows.length };
+ }
+
+ if (compact.startsWith('update crewcheck_rosters set deleted_at') && /returning/i.test(originalSql)) {
+  const rosterId = params[0];
+  const userId = params[1];
+  const [before] = await mysqlPool.execute(normalizeMysqlSql('select id from crewcheck_rosters where id = ? and user_id = ? and deleted_at is null limit 1'), normalizeMysqlParams([rosterId, userId]));
+  if (!before.length) return { rows: [], rowCount: 0 };
+  await mysqlPool.execute(normalizeMysqlSql('update crewcheck_rosters set deleted_at = CURRENT_TIMESTAMP, is_active = 0, updated_at = CURRENT_TIMESTAMP, import_status = ? where id = ? and user_id = ? and deleted_at is null'), normalizeMysqlParams([params[2] || 'deleted_by_user', rosterId, userId]));
+  return { rows: before, rowCount: before.length };
  }
 
  if (compact.startsWith('delete from crewcheck_rosters') && /returning/i.test(originalSql)) {
@@ -517,6 +816,9 @@ async function ensureSchema() {
       registration_captcha_provider varchar(64),
       virtual_base_enabled tinyint(1) not null default 0,
       virtual_base_airport varchar(16),
+      phone_country_iso varchar(8),
+      phone_country_code varchar(8),
+      phone_e164 varchar(32),
       unique key crewcheck_users_email_uidx (email)
      ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
     `);
@@ -543,6 +845,9 @@ async function ensureSchema() {
      "alter table crewcheck_users add column registration_captcha_provider varchar(64) null",
      "alter table crewcheck_users add column virtual_base_enabled tinyint(1) not null default 0",
      "alter table crewcheck_users add column virtual_base_airport varchar(16) null",
+     "alter table crewcheck_users add column phone_country_iso varchar(8) null",
+     "alter table crewcheck_users add column phone_country_code varchar(8) null",
+     "alter table crewcheck_users add column phone_e164 varchar(32) null",
     ];
     for (const stmt of mysqlBillingUserColumns) await db.query(stmt).catch(() => null);
 
@@ -611,6 +916,22 @@ async function ensureSchema() {
     `).catch(() => null);
 
     await db.query(`
+     create table if not exists crewcheck_operational_alert_state (
+      id char(36) primary key,
+      created_at timestamp not null default current_timestamp,
+      updated_at timestamp not null default current_timestamp on update current_timestamp,
+      user_id char(36) not null,
+      alert_key varchar(220) not null,
+      category varchar(64) not null,
+      fingerprint varchar(512),
+      last_notified_at timestamp null,
+      payload_json json not null,
+      unique key crewcheck_operational_alert_user_key_uidx (user_id, alert_key),
+      key crewcheck_operational_alert_user_idx (user_id, updated_at)
+     ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
+    `).catch(() => null);
+
+    await db.query(`
      create table if not exists crewcheck_sessions (
       id char(36) primary key,
       created_at timestamp not null default current_timestamp,
@@ -659,6 +980,14 @@ async function ensureSchema() {
       alerts_count int not null default 0,
       critical_alerts_count int not null default 0,
       checksum varchar(128),
+      is_active tinyint(1) not null default 0,
+      active_at timestamp null,
+      deleted_at timestamp null,
+      import_status varchar(48) not null default 'processed',
+      storage_provider varchar(48),
+      source_storage_path text,
+      source_file_size_bytes bigint,
+      storage_uploaded_at timestamp null,
       key crewcheck_rosters_created_at_idx (created_at),
       key crewcheck_rosters_crew_id_idx (crew_id),
       key crewcheck_rosters_period_idx (period_year, period_month),
@@ -666,6 +995,16 @@ async function ensureSchema() {
       key crewcheck_rosters_checksum_idx (checksum)
      ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
     `);
+
+    await db.query(`alter table crewcheck_rosters add column is_active tinyint(1) not null default 0`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column active_at timestamp null`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column deleted_at timestamp null`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column import_status varchar(48) not null default 'processed'`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column storage_provider varchar(48)`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column source_storage_path text`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column source_file_size_bytes bigint`).catch(() => null);
+    await db.query(`alter table crewcheck_rosters add column storage_uploaded_at timestamp null`).catch(() => null);
+    await db.query(`create index crewcheck_rosters_active_idx on crewcheck_rosters (user_id, is_active, deleted_at, updated_at)`).catch(() => null);
 
     await db.query(`
      create table if not exists crewcheck_audit_logs (
@@ -758,7 +1097,10 @@ async function ensureSchema() {
      registration_user_agent text,
      registration_captcha_provider text,
      virtual_base_enabled boolean not null default false,
-     virtual_base_airport text
+     virtual_base_airport text,
+     phone_country_iso text,
+     phone_country_code text,
+     phone_e164 text
     );
    `);
 
@@ -793,6 +1135,9 @@ async function ensureSchema() {
    await db.query(`alter table crewcheck_users add column if not exists registration_captcha_provider text;`);
    await db.query(`alter table crewcheck_users add column if not exists virtual_base_enabled boolean not null default false;`);
    await db.query(`alter table crewcheck_users add column if not exists virtual_base_airport text;`);
+   await db.query(`alter table crewcheck_users add column if not exists phone_country_iso text;`).catch(() => null);
+   await db.query(`alter table crewcheck_users add column if not exists phone_country_code text;`).catch(() => null);
+   await db.query(`alter table crewcheck_users add column if not exists phone_e164 text;`).catch(() => null);
    await db.query(`create unique index if not exists crewcheck_users_email_uidx on crewcheck_users (lower(email));`).catch(() => null);
 
    await db.query(`
@@ -862,6 +1207,22 @@ async function ensureSchema() {
    await db.query(`create index if not exists crewcheck_airport_board_cache_date_idx on crewcheck_airport_board_cache (flight_date, updated_at desc);`).catch(() => null);
 
    await db.query(`
+    create table if not exists crewcheck_operational_alert_state (
+     id uuid primary key,
+     created_at timestamptz not null default now(),
+     updated_at timestamptz not null default now(),
+     user_id uuid not null references crewcheck_users(id) on delete cascade,
+     alert_key text not null,
+     category text not null,
+     fingerprint text,
+     last_notified_at timestamptz,
+     payload_json jsonb not null default '{}'::jsonb
+    );
+   `).catch(() => null);
+   await db.query(`create unique index if not exists crewcheck_operational_alert_user_key_uidx on crewcheck_operational_alert_state (user_id, alert_key);`).catch(() => null);
+   await db.query(`create index if not exists crewcheck_operational_alert_user_idx on crewcheck_operational_alert_state (user_id, updated_at desc);`).catch(() => null);
+
+   await db.query(`
     create table if not exists crewcheck_sessions (
      id uuid primary key,
      created_at timestamptz not null default now(),
@@ -898,7 +1259,15 @@ async function ensureSchema() {
      intensity_score integer,
      alerts_count integer not null default 0,
      critical_alerts_count integer not null default 0,
-     checksum text
+     checksum text,
+     is_active boolean not null default false,
+     active_at timestamptz,
+     deleted_at timestamptz,
+     import_status text not null default 'processed',
+     storage_provider text,
+     source_storage_path text,
+     source_file_size_bytes bigint,
+     storage_uploaded_at timestamptz
     );
    `);
    await db.query(`alter table crewcheck_rosters add column if not exists updated_at timestamptz not null default now();`);
@@ -909,6 +1278,15 @@ async function ensureSchema() {
    await db.query(`alter table crewcheck_rosters add column if not exists intensity_score integer;`);
    await db.query(`alter table crewcheck_rosters add column if not exists alerts_count integer not null default 0;`);
    await db.query(`alter table crewcheck_rosters add column if not exists critical_alerts_count integer not null default 0;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists is_active boolean not null default false;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists active_at timestamptz;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists deleted_at timestamptz;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists import_status text not null default 'processed';`);
+   await db.query(`alter table crewcheck_rosters add column if not exists storage_provider text;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists source_storage_path text;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists source_file_size_bytes bigint;`);
+   await db.query(`alter table crewcheck_rosters add column if not exists storage_uploaded_at timestamptz;`);
+   await db.query(`create index if not exists crewcheck_rosters_active_idx on crewcheck_rosters (user_id, is_active, deleted_at, updated_at desc);`).catch(() => null);
    await db.query(`create index if not exists crewcheck_rosters_created_at_idx on crewcheck_rosters (created_at desc);`).catch(() => null);
    await db.query(`create index if not exists crewcheck_rosters_crew_id_idx on crewcheck_rosters (crew_id);`).catch(() => null);
    await db.query(`create index if not exists crewcheck_rosters_period_idx on crewcheck_rosters (period_year, period_month);`).catch(() => null);
@@ -983,8 +1361,17 @@ async function ensureSchema() {
 
 
 // --- CrewCheck server-side PDF parser (mobile-safe) ---
-const AIRPORTS = new Set(['BSB','GRU','CGH','VCP','NAT','MCZ','FOR','CNF','PMW','FLN','MAB','CPV','GYN','JPA','EZE','VIX','SSA','GIG','SDU','REC','AJU','BEL','SLZ','CGB','POA','CUR']);
+const AIRPORTS = new Set(['AAX','AEP','AFL','AJU','AMS','ARU','ASU','ATL','ATM','BCN','BEL','BOG','BOS','BPS','BRA','BSB','BVB','CAC','CAW','CCS','CDG','CFB','CGB','CGH','CKS','CLO','CMG','CNF','COR','CPT','CPV','CTG','CUN','CUR','CUZ','CWB','CXJ','DFW','DOH','DXB','EPA','ERM','EWR','EZE','FCO','FEC','FEN','FLL','FLN','FOR','FRA','GIG','GPB','GRU','GVR','GYE','GYN','HAV','IAH','IGU','IMP','IOS','IPN','IST','IZA','JDO','JFK','JIA','JJD','JJG','JNB','JOI','JPA','JPR','JTC','LAS','LAX','LAZ','LDB','LEC','LGW','LHR','LIM','LIS','LPB','MAB','MAD','MAO','MCO','MCP','MCZ','MDE','MDZ','MEA','MEX','MGF','MIA','MOC','MUC','MVD','MXP','NAT','NVT','OAL','OPO','OPS','ORD','ORY','PDP','PET','PFB','PIN','PMW','PNZ','POA','PPB','PTY','PUJ','PVH','QNS','RAO','RBR','REC','RIA','ROO','ROS','RVD','SCL','SDQ','SDU','SFO','SJK','SJO','SJP','SLZ','SSA','STM','TBT','TFF','THE','UDI','UIO','URG','VCP','VDC','VIX','VVI','XAP','ZRH']);
 const MONTHS = { jan:1, feb:2, fev:2, mar:3, apr:4, abr:4, may:5, mai:5, ma:5, jun:6, jul:7, aug:8, ago:8, sep:9, set:9, oct:10, out:10, nov:11, dec:12, dez:12 };
+
+const NON_AIRPORT_TOKEN_V3 = new Set(['LA','OP','PS','DH','PAX','EXTRA','PASSAGEIRO','APRES','APRESENTA','APRESENTACAO','APRESENTAÇÃO','REPORT','CHECKIN','CHECK-IN','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH']);
+function isAirportCodeToken(value) {
+ const clean = String(value || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
+ if (!clean) return false;
+ if (AIRPORTS.has(clean)) return true;
+ return /^[A-Z]{3}$/.test(clean) && !NON_AIRPORT_TOKEN_V3.has(clean) && !MONTHS[String(clean).toLowerCase()];
+}
+
 const WEEKDAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 
@@ -1064,7 +1451,8 @@ async function parsePdfOnServer({ filename, dataBase64 }) {
  if (!dataBase64 || typeof dataBase64 !== 'string') throw new Error('PDF não recebido pelo servidor.');
  const bytes = decodeBase64PdfPayload(dataBase64);
  if (!bytes.length) throw new Error('PDF vazio.');
- const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
+ const pdfjsImport = await import('pdfjs-dist/legacy/build/pdf.js');
+ const pdfjs = pdfjsImport.default || pdfjsImport;
  const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true, isEvalSupported: false, disableFontFace: true }).promise;
  const pages = [];
  const allItems = [];
@@ -1221,7 +1609,7 @@ function looksLikeDurationV3(time) {
  const normalized = normalizeTimeToken(time);
  // Common duration columns in CrewRosterReport/AIMS. They should never be used
  // as the end time for MT/ASB/HSB/HSBE.
- return ['00:59','01:25','01:40','01:45','01:50','02:00','02:05','02:10','02:15','02:25','02:30','02:40','02:45','02:50','03:00','03:10','03:15','05:20','06:00','06:25','07:30','07:35','07:40','08:55','10:30','10:45','10:55','11:30'].includes(normalized);
+ return ['00:59','01:25','01:40','01:45','01:50','02:00','02:05','02:10','02:15','02:25','02:30','02:40','02:45','02:50','03:10','03:15','03:25','03:35','03:38','03:59','04:00','04:35','04:42','05:20','06:00','06:25','07:30','07:35','07:40','07:55','08:10','08:20','08:55','10:30','10:45','10:55','11:15','11:25','11:30'].includes(normalized);
 }
 
 function uniqueTimesV3(times) {
@@ -1267,6 +1655,7 @@ function parseRosterFlightSegmentV3(flightNumber, segment) {
  for (const token of tokens) {
   const upper = token.toUpperCase();
   if (['OP','PS','DH'].includes(upper)) workType = upper;
+  if (['EXTRA','[EXTRA]','PAX','PASSAGEIRO'].includes(upper)) workType = 'PS';
   if (/^(32S|31R|39R|328|319|320|321|32N)$/.test(upper)) aircraftType = upper;
  }
  const pattern = findBestFlightPatternV3(tokens);
@@ -1278,25 +1667,45 @@ function parseRosterFlightSegmentV3(flightNumber, segment) {
 
 function findBestFlightPatternV3(tokens) {
  const upper = tokens.map((token) => String(token || '').toUpperCase());
+ const timeItems = tokens.map((token, idx) => ({ token, idx })).filter((item) => isTimeToken(item.token));
  const candidates = [];
+ const scoreCandidate = (originIdx, depItem, destIdx, arrItem, source) => {
+  const origin = upper[originIdx];
+  const destination = upper[destIdx];
+  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;
+  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;
+  const departureTime = normalizeTimeToken(depItem.token);
+  const arrivalTime = normalizeTimeToken(arrItem.token);
+  const duration = diffHours(departureTime, arrivalTime);
+  if (duration < 0.25 || duration > 8.5) return;
+  const orderBonus = source === 'airport-time-airport-time' ? 8 : 0;
+  const distancePenalty = Math.abs(destIdx - originIdx - 2);
+  const score = 140 + orderBonus - Math.abs(duration - 1.8) * 6 - distancePenalty;
+  candidates.push({ origin, destination, departureTime, arrivalTime, score });
+ };
+
  for (let i = 0; i < upper.length; i++) {
-  if (!AIRPORTS.has(upper[i])) continue;
-  for (let j = i + 1; j < Math.min(upper.length, i + 5); j++) {
+  if (!isAirportCodeToken(upper[i])) continue;
+
+  // Padrão clássico AIMS/CrewRoster: ORIGEM HORA DESTINO HORA.
+  for (let j = i + 1; j < Math.min(upper.length, i + 6); j++) {
    if (!isTimeToken(tokens[j])) continue;
-   for (let k = j + 1; k < Math.min(upper.length, j + 5); k++) {
-    if (!AIRPORTS.has(upper[k])) continue;
-    for (let l = k + 1; l < Math.min(upper.length, k + 5); l++) {
+   for (let k = j + 1; k < Math.min(upper.length, j + 6); k++) {
+    if (!isAirportCodeToken(upper[k])) continue;
+    for (let l = k + 1; l < Math.min(upper.length, k + 6); l++) {
      if (!isTimeToken(tokens[l])) continue;
-     const departureTime = normalizeTimeToken(tokens[j]);
-     const arrivalTime = normalizeTimeToken(tokens[l]);
-     const duration = diffHours(departureTime, arrivalTime);
-     if (duration < 0.25 || duration > 7.5) continue;
-     // Prefer realistic airport-time-airport-time patterns and avoid same-airport
-     // duplicates caused by Duty Report/Debrief columns in AIMS/CrewRoster PDFs.
-     const samePenalty = upper[i] === upper[k] ? 20 : 0;
-     const score = 100 - samePenalty - Math.abs(duration - 1.8) - (j - i - 1) * 2 - (k - j - 1) * 2 - (l - k - 1) * 2;
-     candidates.push({ origin: upper[i], destination: upper[k], departureTime, arrivalTime, score });
+     scoreCandidate(i, { token: tokens[j], idx: j }, k, { token: tokens[l], idx: l }, 'airport-time-airport-time');
     }
+   }
+  }
+
+  // Padrão visual quebrado no celular: HORA ORIGEM DESTINO HORA.
+  const depBefore = [...timeItems].reverse().find((item) => item.idx < i && i - item.idx <= 4);
+  if (depBefore) {
+   for (let k = i + 1; k < Math.min(upper.length, i + 6); k++) {
+    if (!isAirportCodeToken(upper[k])) continue;
+    const arrAfter = timeItems.find((item) => item.idx > k && item.idx - k <= 5);
+    if (arrAfter) scoreCandidate(i, depBefore, k, arrAfter, 'time-airport-airport-time');
    }
   }
  }
@@ -1368,7 +1777,7 @@ function pickDutyWindowFromAimsTokensV3(tokens, index) {
  const slice = tokens.slice(index, Math.min(tokens.length, index + 18));
  const stationTimes = [];
  for (let i = 0; i < slice.length - 1; i++) {
-  if (AIRPORTS.has(String(slice[i]).toUpperCase()) && isTimeToken(slice[i + 1])) stationTimes.push(normalizeTimeToken(slice[i + 1]));
+  if (isAirportCodeToken(String(slice[i]).toUpperCase()) && isTimeToken(slice[i + 1])) stationTimes.push(normalizeTimeToken(slice[i + 1]));
  }
  if (stationTimes.length >= 2) return { start: stationTimes[0], end: stationTimes[stationTimes.length - 1] };
  const times = uniqueTimesV3(slice.filter(isTimeToken).map(normalizeTimeToken));
@@ -1392,16 +1801,196 @@ function inferAimsDebriefV3(tokens, lastLeg) {
  return after[0] || null;
 }
 
+
+function buildServerRosterColumnGroups(pages) {
+ const groups = [];
+ for (const page of pages || []) {
+  const relevant = (page.items || [])
+   .map((item) => ({ ...item, str: cleanRosterLineV3(item.str) }))
+   .filter((item) => item.str && item.x > 70 && item.y > 10 && !/^(LEGEND)$/i.test(item.str));
+  const columns = [];
+  for (const item of relevant.sort((a, b) => a.x - b.x || b.y - a.y)) {
+   let column = columns.find((col) => Math.abs(col.x - item.x) <= 18);
+   if (!column) {
+    column = { x: item.x, page: item.page || page.pageNo, items: [] };
+    columns.push(column);
+   }
+   column.items.push(item);
+   column.x = column.items.reduce((sum, it) => sum + it.x, 0) / column.items.length;
+  }
+  for (const column of columns.sort((a, b) => a.x - b.x)) {
+   const items = column.items.sort((a, b) => b.y - a.y || a.x - b.x);
+   const text = cleanRosterLineV3(items.map((item) => item.str).join(' '));
+   if (!text || /Roster Report|BRUNO|DH\s*:|FH\s*:|01-Jul-2026 to/i.test(text)) continue;
+   if (!/\b(LA\s?\d{3,4}|OP|PS|DH|HSBE?|ASB|RCFI|DOPR|DOP|DOF?|DR|OFF|VC|BSB|GRU|CGH|FOR|CNF|MAB|CPV|VCP|JPA|GYN|FLN|PMW|MAO|BEL|NAT|SSA|CWB|CXJ)\b/i.test(text)) continue;
+   groups.push({ page: column.page, x: column.x, items, text });
+  }
+ }
+ return groups;
+}
+
+function serverDateFromToken(token, fallbackMonth, fallbackYear) {
+ const match = String(token || '').match(/(\d{2})-([A-Za-z]{3})-(\d{4})/);
+ if (!match) return null;
+ return { day: Number(match[1]), month: monthNameToNum(match[2]) || fallbackMonth, year: Number(match[3]) || fallbackYear };
+}
+
+function addDaysToServerDate(marker, days) {
+ const d = new Date(marker.year, marker.month - 1, marker.day, 12, 0, 0, 0);
+ d.setDate(d.getDate() + Number(days || 0));
+ return { day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear() };
+}
+
+function serverDayOffsetFromToken(value) {
+ const m = String(value || '').match(/\(\+(\d+)\)/);
+ return m ? Number(m[1]) || 0 : 0;
+}
+
+function parseServerColumnarGroupToDay(group, currentMarker, base) {
+ const items = group.items || [];
+ const text = group.text || '';
+ if (!currentMarker) return null;
+ const flight = items.find((item) => /^LA\s?\d{3,4}$/i.test(item.str))?.str?.replace(/\s+/g, '').toUpperCase();
+ const activity = text.match(/\b(HSBE|HSB|ASB|RCFI|CRMBSB|CRMB|CRM|C\d{2,3}F|MT|CBF|EMER)\b/i)?.[1]?.toUpperCase();
+ const rest = text.match(/\b(DOPR|DOP|DOF|DO|DR|OFF|VC)\b/i)?.[1]?.toUpperCase();
+ if (flight) return parseServerColumnarFlightDay(group, currentMarker, base, flight);
+ if (activity) return parseServerColumnarActivityDay(group, currentMarker, base, activity);
+ if (rest) {
+  const marker = currentMarker;
+  const day = makeDay(marker.day, marker.month, marker.year, base);
+  day.rawText = text;
+  day.type = rest === 'OFF' || rest === 'VC' || rest.startsWith('DOP') ? 'DO' : rest;
+  day.pairingCode = rest;
+  day.dutyHours = 0;
+  day.flyingHours = 0;
+  return day;
+ }
+ return null;
+}
+
+function parseServerColumnarFlightDay(group, currentMarker, base, flightNumber) {
+ const items = group.items || [];
+ const text = group.text || '';
+ const flightIndex = items.findIndex((item) => /^LA\s?\d{3,4}$/i.test(item.str));
+ const depIndex = items.findIndex((item) => /^[A-Z]{3}\s+\d{1,2}:\d{2}(?:\(\+\d+\))?$/i.test(item.str));
+ if (depIndex < 0) return null;
+ const depMatch = items[depIndex].str.match(/^([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)$/i);
+ if (!depMatch) return null;
+ const origin = depMatch[1].toUpperCase();
+ const rawDeparture = depMatch[2];
+ let destination = '';
+ let rawArrival = '';
+ for (let i = depIndex - 1; i >= 0; i--) {
+  const value = String(items[i].str || '').toUpperCase();
+  if (!destination && /^[A-Z]{3}$/.test(value) && isAirportCodeToken(value)) {
+   destination = value;
+   continue;
+  }
+  if (destination && !rawArrival && /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(value)) {
+   rawArrival = value;
+   break;
+  }
+ }
+ if (!destination || !rawArrival) return null;
+ const offset = Math.max(serverDayOffsetFromToken(rawDeparture), serverDayOffsetFromToken(rawArrival), serverDayOffsetFromToken(items.slice(Math.max(0, flightIndex)).map((item) => item.str).join(' ')));
+ const marker = addDaysToServerDate(currentMarker, offset);
+ const day = makeDay(marker.day, marker.month, marker.year, base);
+ const departureTime = normalizeTimeToken(rawDeparture);
+ const arrivalTime = normalizeTimeToken(rawArrival);
+ const workType = items.find((item) => /^(OP|PS|DH)$/i.test(item.str))?.str?.toUpperCase() || 'OP';
+ const aircraftType = items.find((item) => /^(32S|31R|39R|328|319|320|321|32N)$/i.test(item.str))?.str?.toUpperCase();
+ const reportRaw = flightIndex >= 0 ? items.slice(flightIndex + 1).find((item) => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str))?.str : null;
+ const debriefRaw = items.slice(0, Math.max(0, depIndex - 1)).find((item) => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str) && !looksLikeDurationV3(normalizeTimeToken(item.str)) && normalizeTimeToken(item.str) !== arrivalTime)?.str || null;
+ const isNextDay = serverDayOffsetFromToken(rawArrival) > serverDayOffsetFromToken(rawDeparture) || toMin(arrivalTime) < toMin(departureTime);
+ day.rawText = text;
+ day.type = 'VOO';
+ day.pairingCode = flightNumber;
+ day.dutyReport = reportRaw ? normalizeTimeToken(reportRaw) : departureTime;
+ day.dutyDebrief = debriefRaw ? normalizeTimeToken(debriefRaw) : arrivalTime;
+ day.isNextDay = isNextDay || offset > 0;
+ day.legs = [{ flightNumber, origin, destination, departureTime, arrivalTime, workType, aircraftType, isNextDay, duration: diffHours(departureTime, arrivalTime) }];
+ day.flyingHours = day.legs[0].duration;
+ day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : null;
+ return day;
+}
+
+function parseServerColumnarActivityDay(group, currentMarker, base, rawCode) {
+ const text = group.text || '';
+ const code = rawCode === 'CRMBSB' || rawCode === 'CRMB' || /^C\d{2,3}F$/.test(rawCode) ? 'CRM' : rawCode;
+ const marker = currentMarker;
+ const day = makeDay(marker.day, marker.month, marker.year, base);
+ day.rawText = text;
+ day.pairingCode = code;
+ day.type = code === 'ASB' || code === 'HSB' || code === 'HSBE' ? code : (code === 'RCFI' || code === 'CRM' || code === 'MT' || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');
+ const times = [...text.matchAll(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g)]
+  .map((m) => normalizeTimeToken(m[0]))
+  .filter((time) => time !== '00:00' && !looksLikeDurationV3(time));
+ const unique = uniqueTimesV3(times).sort((a, b) => toMin(a) - toMin(b));
+ day.dutyReport = unique[0] || null;
+ day.dutyDebrief = unique.length > 1 ? unique[unique.length - 1] : null;
+ day.flyingHours = 0;
+ day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : null;
+ return day;
+}
+
+function parseServerRosterReportColumnGroups(pages, h) {
+ const groups = buildServerRosterColumnGroups(pages);
+ const days = [];
+ let currentMarker = null;
+ for (const group of groups) {
+  const dateToken = group.text.match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0] || null;
+  if (dateToken) currentMarker = serverDateFromToken(dateToken, h.month, h.year);
+  if (!currentMarker) continue;
+  if (group.text.includes('<==') && !dateToken) continue;
+  const day = parseServerColumnarGroupToDay(group, currentMarker, h.base);
+  if (!day) continue;
+  if (day.month < h.month - 6) day.year = h.year + 1;
+  days.push(day);
+ }
+ return mergeServerRosterColumnDays(days, h.month, h.year);
+}
+
+function mergeServerRosterColumnDays(days, referenceMonth, referenceYear) {
+ const buckets = new Map();
+ for (const day of days) {
+  if (!day || day.month !== referenceMonth || day.year !== referenceYear) continue;
+  const dateKey = day.date;
+  const minuteKey = day.dutyReport || (day.legs?.[0]?.departureTime) || '99:99';
+  const isFlight = day.type === 'VOO' && day.legs?.length;
+  const key = isFlight ? `${dateKey}|VOO|${minuteKey}` : `${dateKey}|${day.pairingCode || day.type}|${minuteKey}`;
+  const existing = buckets.get(key);
+  if (existing && isFlight) {
+   for (const leg of day.legs) if (!existing.legs.some((old) => old.flightNumber === leg.flightNumber && old.origin === leg.origin && old.departureTime === leg.departureTime)) existing.legs.push(leg);
+   existing.legs.sort((a, b) => toMin(a.departureTime) - toMin(b.departureTime));
+   existing.rawText = `${existing.rawText || ''} ${day.rawText || ''}`.trim();
+   existing.pairingCode = existing.legs[0]?.flightNumber || existing.pairingCode;
+   existing.flyingHours = existing.legs.reduce((sum, leg) => sum + (leg.duration || 0), 0);
+   buckets.set(key, existing);
+  } else if (!existing) {
+   buckets.set(key, day);
+  }
+ }
+ return Array.from(buckets.values());
+}
+
+function scoreServerRosterDays(days) {
+ return (days || []).reduce((score, day) => score + (day.legs?.length || 0) * 3 + (day.pairingCode ? 1 : 0) + (day.type !== 'OTHER' ? 1 : 0), 0);
+}
+
 function parseServerRosterReport(fullText, pages, filename='') {
  const h = parseServerHeader(fullText, filename);
  const blocks = buildRosterDateBlocksV3(fullText);
- const days = [];
+ const textDays = [];
  for (const block of blocks) {
   const month = monthNameToNum(block.monthToken) || h.month;
   const year = Number(block.yearToken) || h.year;
   const parsed = parseCrewRosterBlockV3(Number(block.dayToken), month, year, h.base, block.text);
-  days.push(...parsed);
+  textDays.push(...parsed);
  }
+ const columnDays = parseServerRosterReportColumnGroups(pages, h);
+ const columnFlightCount = columnDays.reduce((sum, day) => sum + (day.legs?.length || 0), 0);
+ const textFlightCount = textDays.reduce((sum, day) => sum + (day.legs?.length || 0), 0);
+ const days = columnDays.length >= 8 && columnFlightCount >= Math.max(4, textFlightCount * 0.55) ? columnDays : (scoreServerRosterDays(columnDays) >= scoreServerRosterDays(textDays) ? columnDays : textDays);
  return { ...h, days, rawText: fullText, totals: extractTotals(fullText) };
 }
 
@@ -1421,7 +2010,9 @@ function parseServerAims(fullText, pages) {
   markers.sort((a,b)=>a.item.x-b.item.x);
   for (let i=0;i<markers.length;i++) {
    const { item, marker } = markers[i];
-   if (marker.month !== h.month || marker.year !== h.year) continue;
+   // PDFs de acionamento podem trazer final do mês anterior e início do próximo.
+   // Não descartar Jul/May quando o cabeçalho informa Junho; a escala contínua precisa desses dias.
+   if (Math.abs(((marker.year || h.year) * 12 + marker.month) - ((h.year || marker.year) * 12 + h.month)) > 1) continue;
    const left = i ? (markers[i-1].item.x + item.x)/2 : item.x - 999;
    const right = i < markers.length-1 ? (item.x + markers[i+1].item.x)/2 : item.x + 999;
    const tokens = page.items.filter(it=>it !== item && it.x >= left && it.x < right && it.y < item.y - 1)
@@ -1452,7 +2043,8 @@ function parseAimsFlightSeq(flightNumber, seq) {
  if (!pattern) return null;
  const aircraft = upper.find((token) => /^\([A-Z0-9]{3}\)$/.test(token))?.replace(/[()]/g, '') || upper.find((token) => /^(32S|31R|39R|328|319|320|321|32N)$/.test(token)) || undefined;
  const { origin, destination, departureTime, arrivalTime } = pattern;
- return { flightNumber, origin, destination, departureTime, arrivalTime, workType:'OP', aircraftType: aircraft, isNextDay:/\(\+1\)/.test(arrivalTime) || toMin(arrivalTime) < toMin(departureTime), duration: diffHours(departureTime, arrivalTime) };
+ const workType = upper.some((token) => ['EXTRA','[EXTRA]','PS','PAX','PASSAGEIRO'].includes(token)) ? 'PS' : 'OP';
+ return { flightNumber, origin, destination, departureTime, arrivalTime, workType, aircraftType: aircraft, isNextDay:/\(\+1\)/.test(arrivalTime) || toMin(arrivalTime) < toMin(departureTime), duration: diffHours(departureTime, arrivalTime) };
 }
 function firstTimeBeforeFirstFlight(tokens) { const idx=tokens.findIndex(t=>String(t).toUpperCase()==='LA'); const arr=(idx>=0?tokens.slice(0, idx):tokens).filter(isTimeToken); return arr[0] ? normalizeTimeToken(arr[0]) : null; }
 function isTimeToken(t) { return /^\d{1,2}:\d{2}(?:\(\+1\))?$/.test(String(t)); }
@@ -1463,7 +2055,12 @@ function findAircraftAfter(text, idx) { const part=text.slice(idx, idx+160); ret
 function extractTotals(fullText) { const m=fullText.match(/FH\s*:\s*(\d{1,3}:\d{2})\s*\|\s*DH\s*:\s*(\d{1,3}:\d{2})/i); return m ? { flightHours: timeToHours(m[1]), dutyHours: timeToHours(m[2]) } : {}; }
 function timeToHours(s) { const [h,m]=s.split(':').map(Number); return h + m/60; }
 function finalizeServerDays(days, month, year, base) {
- const good = days.filter(d => d && d.month === month && d.year === year && (d.type !== 'OTHER' || d.legs?.length || d.pairingCode));
+ const baseIndex = Number(year) * 12 + Number(month);
+ const good = days.filter(d => {
+  if (!d || !(d.type !== 'OTHER' || d.legs?.length || d.pairingCode)) return false;
+  const itemIndex = Number(d.year) * 12 + Number(d.month);
+  return Number.isFinite(itemIndex) && Math.abs(itemIndex - baseIndex) <= 1;
+ });
  const byKey = new Map();
  for (const d of good) {
   const legKey = (d.legs || []).map((leg) => `${leg.flightNumber}-${leg.origin}-${leg.destination}-${leg.departureTime}`).join(',');
@@ -1484,14 +2081,20 @@ function buildParseDiagnostics(roster, sourceFormat) {
 }
 // --- end CrewCheck server-side PDF parser ---
 
-async function readJsonBody(req, maxBytes = 16 * 1024 * 1024) {
+const CREWCHECK_DEFAULT_JSON_BODY_LIMIT_BYTES = Math.max(16 * 1024 * 1024, Number(process.env.CREWCHECK_DEFAULT_JSON_BODY_LIMIT_MB || 32) * 1024 * 1024);
+const CREWCHECK_ROSTER_JSON_BODY_LIMIT_BYTES = Math.max(CREWCHECK_DEFAULT_JSON_BODY_LIMIT_BYTES, Number(process.env.CREWCHECK_ROSTER_PAYLOAD_LIMIT_MB || 48) * 1024 * 1024);
+
+async function readJsonBody(req, maxBytes = CREWCHECK_DEFAULT_JSON_BODY_LIMIT_BYTES) {
  let total = 0;
  const chunks = [];
  for await (const chunk of req) {
   total += chunk.length;
   if (total > maxBytes) {
-   const err = new Error('Payload muito grande.');
+   const maxMb = Math.max(1, Math.round(maxBytes / 1024 / 1024));
+   const err = new Error(`Payload muito grande. Limite atual: ${maxMb} MB. Reimporte sem anexar o PDF original ou aumente CREWCHECK_ROSTER_PAYLOAD_LIMIT_MB no Render.`);
    err.statusCode = 413;
+   err.code = 'PAYLOAD_TOO_LARGE';
+   err.maxBytes = maxBytes;
    throw err;
   }
   chunks.push(chunk);
@@ -1610,7 +2213,6 @@ async function verifyTurnstileToken({ token, remoteIp }) {
 
 function buildEmailVerificationEmail({ email, code }) {
  const safeEmail = escapeHtml(email);
- const safeCode = escapeHtml(code);
  const link = `${PUBLIC_APP_URL}/login?email=${encodeURIComponent(email)}&verify=${encodeURIComponent(code)}`;
  const safeLink = escapeHtml(link);
  const subject = 'Confirme seu e-mail no CrewCheck';
@@ -1618,11 +2220,10 @@ function buildEmailVerificationEmail({ email, code }) {
   'CrewCheck — confirmação de e-mail.',
   '',
   `Conta: ${email}`,
-  `Código de confirmação: ${code}`,
   '',
-  `Confirme pelo link: ${link}`,
+  `Confirme pelo botão/link: ${link}`,
   '',
-  `O código expira em ${EMAIL_VERIFICATION_TTL_MINUTES} minutos.`,
+  `O link expira em ${EMAIL_VERIFICATION_TTL_MINUTES} minutos.`,
   'Se você não criou essa conta, ignore este e-mail.',
  ].join('\n');
  const html = `<div style="margin:0;padding:0;background:#f4f8fb;font-family:Inter,Arial,sans-serif;color:#092846">
@@ -1633,12 +2234,10 @@ function buildEmailVerificationEmail({ email, code }) {
      <h1 style="margin:10px 0 0;font-size:28px;line-height:1.15">Confirme seu e-mail</h1>
     </td></tr>
     <tr><td style="padding:30px;color:#092846;font-size:15px;line-height:1.7">
-     <p style="margin:0 0 14px">Recebemos um cadastro para <strong>${safeEmail}</strong>.</p>
-     <p style="margin:0 0 16px">Use o código abaixo para ativar a conta e liberar o acesso ao CrewCheck:</p>
-     <div style="margin:18px 0;padding:18px 22px;border-radius:20px;background:#e0f2fe;color:#082f49;font-size:34px;letter-spacing:.18em;font-weight:900;text-align:center">${safeCode}</div>
-     <p style="margin:0 0 20px;color:#475569">O código expira em ${EMAIL_VERIFICATION_TTL_MINUTES} minutos.</p>
-     <a href="${safeLink}" style="display:inline-block;border-radius:16px;background:#0891b2;color:white;text-decoration:none;font-weight:900;padding:14px 20px">Confirmar e entrar</a>
-     <p style="margin:20px 0 0;color:#64748b;font-size:13px">Se o botão não abrir, copie este link no navegador:<br>${safeLink}</p>
+     <p style="margin:0 0 18px">Recebemos um cadastro para <strong>${safeEmail}</strong>.</p>
+     <p style="margin:0 0 22px;color:#475569">Para liberar o acesso, toque no botão abaixo. Não exibimos código manual neste e-mail.</p>
+     <a href="${safeLink}" style="display:inline-block;border-radius:18px;background:#0891b2;color:white;text-decoration:none;font-weight:900;padding:15px 22px">Confirmar e-mail</a>
+     <p style="margin:22px 0 0;color:#64748b;font-size:13px">Se você não criou essa conta, ignore esta mensagem.</p>
     </td></tr>
    </table>
   </td></tr></table>
@@ -1715,10 +2314,24 @@ function isLatamCorporateEmail(email) {
  return normalizeEmail(email).endsWith('@latam.com');
 }
 
-const C32F_ADMIN_EMAIL = normalizeEmail(process.env.CREWCHECK_ADMIN_EMAIL || process.env.VITE_CREWCHECK_ADMIN_EMAIL || '');
+const CREWCHECK_ADMIN_EMAILS = new Set([
+ process.env.CREWCHECK_ADMIN_EMAIL,
+ process.env.VITE_CREWCHECK_ADMIN_EMAIL,
+ process.env.CREWCHECK_OWNER_EMAIL,
+ process.env.VITE_CREWCHECK_OWNER_EMAIL,
+ ...(String(process.env.CREWCHECK_ADMIN_EMAILS || process.env.VITE_CREWCHECK_ADMIN_EMAILS || '').split(/[;,\s]+/)),
+ 'bmedeiros1987@gmail.com',
+ 'bruno@crewcheck.local',
+].map(normalizeEmail).filter(Boolean));
+const C32F_ADMIN_EMAIL = Array.from(CREWCHECK_ADMIN_EMAILS)[0] || '';
 
 function isC32FAdminEmail(email) {
- return normalizeEmail(email) === C32F_ADMIN_EMAIL;
+ return CREWCHECK_ADMIN_EMAILS.has(normalizeEmail(email));
+}
+
+function isCrewCheckAdminUser(user) {
+ const role = String(user?.role || '').toLowerCase();
+ return role.includes('admin') || isC32FAdminEmail(user?.email);
 }
 
 function newId() {
@@ -1967,7 +2580,7 @@ function hasFutureDate(value) {
 function isBillingAdmin(user) {
  const role = String(user?.role || '').toLowerCase();
  const email = normalizeEmail(user?.email);
- return role.includes('admin') || email === C32F_ADMIN_EMAIL || email === 'bruno@crewcheck.local';
+ return role.includes('admin') || isC32FAdminEmail(email);
 }
 
 function billingStatusFromUser(user) {
@@ -2089,8 +2702,17 @@ function isPremiumPlanUser(user) {
  return Boolean(billingStatusFromUser(user)?.premiumAccess) && !isBillingAdmin(user);
 }
 
-async function assertRosterBelongsToPremiumUser(db, user, roster, sourceFileName) {
- if (!user?.id || !isPremiumPlanUser(user)) return;
+function wakeupCallAllowedForUser(user) {
+ if (!CREWCHECK_WAKEUP_CALL_PREMIUM_ONLY) return true;
+ return Boolean(billingStatusFromUser(user)?.premiumAccess || isBillingAdmin(user));
+}
+
+function wakeupCallPlanLabel(user) {
+ return wakeupCallAllowedForUser(user) ? 'premium' : 'free_telegram_only';
+}
+
+async function assertRosterBelongsToAccountUser(db, user, roster, sourceFileName) {
+ if (!user?.id || isBillingAdmin(user)) return;
  const rosterCrewId = String(roster?.crewId || '').trim();
  const rosterCrewName = String(roster?.crewName || '').trim();
  let expectedCrewId = String(user.crew_id || '').trim();
@@ -2103,12 +2725,14 @@ async function assertRosterBelongsToPremiumUser(db, user, roster, sourceFileName
   expectedCrewId = String(prior.rows?.[0]?.crew_id || '').trim();
   expectedName = String(prior.rows?.[0]?.crew_name || '').trim();
  }
+ if (!expectedCrewId && !expectedName) return;
+ const genericName = /^(TRIPULANTE|CREW|CREW MEMBER|PASSAGEIRO|USUARIO|USUARIO CREWCHECK|TRIPULANTE EXEMPLO)$/i.test(normalizeRosterIdentityText(rosterCrewName));
  const crewIdMismatch = expectedCrewId && rosterCrewId && normalizeRosterIdentityText(expectedCrewId) !== normalizeRosterIdentityText(rosterCrewId);
- const nameMismatch = !crewIdMismatch && rosterNameLooksDifferent(expectedName, rosterCrewName);
+ const nameMismatch = !crewIdMismatch && !genericName && rosterNameLooksDifferent(expectedName, rosterCrewName);
  if (!crewIdMismatch && !nameMismatch) return;
  const metadata = { sourceFileName, expectedCrewId: expectedCrewId || null, receivedCrewId: rosterCrewId || null, expectedName: expectedName || null, receivedName: rosterCrewName || null, reason: crewIdMismatch ? 'crew_id_mismatch' : 'crew_name_mismatch' };
  await db.query('insert into crewcheck_audit_logs (id, user_id, action, metadata) values ($1, $2, $3, $4::jsonb)', [newId(), user.id, 'roster.identity_mismatch.blocked', JSON.stringify(metadata)]).catch(() => null);
- const err = new Error('Esta escala parece pertencer a outro tripulante. Por segurança, contas Premium só podem salvar a própria escala. Se for falso positivo, revise seu perfil ou fale com o suporte. O uso indevido pode gerar bloqueio preventivo da conta.');
+ const err = new Error('Esta escala parece pertencer a outro tripulante. Por segurança antifraude, a conta só pode salvar a própria escala. Se for falso positivo, revise seu perfil ou fale com o suporte. O uso indevido pode gerar bloqueio preventivo da conta.');
  err.statusCode = 409;
  err.code = 'ROSTER_IDENTITY_MISMATCH';
  err.metadata = metadata;
@@ -2550,12 +3174,15 @@ function publicUser(row) {
   name: row.name,
   email: row.email,
   emailVerified: row.email_verified === undefined ? true : Boolean(row.email_verified),
-  role: row.role,
+  role: isCrewCheckAdminUser(row) ? 'admin' : row.role,
   crewId: row.crew_id,
   base: row.base,
   rank: row.rank,
   hasVirtualBase: Boolean(row.virtual_base_enabled),
   virtualBase: row.virtual_base_airport || null,
+  phoneCountryIso: row.phone_country_iso || null,
+  phoneCountryCode: row.phone_country_code || null,
+  phoneE164: row.phone_e164 || null,
   subscriptionPlan: billing.plan?.id || row.subscription_plan || 'free',
   subscriptionStatus: billing.status || row.subscription_status || 'free',
   premiumAccess: Boolean(billing.premiumAccess),
@@ -2563,6 +3190,35 @@ function publicUser(row) {
   trialExpiresAt: billing.trialExpiresAt || null,
   premiumExpiresAt: billing.premiumExpiresAt || null,
  };
+}
+
+function normalizePhoneCountryIso(value = '') {
+ const clean = String(value || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+ return clean || 'BR';
+}
+
+function normalizePhoneCountryCode(value = '') {
+ const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+ return digits ? `+${digits}` : '+55';
+}
+
+function normalizePhoneE164(input = '', countryCode = '+55') {
+ const code = normalizePhoneCountryCode(countryCode).replace(/\D/g, '');
+ let digits = String(input || '').replace(/\D/g, '').slice(0, 24);
+ if (!digits) return '';
+ if (digits.startsWith(code)) digits = digits.slice(code.length);
+ return digits ? `+${code}${digits}` : '';
+}
+
+function crewClockDiffMinutes(later = '', earlier = '') {
+ const l = normalizeCrewClock(later);
+ const e = normalizeCrewClock(earlier);
+ if (!l || !e) return 0;
+ const [lh, lm] = l.split(':').map(Number);
+ const [eh, em] = e.split(':').map(Number);
+ let diff = (lh * 60 + lm) - (eh * 60 + em);
+ if (diff < 0) diff += 1440;
+ return diff;
 }
 
 function getBearerToken(req) {
@@ -2633,7 +3289,175 @@ function summarizeRosterRow(row) {
   alertsCount: row.alerts_count,
   criticalAlertsCount: row.critical_alerts_count,
   checksum: row.checksum,
+  isActive: Boolean(row.is_active),
+  activeAt: row.active_at || null,
+  deletedAt: row.deleted_at || null,
+  importStatus: row.import_status || 'processed',
+  storageProvider: row.storage_provider || null,
+  sourceStoragePath: row.source_storage_path ? String(row.source_storage_path).split('/').slice(0, 3).join('/') + '/…' : null,
+  sourceFileSizeBytes: Number(row.source_file_size_bytes || 0) || null,
+  storageUploadedAt: row.storage_uploaded_at || null,
+  storageReady: Boolean(row.storage_provider && row.source_storage_path),
  };
+}
+
+function parseRosterDayDateForMerge(value) {
+ const raw = String(value || '').trim();
+ let m = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+ if (m) {
+  const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+  return new Date(year, Number(m[2]) - 1, Number(m[1]), 12, 0, 0, 0);
+ }
+ m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+ if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+ const date = new Date(raw);
+ return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function rosterJsonBoundsForMerge(roster) {
+ const days = Array.isArray(roster?.days) ? roster.days : [];
+ const dates = days.map((day) => parseRosterDayDateForMerge(day?.date)).filter((date) => date && Number.isFinite(date.getTime()));
+ if (!dates.length) return { first: null, last: null };
+ return { first: new Date(Math.min(...dates.map((date) => date.getTime()))), last: new Date(Math.max(...dates.map((date) => date.getTime()))) };
+}
+
+function rosterMergeAirport(value) {
+ return String(value || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+}
+
+function rosterMergeIsOffLike(day) {
+ const text = `${day?.type || ''} ${day?.pairingCode || ''} ${day?.rawText || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+ return /\b(DO|DOF|DOP|DOPR|OFF|DR|FOLGA|FERIAS|VACATION)\b/.test(text) && !(day?.legs || []).length;
+}
+
+function rosterContinuationAnchors(roster) {
+ const days = Array.isArray(roster?.days) ? roster.days : [];
+ return days
+  .map((day, index) => {
+   const legs = Array.isArray(day?.legs) ? day.legs : [];
+   if (!legs.length) return null;
+   const first = legs[0];
+   const last = legs[legs.length - 1];
+   const date = parseRosterDayDateForMerge(day?.date);
+   if (!date) return null;
+   return {
+    day,
+    index,
+    date,
+    origin: rosterMergeAirport(first?.origin),
+    destination: rosterMergeAirport(last?.destination),
+    firstFlight: first?.flightNumber || '',
+    lastFlight: last?.flightNumber || '',
+   };
+  })
+  .filter(Boolean)
+  .sort((a, b) => a.date.getTime() - b.date.getTime() || a.index - b.index);
+}
+
+function rosterMergeDayGap(a, b) {
+ if (!a?.date || !b?.date) return 999;
+ return Math.round((b.date.getTime() - a.date.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function rosterHasOffAfterAnchor(roster, anchor) {
+ const days = Array.isArray(roster?.days) ? roster.days : [];
+ return days.some((day, index) => index > anchor.index && rosterMergeIsOffLike(day));
+}
+
+function rosterContinuationTail(roster, nextRoster) {
+ const anchors = rosterContinuationAnchors(roster);
+ const nextAnchors = rosterContinuationAnchors(nextRoster);
+ if (!anchors.length || !nextAnchors.length) return null;
+ const base = rosterMergeAirport(roster?.base || nextRoster?.base || 'BSB') || 'BSB';
+ const last = anchors[anchors.length - 1];
+ const firstNext = nextAnchors[0];
+ if (!last.destination || !firstNext.origin) return null;
+ if (last.destination === base) return null;
+ if (last.destination !== firstNext.origin) return null;
+ const gapToNext = rosterMergeDayGap(last, firstNext);
+ if (gapToNext < 0 || gapToNext > 3) return null;
+ if (rosterHasOffAfterAnchor(roster, last)) return null;
+
+ let tailStart = last.index;
+ for (let i = anchors.length - 2; i >= 0; i -= 1) {
+  const previous = anchors[i];
+  const current = anchors[i + 1];
+  const gap = rosterMergeDayGap(previous, current);
+  if (gap < 0 || gap > 3) break;
+  if (!previous.destination || !current.origin || previous.destination !== current.origin) break;
+  tailStart = previous.index;
+ }
+ const tailDays = (roster.days || []).filter((day, index) => index >= tailStart && !rosterMergeIsOffLike(day));
+ return tailDays.length ? { ...roster, days: tailDays } : null;
+}
+
+function shouldAppendNextRosterForContinuation(currentRoster, nextRoster) {
+ const tail = rosterContinuationTail(currentRoster, nextRoster);
+ return Boolean(tail?.days?.length);
+}
+
+function mergeRosterJsonContinuous(primaryRoster, adjacentRoster, position = 'append') {
+ if (!primaryRoster?.days?.length || !adjacentRoster?.days?.length) return primaryRoster;
+ const sourceDays = position === 'prepend'
+  ? [...(adjacentRoster.days || []), ...(primaryRoster.days || [])]
+  : [...(primaryRoster.days || []), ...(adjacentRoster.days || [])];
+ const seen = new Set();
+ const days = [];
+ for (const day of sourceDays) {
+  const key = `${day?.date || ''}|${day?.type || ''}|${day?.pairingCode || ''}|${day?.dutyReport || ''}|${day?.dutyDebrief || ''}|${(day?.legs || []).map((leg) => `${leg.flightNumber}-${leg.origin}-${leg.destination}-${leg.departureTime}`).join('|')}`;
+  if (seen.has(key)) continue;
+  seen.add(key);
+  days.push(day);
+ }
+ days.sort((a, b) => {
+  const da = parseRosterDayDateForMerge(a?.date)?.getTime() || 0;
+  const db = parseRosterDayDateForMerge(b?.date)?.getTime() || 0;
+  return da - db;
+ });
+ const note = position === 'prepend'
+  ? '--- Final da escala anterior anexado automaticamente por continuidade/pernoite ---'
+  : '--- Próxima escala anexada automaticamente para pernoite/continuidade ---';
+ return {
+  ...primaryRoster,
+  days,
+  rawText: `${position === 'prepend' ? `${adjacentRoster.rawText || ''}\n\n${note}\n` : ''}${primaryRoster.rawText || ''}${position === 'append' ? `\n\n${note}\n${adjacentRoster.rawText || ''}` : ''}`.trim(),
+ };
+}
+
+async function maybeMergeAdjacentRosterForContinuity(db, userId, row) {
+ if (!row?.roster_json?.days?.length || !userId) return row?.roster_json;
+ const bounds = rosterJsonBoundsForMerge(row.roster_json);
+ if (!bounds.first || !bounds.last) return row.roster_json;
+ const periodIndex = Number(row.period_year) * 12 + Number(row.period_month);
+ const result = await db.query(
+  `select roster_json, period_year, period_month from crewcheck_rosters
+    where user_id = $1 and deleted_at is null and id <> $2
+      and period_year * 12 + period_month between $3 and $4
+    order by period_year asc, period_month asc, created_at asc
+    limit 12`,
+  [userId, row.id, periodIndex - 1, periodIndex + 1],
+ ).catch(() => ({ rows: [] }));
+
+ const rows = (result.rows || []).map((item) => ({ item, bounds: rosterJsonBoundsForMerge(item.roster_json) }));
+ let merged = row.roster_json;
+
+ const previous = rows
+  .filter((entry) => entry.bounds.last && entry.bounds.last.getTime() <= bounds.first.getTime() + 24 * 60 * 60 * 1000)
+  .sort((a, b) => b.bounds.last.getTime() - a.bounds.last.getTime())[0];
+ if (previous?.item?.roster_json) {
+  const previousTail = rosterContinuationTail(previous.item.roster_json, merged);
+  if (previousTail?.days?.length) merged = mergeRosterJsonContinuous(merged, previousTail, 'prepend');
+ }
+
+ const mergedBounds = rosterJsonBoundsForMerge(merged);
+ const next = rows
+  .filter((entry) => entry.bounds.first && entry.bounds.first.getTime() > (mergedBounds.last?.getTime() || bounds.last.getTime()) - 24 * 60 * 60 * 1000)
+  .sort((a, b) => a.bounds.first.getTime() - b.bounds.first.getTime())[0];
+ if (next?.item?.roster_json && shouldAppendNextRosterForContinuation(merged, next.item.roster_json)) {
+  merged = mergeRosterJsonContinuous(merged, next.item.roster_json, 'append');
+ }
+
+ return merged;
 }
 
 
@@ -3038,7 +3862,7 @@ function buildWelcomeEmail({ email, temporaryPassword }) {
   'Bem-vindo ao CrewCheck Premium.',
   '',
   `Conta criada para: ${email}`,
-  `Senha provisória de emergência: ${temporaryPassword}`,
+  `Código temporário de emergência: ${temporaryPassword}`,
   '',
   'Você pode acessar com a senha escolhida no cadastro. A senha provisória é temporária e serve apenas como alternativa inicial/de recuperação.',
   'Após carregar sua primeira escala, o CrewCheck preencherá automaticamente BP, base e função a partir do PDF.',
@@ -3064,7 +3888,7 @@ function buildWelcomeEmail({ email, temporaryPassword }) {
      </td></tr>
      <tr><td style="padding:0 34px 24px">
       <div style="background:#06172a;border-radius:24px;padding:24px;color:white">
-       <p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Senha provisória de emergência</p>
+       <p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Código temporário de emergência</p>
        <div style="margin-top:14px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.08);font-size:28px;letter-spacing:.12em;font-weight:900;text-align:center">${safePassword}</div>
        <p style="margin:16px 0 0;color:#cbd5e1;font-size:13px;line-height:1.6">Você também pode entrar com a senha escolhida no cadastro. A senha provisória expira automaticamente e deve ser usada apenas se necessário.</p>
       </div>
@@ -3083,14 +3907,14 @@ function buildWelcomeEmail({ email, temporaryPassword }) {
 function buildPasswordResetEmail({ email, temporaryPassword }) {
  const safeEmail = escapeHtml(email);
  const safePassword = escapeHtml(temporaryPassword);
- const subject = 'CrewCheck Premium — senha provisória de acesso';
+ const subject = 'CrewCheck Premium — código temporário de redefinição';
  const text = [
   'CrewCheck Premium — recuperação de acesso.',
   '',
   `Conta: ${email}`,
-  `Senha provisória: ${temporaryPassword}`,
+  `Código temporário: ${temporaryPassword}`,
   '',
-  'A senha provisória expira em 7 dias e será invalidada após o uso.',
+  'O código temporário expira em 30 minutos e só serve para definir uma nova senha.',
   'Se você não solicitou essa recuperação, ignore este e-mail.',
   '',
   'Equipe CrewCheck',
@@ -3104,10 +3928,10 @@ function buildPasswordResetEmail({ email, temporaryPassword }) {
      <tr><td style="padding:34px 34px 18px">
       <div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#0ea5e9;font-weight:800">CrewCheck Premium</div>
       <h1 style="margin:10px 0 8px;font-size:30px;line-height:1.1;color:#06172a">Recuperação de acesso</h1>
-      <p style="margin:0;color:#60758a;font-size:15px;line-height:1.7">Geramos uma senha provisória para você acessar sua conta. Por segurança, use-a apenas uma vez e depois continue com sua senha principal.</p>
+      <p style="margin:0;color:#60758a;font-size:15px;line-height:1.7">Geramos um código temporário para redefinir sua senha. Ele não faz login direto: você precisará criar uma nova senha no CrewCheck.</p>
      </td></tr>
      <tr><td style="padding:0 34px 22px"><div style="background:#f8fbff;border:1px solid #dbeafe;border-radius:22px;padding:22px"><p style="margin:0 0 10px;color:#60758a;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Conta</p><p style="margin:0;font-size:16px;font-weight:800;color:#092846">${safeEmail}</p></div></td></tr>
-     <tr><td style="padding:0 34px 24px"><div style="background:#06172a;border-radius:24px;padding:24px;color:white"><p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Senha provisória</p><div style="margin-top:14px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.08);font-size:28px;letter-spacing:.12em;font-weight:900;text-align:center">${safePassword}</div><p style="margin:16px 0 0;color:#cbd5e1;font-size:13px;line-height:1.6">Expira em 7 dias e é invalidada após o primeiro uso.</p></div></td></tr>
+     <tr><td style="padding:0 34px 24px"><div style="background:#06172a;border-radius:24px;padding:24px;color:white"><p style="margin:0;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.14em">Código temporário</p><div style="margin-top:14px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.08);font-size:28px;letter-spacing:.12em;font-weight:900;text-align:center">${safePassword}</div><p style="margin:16px 0 0;color:#cbd5e1;font-size:13px;line-height:1.6">Expira em 30 minutos e só serve para definir uma nova senha.</p></div></td></tr>
      <tr><td style="padding:0 34px 34px;color:#60758a;font-size:14px;line-height:1.7"><strong style="color:#092846">Privacidade:</strong> usamos seus dados apenas para autenticação e análise da escala conforme as boas práticas da LGPD.</td></tr>
     </table>
    </td></tr>
@@ -3996,9 +4820,9 @@ const EXTRA_AIRLINE_LINKS = Object.freeze({
 function canonicalExtraAirlineCode(codeOrName) {
  const text = String(codeOrName || '').trim().toUpperCase();
  if (!text) return '';
- if (/^(LA|JJ|TAM)/.test(text) || text.includes('LATAM')) return 'LA';
- if (/^(G3|GLO)/.test(text) || text.includes('GOL')) return 'G3';
- if (/^(AD|AZU)/.test(text) || text.includes('AZUL')) return 'AD';
+ if (/^(LA|JJ|TAM)\b/.test(text) || text.includes('LATAM')) return 'LA';
+ if (/^(G3|GLO)\b/.test(text) || text.includes('GOL')) return 'G3';
+ if (/^(AD|AZU)\b/.test(text) || text.includes('AZUL')) return 'AD';
  return text.replace(/[^A-Z0-9]/g, '').slice(0, 3);
 }
 
@@ -4655,6 +5479,119 @@ function sortExtraFlightOptionsForPresentation(options = []) {
  });
 }
 
+
+function extraStaffLoadParseCurrency(value = '') {
+ const match = String(value || '').replace(/\./g, '').replace(',', '.').match(/(\d+(?:\.\d+)?)/);
+ return match ? Number(match[1]) : null;
+}
+
+function extraStaffLoadPricePressure(option = {}) {
+ const price = extraStaffLoadParseCurrency(option.priceLabel || '');
+ if (!Number.isFinite(price)) return 0;
+ if (price >= 1800) return 16;
+ if (price >= 1200) return 11;
+ if (price >= 850) return 7;
+ if (price >= 550) return 3;
+ return 0;
+}
+
+function extraStaffLoadTimePressure(option = {}) {
+ const now = new Date();
+ const date = String(option.selectedDate || '').match(/^\d{4}-\d{2}-\d{2}$/)?.[0] || todayIsoInBrazil();
+ const clock = String(option.leaveAt || option.legs?.[0]?.departure || '').match(/(\d{1,2}):(\d{2})/);
+ if (!clock) return 0;
+ const target = new Date(`${date}T${String(clock[1]).padStart(2,'0')}:${clock[2]}:00-03:00`);
+ const hours = (target.getTime() - now.getTime()) / 36e5;
+ if (!Number.isFinite(hours)) return 0;
+ if (hours < 3) return 14;
+ if (hours < 12) return 10;
+ if (hours < 24) return 6;
+ if (hours < 72) return 2;
+ return 0;
+}
+
+function extraStaffLoadScoreFromAvailability(seatsAvailable) {
+ if (seatsAvailable === null || seatsAvailable === undefined || seatsAvailable === '') return null;
+ const seats = Number(seatsAvailable);
+ if (!Number.isFinite(seats)) return null;
+ // Amadeus/availability costuma vir capado em 9; aqui é sinal, não lotação exata.
+ if (seats >= 9) return { score: 88, risk: 'low', label: 'alta chance', seatsLabel: '9+ vagas tarifárias' };
+ if (seats >= 7) return { score: 78, risk: 'low', label: 'boa chance', seatsLabel: `${seats} vagas tarifárias` };
+ if (seats >= 4) return { score: 56, risk: 'medium', label: 'atenção', seatsLabel: `${seats} vagas tarifárias` };
+ if (seats >= 2) return { score: 34, risk: 'high', label: 'baixa chance', seatsLabel: `${seats} vagas tarifárias` };
+ if (seats >= 1) return { score: 20, risk: 'critical', label: 'muito cheio', seatsLabel: '1 vaga tarifária' };
+ return { score: 10, risk: 'critical', label: 'provável cheio', seatsLabel: 'sem vaga tarifária' };
+}
+
+function extraStaffLoadLabelFromScore(score) {
+ if (score >= 80) return { risk: 'low', label: 'alta chance' };
+ if (score >= 65) return { risk: 'low', label: 'boa chance' };
+ if (score >= 48) return { risk: 'medium', label: 'atenção' };
+ if (score >= 28) return { risk: 'high', label: 'baixa chance' };
+ return { risk: 'critical', label: 'muito cheio' };
+}
+
+function estimateExtraStaffLoad(option = {}, query = {}) {
+ if (!EXTRA_STAFF_LOAD_ENABLED) return null;
+ const legs = Array.isArray(option.legs) ? option.legs : [];
+ const directSeatSignal = extraStaffLoadScoreFromAvailability(option.seatsAvailable);
+ let baseScore = directSeatSignal?.score ?? 62;
+ let source = directSeatSignal ? 'availability tarifária / Amadeus' : 'heurística CrewCheck';
+ const pricePressure = extraStaffLoadPricePressure(option);
+ const timePressure = extraStaffLoadTimePressure(option);
+ const connectionPenalty = option.kind === 'connection' ? 8 : 0;
+ const unknownPenalty = directSeatSignal ? 0 : 14;
+ let score = Math.max(5, Math.min(95, Math.round(baseScore - pricePressure - timePressure - connectionPenalty - unknownPenalty)));
+ const label = extraStaffLoadLabelFromScore(score);
+ const statusLabel = directSeatSignal?.label || label.label;
+ const seatsSignal = directSeatSignal?.seatsLabel || 'load real não disponível';
+ const details = [];
+ if (directSeatSignal) details.push(`Sinal de disponibilidade: ${directSeatSignal.seatsLabel}.`);
+ else details.push('Sem acesso ao mapa interno de reservas da companhia; usando sinais externos como voo publicado, tarifa e janela.');
+ if (pricePressure) details.push('Tarifa alta pode indicar procura maior.');
+ if (timePressure) details.push('Partida próxima reduz margem para variação/no-show.');
+ if (connectionPenalty) details.push('Conexão aumenta risco operacional para staff travel.');
+ const confidence = directSeatSignal ? 'média · sinal tarifário, não lista standby' : 'baixa · estimativa, não load oficial';
+ return {
+  ok: true,
+  exactLoad: false,
+  source,
+  statusLabel,
+  chanceLabel: label.label,
+  chanceScore: score,
+  riskLevel: label.risk,
+  seatsSignal,
+  confidence,
+  summary: `${label.label} · ${score}%`,
+  details,
+  updatedAt: new Date().toISOString(),
+  advisory: 'Estimativa auxiliar para Vivo de Extra. Não substitui portal staff, lista de standby, despacho, fechamento de voo ou informação oficial da companhia.',
+  requestable: EXTRA_STAFF_LOAD_MANUAL_REPORTS_ENABLED,
+  manualReportHint: EXTRA_STAFF_LOAD_MANUAL_REPORTS_ENABLED ? 'Permita no futuro que tripulantes informem assentos livres/standby para melhorar a previsão.' : null,
+ };
+}
+
+function enrichExtraFlightOptionsWithStaffLoad(payload = {}, query = {}) {
+ if (!payload || typeof payload !== 'object') return payload;
+ const options = Array.isArray(payload.options) ? payload.options.map((option) => {
+  const staffLoad = estimateExtraStaffLoad(option, query);
+  if (!staffLoad) return option;
+  const legs = Array.isArray(option.legs) ? option.legs.map((leg) => ({ ...leg, staffLoadHint: staffLoad.summary, staffLoadRisk: staffLoad.riskLevel })) : option.legs;
+  return { ...option, staffLoad, legs };
+ }) : [];
+ return {
+  ...payload,
+  options,
+  loadIntelligence: {
+   enabled: EXTRA_STAFF_LOAD_ENABLED,
+   mode: 'proxy + reports-ready',
+   exactSource: EXTRA_STAFF_LOAD_EXACT_SOURCE_LABEL,
+   exactLoadAvailable: false,
+   message: 'CrewCheck estima chance de embarque com sinais permitidos. Load oficial exige integração autorizada ou contribuição verificada de funcionários.',
+  },
+ };
+}
+
 async function buildRealConnectionOptionsWithSerpApi(query, diagnostics) {
  if (String(process.env.EXTRA_FLIGHT_REAL_CONNECTIONS_ENABLED || 'true').toLowerCase() === 'false') return [];
  if (!SERPAPI_API_KEY || !SERPAPI_EXTRA_ENABLED) return [];
@@ -4759,8 +5696,8 @@ async function fetchExtraFlightOffersWithDbCache(query) {
   targetIso: String(query.targetIso || query.presentationIso || '').trim(),
  };
  const cached = await readExtraFlightSearchDbCache(params);
- if (cached) return cached;
- const fresh = await fetchExtraFlightOffers(query);
+ if (cached) return enrichExtraFlightOptionsWithStaffLoad(cached, params);
+ const fresh = enrichExtraFlightOptionsWithStaffLoad(await fetchExtraFlightOffers(query), params);
  return writeExtraFlightSearchDbCache(params, fresh);
 }
 
@@ -4937,8 +5874,12 @@ const OFFICIAL_AIRPORT_BOARD_SOURCES = {
   url: 'https://www.aenabrasil.com.br/pt/aeroportos/aeroporto-de-juazeiro-do-norte/informacoes-de-voos.html',
  },
  SSA: {
-  label: 'Salvador Bahia Airport',
-  url: 'https://www.salvador-airport.com.br/pt-br/passageiros/voos/chegadas-e-partidas',
+  label: 'Salvador Bahia Airport / HST Voos oficial',
+  url: 'https://hstvoos.salvador-airport.com.br/Voos',
+  departuresUrl: 'https://hstvoos.salvador-airport.com.br/Voos',
+  arrivalsUrl: 'https://hstvoos.salvador-airport.com.br/Voos',
+  publicUrl: 'https://www.salvador-airport.com.br/partidas-e-chegadas?type=partidas',
+  hasGateColumn: true,
  },
  VIX: {
   label: 'Zurich Airport VIX',
@@ -4952,6 +5893,191 @@ const OFFICIAL_AIRPORT_BOARD_SOURCES = {
 
 function officialAirportSource(airport) {
  return OFFICIAL_AIRPORT_BOARD_SOURCES[String(airport || '').toUpperCase()] || null;
+}
+
+function officialAirportFetchUrl(source, type = 'departure') {
+ if (!source) return '';
+ const selected = String(type || '').toLowerCase() === 'arrival' ? source.arrivalsUrl : source.departuresUrl;
+ return String(selected || source.url || '').trim();
+}
+
+function officialAirportPublicUrl(source, type = 'departure') {
+ if (!source) return '';
+ if (source.publicUrl) return String(source.publicUrl);
+ return officialAirportFetchUrl(source, type);
+}
+
+const SALVADOR_HST_SOURCE_LABEL = 'HST Voos Salvador oficial';
+const SALVADOR_HST_URL = 'https://hstvoos.salvador-airport.com.br/Voos';
+
+function extractSalvadorHstSections(text, type = 'departure') {
+ const clean = compactOfficialText(text);
+ if (!clean) return [];
+ const wanted = String(type).toLowerCase() === 'arrival' ? 'Chegadas / Arrivals' : 'Partidas / Departures';
+ const other = String(type).toLowerCase() === 'arrival' ? 'Partidas / Departures' : 'Chegadas / Arrivals';
+ const wantedRe = new RegExp(escapeRegExp(wanted), 'ig');
+ const segments = [];
+ let match;
+ while ((match = wantedRe.exec(clean))) {
+  const start = match.index + match[0].length;
+  const rest = clean.slice(start);
+  const nextOther = rest.search(new RegExp(escapeRegExp(other), 'i'));
+  const nextWanted = rest.search(new RegExp(escapeRegExp(wanted), 'i'));
+  let end = rest.length;
+  for (const idx of [nextOther, nextWanted].filter((value) => value >= 0)) end = Math.min(end, idx);
+  const segment = rest.slice(0, end).trim();
+  if (segment) segments.push(segment);
+ }
+ return segments.length ? segments : [clean];
+}
+
+function collectSalvadorHstRowsFromText(text, rows, type, airline, dateIso) {
+ const sections = extractSalvadorHstSections(text, type);
+ const statusWords = '(?:última chamada|ultima chamada|embarque imediato|embarque encerrado|embarque|voo decolado|decolado|pousou|chegou|cancelad[oa]|atrasad[oa]|programad[oa]|previst[oa]|confirmad[oa]|no hor[áa]rio|last call|boarding|scheduled|expected|closed|cancelled|delayed|departed|arrived)';
+ const cityPart = '[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ0-9 .\\/\'\u2019-]{2,56}?';
+ const companyPart = '[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-Za-zÀ-ÿ0-9 .&\\/\'\u2019-]{1,44}?';
+ const gatePart = '(?:[A-Z]?\\d{1,3}[A-Z]?|--|-|não informado|nao informado|aguarde|a definir)';
+ const patterns = [
+  // HST TV monitor: Hora Companhia Voo Destino Status Portão
+  new RegExp(`\\b([0-2]?\\d:[0-5]\\d)\\s+(${companyPart})\\s+([A-Z]{0,4}\\s?\\d{2,5}[A-Z]?)\\s+(${cityPart})\\s+(${statusWords})(?:\\s+(${gatePart}))?(?=\\s+[0-2]?\\d:[0-5]\\d\\s+|$)`, 'gi'),
+  // Site público: Hora Destino Nº Voo Companhia Status — sem portão, mas ajuda status/horário.
+  new RegExp(`\\b([0-2]?\\d:[0-5]\\d)\\s+(${cityPart})\\s+([A-Z]{0,4}\\s?\\d{2,5}[A-Z]?)\\s+(${companyPart})\\s+(${statusWords})(?=\\s+[0-2]?\\d:[0-5]\\d\\s+|$)`, 'gi'),
+ ];
+ for (const section of sections) {
+  const normalizedSection = section
+   .replace(/\bHora\s+Companhia\s+Voo\s+(?:Destino|Origem)\s+Status\s+(?:Portão|Esteira)\b/gi, ' ')
+   .replace(/\bHora\s+(?:Destino|Origem)\s+N[º°]?\s*Voo\s+Companhia\s+Status\b/gi, ' ')
+   .replace(/\s+/g, ' ')
+   .trim();
+  for (const [index, regex] of patterns.entries()) {
+   let match;
+   while ((match = regex.exec(normalizedSection))) {
+    let time, company, flight, city, status, gate;
+    if (index === 0) {
+     [, time, company, flight, city, status, gate] = match;
+    } else {
+     [, time, city, flight, company, status] = match;
+     gate = '';
+    }
+    const flightNumber = normalizeFlightToken(flight);
+    if (!flightNumber) continue;
+    const airlineCode = airlineCodeFromText(`${company} ${flightNumber}`) || flightNumber.match(/^([A-Z]{1,3})/)?.[1] || '';
+    if (!airlineCodeMatches(airlineCode, airline)) continue;
+    const gateValue = String(gate || '').trim();
+    const cleanGate = /^(?:--|-|não informado|nao informado|aguarde|a definir)$/i.test(gateValue) ? null : gateValue.toUpperCase();
+    pushUniqueOfficialRow(rows, {
+     flightNumber,
+     airlineCode,
+     airlineName: normalizeAirportBoardAirlineName(airlineCode, company),
+     airport: 'SSA',
+     type,
+     origin: type === 'arrival' ? String(city || '').trim() : 'SSA',
+     destination: type === 'departure' ? String(city || '').trim() : 'SSA',
+     relatedAirport: String(city || '').trim() || null,
+     gate: type === 'departure' ? cleanGate : null,
+     terminal: null,
+     baggageBelt: type === 'arrival' ? cleanGate : null,
+     scheduledTime: time,
+     confirmedTime: time,
+     status: statusFromOfficialText(status, type) || status || 'Confirmado',
+     source: SALVADOR_HST_SOURCE_LABEL,
+     date: dateIso || todayIsoForAirportServer('SSA'),
+    }, airline);
+   }
+  }
+ }
+}
+
+async function getSalvadorHstAirportBoardSnapshot({ type = 'departure', airline = '', limit = 60, date = '' } = {}) {
+ const localDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : todayIsoForAirportServer('SSA');
+ const normalizedType = String(type).toLowerCase() === 'arrival' ? 'arrival' : 'departure';
+ const cacheKey = `salvador-hst-board:${normalizedType}:${airline}:${limit}:${localDate}`;
+ const cached = cacheGet(flightProviderCache, cacheKey, OFFICIAL_AIRPORT_BOARD_CACHE_TTL_MS);
+ if (cached) return cached;
+ const updatedAt = new Date().toISOString();
+ try {
+  const response = await fetch(SALVADOR_HST_URL, {
+   headers: {
+    accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'accept-language': 'pt-BR,pt;q=0.9,en;q=0.6',
+    'cache-control': 'no-cache',
+    pragma: 'no-cache',
+    'user-agent': 'CrewCheck/11.1.91 Salvador-HST-gate',
+   },
+   signal: AbortSignal.timeout(Number(process.env.SALVADOR_HST_TIMEOUT_MS || 9000)),
+  });
+  if (!response.ok) throw new Error(`SALVADOR_HST_HTTP_${response.status}`);
+  const html = await response.text();
+  const rows = [];
+  collectSalvadorHstRowsFromText(html, rows, normalizedType, airline, localDate);
+  const sortedRows = rows
+   .filter((row) => row.flightNumber || row.relatedAirport)
+   .filter((row) => airlineCodeMatches(row.airlineCode, airline))
+   .sort((a, b) => String(a.confirmedTime || a.scheduledTime || '99:99').localeCompare(String(b.confirmedTime || b.scheduledTime || '99:99')))
+   .slice(0, limit);
+  return cacheSet(flightProviderCache, cacheKey, {
+   ok: true,
+   airport: 'SSA',
+   type: normalizedType,
+   airline,
+   rows: sortedRows,
+   date: localDate,
+   timeBasis: 'airport-local',
+   updatedAt,
+   source: SALVADOR_HST_SOURCE_LABEL,
+   sourceUrl: SALVADOR_HST_URL,
+   message: sortedRows.length
+    ? 'Portão/status carregados do monitor oficial HST do Aeroporto de Salvador.'
+    : 'Monitor HST de Salvador consultado, mas não expôs linhas estruturadas neste momento.',
+  });
+ } catch (error) {
+  return cacheSet(flightProviderCache, cacheKey, {
+   ok: true,
+   airport: 'SSA',
+   type: normalizedType,
+   airline,
+   rows: [],
+   date: localDate,
+   timeBasis: 'airport-local',
+   updatedAt,
+   source: `${SALVADOR_HST_SOURCE_LABEL} indisponível`,
+   sourceUrl: SALVADOR_HST_URL,
+   message: error?.message || 'Falha ao consultar monitor HST Salvador.',
+  });
+ }
+}
+
+async function fetchSalvadorHstFlightStatus(params = {}) {
+ const flightNumber = normalizeFlightToken(params.flightNumber);
+ if (!flightNumber) return null;
+ const candidates = buildFlightCandidates(params);
+ const wantsDeparture = String(params.origin || params.airport || '').toUpperCase() === 'SSA' || !params.destination;
+ const wantsArrival = String(params.destination || params.airport || '').toUpperCase() === 'SSA';
+ const types = wantsArrival && !wantsDeparture ? ['arrival', 'departure'] : ['departure', 'arrival'];
+ for (const type of types) {
+  const board = await getSalvadorHstAirportBoardSnapshot({ type, airline: flightNumber.match(/^([A-Z]{1,3})/)?.[1] || '', limit: 100, date: params.date });
+  const rows = Array.isArray(board?.rows) ? board.rows : [];
+  const found = rows.find((row) => candidates.includes(normalizeFlightToken(row.flightNumber))) || null;
+  if (found) {
+   return {
+    ok: true,
+    flightNumber,
+    origin: type === 'arrival' ? (found.origin || params.origin || '') : 'SSA',
+    destination: type === 'departure' ? (found.destination || params.destination || '') : 'SSA',
+    date: params.date || board.date || todayIsoForAirportServer('SSA'),
+    matchedFlight: found.flightNumber,
+    status: found.status || 'Programado',
+    gate: found.gate || null,
+    terminal: found.terminal || null,
+    scheduledTime: found.scheduledTime || null,
+    confirmedTime: found.confirmedTime || null,
+    baggageBelt: found.baggageBelt || null,
+    source: SALVADOR_HST_SOURCE_LABEL,
+    updatedAt: board.updatedAt || new Date().toISOString(),
+   };
+  }
+ }
+ return null;
 }
 
 function airlineCodeFromText(value) {
@@ -5124,7 +6250,8 @@ async function getOfficialAirportBoardSnapshot({ airport, type, airline, limit, 
  if (cached) return cached;
  const updatedAt = new Date().toISOString();
  try {
-  const response = await fetch(source.url, {
+  const fetchUrl = officialAirportFetchUrl(source, type);
+  const response = await fetch(fetchUrl, {
    headers: {
     accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'accept-language': 'pt-BR,pt;q=0.9,en;q=0.6',
@@ -5154,7 +6281,7 @@ async function getOfficialAirportBoardSnapshot({ airport, type, airline, limit, 
    timeBasis: 'airport-local',
    updatedAt,
    source: source.label,
-   sourceUrl: source.url,
+   sourceUrl: officialAirportPublicUrl(source, type),
    message: sortedRows.length ? 'Dados carregados do painel oficial do aeroporto.' : 'O painel oficial não expôs voos em HTML estruturado neste momento; usando fallback quando disponível.',
   };
   return cacheSet(flightProviderCache, cacheKey, result);
@@ -5169,7 +6296,7 @@ async function getOfficialAirportBoardSnapshot({ airport, type, airline, limit, 
    timeBasis: 'airport-local',
    updatedAt,
    source: `${source.label} indisponível`,
-   sourceUrl: source.url,
+   sourceUrl: officialAirportPublicUrl(source, type),
    message: error?.message || 'Falha ao consultar painel oficial.',
   });
  }
@@ -5190,7 +6317,8 @@ async function fetchOfficialAirportFlightStatus(params, code) {
  const cached = cacheGet(flightProviderCache, cacheKey, OFFICIAL_AIRPORT_BOARD_CACHE_TTL_MS);
  if (cached) return cached;
  try {
-  const response = await fetch(source.url, {
+  const fetchUrl = officialAirportFetchUrl(source, type);
+  const response = await fetch(fetchUrl, {
    headers: {
     accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'accept-language': 'pt-BR,pt;q=0.9,en;q=0.6',
@@ -5446,7 +6574,10 @@ async function fetchAviationstackAirportBoard({ airport, type, airline, limit, d
 function premiumRadarMessage({ official, apiResult, diagnostics, airport, type }) {
  if (apiResult?.rows?.length) return 'Radar carregado com dados operacionais da API. Portão e terminal aparecem quando o provedor disponibiliza essas informações.';
  if (official?.rows?.length) return 'Radar carregado pelo painel oficial público do aeroporto.';
+ const missingAirlabs = diagnostics?.some((item) => String(item.reason || '').includes('AIRLABS_API_KEY'));
  const missingKey = diagnostics?.some((item) => String(item.reason || '').includes('AVIATIONSTACK_ACCESS_KEY'));
+ if (missingAirlabs && missingKey) return 'Configure AIRLABS_API_KEY ou AVIATIONSTACK_ACCESS_KEY no Render para ativar dados reais de voos, portão e terminal.';
+ if (missingAirlabs) return 'Configure AIRLABS_API_KEY no Render para ativar AirLabs: schedules, status, portão/terminal quando disponíveis e radar ADS-B.';
  if (missingKey) return 'Configure AVIATIONSTACK_ACCESS_KEY no Render para ativar dados reais de voos, portão e terminal.';
  const rateLimited = diagnostics?.some((item) => item.throttled || isAviationstackRateLimitMessage(item.reason));
  if (rateLimited) return 'A Aviationstack atingiu o limite temporário de consultas do seu plano. O CrewCheck agora usa cache, fila e cooldown para não repetir chamadas até a API liberar nova consulta.';
@@ -5501,15 +6632,140 @@ function classifyAirportBoardTrafficServer(row = {}) {
  return 'international';
 }
 
+
+function normalizeCodeshareCarrier(value = '') {
+ const clean = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+ if (!clean) return '';
+ if (['JJ','TAM'].includes(clean)) return 'LA';
+ if (['GLO'].includes(clean)) return 'G3';
+ if (['AZU'].includes(clean)) return 'AD';
+ if (['TAP'].includes(clean)) return 'TP';
+ if (['CMP'].includes(clean)) return 'CM';
+ if (['AAL'].includes(clean)) return 'AA';
+ return clean.slice(0, 3);
+}
+
+function carrierFromFlightNumberServer(value = '') {
+ return normalizeCodeshareCarrier(String(value || '').match(/^([A-Z]{1,3})\s*\d{2,5}/i)?.[1] || '');
+}
+
+function rowCarrierServer(row = {}) {
+ return normalizeCodeshareCarrier(row.airlineCode || carrierFromFlightNumberServer(row.flightNumber) || row.operatingAirlineCode || '');
+}
+
+function rowOperatingCarrierServer(row = {}) {
+ return normalizeCodeshareCarrier(row.operatingAirlineCode || row.operatingCarrierCode || row.operatorAirlineCode || rowCarrierServer(row));
+}
+
+function isBrazilianOriginalCarrierServer(code = '') {
+ return ['LA','G3','AD','2Z','M3','TTL','SID'].includes(normalizeCodeshareCarrier(code));
+}
+
+function airportBoardCodeshareKeyServer(row = {}) {
+ const type = String(row.type || '').toLowerCase();
+ const origin = normalizeAirportForTrafficServer(row.origin);
+ const destination = normalizeAirportForTrafficServer(row.destination || row.relatedAirport);
+ const airport = normalizeAirportForTrafficServer(row.airport);
+ const related = type === 'arrival' ? origin : destination;
+ const time = String(row.confirmedTime || row.scheduledTime || '').replace(/\s+/g, '').slice(0, 5);
+ const gate = String(row.gate || '').toUpperCase().replace(/\s+/g, '');
+ const terminal = String(row.terminal || '').toUpperCase().replace(/\s+/g, '');
+ if (!related || !time) return '';
+ return [type || 'board', airport || '-', related, time, terminal || '-', gate || '-'].join('|');
+}
+
+function airportBoardExactFlightKeyServer(row = {}) {
+ const flight = normalizeFlightToken(row.flightNumber || '');
+ if (!flight) return '';
+ return [
+  String(row.type || '').toLowerCase(),
+  normalizeAirportForTrafficServer(row.airport),
+  normalizeAirportForTrafficServer(row.origin),
+  normalizeAirportForTrafficServer(row.destination || row.relatedAirport),
+  flight,
+  String(row.confirmedTime || row.scheduledTime || '').slice(0, 5),
+ ].join('|');
+}
+
+function airportBoardRowQualityServer(row = {}) {
+ const carrier = rowCarrierServer(row);
+ const operating = rowOperatingCarrierServer(row);
+ let score = 0;
+ if (carrier && operating && carrier === operating) score += 90;
+ if (isBrazilianOriginalCarrierServer(carrier)) score += 70;
+ if (/^(LA|G3|AD)\d{2,5}$/i.test(normalizeFlightToken(row.flightNumber || ''))) score += 30;
+ if (row.registration) score += 18;
+ if (row.gate) score += 8;
+ if (row.terminal) score += 6;
+ if (row.confirmedTime) score += 6;
+ if (row.status && !/cancel/i.test(String(row.status))) score += 3;
+ // Voos de codeshare internacionais costumam aparecer com número alto em perna doméstica.
+ if (['TP','CM','AA','UA','DL','AF','KL','IB','BA','EK','QR','LH','LX'].includes(carrier)) score -= 25;
+ return score;
+}
+
+function mergeAirportBoardCodeshareMetadata(primary = {}, duplicate = {}) {
+ const aliases = new Set([...(primary.codeshareFlights || []), ...(duplicate.codeshareFlights || [])].filter(Boolean));
+ const primaryFlight = normalizeFlightToken(primary.flightNumber || '');
+ const duplicateFlight = normalizeFlightToken(duplicate.flightNumber || '');
+ if (duplicateFlight && duplicateFlight !== primaryFlight) aliases.add(duplicateFlight);
+ return {
+  ...primary,
+  codeshareFlights: Array.from(aliases).slice(0, 8),
+  codeshareHiddenCount: Number(primary.codeshareHiddenCount || 0) + 1 + Number(duplicate.codeshareHiddenCount || 0),
+  codeshareFiltered: true,
+  gate: primary.gate || duplicate.gate || null,
+  terminal: primary.terminal || duplicate.terminal || null,
+  registration: primary.registration || duplicate.registration || null,
+  aircraftIcao: primary.aircraftIcao || duplicate.aircraftIcao || null,
+  confirmedTime: primary.confirmedTime || duplicate.confirmedTime || null,
+  scheduledTime: primary.scheduledTime || duplicate.scheduledTime || null,
+ };
+}
+
+function dedupeAirportBoardCodeshareRowsServer(rows = []) {
+ const exactMap = new Map();
+ for (const row of Array.isArray(rows) ? rows : []) {
+  const exactKey = airportBoardExactFlightKeyServer(row);
+  if (!exactKey) {
+   exactMap.set(`loose-${exactMap.size}`, row);
+   continue;
+  }
+  const current = exactMap.get(exactKey);
+  if (!current) exactMap.set(exactKey, row);
+  else exactMap.set(exactKey, airportBoardRowQualityServer(row) > airportBoardRowQualityServer(current) ? mergeAirportBoardCodeshareMetadata(row, current) : mergeAirportBoardCodeshareMetadata(current, row));
+ }
+
+ const groupMap = new Map();
+ for (const row of exactMap.values()) {
+  const key = airportBoardCodeshareKeyServer(row);
+  if (!key) {
+   groupMap.set(`unique-${groupMap.size}`, row);
+   continue;
+  }
+  const current = groupMap.get(key);
+  if (!current) {
+   groupMap.set(key, row);
+   continue;
+  }
+  const chosen = airportBoardRowQualityServer(row) > airportBoardRowQualityServer(current) ? row : current;
+  const duplicate = chosen === row ? current : row;
+  groupMap.set(key, mergeAirportBoardCodeshareMetadata(chosen, duplicate));
+ }
+ return Array.from(groupMap.values());
+}
+
+
 function sanitizeAirportBoardRowsForSharedCache(rows = []) {
- return (Array.isArray(rows) ? rows : [])
+ const cleaned = (Array.isArray(rows) ? rows : [])
   .filter((row) => row && (row.flightNumber || row.destination || row.origin))
   .filter((row) => !isFinalAirportBoardStatusServer(row.status))
   .map((row) => {
    const isCargo = isCargoAirportBoardRowServer(row);
    const trafficScope = classifyAirportBoardTrafficServer({ ...row, isCargo });
    return { ...row, isCargo, trafficScope, externalLinks: [] };
-  })
+  });
+ return dedupeAirportBoardCodeshareRowsServer(cleaned)
   .sort((a, b) => String(a.confirmedTime || a.scheduledTime || '99:99').localeCompare(String(b.confirmedTime || b.scheduledTime || '99:99')));
 }
 
@@ -5542,6 +6798,77 @@ async function readAirportBoardDbCache(params) {
  }
 }
 
+
+function mergeAirportBoardRowsServer(...groups) {
+ const rows = [];
+ for (const group of groups) {
+  if (Array.isArray(group)) rows.push(...group);
+ }
+ return sanitizeAirportBoardRowsForSharedCache(rows);
+}
+
+async function readAirportBoardBroadDbCache(params = {}, { limit = 100, minRows = 24 } = {}) {
+ if (!AIRPORT_BOARD_DB_CACHE_ENABLED || params?.refresh) return null;
+ const db = getPool();
+ if (!db) return null;
+ try {
+  await ensureSchema();
+  const airport = String(params.airport || '').toUpperCase();
+  const type = String(params.type || 'departure').toLowerCase() === 'arrival' ? 'arrival' : 'departure';
+  const date = String(params.date || todayIsoForAirportServer(airport)).slice(0, 10);
+  const airline = String(params.airline || '').toUpperCase();
+  const result = await db.query(
+   `select * from crewcheck_airport_board_cache
+     where airport = $1 and board_type = $2 and flight_date = $3
+     order by case when coalesce(airline,'') = $4 then 0 when coalesce(airline,'') = '' then 1 else 2 end, updated_at desc
+     limit 12`,
+   [airport, type, date, airline || '']
+  ).catch(async () => db.query(
+   `select * from crewcheck_airport_board_cache
+     where airport = $1 and board_type = $2 and flight_date = $3
+     order by updated_at desc
+     limit 12`,
+   [airport, type, date]
+  ));
+  const rows = [];
+  const sources = [];
+  let newest = null;
+  for (const row of result.rows || []) {
+   const updated = new Date(row.updated_at || row.created_at || 0).getTime();
+   if (!updated || Date.now() - updated > AIRPORT_BOARD_DB_CACHE_TTL_MS) continue;
+   newest = newest && newest > updated ? newest : updated;
+   const payload = normalizeAirportBoardCachePayload(row.payload_json);
+   if (!payload) continue;
+   const clean = sanitizeAirportBoardRowsForSharedCache(payload.rows || []);
+   if (clean.length) rows.push(...clean);
+   if (payload.source || row.source) sources.push(payload.source || row.source);
+   if (rows.length >= Math.max(minRows, limit)) break;
+  }
+  const merged = mergeAirportBoardRowsServer(rows).slice(0, limit);
+  if (!rowsAreUseful(merged)) return null;
+  return {
+   ok: true,
+   rows: merged,
+   source: Array.from(new Set(sources)).slice(0, 3).join(' + ') || 'Radar CrewCheck cache ampliado',
+   message: 'Voos complementados com cache compartilhado do aeroporto para reduzir chamadas em APIs pagas.',
+   cache: { hit: true, broad: true, shared: true, updatedAt: newest ? new Date(newest).toISOString() : new Date().toISOString(), ttlMs: AIRPORT_BOARD_DB_CACHE_TTL_MS },
+   updatedAt: newest ? new Date(newest).toISOString() : new Date().toISOString(),
+  };
+ } catch {
+  return null;
+ }
+}
+
+async function augmentAirportBoardRowsWithBroadCache({ rows = [], params = {}, limit = 100, minRows = 18 } = {}) {
+ const cleanRows = sanitizeAirportBoardRowsForSharedCache(rows || []);
+ if (cleanRows.length >= minRows) return { rows: cleanRows.slice(0, limit), broadCache: null };
+ const broadCache = await readAirportBoardBroadDbCache(params, { limit, minRows }).catch(() => null);
+ if (!broadCache?.rows?.length) return { rows: cleanRows.slice(0, limit), broadCache: null };
+ const merged = mergeAirportBoardRowsServer(cleanRows, broadCache.rows).slice(0, limit);
+ return { rows: merged, broadCache };
+}
+
+
 async function writeAirportBoardDbCache(params, payload) {
  if (!AIRPORT_BOARD_DB_CACHE_ENABLED || !payload || !Array.isArray(payload.rows)) return payload;
  const db = getPool();
@@ -5571,29 +6898,453 @@ async function writeAirportBoardDbCache(params, payload) {
 }
 
 
+
+const airlabsRawCache = new Map();
+
+function airlabsConfigured() {
+ return AIRLABS_ENABLED && Boolean(AIRLABS_API_KEY);
+}
+
+function airlabsCacheKey(endpoint, query = {}) {
+ return `${String(endpoint || '').replace(/^\//, '')}?${stableQueryString(query)}`;
+}
+
+function cacheRawAirlabs(key, value, ttlMs = AIRLABS_CACHE_TTL_MS) {
+ airlabsRawCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+ return value;
+}
+
+function getCachedRawAirlabs(key) {
+ const entry = airlabsRawCache.get(key);
+ if (!entry) return undefined;
+ if (entry.expiresAt < Date.now()) {
+  airlabsRawCache.delete(key);
+  return undefined;
+ }
+ return entry.value;
+}
+
+function airlabsErrorMessage(payload) {
+ const error = payload?.error || payload?.errors || payload?.message;
+ if (!error) return '';
+ if (Array.isArray(error)) return error.map((item) => item?.message || item?.title || JSON.stringify(item)).join(' | ');
+ return String(error.message || error.code || error.type || error);
+}
+
+async function fetchAirlabsJson(endpoint, query = {}, diagnostics = [], options = {}) {
+ const normalizedEndpoint = String(endpoint || '').replace(/^\//, '');
+ if (!airlabsConfigured()) {
+  diagnostics.push({ provider: 'AirLabs', endpoint: normalizedEndpoint, ok: false, reason: 'AIRLABS_API_KEY não configurada no Render.' });
+  return null;
+ }
+ const cleanQuery = Object.fromEntries(Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== ''));
+ const cacheKey = airlabsCacheKey(normalizedEndpoint, cleanQuery);
+ if (!options.force) {
+  const cached = getCachedRawAirlabs(cacheKey);
+  if (cached !== undefined) {
+   diagnostics.push({ provider: 'AirLabs', endpoint: normalizedEndpoint, ok: Boolean(cached), cached: true, count: Array.isArray(cached?.response) ? cached.response.length : undefined, reason: cached ? 'cache AirLabs' : 'sem dados em cache recente' });
+   return cached;
+  }
+ }
+ try {
+  const url = new URL(`${AIRLABS_API_BASE}/${normalizedEndpoint}`);
+  url.searchParams.set('api_key', AIRLABS_API_KEY);
+  for (const [key, value] of Object.entries(cleanQuery)) url.searchParams.set(key, String(value));
+  const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'CrewCheck/11.1.21 AirLabs' }, signal: AbortSignal.timeout(Number(process.env.AIRLABS_TIMEOUT_MS || 10_000)) });
+  const payload = await response.json().catch(() => null);
+  const reason = airlabsErrorMessage(payload);
+  if (!response.ok || reason || payload?.success === false) {
+   diagnostics.push({ provider: 'AirLabs', endpoint: normalizedEndpoint, ok: false, status: response.status, reason: reason || `HTTP ${response.status}` });
+   return cacheRawAirlabs(cacheKey, null, 60_000);
+  }
+  const count = Array.isArray(payload?.response) ? payload.response.length : (payload?.response ? 1 : 0);
+  diagnostics.push({ provider: 'AirLabs', endpoint: normalizedEndpoint, ok: true, status: response.status, count });
+  return cacheRawAirlabs(cacheKey, payload);
+ } catch (error) {
+  diagnostics.push({ provider: 'AirLabs', endpoint: normalizedEndpoint, ok: false, reason: error?.message || String(error) });
+  return cacheRawAirlabs(cacheKey, null, 45_000);
+ }
+}
+
+function normalizeAirlabsStatus(value) {
+ const raw = String(value || '').toLowerCase();
+ if (!raw) return 'Confirmado';
+ if (/cancel/.test(raw)) return 'Cancelado';
+ if (/delay/.test(raw)) return 'Atrasado';
+ if (/active|en.?route|airborne/.test(raw)) return 'Em voo';
+ if (/landed|arrived/.test(raw)) return 'Voo finalizado';
+ if (/scheduled/.test(raw)) return 'Confirmado';
+ return normalizeProviderStatus(value);
+}
+
+function normalizeAirlabsAirlineName(code, fallback = '') {
+ return normalizeAirportBoardAirlineName(code, fallback);
+}
+
+function normalizeAirlabsScheduleRow(item = {}, type = 'departure', displayTimeZone = process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo') {
+ const isDeparture = type === 'departure';
+ const airlineCode = String(item.airline_iata || item.cs_airline_iata || '').toUpperCase();
+ const flightNumber = String(item.flight_iata || (item.airline_iata && item.flight_number ? `${item.airline_iata}${item.flight_number}` : item.flight_icao || '') || '').replace(/\s+/g, '').toUpperCase();
+ const scheduledRaw = isDeparture ? item.dep_time || item.dep_time_utc : item.arr_time || item.arr_time_utc;
+ const estimatedRaw = isDeparture ? item.dep_estimated || item.dep_estimated_utc : item.arr_estimated || item.arr_estimated_utc;
+ const actualRaw = isDeparture ? item.dep_actual || item.dep_actual_utc : item.arr_actual || item.arr_actual_utc;
+ const confirmedRaw = actualRaw || estimatedRaw || scheduledRaw;
+ const origin = String(item.dep_iata || '').toUpperCase();
+ const destination = String(item.arr_iata || '').toUpperCase();
+ const status = normalizeAirlabsStatus(item.status || (Number(item.delayed || item.dep_delayed || item.arr_delayed || 0) > 0 ? 'delayed' : 'scheduled'));
+ return {
+  flightNumber,
+  airlineCode,
+  airlineName: normalizeAirlabsAirlineName(airlineCode, item.airline_name || ''),
+  destination,
+  origin,
+  gate: String(isDeparture ? item.dep_gate || '' : item.arr_gate || '').toUpperCase() || null,
+  terminal: String(isDeparture ? item.dep_terminal || '' : item.arr_terminal || '').toUpperCase() || null,
+  scheduledTime: normalizeAirportBoardTime(scheduledRaw, displayTimeZone),
+  confirmedTime: normalizeAirportBoardTime(confirmedRaw, displayTimeZone),
+  status: normalizeAirportBoardStatus(status, type),
+  type,
+  arrivalTime: normalizeAirportBoardTime(item.arr_actual || item.arr_estimated || item.arr_time, displayTimeZone),
+  departureTime: normalizeAirportBoardTime(item.dep_actual || item.dep_estimated || item.dep_time, displayTimeZone),
+  source: 'AirLabs Schedules',
+  relatedAirport: isDeparture ? destination : origin,
+  serviceType: airlabsAircraftTypeFromItem(item) || item.aircraft_icao || item.aircraft || null,
+  registration: airlabsAircraftRegistrationFromItem(item),
+  aircraftIcao: airlabsAircraftTypeFromItem(item),
+  externalLinks: flightNumber ? [{ label: 'AirLabs / status do voo', url: `https://airlabs.co/flights/${encodeURIComponent(flightNumber)}`, kind: 'airlabs' }] : [],
+ };
+}
+
+function normalizeAirlabsLiveFlightRow(item = {}, type = 'departure', displayTimeZone = process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo') {
+ const isDeparture = type === 'departure';
+ const airlineCode = String(item.airline_iata || '').toUpperCase();
+ const flightNumber = String(item.flight_iata || (item.airline_iata && item.flight_number ? `${item.airline_iata}${item.flight_number}` : item.flight_icao || '') || '').replace(/\s+/g, '').toUpperCase();
+ const updatedIso = item.updated ? new Date(Number(item.updated) * 1000).toISOString() : null;
+ return {
+  flightNumber,
+  airlineCode,
+  airlineName: normalizeAirlabsAirlineName(airlineCode, ''),
+  destination: String(item.arr_iata || '').toUpperCase(),
+  origin: String(item.dep_iata || '').toUpperCase(),
+  gate: null,
+  terminal: null,
+  scheduledTime: normalizeAirportBoardTime(updatedIso, displayTimeZone),
+  confirmedTime: normalizeAirportBoardTime(updatedIso, displayTimeZone),
+  status: normalizeAirportBoardStatus(item.status || 'en-route', type),
+  type,
+  arrivalTime: null,
+  departureTime: null,
+  source: 'AirLabs Live ADS-B',
+  relatedAirport: isDeparture ? String(item.arr_iata || '').toUpperCase() : String(item.dep_iata || '').toUpperCase(),
+  serviceType: airlabsAircraftTypeFromItem(item) || item.aircraft_icao || null,
+  registration: airlabsAircraftRegistrationFromItem(item),
+  aircraftIcao: airlabsAircraftTypeFromItem(item),
+  externalLinks: flightNumber ? [{ label: 'AirLabs / radar ao vivo', url: `https://airlabs.co/flights/${encodeURIComponent(flightNumber)}`, kind: 'airlabs-live' }] : [],
+ };
+}
+
+async function fetchAirlabsAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone, refresh = false }) {
+ const query = { limit: Math.min(Math.max(Number(limit || 60), 10), 100) };
+ if (type === 'arrival') query.arr_iata = airport;
+ else query.dep_iata = airport;
+ if (airline) query.airline_iata = airline;
+ const schedulePayload = await fetchAirlabsJson('schedules', query, diagnostics, { force: refresh });
+ let rows = (Array.isArray(schedulePayload?.response) ? schedulePayload.response : [])
+  .map((item) => normalizeAirlabsScheduleRow(item, type, displayTimeZone))
+  .filter((row) => row.flightNumber && (!airline || String(row.airlineCode || '').toUpperCase() === airline));
+ if (rowsAreUseful(rows)) return { rows, source: 'AirLabs Schedules' };
+
+ const liveQuery = { limit: Math.min(Math.max(Number(limit || 60), 10), 100) };
+ if (type === 'arrival') liveQuery.arr_iata = airport;
+ else liveQuery.dep_iata = airport;
+ if (airline) liveQuery.airline_iata = airline;
+ const livePayload = await fetchAirlabsJson('flights', liveQuery, diagnostics, { force: refresh });
+ rows = (Array.isArray(livePayload?.response) ? livePayload.response : [])
+  .map((item) => normalizeAirlabsLiveFlightRow(item, type, displayTimeZone))
+  .filter((row) => row.flightNumber && (!airline || String(row.airlineCode || '').toUpperCase() === airline));
+ return { rows, source: rowsAreUseful(rows) ? 'AirLabs Live ADS-B' : 'AirLabs sem voos retornados' };
+}
+
+
+function firstNonEmptyValue(...values) {
+ for (const value of values) {
+  if (value !== undefined && value !== null && String(value).trim()) return value;
+ }
+ return null;
+}
+
+function normalizeAircraftRegistration(value) {
+ const raw = String(value || '').trim().toUpperCase();
+ if (!raw) return null;
+ return raw.replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '') || null;
+}
+
+function airlabsAircraftRegistrationFromItem(item = {}) {
+ return normalizeAircraftRegistration(firstNonEmptyValue(
+  item.reg_number,
+  item.registration,
+  item.aircraft_registration,
+  item.aircraft_reg,
+  item.aircraft?.reg_number,
+  item.aircraft?.registration,
+  item.aircraft?.reg,
+  item.plane?.reg_number,
+  item.plane?.registration
+ ));
+}
+
+function airlabsAircraftTypeFromItem(item = {}) {
+ return String(firstNonEmptyValue(item.aircraft_icao, item.aircraft?.icao, item.aircraft?.iata, item.plane?.icao, item.plane?.iata, item.aircraft) || '').toUpperCase() || null;
+}
+
+function minutesUntilTimeLabel(timeValue, referenceDate = new Date()) {
+ const time = normalizeTime(timeValue);
+ if (!time) return null;
+ const [hours, minutes] = time.split(':').map(Number);
+ if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+ const target = new Date(referenceDate);
+ target.setHours(hours, minutes, 0, 0);
+ if (target.getTime() < referenceDate.getTime() - 20 * 60 * 1000) target.setDate(target.getDate() + 1);
+ const diff = Math.round((target.getTime() - referenceDate.getTime()) / 60000);
+ if (diff < -5) return null;
+ if (diff <= 0) return 'pousando agora';
+ const h = Math.floor(diff / 60);
+ const m = diff % 60;
+ return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`;
+}
+
+function airlabsLandingEstimateLabel(normalized = {}) {
+ return minutesUntilTimeLabel(normalized.estimatedArrival || normalized.confirmedArrival || normalized.scheduledArrival || normalized.confirmedTime || normalized.scheduledTime);
+}
+
+async function enrichAirlabsStatusWithLiveAircraft(normalized, params = {}, diagnostics = []) {
+ if (!normalized?.flightNumber || normalized.registration) return normalized;
+ if (String(process.env.AIRLABS_ENRICH_AIRCRAFT_REGISTRATION || 'true').toLowerCase() === 'false') return normalized;
+ const designator = primaryFlightDesignator({ ...params, flightNumber: normalized.flightNumber });
+ if (!designator) return normalized;
+ const liveQueries = [
+  { flight_iata: designator.token },
+  { airline_iata: designator.carrierCode, flight_number: designator.flightNumber },
+ ];
+ for (const query of liveQueries) {
+  const payload = await fetchAirlabsJson('flights', query, diagnostics, { force: String(process.env.AIRLABS_FORCE_REGISTRATION_LOOKUP || 'true').toLowerCase() !== 'false' }).catch(() => null);
+  const rows = Array.isArray(payload?.response) ? payload.response : [];
+  const best = rows.find((item) => normalizeFlightToken(item?.flight_iata || '') === designator.token)
+   || rows.find((item) => String(item?.flight_number || '') === designator.flightNumber)
+   || rows[0]
+   || null;
+  if (!best) continue;
+  const registration = airlabsAircraftRegistrationFromItem(best);
+  const aircraftIcao = airlabsAircraftTypeFromItem(best);
+  const live = normalizeAirlabsLiveTrackItem(best, { ...params, flightNumber: normalized.flightNumber });
+  return {
+   ...normalized,
+   registration: registration || normalized.registration || null,
+   aircraftIcao: aircraftIcao || normalized.aircraftIcao || null,
+   altitudeFt: live.altitudeFt ?? normalized.altitudeFt ?? null,
+   speedKt: live.speedKt ?? normalized.speedKt ?? null,
+   headingDeg: live.headingDeg ?? normalized.headingDeg ?? null,
+   liveStatus: live.ok ? live.status : normalized.liveStatus,
+   liveUpdatedAt: live.updatedAt || normalized.liveUpdatedAt || null,
+   rawAgeSeconds: live.rawAgeSeconds ?? normalized.rawAgeSeconds ?? null,
+   source: registration ? `${normalized.source || 'AirLabs'} + ADS-B matrícula` : normalized.source,
+  };
+ }
+ return normalized;
+}
+
+function normalizeAirlabsFlightStatus(item = {}, params = {}) {
+ const flightNumber = String(item.flight_iata || params.flightNumber || '').replace(/\s+/g, '').toUpperCase();
+ const departure = {
+  iata: String(item.dep_iata || '').toUpperCase(),
+  gate: item.dep_gate || null,
+  terminal: item.dep_terminal || null,
+  scheduled: item.dep_time || item.dep_time_utc,
+  estimated: item.dep_estimated || item.dep_estimated_utc,
+  actual: item.dep_actual || item.dep_actual_utc,
+ };
+ const arrival = {
+  iata: String(item.arr_iata || '').toUpperCase(),
+  gate: item.arr_gate || null,
+  terminal: item.arr_terminal || null,
+  scheduled: item.arr_time || item.arr_time_utc,
+  estimated: item.arr_estimated || item.arr_estimated_utc,
+  actual: item.arr_actual || item.arr_actual_utc,
+ };
+ const part = params.destination && airportMatches(arrival.iata, params.destination) ? arrival : departure;
+ const scheduled = part.scheduled || departure.scheduled || arrival.scheduled || null;
+ const confirmed = part.actual || part.estimated || departure.actual || departure.estimated || arrival.actual || arrival.estimated || null;
+ const normalized = {
+  ok: true,
+  flightNumber,
+  origin: departure.iata || params.origin,
+  destination: arrival.iata || params.destination,
+  date: params.date,
+  matchedFlight: flightNumber,
+  status: normalizeAirlabsStatus(item.status),
+  gate: part.gate ? String(part.gate).toUpperCase() : null,
+  terminal: part.terminal ? String(part.terminal).toUpperCase() : null,
+  scheduledTime: normalizeTime(scheduled, params.displayTimeZone),
+  confirmedTime: normalizeTime(confirmed, params.displayTimeZone),
+  scheduledDeparture: normalizeTime(departure.scheduled, params.displayTimeZone),
+  estimatedDeparture: normalizeTime(departure.estimated || departure.actual, params.displayTimeZone),
+  scheduledArrival: normalizeTime(arrival.scheduled, params.displayTimeZone),
+  estimatedArrival: normalizeTime(arrival.estimated || arrival.actual, params.displayTimeZone),
+  registration: airlabsAircraftRegistrationFromItem(item),
+  aircraftIcao: airlabsAircraftTypeFromItem(item),
+  source: 'AirLabs Flight',
+  updatedAt: new Date().toISOString(),
+ };
+ return {
+  ...normalized,
+  landingCountdown: airlabsLandingEstimateLabel(normalized),
+ };
+}
+
+async function fetchAirlabsFlightStatus(params = {}) {
+ const designator = primaryFlightDesignator(params);
+ if (!designator) return null;
+ const diagnostics = [];
+ const attempts = [
+  { flight_iata: designator.token },
+  { airline_iata: designator.carrierCode, flight_number: designator.flightNumber },
+ ];
+ for (const query of attempts) {
+  const payload = await fetchAirlabsJson('flight', query, diagnostics);
+  const response = payload?.response;
+  const item = Array.isArray(response) ? response[0] : response;
+  if (item) {
+   const normalized = normalizeAirlabsFlightStatus(item, { ...params, flightNumber: designator.token });
+   const enriched = await enrichAirlabsStatusWithLiveAircraft(normalized, { ...params, flightNumber: designator.token }, diagnostics);
+   enriched.diagnostics = diagnostics;
+   return enriched;
+  }
+ }
+ return null;
+}
+
+
+function normalizeAirlabsLiveTrackItem(item = {}, params = {}) {
+ const flightNumber = String(item.flight_iata || params.flightNumber || '').replace(/\s+/g, '').toUpperCase();
+ const updatedAt = item.updated ? new Date(Number(item.updated) * 1000).toISOString() : new Date().toISOString();
+ const lat = Number(item.lat);
+ const lng = Number(item.lng);
+ const alt = Number(item.alt);
+ const speed = Number(item.speed);
+ const heading = Number(item.dir);
+ const vSpeed = Number(item.v_speed);
+ return {
+  ok: Number.isFinite(lat) && Number.isFinite(lng),
+  flightNumber,
+  origin: String(item.dep_iata || params.origin || '').toUpperCase(),
+  destination: String(item.arr_iata || params.destination || '').toUpperCase(),
+  lat: Number.isFinite(lat) ? lat : null,
+  lng: Number.isFinite(lng) ? lng : null,
+  altitudeFt: Number.isFinite(alt) ? alt : null,
+  speedKt: Number.isFinite(speed) ? speed : null,
+  headingDeg: Number.isFinite(heading) ? heading : null,
+  verticalSpeedFpm: Number.isFinite(vSpeed) ? vSpeed : null,
+  status: normalizeAirlabsStatus(item.status || 'active'),
+  aircraftIcao: airlabsAircraftTypeFromItem(item),
+  registration: airlabsAircraftRegistrationFromItem(item),
+  hex: item.hex || null,
+  squawk: item.squawk || null,
+  source: 'AirLabs Live ADS-B',
+  updatedAt,
+  rawAgeSeconds: Math.max(0, Math.round((Date.now() - new Date(updatedAt).getTime()) / 1000)),
+ };
+}
+
+async function getAirlabsLiveTrackSnapshot(params = {}) {
+ const designator = primaryFlightDesignator(params);
+ const diagnostics = [];
+ if (!designator) {
+  return { ok: false, message: 'Informe o voo no formato LA1234 para rastreamento ao vivo.', source: 'AirLabs Live ADS-B', diagnostics, providerStatus: radarProviderStatus(), updatedAt: new Date().toISOString() };
+ }
+ const attempts = [
+  { flight_iata: designator.token },
+  { airline_iata: designator.carrierCode, flight_number: designator.flightNumber },
+ ];
+ for (const query of attempts) {
+  const payload = await fetchAirlabsJson('flights', query, diagnostics);
+  const rows = Array.isArray(payload?.response) ? payload.response : [];
+  const best = rows.find((item) => normalizeFlightToken(item?.flight_iata || '') === designator.token)
+   || rows.find((item) => String(item?.flight_number || '') === designator.flightNumber)
+   || rows[0]
+   || null;
+  if (best) {
+   const live = normalizeAirlabsLiveTrackItem(best, { ...params, flightNumber: designator.token });
+   const status = await fetchAirlabsFlightStatus({ ...params, flightNumber: designator.token }).catch(() => null);
+   return {
+    ...live,
+    gate: status?.gate || null,
+    terminal: status?.terminal || null,
+    scheduledTime: status?.scheduledTime || null,
+    confirmedTime: status?.confirmedTime || null,
+    estimatedDeparture: status?.estimatedDeparture || null,
+    estimatedArrival: status?.estimatedArrival || null,
+    landingCountdown: status?.landingCountdown || null,
+    registration: live.registration || status?.registration || null,
+    aircraftIcao: live.aircraftIcao || status?.aircraftIcao || null,
+    message: live.ok ? 'Rastreamento ao vivo disponível via AirLabs ADS-B.' : 'AirLabs retornou o voo, mas sem coordenadas neste momento.',
+    diagnostics,
+    providerStatus: radarProviderStatus(),
+   };
+  }
+ }
+ return { ok: false, flightNumber: designator.token, origin: params.origin || '', destination: params.destination || '', message: 'Voo não localizado no radar ao vivo AirLabs. Pode estar em solo, fora da cobertura ADS-B ou indisponível no plano atual.', source: 'AirLabs Live ADS-B', diagnostics, providerStatus: radarProviderStatus(), updatedAt: new Date().toISOString() };
+}
+
+
+
 async function fetchAirportBoardFromConfiguredApis({ airport, type, airline, limit, diagnostics, date, refresh = false, displayTimeZone = process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo' }) {
- const providerOrder = [...new Set((AIRPORT_BOARD_API_PROVIDER_ORDER.length ? AIRPORT_BOARD_API_PROVIDER_ORDER : ['FLIGHTAWARE', 'FLIGHTSTATS', 'AERODATABOX', 'AVIATIONSTACK']).map((item) => String(item || '').toUpperCase()))];
+ const providerOrder = [...new Set((AIRPORT_BOARD_API_PROVIDER_ORDER.length ? AIRPORT_BOARD_API_PROVIDER_ORDER : ['FLIGHTAWARE', 'FLIGHTSTATS', 'AERODATABOX', 'AIRLABS', 'AVIATIONSTACK']).map((item) => String(item || '').toUpperCase()))];
  let lastResult = { rows: [], source: 'API de voos sem dados' };
+ const combinedRows = [];
+ const usefulSources = [];
+ const sourceDetails = [];
  for (const provider of providerOrder) {
   if (provider === 'OFFICIAL' || provider === 'MONITOR') continue;
   let result = null;
-  if (provider === 'FLIGHTAWARE' || provider === 'AEROAPI') {
-   result = await fetchFlightAwareAirportBoard({ airport, type, airline, limit, diagnostics, date, refresh, displayTimeZone });
-  } else if (provider === 'FLIGHTSTATS' || provider === 'CIRIUM') {
-   result = await fetchFlightStatsAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone });
-  } else if (provider === 'AERODATABOX') {
-   result = await fetchAeroDataBoxAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone });
-  } else if (provider === 'AVIATIONSTACK') {
-   result = await fetchAviationstackAirportBoard({ airport, type, airline, limit, diagnostics, date, refresh, displayTimeZone });
+  try {
+   if (provider === 'FLIGHTAWARE' || provider === 'AEROAPI') {
+    result = await fetchFlightAwareAirportBoard({ airport, type, airline, limit, diagnostics, date, refresh, displayTimeZone });
+   } else if (provider === 'FLIGHTSTATS' || provider === 'CIRIUM') {
+    result = await fetchFlightStatsAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone });
+   } else if (provider === 'AERODATABOX') {
+    result = await fetchAeroDataBoxAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone });
+   } else if (provider === 'AIRLABS') {
+    result = await fetchAirlabsAirportBoard({ airport, type, airline, limit, diagnostics, date, refresh, displayTimeZone });
+   } else if (provider === 'AVIATIONSTACK') {
+    result = await fetchAviationstackAirportBoard({ airport, type, airline, limit, diagnostics, date, refresh, displayTimeZone });
+   }
+  } catch (error) {
+   diagnostics?.push?.({ provider, ok: false, reason: sanitizePublicError(error?.message || String(error)) });
   }
-  if (result) lastResult = result;
-  if (rowsAreUseful(result?.rows)) {
-   return { ...result, providerOrder, apiProvider: provider };
+  if (!result) continue;
+  lastResult = result;
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  sourceDetails.push({ provider, source: result.source || provider, count: rows.length });
+  if (rowsAreUseful(rows)) {
+   usefulSources.push(result.source || provider);
+   combinedRows.push(...rows.map((row) => ({ ...row, rawProvider: row.rawProvider || result.source || provider })));
+   if (!CREWCHECK_RADAR_AGGREGATE_PROVIDERS) break;
   }
  }
- return { ...lastResult, rows: [], providerOrder };
+ if (rowsAreUseful(combinedRows)) {
+  const rows = sanitizeAirportBoardRowsForSharedCache(combinedRows).slice(0, Math.min(Math.max(Number(limit || 60), 10), 180));
+  return {
+   rows,
+   source: usefulSources.length > 1 ? `Radar Multi-API (${[...new Set(usefulSources)].join(' + ')})` : (usefulSources[0] || 'Radar Multi-API'),
+   providerOrder,
+   apiProvider: usefulSources.length > 1 ? 'MULTI_API' : sourceDetails.find((item) => item.count > 0)?.provider,
+   sourceDetails,
+   aggregate: true,
+   deduplicated: true,
+  };
+ }
+ return { ...lastResult, rows: [], providerOrder, sourceDetails, aggregate: CREWCHECK_RADAR_AGGREGATE_PROVIDERS };
 }
-
 
 async function getAirportBoardSnapshot(query) {
  const airport = String(query.get('airport') || query.get('iataCode') || 'BSB').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'BSB';
@@ -5608,11 +7359,12 @@ async function getAirportBoardSnapshot(query) {
  const displayTimeZone = safeRadarTimeZone(query.get('displayTimeZone') || query.get('systemTimeZone') || process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo');
  const today = todayIsoForAirportServer(airport);
  const requestedRaw = String(query.get('date') || '').slice(0, 10);
- const requestedDate = AIRPORT_BOARD_CACHE_CURRENT_DAY_ONLY ? today : (requestedRaw || today);
+ const requestedDate = requestedRaw || today; // v11.1.31: permite pesquisar outros dias; cache do dia atual não restringe a data
  const updatedAt = new Date().toISOString();
  const cacheParams = { airport, type, airline, date: requestedDate, refresh, displayTimeZone };
  const dbCached = await readAirportBoardDbCache(cacheParams);
  if (dbCached) return { ...dbCached, apiFirst, diagnostics: diagnosticsWanted ? dbCached.diagnostics : undefined };
+ const broadDbCached = refresh ? null : await readAirportBoardBroadDbCache(cacheParams, { limit, minRows: Number(process.env.AIRPORT_BOARD_MIN_ROWS_BEFORE_FALLBACK || 18) }).catch(() => null);
  const cacheKey = `airport-board-api-first-v11017:${airport}:${type}:${airline}:${limit}:${diagnosticsWanted}:${officialOnly}:${apiFirst}:${requestedDate}:${displayTimeZone}`;
  const cached = refresh ? null : cacheGet(flightProviderCache, cacheKey, AIRPORT_BOARD_PREMIUM_CACHE_MS);
  if (cached) return cached;
@@ -5621,7 +7373,7 @@ async function getAirportBoardSnapshot(query) {
  let official = null;
 
  if (officialOnly) {
-  official = await getOfficialAirportBoardSnapshot({ airport, type, airline, limit, date: requestedDate });
+  official = airport === 'SSA' ? await getSalvadorHstAirportBoardSnapshot({ type, airline, limit, date: requestedDate }) : await getOfficialAirportBoardSnapshot({ airport, type, airline, limit, date: requestedDate });
   const rows = sanitizeAirportBoardRowsForSharedCache(official?.rows || []).slice(0, limit);
   const value = {
    ok: true,
@@ -5634,7 +7386,7 @@ async function getAirportBoardSnapshot(query) {
    rows,
    updatedAt,
    source: official?.source || officialAirportSource(airport)?.label || 'Monitor oficial/provedor aeroportuário',
-   sourceUrl: official?.sourceUrl || officialAirportSource(airport)?.url || null,
+   sourceUrl: official?.sourceUrl || officialAirportPublicUrl(officialAirportSource(airport), type) || null,
    message: rows.length
     ? 'Dados carregados do monitor oficial/provedor aeroportuário. Sem fallback de escala.'
     : 'Sem retorno estruturado do monitor oficial/provedor para estes filtros. Sem fallback de escala.',
@@ -5649,7 +7401,7 @@ async function getAirportBoardSnapshot(query) {
  }
 
  if (!apiFirst) {
-  official = await getOfficialAirportBoardSnapshot({ airport, type, airline, limit, date: requestedDate });
+  official = airport === 'SSA' ? await getSalvadorHstAirportBoardSnapshot({ type, airline, limit, date: requestedDate }) : await getOfficialAirportBoardSnapshot({ airport, type, airline, limit, date: requestedDate });
   if (official?.rows?.length) {
    const value = {
     ...official,
@@ -5669,7 +7421,8 @@ async function getAirportBoardSnapshot(query) {
 
  const apiResult = await fetchAirportBoardFromConfiguredApis({ airport, type, airline, limit, diagnostics, date: requestedDate, refresh, displayTimeZone });
  if (rowsAreUseful(apiResult.rows)) {
-  const rows = sanitizeAirportBoardRowsForSharedCache(apiResult.rows).slice(0, limit);
+  const augmented = await augmentAirportBoardRowsWithBroadCache({ rows: apiResult.rows, params: cacheParams, limit, minRows: Number(process.env.AIRPORT_BOARD_MIN_ROWS_BEFORE_FALLBACK || 18) });
+  const rows = augmented.rows;
   const value = {
    ok: true,
    airport,
@@ -5682,21 +7435,24 @@ async function getAirportBoardSnapshot(query) {
    updatedAt,
    source: apiResult.source || 'API de voos',
    sourceUrl: null,
-   message: `${premiumRadarMessage({ apiResult: { rows }, diagnostics, airport, type })} Prioridade: API real primeiro; cache compartilhado do dia para reduzir custo.`,
+   message: `${premiumRadarMessage({ apiResult: { rows }, diagnostics, airport, type })} Prioridade: API real primeiro; ${augmented.broadCache ? 'complementado por cache ampliado para mostrar mais voos sem gastar novas chamadas.' : 'cache compartilhado para reduzir custo.'}`,
    diagnostics: diagnosticsWanted ? dedupeDiagnostics(diagnostics) : undefined,
    providerReady: true,
    externalSources: [],
    providerStatus: { ...radarProviderStatus(), apiFirst: true },
    apiFirst: true,
-   cachePolicy: 'api-first-shared-day-cache',
+   cachePolicy: augmented.broadCache ? 'api-first-broad-cache-augmented' : 'api-first-shared-day-cache',
+   broadCache: augmented.broadCache?.cache || null,
   };
   const stored = await writeAirportBoardDbCache(cacheParams, value);
   return cacheSet(flightProviderCache, cacheKey, stored);
  }
 
- if (!official) official = await getOfficialAirportBoardSnapshot({ airport, type, airline, limit, date: requestedDate });
+ if (!official) official = airport === 'SSA' ? await getSalvadorHstAirportBoardSnapshot({ type, airline, limit, date: requestedDate }) : await getOfficialAirportBoardSnapshot({ airport, type, airline, limit, date: requestedDate });
  const sourceRows = official?.rows || [];
- const rows = sanitizeAirportBoardRowsForSharedCache(sourceRows).slice(0, limit);
+ const augmentedFinal = await augmentAirportBoardRowsWithBroadCache({ rows: sourceRows, params: cacheParams, limit, minRows: Number(process.env.AIRPORT_BOARD_MIN_ROWS_BEFORE_FALLBACK || 18) });
+ const rows = augmentedFinal.rows;
+ if (!rows.length && broadDbCached?.rows?.length) rows.push(...sanitizeAirportBoardRowsForSharedCache(broadDbCached.rows).slice(0, limit));
  const value = {
   ok: true,
   airport,
@@ -5708,9 +7464,9 @@ async function getAirportBoardSnapshot(query) {
   rows,
   updatedAt,
   source: rowsAreUseful(rows) ? (official?.source || 'Monitor oficial/provedor aeroportuário') : (apiResult.source || 'Radar de Voos'),
-  sourceUrl: official?.sourceUrl || officialAirportSource(airport)?.url || null,
+  sourceUrl: official?.sourceUrl || officialAirportPublicUrl(officialAirportSource(airport), type) || null,
   message: rowsAreUseful(rows)
-   ? `${premiumRadarMessage({ official, apiResult, diagnostics, airport, type })} APIs consultadas primeiro; monitor oficial usado apenas como fallback.`
+   ? `${premiumRadarMessage({ official, apiResult, diagnostics, airport, type })} APIs consultadas primeiro; monitor oficial/cache ampliado usados como fallback econômico.`
    : `${premiumRadarMessage({ official, apiResult, diagnostics, airport, type })} Nenhum cache vazio foi salvo; use Atualizar agora quando a API estiver liberada.`,
   diagnostics: diagnosticsWanted ? dedupeDiagnostics(diagnostics) : undefined,
   providerReady: Object.values(radarProviderStatus()).some(Boolean),
@@ -5877,10 +7633,13 @@ function radarSanitizedStatus(status, params = {}) {
   estimatedDeparture: status?.estimatedDeparture || status?.confirmedTime || null,
   scheduledArrival: status?.scheduledArrival || null,
   estimatedArrival: status?.estimatedArrival || null,
-  sourceLabel: 'Radar CrewCheck',
+  sourceLabel: status?.source || 'Radar CrewCheck',
+  sources: Array.isArray(status?.sources) ? status.sources : (status?.source ? [String(status.source)] : []),
+  providerCount: Number(status?.providerCount || (Array.isArray(status?.sources) ? status.sources.length : 0)) || null,
+  aggregate: Boolean(status?.aggregate),
   confidence: normalizedStatusConfidence(status),
   updatedAt: status?.updatedAt || new Date().toISOString(),
-  message: status?.source ? 'Atualizado pelo Radar CrewCheck.' : 'Status consultado pelo backend do CrewCheck.',
+  message: status?.source ? 'Atualizado pelo Radar CrewCheck Multi-API.' : 'Status consultado pelo backend do CrewCheck.',
  };
 }
 
@@ -6350,6 +8109,7 @@ async function sabreHealthSnapshot({ testToken = false } = {}) {
 function radarProviderStatus() {
  return {
   official: true,
+  airlabs: airlabsConfigured(),
   aviationstack: Boolean(aviationstackAccessKey()),
   flightstats: flightStatsCredentials().ready,
   aerodatabox: aeroDataBoxCredentials().ready,
@@ -6364,7 +8124,1245 @@ function radarProviderStatus() {
 
 function isMoreUsefulFlightStatus(snapshot) {
  if (!snapshot) return false;
- return Boolean(snapshot.gate || snapshot.terminal || snapshot.confirmedTime || snapshot.scheduledTime || /Aviationstack|Amadeus|BSB Aero oficial|GRU Airport oficial/i.test(String(snapshot.source || '')));
+ return Boolean(snapshot.gate || snapshot.terminal || snapshot.baggageBelt || snapshot.confirmedTime || snapshot.scheduledTime || /AirLabs|Aviationstack|Amadeus|BSB Aero oficial|GRU Airport oficial|HST Voos Salvador/i.test(String(snapshot.source || '')));
+}
+
+
+const aviationCatalogCache = {
+ airlines: { data: null, expiresAt: 0, source: '', error: '' },
+ airports: { data: null, expiresAt: 0, source: '', error: '' },
+};
+
+const CREWCHECK_AIRLINE_SEED = [
+ { iata: 'LA', icao: 'LAN', name: 'LATAM Airlines', logo: '/assets/airlines/latam.png', aliases: ['JJ','TAM','LATAM'] },
+ { iata: 'G3', icao: 'GLO', name: 'GOL Linhas Aéreas', logo: '/assets/airlines/gol.png', aliases: ['GLO','GOL'] },
+ { iata: 'AD', icao: 'AZU', name: 'Azul Linhas Aéreas', logo: '/assets/airlines/azul.png', aliases: ['AZU','AZUL'] },
+ { iata: 'TP', icao: 'TAP', name: 'TAP Air Portugal', logo: '/assets/airlines/tap.png', aliases: ['TAP'] },
+ { iata: '2Z', icao: 'PTB', name: 'Passaredo / VOEPASS', logo: '/assets/airlines/crewcheck-airline.svg', aliases: ['PTB','VOEPASS'] },
+ { iata: 'M3', icao: 'TUS', name: 'LATAM Cargo Brasil / ABSA', logo: '/assets/airlines/latam.png', aliases: ['ABSA','LATAM CARGO'] },
+ { iata: 'TTL', icao: 'TTL', name: 'Total Linhas Aéreas', logo: '/assets/airlines/total.png', aliases: ['TOTAL'] },
+ { iata: '0S', icao: 'SID', name: 'Sideral Linhas Aéreas', logo: '/assets/airlines/sideral.png', aliases: ['SID','SIDERAL'] },
+ { iata: 'AA', icao: 'AAL', name: 'American Airlines', logo: '', aliases: ['AAL'] },
+ { iata: 'CM', icao: 'CMP', name: 'Copa Airlines', logo: '', aliases: ['CMP'] },
+ { iata: 'AF', icao: 'AFR', name: 'Air France', logo: '', aliases: ['AFR'] },
+ { iata: 'KL', icao: 'KLM', name: 'KLM Royal Dutch Airlines', logo: '', aliases: ['KLM'] },
+ { iata: 'IB', icao: 'IBE', name: 'Iberia', logo: '', aliases: ['IBE'] },
+ { iata: 'BA', icao: 'BAW', name: 'British Airways', logo: '', aliases: ['BAW'] },
+ { iata: 'UA', icao: 'UAL', name: 'United Airlines', logo: '', aliases: ['UAL'] },
+ { iata: 'DL', icao: 'DAL', name: 'Delta Air Lines', logo: '', aliases: ['DAL'] },
+];
+
+const CREWCHECK_AIRPORT_SEED = [
+ { iata: 'BSB', icao: 'SBBR', airport: 'Aeroporto Internacional de Brasília Presidente Juscelino Kubitschek', country_code: 'BR', region_name: 'Distrito Federal', latitude: -15.8711, longitude: -47.9186 },
+ { iata: 'GRU', icao: 'SBGR', airport: 'Aeroporto Internacional de São Paulo/Guarulhos', country_code: 'BR', region_name: 'São Paulo', latitude: -23.4356, longitude: -46.4731 },
+ { iata: 'CGH', icao: 'SBSP', airport: 'Aeroporto de São Paulo/Congonhas', country_code: 'BR', region_name: 'São Paulo', latitude: -23.6267, longitude: -46.6554 },
+ { iata: 'SDU', icao: 'SBRJ', airport: 'Aeroporto Santos Dumont', country_code: 'BR', region_name: 'Rio de Janeiro', latitude: -22.9105, longitude: -43.1631 },
+ { iata: 'GIG', icao: 'SBGL', airport: 'Aeroporto Internacional do Rio de Janeiro/Galeão', country_code: 'BR', region_name: 'Rio de Janeiro', latitude: -22.809999, longitude: -43.250557 },
+ { iata: 'CNF', icao: 'SBCF', airport: 'Aeroporto Internacional de Belo Horizonte/Confins', country_code: 'BR', region_name: 'Minas Gerais', latitude: -19.6244, longitude: -43.9719 },
+ { iata: 'VCP', icao: 'SBKP', airport: 'Aeroporto Internacional de Viracopos', country_code: 'BR', region_name: 'São Paulo', latitude: -23.0074, longitude: -47.1345 },
+ { iata: 'CWB', icao: 'SBCT', airport: 'Aeroporto Internacional Afonso Pena', country_code: 'BR', region_name: 'Paraná', latitude: -25.5317, longitude: -49.1761 },
+ { iata: 'POA', icao: 'SBPA', airport: 'Aeroporto Internacional Salgado Filho', country_code: 'BR', region_name: 'Rio Grande do Sul', latitude: -29.9944, longitude: -51.1714 },
+ { iata: 'SSA', icao: 'SBSV', airport: 'Aeroporto Internacional de Salvador', country_code: 'BR', region_name: 'Bahia', latitude: -12.9086, longitude: -38.3225 },
+ { iata: 'REC', icao: 'SBRF', airport: 'Aeroporto Internacional do Recife/Guararapes', country_code: 'BR', region_name: 'Pernambuco', latitude: -8.1265, longitude: -34.9236 },
+ { iata: 'FOR', icao: 'SBFZ', airport: 'Aeroporto Internacional de Fortaleza', country_code: 'BR', region_name: 'Ceará', latitude: -3.7763, longitude: -38.5326 },
+ { iata: 'NAT', icao: 'SBSG', airport: 'Aeroporto Internacional de Natal', country_code: 'BR', region_name: 'Rio Grande do Norte', latitude: -5.7681, longitude: -35.3761 },
+ { iata: 'MAO', icao: 'SBEG', airport: 'Aeroporto Internacional de Manaus', country_code: 'BR', region_name: 'Amazonas', latitude: -3.0386, longitude: -60.0497 },
+ { iata: 'BEL', icao: 'SBBE', airport: 'Aeroporto Internacional de Belém', country_code: 'BR', region_name: 'Pará', latitude: -1.37925, longitude: -48.4763 },
+ { iata: 'CGB', icao: 'SBCY', airport: 'Aeroporto Internacional de Cuiabá', country_code: 'BR', region_name: 'Mato Grosso', latitude: -15.6529, longitude: -56.1167 },
+ { iata: 'CXJ', icao: 'SBCX', airport: 'Aeroporto Regional Hugo Cantergiani', country_code: 'BR', region_name: 'Rio Grande do Sul', latitude: -29.1971, longitude: -51.1875 },
+ { iata: 'RAO', icao: 'SBRP', airport: 'Aeroporto de Ribeirão Preto', country_code: 'BR', region_name: 'São Paulo', latitude: -21.1364, longitude: -47.7767 },
+];
+
+function normalizeCatalogCode(value, max = 4) {
+ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, max);
+}
+
+function normalizeCatalogLogoUrl(value) {
+ const raw = String(value || '').trim();
+ if (!raw) return '';
+ if (/^(https?:|data:image|\/assets\/)/i.test(raw)) return raw;
+ if (raw.startsWith('//')) return `https:${raw}`;
+ return raw;
+}
+
+function normalizeCatalogAirline(item = {}) {
+ const iata = normalizeCatalogCode(item.iata || item.IATA || item.code || item.iata_code, 3);
+ const icao = normalizeCatalogCode(item.icao || item.ICAO || item.icao_code, 4);
+ const name = String(item.name || item.airline || item.airline_name || item.label || '').trim();
+ const logo = normalizeCatalogLogoUrl(item.logo || item.logo_url || item.logoUrl || item.image || '');
+ const aliases = Array.from(new Set([...(Array.isArray(item.aliases) ? item.aliases : []), item.lcc ? '' : '', iata, icao].map((value) => normalizeCatalogCode(value, 8)).filter(Boolean)));
+ if (!iata && !icao && !name) return null;
+ return { iata, icao, name: name || iata || icao, logo, aliases, source: item.source || 'dotmarn/Airlines + CrewCheck' };
+}
+
+function mergeCatalogAirlines(items = []) {
+ const map = new Map();
+ for (const raw of [...CREWCHECK_AIRLINE_SEED, ...items]) {
+  const item = normalizeCatalogAirline(raw);
+  if (!item) continue;
+  const keys = [item.iata, item.icao, ...(item.aliases || [])].filter(Boolean);
+  const primary = item.iata || item.icao || item.name.toUpperCase();
+  const existing = keys.map((key) => map.get(key)).find(Boolean) || map.get(primary);
+  const merged = existing
+   ? { ...existing, ...Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')), aliases: Array.from(new Set([...(existing.aliases || []), ...(item.aliases || [])])) }
+   : item;
+  for (const key of [primary, ...keys]) map.set(key, merged);
+ }
+ return Array.from(new Map(Array.from(map.values()).map((item) => [item.iata || item.icao || item.name, item])).values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+function parseSimpleCsvLine(line = '') {
+ const out = [];
+ let current = '';
+ let quoted = false;
+ for (let i = 0; i < line.length; i += 1) {
+  const char = line[i];
+  if (char === '"' && line[i + 1] === '"') {
+   current += '"';
+   i += 1;
+  } else if (char === '"') {
+   quoted = !quoted;
+  } else if (char === ',' && !quoted) {
+   out.push(current);
+   current = '';
+  } else {
+   current += char;
+  }
+ }
+ out.push(current);
+ return out.map((value) => value.trim());
+}
+
+function normalizeCatalogAirport(item = {}) {
+ const iata = normalizeCatalogCode(item.iata || item.IATA || item.iata_code, 3);
+ const icao = normalizeCatalogCode(item.icao || item.ICAO || item.icao_code, 4);
+ const airport = String(item.airport || item.name || item.airport_name || '').trim();
+ if (!iata && !icao) return null;
+ return {
+  country_code: String(item.country_code || item.country || '').toUpperCase().slice(0, 2),
+  region_name: String(item.region_name || item.region || item.state || '').trim(),
+  iata,
+  icao,
+  airport: airport || iata || icao,
+  latitude: Number(item.latitude ?? item.lat ?? ''),
+  longitude: Number(item.longitude ?? item.lon ?? item.lng ?? ''),
+  source: item.source || 'ip2location/iata-icao + CrewCheck',
+ };
+}
+
+function parseAirportCsv(text = '') {
+ const lines = String(text || '').split(/\r?\n/).filter((line) => line.trim());
+ if (!lines.length) return [];
+ const header = parseSimpleCsvLine(lines[0]).map((value) => value.trim().toLowerCase());
+ return lines.slice(1).map((line) => {
+  const values = parseSimpleCsvLine(line);
+  const item = {};
+  header.forEach((key, index) => { item[key] = values[index] || ''; });
+  return normalizeCatalogAirport(item);
+ }).filter(Boolean);
+}
+
+function mergeCatalogAirports(items = []) {
+ const map = new Map();
+ for (const raw of [...CREWCHECK_AIRPORT_SEED, ...items]) {
+  const item = normalizeCatalogAirport(raw);
+  if (!item) continue;
+  const keys = [item.iata, item.icao].filter(Boolean);
+  const existing = keys.map((key) => map.get(key)).find(Boolean);
+  const merged = existing ? { ...existing, ...Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')) } : item;
+  for (const key of keys) map.set(key, merged);
+ }
+ return Array.from(new Map(Array.from(map.values()).map((item) => [item.iata || item.icao, item])).values()).sort((a, b) => String(a.iata || a.icao).localeCompare(String(b.iata || b.icao)));
+}
+
+async function fetchTextCatalog(url, timeoutMs = 12_000) {
+ if (!url) return '';
+ const response = await fetch(url, { headers: { accept: 'application/json,text/csv,text/plain,*/*', 'user-agent': 'CrewCheck/11.1.25 AviationCatalog' }, signal: AbortSignal.timeout(timeoutMs) });
+ if (!response.ok) throw new Error(`HTTP ${response.status}`);
+ return response.text();
+}
+
+async function getAirlineCatalog({ force = false } = {}) {
+ if (!AVIATION_CATALOG_ENABLED) return { data: mergeCatalogAirlines([]), source: 'CrewCheck seed', error: 'catalog disabled' };
+ const cached = aviationCatalogCache.airlines;
+ if (!force && cached.data && cached.expiresAt > Date.now()) return cached;
+ let data = [];
+ let source = 'CrewCheck seed';
+ let error = '';
+ for (const url of [AIRLINE_CATALOG_SOURCE_URL, AIRLINE_CATALOG_SECONDARY_SOURCE_URL].filter(Boolean)) {
+  try {
+   const text = await fetchTextCatalog(url);
+   const parsed = JSON.parse(text);
+   const list = Array.isArray(parsed) ? parsed : Object.values(parsed || {}).flat();
+   data = mergeCatalogAirlines(list.map((item) => ({ ...item, source: url.includes('dotmarn') ? 'dotmarn/Airlines' : url })));
+   source = url;
+   error = '';
+   break;
+  } catch (err) {
+   error = `${url}: ${err?.message || err}`;
+  }
+ }
+ if (!data.length) data = mergeCatalogAirlines([]);
+ aviationCatalogCache.airlines = { data, source, error, expiresAt: Date.now() + AVIATION_CATALOG_CACHE_TTL_MS };
+ return aviationCatalogCache.airlines;
+}
+
+
+async function ensureOvernightHotelLearningSchema() {
+ const db = getPool();
+ if (!db) return null;
+ await ensureSchema();
+ await db.query(`create table if not exists crewcheck_overnight_hotel_learning (
+  id text primary key,
+  user_id text null,
+  airport text not null,
+  hotel_name text null,
+  hotel_address text null,
+  presentation_time text not null,
+  pickup_time text null,
+  lead_minutes integer default 120,
+  source text null,
+  confidence integer default 70,
+  notes text null,
+  samples integer default 1,
+  departure_time text null,
+  room_hint text null,
+  city text null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+ )`).catch(() => null);
+ await db.query(`create index if not exists crewcheck_overnight_hotel_learning_airport_idx on crewcheck_overnight_hotel_learning (airport, updated_at desc)`).catch(() => null);
+ await db.query(`create table if not exists crewcheck_wakeup_acks (
+  id text primary key,
+  user_id text null,
+  airport text null,
+  wakeup_time text null,
+  presentation_time text null,
+  acknowledged_at timestamptz null,
+  created_at timestamptz default now()
+ )`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists chat_id text null`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists snooze_minutes integer default 10`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists next_reminder_at timestamptz null`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists reminder_count integer default 0`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists max_reminders integer default 8`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists call_count integer default 0`).catch(() => null);
+ await db.query(`alter table crewcheck_wakeup_acks add column if not exists max_calls integer default 2`).catch(() => null);
+ await db.query(`alter table crewcheck_overnight_hotel_learning add column if not exists samples integer default 1`).catch(() => null);
+ await db.query(`alter table crewcheck_overnight_hotel_learning add column if not exists departure_time text null`).catch(() => null);
+ await db.query(`alter table crewcheck_overnight_hotel_learning add column if not exists room_hint text null`).catch(() => null);
+ await db.query(`alter table crewcheck_overnight_hotel_learning add column if not exists city text null`).catch(() => null);
+ await db.query(`create table if not exists crewcheck_layover_details (
+  id text primary key,
+  user_id text null,
+  roster_date text null,
+  airport text null,
+  city text null,
+  hotel_name text null,
+  room_number text null,
+  presentation_time text null,
+  departure_time text null,
+  lead_minutes integer default 120,
+  share_with_emergency boolean default false,
+  source text null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+ )`).catch(() => null);
+ await db.query(`create table if not exists crewcheck_emergency_contacts (
+  id text primary key,
+  user_id text not null,
+  relation text,
+  display_name text,
+  email text,
+  phone_e164 text,
+  telegram_username text,
+  whatsapp_phone text,
+  visitor_enabled boolean default false,
+  share_roster boolean default false,
+  share_hotel_room boolean default false,
+  share_wakeup_status boolean default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+ )`).catch(() => null);
+ return db;
+}
+
+function normalizeCrewClock(value = '') {
+ const raw = String(value || '').trim();
+ const match = raw.match(/\b(\d{1,2})[:hH]?(\d{2})\b/);
+ if (!match) return '';
+ const h = Math.max(0, Math.min(23, Number(match[1]) || 0));
+ const m = Math.max(0, Math.min(59, Number(match[2]) || 0));
+ return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function subtractMinutesFromClock(clock = '', minutes = 0) {
+ const normalized = normalizeCrewClock(clock);
+ if (!normalized) return '';
+ const [h, m] = normalized.split(':').map(Number);
+ let total = h * 60 + m - Math.max(0, Number(minutes) || 0);
+ total = ((total % 1440) + 1440) % 1440;
+ return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+async function lookupOvernightHotelPresentation({ airport = '', userId = '', hotelName = '' } = {}) {
+ const db = await ensureOvernightHotelLearningSchema().catch(() => null);
+ const cleanAirport = String(airport || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+ const cleanHotel = String(hotelName || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+ if (!db || !cleanAirport) return { ok: true, airport: cleanAirport, suggestion: null, global: null, source: 'local-only' };
+ const ownHotelRows = (userId && cleanHotel) ? await db.query(
+  `select * from crewcheck_overnight_hotel_learning where user_id = $1 and airport = $2 and lower(coalesce(hotel_name,'')) = lower($3) order by updated_at desc limit 1`,
+  [userId, cleanAirport, cleanHotel]
+ ).catch(() => ({ rows: [] })) : { rows: [] };
+ const userRows = ownHotelRows.rows?.length ? ownHotelRows : (userId ? await db.query(
+  `select * from crewcheck_overnight_hotel_learning where user_id = $1 and airport = $2 order by updated_at desc limit 1`,
+  [userId, cleanAirport]
+ ).catch(() => ({ rows: [] })) : { rows: [] });
+ const globalHotelRows = cleanHotel ? await db.query(
+  `select airport, hotel_name, presentation_time, pickup_time, round(avg(coalesce(lead_minutes, 120)))::int as lead_minutes, count(*)::int as samples, max(updated_at) as updated_at
+     from crewcheck_overnight_hotel_learning
+    where airport = $1 and lower(coalesce(hotel_name,'')) = lower($2)
+    group by airport, hotel_name, presentation_time, pickup_time
+    order by count(*) desc, max(updated_at) desc
+    limit 1`,
+  [cleanAirport, cleanHotel]
+ ).catch(() => ({ rows: [] })) : { rows: [] };
+ const globalRows = globalHotelRows.rows?.length ? globalHotelRows : await db.query(
+  `select airport, presentation_time, pickup_time, round(avg(coalesce(lead_minutes, 120)))::int as lead_minutes, count(*)::int as samples, max(updated_at) as updated_at
+     from crewcheck_overnight_hotel_learning
+    where airport = $1
+    group by airport, presentation_time, pickup_time
+    order by count(*) desc, max(updated_at) desc
+    limit 1`,
+  [cleanAirport]
+ ).catch(() => ({ rows: [] }));
+ const own = userRows.rows?.[0] || null;
+ const global = globalRows.rows?.[0] || null;
+ return {
+  ok: true,
+  airport: cleanAirport,
+  hotelName: cleanHotel || null,
+  suggestion: own ? { presentationTime: own.presentation_time, pickupTime: own.pickup_time, leadMinutes: own.lead_minutes, departureTime: own.departure_time || null, source: 'seu histórico', hotelName: own.hotel_name || null, samples: own.samples || 1, updatedAt: own.updated_at } : null,
+  global: global ? { presentationTime: global.presentation_time, pickupTime: global.pickup_time, leadMinutes: global.lead_minutes, samples: global.samples, source: global.hotel_name ? 'aprendizado coletivo do hotel' : 'aprendizado coletivo', hotelName: global.hotel_name || null, updatedAt: global.updated_at } : null,
+  source: own ? 'user' : global ? 'global' : 'none',
+ };
+}
+
+async function saveOvernightHotelPresentation(user, data = {}) {
+ const db = await ensureOvernightHotelLearningSchema().catch(() => null);
+ const airport = String(data.airport || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+ const presentationTime = normalizeCrewClock(data.presentationTime || data.presentation_time || data.pickupTime || data.pickup_time);
+ const pickupTime = normalizeCrewClock(data.pickupTime || data.pickup_time || presentationTime);
+ const departureTime = normalizeCrewClock(data.departureTime || data.departure_time || '');
+ const inferredLead = departureTime && presentationTime ? crewClockDiffMinutes(departureTime, presentationTime) : 0;
+ const leadMinutes = Math.max(5, Math.min(360, Number(data.leadMinutes || data.lead_minutes || inferredLead || 120) || 120));
+ const hotelName = String(data.hotelName || data.hotel_name || '').trim().replace(/\s+/g, ' ').slice(0, 160) || null;
+ const city = String(data.city || '').trim().replace(/\s+/g, ' ').slice(0, 80) || null;
+ const roomHint = String(data.roomNumber || data.room || data.room_hint || '').trim().replace(/\s+/g, ' ').slice(0, 40) || null;
+ if (!airport || !presentationTime) return { ok: false, code: 'MISSING_PRESENTATION_TIME', message: 'Informe aeroporto e horário de apresentação/saída do hotel.' };
+ if (!db) return { ok: true, saved: false, localOnly: true, airport, presentationTime, pickupTime, departureTime, leadMinutes };
+ const id = newId();
+ const params = [id, user?.id || null, airport, hotelName, String(data.hotelAddress || data.hotel_address || '').slice(0, 240) || null, presentationTime, pickupTime || null, leadMinutes, String(data.source || 'crewcheck-user').slice(0, 80), Math.max(30, Math.min(100, Number(data.confidence || 85) || 85)), String(data.notes || '').slice(0, 300) || null, departureTime || null, roomHint, city];
+ await db.query(
+  `insert into crewcheck_overnight_hotel_learning (id, user_id, airport, hotel_name, hotel_address, presentation_time, pickup_time, lead_minutes, source, confidence, notes, departure_time, room_hint, city)
+   values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+  params
+ ).catch(async () => {
+  await db.query(
+   `insert into crewcheck_overnight_hotel_learning (id, user_id, airport, hotel_name, hotel_address, presentation_time, pickup_time, lead_minutes, source, confidence, notes)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+   params.slice(0, 11)
+  );
+ });
+ return { ok: true, saved: true, id, airport, presentationTime, pickupTime, departureTime, hotelName, roomHint, city, leadMinutes, learned: await lookupOvernightHotelPresentation({ airport, userId: user?.id || '', hotelName: hotelName || '' }).catch(() => null) };
+}
+
+
+const crewcheckWakeupTimers = new Map();
+const crewcheckWakeupVoiceFiles = new Map();
+const crewcheckInfobipWakeupStatuses = new Map();
+const crewcheckInfobipWakeupDiagnostics = [];
+const CREWCHECK_INFOBIP_DEBUG_LOGS = String(process.env.CREWCHECK_INFOBIP_DEBUG_LOGS || process.env.INFOBIP_DEBUG_LOGS || 'true').toLowerCase() !== 'false';
+
+function wakeupSnoozeMinutesFromPreference(row = null, body = {}) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const fromBody = Number(body.snoozeMinutes || body.snooze_minutes || 0);
+ const fromPrefs = Number(prefs.overnightWakeupSnoozeMinutes || 0);
+ const raw = fromBody || fromPrefs || Number(process.env.CREWCHECK_WAKEUP_SNOOZE_MINUTES || 10);
+ return Math.max(3, Math.min(90, Number(raw) || 10));
+}
+
+function wakeupNotificationModeFromPreference(row = null, body = {}) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const raw = String(body.wakeupNotificationMode || body.notificationMode || prefs.wakeupNotificationMode || 'call_telegram').trim().toLowerCase();
+ if (['telegram', 'telegram_only'].includes(raw)) return 'telegram_only';
+ if (['call', 'call_only', 'phone', 'voip'].includes(raw)) return 'call_only';
+ return 'call_telegram';
+}
+
+function wakeupShouldSendTelegram(mode = 'call_telegram') {
+ return mode !== 'call_only';
+}
+
+function wakeupShouldCall(mode = 'call_telegram') {
+ return mode !== 'telegram_only';
+}
+
+function wakeupMaxCallsFromPreference(row = null, body = {}) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ return Math.max(0, Math.min(2, Number(body.wakeupMaxCalls || body.maxWakeupCalls || prefs.wakeupMaxCalls || process.env.CREWCHECK_WAKEUP_MAX_CALLS || 2) || 2));
+}
+
+function wakeupCallAfterSnoozesFromPreference(row = null, body = {}) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ return Math.max(1, Math.min(8, Number(body.wakeupCallAfterSnoozes || body.callAfterSnoozes || prefs.wakeupCallAfterSnoozes || process.env.CREWCHECK_WAKEUP_CALL_AFTER_SNOOZES || 2) || 2));
+}
+
+function wakeupMaxSnoozesFromPreference(row = null, body = {}) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ return Math.max(1, Math.min(12, Number(body.wakeupMaxSnoozes || body.maxSnoozes || prefs.wakeupMaxSnoozes || process.env.CREWCHECK_WAKEUP_MAX_SNOOZES || 6) || 6));
+}
+
+async function wakeupAckStatus(wakeupId = '') {
+ const db = await ensureOvernightHotelLearningSchema().catch(() => getPool());
+ if (!db || !wakeupId) return { acknowledged: false, row: null };
+ const found = await db.query(`select * from crewcheck_wakeup_acks where id = $1 limit 1`, [wakeupId]).catch(() => ({ rows: [] }));
+ const row = found.rows?.[0] || null;
+ return { acknowledged: Boolean(row?.acknowledged_at), row };
+}
+
+
+function wakeupPad2(value) {
+ return String(Math.max(0, Number(value) || 0)).padStart(2, '0');
+}
+
+function wakeupSafeTimeZone(value = '') {
+ const candidate = String(value || '').trim();
+ const allowedFallback = CREWCHECK_WAKEUP_TIMEZONE || process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo';
+ if (!candidate) return allowedFallback;
+ try {
+  new Intl.DateTimeFormat('pt-BR', { timeZone: candidate }).format(new Date());
+  return candidate;
+ } catch {
+  return allowedFallback;
+ }
+}
+
+function wakeupZonedParts(date = new Date(), timeZone = CREWCHECK_WAKEUP_TIMEZONE) {
+ const fallback = { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), hour: date.getHours(), minute: date.getMinutes() };
+ try {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+   timeZone: wakeupSafeTimeZone(timeZone || CREWCHECK_WAKEUP_TIMEZONE),
+   year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(date).reduce((acc, item) => { acc[item.type] = item.value; return acc; }, {});
+  return {
+   year: Number(parts.year) || fallback.year,
+   month: Number(parts.month) || fallback.month,
+   day: Number(parts.day) || fallback.day,
+   hour: Math.min(23, Number(parts.hour) || fallback.hour),
+   minute: Number(parts.minute) || fallback.minute,
+  };
+ } catch {
+  return fallback;
+ }
+}
+
+function wakeupCurrentClock(timeZone = CREWCHECK_WAKEUP_TIMEZONE) {
+ const now = wakeupZonedParts(new Date(), timeZone);
+ return `${wakeupPad2(now.hour)}:${wakeupPad2(now.minute)}`;
+}
+
+function wakeupNormalizeDateKey(value = '') {
+ const raw = String(value || '').trim();
+ const iso = raw.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+ if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+ const br = raw.match(/\b(\d{2})[\/-](\d{2})[\/-](20\d{2})\b/);
+ if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+ return '';
+}
+
+function wakeupClockToMinutes(clock = '') {
+ const clean = normalizeCrewClock(clock || '');
+ if (!clean) return null;
+ const [h, m] = clean.split(':').map(Number);
+ return h * 60 + m;
+}
+
+function wakeupMinutesUntilPresentation({ presentationTime = '', date = '', timeZone = CREWCHECK_WAKEUP_TIMEZONE } = {}) {
+ const targetMinutes = wakeupClockToMinutes(presentationTime);
+ if (targetMinutes == null) return null;
+ const now = wakeupZonedParts(new Date(), timeZone);
+ const dateKey = wakeupNormalizeDateKey(date);
+ const [y, mo, d] = dateKey ? dateKey.split('-').map(Number) : [now.year, now.month, now.day];
+ const currentLocal = Date.UTC(now.year, now.month - 1, now.day, now.hour, now.minute, 0);
+ let targetLocal = Date.UTC(y || now.year, (mo || now.month) - 1, d || now.day, Math.floor(targetMinutes / 60), targetMinutes % 60, 0);
+ if (!dateKey && targetLocal < currentLocal - 5 * 60_000) targetLocal += 24 * 60 * 60_000;
+ return Math.round((targetLocal - currentLocal) / 60000);
+}
+
+function wakeupDurationPt(minutes) {
+ if (!Number.isFinite(minutes)) return '';
+ const sign = minutes < 0 ? -1 : 1;
+ const abs = Math.abs(Math.round(minutes));
+ const days = Math.floor(abs / 1440);
+ const hours = Math.floor((abs % 1440) / 60);
+ const mins = abs % 60;
+ const parts = [];
+ if (days) parts.push(`${days} dia${days > 1 ? 's' : ''}`);
+ if (hours) parts.push(`${hours} hora${hours > 1 ? 's' : ''}`);
+ if (mins || !parts.length) parts.push(`${mins} minuto${mins !== 1 ? 's' : ''}`);
+ const label = parts.slice(0, 2).join(' e ');
+ return sign < 0 ? `passou há ${label}` : `faltam ${label}`;
+}
+
+function wakeupFirstName(user = null, row = null) {
+ const raw = String(user?.name || user?.full_name || row?.chat_first_name || row?.first_name || '').replace(/[^A-Za-zÀ-ÿ' -]/g, ' ').replace(/\s+/g, ' ').trim();
+ const first = raw.split(' ').find(Boolean) || '';
+ return first ? first.slice(0, 24) : '';
+}
+
+function wakeupDestinationLabel(value = '', airport = '') {
+ const raw = String(value || airport || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+ if (!raw) return '';
+ const code = raw.toUpperCase().replace(/[^A-Z]/g, '');
+ if (code.length === 3) return code;
+ return raw.slice(0, 48);
+}
+
+function buildCrewCheckWakeupScript({ user = null, row = null, text = '', airport = '', destination = '', presentationTime = '', wakeupTime = '', leadMinutes = null, date = '', timeZone = CREWCHECK_WAKEUP_TIMEZONE, test = false } = {}) {
+ const current = wakeupCurrentClock(timeZone);
+ const presentation = normalizeCrewClock(presentationTime || '') || '';
+ const dest = wakeupDestinationLabel(destination, airport);
+ const remainingMinutes = presentation ? wakeupMinutesUntilPresentation({ presentationTime: presentation, date, timeZone }) : null;
+ const remaining = presentation ? wakeupDurationPt(remainingMinutes) : '';
+ const remainingPhrase = remaining ? (Number.isFinite(remainingMinutes) && remainingMinutes < 0 ? `A apresentação ${remaining}.` : `${remaining} para a apresentação.`) : '';
+ const name = wakeupFirstName(user, row);
+ const lead = Number.isFinite(Number(leadMinutes)) ? Number(leadMinutes) : null;
+ const fallback = String(text || '').replace(/\s+/g, ' ').trim();
+ const greeting = test ? `Teste do Despertador CrewCheck${name ? `, ${name}` : ''}.` : `Bom dia${name ? `, ${name}` : ''}. CrewCheck na área.`;
+ const parts = [
+  greeting,
+  `Agora são ${current}.`,
+  presentation ? `Sua apresentação é às ${presentation}.` : '',
+  dest ? `Destino ${dest}.` : '',
+  remainingPhrase,
+  !presentation && fallback ? fallback : '',
+  lead ? `Alarme configurado com ${lead} minutos de antecedência.` : '',
+  'Levanta com calma, toma uma água e confere a escala oficial, combinado?'
+ ].filter(Boolean);
+ const longText = parts.join(' ').replace(/\s+/g, ' ').trim();
+ const callText = longText.slice(0, 252);
+ return { callText, audioText: longText.slice(0, 900), currentTime: current, presentationTime: presentation, destination: dest, remaining };
+}
+
+
+function cleanupWakeupVoiceFiles() {
+ const now = Date.now();
+ for (const [id, item] of crewcheckWakeupVoiceFiles.entries()) {
+  if (!item?.expiresAt || item.expiresAt < now) crewcheckWakeupVoiceFiles.delete(id);
+ }
+}
+
+function wakeupVoiceFileSignature(id = '') {
+ const secret = String(TELEGRAM_BOT_TOKEN || JWT_SECRET || SESSION_SECRET || 'crewcheck-wakeup-voice').trim();
+ return crypto.createHmac('sha256', secret).update(String(id || '')).digest('hex').slice(0, 32);
+}
+
+function storeWakeupVoiceFile(buffer, { mimeType = 'audio/mpeg' } = {}) {
+ cleanupWakeupVoiceFiles();
+ if (!buffer?.length) return null;
+ const id = newId().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+ const sig = wakeupVoiceFileSignature(id);
+ const expiresAt = Date.now() + CREWCHECK_WAKEUP_VOICE_FILE_TTL_MS;
+ crewcheckWakeupVoiceFiles.set(id, { buffer, mimeType, expiresAt });
+ return { id, sig, expiresAt, url: `${PUBLIC_APP_URL}/api/wakeup-voice/${encodeURIComponent(id)}.mp3?sig=${encodeURIComponent(sig)}` };
+}
+
+function readWakeupVoiceFileFromUrl(url) {
+ const match = String(url.pathname || '').match(/^\/api\/wakeup-voice\/([A-Za-z0-9_-]+)\.mp3$/);
+ if (!match) return null;
+ cleanupWakeupVoiceFiles();
+ const id = match[1];
+ const sig = String(url.searchParams.get('sig') || '');
+ if (!sig || sig !== wakeupVoiceFileSignature(id)) return null;
+ const item = crewcheckWakeupVoiceFiles.get(id);
+ if (!item || item.expiresAt < Date.now()) return null;
+ return { id, ...item };
+}
+
+function cleanupInfobipWakeupStatuses() {
+ const now = Date.now();
+ for (const [key, item] of crewcheckInfobipWakeupStatuses.entries()) {
+  if (!item?.receivedAt || now - item.receivedAt > CREWCHECK_INFOBIP_STATUS_TTL_MS) crewcheckInfobipWakeupStatuses.delete(key);
+ }
+}
+
+function normalizeInfobipStatusName(value = '') {
+ return String(value || '').toUpperCase().replace(/[^A-Z0-9_ -]/g, '').replace(/\s+/g, '_').slice(0, 80);
+}
+
+function extractInfobipStatusItems(payload = {}) {
+ const source = payload?.results || payload?.messages || payload?.reports || payload?.message || payload?.data || payload;
+ const list = Array.isArray(source) ? source : [source];
+ const out = [];
+ for (const item of list) {
+  if (!item || typeof item !== 'object') continue;
+  const status = item.status || item.messageStatus || item.delivery || payload.status || {};
+  const statusName = normalizeInfobipStatusName(status.name || status.groupName || status.status || item.statusName || item.status || payload.statusName);
+  const groupName = normalizeInfobipStatusName(status.groupName || item.groupName || payload.groupName);
+  const description = sanitizePublicError(status.description || item.description || payload.description || statusName || groupName || '').slice(0, 240);
+  const messageId = String(item.messageId || item.messageID || item.message_id || item.id || payload.messageId || payload.messageID || '').trim();
+  const bulkId = String(item.bulkId || item.bulkID || item.bulk_id || payload.bulkId || payload.bulkID || '').trim();
+  const to = String(item.to || item.destination || payload.to || payload.destination || '').replace(/[^+\d]/g, '').slice(0, 24);
+  if (!messageId && !bulkId && !statusName && !groupName) continue;
+  out.push({ messageId, bulkId, to, statusName, groupName, description, raw: item });
+ }
+ return out;
+}
+
+function rememberInfobipWakeupStatus(payload = {}) {
+ cleanupInfobipWakeupStatuses();
+ const now = Date.now();
+ const items = extractInfobipStatusItems(payload);
+ for (const item of items) {
+  const saved = { ...item, receivedAt: now, payload };
+  if (item.messageId) crewcheckInfobipWakeupStatuses.set(`message:${item.messageId}`, saved);
+  if (item.bulkId) crewcheckInfobipWakeupStatuses.set(`bulk:${item.bulkId}`, saved);
+  if (item.to) crewcheckInfobipWakeupStatuses.set(`to:${item.to}`, saved);
+ }
+ return items;
+}
+
+function lookupInfobipWakeupStatus({ messageId = '', bulkId = '', to = '' } = {}) {
+ cleanupInfobipWakeupStatuses();
+ const keys = [messageId ? `message:${messageId}` : '', bulkId ? `bulk:${bulkId}` : '', to ? `to:${String(to).replace(/[^+\d]/g, '').slice(0, 24)}` : ''].filter(Boolean);
+ for (const key of keys) {
+  const item = crewcheckInfobipWakeupStatuses.get(key);
+  if (item) return item;
+ }
+ return null;
+}
+
+function rememberInfobipDiagnostic(type = 'event', data = {}) {
+ cleanupInfobipWakeupStatuses();
+ const item = { type: String(type || 'event').slice(0, 40), at: new Date().toISOString(), ...(data || {}) };
+ crewcheckInfobipWakeupDiagnostics.push(item);
+ while (crewcheckInfobipWakeupDiagnostics.length > 30) crewcheckInfobipWakeupDiagnostics.shift();
+ return item;
+}
+
+function safeInfobipDiagnosticPayload(item = {}) {
+ const out = { ...(item || {}) };
+ if (out.to) out.to = maskGenericPhone(out.to);
+ if (out.from) out.from = maskGenericPhone(out.from);
+ if (out.target) out.target = maskGenericPhone(out.target);
+ if (out.destination) out.destination = maskGenericPhone(out.destination);
+ if (out.notifyUrl) out.notifyUrl = String(out.notifyUrl || '').replace(/([?&](?:token|key|secret|apikey)=)[^&]+/gi, '$1***');
+ if (out.payloadPreview && typeof out.payloadPreview === 'object') out.payloadPreview = sanitizeInfobipDiagnosticObject(out.payloadPreview);
+ return out;
+}
+
+function sanitizeInfobipDiagnosticObject(value) {
+ if (Array.isArray(value)) return value.slice(0, 5).map(sanitizeInfobipDiagnosticObject);
+ if (value && typeof value === 'object') {
+  const out = {};
+  for (const [key, raw] of Object.entries(value)) {
+   if (/apikey|authorization|secret|token/i.test(key)) { out[key] = '***'; continue; }
+   if (/^to$|phone|destination/i.test(key) && typeof raw !== 'object') { out[key] = maskGenericPhone(raw); continue; }
+   if (/^from$/i.test(key) && typeof raw !== 'object') { out[key] = maskGenericPhone(raw); continue; }
+   out[key] = sanitizeInfobipDiagnosticObject(raw);
+  }
+  return out;
+ }
+ return typeof value === 'string' ? value.slice(0, 240) : value;
+}
+
+function logInfobipDiagnostic(type = 'event', data = {}) {
+ const safe = safeInfobipDiagnosticPayload(rememberInfobipDiagnostic(type, data));
+ if (CREWCHECK_INFOBIP_DEBUG_LOGS) console.info(`[voip][infobip] ${type}`, JSON.stringify(safe));
+ return safe;
+}
+
+function latestInfobipWakeupDiagnostics() {
+ cleanupInfobipWakeupStatuses();
+ const statuses = [];
+ const seen = new Set();
+ for (const [key, item] of crewcheckInfobipWakeupStatuses.entries()) {
+  const statusKey = `${item.messageId || ''}|${item.bulkId || ''}|${item.statusName || ''}|${item.groupName || ''}`;
+  if (seen.has(statusKey)) continue;
+  seen.add(statusKey);
+  statuses.push({
+   key: key.replace(/to:\+?\d+/g, 'to:masked'),
+   messageId: item.messageId || '',
+   bulkId: item.bulkId || '',
+   to: item.to ? maskGenericPhone(item.to) : '',
+   statusName: item.statusName || '',
+   groupName: item.groupName || '',
+   description: item.description || '',
+   receivedAt: item.receivedAt ? new Date(item.receivedAt).toISOString() : null,
+  });
+ }
+ return {
+  ok: true,
+  endpoint: 'infobip-diagnostics',
+  debugLogsEnabled: CREWCHECK_INFOBIP_DEBUG_LOGS,
+  notifyUrl: INFOBIP_NOTIFY_URL || `${PUBLIC_APP_URL}/api/webhooks/infobip/wakeup-status`,
+  publicUrl: PUBLIC_APP_URL || '',
+  storedStatusCount: statuses.length,
+  statuses: statuses.slice(-12).reverse(),
+  diagnostics: crewcheckInfobipWakeupDiagnostics.slice(-20).map(safeInfobipDiagnosticPayload).reverse(),
+  message: 'Diagnóstico em memória. Reinício do Render limpa estes dados.',
+ };
+}
+
+function infobipWakeupStatusIsFailure(item = {}) {
+ const name = `${item.statusName || ''} ${item.groupName || ''}`.toUpperCase();
+ return /REJECT|UNDELIVER|FAILED|ERROR|EXPIRED|CANCEL|NO_ANSWER|BUSY|INSUFFICIENT|INVALID|BLOCKED|BARRED/.test(name);
+}
+
+function infobipWakeupStatusIsSuccess(item = {}) {
+ const name = `${item.statusName || ''} ${item.groupName || ''}`.toUpperCase();
+ return /DELIVERED|ANSWERED|COMPLETED|SUCCESS|ACCEPTED|PENDING|ENROUTE/.test(name) && !infobipWakeupStatusIsFailure(item);
+}
+
+async function waitForInfobipWakeupStatus({ messageId = '', bulkId = '', to = '', timeoutMs = CREWCHECK_INFOBIP_TEST_WAIT_STATUS_MS } = {}) {
+ const waitMs = Math.max(0, Math.min(28_000, Number(timeoutMs) || 0));
+ if (!waitMs || (!messageId && !bulkId && !to)) return null;
+ const deadline = Date.now() + waitMs;
+ while (Date.now() < deadline) {
+  const item = lookupInfobipWakeupStatus({ messageId, bulkId, to });
+  if (item) return item;
+  await new Promise((resolve) => setTimeout(resolve, 900));
+ }
+ return lookupInfobipWakeupStatus({ messageId, bulkId, to });
+}
+
+async function validateWakeupAudioUrlForInfobip(fileUrl = '') {
+ if (!CREWCHECK_INFOBIP_AUDIO_PREFLIGHT) return { ok: true, skipped: true, reason: 'preflight_disabled' };
+ const safeUrl = String(fileUrl || '').trim();
+ if (!safeUrl || !/^https:\/\//i.test(safeUrl)) return { ok: false, code: 'INFOBIP_AUDIO_URL_INVALID', message: 'A URL do MP3 precisa ser pública e HTTPS para a Infobip baixar.' };
+ try {
+  const response = await fetch(safeUrl, { headers: { accept: 'audio/mpeg,audio/mp3,audio/*,*/*', range: 'bytes=0-262143', 'user-agent': 'CrewCheck-Infobip-Audio-Preflight/11.1.91' }, signal: AbortSignal.timeout(12_000) });
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  const lenHeader = Number(response.headers.get('content-length') || 0);
+  if (!response.ok && response.status !== 206) return { ok: false, code: 'INFOBIP_AUDIO_PREFLIGHT_HTTP', status: response.status, message: `O MP3 público retornou HTTP ${response.status}. Confira PUBLIC_APP_URL e se o Render está Live.` };
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const looksLikeJsonOrText = /json|text\/html|text\/plain/.test(contentType) || /^[\s\r\n]*[<{]/.test(buffer.toString('utf8', 0, Math.min(buffer.length, 24)));
+  if (looksLikeJsonOrText) return { ok: false, code: 'INFOBIP_AUDIO_PREFLIGHT_NOT_AUDIO', status: response.status, contentType, size: buffer.length, message: 'A URL pública do MP3 está retornando texto/erro em vez de áudio. Verifique PUBLIC_APP_URL e cache do Render.' };
+  if (lenHeader && lenHeader > CREWCHECK_INFOBIP_AUDIO_MAX_BYTES) return { ok: false, code: 'INFOBIP_AUDIO_PREFLIGHT_TOO_LARGE', contentType, size: lenHeader, message: `O MP3 ficou maior que o limite seguro (${Math.round(CREWCHECK_INFOBIP_AUDIO_MAX_BYTES / 1024)} KB). Reduza o texto da ligação.` };
+  if (buffer.length < 512) return { ok: false, code: 'INFOBIP_AUDIO_PREFLIGHT_EMPTY', contentType, size: buffer.length, message: 'O MP3 público parece vazio/curto demais para a ligação.' };
+  return { ok: true, status: response.status, contentType, size: lenHeader || buffer.length, previewBytes: buffer.length };
+ } catch (error) {
+  return { ok: false, code: 'INFOBIP_AUDIO_PREFLIGHT_FETCH_ERROR', message: `Não consegui validar o MP3 público antes da Infobip: ${sanitizePublicError(error?.message || String(error))}` };
+ }
+}
+
+async function prepareWakeupElevenLabsAudioForAdmin({ row = null, user = null, script = null } = {}) {
+ if (!CREWCHECK_WAKEUP_ELEVENLABS_ENABLED) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'disabled' };
+ if (CREWCHECK_WAKEUP_ELEVENLABS_PHONE_CALL_ADMIN_ONLY && !telegramAudioAdminPreferred(user, row)) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'phone_call_admin_only' };
+ if (!elevenLabsAudioIsConfigured()) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'ELEVENLABS_API_KEY não configurada' };
+ try {
+  const audioText = String(script?.audioText || '').replace(/\s+/g, ' ').trim().slice(0, 900);
+  if (!audioText) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'texto vazio' };
+  const audioBuffer = await elevenLabsTextToSpeechBuffer(audioText, { userName: wakeupFirstName(user, row), conciergeName: 'Despertador CrewCheck' });
+  const file = CREWCHECK_WAKEUP_ELEVENLABS_USE_MP3_CALL ? storeWakeupVoiceFile(audioBuffer) : null;
+  return { ok: true, provider: 'elevenlabs', mode: file?.url ? 'callmebot_mp3_file' : 'telegram_voice', audioBuffer, fileUrl: file?.url || '', expiresAt: file?.expiresAt || null };
+ } catch (error) {
+  return { ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)), code: error?.code || null };
+ }
+}
+
+
+async function prepareWakeupGoogleTtsAudio({ row = null, user = null, script = null } = {}) {
+ if (!CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO) return { ok: false, skipped: true, provider: 'google-tts', reason: 'disabled' };
+ if (!sglkcTtsApiIsConfigured()) return { ok: false, skipped: true, provider: 'google-tts', reason: 'TTS_API_BASE não configurada' };
+ try {
+  const audioText = String(script?.audioText || script?.callText || '').replace(/\s+/g, ' ').trim().slice(0, 850);
+  if (!audioText) return { ok: false, skipped: true, provider: 'google-tts', reason: 'texto vazio' };
+  const audioBuffer = await sglkcTtsApiTextToSpeechBuffer(audioText, { lang: SGLKC_TTS_API_LANG || 'pt', userName: wakeupFirstName(user, row), conciergeName: 'Despertador CrewCheck' });
+  const file = storeWakeupVoiceFile(audioBuffer, { mimeType: 'audio/mpeg' });
+  return { ok: true, provider: 'google-tts', mode: 'infobip_audio_file', audioBuffer, fileUrl: file?.url || '', expiresAt: file?.expiresAt || null };
+ } catch (error) {
+  return { ok: false, provider: 'google-tts', error: sanitizePublicError(error?.message || String(error)), code: error?.code || null };
+ }
+}
+
+async function sendWakeupElevenLabsVoiceIfEligible({ row = null, user = null, text = '', script = null, audioBuffer = null } = {}) {
+ if (!CREWCHECK_WAKEUP_ELEVENLABS_ENABLED || !CREWCHECK_WAKEUP_ELEVENLABS_SEND_TELEGRAM_VOICE) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'disabled' };
+ if (!row?.chat_id) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'telegram não conectado' };
+ if (CREWCHECK_WAKEUP_ELEVENLABS_ADMIN_ONLY && !telegramAudioAdminPreferred(user, row)) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'admin_only' };
+ if (!elevenLabsAudioIsConfigured()) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'ELEVENLABS_API_KEY não configurada' };
+ try {
+  const audioText = String(script?.audioText || text || '').replace(/\s+/g, ' ').trim().slice(0, 900);
+  if (!audioText && !audioBuffer?.length) return { ok: false, skipped: true, provider: 'elevenlabs', reason: 'texto vazio' };
+  const audio = audioBuffer?.length ? audioBuffer : await elevenLabsTextToSpeechBuffer(audioText, { userName: wakeupFirstName(user, row), conciergeName: 'Despertador CrewCheck' });
+  const caption = telegramEscapeHtml(`Despertador CrewCheck · voz premium${script?.presentationTime ? ` · apresentação ${script.presentationTime}` : ''}`);
+  const sent = await telegramSendVoice(row.chat_id, audio, { caption, filename: 'crewcheck-despertador-elevenlabs.mp3' });
+  return { ok: Boolean(sent?.ok), provider: 'elevenlabs', mode: 'telegram_voice', sent };
+ } catch (error) {
+  return { ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)), code: error?.code || null };
+ }
+}
+
+function directVoipRawIndicatesFailure(raw = '', parsed = null) {
+ const text = String(raw || '').replace(/\s+/g, ' ').trim();
+ const lower = text.toLowerCase();
+ if (parsed && typeof parsed === 'object') {
+  const okValue = parsed.ok ?? parsed.success ?? parsed.sent ?? parsed.status;
+  if (okValue === false || String(okValue).toLowerCase() === 'false' || String(okValue).toLowerCase() === 'error') return true;
+  const msg = String(parsed.message || parsed.error || parsed.description || '').toLowerCase();
+  if (/phone and apikey not found|missing|invalid|wrong|not authorized|unauthorized|not activated|error|failed|insufficient/.test(msg)) return true;
+ }
+ if (!lower) return false;
+ return /phone and apikey not found|phone.*apikey.*not found|missing.*apikey|missing.*phone|invalid.*api|wrong.*api|not authorized|unauthorized|not activated|api.*not.*activated|error|failed|insufficient|payment required/.test(lower);
+}
+
+async function fetchDirectVoipEndpoint(endpoint, params, { provider = 'inout' } = {}) {
+ const cleanParams = {};
+ for (const [key, value] of Object.entries(params || {})) {
+  if (value === undefined || value === null || value === '') continue;
+  cleanParams[key] = String(value);
+ }
+ const body = new URLSearchParams(cleanParams);
+ const headers = { accept: 'application/json,text/plain,text/html,*/*', 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'CrewCheck-Wakeup/11.1.91' };
+ async function readResponse(response, method) {
+  const raw = await response.text().catch(() => '');
+  let parsed = null;
+  try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = null; }
+  const failedByBody = directVoipRawIndicatesFailure(raw, parsed);
+  return { ok: response.ok && !failedByBody, status: response.status, raw, parsed, method, failedByBody };
+ }
+ try {
+  const post = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(20000) });
+  const postResult = await readResponse(post, 'POST');
+  if (postResult.ok) return postResult;
+  // Alguns gateways ignoram POST e devolvem “Phone and APIkey not found”; tenta GET com parâmetros separados.
+  if ([400, 404, 405, 415, 501].includes(Number(postResult.status)) || postResult.failedByBody) {
+   const getUrl = new URL(endpoint);
+   Object.entries(cleanParams).forEach(([key, value]) => getUrl.searchParams.set(key, value));
+   const get = await fetch(getUrl, { headers: { accept: headers.accept, 'user-agent': headers['user-agent'] }, signal: AbortSignal.timeout(20000) });
+   const getResult = await readResponse(get, 'GET');
+   return getResult.ok ? getResult : { ...getResult, postAttempt: postResult };
+  }
+  return postResult;
+ } catch (error) {
+  return { ok: false, status: 0, raw: '', parsed: null, method: 'POST', error: sanitizePublicError(error?.message || String(error)), provider };
+ }
+}
+
+async function sendDirectVoipWakeupVoice({ row = null, user = null, script = null } = {}) {
+ if (CREWCHECK_WAKEUP_FORCE_INFOBIP) return { ok: false, skipped: true, provider: 'direct-voip', code: 'INFOBIP_PRIMARY', message: 'Infobip está definido como canal principal; InOut/CallMeBot não será usado como fallback.', scriptPreview: script?.callText || '' };
+ const cfg = directVoipConfigFromRow(row);
+ if (!cfg.enabled) return { ok: false, skipped: true, provider: 'direct-voip', code: 'WAKEUP_DISABLED', message: 'Despertador por ligação desativado pelo usuário.', missing: cfg.missing || [], scriptPreview: script?.callText || '' };
+ if (!cfg.phone) return { ok: false, skipped: true, provider: 'direct-voip', code: 'VOIP_TARGET_PHONE_MISSING', message: 'Falta telefone de destino da ligação VOIP.', missing: cfg.missing || [], scriptPreview: script?.callText || '' };
+ if (!cfg.apiKey) return { ok: false, skipped: true, provider: 'direct-voip', code: 'VOIP_API_KEY_MISSING', message: 'Falta a chave técnica do canal VOIP.', missing: cfg.missing || [], scriptPreview: script?.callText || '' };
+ const spokenText = String(script?.callText || script?.audioText || 'CrewCheck despertar. Confira sua apresentação oficial.').replace(/\s+/g, ' ').trim().slice(0, 256);
+ const endpoint = cfg.provider === 'callmebot' ? 'https://api.callmebot.com/call.php' : `${INOUT_CALL_API_BASE || 'https://api.inout.bot'}/call`;
+ const params = cfg.provider === 'callmebot'
+  ? { phone: cfg.phone, text: spokenText, apikey: cfg.apiKey, lang: cfg.language || CALLMEBOT_DEFAULT_LANG, style: cfg.style || undefined }
+  : { phone: cfg.phone, apikey: cfg.apiKey, message: spokenText, language: cfg.language || INOUT_CALL_LANGUAGE || 'pt-BR', style: cfg.style || undefined };
+ const result = await fetchDirectVoipEndpoint(endpoint, params, { provider: cfg.provider });
+ const raw = String(result.raw || '').replace(/\s+/g, ' ').trim();
+ const detail = sanitizePublicError(result.parsed?.message || result.parsed?.description || result.parsed?.error || raw || result.error || '').slice(0, 260);
+ return {
+  ok: Boolean(result.ok),
+  provider: 'direct-voip',
+  mode: 'phone',
+  transport: cfg.provider === 'callmebot' ? 'bridge-call' : 'direct-call',
+  status: result.status,
+  method: result.method,
+  targetMasked: cfg.targetMasked,
+  apiKeyConfigured: Boolean(cfg.apiKey),
+  apiKeyMasked: cfg.apiKeyMasked,
+  response: raw.slice(0, 500),
+  postAttempt: result.postAttempt ? { status: result.postAttempt.status, method: result.postAttempt.method, response: String(result.postAttempt.raw || '').slice(0, 160) } : null,
+  scriptPreview: script?.callText || '',
+  scriptContext: { currentTime: script?.currentTime || '', presentationTime: script?.presentationTime || '', destination: script?.destination || '', remaining: script?.remaining || '' },
+  message: result.ok ? `Ligação VOIP solicitada para ${cfg.targetMasked || 'telefone autorizado'}.` : `Canal VOIP recusou a ligação (${result.status || 'sem status'}). ${detail || 'Confira telefone, chave técnica e se o número foi autorizado no provedor.'}`,
+ };
+}
+
+async function sendWakeupCallIfConfigured({ text = '', row = null, user = null, context = {} } = {}) {
+ const script = buildCrewCheckWakeupScript({ user, row, text, ...(context || {}) });
+ const callOnly = context?.callOnly === true || context?.forcePhoneCallOnly === true || context?.testCallOnly === true;
+ const disableFallback = context?.disableFallback === true || context?.noFallback === true;
+ const allowTelegramVoice = context?.allowTelegramVoice === true && !callOnly;
+ const forceProvider = String(context?.forceProvider || context?.provider || '').trim().toLowerCase();
+ if (!wakeupCallAllowedForUser(user)) {
+  return {
+   ok: false,
+   skipped: true,
+   provider: 'telegram',
+   code: 'WAKEUP_CALL_PREMIUM_ONLY',
+   premiumRequired: true,
+   telegramOnly: true,
+   message: CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE,
+   scriptPreview: script.callText,
+   scriptContext: { currentTime: script.currentTime, presentationTime: script.presentationTime, destination: script.destination, remaining: script.remaining },
+  };
+ }
+ const adminCanUseElevenLabsWakeup = telegramAudioAdminPreferred(user, row);
+ let googleTtsPrepared = { ok: false, skipped: true, provider: 'google-tts', reason: 'not_prepared' };
+ let elevenlabsPrepared = { ok: false, skipped: true, provider: 'elevenlabs', reason: adminCanUseElevenLabsWakeup ? 'not_prepared' : 'admin_only' };
+ if (CREWCHECK_WAKEUP_ADMIN_PREFER_ELEVENLABS && adminCanUseElevenLabsWakeup) {
+  elevenlabsPrepared = await prepareWakeupElevenLabsAudioForAdmin({ row, user, script }).catch((error) => ({ ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)) }));
+  googleTtsPrepared = await prepareWakeupGoogleTtsAudio({ row, user, script }).catch((error) => ({ ok: false, provider: 'google-tts', error: sanitizePublicError(error?.message || String(error)) }));
+ } else {
+  googleTtsPrepared = await prepareWakeupGoogleTtsAudio({ row, user, script }).catch((error) => ({ ok: false, provider: 'google-tts', error: sanitizePublicError(error?.message || String(error)) }));
+  elevenlabsPrepared = googleTtsPrepared?.ok
+   ? { ok: false, skipped: true, provider: 'elevenlabs', reason: adminCanUseElevenLabsWakeup ? 'google_tts_audio_prepared' : 'admin_only' }
+   : await prepareWakeupElevenLabsAudioForAdmin({ row, user, script }).catch((error) => ({ ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)) }));
+ }
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const requestedProvider = String(forceProvider || prefs.wakeupCallProvider || CREWCHECK_WAKEUP_CALL_PROVIDER || 'auto').trim().toLowerCase();
+ const providerOrder = [];
+ const addProvider = (name) => { const v = String(name || '').toLowerCase(); if (v && !providerOrder.includes(v)) providerOrder.push(v); };
+ if (requestedProvider === 'auto') {
+  if (CREWCHECK_WAKEUP_FORCE_INFOBIP || CREWCHECK_WAKEUP_CALL_PROVIDER === 'infobip') {
+   addProvider('infobip');
+  } else {
+   addProvider('direct-voip');
+   if (CREWCHECK_WAKEUP_CALL_PROVIDER === 'callmebot') addProvider(callOnly ? 'callmebot-phone' : 'callmebot');
+   if (CREWCHECK_WAKEUP_CALL_PROVIDER === 'twilio') addProvider('twilio');
+   if (CREWCHECK_WAKEUP_CALL_PROVIDER === 'infobip') addProvider('infobip');
+   addProvider('infobip');
+   addProvider('twilio');
+   if (CREWCHECK_WAKEUP_CALL_PROVIDER !== 'callmebot' && !callOnly) addProvider('callmebot');
+  }
+ }
+ else if (requestedProvider === 'twilio') { addProvider(CREWCHECK_WAKEUP_FORCE_INFOBIP ? 'infobip' : 'twilio'); }
+ else if (['phone', 'voip', 'direct', 'direct-voip', 'inout'].includes(requestedProvider)) { addProvider(CREWCHECK_WAKEUP_FORCE_INFOBIP ? 'infobip' : 'direct-voip'); }
+ else if (requestedProvider === 'infobip') { addProvider('infobip'); }
+ else if (requestedProvider === 'telegram' || requestedProvider === 'callmebot') { addProvider(CREWCHECK_WAKEUP_FORCE_INFOBIP ? 'infobip' : (callOnly ? 'callmebot-phone' : 'callmebot')); }
+ else addProvider(requestedProvider);
+ if (!disableFallback && !callOnly && CREWCHECK_WAKEUP_FALLBACK_PROVIDER && CREWCHECK_WAKEUP_FALLBACK_PROVIDER !== 'none') addProvider(CREWCHECK_WAKEUP_FALLBACK_PROVIDER);
+ const attempts = [];
+ let elevenlabsVoice = null;
+ for (const provider of providerOrder) {
+  if (provider === 'direct-voip' || provider === 'inout' || provider === 'direct') {
+   const result = await sendDirectVoipWakeupVoice({ row, user, script }).catch((error) => ({ ok: false, provider: 'direct-voip', error: sanitizePublicError(error?.message || String(error)), scriptPreview: script.callText }));
+   attempts.push(result);
+   if (result?.ok) {
+    elevenlabsVoice = { ok: false, skipped: true, provider: 'elevenlabs', reason: callOnly ? 'teste_de_ligacao_sem_audio_telegram' : 'telegram_voice_disabled' };
+    return { ...result, attempts, elevenlabsVoice, callOnly };
+   }
+   continue;
+  }
+  if (provider === 'twilio') {
+   const result = await sendTwilioWakeupVoice({ row, user, script, elevenlabsPrepared }).catch((error) => ({ ok: false, provider: 'twilio', error: sanitizePublicError(error?.message || String(error)), scriptPreview: script.callText }));
+   attempts.push(result);
+   if (result?.ok) {
+    if (allowTelegramVoice) {
+     elevenlabsVoice = await sendWakeupElevenLabsVoiceIfEligible({ row, user, script, audioBuffer: elevenlabsPrepared?.audioBuffer || null }).catch((error) => ({ ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)) }));
+    } else {
+     elevenlabsVoice = { ok: false, skipped: true, provider: 'elevenlabs', reason: callOnly ? 'teste_de_ligacao_sem_audio_telegram' : 'telegram_voice_disabled' };
+    }
+    return { ...result, attempts, elevenlabsVoice, callOnly };
+   }
+   continue;
+  }
+  if (provider === 'infobip') {
+   const result = await sendInfobipWakeupVoice({ row, user, script, elevenlabsPrepared, googleTtsPrepared, context }).catch((error) => ({ ok: false, provider: 'infobip', error: sanitizePublicError(error?.message || String(error)), scriptPreview: script.callText }));
+   attempts.push(result);
+   if (result?.ok) {
+    if (allowTelegramVoice) {
+     elevenlabsVoice = await sendWakeupElevenLabsVoiceIfEligible({ row, user, script, audioBuffer: elevenlabsPrepared?.audioBuffer || null }).catch((error) => ({ ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)) }));
+    } else {
+     elevenlabsVoice = { ok: false, skipped: true, provider: 'elevenlabs', reason: callOnly ? 'teste_de_ligacao_sem_audio_telegram' : 'telegram_voice_disabled' };
+    }
+    return { ...result, attempts, elevenlabsVoice, callOnly };
+   }
+   continue;
+  }
+  if (provider === 'callmebot' || provider === 'callmebot-phone') {
+   const cfg = callmebotConfigFromRow(row);
+   if (!cfg.enabled) {
+    const skipped = { ok: false, skipped: true, provider: 'callmebot', message: 'Chamada de despertar desativada pelo usuário.', scriptPreview: script.callText };
+    attempts.push(skipped);
+    continue;
+   }
+   const spokenText = String(script.callText || text || 'CrewCheck despertar. Confira sua apresentação.').replace(/\s+/g, ' ').trim().slice(0, 256);
+   try {
+    let url;
+    const forceCallmebotPhone = provider === 'callmebot-phone' || (callOnly && cfg.effectiveMode !== 'phone');
+    if ((cfg.effectiveMode === 'phone' || forceCallmebotPhone) && cfg.phone && cfg.apiKey) {
+     url = new URL('https://api.callmebot.com/call.php');
+     url.searchParams.set('phone', cfg.phone.replace(/^\+/, ''));
+     url.searchParams.set('text', spokenText);
+     url.searchParams.set('apikey', cfg.apiKey);
+    } else {
+     if (!cfg.telegramUser) {
+      attempts.push({ ok: false, skipped: true, provider: 'callmebot', mode: 'telegram', message: 'Informe @Telegram ou telefone autorizado para o Despertador CrewCheck.', scriptPreview: script.callText });
+      continue;
+     }
+     url = new URL('https://api.callmebot.com/start.php');
+     url.searchParams.set('user', cfg.telegramUser);
+     if (elevenlabsPrepared?.fileUrl && CREWCHECK_WAKEUP_ELEVENLABS_USE_MP3_CALL) {
+      url.searchParams.set('file', elevenlabsPrepared.fileUrl);
+     } else {
+      url.searchParams.set('text', spokenText);
+      url.searchParams.set('lang', cfg.lang);
+      url.searchParams.set('rpt', String(cfg.repeat));
+      url.searchParams.set('cc', 'missed');
+     }
+    }
+    const response = await fetch(url, { headers: { accept: 'application/json,text/plain,*/*', 'user-agent': 'CrewCheck-Wakeup/11.1.91' }, signal: AbortSignal.timeout(20000) });
+    const raw = await response.text().catch(() => '');
+    if (allowTelegramVoice) {
+     elevenlabsVoice = await sendWakeupElevenLabsVoiceIfEligible({ row, user, script, audioBuffer: elevenlabsPrepared?.audioBuffer || null }).catch((error) => ({ ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)) }));
+    } else {
+     elevenlabsVoice = { ok: false, skipped: true, provider: 'elevenlabs', reason: callOnly ? 'teste_de_ligacao_sem_audio_telegram' : 'telegram_voice_disabled' };
+    }
+    const result = { ok: response.ok, provider: 'callmebot', mode: (forceCallmebotPhone && cfg.phone && cfg.apiKey) ? 'phone' : cfg.effectiveMode, status: response.status, targetMasked: ((forceCallmebotPhone || cfg.effectiveMode === 'phone') && cfg.phone && cfg.apiKey) ? maskCallmebotTarget(cfg.phone, 'phone') : maskCallmebotTarget(cfg.telegramUser, 'telegram'), response: raw.slice(0, 240), scriptPreview: script.callText, scriptContext: { currentTime: script.currentTime, presentationTime: script.presentationTime, destination: script.destination, remaining: script.remaining }, elevenlabsCallAudio: { ok: Boolean(elevenlabsPrepared?.fileUrl), mode: elevenlabsPrepared?.mode || null, expiresAt: elevenlabsPrepared?.expiresAt || null }, elevenlabsVoice };
+    attempts.push(result);
+    if (result.ok) return { ...result, attempts, callOnly };
+   } catch (error) {
+    const result = { ok: false, provider: 'callmebot', error: sanitizePublicError(error?.message || String(error)), scriptPreview: script.callText, scriptContext: { currentTime: script.currentTime, presentationTime: script.presentationTime, destination: script.destination, remaining: script.remaining }, elevenlabsCallAudio: { ok: Boolean(elevenlabsPrepared?.fileUrl), mode: elevenlabsPrepared?.mode || null, expiresAt: elevenlabsPrepared?.expiresAt || null } };
+    attempts.push(result);
+   }
+  }
+ }
+ if (allowTelegramVoice && !elevenlabsVoice) {
+  elevenlabsVoice = await sendWakeupElevenLabsVoiceIfEligible({ row, user, script, audioBuffer: elevenlabsPrepared?.audioBuffer || null }).catch((error) => ({ ok: false, provider: 'elevenlabs', error: sanitizePublicError(error?.message || String(error)) }));
+ } else if (!elevenlabsVoice) {
+  elevenlabsVoice = { ok: false, skipped: true, provider: 'elevenlabs', reason: callOnly ? 'teste_de_ligacao_sem_audio_telegram' : 'telegram_voice_disabled' };
+ }
+ const firstAttempt = attempts.find((attempt) => attempt?.message || attempt?.error) || attempts[0] || null;
+ const detail = firstAttempt?.message || firstAttempt?.error || '';
+ const code = firstAttempt?.code || null;
+ const baseMessage = callOnly ? 'A ligação premium não foi iniciada.' : 'Nenhum provedor de ligação conseguiu completar o disparo.';
+ return { ok: false, provider: providerOrder[0] || 'none', code, message: detail ? `${baseMessage} ${detail}` : `${baseMessage} Verifique Infobip/VoIP no Render, telefone de destino e se o usuário é Premium/Admin.`, attempts, scriptPreview: script.callText, scriptContext: { currentTime: script.currentTime, presentationTime: script.presentationTime, destination: script.destination, remaining: script.remaining }, elevenlabsVoice, callOnly };
+}
+
+async function scheduleWakeupTelegramLoop({ wakeupId, chatId, text, alarmUrl = '', snoozeMinutes = 10, maxReminders = 8, row = null, user = null, context = {}, notificationMode = 'call_telegram', maxCalls = 2, callAfterSnoozes = 2 } = {}) {
+ if (!wakeupId || !chatId || !text) return false;
+ if (crewcheckWakeupTimers.has(wakeupId)) clearTimeout(crewcheckWakeupTimers.get(wakeupId));
+ const intervalMs = Math.max(3, Math.min(90, Number(snoozeMinutes) || 10)) * 60 * 1000;
+ const tick = async () => {
+  const status = await wakeupAckStatus(wakeupId);
+  if (status.acknowledged) { crewcheckWakeupTimers.delete(wakeupId); return; }
+  const count = Number(status.row?.reminder_count || 0);
+  if (count >= Math.max(1, Number(maxReminders) || 8)) { crewcheckWakeupTimers.delete(wakeupId); return; }
+  await telegramSendMessage(chatId, text, { reply_markup: wakeupTelegramReplyMarkup(wakeupId, alarmUrl, snoozeMinutes) }).catch(() => null);
+  const db = await ensureOvernightHotelLearningSchema().catch(() => getPool());
+  if (db) await db.query(`update crewcheck_wakeup_acks set reminder_count = coalesce(reminder_count,0) + 1, next_reminder_at = now() + ($2 || ' minutes')::interval where id = $1 and acknowledged_at is null`, [wakeupId, String(snoozeMinutes)]).catch(() => null);
+  const currentCount = count + 1;
+  const shouldCallAgain = wakeupShouldCall(notificationMode) && currentCount >= Math.max(1, Number(callAfterSnoozes) || 2) && Number(status.row?.call_count || 0) < Math.max(0, Math.min(2, Number(maxCalls) || 2));
+  if (shouldCallAgain) {
+   await sendWakeupCallIfConfigured({ row, user, text: '', context: { ...(context || {}), callOnly: true, forcePhoneCallOnly: true, allowTelegramVoice: false } }).catch(() => null);
+   if (db) await db.query(`update crewcheck_wakeup_acks set call_count = coalesce(call_count,0) + 1 where id = $1 and acknowledged_at is null`, [wakeupId]).catch(() => null);
+  }
+  const timer = setTimeout(tick, intervalMs);
+  crewcheckWakeupTimers.set(wakeupId, timer);
+ };
+ const timer = setTimeout(tick, intervalMs);
+ crewcheckWakeupTimers.set(wakeupId, timer);
+ return true;
+}
+
+function wakeupTelegramReplyMarkup(wakeupId = '', alarmUrl = '', snoozeMinutes = 10) {
+ const buttons = [];
+ const ackUrl = `${PUBLIC_APP_URL}/api/overnight-wakeup/ack?id=${encodeURIComponent(wakeupId)}`;
+ const snoozeUrl = `${PUBLIC_APP_URL}/api/overnight-wakeup/snooze?id=${encodeURIComponent(wakeupId)}&m=${encodeURIComponent(String(snoozeMinutes || 10))}`;
+ buttons.push([{ text: '✅ Já acordei', url: ackUrl }, { text: `😴 Soneca ${snoozeMinutes || 10} min`, url: snoozeUrl }]);
+ if (alarmUrl) buttons.push([{ text: '⏰ Abrir despertador', url: alarmUrl }]);
+ buttons.push([{ text: 'Abrir CrewCheck', url: PUBLIC_APP_URL }]);
+ return { inline_keyboard: buttons };
+}
+
+async function getAirportCatalog({ force = false } = {}) {
+ if (!AVIATION_CATALOG_ENABLED) return { data: mergeCatalogAirports([]), source: 'CrewCheck seed', error: 'catalog disabled' };
+ const cached = aviationCatalogCache.airports;
+ if (!force && cached.data && cached.expiresAt > Date.now()) return cached;
+ let data = [];
+ let source = 'CrewCheck seed';
+ let error = '';
+ try {
+  const text = await fetchTextCatalog(AIRPORT_CATALOG_SOURCE_URL);
+  data = mergeCatalogAirports(parseAirportCsv(text).map((item) => ({ ...item, source: 'ip2location/iata-icao' })));
+  source = AIRPORT_CATALOG_SOURCE_URL;
+ } catch (err) {
+  error = `${AIRPORT_CATALOG_SOURCE_URL}: ${err?.message || err}`;
+ }
+ if (!data.length) data = mergeCatalogAirports([]);
+ aviationCatalogCache.airports = { data, source, error, expiresAt: Date.now() + AVIATION_CATALOG_CACHE_TTL_MS };
+ return aviationCatalogCache.airports;
+}
+
+function filterCatalogItems(items, q = '', limit = 200) {
+ const term = String(q || '').trim().toLowerCase();
+ const filtered = !term ? items : items.filter((item) => JSON.stringify(item).toLowerCase().includes(term));
+ return filtered.slice(0, Math.min(Math.max(Number(limit || 200), 1), 5000));
+}
+
+async function lookupCatalog({ airline = '', airport = '', force = false } = {}) {
+ const [airlines, airports] = await Promise.all([getAirlineCatalog({ force }), getAirportCatalog({ force })]);
+ const airlineKey = normalizeCatalogCode(airline, 8);
+ const airportKey = normalizeCatalogCode(airport, 4);
+ const airlineMatch = airlineKey ? airlines.data.find((item) => [item.iata, item.icao, ...(item.aliases || [])].some((key) => normalizeCatalogCode(key, 8) === airlineKey)) : null;
+ const airportMatch = airportKey ? airports.data.find((item) => normalizeCatalogCode(item.iata, 4) === airportKey || normalizeCatalogCode(item.icao, 4) === airportKey) : null;
+ return { airline: airlineMatch || null, airport: airportMatch || null, sources: { airlines: airlines.source, airports: airports.source }, errors: [airlines.error, airports.error].filter(Boolean) };
+}
+
+
+function radarConsultationLimitForUser(user) {
+ try {
+  const billing = billingStatusFromUser(user);
+  if (isBillingAdmin(user) || billing?.premiumAccess || hasLifetimePremiumAccess(user)) return CREWCHECK_RADAR_PREMIUM_BATCH_MAX_FLIGHTS;
+ } catch {}
+ return CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS;
+}
+
+function radarStatusSourceLabel(snapshot = {}) {
+ return String(snapshot.source || snapshot.sourceLabel || snapshot.provider || '').trim();
+}
+
+function radarSnapshotHasOperationalSignal(snapshot = {}) {
+ if (!snapshot) return false;
+ const status = radarStatusLabel(snapshot.status || snapshot.flightStatus || snapshot.state || '');
+ return Boolean(snapshot.gate || snapshot.terminal || snapshot.baggageBelt || snapshot.confirmedTime || snapshot.estimatedDeparture || snapshot.estimatedArrival || (status && status !== 'Programado') || radarStatusSourceLabel(snapshot));
+}
+
+function radarSnapshotQualityScore(snapshot = {}) {
+ if (!snapshot) return 0;
+ let score = 0;
+ const source = radarStatusSourceLabel(snapshot);
+ if (snapshot.gate) score += 80;
+ if (snapshot.terminal) score += 55;
+ if (snapshot.baggageBelt) score += 20;
+ if (snapshot.estimatedDeparture || snapshot.estimatedArrival || snapshot.confirmedTime) score += 30;
+ if (snapshot.scheduledDeparture || snapshot.scheduledArrival || snapshot.scheduledTime) score += 12;
+ const label = radarStatusLabel(snapshot.status || snapshot.flightStatus || snapshot.state || '');
+ if (label && label !== 'Programado') score += 35;
+ if (/FlightAware|AeroAPI/i.test(source)) score += 26;
+ if (/FlightStats|Cirium/i.test(source)) score += 24;
+ if (/AeroDataBox/i.test(source)) score += 22;
+ if (/AirLabs/i.test(source)) score += 18;
+ if (/Aviationstack/i.test(source)) score += 14;
+ if (/Amadeus/i.test(source)) score += 12;
+ if (/oficial|BSB|GRU|Salvador|HST/i.test(source)) score += 20;
+ return score;
+}
+
+function radarPickBestField(candidates = [], field, transform = (x) => x) {
+ for (const item of candidates) {
+  const value = item?.[field];
+  if (value !== null && value !== undefined && String(value).trim()) return transform(value);
+ }
+ return null;
+}
+
+function radarStatusRank(label = '') {
+ const text = radarStatusLabel(label).toLowerCase();
+ if (/cancel/.test(text)) return 900;
+ if (/desvi/.test(text)) return 850;
+ if (/última|ultima|last/.test(text)) return 760;
+ if (/embar/.test(text)) return 720;
+ if (/atras/.test(text)) return 680;
+ if (/decol/.test(text)) return 600;
+ if (/pous/.test(text)) return 560;
+ if (/no horário|no horario/.test(text)) return 420;
+ if (/program/.test(text)) return 100;
+ return text ? 300 : 0;
+}
+
+function mergeFlightStatusSnapshots(queryBase = {}, snapshots = [], updatedAt = new Date().toISOString()) {
+ const candidates = (Array.isArray(snapshots) ? snapshots : [])
+  .filter(Boolean)
+  .filter((item) => radarSnapshotHasOperationalSignal(item))
+  .map((item, index) => ({ ...item, __order: index, __quality: radarSnapshotQualityScore(item) }))
+  .sort((a, b) => (b.__quality - a.__quality) || (a.__order - b.__order));
+ if (!candidates.length) return null;
+ const statusCandidate = [...candidates].sort((a, b) => (radarStatusRank(b.status || b.flightStatus || b.state) - radarStatusRank(a.status || a.flightStatus || a.state)) || (b.__quality - a.__quality))[0];
+ const sources = [...new Set(candidates.map(radarStatusSourceLabel).filter(Boolean))];
+ const best = candidates[0] || {};
+ return {
+  ok: true,
+  flightNumber: normalizeFlightToken(best.flightNumber || queryBase.flightNumber || ''),
+  origin: String(radarPickBestField(candidates, 'origin') || queryBase.origin || '').toUpperCase() || null,
+  destination: String(radarPickBestField(candidates, 'destination') || queryBase.destination || '').toUpperCase() || null,
+  date: radarIsoDate(radarPickBestField(candidates, 'date') || queryBase.date),
+  status: radarStatusLabel(statusCandidate?.status || statusCandidate?.flightStatus || statusCandidate?.state || 'Programado'),
+  gate: radarPickBestField(candidates, 'gate', (v) => String(v).toUpperCase()),
+  terminal: radarPickBestField(candidates, 'terminal', (v) => String(v).toUpperCase()),
+  baggageBelt: radarPickBestField(candidates, 'baggageBelt'),
+  scheduledTime: radarPickBestField(candidates, 'scheduledTime'),
+  confirmedTime: radarPickBestField(candidates, 'confirmedTime'),
+  scheduledDeparture: radarPickBestField(candidates, 'scheduledDeparture') || radarPickBestField(candidates, 'scheduledTime'),
+  estimatedDeparture: radarPickBestField(candidates, 'estimatedDeparture') || radarPickBestField(candidates, 'confirmedTime'),
+  scheduledArrival: radarPickBestField(candidates, 'scheduledArrival'),
+  estimatedArrival: radarPickBestField(candidates, 'estimatedArrival'),
+  registration: radarPickBestField(candidates, 'registration'),
+  aircraftIcao: radarPickBestField(candidates, 'aircraftIcao'),
+  source: sources.length > 1 ? `Radar Multi-API (${sources.join(' + ')})` : (sources[0] || 'Radar Multi-API'),
+  sources,
+  providerCount: sources.length,
+  aggregate: sources.length > 1,
+  deduplicated: true,
+  updatedAt,
+ };
+}
+
+async function fetchCustomFlightStatusProvider(queryBase, updatedAt) {
+ const provider = String(process.env.FLIGHT_STATUS_ENDPOINT || '').trim();
+ if (!provider) return null;
+ try {
+  const providerUrl = new URL(provider);
+  providerUrl.searchParams.set('flightNumber', queryBase.flightNumber || '');
+  providerUrl.searchParams.set('codes', queryBase.codes || '');
+  if (queryBase.origin) providerUrl.searchParams.set('origin', queryBase.origin);
+  if (queryBase.destination) providerUrl.searchParams.set('destination', queryBase.destination);
+  if (queryBase.date) providerUrl.searchParams.set('date', queryBase.date);
+  const response = await fetch(providerUrl, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(Number(process.env.FLIGHT_STATUS_ENDPOINT_TIMEOUT_MS || 6500)) });
+  if (!response.ok) return null;
+  const payload = await response.json();
+  return {
+   ok: true,
+   flightNumber: queryBase.flightNumber,
+   origin: queryBase.origin,
+   destination: queryBase.destination,
+   date: queryBase.date,
+   status: String(payload.status || payload.flightStatus || payload.state || 'Scheduled'),
+   gate: payload.gate ? String(payload.gate) : null,
+   terminal: payload.terminal ? String(payload.terminal) : null,
+   scheduledTime: payload.scheduledTime ? String(payload.scheduledTime) : null,
+   confirmedTime: payload.confirmedTime ? String(payload.confirmedTime) : null,
+   source: payload.source || 'provedor externo',
+   updatedAt,
+  };
+ } catch {
+  return null;
+ }
+}
+
+async function fetchRadarStatusProviderSnapshot(provider, queryBase, updatedAt) {
+ const name = String(provider || '').toUpperCase();
+ if (!name) return null;
+ try {
+  if (name === 'OFFICIAL') {
+   const official = [];
+   if (shouldUseBsbAero(queryBase)) official.push(await fetchBsbAeroFlightStatus(queryBase));
+   if (shouldUseOfficialAirport(queryBase, 'GRU')) official.push(await fetchOfficialAirportFlightStatus(queryBase, 'GRU'));
+   if (shouldUseOfficialAirport(queryBase, 'SSA')) official.push(await fetchSalvadorHstFlightStatus(queryBase));
+   return mergeFlightStatusSnapshots(queryBase, official, updatedAt);
+  }
+  if (name === 'FLIGHTSTATS' || name === 'CIRIUM') return await fetchFlightStatsSingleStatus(queryBase);
+  if (name === 'AERODATABOX') return await fetchAeroDataBoxFlightStatus(queryBase);
+  if (name === 'FLIGHTAWARE' || name === 'AEROAPI') return await fetchFlightAwareAeroApiStatus(queryBase);
+  if (name === 'AIRLABS') return await fetchAirlabsFlightStatus(queryBase);
+  if (name === 'AVIATIONSTACK_TIMETABLE') return await fetchAviationstackTimetableStatus(queryBase);
+  if (name === 'AVIATIONSTACK_FLIGHTS') return await fetchAviationstackFlightsStatus(queryBase);
+  if (name === 'AVIATIONSTACK') {
+   const timetable = await fetchAviationstackTimetableStatus(queryBase);
+   const flights = await fetchAviationstackFlightsStatus(queryBase);
+   return mergeFlightStatusSnapshots(queryBase, [timetable, flights], updatedAt);
+  }
+  if (name === 'AMADEUS') return await fetchAmadeusOnDemandStatus(queryBase);
+  if (name === 'CUSTOM' || name === 'PROXY' || name === 'EXTERNAL') return await fetchCustomFlightStatusProvider(queryBase, updatedAt);
+ } catch {
+  return null;
+ }
+ return null;
 }
 
 async function getFlightStatusSnapshot(query) {
@@ -6377,78 +9375,20 @@ async function getFlightStatusSnapshot(query) {
  const airport = String(query.get('airport') || '').toUpperCase().slice(0, 4);
  const updatedAt = new Date().toISOString();
  const queryBase = { flightNumber, origin, destination, date, codes, route, airport };
-
- let bsbStatus = null;
- if (shouldUseBsbAero(queryBase)) {
-  bsbStatus = await fetchBsbAeroFlightStatus(queryBase);
-  if (isMoreUsefulFlightStatus(bsbStatus) && bsbStatus.source === 'BSB Aero oficial') return bsbStatus;
+ const providerOrder = [...new Set((CREWCHECK_RADAR_STATUS_PROVIDER_ORDER.length ? CREWCHECK_RADAR_STATUS_PROVIDER_ORDER : ['FLIGHTAWARE','FLIGHTSTATS','AERODATABOX','AIRLABS','AVIATIONSTACK','AMADEUS','OFFICIAL','CUSTOM']).map((item) => String(item || '').toUpperCase()))];
+ const snapshots = [];
+ const diagnostics = [];
+ for (const provider of providerOrder) {
+  const before = snapshots.length;
+  const snapshot = await fetchRadarStatusProviderSnapshot(provider, queryBase, updatedAt);
+  if (snapshot) snapshots.push(snapshot);
+  diagnostics.push({ provider, ok: snapshots.length > before, useful: radarSnapshotHasOperationalSignal(snapshot), source: radarStatusSourceLabel(snapshot) || null });
+  if (!CREWCHECK_RADAR_AGGREGATE_PROVIDERS && isMoreUsefulFlightStatus(snapshot)) return snapshot;
  }
-
- let gruStatus = null;
- if (shouldUseOfficialAirport(queryBase, 'GRU')) {
-  gruStatus = await fetchOfficialAirportFlightStatus(queryBase, 'GRU');
-  if (isMoreUsefulFlightStatus(gruStatus) && /GRU Airport oficial/i.test(String(gruStatus.source || ''))) return gruStatus;
- }
-
- const flightStatsStatus = await fetchFlightStatsSingleStatus(queryBase);
- if (isMoreUsefulFlightStatus(flightStatsStatus)) return flightStatsStatus;
-
- const aeroDataBoxStatus = await fetchAeroDataBoxFlightStatus(queryBase);
- if (isMoreUsefulFlightStatus(aeroDataBoxStatus)) return aeroDataBoxStatus;
-
- const flightAwareStatus = await fetchFlightAwareAeroApiStatus(queryBase);
- if (isMoreUsefulFlightStatus(flightAwareStatus)) return flightAwareStatus;
-
- const aviationstackTimetable = await fetchAviationstackTimetableStatus(queryBase);
- if (isMoreUsefulFlightStatus(aviationstackTimetable)) return aviationstackTimetable;
-
- const aviationstackFlights = await fetchAviationstackFlightsStatus(queryBase);
- if (isMoreUsefulFlightStatus(aviationstackFlights)) return aviationstackFlights;
-
- const amadeusStatus = await fetchAmadeusOnDemandStatus(queryBase);
- if (isMoreUsefulFlightStatus(amadeusStatus)) return amadeusStatus;
-
- if (gruStatus) return gruStatus;
- if (bsbStatus) return bsbStatus;
-
- // Provedor opcional. Configure FLIGHT_STATUS_ENDPOINT com uma URL interna/proxy
- // que aceite flightNumber/origin/destination/date. Sem provedor, o CrewCheck
- // retorna estrutura segura para a UI, sem inventar portão/status.
- const provider = String(process.env.FLIGHT_STATUS_ENDPOINT || '').trim();
- if (provider) {
-  try {
-   const providerUrl = new URL(provider);
-   providerUrl.searchParams.set('flightNumber', flightNumber);
-   providerUrl.searchParams.set('codes', codes);
-   if (origin) providerUrl.searchParams.set('origin', origin);
-   if (destination) providerUrl.searchParams.set('destination', destination);
-   if (date) providerUrl.searchParams.set('date', date);
-   const response = await fetch(providerUrl, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(6500) });
-   if (response.ok) {
-    const payload = await response.json();
-    return {
-     ok: true,
-     flightNumber,
-     origin,
-     destination,
-     date,
-     status: String(payload.status || payload.flightStatus || payload.state || 'Scheduled'),
-     gate: payload.gate ? String(payload.gate) : null,
-     terminal: payload.terminal ? String(payload.terminal) : null,
-     scheduledTime: payload.scheduledTime ? String(payload.scheduledTime) : null,
-     confirmedTime: payload.confirmedTime ? String(payload.confirmedTime) : null,
-     source: payload.source || 'provedor externo',
-     updatedAt,
-    };
-   }
-  } catch (error) {
-   return { ok: true, flightNumber, origin, destination, date, status: 'Scheduled', gate: null, terminal: null, source: 'provedor indisponível', updatedAt };
-  }
- }
-
- return { ok: true, flightNumber, origin, destination, date, status: 'Scheduled', gate: null, terminal: null, source: shouldUseBsbAero(queryBase) ? 'BSB Aero oficial: voo não localizado' : (shouldUseOfficialAirport(queryBase, 'GRU') ? 'GRU Airport oficial: voo não localizado' : 'Sem dados online'), updatedAt };
+ const merged = mergeFlightStatusSnapshots(queryBase, snapshots, updatedAt);
+ if (merged) return { ...merged, diagnostics };
+ return { ok: true, flightNumber, origin, destination, date, status: 'Scheduled', gate: null, terminal: null, source: 'Sem dados online', sources: [], diagnostics, updatedAt };
 }
-
 
 const CREWCHECK_AIRPORT_COORDS = {
  BSB: { name: 'Aeroporto de Brasília', lat: -15.8697, lng: -47.9208 },
@@ -6552,6 +9492,156 @@ function buildTomTomGoNavigationUrl({ destination }) {
  }
 }
 
+function buildTomTomPlanUrl({ destination }) {
+ try {
+  const lat = Number(destination?.lat);
+  const lng = Number(destination?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'https://plan.tomtom.com/';
+  const point = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  return `https://plan.tomtom.com/?destination=${encodeURIComponent(point)}&routeType=fastest&traffic=true`;
+ } catch {
+  return 'https://plan.tomtom.com/';
+ }
+}
+
+
+function buildGoogleMapsWebRouteUrl({ destination }) {
+ try {
+  const lat = Number(destination?.lat);
+  const lng = Number(destination?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'https://www.google.com/maps';
+  const point = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(point)}&travelmode=driving`;
+ } catch {
+  return 'https://www.google.com/maps';
+ }
+}
+
+function getTomTomServerKey() {
+ return String(process.env.TOMTOM_API_KEY || process.env.TOMTOM_ROUTING_API_KEY || process.env.CREWCHECK_TOMTOM_API_KEY || process.env.TOMTOM_KEY || process.env.VITE_TOMTOM_API_KEY || '').trim();
+}
+
+
+const CREWCHECK_WEATHER_ENABLED = String(process.env.CREWCHECK_WEATHER_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WEATHER_API_BASE = String(process.env.CREWCHECK_WEATHER_API_BASE || 'https://api.open-meteo.com/v1/forecast').trim();
+const CREWCHECK_WEATHER_CACHE_TTL_MS = Math.max(10 * 60 * 1000, Number(process.env.CREWCHECK_WEATHER_CACHE_TTL_MS || 45 * 60 * 1000));
+const crewcheckWeatherCache = new Map();
+
+function crewcheckWeatherCodeLabel(code) {
+ const n = Number(code);
+ if (n === 0) return 'Sol';
+ if ([1, 2].includes(n)) return 'Parcialmente nublado';
+ if (n === 3) return 'Nublado';
+ if ([45, 48].includes(n)) return 'Névoa/nevoeiro';
+ if ((n >= 51 && n <= 57) || (n >= 61 && n <= 67)) return 'Chuva';
+ if (n >= 71 && n <= 77) return 'Neve/granizo';
+ if (n >= 80 && n <= 82) return 'Pancadas de chuva';
+ if (n >= 85 && n <= 86) return 'Pancadas de neve';
+ if (n >= 95) return 'Trovoadas';
+ return 'Tempo a confirmar';
+}
+
+function crewcheckWeatherSeverity({ code, precipitation = 0, precipitationProbability = 0, windGust = 0, temperature = null } = {}) {
+ const n = Number(code);
+ const rain = Number(precipitation || 0);
+ const prob = Number(precipitationProbability || 0);
+ const gust = Number(windGust || 0);
+ const temp = Number(temperature);
+ if (n >= 95 || rain >= 18 || prob >= 85 || gust >= 65) return 'red';
+ if ((n >= 61 && n <= 82) || rain >= 6 || prob >= 60 || gust >= 45) return 'amber';
+ if (n === 3 || (n >= 45 && n <= 57) || rain > 0 || prob >= 35 || (Number.isFinite(temp) && (temp >= 34 || temp <= 8))) return 'yellow';
+ return 'green';
+}
+
+function crewcheckWeatherToneLabel(severity) {
+ if (severity === 'red') return 'vermelho';
+ if (severity === 'amber') return 'âmbar';
+ if (severity === 'yellow') return 'amarelo';
+ return 'verde';
+}
+
+function crewcheckWeatherAdvisory(severity, label = '') {
+ if (severity === 'red') return `Atenção operacional: ${label || 'tempo severo'} previsto/observado. Confirme METAR/TAF e alertas oficiais.`;
+ if (severity === 'amber') return `Atenção: ${label || 'chuva/vento'} pode impactar deslocamento, embarque e conexão.`;
+ if (severity === 'yellow') return `Monitorar: ${label || 'condição variável'} no pernoite.`;
+ return 'Condição meteorológica favorável no momento da consulta.';
+}
+
+function airportWeatherCoords(airport) {
+ const code = normalizeAirportCode(airport, '');
+ const info = CREWCHECK_AIRPORT_COORDS[code];
+ if (!info) return null;
+ return { airport: code, lat: Number(info.lat), lng: Number(info.lng), name: info.name || code };
+}
+
+async function fetchAirportWeatherSnapshot({ airport = 'BSB', date = '', days = 3 } = {}) {
+ if (!CREWCHECK_WEATHER_ENABLED) return { ok: false, message: 'Meteorologia desativada.' };
+ const coords = airportWeatherCoords(airport);
+ if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return { ok: false, airport, message: 'Aeroporto sem coordenadas cadastradas.' };
+ const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : todayIsoInBrazil();
+ const forecastDays = Math.min(16, Math.max(1, Number(days || 3)));
+ const cacheKey = `${coords.airport}:${cleanDate}:${forecastDays}`;
+ const cached = crewcheckWeatherCache.get(cacheKey);
+ if (cached && Date.now() - cached.cachedAt < CREWCHECK_WEATHER_CACHE_TTL_MS) return { ...cached.payload, cache: { hit: true, ttlMs: CREWCHECK_WEATHER_CACHE_TTL_MS } };
+ try {
+  const url = new URL(CREWCHECK_WEATHER_API_BASE);
+  url.searchParams.set('latitude', String(coords.lat));
+  url.searchParams.set('longitude', String(coords.lng));
+  url.searchParams.set('timezone', process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo');
+  url.searchParams.set('forecast_days', String(forecastDays));
+  url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,precipitation,rain,showers,weather_code,wind_speed_10m,wind_gusts_10m');
+  url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max');
+  const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'CrewCheck/11.1.33 Weather' }, signal: AbortSignal.timeout(Number(process.env.CREWCHECK_WEATHER_TIMEOUT_MS || 9000)) });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload) throw new Error(`WEATHER_HTTP_${response.status}`);
+  const current = payload.current || {};
+  const daily = payload.daily || {};
+  const dailyItems = Array.isArray(daily.time) ? daily.time.map((day, index) => {
+   const code = daily.weather_code?.[index];
+   const label = crewcheckWeatherCodeLabel(code);
+   const severity = crewcheckWeatherSeverity({ code, precipitation: daily.precipitation_sum?.[index], precipitationProbability: daily.precipitation_probability_max?.[index], windGust: daily.wind_gusts_10m_max?.[index], temperature: daily.temperature_2m_max?.[index] });
+   return {
+    date: day,
+    label,
+    severity,
+    tone: crewcheckWeatherToneLabel(severity),
+    temperatureMax: Number(daily.temperature_2m_max?.[index] ?? null),
+    temperatureMin: Number(daily.temperature_2m_min?.[index] ?? null),
+    precipitationMm: Number(daily.precipitation_sum?.[index] ?? 0),
+    precipitationProbability: Number(daily.precipitation_probability_max?.[index] ?? 0),
+    windGustKmh: Number(daily.wind_gusts_10m_max?.[index] ?? 0),
+    advisory: crewcheckWeatherAdvisory(severity, label),
+   };
+  }) : [];
+  const currentLabel = crewcheckWeatherCodeLabel(current.weather_code);
+  const currentSeverity = crewcheckWeatherSeverity({ code: current.weather_code, precipitation: current.precipitation || current.rain || current.showers, windGust: current.wind_gusts_10m, temperature: current.temperature_2m });
+  const result = {
+   ok: true,
+   airport: coords.airport,
+   airportName: coords.name,
+   date: cleanDate,
+   current: {
+    label: currentLabel,
+    severity: currentSeverity,
+    tone: crewcheckWeatherToneLabel(currentSeverity),
+    temperature: Number(current.temperature_2m ?? null),
+    humidity: Number(current.relative_humidity_2m ?? null),
+    precipitationMm: Number(current.precipitation ?? current.rain ?? current.showers ?? 0),
+    windKmh: Number(current.wind_speed_10m ?? 0),
+    windGustKmh: Number(current.wind_gusts_10m ?? 0),
+    advisory: crewcheckWeatherAdvisory(currentSeverity, currentLabel),
+   },
+   daily: dailyItems,
+   source: 'Open-Meteo Forecast API',
+   updatedAt: new Date().toISOString(),
+  };
+  crewcheckWeatherCache.set(cacheKey, { cachedAt: Date.now(), payload: result });
+  return result;
+ } catch (error) {
+  return { ok: false, airport: coords.airport, airportName: coords.name, date: cleanDate, message: sanitizePublicError(error?.message || String(error)), source: 'Open-Meteo Forecast API', updatedAt: new Date().toISOString() };
+ }
+}
+
 /* CREWCHECK_V10862_ADDRESS_ROUTES_RELIABLE_START */
 function normalizeBrazilCep(value) {
  const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
@@ -6594,6 +9684,49 @@ function normalizeGeocodeResult(result, source = 'Google Geocoding') {
  };
 }
 
+function normalizeTomTomGeocodeResult(result) {
+ const position = result?.position || {};
+ const lat = Number(position.lat);
+ const lng = Number(position.lon ?? position.lng);
+ if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+ const address = result.address || {};
+ return {
+  ok: true,
+  formattedAddress: result.address?.freeformAddress || result.poi?.name || '',
+  lat,
+  lng,
+  placeId: result.id || null,
+  precision: result.type || result.score ? 'TOMTOM_GEOCODED' : 'GEOCODED',
+  postalCode: address.postalCode || '',
+  neighborhood: address.municipalitySubdivision || '',
+  city: address.municipality || address.localName || '',
+  state: address.countrySubdivision || '',
+  country: address.country || address.countryCode || '',
+  source: 'TomTom Search',
+ };
+}
+
+async function geocodeTomTomAddress({ queryAddress, normalizedCep }) {
+ const key = getTomTomServerKey();
+ const query = String(queryAddress || '').trim();
+ if (!key || !query) return null;
+ try {
+  const url = new URL(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(query)}.json`);
+  url.searchParams.set('key', key);
+  url.searchParams.set('language', 'pt-BR');
+  url.searchParams.set('countrySet', 'BR');
+  url.searchParams.set('limit', '1');
+  if (normalizedCep) url.searchParams.set('postalCode', normalizedCep);
+  const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`TOMTOM_GEOCODE_${response.status}`);
+  const best = normalizeTomTomGeocodeResult(payload?.results?.[0]);
+  return best ? { ...best, rawSource: 'tomtom' } : null;
+ } catch (error) {
+  return { ok: false, code: String(error?.message || 'TOMTOM_GEOCODE_ERROR'), message: 'TomTom Search indisponível ou sem resultado.' };
+ }
+}
+
 async function lookupViaCep(cep) {
  const normalized = normalizeBrazilCep(cep);
  if (!normalized) return null;
@@ -6615,11 +9748,14 @@ async function geocodeCrewCheckAddress({ address, cep }) {
  const addressText = String(address || '').trim();
  const queryAddress = [addressText, !addressText && viaCep?.address ? viaCep.address : '', addressText && normalizedCep ? `CEP ${normalizedCep}` : '', 'Brasil'].filter(Boolean).join(', ');
  if (!key) {
+  const tomTomGeocode = await geocodeTomTomAddress({ queryAddress, normalizedCep });
+  if (tomTomGeocode?.ok) return { ...tomTomGeocode, viaCep, inputCep: normalizedCep || null, inputAddress: addressText || null, source: 'TomTom Search · fallback' };
   return {
    ok: false,
    code: 'GOOGLE_KEY_MISSING',
-   message: 'Chave Google não configurada no backend. Configure GOOGLE_ROUTES_API_KEY/GOOGLE_MAPS_API_KEY no Render.',
+   message: 'Google Maps não configurado. Configure GOOGLE_MAPS_API_KEY no Render; TomTom será usado apenas como fallback quando disponível.',
    viaCep,
+   tomTomGeocode,
   };
  }
  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
@@ -6637,11 +9773,14 @@ async function geocodeCrewCheckAddress({ address, cep }) {
  });
  const payload = await response.json().catch(() => null);
  if (!response.ok || payload?.status !== 'OK') {
+  const tomTomGeocode = await geocodeTomTomAddress({ queryAddress, normalizedCep });
+  if (tomTomGeocode?.ok) return { ...tomTomGeocode, viaCep, inputCep: normalizedCep || null, inputAddress: addressText || null, source: 'TomTom Search · fallback' };
   return {
    ok: false,
    code: `GOOGLE_GEOCODING_${payload?.status || response.status}`,
    message: payload?.error_message || payload?.status || `HTTP ${response.status}`,
    viaCep,
+   tomTomGeocode,
   };
  }
  const best = normalizeGeocodeResult(payload.results?.[0], 'Google Geocoding');
@@ -6851,6 +9990,52 @@ function parseLegacyStepTransit(step) {
  };
 }
 
+async function computeTomTomRoutePlan({ origin, destination, departureTime, mode = 'DRIVE' }) {
+ const key = getTomTomServerKey();
+ if (!key) return null;
+ const originLat = Number(origin?.lat);
+ const originLng = Number(origin?.lng);
+ const destLat = Number(destination?.lat);
+ const destLng = Number(destination?.lng);
+ if (![originLat, originLng, destLat, destLng].every(Number.isFinite)) return null;
+ const travelMode = mode === 'WALK' ? 'pedestrian' : mode === 'TWO_WHEELER' ? 'motorcycle' : 'car';
+ const url = new URL(`https://api.tomtom.com/routing/1/calculateRoute/${originLat},${originLng}:${destLat},${destLng}/json`);
+ url.searchParams.set('key', key);
+ url.searchParams.set('traffic', 'true');
+ url.searchParams.set('routeType', 'fastest');
+ url.searchParams.set('travelMode', travelMode);
+ url.searchParams.set('language', 'pt-BR');
+ url.searchParams.set('instructionsType', 'text');
+ url.searchParams.set('routeRepresentation', 'summaryOnly');
+ url.searchParams.set('computeTravelTimeFor', 'all');
+ const depart = new Date(departureTime || Date.now());
+ if (Number.isFinite(depart.getTime())) url.searchParams.set('departAt', depart.toISOString());
+ try {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_500) });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`TOMTOM_ROUTING_${response.status}`);
+  const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
+  const summary = route?.summary || {};
+  const durationSeconds = Number(summary.travelTimeInSeconds || summary.noTrafficTravelTimeInSeconds || 0);
+  if (!durationSeconds) return null;
+  const staticDurationSeconds = Math.max(1, Number(summary.noTrafficTravelTimeInSeconds || durationSeconds - Number(summary.trafficDelayInSeconds || 0) || durationSeconds));
+  const distanceMeters = parseFiniteNumber(summary.lengthInMeters, null);
+  return {
+   mode: mode === 'WALK' ? 'WALK' : mode === 'TWO_WHEELER' ? 'TWO_WHEELER' : 'DRIVE',
+   durationSeconds,
+   staticDurationSeconds,
+   distanceMeters,
+   localizedDuration: `${Math.max(1, Math.round(durationSeconds / 60))} min`,
+   localizedDistance: distanceMeters ? `${Math.round((distanceMeters / 1000) * 10) / 10} km` : '',
+   label: mode === 'TWO_WHEELER' ? 'Moto · TomTom Traffic' : mode === 'WALK' ? 'A pé · TomTom' : 'Carro · TomTom Traffic',
+   transitSteps: [],
+   source: 'TomTom Routing · trânsito real',
+  };
+ } catch (error) {
+  return null;
+ }
+}
+
 async function computeLegacyDirectionsPlan({ origin, destination, departureTime, arrivalTime, mode = 'DRIVE' }) {
  const key = String(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || '').trim();
  if (!key) return null;
@@ -6896,9 +10081,17 @@ async function computeLegacyDirectionsPlan({ origin, destination, departureTime,
 }
 
 async function computeGoogleRoutesPlan({ origin, destination, departureTime, arrivalTime, mode = 'DRIVE', transitPreference = 'FEWER_TRANSFERS', sourceSuffix = '' }) {
- const key = String(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || '').trim();
- if (!key) return null;
  const travelMode = mode === 'TRANSIT' ? 'TRANSIT' : mode === 'WALK' ? 'WALK' : mode === 'TWO_WHEELER' ? 'TWO_WHEELER' : 'DRIVE';
+ const key = String(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || '').trim();
+ const preferTomTom = ['1','true','yes','on'].includes(String(process.env.TOMTOM_PREFER_FOR_DRIVE || 'true').toLowerCase());
+ if (preferTomTom && ['DRIVE','TWO_WHEELER','WALK'].includes(travelMode) && getTomTomServerKey()) {
+  const tomTomFirst = await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }).catch(() => null);
+  if (tomTomFirst?.durationSeconds) return { ...tomTomFirst, source: `${tomTomFirst.source || 'TomTom'} · principal` };
+ }
+ if (!key) {
+  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }) : null;
+  return tomTom?.durationSeconds ? { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` } : null;
+ }
  const body = {
   origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
   destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
@@ -6938,6 +10131,8 @@ async function computeGoogleRoutesPlan({ origin, destination, departureTime, arr
  } catch (error) {
   const legacy = await computeLegacyDirectionsPlan({ origin, destination, departureTime, arrivalTime, mode: travelMode });
   if (legacy?.durationSeconds) return legacy;
+  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }) : null;
+  if (tomTom?.durationSeconds) return { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` };
   throw error;
  }
  const payload = await response.json();
@@ -7036,7 +10231,7 @@ function buildUberRideLinks({ origin, destination, airport }) {
  return {
   deepLink: `uber://?${common.toString()}`,
   webLink: `https://m.uber.com/ul/?${common.toString()}`,
-  mapsLink: buildTomTomGoNavigationUrl({ destination }),
+  mapsLink: buildGoogleMapsWebRouteUrl({ destination }),
  };
 }
 
@@ -7562,7 +10757,7 @@ function buildSmartRouteOption({ route, airport, destination, origin, target, ar
   fareRange: route.fareRange || null,
   fareLabel: route.fareLabel || null,
   fareConfidence: route.fareConfidence || null,
-  mapsUrl: buildTomTomGoNavigationUrl({ destination }),
+  mapsUrl: buildGoogleMapsWebRouteUrl({ destination }),
   isLate,
   source: route.source,
   humanSourceLabel,
@@ -7755,10 +10950,12 @@ async function getSmartDeparturePlan(query) {
   locationLearning: { mode: 'local', samples: localSamples, enabled: localSamples > 0, locationTime: locationTime || null },
   warning: isLongDistance && !userAllowsFlightAboveThreshold
    ? `Trajeto longo detectado. Ative a opção de voo em longa distância para o Automático considerar ponte aérea.`
-   : (usedGoogle ? null : 'Trânsito em tempo real ainda não configurado. O CrewCheck está usando uma estimativa segura e mantém o botão para abrir a rota no TomTom.'),
+   : (usedGoogle ? null : 'Google Maps não retornou rota em tempo real. O CrewCheck mantém estimativa segura e usa TomTom apenas como fallback.'),
   diagnostics: {
    provider: isFlightBridgeMode(primary.mode) ? 'flight-threshold-policy' : primary.mode === 'RIDE_APP' ? 'ride-apps' : usedGoogle ? 'google-routes' : 'local-fallback',
    mapsKeyConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY),
+   tomTomConfigured: Boolean(getTomTomServerKey()),
+   tomTomPreferredForDrive: ['1','true','yes','on'].includes(String(process.env.TOMTOM_PREFER_FOR_DRIVE || 'true').toLowerCase()),
    geocodingOk: geocodedOrigin?.ok || null,
    geocodingMessage: geocodedOrigin?.ok ? geocodedOrigin.formattedAddress : sanitizePublicError(geocodedOrigin?.message || geocodedOrigin?.code || ''),
    rideAppsEnabled: rideEnabled,
@@ -7773,12 +10970,106 @@ async function getSmartDeparturePlan(query) {
 
 
 const CREWCHECK_EXCHANGE_API_BASE = String(process.env.CREWCHECK_EXCHANGE_API_BASE || 'https://api.frankfurter.dev/v1/latest').trim();
+const CREWCHECK_EXCHANGE_AWESOME_BASE = String(process.env.CREWCHECK_EXCHANGE_AWESOME_BASE || 'https://economia.awesomeapi.com.br/json/last').trim().replace(/\/$/, '');
+const FREECURRENCY_API_KEY = String(process.env.FREECURRENCY_API_KEY || process.env.FREECURRENCYAPI_KEY || process.env.FREECURRENCY_APIKEY || '').trim();
+const FREECURRENCY_API_BASE = String(process.env.FREECURRENCY_API_BASE || 'https://api.freecurrencyapi.com/v1/latest').trim();
+const FREECURRENCY_API_ENABLED = String(process.env.FREECURRENCY_API_ENABLED || 'true').toLowerCase() !== 'false';
 const CREWCHECK_EXCHANGE_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CREWCHECK_EXCHANGE_CACHE_TTL_MS || 12 * 60 * 60 * 1000));
+const CREWCHECK_EXCHANGE_HTTP_TIMEOUT_MS = Math.max(3000, Number(process.env.CREWCHECK_EXCHANGE_HTTP_TIMEOUT_MS || 9000));
 const exchangeRatesCache = new Map();
 
 function normalizeCurrencyCode(value, fallback = 'BRL') {
  const code = String(value || fallback).trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
  return code.length === 3 ? code : fallback;
+}
+
+function parsePositiveNumber(value) {
+ if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+ const cleaned = String(value ?? '').trim().replace(',', '.');
+ const number = Number(cleaned);
+ return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+async function crewFetchJsonWithTimeout(url, { label = 'cotação' } = {}) {
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), CREWCHECK_EXCHANGE_HTTP_TIMEOUT_MS);
+ try {
+  const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'CrewCheck-Exchange/11.1.91' }, signal: controller.signal });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`${label} indisponível (${response.status}).`);
+  return payload;
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+function readAwesomePair(payload, from, to) {
+ const key = `${normalizeCurrencyCode(from, '')}${normalizeCurrencyCode(to, '')}`;
+ const item = payload?.[key] || payload?.[key.toUpperCase()] || null;
+ return parsePositiveNumber(item?.bid || item?.ask || item?.varBid || item?.high || item?.low);
+}
+
+async function fetchAwesomeExchangeRates(cleanBase, cleanSymbols) {
+ const pairSet = new Set();
+ for (const symbol of cleanSymbols) {
+  if (symbol === cleanBase) continue;
+  pairSet.add(`${cleanBase}-${symbol}`);
+  if (cleanBase !== 'BRL') pairSet.add(`${cleanBase}-BRL`);
+  if (symbol !== 'BRL') pairSet.add(`${symbol}-BRL`);
+ }
+ if (!pairSet.size) return { rates: {}, source: 'AwesomeAPI / mercado', date: new Date().toISOString().slice(0, 10) };
+ const url = `${CREWCHECK_EXCHANGE_AWESOME_BASE}/${Array.from(pairSet).join(',')}`;
+ const payload = await crewFetchJsonWithTimeout(url, { label: 'AwesomeAPI' });
+ const rates = {};
+ for (const symbol of cleanSymbols) {
+  if (symbol === cleanBase) {
+   rates[symbol] = 1;
+   continue;
+  }
+  const direct = readAwesomePair(payload, cleanBase, symbol);
+  if (direct) {
+   rates[symbol] = direct;
+   continue;
+  }
+  const baseBrl = cleanBase === 'BRL' ? 1 : readAwesomePair(payload, cleanBase, 'BRL');
+  const symbolBrl = symbol === 'BRL' ? 1 : readAwesomePair(payload, symbol, 'BRL');
+  if (baseBrl && symbolBrl) rates[symbol] = Number((baseBrl / symbolBrl).toPrecision(12));
+ }
+ const firstItem = payload && typeof payload === 'object' ? Object.values(payload).find((item) => item && typeof item === 'object') : null;
+ const date = firstItem?.create_date ? String(firstItem.create_date).slice(0, 10) : new Date().toISOString().slice(0, 10);
+ return { rates, source: 'AwesomeAPI / mercado', date };
+}
+
+async function fetchFrankfurterExchangeRates(cleanBase, cleanSymbols) {
+ const apiUrl = new URL(CREWCHECK_EXCHANGE_API_BASE);
+ apiUrl.searchParams.set('base', cleanBase);
+ apiUrl.searchParams.set('symbols', cleanSymbols.join(','));
+ const payload = await crewFetchJsonWithTimeout(apiUrl, { label: 'Frankfurter' });
+ if (!payload?.rates) throw new Error(payload?.message || 'Frankfurter não retornou cotações.');
+ const rates = {};
+ for (const [currency, value] of Object.entries(payload.rates || {})) {
+  const number = parsePositiveNumber(value);
+  if (number) rates[normalizeCurrencyCode(currency)] = number;
+ }
+ return { rates, source: 'Frankfurter / bancos centrais', date: String(payload.date || new Date().toISOString().slice(0, 10)) };
+}
+
+async function fetchFreeCurrencyApiExchangeRates(cleanBase, cleanSymbols) {
+ if (!FREECURRENCY_API_ENABLED || !FREECURRENCY_API_KEY) throw new Error('FreeCurrencyAPI não configurada.');
+ const apiUrl = new URL(FREECURRENCY_API_BASE);
+ apiUrl.searchParams.set('apikey', FREECURRENCY_API_KEY);
+ apiUrl.searchParams.set('base_currency', cleanBase);
+ apiUrl.searchParams.set('currencies', cleanSymbols.join(','));
+ const payload = await crewFetchJsonWithTimeout(apiUrl, { label: 'FreeCurrencyAPI' });
+ const data = payload?.data || payload?.rates || null;
+ if (!data || typeof data !== 'object') throw new Error(payload?.message || 'FreeCurrencyAPI não retornou cotações.');
+ const rates = {};
+ for (const [currency, value] of Object.entries(data)) {
+  const number = parsePositiveNumber(value);
+  if (number) rates[normalizeCurrencyCode(currency)] = number;
+ }
+ const date = String(payload?.meta?.last_updated_at || payload?.date || new Date().toISOString()).slice(0, 10);
+ return { rates, source: 'FreeCurrencyAPI', date };
 }
 
 async function fetchCrewCheckExchangeRates({ base, symbols }) {
@@ -7791,29 +11082,34 @@ async function fetchCrewCheckExchangeRates({ base, symbols }) {
  const key = `${cleanBase}:${cleanSymbols.join(',')}`;
  const cached = exchangeRatesCache.get(key);
  if (cached && Date.now() - cached.cachedAt < CREWCHECK_EXCHANGE_CACHE_TTL_MS) return { ...cached.payload, cached: true };
- const controller = new AbortController();
- const timeout = setTimeout(() => controller.abort(), 10_000);
- try {
-  const apiUrl = new URL(CREWCHECK_EXCHANGE_API_BASE);
-  apiUrl.searchParams.set('base', cleanBase);
-  apiUrl.searchParams.set('symbols', cleanSymbols.join(','));
-  const response = await fetch(apiUrl, { headers: { accept: 'application/json' }, signal: controller.signal });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.rates) throw new Error(payload?.message || `Cotação indisponível (${response.status}).`);
-  const rates = {};
-  for (const [currency, value] of Object.entries(payload.rates || {})) {
-   const number = Number(value);
-   if (Number.isFinite(number) && number > 0) rates[normalizeCurrencyCode(currency)] = number;
+ const rates = {};
+ const sources = [];
+ const errors = [];
+ const applyProvider = (payload) => {
+  for (const symbol of cleanSymbols) {
+   if (symbol === cleanBase) rates[symbol] = 1;
+   const rate = parsePositiveNumber(payload?.rates?.[symbol]);
+   if (rate && !rates[symbol]) rates[symbol] = rate;
   }
-  const out = { ok: true, base: cleanBase, date: String(payload.date || new Date().toISOString().slice(0, 10)), rates, source: 'Frankfurter / bancos centrais', updatedAt: new Date().toISOString() };
-  exchangeRatesCache.set(key, { cachedAt: Date.now(), payload: out });
-  return out;
- } catch (error) {
-  if (cached?.payload) return { ...cached.payload, cached: true, warning: 'cotação em cache usada por falha temporária' };
-  throw error;
- } finally {
-  clearTimeout(timeout);
+  if (payload?.source) sources.push(payload.source);
+ };
+ try { applyProvider(await fetchFreeCurrencyApiExchangeRates(cleanBase, cleanSymbols)); } catch (error) { errors.push(`FreeCurrencyAPI: ${error?.message || 'falha'}`); }
+ const missingAfterFreeCurrency = cleanSymbols.filter((symbol) => symbol !== cleanBase && !rates[symbol]);
+ if (missingAfterFreeCurrency.length) {
+  try { applyProvider(await fetchAwesomeExchangeRates(cleanBase, missingAfterFreeCurrency)); } catch (error) { errors.push(`AwesomeAPI: ${error?.message || 'falha'}`); }
  }
+ const missingAfterAwesome = cleanSymbols.filter((symbol) => symbol !== cleanBase && !rates[symbol]);
+ if (missingAfterAwesome.length) {
+  try { applyProvider(await fetchFrankfurterExchangeRates(cleanBase, missingAfterAwesome)); } catch (error) { errors.push(`Frankfurter: ${error?.message || 'falha'}`); }
+ }
+ const missing = cleanSymbols.filter((symbol) => symbol !== cleanBase && !rates[symbol]);
+ if (missing.length) {
+  if (cached?.payload) return { ...cached.payload, cached: true, warning: `Cotação em cache usada. Pares indisponíveis agora: ${missing.join(', ')}.` };
+  throw new Error(`Cotação indisponível para ${cleanBase} → ${missing.join(', ')}. Tente atualizar novamente em instantes.`);
+ }
+ const out = { ok: true, base: cleanBase, date: new Date().toISOString().slice(0, 10), rates, source: Array.from(new Set(sources)).join(' + ') || 'câmbio CrewCheck', updatedAt: new Date().toISOString(), diagnostics: errors.slice(0, 2) };
+ exchangeRatesCache.set(key, { cachedAt: Date.now(), payload: out });
+ return out;
 }
 
 
@@ -7847,8 +11143,953 @@ function telegramMaskChat(row) {
  return chat.length <= 4 ? 'conectado' : `${chat.slice(0, 3)}***${chat.slice(-2)}`;
 }
 
+const TELEGRAM_ALLOWED_PREFERENCE_KEYS = new Set([
+ ...Object.keys(TELEGRAM_DEFAULT_PREFERENCES),
+ 'callmebotApiKey',
+ 'callmebot_api_key',
+ 'callmebotClearApiKey',
+ 'wakeupCallProvider',
+ 'infobipPhone',
+ 'infobip_phone',
+ 'twilioPhone',
+ 'twilio_phone',
+ 'crewcheckVoiceProviderAuthorized',
+ 'overnightWakeupSnoozeMinutes',
+ 'userPhone', 'userPhoneCountryIso', 'userPhoneCountryCode', 'phoneE164',
+ 'wakeupAutoEnabled', 'wakeupAutoLeadMinutes', 'shareEmergencyRoster', 'shareEmergencyHotelRoom',
+ 'whatsappConcierge', 'whatsappAudioReplies',
+ 'emergencyContactName', 'emergencyContactRelation', 'emergencyContactEmail', 'emergencyContactPhone', 'emergencyContactTelegram', 'emergencyContactWhatsapp',
+]);
+
+function compactTelegramPreferenceInput(input = {}) {
+ const raw = input && typeof input === 'object' ? input : {};
+ const compact = {};
+ for (const [key, value] of Object.entries(raw)) {
+  if (!TELEGRAM_ALLOWED_PREFERENCE_KEYS.has(key)) continue;
+  compact[key] = value;
+ }
+ return compact;
+}
+
 function normalizeTelegramPreferences(input = {}) {
- return { ...TELEGRAM_DEFAULT_PREFERENCES, ...(input && typeof input === 'object' ? input : {}) };
+ const raw = compactTelegramPreferenceInput(input);
+ const merged = { ...TELEGRAM_DEFAULT_PREFERENCES };
+ for (const key of Object.keys(TELEGRAM_DEFAULT_PREFERENCES)) {
+  if (Object.prototype.hasOwnProperty.call(raw, key)) merged[key] = raw[key];
+ }
+ if (Object.prototype.hasOwnProperty.call(raw, 'callmebotApiKey')) merged.callmebotApiKey = raw.callmebotApiKey;
+ if (Object.prototype.hasOwnProperty.call(raw, 'callmebot_api_key')) merged.callmebotApiKey = raw.callmebot_api_key;
+ if (Object.prototype.hasOwnProperty.call(raw, 'overnightWakeupSnoozeMinutes')) merged.overnightWakeupSnoozeMinutes = raw.overnightWakeupSnoozeMinutes;
+ const rawConciergeName = String(raw.conciergeName || raw.concierge_name || merged.conciergeName || TELEGRAM_DEFAULT_CONCIERGE_NAME).replace(/\s+/g, ' ').trim();
+ merged.conciergeName = rawConciergeName ? rawConciergeName.slice(0, 32) : TELEGRAM_DEFAULT_CONCIERGE_NAME;
+ merged.overnightWakeup = raw.overnightWakeup === false ? false : merged.overnightWakeup !== false;
+ merged.wakeupCallEnabled = raw.wakeupCallEnabled === false ? false : merged.wakeupCallEnabled !== false;
+ const providerRaw = String(raw.wakeupCallProvider || raw.wakeup_call_provider || merged.wakeupCallProvider || CREWCHECK_WAKEUP_CALL_PROVIDER || 'auto').trim().toLowerCase();
+ merged.wakeupCallProvider = ['auto', 'callmebot', 'infobip', 'twilio', 'telegram', 'phone', 'voip', 'direct', 'direct-voip', 'inout'].includes(providerRaw) ? providerRaw : 'auto';
+ merged.infobipPhone = String(raw.infobipPhone || raw.infobip_phone || merged.infobipPhone || '').replace(/[^+\d]/g, '').slice(0, 22);
+ merged.twilioPhone = String(raw.twilioPhone || raw.twilio_phone || merged.twilioPhone || merged.infobipPhone || '').replace(/[^+\d]/g, '').slice(0, 22);
+ const modeRaw = String(raw.callmebotMode || raw.callmebot_mode || merged.callmebotMode || CALLMEBOT_DEFAULT_MODE || 'telegram').trim().toLowerCase();
+ merged.callmebotMode = ['phone', 'telegram', 'auto'].includes(modeRaw) ? modeRaw : 'telegram';
+ merged.callmebotPhone = String(raw.callmebotPhone || raw.callmebot_phone || merged.callmebotPhone || '').replace(/[^+\d]/g, '').slice(0, 22);
+ merged.callmebotTelegramUser = String(raw.callmebotTelegramUser || raw.callmebot_telegram_user || merged.callmebotTelegramUser || '').replace(/\s+/g, '').replace(/^@+/, '@').slice(0, 64);
+ merged.callmebotApiKey = String(raw.callmebotApiKey || raw.callmebot_api_key || merged.callmebotApiKey || '').replace(/\s+/g, '').slice(0, 90);
+ merged.callmebotLang = String(raw.callmebotLang || raw.callmebot_lang || merged.callmebotLang || CALLMEBOT_DEFAULT_LANG).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || CALLMEBOT_DEFAULT_LANG;
+ merged.callmebotRepeat = String(Math.max(1, Math.min(5, Number(raw.callmebotRepeat || raw.callmebot_repeat || merged.callmebotRepeat || CALLMEBOT_DEFAULT_REPEAT) || CALLMEBOT_DEFAULT_REPEAT)));
+ merged.crewcheckVoiceProviderAuthorized = raw.crewcheckVoiceProviderAuthorized === true || raw.crewcheckVoiceProviderAuthorized === 'true' || merged.crewcheckVoiceProviderAuthorized === true;
+ if (Object.prototype.hasOwnProperty.call(merged, 'overnightWakeupSnoozeMinutes')) {
+  merged.overnightWakeupSnoozeMinutes = String(Math.max(3, Math.min(90, Number(merged.overnightWakeupSnoozeMinutes) || 10)));
+ }
+ const mode = String(raw.wakeupNotificationMode || raw.wakeup_notification_mode || merged.wakeupNotificationMode || 'call_telegram').trim().toLowerCase();
+ merged.wakeupNotificationMode = ['call_telegram','telegram_only','call_only','telegram','call'].includes(mode) ? mode : 'call_telegram';
+ merged.wakeupMaxCalls = String(Math.max(0, Math.min(2, Number(raw.wakeupMaxCalls || raw.wakeup_max_calls || merged.wakeupMaxCalls || 2) || 2)));
+ merged.wakeupCallAfterSnoozes = String(Math.max(1, Math.min(8, Number(raw.wakeupCallAfterSnoozes || raw.wakeup_call_after_snoozes || merged.wakeupCallAfterSnoozes || 2) || 2)));
+ merged.wakeupMaxSnoozes = String(Math.max(1, Math.min(12, Number(raw.wakeupMaxSnoozes || raw.wakeup_max_snoozes || merged.wakeupMaxSnoozes || 6) || 6)));
+ merged.userPhoneCountryIso = normalizePhoneCountryIso(raw.userPhoneCountryIso || merged.userPhoneCountryIso || 'BR');
+ merged.userPhoneCountryCode = normalizePhoneCountryCode(raw.userPhoneCountryCode || merged.userPhoneCountryCode || '+55');
+ merged.userPhone = normalizePhoneE164(raw.userPhone || raw.phoneE164 || raw.infobipPhone || merged.userPhone || '', merged.userPhoneCountryCode);
+ merged.phoneE164 = merged.userPhone;
+ if (merged.userPhone && !merged.infobipPhone) merged.infobipPhone = merged.userPhone;
+ merged.wakeupAutoEnabled = raw.wakeupAutoEnabled === false || raw.wakeupAutoEnabled === 'false' ? false : Boolean(raw.wakeupAutoEnabled ?? merged.wakeupAutoEnabled ?? true);
+ merged.wakeupAutoLeadMinutes = String(Math.max(30, Math.min(300, Number(raw.wakeupAutoLeadMinutes || merged.wakeupAutoLeadMinutes || 120) || 120)));
+ merged.whatsappConcierge = raw.whatsappConcierge === false || raw.whatsappConcierge === 'false' ? false : Boolean(raw.whatsappConcierge ?? merged.whatsappConcierge ?? true);
+ merged.whatsappAudioReplies = raw.whatsappAudioReplies === false || raw.whatsappAudioReplies === 'false' ? false : Boolean(raw.whatsappAudioReplies ?? merged.whatsappAudioReplies ?? true);
+ return merged;
+}
+
+function buildTelegramPreferencePatch(input = {}) {
+ return compactTelegramPreferenceInput(input);
+}
+
+function maskCallmebotTarget(value = '', kind = 'phone') {
+ const raw = String(value || '').trim();
+ if (!raw) return '';
+ if (kind === 'apiKey') return raw.length <= 4 ? '••••' : `••••${raw.slice(-4)}`;
+ if (kind === 'telegram') {
+  const clean = raw.replace(/^@+/, '');
+  if (!clean) return '';
+  return clean.length <= 4 ? `@${clean}` : `@${clean.slice(0, 2)}***${clean.slice(-2)}`;
+ }
+ const digits = raw.replace(/\D/g, '');
+ if (!digits) return '';
+ return digits.length <= 6 ? `+${digits}` : `+${digits.slice(0, 4)}***${digits.slice(-4)}`;
+}
+
+function callmebotApiKeyLooksMasked(value = '') {
+ const raw = String(value || '').trim();
+ return !raw || /[•*]/.test(raw) || /^masked:/i.test(raw);
+}
+
+function telegramPublicPreferences(preferences = {}) {
+ const publicPrefs = { ...preferences };
+ const key = String(publicPrefs.callmebotApiKey || '').trim();
+ delete publicPrefs.callmebotApiKey;
+ delete publicPrefs.callmebot_api_key;
+ publicPrefs.callmebotApiKeyConfigured = Boolean(key || CALLMEBOT_API_KEY);
+ publicPrefs.callmebotApiKeyMasked = key ? maskCallmebotTarget(key, 'apiKey') : (CALLMEBOT_API_KEY ? maskCallmebotTarget(CALLMEBOT_API_KEY, 'apiKey') : '');
+ return publicPrefs;
+}
+
+
+function maskGenericPhone(value = '') {
+ const digits = String(value || '').replace(/\D/g, '');
+ if (!digits) return '';
+ if (digits.length <= 4) return `••${digits}`;
+ return `${digits.slice(0, 4)}••••${digits.slice(-4)}`;
+}
+
+function normalizeWhatsAppNumber(value = '') {
+ let digits = String(value || '').replace(/\D/g, '');
+ if (digits.startsWith('00')) digits = digits.slice(2);
+ return digits.slice(0, 18);
+}
+
+function crewcheckSystemWhatsAppNumber() {
+ const explicit = normalizeWhatsAppNumber(CREWCHECK_WHATSAPP_NUMBER_RAW);
+ if (explicit) return explicit;
+ const supportUrl = String(CREWCHECK_SUPPORT_WHATSAPP_URL || '');
+ const match = supportUrl.match(/wa\.me\/(\d{8,18})/i) || supportUrl.match(/[?&]phone=(\d{8,18})/i);
+ return match ? normalizeWhatsAppNumber(match[1]) : '';
+}
+
+function whatsAppClickToChatUrl(number, text = '') {
+ const digits = normalizeWhatsAppNumber(number);
+ if (!digits) return '';
+ const encoded = encodeURIComponent(String(text || '').slice(0, CREWCHECK_WHATSAPP_MAX_TEXT_CHARS));
+ return `https://wa.me/${digits}${encoded ? `?text=${encoded}` : ''}`;
+}
+
+function whatsAppBillingAccess(user) {
+ const billing = billingStatusFromUser(user);
+ const status = String(billing.status || '').toLowerCase();
+ const admin = isBillingAdmin(user) || hasLifetimePremiumAccess(user);
+ const trialing = Boolean(billing.premiumAccess && status === 'trialing');
+ const paidPremium = Boolean(admin || (billing.premiumAccess && !['trialing', 'trial_expired'].includes(status)));
+ const allowed = !CREWCHECK_WHATSAPP_PREMIUM_ONLY || paidPremium || trialing;
+ return { billing, status, admin, trialing, paidPremium, allowed, premiumRequired: CREWCHECK_WHATSAPP_PREMIUM_ONLY && !allowed };
+}
+
+async function whatsAppUsageCount(db, userId, sinceIso = null) {
+ if (!db || !userId) return 0;
+ const params = sinceIso ? [userId, 'whatsapp.%', sinceIso] : [userId, 'whatsapp.%'];
+ const sql = sinceIso
+  ? 'select count(*) as count from crewcheck_audit_logs where user_id = $1 and action like $2 and created_at >= $3'
+  : 'select count(*) as count from crewcheck_audit_logs where user_id = $1 and action like $2';
+ const result = await db.query(sql, params).catch(() => ({ rows: [] }));
+ return Number(result.rows?.[0]?.count || 0) || 0;
+}
+
+async function whatsAppTrialUsage(db, user) {
+ const access = whatsAppBillingAccess(user);
+ if (!access.trialing || !user?.id) {
+  return { trialing: access.trialing, dailyUsed: 0, totalUsed: 0, dailyLimit: CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT, totalLimit: CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT, remainingDaily: null, remainingTotal: null, exceeded: false };
+ }
+ const today = new Date();
+ today.setHours(0, 0, 0, 0);
+ const trialStart = user.trial_started_at ? new Date(user.trial_started_at) : new Date(Date.now() - BILLING_TRIAL_DAYS * 24 * 60 * 60 * 1000);
+ const dailyUsed = await whatsAppUsageCount(db, user.id, today.toISOString());
+ const totalUsed = await whatsAppUsageCount(db, user.id, Number.isFinite(trialStart.getTime()) ? trialStart.toISOString() : null);
+ const remainingDaily = Math.max(0, CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT - dailyUsed);
+ const remainingTotal = Math.max(0, CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT - totalUsed);
+ return { trialing: true, dailyUsed, totalUsed, dailyLimit: CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT, totalLimit: CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT, remainingDaily, remainingTotal, exceeded: remainingDaily <= 0 || remainingTotal <= 0 };
+}
+
+function buildCrewCheckWhatsAppRosterText(roster = {}, user = {}) {
+ const days = Array.isArray(roster?.days) ? roster.days : [];
+ const header = [
+  `CrewCheck · escala de ${user?.name || roster?.crewName || 'tripulante'}`,
+  roster?.base ? `Base: ${roster.base}` : '',
+  roster?.month && roster?.year ? `Período: ${String(roster.month).padStart(2, '0')}/${roster.year}` : '',
+ ].filter(Boolean).join('\n');
+ const lines = days.slice(0, 18).map((day) => {
+  const legs = Array.isArray(day?.legs) ? day.legs : [];
+  const flights = legs.slice(0, 4).map((leg) => {
+   const num = leg.flightNumber || leg.flight || leg.number || '';
+   const route = [leg.origin, leg.destination].filter(Boolean).join('-');
+   const time = [leg.departureTime || leg.departure, leg.arrivalTime || leg.arrival].filter(Boolean).join('/');
+   return [num, route, time].filter(Boolean).join(' ');
+  }).join(' · ');
+  const label = day?.pairingCode || day?.type || day?.dutyCode || day?.activity || (legs.length ? 'VOO' : 'Programação');
+  return `${day?.date || '--/--'} — ${label}${flights ? `: ${flights}` : ''}`.trim();
+ }).filter(Boolean);
+ const tail = days.length > lines.length ? `\n… +${days.length - lines.length} dia(s). Abra o CrewCheck para ver a escala completa.` : '';
+ return `${header}\n\n${lines.join('\n')}${tail}\n\nCompartilhado pelo CrewCheck.`.slice(0, CREWCHECK_WHATSAPP_MAX_TEXT_CHARS);
+}
+
+async function latestRosterRowForWhatsApp(db, userId) {
+ const result = await db.query(
+  `select * from crewcheck_rosters
+    where user_id = $1 and deleted_at is null
+    order by is_active desc, coalesce(active_at, updated_at, created_at) desc, created_at desc
+    limit 1`,
+  [userId],
+ );
+ return result.rows?.[0] || null;
+}
+
+async function sendWhatsAppTextMessage({ to, text }) {
+ const target = normalizeWhatsAppNumber(to);
+ const bodyText = String(text || '').slice(0, CREWCHECK_WHATSAPP_MAX_TEXT_CHARS);
+ if (!target) return { ok: false, code: 'WHATSAPP_TARGET_MISSING', message: 'Telefone WhatsApp do usuário não informado no Perfil.' };
+ if (!CREWCHECK_WHATSAPP_API_KEY) return { ok: false, code: 'WHATSAPP_API_KEY_MISSING', message: 'Configure CREWCHECK_WHATSAPP_API_KEY no Render.' };
+ if (!CREWCHECK_WHATSAPP_CONCIERGE_ENABLED) return { ok: false, code: 'WHATSAPP_DISABLED', message: 'WhatsApp Concierge está desativado no servidor.' };
+ const provider = CREWCHECK_WHATSAPP_PROVIDER;
+ const endpoint = CREWCHECK_WHATSAPP_API_URL || (provider === 'callmebot' ? 'https://api.callmebot.com/whatsapp.php' : '');
+ if (!endpoint) return { ok: false, code: 'WHATSAPP_API_URL_MISSING', message: 'Configure CREWCHECK_WHATSAPP_API_URL no Render para este provedor.' };
+ const url = new URL(endpoint);
+ if (provider === 'callmebot') {
+  url.searchParams.set('phone', target.startsWith('+') ? target : `+${target}`);
+  url.searchParams.set('apikey', CREWCHECK_WHATSAPP_API_KEY);
+  url.searchParams.set('text', bodyText);
+ } else {
+  url.searchParams.set('to', target);
+  url.searchParams.set('apikey', CREWCHECK_WHATSAPP_API_KEY);
+  url.searchParams.set('text', bodyText);
+ }
+ const response = await fetch(url, { method: 'GET' });
+ const raw = await response.text().catch(() => '');
+ const lower = raw.toLowerCase();
+ const accepted = response.ok && !/(wrong|invalid|not found|error|erro|unauthorized|forbidden)/i.test(lower);
+ return { ok: accepted, provider, status: response.status, targetMasked: maskGenericPhone(target), response: sanitizePublicError(raw || response.statusText || ''), message: accepted ? 'Mensagem WhatsApp solicitada pelo CrewCheck.' : `WhatsApp recusou a mensagem (${response.status}).` };
+}
+
+
+function whatsappWebhookConfiguredPublicUrl() {
+ const base = PUBLIC_APP_URL || '';
+ return base ? `${base}/api/webhooks/whatsapp/concierge` : '/api/webhooks/whatsapp/concierge';
+}
+
+function whatsappWebhookTokenOk(req, url, body = {}) {
+ if (!CREWCHECK_WHATSAPP_WEBHOOK_TOKEN) return true;
+ const candidates = [
+  url.searchParams.get('token'),
+  url.searchParams.get('hub.verify_token'),
+  req.headers['x-crewcheck-whatsapp-token'],
+  req.headers['x-webhook-token'],
+  body?.token,
+  body?.verify_token,
+ ].map((item) => String(item || '').trim()).filter(Boolean);
+ return candidates.includes(CREWCHECK_WHATSAPP_WEBHOOK_TOKEN);
+}
+
+function extractWhatsAppInboundMessage(payload = {}) {
+ const candidates = [];
+ const add = (item) => { if (item && typeof item === 'object') candidates.push(item); };
+ add(payload);
+ if (Array.isArray(payload?.messages)) payload.messages.forEach(add);
+ if (Array.isArray(payload?.entry)) {
+  for (const entry of payload.entry) for (const change of entry?.changes || []) {
+   for (const message of change?.value?.messages || []) add({ ...message, _value: change.value });
+  }
+ }
+ const first = candidates.find((item) => item?.from || item?.phone || item?.wa_id || item?.sender || item?.contact || item?.message || item?.text || item?.document || item?.mediaUrl || item?.url || item?.fileDataBase64) || {};
+ const contact = first?._value?.contacts?.[0] || payload?.contacts?.[0] || {};
+ const from = first.from || first.phone || first.sender || first.wa_id || contact.wa_id || payload.from || payload.phone || payload.sender || '';
+ const text = first.text?.body || first.message?.text || first.message || first.body || first.text || payload.text || payload.message || '';
+ const document = first.document || payload.document || null;
+ const media = first.media || payload.media || null;
+ const fileName = document?.filename || document?.file_name || payload.filename || payload.fileName || 'escala-whatsapp.pdf';
+ const mimeType = document?.mime_type || document?.mimeType || media?.mimeType || payload.mimeType || payload.contentType || '';
+ const mediaUrl = document?.url || media?.url || payload.mediaUrl || payload.documentUrl || payload.fileUrl || payload.url || '';
+ const mediaId = document?.id || media?.id || payload.mediaId || payload.documentId || '';
+ const fileDataBase64 = payload.fileDataBase64 || payload.dataBase64 || payload.base64 || document?.base64 || media?.base64 || '';
+ const isPdf = /application\/pdf/i.test(String(mimeType)) || /\.pdf$/i.test(String(fileName)) || /^data:application\/pdf/i.test(String(fileDataBase64));
+ return { from: normalizeWhatsAppNumber(from), text: String(text || '').trim(), fileName: String(fileName || 'escala-whatsapp.pdf').slice(0, 140), mimeType: String(mimeType || (isPdf ? 'application/pdf' : '')).slice(0, 120), mediaUrl: String(mediaUrl || '').trim(), mediaId: String(mediaId || '').trim(), fileDataBase64: String(fileDataBase64 || '').trim(), isPdf, rawType: first.type || payload.type || null };
+}
+
+async function findCrewCheckUserByWhatsAppPhone(db, phone = '') {
+ const digits = normalizeWhatsAppNumber(phone);
+ if (!db || !digits) return null;
+ const candidates = [`+${digits}`, digits, digits.startsWith('55') ? `+${digits.slice(2)}` : null].filter(Boolean);
+ const exact = await db.query('select * from crewcheck_users where phone_e164 = any($1::text[]) order by updated_at desc limit 1', [candidates]).catch(() => ({ rows: [] }));
+ if (exact.rows?.[0]) return exact.rows[0];
+ const suffix = digits.slice(-11);
+ const normalized = await db.query(
+  `select * from crewcheck_users
+    where regexp_replace(coalesce(phone_e164,''), '[^0-9]', '', 'g') = $1
+       or regexp_replace(coalesce(phone_e164,''), '[^0-9]', '', 'g') like $2
+    order by updated_at desc
+    limit 1`,
+  [digits, `%${suffix}`],
+ ).catch(() => ({ rows: [] }));
+ return normalized.rows?.[0] || null;
+}
+
+async function fetchWhatsAppMediaBuffer(inbound = {}) {
+ if (inbound.fileDataBase64) {
+  const clean = inbound.fileDataBase64.replace(/^data:application\/pdf;base64,/i, '').replace(/\s+/g, '');
+  const buffer = Buffer.from(clean, 'base64');
+  if (!buffer.length) throw new Error('Arquivo PDF do WhatsApp veio vazio.');
+  if (buffer.length > CREWCHECK_WHATSAPP_INBOUND_MAX_BYTES) throw new Error('PDF do WhatsApp maior que o limite aceito pelo CrewCheck.');
+  return buffer;
+ }
+ if (!inbound.mediaUrl) throw new Error('O webhook do WhatsApp não trouxe URL/base64 do PDF. Configure o provedor para encaminhar mídia ao CrewCheck.');
+ const headers = { accept: 'application/pdf,application/octet-stream,*/*', 'user-agent': 'CrewCheck-WhatsApp/11.1.91' };
+ if (CREWCHECK_WHATSAPP_MEDIA_TOKEN) headers.authorization = `Bearer ${CREWCHECK_WHATSAPP_MEDIA_TOKEN}`;
+ const response = await fetch(inbound.mediaUrl, { headers, signal: AbortSignal.timeout(20_000) });
+ if (!response.ok) throw new Error(`Não consegui baixar o PDF do WhatsApp (${response.status}).`);
+ const bytes = Buffer.from(await response.arrayBuffer());
+ if (!bytes.length) throw new Error('PDF do WhatsApp veio vazio.');
+ if (bytes.length > CREWCHECK_WHATSAPP_INBOUND_MAX_BYTES) throw new Error('PDF do WhatsApp maior que o limite aceito pelo CrewCheck.');
+ return bytes;
+}
+
+async function recordWhatsAppAudit(db, userId, action, entityId = null, metadata = {}) {
+ if (!db || !userId) return;
+ await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [newId(), userId, action, entityId, JSON.stringify(metadata || {})]).catch(() => null);
+}
+
+async function sendWhatsAppPremiumReply(db, user, to, text, { action = 'whatsapp.concierge.reply', entityId = null, metadata = {} } = {}) {
+ const trial = await whatsAppTrialUsage(db, user).catch(() => null);
+ if (trial?.trialing && trial.exceeded) return { ok: false, code: 'WHATSAPP_TRIAL_LIMIT_REACHED', trial, message: 'Limite de WhatsApp do teste Premium atingido.' };
+ const result = await sendWhatsAppTextMessage({ to, text });
+ await recordWhatsAppAudit(db, user?.id, result.ok ? action : `${action}.failed`, entityId, { ...metadata, ok: result.ok, provider: result.provider || null, status: result.status || null, targetMasked: result.targetMasked || maskGenericPhone(to) });
+ return { ...result, trial: await whatsAppTrialUsage(db, user).catch(() => trial) };
+}
+
+async function importWhatsAppPdfRoster(db, user, inbound) {
+ const buffer = await fetchWhatsAppMediaBuffer(inbound);
+ const sourceFileDataBase64 = buffer.toString('base64');
+ const filename = inbound.fileName || 'escala-whatsapp.pdf';
+ const parsed = await parsePdfOnServer({ filename, dataBase64: sourceFileDataBase64 });
+ const saved = await saveRosterForUser(db, user, {
+  roster: parsed.roster,
+  compliance: parsed.compliance || null,
+  gym: parsed.gym || [],
+  sourceFileName: filename,
+  importSource: 'whatsapp_pdf',
+  sourceFileDataBase64,
+  sourceMimeType: 'application/pdf',
+  sourceFileSize: buffer.length,
+ });
+ const days = Array.isArray(parsed.roster?.days) ? parsed.roster.days.length : 0;
+ const flights = (parsed.roster?.days || []).reduce((sum, day) => sum + (Array.isArray(day.legs) ? day.legs.length : 0), 0);
+ return { ok: true, saved, roster: parsed.roster, days, flights, filename, size: buffer.length };
+}
+
+function infobipIsConfigured() {
+ return Boolean(INFOBIP_BASE_URL && INFOBIP_API_KEY);
+}
+
+function infobipConfigFromRow(row = null, user = null) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const callCfg = callmebotConfigFromRow(row);
+ const targetSources = [
+  prefs.infobipPhone,
+  prefs.userPhone,
+  user?.phone_e164,
+  user?.phoneE164,
+  INFOBIP_TO_PHONE,
+  prefs.callmebotPhone,
+  callCfg.phone,
+  CALLMEBOT_PHONE,
+ ];
+ const target = String(targetSources.find((item) => String(item || '').replace(/[^+\d]/g, '').replace(/^\+/, '').length >= 10) || '').replace(/[^+\d]/g, '').replace(/^\+/, '').slice(0, 24);
+ const enabled = prefs.wakeupCallEnabled !== false && prefs.overnightWakeup !== false;
+ const missing = [];
+ if (!INFOBIP_BASE_URL) missing.push('INFOBIP_BASE_URL');
+ if (!INFOBIP_API_KEY) missing.push('INFOBIP_API_KEY');
+ if (!INFOBIP_FROM_NUMBER) missing.push('INFOBIP_FROM_NUMBER');
+ if (!target) missing.push('telefone de destino');
+ return {
+  enabled,
+  configured: infobipIsConfigured() && Boolean(target) && Boolean(INFOBIP_FROM_NUMBER),
+  baseUrl: INFOBIP_BASE_URL,
+  hasApiKey: Boolean(INFOBIP_API_KEY),
+  from: INFOBIP_FROM_NUMBER,
+  target,
+  missing,
+  targetMasked: maskGenericPhone(target),
+  fromMasked: maskGenericPhone(INFOBIP_FROM_NUMBER),
+  language: INFOBIP_LANGUAGE,
+  voiceName: INFOBIP_VOICE_NAME,
+  voiceGender: INFOBIP_VOICE_GENDER,
+ };
+}
+
+function infobipPublicStatus(row = null) {
+ const cfg = infobipConfigFromRow(row);
+ const missingText = cfg.missing?.length ? ` Falta: ${cfg.missing.join(', ')}.` : '';
+ return {
+  provider: 'infobip',
+  configured: cfg.configured,
+  enabled: cfg.enabled,
+  targetMasked: cfg.targetMasked,
+  fromMasked: cfg.fromMasked,
+  missing: cfg.missing || [],
+  baseConfigured: Boolean(INFOBIP_BASE_URL),
+  apiKeyConfigured: Boolean(INFOBIP_API_KEY),
+  fromConfigured: Boolean(INFOBIP_FROM_NUMBER),
+  targetConfigured: Boolean(cfg.target),
+  language: cfg.language,
+  voice: cfg.voiceName || cfg.voiceGender || 'default',
+  audioProvider: CREWCHECK_INFOBIP_USE_ELEVENLABS_AUDIO ? 'elevenlabs-mp3-v3' : (CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO ? 'google-tts-mp3' : 'infobip-tts'),
+  googleTtsConfigured: sglkcTtsApiIsConfigured(),
+  publicAppUrlConfigured: /^https:\/\//i.test(PUBLIC_APP_URL),
+  message: cfg.configured ? `Infobip v3 pronto para ligação premium em ${cfg.targetMasked || 'telefone salvo'} com áudio MP3 em português gerado pela ElevenLabs.` : `Infobip ainda não iniciou ligação.${missingText} Preencha o telefone da ligação premium no app ou configure INFOBIP_TO_PHONE no Render para testes.`,
+ };
+}
+
+function compactInfobipPayload(value) {
+ if (Array.isArray(value)) return value.map(compactInfobipPayload).filter((item) => item !== undefined && item !== null && item !== '');
+ if (value && typeof value === 'object') {
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+   const next = compactInfobipPayload(item);
+   if (next === undefined || next === null || next === '') continue;
+   if (Array.isArray(next) && next.length === 0) continue;
+   if (typeof next === 'object' && !Array.isArray(next) && Object.keys(next).length === 0) continue;
+   out[key] = next;
+  }
+  return out;
+ }
+ return value;
+}
+
+async function sendInfobipWakeupVoice({ row = null, user = null, script = null, elevenlabsPrepared = null, googleTtsPrepared = null, context = {} } = {}) {
+ const cfg = infobipConfigFromRow(row, user);
+ if (!cfg.enabled) return { ok: false, skipped: true, provider: 'infobip', code: 'WAKEUP_DISABLED', message: 'Despertador desativado pelo usuário.', missing: cfg.missing || [] };
+ if (!INFOBIP_BASE_URL) return { ok: false, skipped: true, provider: 'infobip', code: 'INFOBIP_BASE_URL_MISSING', message: 'Falta INFOBIP_BASE_URL no Render.', missing: cfg.missing || [] };
+ if (!INFOBIP_API_KEY) return { ok: false, skipped: true, provider: 'infobip', code: 'INFOBIP_API_KEY_MISSING', message: 'Falta INFOBIP_API_KEY no Render.', missing: cfg.missing || [] };
+ if (!cfg.from) return { ok: false, skipped: true, provider: 'infobip', code: 'INFOBIP_FROM_NUMBER_MISSING', message: 'Falta INFOBIP_FROM_NUMBER no Render. Use um número/remetente habilitado na Infobip.', missing: cfg.missing || [] };
+ if (!cfg.target) return { ok: false, skipped: true, provider: 'infobip', code: 'INFOBIP_TARGET_PHONE_MISSING', message: 'Falta o telefone de destino da ligação premium. Preencha “Telefone da ligação premium” no CrewCheck ou configure INFOBIP_TO_PHONE no Render para teste.', missing: cfg.missing || [] };
+ const text = String(script?.audioText || script?.callText || 'CrewCheck despertar. Confira sua apresentação.').replace(/\s+/g, ' ').trim().slice(0, 1000);
+ const englishFallbackText = String(script?.englishCallText || `CrewCheck wakeup call. Please check your official roster. Presentation time: ${script?.presentationTime || 'scheduled time'}. Destination: ${script?.destination || 'your next flight'}.`).replace(/\s+/g, ' ').trim().slice(0, 1000);
+ const endpoint = `${INFOBIP_BASE_URL}/tts/3/advanced`;
+ const candidates = infobipLanguageCandidateList();
+ const attempts = [];
+ let lastResult = null;
+
+ async function attemptInfobipAudioFile(fileUrl, attemptIndex = 0, meta = {}) {
+  const safeUrl = String(fileUrl || '').trim();
+  if (!safeUrl || !/^https:\/\//i.test(safeUrl)) {
+   return { ok: false, provider: 'infobip', skipped: true, code: 'INFOBIP_AUDIO_URL_MISSING', message: 'Áudio MP3 não tem URL pública HTTPS válida para a Infobip baixar.', audioUrlConfigured: Boolean(safeUrl), scriptPreview: script?.callText || '' };
+  }
+  const preflight = await validateWakeupAudioUrlForInfobip(safeUrl);
+  if (!preflight.ok) {
+   return { ok: false, provider: 'infobip', code: preflight.code || 'INFOBIP_AUDIO_PREFLIGHT_FAILED', message: preflight.message || 'Falha ao validar o MP3 público antes da Infobip.', preflight, scriptPreview: script?.callText || '' };
+  }
+  const providerLabel = String(meta.provider || 'audio').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'audio';
+  const sourceName = String(meta.sourceName || providerLabel || 'áudio MP3').trim();
+  const variants = (INFOBIP_AUDIO_PAYLOAD_VARIANTS.length ? INFOBIP_AUDIO_PAYLOAD_VARIANTS : ['voiceFileUrl-v3', 'audioFileUrl-v3']).filter((item) => !(CREWCHECK_INFOBIP_DISABLE_LEGACY_V1 && /legacy|v1/i.test(String(item))));
+  const variantAttempts = [];
+  let lastVariantResult = null;
+  if (!variants.length) {
+   return { ok: false, provider: 'infobip', code: 'INFOBIP_AUDIO_VARIANTS_EMPTY', message: 'Nenhuma variante v3 de MP3 Infobip ficou ativa. Remova legacy-v1 de INFOBIP_AUDIO_PAYLOAD_VARIANTS ou deixe CREWCHECK_INFOBIP_DISABLE_LEGACY_V1=true.', scriptPreview: script?.callText || '' };
+  }
+
+  function buildV3Payload(fieldName, variant, messageId, bulkId) {
+   return compactInfobipPayload({
+    bulkId,
+    messages: [{
+     from: cfg.from,
+     destinations: [{ to: cfg.target, messageId }],
+     [fieldName]: safeUrl,
+     notifyUrl: INFOBIP_NOTIFY_URL || undefined,
+     notifyContentType: INFOBIP_NOTIFY_URL ? 'application/json' : undefined,
+     validityPeriod: INFOBIP_VALIDITY_PERIOD,
+     record: false,
+     ringTimeout: INFOBIP_RING_TIMEOUT,
+     callTimeout: INFOBIP_CALL_TIMEOUT,
+     callbackData: JSON.stringify({ source: 'crewcheck-wakeup', mode: meta.mode || variant, audioProvider: providerLabel, userId: user?.id || null, presentationTime: script?.presentationTime || null, destination: script?.destination || null }).slice(0, 900),
+    }],
+   });
+  }
+
+  function buildLegacyPayload(messageId, bulkId) {
+   return compactInfobipPayload({
+    bulkId,
+    requestId: messageId,
+    sourceAddress: cfg.from,
+    destinationAddress: cfg.target,
+    voiceFileUrl: safeUrl,
+    record: false,
+    retry: false,
+    waitForDtmf: false,
+    dtmfTimeout: 5,
+    ringTimeout: Math.max(5, Number(INFOBIP_RING_TIMEOUT || 45) || 45),
+    timeout: Math.max(10, Number(INFOBIP_CALL_TIMEOUT || 90) || 90),
+    notifyUrl: INFOBIP_NOTIFY_URL || undefined,
+    callbackData: JSON.stringify({ source: 'crewcheck-wakeup', mode: meta.mode || 'legacy-voiceFileUrl', audioProvider: providerLabel, userId: user?.id || null, presentationTime: script?.presentationTime || null, destination: script?.destination || null }).slice(0, 900),
+   });
+  }
+
+  async function postAudioVariant(rawVariant = 'voiceFileUrl-v3', variantIndex = 0) {
+   const variant = String(rawVariant || '').trim() || 'voiceFileUrl-v3';
+   const lower = variant.toLowerCase();
+   const isLegacy = lower.includes('legacy') || lower.includes('v1');
+   const fieldName = lower.includes('audiofileurl') ? 'audioFileUrl' : (lower.includes('voicefileurl') ? 'voiceFileUrl' : CREWCHECK_INFOBIP_AUDIO_URL_FIELD);
+   const messageId = `crewcheck-${providerLabel}-${Date.now()}-${attemptIndex}-${variantIndex}-${Math.random().toString(36).slice(2, 8)}`;
+   const bulkId = `crewcheck-wakeup-${providerLabel}-${Date.now()}-${attemptIndex}-${variantIndex}`;
+   const endpointPath = isLegacy ? INFOBIP_LEGACY_TTS_ENDPOINT_PATH : '/tts/3/advanced';
+   const endpointUrl = `${INFOBIP_BASE_URL}${endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`}`;
+   const payload = isLegacy ? buildLegacyPayload(messageId, bulkId) : buildV3Payload(fieldName, variant, messageId, bulkId);
+   logInfobipDiagnostic('outbound-send', { endpointPath, variant, messageId, bulkId, notifyUrl: INFOBIP_NOTIFY_URL || '', from: cfg.from, to: cfg.target, payloadPreview: { bulkId: payload.bulkId, messages: payload.messages?.map((m) => ({ from: m.from, destinations: m.destinations, notifyUrl: m.notifyUrl, notifyContentType: m.notifyContentType, hasVoiceFileUrl: Boolean(m.voiceFileUrl), hasAudioFileUrl: Boolean(m.audioFileUrl), validityPeriod: m.validityPeriod, ringTimeout: m.ringTimeout, callTimeout: m.callTimeout })) } });
+   const response = await fetch(endpointUrl, {
+    method: 'POST',
+    headers: { authorization: `App ${INFOBIP_API_KEY}`, accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'CrewCheck-Wakeup/11.1.91' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(20000),
+   });
+   const raw = await response.text().catch(() => '');
+   let parsed = null;
+   try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = null; }
+   const returnedMessageId = String(parsed?.messages?.[0]?.messageId || parsed?.messages?.[0]?.id || parsed?.ttsCallRequestId || parsed?.requestId || messageId || '').trim();
+   const returnedBulkId = String(parsed?.bulkId || parsed?.bulkID || bulkId || '').trim();
+   const detail = sanitizePublicError((parsed?.requestError?.serviceException?.text || parsed?.messages?.[0]?.status?.description || parsed?.messages?.[0]?.status?.name || parsed?.status?.description || parsed?.description || parsed?.message || parsed?.error || raw || '')).slice(0, 320);
+   const unsupportedLanguage = /unsupported[_ ]language|rejected_unsupported_language/i.test(`${detail} ${raw}`);
+   const ok = response.ok && !unsupportedLanguage;
+   logInfobipDiagnostic('outbound-response', { endpointPath, variant, status: response.status, ok, messageId: returnedMessageId, bulkId: returnedBulkId, detail: detail || '', notifyUrl: INFOBIP_NOTIFY_URL || '', to: cfg.target, from: cfg.from });
+   let result = { ok, provider: 'infobip', mode: isLegacy ? 'legacyVoiceFileUrl' : fieldName, variant, endpointPath, status: response.status, languageTried: `${variant}-mp3-url`, voiceTried: sourceName, usedGoogleTtsAudio: providerLabel.includes('google') || providerLabel.includes('ttsapi'), usedElevenLabsAudio: providerLabel.includes('eleven'), audioProvider: providerLabel, targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, response: parsed || raw.slice(0, 500), bulkId: returnedBulkId, messageId: returnedMessageId, notifyUrl: INFOBIP_NOTIFY_URL || '', preflight, scriptPreview: script?.callText || '', scriptContext: { currentTime: script?.currentTime || '', presentationTime: script?.presentationTime || '', destination: script?.destination || '', remaining: script?.remaining || '' }, unsupportedLanguage, detail, message: ok ? `${CREWCHECK_INFOBIP_AUDIO_FIRST_MESSAGE} A Infobip aceitou a chamada usando MP3 público gerado por ${sourceName} (${variant}).` : `Infobip recusou o MP3 ${sourceName} (${response.status}) no modo ${variant}. ${detail || 'Confira se PUBLIC_APP_URL está público em HTTPS e se a conta aceita voiceFileUrl/audioFileUrl.'}` };
+   if (ok && (context?.callOnly || context?.test || context?.forcePhoneCallOnly) && CREWCHECK_INFOBIP_TEST_WAIT_STATUS_MS > 0 && !isLegacy) {
+    const statusItem = await waitForInfobipWakeupStatus({ messageId: returnedMessageId, bulkId: returnedBulkId, to: cfg.target, timeoutMs: CREWCHECK_INFOBIP_TEST_WAIT_STATUS_MS });
+    if (statusItem) {
+     result.deliveryReport = { statusName: statusItem.statusName, groupName: statusItem.groupName, description: statusItem.description, receivedAt: statusItem.receivedAt };
+     if (infobipWakeupStatusIsFailure(statusItem)) {
+      return { ...result, ok: false, code: 'INFOBIP_DELIVERY_FAILED', unsupportedLanguage: /UNSUPPORTED_LANGUAGE/i.test(`${statusItem.statusName} ${statusItem.description}`), message: `Infobip aceitou o pedido em ${variant}, mas o relatório de entrega voltou com falha: ${statusItem.statusName || statusItem.groupName || 'falha'}${statusItem.description ? ` — ${statusItem.description}` : ''}.` };
+     }
+     if (infobipWakeupStatusIsSuccess(statusItem)) {
+      return { ...result, ok: true, acceptedByInfobip: true, code: 'INFOBIP_ACCEPTED_DELIVERY_STATUS', message: `Ligação Infobip enviada com MP3 público (${variant}) e status recebido: ${statusItem.statusName || statusItem.groupName || 'confirmado'}.` };
+     }
+    }
+    const pendingMessage = `A Infobip aceitou a ligação com MP3 público em ${variant} e deixou pendente para entrega. Isso não é recusa do MP3; é o fluxo assíncrono normal do provedor. Para confirmar toque/atendimento dentro do CrewCheck, valide INFOBIP_NOTIFY_URL=${INFOBIP_NOTIFY_URL || `${PUBLIC_APP_URL}/api/webhooks/infobip/wakeup-status`}.`;
+    if (CREWCHECK_INFOBIP_REQUIRE_DELIVERY_CALLBACK) {
+     return { ...result, ok: false, acceptedByInfobip: true, deliveryPending: true, code: 'INFOBIP_NO_DELIVERY_CALLBACK', message: pendingMessage };
+    }
+    return { ...result, ok: true, acceptedByInfobip: true, deliveryPending: true, code: 'INFOBIP_ACCEPTED_PENDING_DELIVERY', message: pendingMessage };
+   }
+   return result;
+  }
+
+  for (let i = 0; i < variants.length; i += 1) {
+   const attempt = await postAudioVariant(variants[i], i);
+   variantAttempts.push({ variant: attempt.variant, endpointPath: attempt.endpointPath, status: attempt.status, ok: attempt.ok, unsupportedLanguage: attempt.unsupportedLanguage, detail: attempt.detail || attempt.message || '' });
+   lastVariantResult = attempt;
+   if (attempt.ok) return { ...attempt, attempts: [...(attempts || []), ...variantAttempts] };
+   // 401/403/404/from inválido não melhora trocando campo; mostra erro real rapidamente.
+   if ([401, 403, 404].includes(Number(attempt.status))) break;
+  }
+  if (lastVariantResult?.acceptedByInfobip && !CREWCHECK_INFOBIP_REQUIRE_DELIVERY_CALLBACK) {
+   return { ...(lastVariantResult || {}), ok: true, provider: 'infobip', code: lastVariantResult.code || 'INFOBIP_ACCEPTED_PENDING_DELIVERY', attempts: variantAttempts, message: lastVariantResult.message || 'Infobip aceitou a ligação e deixou pendente para entrega.' };
+  }
+  const detail = lastVariantResult?.detail || lastVariantResult?.message || 'A Infobip não aceitou nenhum formato de MP3 por URL pública.';
+  const legacyShutdown = /version of the API is shut down|v3 documentation/i.test(String(detail));
+  const acceptedPending = /message accepted|pending for delivery|accepted/i.test(String(detail));
+  const legacyNote = legacyShutdown ? ' O endpoint legado v1 foi removido do CrewCheck; rode o bash de variáveis v11.1.77 para limpar legacy-v1 do Render e teste novamente.' : '';
+  if (acceptedPending && !CREWCHECK_INFOBIP_REQUIRE_DELIVERY_CALLBACK) {
+   return { ...(lastVariantResult || {}), ok: true, provider: 'infobip', acceptedByInfobip: true, deliveryPending: true, code: 'INFOBIP_ACCEPTED_PENDING_DELIVERY', attempts: variantAttempts, message: `Infobip aceitou a ligação com MP3 público (${variantAttempts.map((a) => a.variant).join(', ')}) e deixou pendente para entrega. Configure o webhook para confirmar toque/atendimento. Detalhe: ${detail}` };
+  }
+  return { ...(lastVariantResult || {}), ok: false, provider: 'infobip', code: legacyShutdown ? 'INFOBIP_LEGACY_V1_SHUTDOWN' : 'INFOBIP_AUDIO_URL_REJECTED', attempts: variantAttempts, message: `Infobip recusou o MP3 público nos formatos v3 testados (${variantAttempts.map((a) => a.variant).join(', ')}). Não enviei TTS nativo para evitar erro de idioma/voz.${legacyNote} Detalhe: ${detail}` };
+ }
+
+ async function attemptSend(languageCandidate, voiceCandidate, attemptIndex) {
+  const messageId = `crewcheck-${Date.now()}-${attemptIndex}-${Math.random().toString(36).slice(2, 8)}`;
+  const languageKey = String(languageCandidate || 'auto').toLowerCase();
+  const autoShouldUseEnglish = CREWCHECK_INFOBIP_ALLOW_ENGLISH_FALLBACK && languageKey === 'auto';
+  const useEnglishFallback = CREWCHECK_INFOBIP_ALLOW_ENGLISH_FALLBACK && (languageKey.startsWith('en') || autoShouldUseEnglish) && /[áàâãéèêíóôõúç]/i.test(text);
+  const payloadText = useEnglishFallback ? englishFallbackText : text;
+  const cleanVoiceName = normalizeInfobipVoiceName(voiceCandidate || '');
+  const voiceObject = (cleanVoiceName || cfg.voiceGender) ? { name: cleanVoiceName || undefined, gender: cfg.voiceGender || undefined } : undefined;
+  const payload = compactInfobipPayload({
+   bulkId: `crewcheck-wakeup-${Date.now()}-${attemptIndex}`,
+   messages: [{
+    from: cfg.from,
+    destinations: [{ to: cfg.target, messageId }],
+    text: payloadText,
+    language: languageCandidate && languageCandidate !== 'auto' ? languageCandidate : undefined,
+    voice: languageCandidate && languageCandidate !== 'auto' ? voiceObject : undefined,
+    speechRate: INFOBIP_SPEECH_RATE,
+    notifyUrl: INFOBIP_NOTIFY_URL || undefined,
+    notifyContentType: INFOBIP_NOTIFY_URL ? 'application/json' : undefined,
+    validityPeriod: INFOBIP_VALIDITY_PERIOD,
+    record: false,
+    ringTimeout: INFOBIP_RING_TIMEOUT,
+    callTimeout: INFOBIP_CALL_TIMEOUT,
+    callbackData: JSON.stringify({ source: 'crewcheck-wakeup', userId: user?.id || null, presentationTime: script?.presentationTime || null, destination: script?.destination || null, language: languageCandidate || 'auto', voice: cleanVoiceName || 'default' }).slice(0, 900),
+   }],
+  });
+  const response = await fetch(endpoint, {
+   method: 'POST',
+   headers: { authorization: `App ${INFOBIP_API_KEY}`, accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'CrewCheck-Wakeup/11.1.91' },
+   body: JSON.stringify(payload),
+   signal: AbortSignal.timeout(20000),
+  });
+  const raw = await response.text().catch(() => '');
+  let parsed = null;
+  try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = null; }
+  const rejectedText = sanitizePublicError((parsed?.requestError?.serviceException?.text || parsed?.requestError?.serviceException?.messageId || parsed?.messages?.[0]?.status?.name || parsed?.messages?.[0]?.status?.description || parsed?.message || parsed?.error || raw || 'Confira permissões de Voice, número de origem habilitado e telefone de destino.')).slice(0, 260);
+  const ttsUnsupported = /unsupported[_ ](language|voice)|rejected_unsupported_(language|voice)|voice[^a-z0-9]+not[^a-z0-9]+supported/i.test(`${rejectedText} ${raw}`);
+  const unsupportedLanguage = /unsupported[_ ]language|rejected_unsupported_language/i.test(`${rejectedText} ${raw}`);
+  const result = { ok: response.ok, provider: 'infobip', status: response.status, unsupportedLanguage, ttsUnsupported, rejectedText, languageTried: languageCandidate || 'auto', voiceTried: cleanVoiceName || 'default', usedEnglishFallback: useEnglishFallback, targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, response: parsed || raw.slice(0, 500), messageId, scriptPreview: script?.callText || '', scriptContext: { currentTime: script?.currentTime || '', presentationTime: script?.presentationTime || '', destination: script?.destination || '', remaining: script?.remaining || '' } };
+  return result;
+ }
+
+ try {
+  let elevenLabsAudioAlreadyTried = false;
+  const adminPrefersElevenLabsAudio = CREWCHECK_WAKEUP_ADMIN_PREFER_ELEVENLABS && telegramAudioAdminPreferred(user, row);
+  if (adminPrefersElevenLabsAudio && CREWCHECK_INFOBIP_USE_ELEVENLABS_AUDIO && elevenlabsPrepared?.fileUrl) {
+   elevenLabsAudioAlreadyTried = true;
+   const audioResult = await attemptInfobipAudioFile(elevenlabsPrepared.fileUrl, 1, { provider: 'elevenlabs', sourceName: 'ElevenLabs Admin', mode: 'elevenlabs-admin-audio-url', languageTried: 'elevenlabs-admin-pt-BR-audio', voiceTried: 'ElevenLabs Admin' });
+   attempts.push({ language: 'elevenlabs-admin-audio', voice: 'ElevenLabs Admin', status: audioResult.status, ttsUnsupported: false, unsupportedLanguage: false, usedEnglishFallback: false, detail: audioResult.message || audioResult.error || '' });
+   lastResult = audioResult;
+   if (audioResult.ok) return { ...audioResult, attempts, elevenLabsAdminOnly: true };
+  }
+  if (CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO && googleTtsPrepared?.fileUrl) {
+   const audioResult = await attemptInfobipAudioFile(googleTtsPrepared.fileUrl, 0, { provider: 'google-tts', sourceName: 'TTS API/Google', mode: 'google-tts-audio-url', languageTried: 'pt-google-tts-audio', voiceTried: 'Google TTS' });
+   attempts.push({ language: 'google-tts-audio', voice: 'Google TTS', status: audioResult.status, ttsUnsupported: false, unsupportedLanguage: false, usedEnglishFallback: false, detail: audioResult.message || audioResult.error || '' });
+   lastResult = audioResult;
+   if (audioResult.ok) return { ...audioResult, attempts };
+   if (CREWCHECK_INFOBIP_GOOGLE_TTS_REQUIRED && !CREWCHECK_INFOBIP_TTS_FALLBACK) return { ...audioResult, attempts };
+  }
+  if (CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO && CREWCHECK_INFOBIP_GOOGLE_TTS_REQUIRED && !CREWCHECK_INFOBIP_TTS_FALLBACK) {
+   const googleDetail = googleTtsPrepared?.reason || googleTtsPrepared?.error || 'áudio Google TTS não foi gerado';
+   return { ok: false, provider: 'infobip', code: 'INFOBIP_GOOGLE_TTS_AUDIO_REQUIRED', message: `Português por Google TTS obrigatório: não enviei fallback TTS da Infobip nem inglês. Configure TTS_API_BASE, TTS_API_LANG=pt e PUBLIC_APP_URL no Render. Detalhe TTS API: ${sanitizePublicError(googleDetail)}.`, attempts, targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+  }
+  if (!elevenLabsAudioAlreadyTried && CREWCHECK_INFOBIP_USE_ELEVENLABS_AUDIO && elevenlabsPrepared?.fileUrl) {
+   const audioResult = await attemptInfobipAudioFile(elevenlabsPrepared.fileUrl, 1, { provider: 'elevenlabs', sourceName: 'ElevenLabs', mode: 'elevenlabs-audio-url', languageTried: 'elevenlabs-pt-BR-audio', voiceTried: 'ElevenLabs' });
+   attempts.push({ language: 'elevenlabs-audio', voice: 'ElevenLabs', status: audioResult.status, ttsUnsupported: false, unsupportedLanguage: false, usedEnglishFallback: false, detail: audioResult.message || audioResult.error || '' });
+   lastResult = audioResult;
+   if (audioResult.ok) return { ...audioResult, attempts };
+   if (!CREWCHECK_INFOBIP_TTS_FALLBACK) return { ...audioResult, attempts };
+  }
+  if (!CREWCHECK_INFOBIP_TTS_FALLBACK) {
+   const detail = elevenlabsPrepared?.error || elevenlabsPrepared?.reason || googleTtsPrepared?.error || googleTtsPrepared?.reason || 'áudio MP3 em português não foi gerado';
+   return { ok: false, provider: 'infobip', code: 'INFOBIP_AUDIO_PT_REQUIRED', message: `Português natural obrigatório: não enviei fallback em inglês. Configure a chave de voz premium, o identificador de voz e a URL pública no Render. Detalhe: ${sanitizePublicError(detail)}.`, attempts, targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+  }
+  let attemptIndex = 0;
+  for (let i = 0; i < candidates.length; i += 1) {
+   const candidate = candidates[i] || 'auto';
+   const voiceCandidates = infobipVoiceCandidateList(candidate);
+   for (const voiceCandidate of voiceCandidates) {
+    attemptIndex += 1;
+    const result = await attemptSend(candidate, voiceCandidate, attemptIndex);
+    attempts.push({ language: result.languageTried, voice: result.voiceTried, status: result.status, ttsUnsupported: result.ttsUnsupported, unsupportedLanguage: result.unsupportedLanguage, usedEnglishFallback: result.usedEnglishFallback, detail: result.rejectedText });
+    lastResult = result;
+    if (result.ok) {
+     const suffix = result.languageTried === 'auto'
+      ? ' A chamada foi enviada em modo automático apenas como fallback, para evitar a voz americana lendo português.'
+      : ` Idioma TTS aceito: ${result.languageTried}.`;
+     const voiceNote = result.voiceTried && result.voiceTried !== 'default' ? ` Voz testada: ${result.voiceTried}.` : ' Voz padrão do idioma usada.';
+     const englishNote = result.usedEnglishFallback || String(result.languageTried || '').toLowerCase().startsWith('en') ? ' Fallback em inglês só é permitido quando CREWCHECK_INFOBIP_ALLOW_ENGLISH_FALLBACK=true. Para português natural, use ElevenLabs como áudio MP3 público.' : '';
+     return { ...result, attempts, message: `Infobip aceitou a solicitação da ligação premium.${suffix}${voiceNote}${englishNote}` };
+    }
+    // Se o problema não for TTS/voz/idioma, não adianta tentar outras vozes; retorna erro real.
+    if (!result.ttsUnsupported) break;
+   }
+  }
+  const detail = lastResult?.rejectedText || 'Confira permissões de Voice, número de origem habilitado e telefone de destino.';
+  const tried = attempts.map((item) => `${item.language}${item.voice && item.voice !== 'default' ? '/' + item.voice : ''}`).filter(Boolean).join(', ') || 'pt-BR/Camila, pt-BR/Vitoria, pt, auto, en';
+  const message = lastResult?.ttsUnsupported
+   ? `Infobip recusou as combinações de idioma/voz TTS testadas (${tried}). Peça à Infobip para habilitar TTS Portuguese/Brazil e mantive o bloqueio de inglês ativo. Detalhe: ${detail}`
+   : `Infobip recusou a ligação (${lastResult?.status || 'sem status'}). ${detail}`;
+  return { ...(lastResult || {}), ok: false, provider: 'infobip', attempts, message, targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+ } catch (error) {
+  return { ok: false, provider: 'infobip', code: 'INFOBIP_FETCH_ERROR', attempts, message: `Falha ao chamar a Infobip: ${sanitizePublicError(error?.message || String(error))}`, error: sanitizePublicError(error?.message || String(error)), targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+ }
+}
+
+function twilioIsConfigured() {
+ return Boolean(TWILIO_ENABLED && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER);
+}
+
+function twilioNormalizePhone(value = '') {
+ const raw = String(value || '').replace(/[^+\d]/g, '');
+ if (!raw) return '';
+ if (raw.startsWith('+')) return raw.slice(0, 24);
+ const digits = raw.replace(/\D/g, '').slice(0, 23);
+ return digits ? `+${digits}` : '';
+}
+
+function twilioConfigFromRow(row = null) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const callCfg = callmebotConfigFromRow(row);
+ const targetSources = [
+  prefs.twilioPhone,
+  prefs.infobipPhone,
+  TWILIO_TO_PHONE,
+  INFOBIP_TO_PHONE,
+  prefs.callmebotPhone,
+  callCfg.phone,
+  CALLMEBOT_PHONE,
+ ];
+ const target = twilioNormalizePhone(targetSources.find((item) => String(item || '').replace(/[^+\d]/g, '').replace(/^\+/, '').length >= 10) || '');
+ const from = twilioNormalizePhone(TWILIO_FROM_NUMBER);
+ const enabled = prefs.wakeupCallEnabled !== false && prefs.overnightWakeup !== false;
+ const missing = [];
+ if (!TWILIO_ENABLED) missing.push('TWILIO_ENABLED');
+ if (!TWILIO_ACCOUNT_SID) missing.push('TWILIO_ACCOUNT_SID');
+ if (!TWILIO_AUTH_TOKEN) missing.push('TWILIO_AUTH_TOKEN');
+ if (!from) missing.push('TWILIO_FROM_NUMBER');
+ if (!target) missing.push('telefone de destino');
+ return {
+  enabled,
+  configured: twilioIsConfigured() && Boolean(target),
+  accountSid: TWILIO_ACCOUNT_SID,
+  hasAuthToken: Boolean(TWILIO_AUTH_TOKEN),
+  from,
+  target,
+  missing,
+  targetMasked: maskGenericPhone(target),
+  fromMasked: maskGenericPhone(from),
+ };
+}
+
+function twilioPublicStatus(row = null) {
+ const cfg = twilioConfigFromRow(row);
+ const missingText = cfg.missing?.length ? ` Falta: ${cfg.missing.join(', ')}.` : '';
+ return {
+  provider: 'twilio',
+  configured: cfg.configured,
+  enabled: cfg.enabled,
+  targetMasked: cfg.targetMasked,
+  fromMasked: cfg.fromMasked,
+  missing: cfg.missing || [],
+  accountSidConfigured: Boolean(TWILIO_ACCOUNT_SID),
+  authTokenConfigured: Boolean(TWILIO_AUTH_TOKEN),
+  fromConfigured: Boolean(cfg.from),
+  targetConfigured: Boolean(cfg.target),
+  elevenLabsAudio: CREWCHECK_TWILIO_USE_ELEVENLABS_AUDIO,
+  ttsFallback: CREWCHECK_TWILIO_TTS_FALLBACK,
+  twilioSayLanguage: TWILIO_SAY_LANGUAGE,
+  twilioSayVoice: TWILIO_SAY_VOICE || TWILIO_SAY_FALLBACK_VOICE,
+  message: cfg.configured ? `Twilio pronto para ligação premium em ${cfg.targetMasked || 'telefone salvo'}; ElevenLabs fica restrito ao admin; demais usam TTS nativo/Google em português.` : `Twilio ainda não iniciou ligação.${missingText} Preencha o telefone da ligação premium no app ou configure TWILIO_TO_PHONE no Render para testes.`,
+ };
+}
+
+const crewcheckTwilioTwimlPayloads = new Map();
+
+function twilioTwimlSignature(id = '') {
+ const secret = String(TWILIO_AUTH_TOKEN || JWT_SECRET || SESSION_SECRET || 'crewcheck-twilio-wakeup').trim();
+ return crypto.createHmac('sha256', secret).update(String(id || '')).digest('hex').slice(0, 32);
+}
+
+function cleanupTwilioTwimlPayloads() {
+ const now = Date.now();
+ for (const [id, item] of crewcheckTwilioTwimlPayloads.entries()) {
+  if (!item?.expiresAt || item.expiresAt < now) crewcheckTwilioTwimlPayloads.delete(id);
+ }
+}
+
+function storeTwilioWakeupTwiml({ audioUrl = '', text = '', language = TWILIO_SAY_LANGUAGE, voice = TWILIO_SAY_VOICE, fallbackVoice = TWILIO_SAY_FALLBACK_VOICE } = {}) {
+ cleanupTwilioTwimlPayloads();
+ const id = newId().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+ const sig = twilioTwimlSignature(id);
+ const expiresAt = Date.now() + CREWCHECK_WAKEUP_VOICE_FILE_TTL_MS;
+ crewcheckTwilioTwimlPayloads.set(id, {
+  audioUrl: String(audioUrl || '').trim(),
+  text: String(text || '').replace(/\s+/g, ' ').trim().slice(0, 1200),
+  language: String(language || 'pt-BR').trim() || 'pt-BR',
+  voice: String(voice || '').trim(),
+  fallbackVoice: String(fallbackVoice || 'woman').trim(),
+  expiresAt,
+ });
+ return { id, sig, expiresAt, url: `${PUBLIC_APP_URL}/api/wakeup-twilio/${encodeURIComponent(id)}.xml?sig=${encodeURIComponent(sig)}` };
+}
+
+function readTwilioWakeupTwiml(url) {
+ const match = String(url.pathname || '').match(/^\/api\/wakeup-twilio\/([A-Za-z0-9_-]+)\.xml$/);
+ if (!match) return null;
+ cleanupTwilioTwimlPayloads();
+ const id = match[1];
+ const sig = String(url.searchParams.get('sig') || '');
+ if (!sig || sig !== twilioTwimlSignature(id)) return null;
+ const item = crewcheckTwilioTwimlPayloads.get(id);
+ if (!item || item.expiresAt < Date.now()) return null;
+ return { id, ...item };
+}
+
+function twilioXmlEscape(value = '') {
+ return String(value || '').replace(/[<>&"']/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[ch] || ch));
+}
+
+function renderTwilioWakeupTwiml(item = {}) {
+ const audioUrl = String(item.audioUrl || '').trim();
+ const text = String(item.text || 'CrewCheck despertar. Confira sua apresentação oficial.').replace(/\s+/g, ' ').trim().slice(0, 1200);
+ const language = String(item.language || TWILIO_SAY_LANGUAGE || 'pt-BR').trim() || 'pt-BR';
+ const voice = String(item.voice || TWILIO_SAY_VOICE || '').trim();
+ const fallbackVoice = String(item.fallbackVoice || TWILIO_SAY_FALLBACK_VOICE || 'woman').trim();
+ if (audioUrl && /^https:\/\//i.test(audioUrl)) {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Play>${twilioXmlEscape(audioUrl)}</Play></Response>`;
+ }
+ const voiceAttr = voice ? ` voice="${twilioXmlEscape(voice)}"` : (fallbackVoice ? ` voice="${twilioXmlEscape(fallbackVoice)}"` : '');
+ return `<?xml version="1.0" encoding="UTF-8"?><Response><Say${voiceAttr} language="${twilioXmlEscape(language)}">${twilioXmlEscape(text)}</Say></Response>`;
+}
+
+async function sendTwilioWakeupVoice({ row = null, user = null, script = null, elevenlabsPrepared = null } = {}) {
+ const cfg = twilioConfigFromRow(row);
+ if (!cfg.enabled) return { ok: false, skipped: true, provider: 'twilio', code: 'WAKEUP_DISABLED', message: 'Despertador desativado pelo usuário.', missing: cfg.missing || [] };
+ if (!TWILIO_ENABLED) return { ok: false, skipped: true, provider: 'twilio', code: 'TWILIO_DISABLED', message: 'TWILIO_ENABLED=false no Render.', missing: cfg.missing || [] };
+ if (!TWILIO_ACCOUNT_SID) return { ok: false, skipped: true, provider: 'twilio', code: 'TWILIO_ACCOUNT_SID_MISSING', message: 'Falta TWILIO_ACCOUNT_SID no Render.', missing: cfg.missing || [] };
+ if (!TWILIO_AUTH_TOKEN) return { ok: false, skipped: true, provider: 'twilio', code: 'TWILIO_AUTH_TOKEN_MISSING', message: 'Falta TWILIO_AUTH_TOKEN no Render.', missing: cfg.missing || [] };
+ if (!cfg.from) return { ok: false, skipped: true, provider: 'twilio', code: 'TWILIO_FROM_NUMBER_MISSING', message: 'Falta TWILIO_FROM_NUMBER no Render. Use um número comprado/habilitado na Twilio.', missing: cfg.missing || [] };
+ if (!cfg.target) return { ok: false, skipped: true, provider: 'twilio', code: 'TWILIO_TARGET_PHONE_MISSING', message: 'Falta telefone de destino. Preencha “Telefone da ligação premium” no CrewCheck ou configure TWILIO_TO_PHONE no Render.', missing: cfg.missing || [] };
+ const ptText = String(script?.audioText || script?.callText || 'CrewCheck despertar. Confira sua apresentação oficial.').replace(/\s+/g, ' ').trim().slice(0, 1000);
+ const audioUrl = CREWCHECK_TWILIO_USE_ELEVENLABS_AUDIO && elevenlabsPrepared?.fileUrl ? elevenlabsPrepared.fileUrl : '';
+ const elevenLabsDetail = elevenlabsPrepared?.reason || elevenlabsPrepared?.error || '';
+ if (CREWCHECK_TWILIO_USE_ELEVENLABS_AUDIO && !audioUrl && !CREWCHECK_TWILIO_TTS_FALLBACK) {
+  const detail = elevenLabsDetail || 'áudio ElevenLabs não foi gerado';
+  return { ok: false, provider: 'twilio', code: 'TWILIO_AUDIO_PT_REQUIRED', message: `Português natural obrigatório: não enviei fallback TTS. Configure ELEVENLABS_API_KEY, ELEVENLABS_TTS_VOICE_ID e PUBLIC_APP_URL no Render. Detalhe ElevenLabs: ${sanitizePublicError(detail)}.`, targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+ }
+ if (!audioUrl && !CREWCHECK_TWILIO_TTS_FALLBACK) {
+  return { ok: false, provider: 'twilio', code: 'TWILIO_TTS_DISABLED', message: 'Twilio configurado para não usar TTS. Ative ElevenLabs ou CREWCHECK_TWILIO_TTS_FALLBACK=true.', targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+ }
+ const twiml = storeTwilioWakeupTwiml({ audioUrl, text: ptText, language: TWILIO_SAY_LANGUAGE, voice: TWILIO_SAY_VOICE, fallbackVoice: TWILIO_SAY_FALLBACK_VOICE });
+ if (!/^https:\/\//i.test(String(twiml.url || ''))) {
+  return { ok: false, provider: 'twilio', code: 'PUBLIC_APP_URL_INVALID', message: 'PUBLIC_APP_URL precisa ser HTTPS público para a Twilio buscar o TwiML e o áudio.', targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+ }
+ const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(TWILIO_ACCOUNT_SID)}/Calls.json`;
+ const body = new URLSearchParams();
+ body.set('To', cfg.target);
+ body.set('From', cfg.from);
+ body.set('Url', twiml.url);
+ body.set('Timeout', String(TWILIO_TIMEOUT_SECONDS));
+ body.set('MachineDetection', 'Enable');
+ if (TWILIO_STATUS_CALLBACK_ENABLED) {
+  body.set('StatusCallback', TWILIO_STATUS_CALLBACK_URL || `${PUBLIC_APP_URL}/api/webhooks/twilio/wakeup-status`);
+  body.set('StatusCallbackEvent', 'initiated ringing answered completed');
+  body.set('StatusCallbackMethod', 'POST');
+ }
+ const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+ try {
+  const response = await fetch(endpoint, {
+   method: 'POST',
+   headers: { authorization: `Basic ${auth}`, accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'CrewCheck-Wakeup/11.1.91' },
+   body,
+   signal: AbortSignal.timeout(20000),
+  });
+  const raw = await response.text().catch(() => '');
+  let parsed = null;
+  try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = null; }
+  const detail = sanitizePublicError(parsed?.message || parsed?.error_message || parsed?.more_info || raw || '').slice(0, 260);
+  return {
+   ok: response.ok,
+   provider: 'twilio',
+   mode: audioUrl ? 'elevenlabs-audio-twiml' : 'twilio-say-pt-br-native',
+   status: response.status,
+   sid: parsed?.sid || null,
+   callStatus: parsed?.status || null,
+   usedElevenLabsAudio: Boolean(audioUrl),
+   usedTwilioPortugueseTts: !audioUrl,
+   twilioSayLanguage: !audioUrl ? TWILIO_SAY_LANGUAGE : null,
+   twilioSayVoice: !audioUrl ? (TWILIO_SAY_VOICE || TWILIO_SAY_FALLBACK_VOICE || null) : null,
+   elevenLabsDetail: !audioUrl && elevenLabsDetail ? sanitizePublicError(elevenLabsDetail).slice(0, 180) : null,
+   targetMasked: cfg.targetMasked,
+   fromMasked: cfg.fromMasked,
+   response: parsed || raw.slice(0, 500),
+   twimlUrl: twiml.url,
+   message: response.ok ? (audioUrl ? `${CREWCHECK_TWILIO_AUDIO_FIRST_MESSAGE} Chamada premium solicitada pela Twilio.` : `Chamada premium solicitada pela Twilio com TTS nativo em português brasileiro (${TWILIO_SAY_VOICE || TWILIO_SAY_LANGUAGE}). ElevenLabs não foi usado${elevenLabsDetail ? `: ${sanitizePublicError(elevenLabsDetail).slice(0, 140)}` : '.'}`) : `Twilio recusou a ligação (${response.status}). ${detail || 'Confira número de origem, destino verificado e permissões de Voice.'}`,
+   scriptPreview: script?.callText || '',
+   scriptContext: { currentTime: script?.currentTime || '', presentationTime: script?.presentationTime || '', destination: script?.destination || '', remaining: script?.remaining || '' },
+  };
+ } catch (error) {
+  return { ok: false, provider: 'twilio', code: 'TWILIO_FETCH_ERROR', message: `Falha ao chamar a Twilio: ${sanitizePublicError(error?.message || String(error))}`, error: sanitizePublicError(error?.message || String(error)), targetMasked: cfg.targetMasked, fromMasked: cfg.fromMasked, scriptPreview: script?.callText || '' };
+ }
+}
+
+function callmebotConfigFromRow(row = null) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const mode = String(prefs.callmebotMode || CALLMEBOT_DEFAULT_MODE || 'telegram').toLowerCase();
+ const phone = String(prefs.callmebotPhone || CALLMEBOT_PHONE || '').replace(/[^+\d]/g, '');
+ const apiKey = String(prefs.callmebotApiKey || CALLMEBOT_API_KEY || '').replace(/\s+/g, '');
+ const usernameFallback = row?.chat_username ? `@${String(row.chat_username).replace(/^@+/, '')}` : row?.expected_username ? `@${String(row.expected_username).replace(/^@+/, '')}` : '';
+ const telegramUser = String(prefs.callmebotTelegramUser || CALLMEBOT_TELEGRAM_CALL_USER || usernameFallback || (phone ? `+${phone.replace(/\D/g, '')}` : '')).replace(/\s+/g, '');
+ const lang = String(prefs.callmebotLang || CALLMEBOT_DEFAULT_LANG).replace(/[^A-Za-z0-9_-]/g, '') || CALLMEBOT_DEFAULT_LANG;
+ const repeat = Math.max(1, Math.min(5, Number(prefs.callmebotRepeat || CALLMEBOT_DEFAULT_REPEAT) || CALLMEBOT_DEFAULT_REPEAT));
+ const enabled = prefs.wakeupCallEnabled !== false && prefs.overnightWakeup !== false;
+ const phoneReady = Boolean(phone && apiKey);
+ const telegramReady = Boolean(telegramUser);
+ const effectiveMode = mode === 'auto' ? (phoneReady ? 'phone' : 'telegram') : mode;
+ return { prefs, enabled, mode, effectiveMode, phone, apiKey, telegramUser, lang, repeat, phoneReady, telegramReady, configured: enabled && (phoneReady || telegramReady) };
+}
+
+function directVoipNormalizePhone(value = '') {
+ const raw = String(value || '').replace(/[^+\d]/g, '').trim();
+ if (!raw) return '';
+ if (raw.startsWith('+')) return raw.slice(0, 24);
+ const digits = raw.replace(/\D/g, '').slice(0, 23);
+ return digits ? `+${digits}` : '';
+}
+
+function directVoipConfigFromRow(row = null) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const callCfg = callmebotConfigFromRow(row);
+ const phoneSources = [
+  prefs.infobipPhone,
+  prefs.twilioPhone,
+  prefs.callmebotPhone,
+  INOUT_CALL_PHONE,
+  CALLMEBOT_PHONE,
+  INFOBIP_TO_PHONE,
+  TWILIO_TO_PHONE,
+  callCfg.phone,
+ ];
+ const phone = directVoipNormalizePhone(phoneSources.find((item) => String(item || '').replace(/[^+\d]/g, '').replace(/^\+/, '').length >= 10) || '');
+ const apiKey = String(prefs.callmebotApiKey || INOUT_CALL_API_KEY || CALLMEBOT_API_KEY || '').replace(/\s+/g, '').slice(0, 120);
+ const provider = ['callmebot', 'bridge'].includes(CREWCHECK_VOIP_DIRECT_PROVIDER) ? 'callmebot' : (['off', 'none', 'disabled', 'infobip'].includes(CREWCHECK_VOIP_DIRECT_PROVIDER) ? 'off' : 'inout');
+ const enabled = !CREWCHECK_WAKEUP_FORCE_INFOBIP && provider !== 'off' && INOUT_CALL_ENABLED && prefs.wakeupCallEnabled !== false && prefs.overnightWakeup !== false;
+ const missing = [];
+ if (CREWCHECK_WAKEUP_FORCE_INFOBIP) missing.push('Infobip principal; VOIP direto desativado');
+ if (provider === 'off') missing.push('VOIP direto desativado');
+ if (!INOUT_CALL_ENABLED) missing.push('VOIP_DIRECT_ENABLED');
+ if (!phone) missing.push('telefone de destino');
+ if (!apiKey) missing.push('chave técnica');
+ return {
+  enabled,
+  configured: enabled && Boolean(phone && apiKey),
+  provider,
+  phone,
+  apiKey,
+  language: String(prefs.callmebotLang || INOUT_CALL_LANGUAGE || CALLMEBOT_DEFAULT_LANG || 'pt-BR').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'pt-BR',
+  style: INOUT_CALL_STYLE,
+  missing,
+  targetMasked: maskCallmebotTarget(phone, 'phone'),
+  apiKeyMasked: maskCallmebotTarget(apiKey, 'apiKey'),
+ };
+}
+
+function callmebotPublicStatus(row = null) {
+ const cfg = callmebotConfigFromRow(row);
+ const direct = directVoipConfigFromRow(row);
+ const targetMasked = direct.configured ? direct.targetMasked : (cfg.effectiveMode === 'phone' ? maskCallmebotTarget(cfg.phone, 'phone') : maskCallmebotTarget(cfg.telegramUser, 'telegram'));
+ return {
+  configured: cfg.configured || direct.configured,
+  provider: CREWCHECK_WAKEUP_FORCE_INFOBIP ? 'infobip-primary' : 'callmebot',
+  directVoipConfigured: direct.configured,
+  enabled: cfg.enabled || direct.enabled,
+  mode: direct.configured ? 'phone' : cfg.mode,
+  effectiveMode: direct.configured ? 'phone' : cfg.effectiveMode,
+  targetMasked,
+  phoneMasked: direct.targetMasked || maskCallmebotTarget(cfg.phone, 'phone'),
+  telegramMasked: maskCallmebotTarget(cfg.telegramUser, 'telegram'),
+  apiKeyConfigured: Boolean(cfg.apiKey || direct.apiKey),
+  apiKeyMasked: maskCallmebotTarget(cfg.apiKey || direct.apiKey, 'apiKey'),
+  globalFallback: !CREWCHECK_WAKEUP_FORCE_INFOBIP && Boolean(INOUT_CALL_PHONE || INOUT_CALL_API_KEY || CALLMEBOT_PHONE || CALLMEBOT_API_KEY || CALLMEBOT_TELEGRAM_CALL_USER),
+  brand: CREWCHECK_WAKEUP_BRAND,
+  authorizationRequired: !direct.configured && cfg.effectiveMode === 'telegram',
+  authorizationAcknowledged: cfg.prefs.crewcheckVoiceProviderAuthorized === true || direct.configured,
+  authorizeUrl: CREWCHECK_WAKEUP_AUTHORIZE_URL,
+  disclosure: 'provedor técnico externo',
+  message: (cfg.configured || direct.configured) ? `Canal VOIP pronto para ${targetMasked || 'alvo autorizado'}.` : 'Canal VOIP ainda não configurado. Use telefone autorizado e chave técnica, ou autorize o canal de voz.',
+ };
 }
 
 function telegramConnectCode() {
@@ -7895,11 +12136,26 @@ async function telegramBotIdentity() {
  return result;
 }
 
-function telegramPublicStatusFromRow(row, bot = null) {
+function telegramPublicStatusFromRow(row, bot = null, user = null) {
  const preferences = normalizeTelegramPreferences(row?.preferences_json || {});
  const connected = Boolean(row?.is_active && row?.chat_id);
  const botUsername = bot?.username || null;
  const code = connected ? null : (row?.connect_code || null);
+ const callAllowed = wakeupCallAllowedForUser(user);
+ const callmebotStatus = callmebotPublicStatus(row);
+ const infobipStatus = infobipPublicStatus(row);
+ const twilioStatus = twilioPublicStatus(row);
+ if (!callAllowed) {
+  callmebotStatus.enabled = false;
+  callmebotStatus.premiumRequired = true;
+  callmebotStatus.message = CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE;
+  infobipStatus.enabled = false;
+  infobipStatus.premiumRequired = true;
+  infobipStatus.message = CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE;
+  twilioStatus.enabled = false;
+  twilioStatus.premiumRequired = true;
+  twilioStatus.message = CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE;
+ }
  return {
   ok: true,
   configured: telegramIsConfigured(),
@@ -7909,7 +12165,18 @@ function telegramPublicStatusFromRow(row, bot = null) {
   connectUrl: botUsername && code ? `https://t.me/${botUsername}?start=${encodeURIComponent(code)}` : null,
   expectedUsername: row?.expected_username || null,
   chat: connected ? { username: row?.chat_username || null, maskedId: telegramMaskChat(row), firstName: row?.chat_first_name || null } : null,
-  preferences,
+  preferences: telegramPublicPreferences(preferences),
+  callmebot: callmebotStatus,
+  infobip: infobipStatus,
+  twilio: twilioStatus,
+  wakeupPolicy: {
+   plan: wakeupCallPlanLabel(user),
+   telegramForFree: true,
+   callPremiumOnly: CREWCHECK_WAKEUP_CALL_PREMIUM_ONLY,
+   callAllowed,
+   premiumRequired: !callAllowed,
+   message: callAllowed ? 'Ligações do Despertador CrewCheck liberadas para este usuário.' : CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE,
+  },
  };
 }
 
@@ -7965,16 +12232,897 @@ async function telegramDownloadFileBuffer(fileId, maxBytes = 35 * 1024 * 1024) {
  }
 }
 
-async function saveRosterForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, importSource = 'api' }) {
+async function telegramDownloadFileObject(fileId, maxBytes = 25 * 1024 * 1024) {
+ const file = await telegramApi('getFile', null, { query: { file_id: fileId } });
+ const filePath = String(file?.file_path || '').trim();
+ if (!filePath) throw new Error('Telegram não retornou o caminho do áudio.');
+ const fileSize = Number(file?.file_size || 0);
+ if (fileSize && fileSize > maxBytes) {
+  const err = new Error('Áudio maior que o limite aceito pelo Concierge. Envie uma pergunta mais curta.');
+  err.statusCode = 413;
+  throw err;
+ }
+ const downloadUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 30_000);
+ try {
+  const response = await fetch(downloadUrl, { signal: controller.signal });
+  if (!response.ok) throw new Error(`Falha ao baixar áudio do Telegram (${response.status}).`);
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (!buffer.length) throw new Error('Áudio recebido vazio pelo Telegram.');
+  if (buffer.length > maxBytes) {
+   const err = new Error('Áudio maior que o limite aceito pelo Concierge.');
+   err.statusCode = 413;
+   throw err;
+  }
+  return { buffer, filePath, fileSize: fileSize || buffer.length };
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+function telegramMessageAudioDocument(message = {}) {
+ const item = message.voice || message.audio || null;
+ if (!item?.file_id) return null;
+ const duration = Number(item.duration || 0);
+ const isVoice = Boolean(message.voice);
+ const fileName = String(message.audio?.file_name || `crewcheck-telegram-${message.message_id || Date.now()}${isVoice ? '.ogg' : '.mp3'}`).trim();
+ const mimeType = String(item.mime_type || (isVoice ? 'audio/ogg' : 'audio/mpeg')).toLowerCase();
+ return { ...item, isVoice, duration, filename: fileName, mimeType };
+}
+
+function openAiAudioIsConfigured() {
+ return Boolean(OPENAI_API_KEY);
+}
+
+function azureSpeechIsConfigured() {
+ return Boolean(AZURE_SPEECH_KEY && (AZURE_SPEECH_REGION || AZURE_SPEECH_ENDPOINT));
+}
+
+function elevenLabsAudioIsConfigured() {
+ return Boolean(ELEVENLABS_API_KEY);
+}
+
+function sglkcTtsApiIsConfigured() {
+ return Boolean(SGLKC_TTS_API_ENABLED && SGLKC_TTS_API_BASE);
+}
+
+function telegramAudioAdminPreferred(user = null, row = null) {
+ if (isBillingAdmin(user)) return true;
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ return Boolean(prefs?.admin === true || String(user?.role || '').toLowerCase().includes('admin'));
+}
+
+function telegramSpeechProviderOrder(kind = 'tts', { user = null, row = null } = {}) {
+ const configured = TELEGRAM_CONCIERGE_SPEECH_PROVIDER || 'auto';
+ const normalize = (value) => {
+  const raw = String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (raw === 'eleven' || raw === 'elevenlabs' || raw === '11labs' || raw === 'xi') return 'elevenlabs';
+  if (raw === 'azure' || raw === 'azurespeech') return 'azure';
+  if (raw === 'openai' || raw === 'gpt') return 'openai';
+  if (raw === 'ttsapi' || raw === 'sglkcttsapi' || raw === 'sglkc' || raw === 'googletranslate' || raw === 'googletts' || raw === 'translate') return 'ttsapi';
+  if (raw === 'off' || raw === 'none' || raw === 'disabled') return 'off';
+  return raw;
+ };
+ const explicit = String(configured || '').trim().toLowerCase();
+ const pick = [];
+ const push = (provider) => {
+  const p = normalize(provider);
+  if (!p || p === 'off' || p === 'none' || p === 'disabled') return;
+  if (!['elevenlabs', 'azure', 'openai', 'ttsapi'].includes(p)) return;
+  if (p === 'elevenlabs' && !elevenLabsAudioIsConfigured()) return;
+  if (p === 'azure' && !azureSpeechIsConfigured()) return;
+  if (p === 'openai' && !openAiAudioIsConfigured()) return;
+  if (p === 'ttsapi' && !sglkcTtsApiIsConfigured()) return;
+  if (!pick.includes(p)) pick.push(p);
+ };
+ if (normalize(explicit) !== 'auto') {
+  explicit.split(/[,;\s]+/).forEach(push);
+  return pick;
+ }
+ // v11.1.29: admin usa ElevenLabs primeiro; demais usam tts-api primeiro.
+ // ElevenLabs fica como fallback premium para todos quando configurado.
+ if (telegramAudioAdminPreferred(user, row)) {
+  push('elevenlabs');
+  push('ttsapi');
+  push('azure');
+  push('openai');
+ } else {
+  push('ttsapi');
+  push('elevenlabs');
+  push('azure');
+  push('openai');
+ }
+ return pick;
+}
+
+function telegramSpeechHasProvider(kind = 'tts', options = {}) {
+ return telegramSpeechProviderOrder(kind, options).length > 0;
+}
+
+function azureSpeechBaseEndpoint(type = 'tts') {
+ if (AZURE_SPEECH_ENDPOINT) {
+  if (/\.speech\.microsoft\.com/i.test(AZURE_SPEECH_ENDPOINT)) return AZURE_SPEECH_ENDPOINT;
+  if (/\.cognitiveservices\.azure\.com/i.test(AZURE_SPEECH_ENDPOINT)) return AZURE_SPEECH_ENDPOINT;
+ }
+ const subdomain = type === 'tts' ? 'tts' : 'stt';
+ return `https://${AZURE_SPEECH_REGION}.${subdomain}.speech.microsoft.com`;
+}
+
+function azureSpeechTtsEndpoint() {
+ const base = azureSpeechBaseEndpoint('tts');
+ if (/\/cognitiveservices\/v1$/i.test(base)) return base;
+ return `${base}/cognitiveservices/v1`;
+}
+
+function azureSpeechSttEndpoint() {
+ const base = azureSpeechBaseEndpoint('stt');
+ if (/\/stt\/speech\/recognition\/conversation\/cognitiveservices\/v1$/i.test(base)) return base;
+ if (/\.cognitiveservices\.azure\.com$/i.test(base)) return `${base}/stt/speech/recognition/conversation/cognitiveservices/v1`;
+ return `${base}/speech/recognition/conversation/cognitiveservices/v1`;
+}
+
+function speechProviderLabel(provider = '') {
+ const p = String(provider || '').toLowerCase();
+ if (p === 'elevenlabs') return 'ElevenLabs';
+ if (p === 'azure') return 'Azure Speech';
+ if (p === 'openai') return 'OpenAI';
+ if (p === 'ttsapi') return 'sglkc/tts-api';
+ return 'serviço de voz';
+}
+
+function classifySpeechAudioError(error = {}) {
+ const raw = String(error?.message || error || '').replace(/\s+/g, ' ').trim();
+ const code = String(error?.code || '').toLowerCase();
+ const status = Number(error?.statusCode || error?.status || 0);
+ const provider = String(error?.provider || '').toLowerCase();
+ const providerName = speechProviderLabel(provider);
+ const quota = code.includes('insufficient_quota') || code.includes('quota') || /exceeded your current quota|check your plan and billing|atingiu.*limite|limite de uso|quota|billing|free tier|cota/i.test(raw);
+ const rate = !quota && (status === 429 || code.includes('rate_limit') || /rate limit|too many requests|muitas solicitações|limite de taxa|throttl/i.test(raw));
+ const auth = status === 401 || status === 403 || code.includes('invalid_api_key') || code.includes('unauthorized') || /api key|subscription key|unauthorized|permission|forbidden|sem permissão|chave|assinatura/i.test(raw);
+ const notConfigured = code === 'openai_not_configured' || code === 'azure_speech_not_configured' || code === 'elevenlabs_not_configured' || code === 'tts_api_not_configured' || /OPENAI_API_KEY.*não configurada|AZURE_SPEECH_KEY.*não configurada|ELEVENLABS_API_KEY.*não configurada|TTS_API.*não configurad|não configurad/i.test(raw);
+ const unsupported = code === 'azure_stt_unsupported_format' || /unsupported.*format|formato.*não compatível|codec|samplerate|ogg opus/i.test(raw);
+ const timeout = /abort|timeout|timed out|tempo esgotado/i.test(raw);
+ if (quota) {
+  return {
+   kind: 'quota',
+   title: 'Áudio indisponível no momento',
+   lines: [
+    `A integração de voz (${providerName}) retornou limite de uso/cota.`,
+    'Sua pergunta por áudio não foi processada para evitar resposta incorreta.',
+    'Envie a pergunta por texto enquanto o administrador ajusta o billing/usage da chave API.'
+   ],
+   log: raw || `${providerName} quota exceeded`
+  };
+ }
+ if (rate) {
+  return {
+   kind: 'rate_limit',
+   title: 'Voz temporariamente ocupada',
+   lines: [
+    `A integração de voz (${providerName}) recebeu muitas solicitações ao mesmo tempo.`,
+    'Tente novamente em alguns instantes ou envie sua pergunta por texto.'
+   ],
+   log: raw || `${providerName} rate limit`
+  };
+ }
+ if (auth) {
+  return {
+   kind: 'auth',
+   title: 'Voz precisa de configuração',
+   lines: [
+    `A chave do ${providerName} não autorizou o uso de áudio neste servidor.`,
+    'Envie por texto enquanto o administrador confere a chave, a região, o projeto e as permissões.'
+   ],
+   log: raw || `${providerName} auth/config error`
+  };
+ }
+ if (notConfigured) {
+  return {
+   kind: 'not_configured',
+   title: 'Voz não configurada',
+   lines: [
+    'Nenhum provedor de voz está disponível no servidor.',
+    'Configure ELEVENLABS_API_KEY, AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY no Render para ativar áudio no Concierge.'
+   ],
+   log: raw || 'Speech provider not configured'
+  };
+ }
+ if (unsupported) {
+  return {
+   kind: 'unsupported_format',
+   title: 'Formato de áudio não compatível',
+   lines: [
+    'O Azure Speech funciona melhor com mensagem de voz do Telegram em OGG/Opus.',
+    'Envie uma mensagem de voz normal pelo Telegram ou mande por texto.'
+   ],
+   log: raw || 'Azure STT unsupported format'
+  };
+ }
+ if (timeout) {
+  return {
+   kind: 'timeout',
+   title: 'Áudio demorou demais',
+   lines: [
+    'A leitura do áudio demorou mais que o esperado.',
+    'Reenvie com menos ruído, grave um áudio mais curto ou mande por texto.'
+   ],
+   log: raw || `${providerName} audio timeout`
+  };
+ }
+ return {
+  kind: 'generic',
+  title: 'Não consegui processar o áudio',
+  lines: [
+   'Não consegui entender ou converter esse áudio agora.',
+   'Tente reenviar com menos ruído ou mande por texto.'
+  ],
+  log: raw || 'Speech audio error'
+ };
+}
+
+function classifyOpenAiAudioError(error = {}) {
+ return classifySpeechAudioError({ ...error, provider: error?.provider || 'openai' });
+}
+
+function markSpeechError(error, provider, fallbackCode = '') {
+ if (error && typeof error === 'object') {
+  if (!error.provider) error.provider = provider;
+  if (!error.code && fallbackCode) error.code = fallbackCode;
+ }
+ return error;
+}
+
+async function openAiTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
+ if (!openAiAudioIsConfigured()) {
+  const err = new Error('OPENAI_API_KEY não configurada no Render.');
+  err.code = 'OPENAI_NOT_CONFIGURED';
+  err.statusCode = 503;
+  throw err;
+ }
+ const form = new FormData();
+ form.append('file', new Blob([buffer], { type: mimeType || 'audio/ogg' }), filename || 'audio.ogg');
+ form.append('model', OPENAI_TRANSCRIBE_MODEL);
+ form.append('language', 'pt');
+ form.append('prompt', 'Áudio curto em português brasileiro de tripulante perguntando sobre escala, voo, portão, saída inteligente, diárias, rotina ou alertas do CrewCheck. Preserve números de voo como LA1234, horários e aeroportos IATA.');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 45_000);
+ try {
+  const response = await fetch(`${OPENAI_AUDIO_API_BASE}/audio/transcriptions`, {
+   method: 'POST',
+   headers: { authorization: `Bearer ${OPENAI_API_KEY}` },
+   body: form,
+   signal: controller.signal,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+   const err = new Error(data?.error?.message || data?.message || `Falha na transcrição OpenAI (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.error?.code || 'OPENAI_TRANSCRIPTION_ERROR';
+   throw err;
+  }
+  const text = String(data?.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) throw new Error('Não consegui entender o áudio. Envie novamente com menos ruído ou digite a pergunta.');
+  return text.slice(0, 1200);
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+
+async function elevenLabsTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
+ if (!elevenLabsAudioIsConfigured()) {
+  const err = new Error('ELEVENLABS_API_KEY não configurada no Render.');
+  err.code = 'ELEVENLABS_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'elevenlabs';
+  throw err;
+ }
+ const form = new FormData();
+ form.append('model_id', ELEVENLABS_STT_MODEL || 'scribe_v2');
+ form.append('file', new Blob([buffer], { type: mimeType || 'audio/ogg' }), filename || 'audio.ogg');
+ if (ELEVENLABS_STT_LANGUAGE) form.append('language_code', ELEVENLABS_STT_LANGUAGE);
+ form.append('tag_audio_events', 'false');
+ form.append('diarize', 'false');
+ form.append('timestamps_granularity', 'none');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 60_000);
+ try {
+  const response = await fetch(`${ELEVENLABS_API_BASE}/speech-to-text`, {
+   method: 'POST',
+   headers: { 'xi-api-key': ELEVENLABS_API_KEY },
+   body: form,
+   signal: controller.signal,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+   const err = new Error(data?.detail?.message || data?.message || data?.detail || `Falha na transcrição ElevenLabs (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.detail?.code || data?.code || 'ELEVENLABS_STT_ERROR';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  const text = String(data?.text || data?.transcript || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+   const err = new Error('ElevenLabs não retornou transcrição reconhecida.');
+   err.code = 'ELEVENLABS_STT_EMPTY';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  return text.slice(0, 1200);
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+async function azureSpeechToTextShortAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
+ if (!azureSpeechIsConfigured()) {
+  const err = new Error('AZURE_SPEECH_KEY/AZURE_SPEECH_REGION não configurada no Render.');
+  err.code = 'AZURE_SPEECH_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'azure';
+  throw err;
+ }
+ const lowerMime = String(mimeType || '').toLowerCase();
+ const lowerName = String(filename || '').toLowerCase();
+ let contentType = '';
+ if (lowerMime.includes('ogg') || lowerName.endsWith('.ogg') || lowerName.endsWith('.oga')) {
+  contentType = 'audio/ogg; codecs=opus';
+ } else if (lowerMime.includes('wav') || lowerName.endsWith('.wav')) {
+  contentType = 'audio/wav; codecs=audio/pcm; samplerate=16000';
+ } else {
+  const err = new Error('Formato de áudio não compatível com Azure Speech REST curto. Use voice note OGG/Opus ou WAV PCM 16k mono.');
+  err.code = 'AZURE_STT_UNSUPPORTED_FORMAT';
+  err.statusCode = 415;
+  err.provider = 'azure';
+  throw err;
+ }
+ const url = new URL(azureSpeechSttEndpoint());
+ url.searchParams.set('language', AZURE_STT_LANGUAGE || 'pt-BR');
+ url.searchParams.set('format', 'detailed');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 45_000);
+ try {
+  const response = await fetch(url, {
+   method: 'POST',
+   headers: {
+    'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
+    'Content-Type': contentType,
+    'Accept': 'application/json',
+    'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.95',
+   },
+   body: buffer,
+   signal: controller.signal,
+  });
+  const contentTypeResponse = String(response.headers.get('content-type') || '').toLowerCase();
+  const data = contentTypeResponse.includes('json') ? await response.json().catch(() => null) : null;
+  const raw = data ? '' : await response.text().catch(() => '');
+  if (!response.ok) {
+   const message = data?.message || data?.error?.message || data?.error || raw || `Falha na transcrição Azure Speech (${response.status}).`;
+   const err = new Error(message);
+   err.statusCode = response.status;
+   err.code = data?.error?.code || data?.code || 'AZURE_STT_ERROR';
+   err.provider = 'azure';
+   throw err;
+  }
+  const best = data?.NBest?.[0]?.Display || data?.NBest?.[0]?.Lexical || data?.DisplayText || data?.Text || '';
+  const text = String(best || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+   const err = new Error('Azure Speech não retornou transcrição reconhecida.');
+   err.code = 'AZURE_STT_EMPTY';
+   err.provider = 'azure';
+   throw err;
+  }
+  return text.slice(0, 1200);
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+async function transcribeTelegramAudio(buffer, options = {}) {
+ const order = telegramSpeechProviderOrder('stt');
+ if (!order.length) {
+  const err = new Error('Nenhum provedor de transcrição configurado.');
+  err.code = 'SPEECH_PROVIDER_NOT_CONFIGURED';
+  err.statusCode = 503;
+  throw err;
+ }
+ const failures = [];
+ for (const provider of order) {
+  try {
+   if (provider === 'elevenlabs') return await elevenLabsTranscribeAudio(buffer, options);
+   if (provider === 'azure') return await azureSpeechToTextShortAudio(buffer, options);
+   if (provider === 'openai') return await openAiTranscribeAudio(buffer, options);
+  } catch (error) {
+   failures.push(markSpeechError(error, provider));
+   console.warn(`[telegram] transcrição ${provider} falhou; ${failures.length < order.length ? 'tentando fallback' : 'sem fallback disponível'}`, error?.message || error);
+  }
+ }
+ const preferred = failures.find((error) => String(error?.code || '').toLowerCase() !== 'azure_stt_unsupported_format') || failures[0] || new Error('Falha ao transcrever áudio.');
+ throw preferred;
+}
+
+function telegramPlainTextFromPremiumMessage(text = '') {
+ return String(text || '')
+  .replace(/<[^>]+>/g, '')
+  .replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"')
+  .replace(/[•🤖✈️🧭📅🛫⚠️📊💼✅⏱️📍🚘💎🎙️]/g, '')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+}
+
+
+async function elevenLabsTextToSpeechBuffer(text, { voice = ELEVENLABS_TTS_VOICE_ID, userName = '', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME } = {}) {
+ if (!elevenLabsAudioIsConfigured()) {
+  const err = new Error('ELEVENLABS_API_KEY não configurada no Render.');
+  err.code = 'ELEVENLABS_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'elevenlabs';
+  throw err;
+ }
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
+ if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
+ const cleanVoice = String(voice || ELEVENLABS_TTS_VOICE_ID || '').trim();
+ if (!cleanVoice) {
+  const err = new Error('ELEVENLABS_TTS_VOICE_ID não configurado.');
+  err.code = 'ELEVENLABS_VOICE_NOT_CONFIGURED';
+  err.provider = 'elevenlabs';
+  throw err;
+ }
+ const url = new URL(`${ELEVENLABS_API_BASE}/text-to-speech/${encodeURIComponent(cleanVoice)}`);
+ url.searchParams.set('output_format', ELEVENLABS_TTS_OUTPUT_FORMAT || 'mp3_22050_32');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 60_000);
+ try {
+  const response = await fetch(url, {
+   method: 'POST',
+   headers: {
+    'xi-api-key': ELEVENLABS_API_KEY,
+    'Content-Type': 'application/json',
+    'Accept': 'audio/mpeg',
+   },
+   body: JSON.stringify({
+    text: input,
+    model_id: ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2',
+    language_code: 'pt',
+    previous_text: userName ? `Mensagem de voz curta para ${userName}, em português brasileiro, natural e levemente informal.` : 'Mensagem de voz curta em português brasileiro, natural e levemente informal.',
+    next_text: 'Resposta curta, natural e descontraída, como um amigo mandando áudio no Telegram. Traduza siglas de escala e aeroportos. Modo ATIS apenas para meteorologia.',
+    voice_settings: {
+     stability: ELEVENLABS_TTS_STABILITY,
+     similarity_boost: ELEVENLABS_TTS_SIMILARITY_BOOST,
+     style: ELEVENLABS_TTS_STYLE,
+     use_speaker_boost: ELEVENLABS_TTS_SPEAKER_BOOST,
+    },
+   }),
+   signal: controller.signal,
+  });
+  if (!response.ok) {
+   const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+   const data = contentType.includes('json') ? await response.json().catch(() => null) : null;
+   const raw = data ? '' : await response.text().catch(() => '');
+   const err = new Error(data?.detail?.message || data?.message || data?.detail || raw || `Falha no Text to Speech ElevenLabs (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.detail?.code || data?.code || 'ELEVENLABS_TTS_ERROR';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (!buffer.length) {
+   const err = new Error('ElevenLabs retornou áudio vazio.');
+   err.code = 'ELEVENLABS_TTS_EMPTY';
+   err.provider = 'elevenlabs';
+   throw err;
+  }
+  return buffer;
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+async function openAiTextToSpeechBuffer(text, { voice = OPENAI_TTS_VOICE, userName = '', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME } = {}) {
+ if (!openAiAudioIsConfigured()) {
+  const err = new Error('OPENAI_API_KEY não configurada no Render.');
+  err.code = 'OPENAI_NOT_CONFIGURED';
+  err.statusCode = 503;
+  throw err;
+ }
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
+ if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 45_000);
+ try {
+  const response = await fetch(`${OPENAI_AUDIO_API_BASE}/audio/speech`, {
+   method: 'POST',
+   headers: { authorization: `Bearer ${OPENAI_API_KEY}`, 'content-type': 'application/json' },
+   body: JSON.stringify({
+    model: OPENAI_TTS_MODEL,
+    input,
+    voice: voice || OPENAI_TTS_VOICE,
+    response_format: 'mp3',
+    speed: OPENAI_TTS_SPEED,
+    instructions: `Fale em português brasileiro, como um amigo mandando uma mensagem de voz no Telegram: leve, direto, simpático e sem parecer locutor. Você é ${conciergeName || TELEGRAM_DEFAULT_CONCIERGE_NAME}. Traduza siglas de escala e aeroportos antes de falar, não leia códigos literalmente e não use cadência de ATIS, exceto quando a resposta for de meteorologia, METAR ou TAF. Use o nome ${userName || 'do usuário'} quando fizer sentido. Pode usar expressões naturais como “boa”, “olhei aqui” e “fechado”, sem exagerar.`,
+   }),
+   signal: controller.signal,
+  });
+  if (!response.ok) {
+   const data = await response.json().catch(() => null);
+   const err = new Error(data?.error?.message || data?.message || `Falha no Text to Speech OpenAI (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.error?.code || 'OPENAI_TTS_ERROR';
+   throw err;
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (!buffer.length) throw new Error('OpenAI retornou áudio vazio.');
+  return buffer;
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+
+function ttsApiNormalizeLang(value = '') {
+ const raw = String(value || SGLKC_TTS_API_LANG || 'pt').trim();
+ // sglkc/tts-api / Google Translate TTS usa códigos curtos; pt-BR pode retornar "language not supported".
+ if (/^pt[-_]?br$/i.test(raw)) return 'pt';
+ if (/^pt$/i.test(raw)) return 'pt';
+ if (/^en[-_]?us$/i.test(raw)) return 'en';
+ if (/^es[-_]?/i.test(raw)) return 'es';
+ if (/^fr[-_]?/i.test(raw)) return 'fr';
+ if (/^de[-_]?/i.test(raw)) return 'de';
+ return raw || 'pt';
+}
+
+async function sglkcTtsApiTextToSpeechBuffer(text, { lang = SGLKC_TTS_API_LANG } = {}) {
+ if (!sglkcTtsApiIsConfigured()) {
+  const err = new Error('SGLKC_TTS_API_BASE não configurada no Render.');
+  err.code = 'TTS_API_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'ttsapi';
+  throw err;
+ }
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
+ if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
+ const payload = {
+  text: input,
+  lang: ttsApiNormalizeLang(lang),
+  speed: SGLKC_TTS_API_SPEED,
+  pitch: SGLKC_TTS_API_PITCH,
+ };
+ const languageAttempts = Array.from(new Set([payload.lang, 'pt'].filter(Boolean)));
+ const parseAudioResponse = async (response) => {
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (!response.ok) {
+   const raw = contentType.includes('json') ? JSON.stringify(await response.json().catch(() => null)) : await response.text().catch(() => '');
+   const err = new Error(raw || `Falha no sglkc/tts-api (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = 'TTS_API_ERROR';
+   err.provider = 'ttsapi';
+   throw err;
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (!buffer.length) {
+   const err = new Error('sglkc/tts-api retornou áudio vazio.');
+   err.code = 'TTS_API_EMPTY';
+   err.provider = 'ttsapi';
+   throw err;
+  }
+  return buffer;
+ };
+ let lastError = null;
+ for (const attemptLang of languageAttempts) {
+  const attemptPayload = { ...payload, lang: attemptLang };
+  const postController = new AbortController();
+  const postTimeout = setTimeout(() => postController.abort(), SGLKC_TTS_API_TIMEOUT_MS);
+  try {
+   const response = await fetch(SGLKC_TTS_API_BASE || 'https://tts-api.netlify.app', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'audio/mpeg,audio/mp3,audio/*,*/*', 'user-agent': 'CrewCheck-Telegram-Concierge/11.1.91' },
+    body: JSON.stringify(attemptPayload),
+    signal: postController.signal,
+   });
+   return await parseAudioResponse(response);
+  } catch (postError) {
+   lastError = postError;
+   // O projeto aceita GET e POST; se a hospedagem bloquear JSON, tenta GET com query.
+   const getController = new AbortController();
+   const getTimeout = setTimeout(() => getController.abort(), SGLKC_TTS_API_TIMEOUT_MS);
+   try {
+    const url = new URL(SGLKC_TTS_API_BASE || 'https://tts-api.netlify.app');
+    url.searchParams.set('text', attemptPayload.text);
+    url.searchParams.set('lang', attemptPayload.lang);
+    url.searchParams.set('speed', String(attemptPayload.speed));
+    url.searchParams.set('pitch', String(attemptPayload.pitch));
+    const response = await fetch(url, { headers: { accept: 'audio/mpeg,audio/mp3,audio/*,*/*', 'user-agent': 'CrewCheck-Telegram-Concierge/11.1.91' }, signal: getController.signal });
+    return await parseAudioResponse(response);
+   } catch (getError) {
+    lastError = getError || postError;
+   } finally {
+    clearTimeout(getTimeout);
+   }
+  } finally {
+   clearTimeout(postTimeout);
+  }
+ }
+ throw markSpeechError(lastError || new Error('Falha no sglkc/tts-api.'), 'ttsapi', 'TTS_API_ERROR');
+}
+
+
+function azureXmlEscape(value = '') {
+ return String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] || ch));
+}
+
+function azureSpeechSsmlContent(text = '') {
+ const plain = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
+ const parts = plain.split(/\n+/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 12);
+ const content = (parts.length ? parts : [plain]).map((line, index) => `${azureXmlEscape(line)}${index < parts.length - 1 ? '<break time="260ms"/>' : ''}`).join(' ');
+ return content || 'CrewCheck Concierge.';
+}
+
+function azureSpeechBuildSsml(text, { voice = AZURE_TTS_VOICE, style = AZURE_TTS_STYLE } = {}) {
+ const content = azureSpeechSsmlContent(text);
+ const prosody = `<prosody rate="${azureXmlEscape(AZURE_TTS_RATE || '+2%')}" pitch="${azureXmlEscape(AZURE_TTS_PITCH || '+0%')}">${content}</prosody>`;
+ const expressive = style ? `<mstts:express-as style="${azureXmlEscape(style)}">${prosody}</mstts:express-as>` : prosody;
+ return `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="pt-BR"><voice name="${azureXmlEscape(voice || AZURE_TTS_VOICE)}">${expressive}</voice></speak>`;
+}
+
+async function azureSpeechTextToSpeechBuffer(text, { voice = AZURE_TTS_VOICE, style = AZURE_TTS_STYLE } = {}) {
+ if (!azureSpeechIsConfigured()) {
+  const err = new Error('AZURE_SPEECH_KEY/AZURE_SPEECH_REGION não configurada no Render.');
+  err.code = 'AZURE_SPEECH_NOT_CONFIGURED';
+  err.statusCode = 503;
+  err.provider = 'azure';
+  throw err;
+ }
+ const input = telegramConciergeTrimAudioText(telegramPlainTextFromPremiumMessage(text), TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS);
+ if (!input) throw new Error('Não há texto suficiente para gerar áudio.');
+ const attempt = async (attemptStyle) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  try {
+   const response = await fetch(azureSpeechTtsEndpoint(), {
+    method: 'POST',
+    headers: {
+     'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
+     'Content-Type': 'application/ssml+xml',
+     'X-Microsoft-OutputFormat': AZURE_TTS_OUTPUT_FORMAT,
+     'Accept': 'audio/mpeg',
+     'User-Agent': 'CrewCheck-Telegram-Concierge/11.0.95',
+    },
+    body: azureSpeechBuildSsml(input, { voice, style: attemptStyle }),
+    signal: controller.signal,
+   });
+   if (!response.ok) {
+    const raw = await response.text().catch(() => '');
+    const err = new Error(raw || `Falha no Text to Speech Azure Speech (${response.status}).`);
+    err.statusCode = response.status;
+    err.code = 'AZURE_TTS_ERROR';
+    err.provider = 'azure';
+    throw err;
+   }
+   const arrayBuffer = await response.arrayBuffer();
+   const buffer = Buffer.from(arrayBuffer);
+   if (!buffer.length) {
+    const err = new Error('Azure Speech retornou áudio vazio.');
+    err.code = 'AZURE_TTS_EMPTY';
+    err.provider = 'azure';
+    throw err;
+   }
+   return buffer;
+  } finally {
+   clearTimeout(timeout);
+  }
+ };
+ try {
+  return await attempt(style);
+ } catch (error) {
+  if (style) {
+   console.warn('[telegram] Azure TTS falhou com estilo SSML; tentando sem estilo', error?.message || error);
+   return await attempt('');
+  }
+  throw error;
+ }
+}
+
+async function textToSpeechBuffer(text, options = {}) {
+ const order = telegramSpeechProviderOrder('tts', options);
+ if (!order.length) {
+  const err = new Error('Nenhum provedor de text-to-speech configurado.');
+  err.code = 'SPEECH_PROVIDER_NOT_CONFIGURED';
+  err.statusCode = 503;
+  throw err;
+ }
+ const failures = [];
+ for (const provider of order) {
+  try {
+   if (provider === 'elevenlabs') return await elevenLabsTextToSpeechBuffer(text, options);
+   if (provider === 'azure') return await azureSpeechTextToSpeechBuffer(text, options);
+   if (provider === 'openai') return await openAiTextToSpeechBuffer(text, options);
+   if (provider === 'ttsapi') return await sglkcTtsApiTextToSpeechBuffer(text, options);
+  } catch (error) {
+   failures.push(markSpeechError(error, provider));
+   console.warn(`[telegram] TTS ${provider} falhou; ${failures.length < order.length ? 'tentando fallback' : 'usando texto'}`, error?.message || error);
+  }
+ }
+ throw failures[0] || new Error('Falha ao gerar áudio.');
+}
+
+
+function safeSupabaseStorageName(value, fallback = 'escala.pdf') {
+ const raw = String(value || fallback).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 120);
+ return raw || fallback;
+}
+
+function supabaseStorageConfigured() {
+ return CREWCHECK_STORAGE_PROVIDER.includes('supabase') && ['backup', 'redundancy', 'redundancia', 'fallback'].includes(CREWCHECK_STORAGE_MODE) && Boolean(SUPABASE_URL && SUPABASE_SECRET_KEY && CREWCHECK_SUPABASE_BUCKET_ROSTERS);
+}
+
+function summarizeStorageStatus() {
+ return {
+  provider: supabaseStorageConfigured() ? 'supabase-storage' : 'database-only',
+  mode: CREWCHECK_STORAGE_MODE,
+  configured: supabaseStorageConfigured(),
+  databasePrimary: true,
+  bucket: supabaseStorageConfigured() ? CREWCHECK_SUPABASE_BUCKET_ROSTERS : null,
+  urlConfigured: Boolean(SUPABASE_URL),
+  secretConfigured: Boolean(SUPABASE_SECRET_KEY),
+  publishableConfigured: Boolean(SUPABASE_PUBLISHABLE_KEY),
+  jwksConfigured: Boolean(SUPABASE_JWKS_URL),
+  maxFileBytes: CREWCHECK_STORAGE_MAX_FILE_BYTES,
+  freeBackupLimit: CREWCHECK_FREE_STORAGE_BACKUP_LIMIT,
+  freeTelegramBackupLimit: CREWCHECK_FREE_TELEGRAM_STORAGE_BACKUP_LIMIT,
+  premiumBackupPriority: true,
+ };
+}
+
+function normalizeBase64Input(value = '') {
+ return String(value || '').replace(/^data:[^;]+;base64,/i, '').replace(/\s+/g, '');
+}
+
+async function uploadRosterOriginalToSupabase(user, rosterId, filePayload = {}) {
+ if (!supabaseStorageConfigured()) return { ok: false, skipped: true, reason: 'storage_not_configured' };
+ const dataBase64 = normalizeBase64Input(filePayload.sourceFileDataBase64 || filePayload.dataBase64 || '');
+ if (!dataBase64) return { ok: false, skipped: true, reason: 'no_file_payload' };
+ const buffer = Buffer.from(dataBase64, 'base64');
+ if (!buffer.length) return { ok: false, skipped: true, reason: 'empty_file' };
+ if (buffer.length > CREWCHECK_STORAGE_MAX_FILE_BYTES) {
+  return { ok: false, skipped: true, reason: 'file_too_large', size: buffer.length, max: CREWCHECK_STORAGE_MAX_FILE_BYTES };
+ }
+ const fileName = safeSupabaseStorageName(filePayload.sourceFileName || filePayload.filename || 'escala.pdf');
+ const mimeType = String(filePayload.sourceMimeType || filePayload.mimeType || (fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream')).trim();
+ const userId = safeSupabaseStorageName(user?.id || 'anon', 'anon');
+ const objectPath = `users/${userId}/rosters/${rosterId}/${Date.now()}-${fileName}`;
+ const endpoint = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(CREWCHECK_SUPABASE_BUCKET_ROSTERS)}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
+ const response = await fetch(endpoint, {
+  method: 'POST',
+  headers: {
+   authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+   apikey: SUPABASE_SECRET_KEY,
+   'content-type': mimeType,
+   'x-upsert': 'true',
+  },
+  body: buffer,
+  signal: AbortSignal.timeout(Number(process.env.CREWCHECK_STORAGE_UPLOAD_TIMEOUT_MS || 20000)),
+ });
+ const text = await response.text().catch(() => '');
+ if (!response.ok) {
+  const error = new Error(`Falha no armazenamento seguro da escala (${response.status}).`);
+  error.statusCode = response.status;
+  error.detail = text.slice(0, 500);
+  throw error;
+ }
+ return { ok: true, provider: 'supabase-storage', mode: CREWCHECK_STORAGE_MODE, bucket: CREWCHECK_SUPABASE_BUCKET_ROSTERS, path: objectPath, size: buffer.length, mimeType };
+}
+
+function rosterBackupIsPremium(user) {
+ return Boolean(isBillingAdmin(user) || billingStatusFromUser(user)?.premiumAccess);
+}
+
+async function rosterBackupGateForUser(db, user, importSource = 'api') {
+ if (!supabaseStorageConfigured()) return { allowed: false, skipped: true, reason: 'storage_not_configured' };
+ if (rosterBackupIsPremium(user)) return { allowed: true, plan: 'premium' };
+ const source = String(importSource || '').toLowerCase();
+ const freeLimit = source.includes('telegram') ? CREWCHECK_FREE_TELEGRAM_STORAGE_BACKUP_LIMIT : CREWCHECK_FREE_STORAGE_BACKUP_LIMIT;
+ if (freeLimit <= 0) {
+  return { allowed: false, skipped: true, reason: 'free_backup_premium_only', premiumRequired: true, limit: 0 };
+ }
+ if (!db || !user?.id) return { allowed: false, skipped: true, reason: 'free_backup_unidentified', premiumRequired: true, limit: freeLimit };
+ const counted = await db.query(
+  `select count(*) as total
+     from crewcheck_rosters
+    where user_id = $1
+      and deleted_at is null
+      and storage_provider is not null
+      and source_storage_path is not null`,
+  [user.id],
+ ).catch(() => ({ rows: [{ total: freeLimit }] }));
+ const total = Number(counted.rows?.[0]?.total || 0);
+ if (total >= freeLimit) {
+  return { allowed: false, skipped: true, reason: 'free_backup_limit_reached', premiumRequired: true, limit: freeLimit, used: total };
+ }
+ return { allowed: true, plan: 'free', limit: freeLimit, used: total };
+}
+
+async function processRosterStorageBackup(db, user, rosterRow, filePayload = {}, { importSource = 'api' } = {}) {
+ const rosterId = rosterRow?.id;
+ const sourceFileDataBase64 = filePayload.sourceFileDataBase64 || filePayload.dataBase64 || null;
+ if (!rosterId || !sourceFileDataBase64) return null;
+ if (rosterRow?.storage_provider && rosterRow?.source_storage_path) {
+  return {
+   ok: true,
+   skipped: true,
+   reason: 'already_backed_up',
+   provider: rosterRow.storage_provider,
+   path: rosterRow.source_storage_path,
+   size: Number(rosterRow.source_file_size_bytes || 0) || null,
+   uploadedAt: rosterRow.storage_uploaded_at || null,
+  };
+ }
+ const gate = await rosterBackupGateForUser(db, user, importSource);
+ if (!gate.allowed) {
+  const status = gate.premiumRequired ? 'processed_backup_premium_only' : 'processed';
+  await db.query('update crewcheck_rosters set import_status = $3, updated_at = now() where id = $1 and user_id = $2', [rosterId, user.id || null, status]).catch(() => null);
+  return { ok: false, skipped: true, ...gate };
+ }
+ try {
+  const storageResult = await uploadRosterOriginalToSupabase(user, rosterId, filePayload);
+  if (storageResult?.ok) {
+   await db.query('update crewcheck_rosters set storage_provider = $3, source_storage_path = $4, source_file_size_bytes = $5, storage_uploaded_at = now(), import_status = $6, updated_at = now() where id = $1 and user_id = $2', [rosterId, user.id || null, storageResult.provider, storageResult.path, storageResult.size, 'stored_backup']);
+  }
+  return { ...storageResult, gate };
+ } catch (storageError) {
+  await db.query('update crewcheck_rosters set import_status = $3, updated_at = now() where id = $1 and user_id = $2', [rosterId, user.id || null, 'processed_backup_pending']).catch(() => null);
+  return { ok: false, message: storageError?.message || 'Falha no armazenamento seguro.', gate };
+ }
+}
+
+async function markRosterActive(db, userId, rosterId) {
+ if (!userId || !rosterId) return;
+ await db.query('update crewcheck_rosters set is_active = false, updated_at = now() where user_id = $1 and id <> $2 and deleted_at is null', [userId, rosterId]).catch(() => null);
+ await db.query("update crewcheck_rosters set is_active = true, active_at = now(), updated_at = now(), import_status = coalesce(nullif(import_status, ''), 'processed') where id = $1 and user_id = $2 and deleted_at is null", [rosterId, userId]).catch(() => null);
+}
+
+async function refreshRosterSummaryRow(db, userId, rosterId) {
+ const result = await db.query(
+  `select id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
+      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+      is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+      source_file_size_bytes, storage_uploaded_at
+    from crewcheck_rosters
+   where id = $1 and (($2::uuid is null and user_id is null) or user_id = $2)
+   limit 1`,
+  [rosterId, userId || null],
+ );
+ return result.rows?.[0] || null;
+}
+
+async function saveRosterForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, importSource = 'api', sourceFileDataBase64 = null, sourceMimeType = null, sourceFileSize = null }) {
  if (!db || !user?.id) throw new Error('Usuário não identificado para salvar a escala.');
  if (!roster || !Array.isArray(roster.days)) throw new Error('PDF interpretado, mas não retornou uma escala válida.');
- await assertRosterBelongsToPremiumUser(db, user, roster, sourceFileName || null);
+ await assertRosterBelongsToAccountUser(db, user, roster, sourceFileName || null);
+ const billingForRosterSave = billingStatusFromUser(user);
+ if (!billingForRosterSave?.premiumAccess && !isBillingAdmin(user)) {
+  const existingFree = await db.query('select count(*)::int as total from crewcheck_rosters where user_id = $1', [user.id]).catch(() => ({ rows: [{ total: 0 }] }));
+  const totalFree = Number(existingFree.rows?.[0]?.total || 0);
+  if (totalFree >= Number(process.env.CREWCHECK_FREE_ROSTER_ARCHIVE_LIMIT || 1)) {
+   const err = new Error('Plano gratuito: apenas uma escala no histórico. Assine Premium para histórico completo e Concierge.');
+   err.statusCode = 402;
+   err.code = 'PREMIUM_ARCHIVE_REQUIRED';
+   throw err;
+  }
+ }
  const alerts = Array.isArray(compliance?.alerts) ? compliance.alerts : [];
  const criticalAlerts = alerts.filter((alert) => alert?.severity === 'error');
  const payloadChecksum = checksumPayload({ roster, compliance, gym, sourceFileName: sourceFileName || null });
  const existing = await db.query(
   `select id from crewcheck_rosters
-   where checksum = $1 and (($2::uuid is null and user_id is null) or user_id = $2)
+   where checksum = $1 and deleted_at is null and (($2::uuid is null and user_id is null) or user_id = $2)
    limit 1`,
   [payloadChecksum, user.id || null],
  );
@@ -8008,7 +13156,9 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
           alerts_count = $15, critical_alerts_count = $16, checksum = $17
     where id = $18
     returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+      is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+      source_file_size_bytes, storage_uploaded_at`,
    [...params, existing.rows[0].id],
   );
   action = 'roster.updated_dedup';
@@ -8019,17 +13169,24 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
       roster_json, compliance_json, gym_json, score, intensity_score, alerts_count, critical_alerts_count, checksum
     ) values ($18,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17)
     returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+      source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+      is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+      source_file_size_bytes, storage_uploaded_at`,
    [...params, newId()],
   );
  }
+ await markRosterActive(db, user.id || null, result.rows[0].id);
+ let storageResult = await processRosterStorageBackup(db, user, result.rows[0], { sourceFileDataBase64, sourceFileName, sourceMimeType, sourceFileSize }, { importSource });
+ const refreshedRow = await refreshRosterSummaryRow(db, user.id || null, result.rows[0].id).catch(() => null);
+ if (refreshedRow) result.rows[0] = refreshedRow;
+
  if (user.id && (roster.crewId || roster.base || roster.rank || roster.crewName)) {
   await db.query(
    `update crewcheck_users
       set crew_id = coalesce(nullif($2, ''), crew_id),
           base = coalesce(nullif($3, ''), base),
           rank = coalesce(nullif($4, ''), rank),
-          name = case when $5 is not null and length(trim($5)) > 2 then $5 else name end,
+          name = case when $5 is not null and length(trim($5)) > 2 and upper(trim($5)) not in ('TRIPULANTE','TRIPULANTE EXEMPLO') then $5 else name end,
           updated_at = now()
     where id = $1`,
    [user.id, roster.crewId || null, roster.base || null, roster.rank || null, roster.crewName || null],
@@ -8037,9 +13194,105 @@ async function saveRosterForUser(db, user, { roster, compliance = null, gym = []
  }
  await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [
   newId(), user.id || null, action, result.rows[0].id,
-  JSON.stringify({ sourceFileName: sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, importSource }),
+  JSON.stringify({ sourceFileName: sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, importSource, storage: storageResult || null }),
  ]).catch(() => null);
- return { row: result.rows[0], deduplicated: Boolean(existing.rowCount), alerts, criticalAlerts, checksum: payloadChecksum };
+ await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName, checksum: payloadChecksum, rosterRow: result.rows[0], storage: storageResult }).catch(() => null);
+ return { row: result.rows[0], deduplicated: Boolean(existing.rowCount), alerts, criticalAlerts, checksum: payloadChecksum, storage: storageResult };
+}
+
+function telegramConciergeRosterSnapshotFromLink(linkRow = null) {
+ const raw = telegramConciergeSafeJson(linkRow?.preferences_json, linkRow?.preferences_json || {}) || {};
+ const snapshot = raw._conciergeRosterSnapshot || raw.conciergeRosterSnapshot || null;
+ const roster = snapshot?.roster;
+ if (!roster || !Array.isArray(roster.days)) return null;
+ const stableId = snapshot.rosterId || snapshot.rowId || snapshot.id || `telegram-snapshot-${linkRow?.user_id || 'user'}`;
+ return {
+  id: stableId,
+  roster_id: snapshot.rosterId || snapshot.rowId || null,
+  created_at: snapshot.createdAt || snapshot.updatedAt || new Date().toISOString(),
+  updated_at: snapshot.updatedAt || snapshot.createdAt || new Date().toISOString(),
+  period_year: Number(snapshot.periodYear || roster.year) || null,
+  period_month: Number(snapshot.periodMonth || roster.month) || null,
+  roster,
+  roster_json: roster,
+  compliance: snapshot.compliance || null,
+  compliance_json: snapshot.compliance || null,
+  gym: Array.isArray(snapshot.gym) ? snapshot.gym : [],
+  gym_json: Array.isArray(snapshot.gym) ? snapshot.gym : [],
+  crew_id: roster.crewId || snapshot.crewId || null,
+  crew_name: roster.crewName || snapshot.crewName || null,
+  base: roster.base || snapshot.base || null,
+  rank: roster.rank || snapshot.rank || null,
+  airline: roster.airline || snapshot.airline || null,
+  checksum: snapshot.checksum || null,
+  source_file_name: snapshot.sourceFileName || 'Escala recebida pelo Telegram',
+  score: Number(snapshot.score ?? snapshot.compliance?.score ?? 0),
+  intensity_score: Number(snapshot.intensityScore ?? snapshot.compliance?.loadAnalysis?.intensityScore ?? 0),
+  alerts_count: Number(snapshot.alertsCount ?? snapshot.compliance?.alerts?.length ?? 0),
+  critical_alerts_count: Number(snapshot.criticalAlertsCount ?? 0),
+  is_active: snapshot.isActive === undefined ? true : Boolean(snapshot.isActive),
+  active_at: snapshot.activeAt || snapshot.updatedAt || null,
+  deleted_at: null,
+  import_status: snapshot.importStatus || 'telegram_snapshot',
+  storage_provider: snapshot.storageProvider || null,
+  source_storage_path: snapshot.sourceStoragePath || null,
+  source_file_size_bytes: Number(snapshot.sourceFileSizeBytes || 0) || null,
+  storage_uploaded_at: snapshot.storageUploadedAt || null,
+  source: 'telegram_link_snapshot',
+ };
+}
+
+function summarizeTelegramSnapshotRosterRow(snapshot = null) {
+ if (!snapshot?.roster_json || !Array.isArray(snapshot.roster_json.days)) return null;
+ return {
+  ...summarizeRosterRow(snapshot),
+  source: 'telegram_snapshot',
+  importedFromTelegram: true,
+  storageReady: Boolean(snapshot.storage_provider && snapshot.source_storage_path),
+ };
+}
+
+async function storeTelegramRosterSnapshotForUser(db, user, { roster, compliance = null, gym = [], sourceFileName = null, checksum = null, rosterRow = null, storage = null } = {}) {
+ if (!db || !user?.id || !roster || !Array.isArray(roster.days)) return null;
+ if (!telegramIsConfigured()) return null;
+ const row = await ensureTelegramLinkForUser(db, user).catch(() => null);
+ if (!row?.id) return null;
+ const raw = telegramConciergeSafeJson(row.preferences_json, row.preferences_json || {}) || {};
+ const preferences = { ...raw };
+ const nowIso = new Date().toISOString();
+ const storageOk = Boolean(storage?.ok || rosterRow?.storage_provider);
+ const snapshot = {
+  id: rosterRow?.id || `telegram-snapshot-${user.id}-${Date.now()}`,
+  rosterId: rosterRow?.id || null,
+  updatedAt: nowIso,
+  createdAt: rosterRow?.created_at || nowIso,
+  periodYear: Number(roster.year) || null,
+  periodMonth: Number(roster.month) || null,
+  crewId: roster.crewId || null,
+  crewName: roster.crewName || null,
+  base: roster.base || null,
+  rank: roster.rank || null,
+  airline: roster.airline || null,
+  sourceFileName: sourceFileName || rosterRow?.source_file_name || null,
+  checksum: checksum || rosterRow?.checksum || null,
+  score: Number(rosterRow?.score ?? compliance?.score ?? 0),
+  intensityScore: Number(rosterRow?.intensity_score ?? compliance?.loadAnalysis?.intensityScore ?? 0),
+  alertsCount: Number(rosterRow?.alerts_count ?? compliance?.alerts?.length ?? 0),
+  criticalAlertsCount: Number(rosterRow?.critical_alerts_count ?? 0),
+  isActive: rosterRow?.is_active === undefined ? true : Boolean(rosterRow?.is_active),
+  activeAt: rosterRow?.active_at || nowIso,
+  importStatus: rosterRow?.import_status || (storageOk ? 'stored_backup' : 'processed_backup_pending'),
+  storageProvider: rosterRow?.storage_provider || storage?.provider || null,
+  sourceStoragePath: rosterRow?.source_storage_path || storage?.path || null,
+  sourceFileSizeBytes: Number(rosterRow?.source_file_size_bytes || storage?.size || 0) || null,
+  storageUploadedAt: rosterRow?.storage_uploaded_at || (storageOk ? nowIso : null),
+  roster,
+  compliance,
+  gym: Array.isArray(gym) ? gym : [],
+ };
+ preferences._conciergeRosterSnapshot = snapshot;
+ await db.query('update crewcheck_telegram_links set preferences_json = $1::jsonb, updated_at = now() where id = $2', [JSON.stringify(preferences), row.id]).catch(() => null);
+ return snapshot;
 }
 
 async function importTelegramPdfRoster(db, row, message, document) {
@@ -8053,16 +13306,41 @@ async function importTelegramPdfRoster(db, row, message, document) {
  const filename = document.filename || document.file_name || 'escala.pdf';
  await telegramSendMessage(message.chat.id, telegramPremiumMessage('roster', 'Escala recebida', ['PDF recebido pelo Telegram.', 'Estou analisando sua escala e salvando no CrewCheck.', 'Você receberá uma confirmação assim que a leitura terminar.'], { footer: 'Mantenha o PDF original; imagens ou prints podem exigir upload manual.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') }).catch(() => null);
  const buffer = await telegramDownloadFileBuffer(document.file_id);
- const parsed = await parsePdfOnServer({ filename, dataBase64: buffer.toString('base64') });
- const saved = await saveRosterForUser(db, user, { roster: parsed.roster, compliance: parsed.compliance || null, gym: parsed.gym || [], sourceFileName: filename, importSource: 'telegram_pdf' });
+ const sourceFileDataBase64 = buffer.toString('base64');
+ const parsed = await parsePdfOnServer({ filename, dataBase64: sourceFileDataBase64 });
+ const saved = await saveRosterForUser(db, user, {
+  roster: parsed.roster,
+  compliance: parsed.compliance || null,
+  gym: parsed.gym || [],
+  sourceFileName: filename,
+  importSource: 'telegram_pdf',
+  sourceFileDataBase64,
+  sourceMimeType: 'application/pdf',
+  sourceFileSize: buffer.length,
+ });
  const days = Array.isArray(parsed.roster?.days) ? parsed.roster.days.length : 0;
  const flights = (parsed.roster?.days || []).reduce((sum, day) => sum + (Array.isArray(day.legs) ? day.legs.length : 0), 0);
  const inactive = (parsed.roster?.days || []).filter((day) => /INATIV|PERNOITE|LAYOVER|HOTEL|ACOMOD/i.test(`${day.type || ''} ${day.pairingCode || ''} ${day.rawText || ''}`)).length;
+ const storageLines = [];
+ if (saved.storage?.ok && saved.storage?.reason !== 'already_backed_up') {
+  storageLines.push('Backup seguro do PDF salvo na nuvem.');
+ } else if (saved.storage?.reason === 'already_backed_up') {
+  storageLines.push('Escala registrada no Gerenciador; o PDF original já estava no backup.');
+ } else if (saved.storage?.premiumRequired) {
+  storageLines.push('Escala registrada no Gerenciador. Backup em nuvem fica reservado ao Premium para manter o sistema rápido.');
+ } else if (supabaseStorageConfigured()) {
+  storageLines.push('Escala registrada no Gerenciador; backup em nuvem ficou pendente.');
+ } else {
+  storageLines.push('Escala registrada no Gerenciador. Backup em nuvem não está configurado neste servidor.');
+ }
+ const shortRosterId = String(saved.row?.id || '').slice(0, 8);
  await telegramSendMessage(message.chat.id, telegramPremiumMessage('roster', saved.deduplicated ? 'Escala atualizada' : 'Escala importada com sucesso', [
   `${String(parsed.roster?.month || '').padStart(2, '0')}/${parsed.roster?.year || '----'} · Base ${parsed.roster?.base || 'não informada'}`,
   `${days} dia(s) de programação · ${flights} trecho(s) de voo.`,
   inactive ? `${inactive} inativo(s)/pernoite(s) identificado(s) para conferência de diárias.` : 'Inativos/pernoites não apareceram neste PDF.',
-  'Abra o CrewCheck para conferir escala, diárias, salário, Saída Inteligente e tripulação.',
+  `Gerenciador de Escalas: ${saved.row?.is_active ? 'registrada como ativa' : 'registrada'}${shortRosterId ? ` · ID ${shortRosterId}` : ''}.`,
+  ...storageLines,
+  'Abra o CrewCheck, entre em Gerenciador de Escalas e toque em Atualizar para conferir.',
  ], { footer: 'Importação via Telegram concluída. Confira sempre com a publicação oficial.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
  return { ok: true, rosterId: saved.row.id, deduplicated: saved.deduplicated };
 }
@@ -8106,6 +13384,116 @@ async function telegramSendMessage(chatId, text, options = {}) {
  return { ok: true, result };
 }
 
+async function telegramApiMultipart(method, form) {
+ if (!telegramIsConfigured()) {
+  const err = new Error('TELEGRAM_BOT_TOKEN não configurado no Render.');
+  err.statusCode = 503;
+  err.code = 'TELEGRAM_NOT_CONFIGURED';
+  throw err;
+ }
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 45_000);
+ try {
+  const response = await fetch(`${TELEGRAM_API_BASE}/${method}`, { method: 'POST', body: form, signal: controller.signal });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || data?.ok === false) {
+   const err = new Error(data?.description || `Telegram indisponível (${response.status}).`);
+   err.statusCode = response.status;
+   err.code = data?.error_code || 'TELEGRAM_API_ERROR';
+   throw err;
+  }
+  return data?.result ?? data;
+ } finally {
+  clearTimeout(timeout);
+ }
+}
+
+async function telegramSendVoice(chatId, audioBuffer, { caption = '', filename = 'crewcheck-concierge-voz.mp3', reply_markup = undefined } = {}) {
+ if (!chatId) return { ok: false, skipped: true, reason: 'chat_id ausente' };
+ if (!audioBuffer?.length) return { ok: false, skipped: true, reason: 'áudio vazio' };
+ const form = new FormData();
+ form.append('chat_id', String(chatId));
+ form.append('voice', new Blob([audioBuffer], { type: 'audio/mpeg' }), filename);
+ if (caption) form.append('caption', String(caption).slice(0, 900));
+ form.append('parse_mode', 'HTML');
+ if (reply_markup) form.append('reply_markup', JSON.stringify(reply_markup));
+ const result = await telegramApiMultipart('sendVoice', form);
+ return { ok: true, result };
+}
+
+async function telegramSendAudio(chatId, audioBuffer, { caption = '', filename = 'crewcheck-concierge.mp3', reply_markup = undefined } = {}) {
+ if (!chatId) return { ok: false, skipped: true, reason: 'chat_id ausente' };
+ if (!audioBuffer?.length) return { ok: false, skipped: true, reason: 'áudio vazio' };
+ const form = new FormData();
+ form.append('chat_id', String(chatId));
+ form.append('audio', new Blob([audioBuffer], { type: 'audio/mpeg' }), filename);
+ if (caption) form.append('caption', String(caption).slice(0, 900));
+ form.append('parse_mode', 'HTML');
+ if (reply_markup) form.append('reply_markup', JSON.stringify(reply_markup));
+ const result = await telegramApiMultipart('sendAudio', form);
+ return { ok: true, result };
+}
+
+function telegramFirstNameFromUser(user = null, row = null, chat = null) {
+ const raw = String(user?.name || user?.full_name || row?.chat_first_name || chat?.first_name || '').replace(/\s+/g, ' ').trim();
+ const first = raw.split(' ').find((part) => part && part.length > 1) || '';
+ return first ? first.charAt(0).toUpperCase() + first.slice(1) : '';
+}
+
+function telegramConciergeDisplayName(row = null, user = null) {
+ const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+ const custom = String(prefs.conciergeName || TELEGRAM_DEFAULT_CONCIERGE_NAME).replace(/\s+/g, ' ').trim().slice(0, 32);
+ if (telegramConciergeIsPremium(user) || isBillingAdmin(user)) return custom || TELEGRAM_DEFAULT_CONCIERGE_NAME;
+ return TELEGRAM_DEFAULT_CONCIERGE_NAME;
+}
+
+function telegramConciergeHumanizeLines(lines = [], { userName = '', inputMode = 'text', greetingInfo = null } = {}) {
+ const cleanLines = (Array.isArray(lines) ? lines : [lines])
+  .map((line) => telegramConciergeTranslateRosterAbbreviations(String(line || '').trim()))
+  .filter(Boolean);
+ if (cleanLines[0] && telegramConciergeIsGenericGreetingLine(cleanLines[0], userName)) return cleanLines.slice(0, 12);
+ const shouldGreet = greetingInfo ? greetingInfo.include !== false : true;
+ if (!shouldGreet) return cleanLines.slice(0, 12);
+ const greetingPhrase = greetingInfo?.phrase || telegramConciergeGreetingPeriod(new Date()).phrase;
+ const greeting = userName
+  ? `${greetingPhrase}, ${userName}. Olhei rapidinho aqui para você.`
+  : `${greetingPhrase}. Olhei rapidinho aqui para você.`;
+ return [greeting, ...cleanLines].slice(0, 12);
+}
+
+async function telegramSendConciergeReply(chatId, { row = null, user = null, title = 'Concierge CrewCheck', lines = [], footer = null, actionLabel = 'Abrir CrewCheck', preferAudio = false, inputMode = 'text', audioContext = null } = {}) {
+ const preferences = normalizeTelegramPreferences(row?.preferences_json || {});
+ const premium = telegramConciergeIsPremium(user);
+ const userName = telegramFirstNameFromUser(user, row, null);
+ const conciergeName = telegramConciergeDisplayName(row, user);
+ const greetingInfo = telegramConciergeShouldGreet({ chatId, row, user, inputMode });
+ const humanLines = telegramConciergeHumanizeLines(lines, { userName, inputMode, greetingInfo });
+ const messageText = telegramPremiumMessage('concierge', title, humanLines, { footer: footer || TELEGRAM_PREMIUM_CATEGORIES.concierge.footer, conciergeName });
+ const reply_markup = telegramPremiumReplyMarkup(actionLabel);
+ const maySendAudio = Boolean(preferAudio && TELEGRAM_CONCIERGE_VOICE_ENABLED && preferences.conciergeAudioReplies !== false && (!TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY || premium));
+ if (maySendAudio && telegramSpeechHasProvider('tts', { user, row })) {
+  try {
+   const sendMode = String(TELEGRAM_CONCIERGE_AUDIO_SEND_MODE || 'voice').toLowerCase();
+   const asAudioFile = ['audio', 'mp3', 'file', 'document'].includes(sendMode);
+   await telegramApi('sendChatAction', { chat_id: String(chatId), action: asAudioFile ? 'upload_voice' : 'record_voice' }).catch(() => null);
+   const spokenText = telegramConciergeSpokenTextFromReply({ title, lines, userName, inputMode, conciergeName, user, row, audioContext, greetingInfo });
+   const audio = await textToSpeechBuffer(spokenText, { userName, conciergeName, user, row });
+   const caption = telegramEscapeHtml(`${conciergeName}: ${telegramPlainTextFromPremiumMessage(title).slice(0, 80)}`);
+   if (!asAudioFile) {
+    try {
+     return await telegramSendVoice(chatId, audio, { caption, filename: 'crewcheck-concierge-voz.mp3', reply_markup });
+    } catch (voiceError) {
+     console.warn('[telegram] sendVoice falhou; enviando como áudio', voiceError?.message || voiceError);
+    }
+   }
+   return await telegramSendAudio(chatId, audio, { caption, filename: 'crewcheck-concierge-leve.mp3', reply_markup });
+  } catch (error) {
+   console.warn('[telegram] falha ao gerar/enviar áudio; usando texto', error?.message || error);
+  }
+ }
+ return await telegramSendMessage(chatId, messageText, { reply_markup });
+}
+
 function telegramEscapeHtml(value) {
  return String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] || ch));
 }
@@ -8125,7 +13513,8 @@ function telegramLineIcon(line = '') {
  const lower = String(line || '').toLowerCase();
  if (/saia|saída|chegue|apresent/.test(lower)) return '⏱️';
  if (/destino|aeroporto|base|origem|local/.test(lower)) return '📍';
- if (/modal|carro|uber|99|moto|transporte|voo/.test(lower)) return '🚘';
+ if (/\bla\s?\d{3,4}\b|voo|trecho|decolagem|chegada/.test(lower)) return '🛫';
+ if (/modal|carro|uber|99|moto|transporte/.test(lower)) return '🚘';
  if (/alerta|crítico|irregular|atenção|falha/.test(lower)) return '⚠️';
  if (/escala|programação|importada|atualizada|mês|base/.test(lower)) return '📅';
  if (/ganho|diária|valor|salário|resumo/.test(lower)) return '💎';
@@ -8134,7 +13523,8 @@ function telegramLineIcon(line = '') {
 
 function telegramPremiumMessage(category, title, lines = [], options = {}) {
  const cfg = TELEGRAM_PREMIUM_CATEGORIES[category] || TELEGRAM_PREMIUM_CATEGORIES.default;
- const cleanTitle = telegramEscapeHtml(title || cfg.label || 'CrewCheck');
+ const dynamicLabel = category === 'concierge' && options.conciergeName ? String(options.conciergeName).replace(/\s+/g, ' ').trim().slice(0, 32) : cfg.label;
+ const cleanTitle = telegramEscapeHtml(title || dynamicLabel || cfg.label || 'CrewCheck');
  const bodyLines = (Array.isArray(lines) ? lines : [lines]).map((line) => String(line || '').trim()).filter(Boolean).slice(0, 12);
  const body = bodyLines.length
   ? bodyLines.map((line) => `${telegramLineIcon(line)} ${telegramEscapeHtml(line)}`).join('\n')
@@ -8142,7 +13532,7 @@ function telegramPremiumMessage(category, title, lines = [], options = {}) {
  const footer = telegramEscapeHtml(options.footer || cfg.footer || TELEGRAM_PREMIUM_CATEGORIES.default.footer);
  return [
   `${cfg.icon} <b>${cleanTitle}</b>`,
-  `<i>CrewCheck Premium · ${telegramEscapeHtml(cfg.label)}</i>`,
+  `<i>CrewCheck Premium · ${telegramEscapeHtml(dynamicLabel || cfg.label)}</i>`,
   '',
   body,
   '',
@@ -8170,7 +13560,7 @@ async function notifyTelegramForUser(db, userId, category, title, lines = []) {
 
 
 
-const TELEGRAM_CONCIERGE_FREE_DAILY_LIMIT = Math.max(1, Number(process.env.TELEGRAM_CONCIERGE_FREE_DAILY_LIMIT || 5));
+const TELEGRAM_CONCIERGE_FREE_DAILY_LIMIT = Number(process.env.TELEGRAM_CONCIERGE_FREE_DAILY_LIMIT || 0); // v11.1.29: 0 = gratuito ilimitado
 
 function telegramConciergeDayKey(now = new Date()) {
  return now.toISOString().slice(0, 10);
@@ -8215,62 +13605,87 @@ function telegramConciergeSafeJson(value, fallback = null) {
  try { return JSON.parse(String(value)); } catch { return fallback; }
 }
 
-async function telegramConciergeLatestRosters(db, userOrId, limit = 8) {
+async function telegramConciergeLatestRosters(db, userOrId, limit = 8, linkRow = null) {
  if (!db || !userOrId) return [];
  const user = typeof userOrId === 'object' ? userOrId : { id: userOrId };
- const userId = user.id || user.user_id || null;
+ const userId = user.id || user.user_id || linkRow?.user_id || null;
+ const linkSnapshot = telegramConciergeRosterSnapshotFromLink(linkRow);
  const normalizeRows = (rows = []) => (rows || []).map((row) => ({
   ...row,
   roster: telegramConciergeSafeJson(row.roster_json, row.roster_json || null),
   compliance: telegramConciergeSafeJson(row.compliance_json, row.compliance_json || null),
   gym: telegramConciergeSafeJson(row.gym_json, row.gym_json || []),
  })).filter((row) => row.roster && Array.isArray(row.roster.days));
- const run = (sql, params) => db.query(sql, params).catch(() => ({ rows: [] }));
- const byUser = userId ? await run(
-  `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
-     from crewcheck_rosters
-    where user_id = $1
-    order by period_year desc nulls last, period_month desc nulls last, updated_at desc, created_at desc
-    limit $2`,
-  [userId, limit],
- ) : { rows: [] };
- let rosters = normalizeRows(byUser.rows);
- if (rosters.length) return rosters;
- const byUserFallback = userId ? await run(
-  `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
-     from crewcheck_rosters
-    where user_id = $1
-    order by updated_at desc, created_at desc
-    limit $2`,
-  [userId, limit],
- ) : { rows: [] };
- rosters = normalizeRows(byUserFallback.rows);
- if (rosters.length) return rosters;
+ const run = (sql, params = []) => db.query(sql, params).catch(() => ({ rows: [] }));
+ const unique = (items = []) => {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+   const key = String(item?.id || item?.checksum || JSON.stringify([item?.period_year, item?.period_month, item?.updated_at]).slice(0, 120));
+   if (!key || seen.has(key)) continue;
+   seen.add(key);
+   out.push(item);
+  }
+  return out.slice(0, limit);
+ };
+ const queries = [];
+ if (userId) {
+  queries.push(run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
+      from crewcheck_rosters
+     where user_id = $1
+     order by updated_at desc, created_at desc
+     limit $2`,
+   [userId, limit],
+  ));
+  queries.push(run(
+   `select r.id, r.created_at, r.updated_at, r.period_year, r.period_month, r.roster_json, r.compliance_json, r.gym_json, r.crew_id, r.crew_name, r.checksum
+      from crewcheck_rosters r
+      join crewcheck_audit_logs a on a.entity_id = r.id
+     where a.user_id = $1
+     order by r.updated_at desc, r.created_at desc
+     limit $2`,
+   [userId, limit],
+  ));
+ }
  const crewId = String(user.crew_id || user.crewId || '').trim();
  if (crewId) {
-  const byCrew = await run(
-   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
+  queries.push(run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
       from crewcheck_rosters
-     where crew_id = $1
+     where lower(replace(coalesce(crew_id,''),' ','')) = lower(replace($1,' ',''))
      order by updated_at desc, created_at desc
      limit $2`,
    [crewId, limit],
-  );
-  rosters = normalizeRows(byCrew.rows);
-  if (rosters.length) return rosters;
+  ));
  }
- const userName = String(user.name || '').trim();
- if (userName && userName.length >= 4) {
-  const byName = await run(
-   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json
+ const userName = String(user.name || user.full_name || '').replace(/\s+/g, ' ').trim();
+ const nameTokens = userName.split(/\s+/).filter((token) => token.length >= 3).slice(0, 3);
+ if (nameTokens.length) {
+  const like = `%${nameTokens.join('%')}%`;
+  queries.push(run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
       from crewcheck_rosters
      where lower(coalesce(crew_name,'')) like lower($1)
      order by updated_at desc, created_at desc
      limit $2`,
-   [`%${userName.split(/\s+/).slice(0, 2).join('%')}%`, Math.min(limit, 3)],
+   [like, Math.min(limit, 5)],
+  ));
+ }
+ const results = await Promise.all(queries);
+ let rosters = unique([...(linkSnapshot ? [linkSnapshot] : []), ...results.flatMap((result) => normalizeRows(result.rows))]);
+ if (rosters.length) return rosters;
+ if (telegramConciergeIsPremium(user) || isBillingAdmin(user)) {
+  const latestOwnCompatible = await run(
+   `select id, created_at, updated_at, period_year, period_month, roster_json, compliance_json, gym_json, crew_id, crew_name, checksum
+      from crewcheck_rosters
+     where user_id is null
+     order by updated_at desc, created_at desc
+     limit $1`,
+   [Math.min(limit, 3)],
   );
-  rosters = normalizeRows(byName.rows);
-  if (rosters.length) return rosters;
+  rosters = normalizeRows(latestOwnCompatible.rows);
+  if (rosters.length) return unique(rosters);
  }
  return [];
 }
@@ -8300,11 +13715,21 @@ function telegramConciergeDateFromDay(day = {}, roster = {}) {
  return telegramConciergeIsoDateFromParts(day.year || roster.year, day.month || roster.month, dayNumber);
 }
 
+function telegramConciergeSaoPauloDateParts(date = new Date()) {
+ try {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { year: Number(map.year), month: Number(map.month), day: Number(map.day) };
+ } catch {
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+ }
+}
+
 function telegramConciergeDatePlus(days = 0) {
- const date = new Date();
- date.setHours(12, 0, 0, 0);
- date.setDate(date.getDate() + Number(days || 0));
- return date.toISOString().slice(0, 10);
+ const baseParts = telegramConciergeSaoPauloDateParts(new Date());
+ const base = new Date(Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day + Number(days || 0), 12, 0, 0));
+ const shifted = telegramConciergeSaoPauloDateParts(base);
+ return telegramConciergeIsoDateFromParts(shifted.year, shifted.month, shifted.day);
 }
 
 function telegramConciergeDateFromText(text = '', rosters = []) {
@@ -8342,11 +13767,570 @@ function telegramConciergeFindDay(rosters = [], iso = '') {
  return null;
 }
 
+function telegramConciergeReadableDate(iso = '') {
+ const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if (!m) return iso || 'data não informada';
+ return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 function telegramConciergeFormatTime(value) {
  const raw = String(value || '').trim();
  const m = raw.match(/(\d{1,2})[:hH](\d{2})/);
  if (m) return `${telegramConciergePad2(m[1])}:${m[2]}`;
  return raw;
+}
+
+
+function telegramConciergeCleanWord(value = '') {
+ return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function telegramConciergePlural(value = 0, one = '', many = '') {
+ return Number(value) === 1 ? one : (many || `${one}s`);
+}
+
+function telegramConciergeSpeakClock(value = '') {
+ const time = telegramConciergeFormatTime(value);
+ const m = String(time || '').match(/^(\d{1,2}):(\d{2})$/);
+ if (!m) return time || 'horário não informado';
+ const hour = Number(m[1]);
+ const min = Number(m[2]);
+ if (min === 0) return `${hour} hora${hour === 1 ? '' : 's'}`;
+ return `${hour} e ${String(min).padStart(2, '0')} horas`;
+}
+
+function telegramConciergeAirportName(value = '') {
+ const raw = String(value || '').trim();
+ if (!raw) return '';
+ const upper = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+ const map = {
+  BSB: 'Brasília', GRU: 'Guarulhos', CGH: 'Congonhas', SDU: 'Santos Dumont', GIG: 'Galeão', VCP: 'Viracopos', CNF: 'Confins',
+  POA: 'Porto Alegre', REC: 'Recife', SSA: 'Salvador', FOR: 'Fortaleza', NAT: 'Natal', CWB: 'Curitiba', FLN: 'Florianópolis',
+  BEL: 'Belém', MAO: 'Manaus', MIA: 'Miami', JFK: 'Nova York', LAX: 'Los Angeles', MCO: 'Orlando', LIS: 'Lisboa', SCL: 'Santiago', EZE: 'Buenos Aires'
+ };
+ return map[upper] || raw;
+}
+
+function telegramConciergeDayRawText(day = {}) {
+ return [day.type, day.title, day.activityType, day.pairingCode, day.code, day.rawText, day.description, day.label, day.name]
+  .map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+}
+
+function telegramConciergeDayLegs(day = {}) {
+ return Array.isArray(day?.legs) ? day.legs.filter(Boolean) : [];
+}
+
+function telegramConciergeDayKind(day = {}) {
+ const translated = telegramConciergeTranslateRosterAbbreviations(telegramConciergeDayRawText(day));
+ const clean = telegramConciergeCleanWord(`${translated} ${telegramConciergeDayRawText(day)}`);
+ const legs = telegramConciergeDayLegs(day);
+ if (/sobreaviso extra|hsb extra|extra hsb|hsb x|hsb ext/.test(clean)) return { key: 'standby_extra', label: 'sobreaviso extra' };
+ if (/sobreaviso|hsb|sby|sob/.test(clean)) return { key: 'standby', label: 'sobreaviso' };
+ if (/reserva|\bres\b|\brsa\b|airport standby/.test(clean)) return { key: 'reserve', label: 'reserva' };
+ if (/vivo de extra|\bextra\b|\bvex\b|\bps\b/.test(clean)) return { key: 'extra', label: 'extra' };
+ if (/folga pos ferias|\bdop\b/.test(clean)) return { key: 'off_after_vacation', label: 'folga pós-férias' };
+ if (/\bfolga\b|\bdo\b|\bdof\b|\boff\b/.test(clean)) return { key: 'off', label: 'folga' };
+ if (/ferias|vacation|\bvac\b/.test(clean)) return { key: 'vacation', label: 'férias' };
+ if (/treinamento crm|\bcrm\b/.test(clean)) return { key: 'crm', label: 'treinamento CRM' };
+ if (/treinamento on line|\bead\b/.test(clean)) return { key: 'ead', label: 'treinamento on-line' };
+ if (/reuniao|reunião|meeting|\bmt\b/.test(clean)) return { key: 'meeting', label: 'reunião' };
+ if (legs.length) return { key: 'flight', label: 'voo' };
+ return { key: 'other', label: translated || 'programação' };
+}
+
+function telegramConciergeDayStartTime(day = {}, firstLeg = {}) {
+ return telegramConciergeFormatTime(day.startTime || day.reportTime || day.dutyReport || day.presentationTime || day.checkInTime || firstLeg.dutyReport || firstLeg.reportTime || firstLeg.presentationTime || firstLeg.departureTime || firstLeg.departure || firstLeg.dep || firstLeg.startTime || '');
+}
+
+function telegramConciergeDayEndTime(day = {}, lastLeg = {}) {
+ return telegramConciergeFormatTime(day.endTime || day.releaseTime || day.dutyEnd || lastLeg.arrivalTime || lastLeg.arrival || lastLeg.arr || lastLeg.endTime || day.arrivalTime || '');
+}
+
+function telegramConciergeDayStartPlace(day = {}, firstLeg = {}) {
+ return telegramConciergeAirportName(firstLeg.origin || firstLeg.from || day.origin || day.from || day.location || day.airport || day.base || 'local não informado');
+}
+
+function telegramConciergeDayEndPlace(day = {}, lastLeg = {}) {
+ return telegramConciergeAirportName(lastLeg.destination || lastLeg.to || day.destination || day.to || day.endLocation || day.location || day.airport || day.base || 'local não informado');
+}
+
+
+function telegramConciergeSaoPauloNowParts(date = new Date()) {
+ try {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { year: Number(map.year), month: Number(map.month), day: Number(map.day), hour: Number(map.hour) };
+ } catch {
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: date.getUTCHours() };
+ }
+}
+
+function telegramConciergeGreetingPeriod(date = new Date()) {
+ const parts = telegramConciergeSaoPauloNowParts(date);
+ const hour = Number(parts.hour || 0);
+ const dayKey = `${parts.year}-${telegramConciergePad2(parts.month)}-${telegramConciergePad2(parts.day)}`;
+ const period = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'night';
+ const phrase = period === 'morning' ? 'Bom dia' : period === 'afternoon' ? 'Boa tarde' : 'Boa noite';
+ return { dayKey, period, phrase };
+}
+
+function telegramConciergeShouldGreet({ chatId = '', row = null, user = null, inputMode = 'text' } = {}) {
+ const info = telegramConciergeGreetingPeriod(new Date());
+ const userId = user?.id || row?.user_id || row?.userId || '';
+ const key = [chatId || row?.chat_id || 'chat', userId || 'user', inputMode === 'audio' ? 'audio' : 'text', info.dayKey, info.period].join(':');
+ const now = Date.now();
+ for (const [existingKey, at] of telegramConciergeGreetingState.entries()) {
+  if (!Number.isFinite(at) || now - at > 26 * 60 * 60 * 1000) telegramConciergeGreetingState.delete(existingKey);
+ }
+ if (telegramConciergeGreetingState.has(key)) return { include: false, phrase: info.phrase };
+ telegramConciergeGreetingState.set(key, now);
+ return { include: true, phrase: info.phrase };
+}
+
+function telegramConciergeVocativeFromUser(user = null, row = null, context = {}) {
+ const first = telegramFirstNameFromUser(user, row, null) || 'comandante';
+ const roster = context?.roster || context?.found?.roster || context?.row?.roster || {};
+ const day = context?.day || context?.found?.day || null;
+ const rawRole = [user?.rank, user?.role, user?.function, user?.funcao, user?.cargo, roster?.rank, roster?.crewRank, roster?.role, day?.rank, day?.role]
+  .map((part) => String(part || '').trim()).find(Boolean) || '';
+ const role = telegramConciergeReadableCrewRole(rawRole, -1);
+ if (role && !/^Comissário$/i.test(role)) return `${role} ${first}`;
+ if (/^Comissário$/i.test(role)) return `Comissário ${first}`;
+ return first;
+}
+
+function telegramConciergeAudioGreeting({ user = null, row = null, context = {}, greetingInfo = null } = {}) {
+ if (greetingInfo && greetingInfo.include === false) return '';
+ const vocative = telegramConciergeVocativeFromUser(user, row, context);
+ const phrase = greetingInfo?.phrase || telegramConciergeGreetingPeriod(new Date()).phrase;
+ return `Fala, ${vocative}.`;
+}
+
+function telegramConciergeDateLabelForSpeech(iso = '', label = '') {
+ const clean = telegramConciergeCleanWord(label);
+ if (clean === 'hoje') return 'hoje';
+ if (clean === 'amanha') return 'amanhã';
+ if (clean.includes('depois de amanha')) return 'depois de amanhã';
+ const readable = telegramConciergeReadableDate(iso);
+ return readable ? `no dia ${readable.slice(0, 5)}` : (label || 'nessa data');
+}
+
+
+function telegramConciergeCheckinReminderNeeded(day = {}, legsArg = null) {
+ const legs = Array.isArray(legsArg) ? legsArg : telegramConciergeDayLegs(day);
+ const raw = telegramConciergeNormalizeText([
+  day.type, day.title, day.activityType, day.pairingCode, day.code, day.workType, day.rawText, day.description,
+  ...legs.map((leg) => [leg.workType, leg.type, leg.activityType, leg.label, leg.status, leg.origin, leg.from].filter(Boolean).join(' ')),
+ ].filter(Boolean).join(' '));
+ const kind = telegramConciergeDayKind(day);
+ const base = String(day.base || day.contractBase || day.homeBase || day.location || '').trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+ const hasReserve = kind.key === 'reserve' || /\b(asb|reserva|res|rsa|airport standby)\b/.test(raw);
+ const hasExtraFlight = kind.key === 'extra' || /\b(ps|vex|extra|vivo de extra)\b/.test(raw) || legs.some((leg) => /\b(ps|vex|extra)\b/i.test(String(leg.workType || leg.type || leg.label || '')));
+ const startsAtBase = !base || legs.some((leg) => String(leg.origin || leg.from || '').trim().toUpperCase() === base) || String(day.location || day.airport || '').trim().toUpperCase() === base;
+ return Boolean(hasReserve || (hasExtraFlight && startsAtBase));
+}
+
+function telegramConciergeCheckinReminderLine(day = {}, legsArg = null) {
+ return telegramConciergeCheckinReminderNeeded(day, legsArg)
+  ? 'Ah, e lembra de preencher o formulário de check-in, porque é reserva ou extra na base.'
+  : '';
+}
+
+function telegramConciergeAudioDaySummary(day = {}, iso = '', { label = '', concise = false, includeAdvice = true } = {}) {
+ const kind = telegramConciergeDayKind(day);
+ const legs = telegramConciergeDayLegs(day);
+ const firstLeg = legs[0] || {};
+ const lastLeg = legs[legs.length - 1] || firstLeg || {};
+ const start = telegramConciergeDayStartTime(day, firstLeg);
+ const end = telegramConciergeDayEndTime(day, lastLeg);
+ const startPlace = telegramConciergeDayStartPlace(day, firstLeg);
+ const endPlace = telegramConciergeDayEndPlace(day, lastLeg);
+ const dateLabel = telegramConciergeDateLabelForSpeech(iso, label);
+ const startClock = telegramConciergeSpeakClock(start);
+ const endClock = telegramConciergeSpeakClock(end);
+ const datePrefix = dateLabel === 'hoje' ? 'hoje' : dateLabel;
+ const checkinAdvice = includeAdvice ? telegramConciergeCheckinReminderLine(day, legs) : '';
+ const timeRange = start || end ? `${start ? `começa às ${startClock}` : 'não achei o início'}${end ? ` e vai até ${endClock}` : ''}` : 'não achei o horário certinho na escala';
+ if (kind.key === 'standby' || kind.key === 'standby_extra') {
+  const labelText = kind.key === 'standby_extra' ? 'sobreaviso extra' : 'sobreaviso';
+  return `Boa, ${datePrefix}: você tá de ${labelText}. ${timeRange}. Deixa o celular por perto, mas sem neura.`;
+ }
+ if (kind.key === 'reserve') {
+  return [`Boa, ${datePrefix}: você tá de reserva. A apresentação aparece às ${startClock}.`, checkinAdvice].filter(Boolean).join(' ');
+ }
+ if (kind.key === 'extra') {
+  return [`Boa, ${datePrefix}: você tá de extra. A apresentação aparece às ${startClock}.`, checkinAdvice].filter(Boolean).join(' ');
+ }
+ if (kind.key === 'off' || kind.key === 'off_after_vacation') {
+  return `${dateLabel === 'hoje' ? 'Hoje' : `No ${dateLabel}`}, você tá de ${kind.label}. Aproveita para descansar de verdade.`;
+ }
+ if (kind.key === 'vacation') {
+  return `${dateLabel === 'hoje' ? 'Hoje' : `No ${dateLabel}`}, você segue de férias. Curte bastante.`;
+ }
+ if (kind.key === 'crm' || kind.key === 'ead' || kind.key === 'meeting') {
+  const local = startPlace && startPlace !== 'local não informado' ? ` em ${startPlace}` : '';
+  return `Você tem ${kind.label} ${datePrefix}${local}. ${timeRange}.`;
+ }
+ if (legs.length) {
+  const count = legs.length;
+  const trecho = telegramConciergePlural(count, 'trecho', 'trechos');
+  const firstFlight = telegramConciergeNaturalizeForAudio(telegramConciergeLegNumber(firstLeg) || 'primeiro voo');
+  const route = `começa em ${startPlace}, às ${startClock}, e termina em ${endPlace}, às ${endClock}`;
+  const reminder = includeAdvice ? telegramConciergeCheckinReminderLine(day, legs) : '';
+  let baseFlight = '';
+  if (count === 1) baseFlight = `Boa, ${datePrefix}: é só um trecho. ${firstFlight}, de ${startPlace} para ${endPlace}, saindo às ${startClock} e chegando às ${endClock}.`;
+  else if (count >= 4) baseFlight = `Rapaz, ${datePrefix} tá mais puxado: são ${count} ${trecho}. ${route}.`;
+  else baseFlight = `Boa, ${datePrefix}: você tem ${count} ${trecho}. ${route}.`;
+  return [baseFlight, reminder].filter(Boolean).join(' ');
+ }
+ const type = kind.label || 'programação';
+ return `Você tem ${type} ${datePrefix}. ${timeRange}.`;
+}
+
+function telegramConciergeDayShortLine(day = {}, iso = '') {
+ const kind = telegramConciergeDayKind(day);
+ const legs = telegramConciergeDayLegs(day);
+ const firstLeg = legs[0] || {};
+ const lastLeg = legs[legs.length - 1] || firstLeg || {};
+ const date = telegramConciergeReadableDate(iso).slice(0, 5);
+ const start = telegramConciergeDayStartTime(day, firstLeg) || '--:--';
+ const end = telegramConciergeDayEndTime(day, lastLeg) || '--:--';
+ if (legs.length) return `${date} · ${legs.length} ${telegramConciergePlural(legs.length, 'perna', 'pernas')} · ${telegramConciergeDayStartPlace(day, firstLeg)} ${start} → ${telegramConciergeDayEndPlace(day, lastLeg)} ${end}`;
+ return `${date} · ${kind.label} · ${start}${end !== '--:--' ? ` até ${end}` : ''}`;
+}
+
+function telegramConciergeUpcomingDays(rosters = [], { limit = 5, fromIso = telegramConciergeDatePlus(0) } = {}) {
+ const items = [];
+ const seen = new Set();
+ for (const item of rosters) {
+  const roster = item.roster || {};
+  for (const day of roster.days || []) {
+   const iso = telegramConciergeDateFromDay(day, roster);
+   if (!iso || iso < fromIso || seen.has(iso)) continue;
+   const kind = telegramConciergeDayKind(day);
+   const legs = telegramConciergeDayLegs(day);
+   const firstLeg = legs[0] || {};
+   const start = telegramConciergeDayStartTime(day, firstLeg) || telegramConciergeFormatTime(firstLeg.departureTime || firstLeg.departure || '23:59') || '23:59';
+   seen.add(iso);
+   items.push({ row: item, roster, day, iso, kind, sortKey: `${iso}T${start}` });
+  }
+ }
+ return items.sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey))).slice(0, Math.max(1, limit));
+}
+
+function telegramConciergeUpcomingLines(items = [], { free = false } = {}) {
+ if (!items.length) return ['Não encontrei próximas programações na escala salva.', 'Importe ou sincronize a escala mais recente para eu acompanhar.'];
+ const lines = ['Próximas programações encontradas:'];
+ for (const item of items) lines.push(telegramConciergeDayShortLine(item.day, item.iso));
+ if (free) lines.push('No gratuito, mostro só um resumo básico. O Premium libera calendário completo, voz, radar, saída e diárias.');
+ return lines;
+}
+
+function telegramConciergeWantsUpcoming(text = '') {
+ const clean = telegramConciergeNormalizeText(text);
+ if (/^\/(proximas|proximos|semana|escala|agenda)\b/.test(clean)) return true;
+ if (/\b(proximas|proximos|proximas programacoes|proximos voos|minhas programacoes|meus voos|minha escala|minha agenda|programacoes da semana|escala da semana|semana)\b/.test(clean)) return true;
+ if (/\b(programacoes|programações)\b/.test(String(text || '').toLowerCase()) && !/\b(hoje|amanha|amanhã|dia\s+\d{1,2}|\d{1,2}[\/\-.]\d{1,2})\b/i.test(String(text || ''))) return true;
+ return false;
+}
+
+
+function telegramConciergeWantsRegulation(text = '') {
+ const clean = telegramConciergeNormalizeText(text);
+ return /\b(regulamentacao|regulamentação|conformidade|irregularidade|irregularidades|alertas?|rbac|lei do aeronauta|mcmsv|manual|notoc|pnae|pob|poc|depa|depu|custodia|custódia|madrugada|sobreaviso|reserva|repouso|jornada|artigo perigoso|artigos perigosos)\b/i.test(clean);
+}
+
+function telegramConciergeRegulationLines(rosters = [], { premium = false } = {}) {
+ const text = rosters.map(item => `${item.roster?.rawText || ''} ${(item.roster?.days || []).map(day => `${day.rawText || ''} ${day.pairingCode || ''} ${day.type || ''}`).join(' ')}`).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+ const hits = [];
+ const add = (condition, line) => { if (condition) hits.push(line); };
+ add(/\b(WCH|WCHR|WCHS|WCHC|WCBD|BLND|DEAF|UMNR|PNAE)\b/.test(text), 'PNAE/atendimento especial: conferir Nimbus; se houver divergência persistente, inserir o adicional no P.O.B. e avisar cockpit.');
+ add(/\b(NOTOC|DG|DGR|ARTIGOS? PERIGOSOS?|DANGEROUS GOODS)\b/.test(text), 'NOTOC/artigos perigosos: garantir ciência do CSB/CF e cabine; em discrepância, seguir reporte operacional.');
+ add(/\b(POC|CONCENTRADOR)\b/.test(text), 'POC: validar bateria de 150% do voo, assento adequado e sem obstruir evacuação.');
+ add(/\b(DEPA|DEPU|CUSTODIAD|CUSTODIA|ESCOLTA)\b/.test(text), 'Security: DEPA/DEPU/custodiado exigem briefing, assento no final da cabine, escolta e restrição de serviço conforme caso.');
+ add(/\b(PETC|ESAN|SVAN|AVIH)\b/.test(text), 'Animal em cabine/serviço: conferir categoria, limite, assento e se não bloqueia corredor ou saída.');
+ add(/\b(HSB|HSBE|SOBREAVISO)\b/.test(text), 'Sobreaviso: janela de 3h a 12h, até 8 mensais; se houver acionamento, não alertar mínimo isolado de 3h e validar SAV + jornada.');
+ add(/\b(ASB|RES|RESERVA)\b/.test(text), 'Reserva: janela de 3h a 6h em local de trabalho; se houver acionamento, não alertar mínimo isolado de 3h e validar reserva + jornada.');
+ add(/\b(KME|KIM|MEDAIRE|OCORRENCIA MEDICA)\b/.test(text), 'Ocorrência médica: KME/KIM, autorização MedAire/Comandante e MOR quando aplicável.');
+ const base = [
+  'Motor de conformidade refinado: foco em jornada, repouso, sobreaviso/reserva acionados e redução de falsos positivos.',
+  'Também passei a marcar como ponto de atenção itens operacionais, e não só jornada/repouso.',
+ ];
+ const lines = base.concat(hits.length ? hits : [
+  'Na escala salva não encontrei códigos especiais evidentes como PNAE, NOTOC, POC, DEPA/DEPU ou PETC, mas o motor já fica pronto para alertar quando aparecerem.',
+  'Continuo validando folgas, repouso, sobreaviso, reserva acionada, madrugadas, horas de voo e jornada líquida sem somar solo entre etapas.',
+ ]);
+ if (!premium) lines.push('No gratuito, deixo só o resumo. O Premium mostra os alertas detalhados e histórico de conformidade.');
+ return lines.slice(0, premium ? 10 : 5);
+}
+
+function telegramConciergeIsGenericGreetingLine(line = '', userName = '') {
+ const clean = telegramConciergeCleanWord(line);
+ const name = telegramConciergeCleanWord(userName);
+ if (!clean) return true;
+ if (name && new RegExp(`^(boa|ola|oi|fala|pronto|e ai)?\\s*${name}\\b`).test(clean)) return true;
+ return /^(boa|ola|oi|fala|pronto|e ai|ja olhei aqui|ouvi aqui|ouvi aqui e ja dei uma olhada)/.test(clean);
+}
+
+
+function telegramConciergeTitleCaseName(value = '') {
+ const clean = String(value || '').replace(/[_|;]/g, ' ').replace(/\s+/g, ' ').trim();
+ if (!clean) return '';
+ if (clean.length <= 3 && clean === clean.toUpperCase()) return clean;
+ return clean.toLowerCase().replace(/(^|\s|[-'])([\p{L}])/gu, (_, sep, ch) => `${sep}${ch.toUpperCase()}`);
+}
+
+function telegramConciergeReadableCrewRole(value = '', index = -1) {
+ const raw = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+ if (!raw) return index === 0 ? 'Chefe' : '';
+ if (/\b(CCM|CHEFE|CABIN CHIEF|CHIEF|PUR\d?|COMISSARIO CHEFE)\b/.test(raw)) return 'Chefe';
+ if (/\b(CP|CPT|CMTE|COMANDANTE|CAPTAIN|CAP)\b/.test(raw)) return 'Comandante';
+ if (/\b(FO|COP|COPILOTO|CO PILOTO|FIRST OFFICER)\b/.test(raw)) return 'Copiloto';
+ if (/\b(CMS|COMISSARIO|COMISSARIA|CABIN CREW|FA)\b/.test(raw)) return 'Comissário';
+ if (/\b(INST|INSTRUTOR|INSTRUCTOR)\b/.test(raw)) return 'Instrutor';
+ return telegramConciergeTitleCaseName(value).slice(0, 24);
+}
+
+function telegramConciergeCrewNameFromItem(item = {}) {
+ if (typeof item === 'string') {
+  const cleaned = item.replace(/^\s*(?:CP|CPT|CMTE|FO|COP|CCM|CMS|FA|INST|CHEFE|COMANDANTE|COPILOTO|COMISS[ÁA]RIO[A]?)\s*[-:·–—]?\s*/i, '').replace(/\s+/g, ' ').trim();
+  return telegramConciergeTitleCaseName(cleaned).slice(0, 48);
+ }
+ const candidates = [item.name, item.fullName, item.full_name, item.crewName, item.crew_name, item.displayName, item.employeeName, item.nome, item.tripulante, item.label].filter(Boolean);
+ const value = String(candidates[0] || '').replace(/\s+/g, ' ').trim();
+ return telegramConciergeTitleCaseName(value).slice(0, 48);
+}
+
+function telegramConciergeCrewRoleFromItem(item = {}, index = -1) {
+ if (typeof item === 'string') {
+  const match = item.match(/^\s*(CP|CPT|CMTE|FO|COP|CCM|CMS|FA|INST|CHEFE|COMANDANTE|COPILOTO|COMISS[ÁA]RIO[A]?)\b/i) || item.match(/\b(CP|CPT|CMTE|FO|COP|CCM|CMS|FA|INST)\b/i);
+  return telegramConciergeReadableCrewRole(match?.[1] || '', index);
+ }
+ const candidates = [item.role, item.rank, item.function, item.funcao, item.função, item.position, item.duty, item.code, item.category, item.cargo, item.type].filter(Boolean);
+ return telegramConciergeReadableCrewRole(candidates[0] || '', index);
+}
+
+function telegramConciergeCrewLabel(item = {}, index = -1) {
+ const role = telegramConciergeCrewRoleFromItem(item, index);
+ const name = telegramConciergeCrewNameFromItem(item);
+ if (role && name) return `${role} ${name}`;
+ if (name) return name;
+ return '';
+}
+
+function telegramConciergeCollectCrewMembers(day = {}, leg = {}) {
+ const buckets = [leg.crew, leg.crews, leg.crewMembers, leg.crewList, leg.tripulantes, leg.tripulation, day.crew, day.crews, day.crewMembers, day.crewList, day.tripulantes, day.tripulation, day.team].filter(Boolean);
+ const rawItems = [];
+ for (const bucket of buckets) {
+  if (Array.isArray(bucket)) rawItems.push(...bucket);
+  else if (typeof bucket === 'object') rawItems.push(...Object.values(bucket));
+  else if (typeof bucket === 'string') rawItems.push(...bucket.split(/\n|;/).map((part) => part.trim()).filter(Boolean));
+ }
+ const seen = new Set();
+ const labels = [];
+ for (let i = 0; i < rawItems.length; i += 1) {
+  const label = telegramConciergeCrewLabel(rawItems[i], i);
+  const key = telegramConciergeNormalizeText(label);
+  if (!label || seen.has(key)) continue;
+  seen.add(key);
+  labels.push(label);
+ }
+ return labels.slice(0, 8);
+}
+
+function telegramConciergeTranslateRosterAbbreviations(text = '') {
+ let out = String(text || '');
+ const replacements = [
+  [/\bHSB\s*(?:EXTRA|EXT|\+|X)\b/g, 'sobreaviso extra'],
+  [/\b(?:EXTRA\s*)?HSB\b/g, (m) => /^EXTRA/.test(m) ? 'sobreaviso extra' : 'sobreaviso'],
+  [/\bSBY\b|\bSOB\b/g, 'sobreaviso'],
+  [/\bDOP\b/g, 'folga pós-férias'],
+  [/\bDOF\b|\bDO\b|\bOFF\b/g, 'folga'],
+  [/\bVAC\b|\bFERIAS\b|\bFÉRIAS\b/gi, 'férias'],
+  [/\bPS\b|\bVEX\b|\bVIVO\s+DE\s+EXTRA\b/g, 'extra'],
+  [/\bMT\b/g, 'reunião'],
+  [/\bCRM\b/g, 'treinamento CRM'],
+  [/\bC32F\b/g, 'treinamento de Airbus A320 família'],
+  [/\bRCFI\b/g, 'recorrência ou instrução programada'],
+  [/\bCBF\b/g, 'curso ou briefing programado'],
+  [/\bEMER\b/g, 'treinamento de emergência'],
+  [/\bEAD\b/g, 'treinamento on-line'],
+  [/\bASB\b/g, 'reserva no aeroporto'],
+  [/\bHSBE\b/g, 'sobreaviso extra'],
+  [/\bRES\b|\bRSA\b/g, 'reserva'],
+  [/\bAPRES(?:ENTA[ÇC][ÃA]O)?\b|\bDUTY\s*REPORT\b/gi, 'apresentação'],
+  [/\bDEP\b/g, 'decolagem'],
+  [/\bARR\b/g, 'chegada'],
+  [/\bCP\b/g, 'Comandante'],
+  [/\bFO\b/g, 'Copiloto'],
+  [/\bCCM\b/g, 'Chefe'],
+ ];
+ for (const [pattern, value] of replacements) out = out.replace(pattern, value);
+ return out.replace(/\s+/g, ' ').trim();
+}
+
+
+function telegramConciergeSpeakDigits(value = '') {
+ return String(value || '').replace(/\D/g, '').split('').join(' ');
+}
+
+function telegramConciergeSpeakFlightForAudio(carrier = '', number = '') {
+ const prefix = String(carrier || '').toUpperCase().replace(/\s+/g, '');
+ const digits = telegramConciergeSpeakDigits(number);
+ const airline = (prefix === 'LA' || prefix === 'JJ' || prefix === 'TAM') ? 'LATAM'
+  : prefix === 'G3' ? 'Gol'
+  : prefix === 'AD' ? 'Azul'
+  : prefix === 'TP' ? 'TAP'
+  : prefix === 'CM' ? 'Copa'
+  : prefix === 'AA' ? 'American'
+  : prefix === '0S' || prefix === 'SID' ? 'Sideral'
+  : prefix === 'TTL' ? 'Total'
+  : prefix || 'companhia';
+ return `voo ${airline} ${digits}`.trim();
+}
+
+function telegramAudioRandomPick(items = [], seed = '') {
+ const list = items.filter(Boolean);
+ if (!list.length) return '';
+ const base = String(seed || `${Date.now()}-${Math.random()}`);
+ let hash = 0;
+ for (let i = 0; i < base.length; i += 1) hash = ((hash << 5) - hash) + base.charCodeAt(i);
+ const jitter = Math.floor(Math.random() * list.length);
+ return list[Math.abs(hash + jitter) % list.length];
+}
+
+function telegramConciergeAudioIntro({ inputMode = 'text', isWeather = false, seed = '' } = {}) {
+ if (isWeather) {
+  return telegramAudioRandomPick([
+   'Boa, vou te passar no padrão de meteorologia.',
+   'Fechado, vou ler como informe meteorológico.',
+   'Olhei a meteorologia aqui, vou deixar bem direto.',
+  ], seed);
+ }
+ return telegramAudioRandomPick(inputMode === 'audio' ? [
+  'Boa, ouvi seu áudio e olhei rapidinho aqui.',
+  'Fechado, conferi aqui para você.',
+  'Olhei aqui agora, bem direto.',
+  'Show, já puxei aqui no CrewCheck.',
+ ] : [
+  'Boa, olhei aqui rapidinho.',
+  'Fechado, conferi no CrewCheck.',
+  'Show, já puxei aqui para você.',
+  'Olhei aqui agora, bem direto.',
+ ], seed);
+}
+
+function telegramConciergeNaturalizeForAudio(text = '') {
+ let out = telegramConciergeTranslateRosterAbbreviations(text);
+ out = out
+  .replace(/\b(LA|JJ|G3|AD|TP|CM|AA|0S|SID|TTL)\s?(\d{3,5})\b/gi, (_, carrier, number) => telegramConciergeSpeakFlightForAudio(carrier, number))
+  .replace(/\bvoo\s+(\d{3,5})\b/gi, (_, number) => `voo ${telegramConciergeSpeakDigits(number)}`)
+  .replace(/\bBSB\b/g, 'Brasília')
+  .replace(/\bGRU\b/g, 'Guarulhos')
+  .replace(/\bCGH\b/g, 'Congonhas')
+  .replace(/\bSDU\b/g, 'Santos Dumont')
+  .replace(/\bGIG\b/g, 'Galeão')
+  .replace(/\bVCP\b/g, 'Viracopos')
+  .replace(/\bCNF\b/g, 'Confins')
+  .replace(/\bPOA\b/g, 'Porto Alegre')
+  .replace(/\bREC\b/g, 'Recife')
+  .replace(/\bSSA\b/g, 'Salvador')
+  .replace(/\bFOR\b/g, 'Fortaleza')
+  .replace(/\bNAT\b/g, 'Natal')
+  .replace(/\bGYN\b/g, 'Goiânia')
+  .replace(/\bJPA\b/g, 'João Pessoa')
+  .replace(/\bPMW\b/g, 'Palmas')
+  .replace(/\bCXJ\b/g, 'Caxias do Sul')
+  .replace(/\bCWB\b/g, 'Curitiba')
+  .replace(/\bMAO\b/g, 'Manaus')
+  .replace(/\bBEL\b/g, 'Belém')
+  .replace(/\bMAB\b/g, 'Marabá')
+  .replace(/\bMCZ\b/g, 'Maceió')
+  .replace(/\bFLN\b/g, 'Florianópolis')
+  .replace(/\bCPV\b/g, 'Campina Grande')
+  .replace(/\s*[·•]\s*/g, ', ')
+  .replace(/\s*→\s*/g, ' para ')
+  .replace(/--:--/g, 'horário não informado')
+  .replace(/\bHorário:\s*/gi, 'horário, ')
+  .replace(/\bData da programação:\s*/gi, 'programação em ')
+  .replace(/\bPortão:\s*/gi, 'portão, ')
+  .replace(/\bTerminal:\s*/gi, 'terminal, ')
+  .replace(/\bStatus:\s*/gi, 'status, ')
+  .replace(/\bOrigem:\s*/gi, 'saindo de ')
+  .replace(/\bLocal:\s*/gi, 'local, ')
+  .replace(/\bApresentação na escala:\s*/gi, 'apresentação na escala às ')
+  .replace(/\bDecolagem:\s*/gi, 'decolagem às ')
+  .replace(/\b(\d{1,2}):(\d{2})\b/g, (_, h, m) => telegramConciergeSpeakClock(`${h}:${m}`))
+  .replace(/\s+/g, ' ')
+  .trim();
+ return out;
+}
+
+function telegramConciergeTrimAudioText(text = '', maxChars = TELEGRAM_CONCIERGE_AUDIO_MAX_CHARS) {
+ const clean = String(text || '').replace(/\s+/g, ' ').trim();
+ if (clean.length <= maxChars) return clean;
+ const sliced = clean.slice(0, maxChars);
+ const cut = Math.max(sliced.lastIndexOf('. '), sliced.lastIndexOf(', '), sliced.lastIndexOf(' '));
+ return `${sliced.slice(0, cut > 360 ? cut : maxChars).trim()}. O restante eu deixei escrito no Telegram.`;
+}
+
+function telegramConciergeAudioBodyFromContext(context = {}) {
+ if (!context || typeof context !== 'object') return '';
+ if (context.kind === 'weather') return String(context.spoken || '').replace(/\s+/g, ' ').trim();
+ if (context.kind === 'day' && context.day) return telegramConciergeAudioDaySummary(context.day, context.iso || '', { label: context.label || '', includeAdvice: true });
+ if (context.kind === 'next' && context.day) return `Sua próxima é essa: ${telegramConciergeAudioDaySummary(context.day, context.iso || '', { label: context.label || 'próxima', includeAdvice: true })}`;
+ if (context.kind === 'upcoming') {
+  const items = Array.isArray(context.items) ? context.items : [];
+  if (!items.length) return 'Não encontrei próximas programações salvas. Sincronize a escala mais recente no CrewCheck.';
+  const maxAudio = Math.min(Number(context.audioLimit || 3), items.length);
+  const intro = `Boa, separei suas próximas ${maxAudio} programações.`;
+  const pieces = items.slice(0, maxAudio).map((item) => telegramConciergeAudioDaySummary(item.day, item.iso, { label: item.label || '', concise: true, includeAdvice: false }));
+  const more = items.length > maxAudio ? 'O restante eu deixei escrito no Telegram.' : '';
+  return [intro, ...pieces, more].filter(Boolean).join(' ');
+ }
+ if (context.kind === 'gate' && context.found) {
+  const leg = context.leg || context.found.leg || {};
+  const flight = telegramConciergeNaturalizeForAudio(telegramConciergeLegNumber(leg) || 'seu voo');
+  const route = [telegramConciergeAirportName(leg.origin || leg.from), telegramConciergeAirportName(leg.destination || leg.to)].filter(Boolean).join(' para ');
+  const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
+  const gate = leg.gate ? `O portão é ${leg.gate}.` : 'O portão ainda não apareceu no radar salvo.';
+  const terminal = leg.terminal ? `Terminal ${leg.terminal}.` : '';
+  return `Sobre o ${flight}${route ? `, de ${route}` : ''}${dep ? `, saindo às ${telegramConciergeSpeakClock(dep)}` : ''}: ${gate} ${terminal}`.trim();
+ }
+ if (context.kind === 'departure' && context.found) {
+  const leg = context.leg || context.found.leg || {};
+  const report = telegramConciergeFormatTime(leg.dutyReport || leg.reportTime || leg.presentationTime || context.found.day?.startTime || '');
+  const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
+  const origin = telegramConciergeAirportName(leg.origin || leg.from || context.found.day?.location || 'origem não informada');
+  return `Boa, para a saída inteligente eu achei essa programação saindo de ${origin}. ${report ? `A apresentação tá às ${telegramConciergeSpeakClock(report)}.` : dep ? `A decolagem tá às ${telegramConciergeSpeakClock(dep)}.` : 'Não achei o horário de apresentação na escala.'} Para trânsito real, calcula uma vez no app com a localização ligada.`;
+ }
+ if (context.kind === 'perdiem') {
+  const target = context.target?.label || 'essa data';
+  const lines = Array.isArray(context.lines) ? context.lines.filter(Boolean).slice(1, 4) : [];
+  return lines.length ? `Sobre as diárias de ${target}: ${lines.map(telegramConciergeNaturalizeForAudio).join('. ')}.` : `Não achei diária calculada para ${target}.`;
+ }
+ return '';
+}
+
+function telegramConciergeSpokenTextFromReply({ title = '', lines = [], userName = '', inputMode = 'text', conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME, user = null, row = null, audioContext = null, greetingInfo = null } = {}) {
+ const contextBody = telegramConciergeAudioBodyFromContext(audioContext || {});
+ if (audioContext?.kind === 'weather' && contextBody) return telegramConciergeTrimAudioText(contextBody);
+ const rawLines = (Array.isArray(lines) ? lines : [lines]).map((line) => String(line || '').trim()).filter(Boolean);
+ const filteredLines = rawLines.filter((line) => !telegramConciergeIsGenericGreetingLine(line, userName));
+ const cleanLines = filteredLines.map((line) => telegramConciergeNaturalizeForAudio(line)).filter(Boolean);
+ const greeting = telegramConciergeAudioGreeting({ user, row, context: audioContext || {}, greetingInfo });
+ const readableTitle = telegramConciergeNaturalizeForAudio(title).replace(/^Programação\s*[·-]\s*/i, 'programação de ');
+ const body = contextBody || [readableTitle && !/concierge/i.test(readableTitle) ? readableTitle : '', cleanLines.slice(0, 4).join('. ')].filter(Boolean).join('. ');
+ const isWeather = /meteorologia|metar|taf|tempo|vento|tempestade|cb|tcu|visibilidade|teto/i.test(`${title} ${body}`);
+ const needsSafety = /voo|trecho|portão|saída|apresentação|reserva|extra|sobreaviso|radar|escala/i.test(body);
+ const intro = telegramConciergeAudioIntro({ inputMode, isWeather, seed: `${title}|${userName}|${body.slice(0, 60)}|${Date.now()}` });
+ const safety = needsSafety ? telegramAudioRandomPick([
+  'Só confere com a escala oficial também, combinado?',
+  'Confere a publicação oficial antes de decidir, tá?',
+  'Usa isso como apoio e valida no canal oficial, fechado?',
+ ], `${body}|safety`) : '';
+ const text = [greeting, intro, body, safety].filter(Boolean).join(' ');
+ return telegramConciergeTrimAudioText(text);
 }
 
 function telegramConciergeLegNumber(leg = {}) {
@@ -8361,14 +14345,14 @@ function telegramConciergeLegLine(leg = {}, index = 0) {
  const time = dep || arr ? `${dep || '--:--'}${arr ? `–${arr}` : ''}` : '';
  const gate = leg.gate ? `Portão ${leg.gate}` : '';
  const terminal = leg.terminal ? `Terminal ${leg.terminal}` : '';
- const status = leg.status || leg.flightStatus || '';
+ const status = telegramConciergeTranslateRosterAbbreviations(leg.status || leg.flightStatus || '');
  return [number, route, time, gate, terminal, status].filter(Boolean).join(' · ');
 }
 
 function telegramConciergeDayLines(day = {}, iso = '') {
  const lines = [];
- const type = day.type || day.title || day.activityType || day.pairingCode || day.code || '';
- const raw = String(day.rawText || day.description || '').replace(/\s+/g, ' ').trim();
+ const type = telegramConciergeTranslateRosterAbbreviations(day.type || day.title || day.activityType || day.pairingCode || day.code || '');
+ const raw = telegramConciergeTranslateRosterAbbreviations(String(day.rawText || day.description || '').replace(/\s+/g, ' ').trim());
  const start = telegramConciergeFormatTime(day.startTime || day.reportTime || day.dutyReport || day.presentationTime || day.checkInTime || '');
  const end = telegramConciergeFormatTime(day.endTime || day.releaseTime || day.dutyEnd || day.arrivalTime || '');
  const baseLine = [iso ? iso.split('-').reverse().join('/') : '', type].filter(Boolean).join(' · ');
@@ -8376,8 +14360,12 @@ function telegramConciergeDayLines(day = {}, iso = '') {
  if (start || end) lines.push(`Horário: ${start || '--:--'}${end ? ` até ${end}` : ''}`);
  const legs = Array.isArray(day.legs) ? day.legs : [];
  if (legs.length) lines.push(...legs.slice(0, 6).map(telegramConciergeLegLine));
- else if (raw) lines.push(raw.slice(0, 160));
+ else if (raw) lines.push(raw.slice(0, 180));
+ const crew = telegramConciergeCollectCrewMembers(day, legs[0] || {});
+ if (crew.length) lines.push(`Tripulação: ${crew.slice(0, 6).join('; ')}`);
  if (day.location || day.airport || day.base) lines.push(`Local: ${day.location || day.airport || day.base}`);
+ const checkinReminder = telegramConciergeCheckinReminderLine(day, legs);
+ if (checkinReminder) lines.push(checkinReminder);
  return lines.length ? lines : ['Não encontrei programação detalhada para esta data.'];
 }
 
@@ -8415,8 +14403,8 @@ function telegramConciergeMealLines(day = {}, iso = '') {
  if (Array.isArray(day.perDiems)) candidates.push(...day.perDiems);
  if (Array.isArray(day.diarias)) candidates.push(...day.diarias);
  for (const item of candidates.slice(0, 8)) {
-  if (typeof item === 'string') lines.push(item);
-  else lines.push([item.label || item.type || item.name || 'Diária', item.value ? `R$ ${item.value}` : '', item.reason || item.source || ''].filter(Boolean).join(' · '));
+  if (typeof item === 'string') lines.push(telegramConciergeTranslateRosterAbbreviations(item));
+  else lines.push(telegramConciergeTranslateRosterAbbreviations([item.label || item.type || item.name || 'Diária', item.value ? `R$ ${item.value}` : '', item.reason || item.source || ''].filter(Boolean).join(' · ')));
  }
  if (!lines.length && /pernoite|inativo|layover|hotel|acomod/i.test(raw)) lines.push('Pernoite/inativo fora de base: verificar almoço e jantar conforme janela e tabela vigente.');
  if (!lines.length && Array.isArray(day.legs) && day.legs.length) lines.push('Há voo/jornada no dia. Abra a auditoria de diárias no app para ver janelas de café, almoço, jantar e ceia.');
@@ -8448,73 +14436,573 @@ function telegramConciergeFreeBlockedLines() {
  ];
 }
 
+/* CREWCHECK_TELEGRAM_METAR_INTENT_PRIORITY_START */
+const TELEGRAM_CONCIERGE_PHONETIC_LETTERS = {
+ alfa: 'A', alpha: 'A', a: 'A',
+ bravo: 'B', braavo: 'B', b: 'B', be: 'B', bee: 'B', bebe: 'B',
+ charlie: 'C', charli: 'C', charliee: 'C', c: 'C', ce: 'C',
+ delta: 'D', d: 'D', de: 'D',
+ echo: 'E', eco: 'E', e: 'E',
+ foxtrot: 'F', fox: 'F', f: 'F', efe: 'F',
+ golf: 'G', golfe: 'G', g: 'G', ge: 'G',
+ hotel: 'H', h: 'H', aga: 'H', agah: 'H',
+ india: 'I', i: 'I',
+ juliet: 'J', juliett: 'J', julieta: 'J', j: 'J', jota: 'J',
+ kilo: 'K', quilo: 'K', k: 'K', ka: 'K',
+ lima: 'L', l: 'L', ele: 'L',
+ mike: 'M', maik: 'M', m: 'M', eme: 'M',
+ november: 'N', novembro: 'N', n: 'N', ene: 'N',
+ oscar: 'O', o: 'O',
+ papa: 'P', p: 'P', pe: 'P',
+ quebec: 'Q', quebeque: 'Q', q: 'Q', que: 'Q',
+ romeo: 'R', romeu: 'R', r: 'R', erre: 'R',
+ sierra: 'S', serra: 'S', cierra: 'S', s: 'S', esse: 'S',
+ tango: 'T', t: 'T', te: 'T',
+ uniform: 'U', uniforme: 'U', u: 'U',
+ victor: 'V', vitor: 'V', v: 'V', ve: 'V',
+ whiskey: 'W', whisky: 'W', wiskey: 'W', w: 'W', dabliu: 'W', doubleu: 'W',
+ xray: 'X', x: 'X', xis: 'X',
+ yankee: 'Y', yanki: 'Y', y: 'Y', ipsilon: 'Y',
+ zulu: 'Z', z: 'Z', ze: 'Z'
+};
+
+const TELEGRAM_CONCIERGE_AIRPORT_NAME_TO_ICAO = {
+ brasilia: 'SBBR', bsb: 'SBBR',
+ congonhas: 'SBSP', 'sao paulo congonhas': 'SBSP',
+ guarulhos: 'SBGR', cumbica: 'SBGR',
+ 'santos dumont': 'SBRJ', 'rio santos dumont': 'SBRJ',
+ galeao: 'SBGL', 'rio galeao': 'SBGL',
+ viracopos: 'SBKP', campinas: 'SBKP',
+ confins: 'SBCF', 'belo horizonte': 'SBCF',
+ goiania: 'SBGO', fortaleza: 'SBFZ', recife: 'SBRF', salvador: 'SBSV', natal: 'SBSG',
+ curitiba: 'SBCT', florianopolis: 'SBFL', 'porto alegre': 'SBPA', belem: 'SBBE', manaus: 'SBEG',
+ palmas: 'SBPJ', 'joao pessoa': 'SBJP', maceio: 'SBMO', maraba: 'SBMA', 'campina grande': 'SBKG',
+ 'caxias do sul': 'SBCX', miami: 'KMIA', orlando: 'KMCO', lisboa: 'LPPT', santiago: 'SCEL', 'buenos aires': 'SAEZ'
+};
+
+function telegramConciergeLooksLikeIcao(value = '') {
+ const code = String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
+ if (!/^[A-Z]{4}$/.test(code)) return false;
+ if (/^(METR|META|META|ATIS|TAFS|TEMO|HOJE|AMAN|PROG|ESCA)$/.test(code)) return false;
+ return /^(SB|SI|SN|SD|SS|KM|KJ|KL|KA|LP|LE|LF|LI|ED|EG|SA|SC|SP|SK|MM|MU|MP|MD|TN|TX|CY|C[YZ])/.test(code);
+}
+
+function telegramConciergeTokensForAirport(text = '') {
+ return telegramConciergeNormalizeText(text)
+  .replace(/x\s*[- ]?\s*ray/g, 'xray')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .split(/\s+/)
+  .filter(Boolean);
+}
+
+function telegramConciergePhoneticAirports(text = '') {
+ const tokens = telegramConciergeTokensForAirport(text);
+ const airports = [];
+ for (let i = 0; i < tokens.length; i += 1) {
+  const letters = [];
+  let consumed = 0;
+  for (let j = i; j < tokens.length && letters.length < 4; j += 1) {
+   const token = tokens[j];
+   if (/^(de|da|do|para|em|no|na|o|a|um|uma|codigo|código|aeroporto)$/.test(token) && !letters.length) { consumed += 1; continue; }
+   const letter = TELEGRAM_CONCIERGE_PHONETIC_LETTERS[token];
+   if (!letter) break;
+   letters.push(letter);
+   consumed += 1;
+  }
+  if (letters.length === 4) {
+   const code = letters.join('');
+   if (telegramConciergeLooksLikeIcao(code)) airports.push(code);
+   i += Math.max(0, consumed - 1);
+  }
+ }
+ return airports;
+}
+
+function telegramConciergeAirportNamesFromText(text = '') {
+ const clean = telegramConciergeNormalizeText(text).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+ const matches = [];
+ for (const [name, icao] of Object.entries(TELEGRAM_CONCIERGE_AIRPORT_NAME_TO_ICAO)) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`\\b${escaped}\\b`, 'i').test(clean)) matches.push(icao);
+ }
+ return matches;
+}
+
+function telegramConciergeExplicitAirportsFromText(text = '') {
+ const raw = String(text || '');
+ const clean = telegramConciergeNormalizeText(raw);
+ const airports = [];
+ for (const m of raw.toUpperCase().matchAll(/\b([A-Z]{4})\b/g)) {
+  const code = m[1];
+  if (telegramConciergeLooksLikeIcao(code)) airports.push(code);
+ }
+ for (const m of clean.toUpperCase().matchAll(/\b([A-Z]{4})\b/g)) {
+  const code = m[1];
+  if (telegramConciergeLooksLikeIcao(code)) airports.push(code);
+ }
+ for (const m of raw.toUpperCase().matchAll(/\b([A-Z]{3})\b/g)) {
+  const code = aviationNormalizeAirport(m[1]);
+  if (telegramConciergeLooksLikeIcao(code)) airports.push(code);
+ }
+ for (const m of clean.toUpperCase().matchAll(/\b([A-Z]{3})\b/g)) {
+  const code = aviationNormalizeAirport(m[1]);
+  if (telegramConciergeLooksLikeIcao(code)) airports.push(code);
+ }
+ return airports;
+}
+
+function telegramConciergeParseAviationWeatherRequest(text = '') {
+ const raw = String(text || '');
+ const clean = telegramConciergeNormalizeText(raw);
+ const hasWeatherKeyword = /^\/(metar|taf|atis|meteorologia|tempo)\b/i.test(raw)
+  || /\b(metar|taf|atis|meteorologia|tempo\s+(?:do|de|em|para)|condi[cç][aã]o meteorol[oó]gica|vento|rajada|visibilidade|teto|cb|tcu|sigmet)\b/i.test(raw)
+  || /\b(metar|taf|atis|meteorologia|tempo|condicao meteorologica|vento|rajada|visibilidade|teto|cb|tcu|sigmet)\b/.test(clean);
+ const phoneticAirports = telegramConciergePhoneticAirports(raw);
+ const explicitAirports = telegramConciergeExplicitAirportsFromText(raw);
+ const namedAirports = telegramConciergeAirportNamesFromText(raw);
+ const airports = [...new Set([...explicitAirports, ...phoneticAirports, ...namedAirports])].slice(0, 4);
+ const hasPhoneticCue = /\b(alfabeto\s+fonetico|fonetico|sierra|serra|bravo|romeo|romeu|alpha|alfa|charlie|delta|echo|foxtrot|golf|hotel|india|juliet|kilo|lima|mike|november|oscar|papa|quebec|tango|uniform|victor|whiskey|x\s*ray|yankee|zulu)\b/.test(clean);
+ if (!hasWeatherKeyword && !(airports.length && hasPhoneticCue)) return null;
+ const wantsTaf = /\btaf\b/i.test(raw) || /\btaf\b/.test(clean) || /\bprevis[aã]o|forecast|prognostico|prognóstico\b/i.test(raw);
+ const wantsMetar = /\bmetar\b/i.test(raw) || /\bmetar\b/.test(clean) || !wantsTaf || /\batis\b/.test(clean);
+ const wantsAtis = /\batis\b/i.test(raw) || /modo\s+atis/i.test(raw) || /\batis\b/.test(clean);
+ return { airports, wantsMetar, wantsTaf, wantsAtis, hasWeatherKeyword, sourceText: raw };
+}
+
+function telegramConciergeMetarPhenomenaText(raw = '') {
+ const text = String(raw || '').toUpperCase();
+ const items = [];
+ if (/\bTSRA|\+TSRA|VCTS|\bTS\b/.test(text)) items.push('trovoada na área');
+ if (/\bCB\b/.test(text)) items.push('cumulonimbus reportado');
+ if (/\bTCU\b/.test(text)) items.push('torre de cúmulus reportada');
+ if (/\+RA|\bRA\b/.test(text)) items.push(/\+RA/.test(text) ? 'chuva forte' : 'chuva');
+ if (/\bDZ\b/.test(text)) items.push('garoa');
+ if (/\bFG\b/.test(text)) items.push('nevoeiro');
+ if (/\bBR\b/.test(text)) items.push('névoa úmida');
+ if (/\bHZ\b/.test(text)) items.push('névoa seca');
+ if (/\bCAVOK\b/.test(text)) items.push('CAVOK, sem fenômeno relevante reportado');
+ if (/\bNSW\b/.test(text)) items.push('sem tempo significativo');
+ return items.length ? items.join(', ') : 'sem fenômeno significativo destacado';
+}
+
+function telegramConciergeAirportSpokenName(icao = '') {
+ const code = String(icao || '').toUpperCase();
+ const pretty = TELEGRAM_CONCIERGE_AIRPORT_ATIS_NAMES[code];
+ if (pretty) return pretty;
+ const pair = Object.entries(TELEGRAM_CONCIERGE_AIRPORT_NAME_TO_ICAO).find(([, value]) => value === code);
+ if (!pair) return code;
+ const name = pair[0].split(' ').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+ return name;
+}
+
+const TELEGRAM_CONCIERGE_ATIS_PHONETIC_WORDS = {
+ A: 'Alfa', B: 'Bravo', C: 'Charlie', D: 'Delta', E: 'Echo', F: 'Foxtrot', G: 'Golf', H: 'Hotel', I: 'India', J: 'Juliett', K: 'Kilo', L: 'Lima', M: 'Mike',
+ N: 'November', O: 'Oscar', P: 'Papa', Q: 'Quebec', R: 'Romeo', S: 'Sierra', T: 'Tango', U: 'Uniform', V: 'Victor', W: 'Whiskey', X: 'X-Ray', Y: 'Yankee', Z: 'Zulu'
+};
+
+const TELEGRAM_CONCIERGE_AIRPORT_ATIS_NAMES = {
+ SBBR: 'Aeroporto Internacional Juscelino Kubitschek',
+ SBGR: 'Aeroporto Internacional de Guarulhos',
+ SBSP: 'Aeroporto de Congonhas',
+ SBRJ: 'Aeroporto Santos Dumont',
+ SBGL: 'Aeroporto Internacional do Galeão',
+ SBKP: 'Aeroporto Internacional de Viracopos',
+ SBCF: 'Aeroporto Internacional de Confins',
+ SBGO: 'Aeroporto de Goiânia',
+ SBCT: 'Aeroporto Internacional Afonso Pena',
+ SBFZ: 'Aeroporto Internacional de Fortaleza',
+ SBRF: 'Aeroporto Internacional do Recife',
+ SBSV: 'Aeroporto Internacional de Salvador',
+ SBSG: 'Aeroporto Internacional de Natal',
+ SBFL: 'Aeroporto Internacional de Florianópolis',
+ SBPA: 'Aeroporto Internacional de Porto Alegre',
+ SBBE: 'Aeroporto Internacional de Belém',
+ SBEG: 'Aeroporto Internacional de Manaus',
+ SBPJ: 'Aeroporto de Palmas',
+ SBJP: 'Aeroporto Internacional de João Pessoa',
+ SBMO: 'Aeroporto Internacional de Maceió',
+ SBMA: 'Aeroporto de Marabá',
+ SBKG: 'Aeroporto de Campina Grande',
+ SBCX: 'Aeroporto de Caxias do Sul',
+ KMIA: 'Aeroporto Internacional de Miami',
+ KMCO: 'Aeroporto Internacional de Orlando',
+ LPPT: 'Aeroporto de Lisboa',
+ SCEL: 'Aeroporto de Santiago',
+ SAEZ: 'Aeroporto Internacional de Ezeiza'
+};
+
+function telegramConciergeIcaoPhonetic(icao = '') {
+ return String(icao || '').toUpperCase().replace(/[^A-Z]/g, '').split('').map((letter) => TELEGRAM_CONCIERGE_ATIS_PHONETIC_WORDS[letter] || letter).join(' ');
+}
+
+function telegramConciergeAtisNumber(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? String(Math.round(n)) : '';
+}
+
+function telegramConciergeAtisSignedTemp(value = '') {
+ const raw = String(value || '').trim();
+ if (!raw) return '';
+ return raw.startsWith('M') ? `menos ${Number(raw.slice(1))}` : String(Number(raw));
+}
+
+function telegramConciergeMetarDayTime(raw = '') {
+ const match = String(raw || '').match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+ if (!match) return '';
+ return `dia ${Number(match[1])}, horário ${match[2]}:${match[3]} UTC`;
+}
+
+function telegramConciergeAtisWind(raw = '') {
+ const match = String(raw || '').match(/(?:^|\s)(VRB|\d{3})(\d{2,3})(?:G(\d{2,3}))?KT\b/);
+ if (!match) return '';
+ const direction = match[1] === 'VRB' ? 'variável' : `${match[1]} graus`;
+ const speed = Number(match[2]);
+ const gust = match[3] ? Number(match[3]) : 0;
+ if (match[1] === '000' && speed === 0) return 'Vento calmo';
+ return `Vento ${direction} com ${speed} ${speed === 1 ? 'nó' : 'nós'}${gust ? `, rajadas de ${gust} nós` : ''}`;
+}
+
+function telegramConciergeAtisVisibility(raw = '', record = {}) {
+ const text = String(raw || '').toUpperCase();
+ if (/\bCAVOK\b/.test(text) || /\b9999\b/.test(text)) return 'Visibilidade de 10 quilômetros ou mais';
+ const meters = aviationExtractVisibility(text, record || {});
+ if (meters === null) return '';
+ if (meters >= 1000) {
+  const km = meters / 1000;
+  const rounded = Math.round(km * 10) / 10;
+  return `Visibilidade de ${String(rounded).replace('.', ',')} ${rounded === 1 ? 'quilômetro' : 'quilômetros'}`;
+ }
+ return `Visibilidade de ${Math.round(meters)} metros`;
+}
+
+function telegramConciergeCloudLayerText(code = '', height = '', suffix = '') {
+ const feet = Number(height) * 100;
+ const suffixText = /CB/i.test(suffix) ? ' com cumulonimbus' : /TCU/i.test(suffix) ? ' com torre de cúmulus' : '';
+ if (code === 'FEW') return `poucas nuvens a ${feet} pés${suffixText}`;
+ if (code === 'SCT') return `nuvens esparsas a ${feet} pés${suffixText}`;
+ if (code === 'BKN') return `céu nublado com teto a ${feet} pés${suffixText}`;
+ if (code === 'OVC') return `céu encoberto com teto a ${feet} pés${suffixText}`;
+ if (code === 'VV') return `visibilidade vertical ${feet} pés${suffixText}`;
+ return '';
+}
+
+function telegramConciergeAtisClouds(raw = '') {
+ const text = String(raw || '').toUpperCase();
+ if (/\bCAVOK\b/.test(text)) return 'Sem nuvens significativas abaixo dos mínimos operacionais e sem tempo significativo reportado';
+ if (/\bNSC\b/.test(text)) return 'Sem nuvens significativas';
+ if (/\bSKC\b|\bCLR\b/.test(text)) return 'Céu claro';
+ const layers = [];
+ for (const match of text.matchAll(/\b(FEW|SCT|BKN|OVC|VV)(\d{3})(CB|TCU)?\b/g)) {
+  const line = telegramConciergeCloudLayerText(match[1], match[2], match[3] || '');
+  if (line) layers.push(line);
+ }
+ return layers.length ? layers.join('; ') : '';
+}
+
+function telegramConciergeAtisPhenomena(raw = '') {
+ const text = String(raw || '').toUpperCase();
+ const items = [];
+ if (/\b\+TSRA\b|\bTSRA\b|\bVCTS\b|\bTS\b/.test(text)) items.push('trovoada na área');
+ if (/\bCB\b/.test(text)) items.push('cumulonimbus reportado');
+ if (/\bTCU\b/.test(text)) items.push('torre de cúmulus reportada');
+ if (/\b\+RA\b/.test(text)) items.push('chuva forte');
+ else if (/\bRA\b/.test(text)) items.push('chuva');
+ if (/\bDZ\b/.test(text)) items.push('garoa');
+ if (/\bFG\b/.test(text)) items.push('nevoeiro');
+ if (/\bBR\b/.test(text)) items.push('névoa úmida');
+ if (/\bHZ\b/.test(text)) items.push('névoa seca');
+ if (/\bNSW\b/.test(text)) items.push('sem tempo significativo');
+ return items.length ? `Tempo presente: ${items.join(', ')}` : '';
+}
+
+function telegramConciergeAtisTemperature(raw = '') {
+ const temp = String(raw || '').match(/\s(M?\d{2})\/(M?\d{2})\s/);
+ if (!temp) return '';
+ return `Temperatura ${telegramConciergeAtisSignedTemp(temp[1])} graus. Ponto de orvalho ${telegramConciergeAtisSignedTemp(temp[2])} graus`;
+}
+
+function telegramConciergeAtisAltimeter(raw = '') {
+ const alt = String(raw || '').match(/\bQ(\d{4})\b|\bA(\d{4})\b/);
+ if (!alt) return '';
+ if (alt[1]) return `QNH ${alt[1]} hectopascais`;
+ const inches = `${alt[2].slice(0, 2)}.${alt[2].slice(2)}`;
+ return `Altímetro ${inches} polegadas`;
+}
+
+function telegramConciergeMetarAtisText(icao = '', metar = null, { includeRaw = false } = {}) {
+ const raw = aviationRawText(metar);
+ const airportName = telegramConciergeAirportSpokenName(icao);
+ const phonetic = telegramConciergeIcaoPhonetic(icao);
+ if (!raw) return `${airportName}, ${phonetic}. Não encontrei METAR recente na fonte aeronáutica.`;
+ const lines = [
+  `${airportName}, ${phonetic}`,
+  telegramConciergeMetarDayTime(raw),
+  telegramConciergeAtisWind(raw),
+  telegramConciergeAtisVisibility(raw, metar || {}),
+  telegramConciergeAtisClouds(raw),
+  telegramConciergeAtisPhenomena(raw),
+  telegramConciergeAtisTemperature(raw),
+  telegramConciergeAtisAltimeter(raw),
+ ].filter(Boolean);
+ if (includeRaw) lines.push(`METAR bruto: ${raw}`);
+ return lines.join('. ').replace(/\s+\./g, '.').replace(/\s+/g, ' ').trim() + '.';
+}
+
+function telegramConciergeMetarSummaryLine(icao = '', metar = null) {
+ return telegramConciergeMetarAtisText(icao, metar, { includeRaw: false });
+}
+
+function telegramConciergeWeatherAudioText({ request = {}, airports = [], metarByStation = new Map(), tafByStation = new Map(), alerts = [] } = {}) {
+ if (!airports.length) return 'Me manda o código ICAO do aeroporto. Pode falar SBBR ou em fonético, Sierra Bravo Bravo Romeo.';
+ const parts = [];
+ for (const icao of airports.slice(0, 2)) {
+  const spoken = telegramConciergeMetarAtisText(icao, metarByStation.get(icao), { includeRaw: false });
+  const stationAlerts = alerts.filter((item) => item?.icao === icao || item?.airport === icao);
+  const risk = stationAlerts.length ? `Atenção operacional: ${stationAlerts[0].summary || stationAlerts[0].title}.` : '';
+  const tafRaw = aviationRawText(tafByStation.get(icao));
+  const tafPart = request.wantsTaf && tafRaw ? `TAF consultado e disponível no texto para conferência.` : request.wantsTaf ? 'TAF não retornou agora.' : '';
+  parts.push(`${spoken} ${risk} ${tafPart}`.replace(/\s+/g, ' ').trim());
+ }
+ return parts.join(' ');
+}
+
+async function telegramConciergeAviationWeatherLines(request = {}) {
+ const airports = Array.isArray(request.airports) ? request.airports : [];
+ if (!airports.length) {
+  return {
+   ok: false,
+   title: 'Meteorologia · informe o aeroporto',
+   lines: [
+    'Não identifiquei o aeroporto no pedido.',
+    'Pode mandar por texto ou áudio: “METAR de SBBR” ou “METAR de Sierra Bravo Bravo Romeo”.',
+    'Para METAR e TAF, diga: “METAR e TAF de SBBR”.',
+   ],
+   audioContext: { kind: 'weather', spoken: 'Não identifiquei o aeroporto. Pode falar, por exemplo: METAR de Sierra Bravo Bravo Romeo.' },
+  };
+ }
+ const ids = airports.join(',');
+ const [metars, tafs] = await Promise.all([
+  request.wantsMetar ? aviationFetchJson('metar', { ids, format: 'json', hours: '3' }).catch(() => []) : Promise.resolve([]),
+  request.wantsTaf ? aviationFetchJson('taf', { ids, format: 'json' }).catch(() => []) : Promise.resolve([]),
+ ]);
+ const metarByStation = new Map();
+ const tafByStation = new Map();
+ for (const record of metars) { const station = aviationStation(record); if (station && !metarByStation.has(station)) metarByStation.set(station, record); }
+ for (const record of tafs) { const station = aviationStation(record); if (station && !tafByStation.has(station)) tafByStation.set(station, record); }
+ const alerts = airports.map((icao) => aviationAnalyzeStation(icao, metarByStation.get(icao), tafByStation.get(icao))).filter(Boolean);
+ const lines = [];
+ for (const icao of airports) {
+  const metarRaw = aviationRawText(metarByStation.get(icao));
+  const tafRaw = aviationRawText(tafByStation.get(icao));
+  const alert = alerts.find((item) => item?.icao === icao || item?.airport === icao);
+  lines.push(`${telegramConciergeAirportSpokenName(icao)} · ${telegramConciergeIcaoPhonetic(icao)}`);
+  if (request.wantsMetar) lines.push(telegramConciergeMetarSummaryLine(icao, metarByStation.get(icao)));
+  if (request.wantsMetar && metarRaw) lines.push(`METAR original: ${metarRaw}`);
+  if (request.wantsTaf) lines.push(tafRaw ? `TAF original: ${tafRaw}` : 'TAF: não retornou TAF agora.');
+  if (alert) lines.push(`Atenção operacional: ${alert.summary || alert.title}`);
+ }
+ lines.push('Sem informação fictícia de ATIS, pista, letra de informação, nível de transição ou NOTAM. Quando essas fontes oficiais forem integradas, o CrewCheck incrementa a cópia.');
+ return {
+  ok: true,
+  title: request.wantsAtis ? `ATIS Meteorologia · ${airports.join(', ')}` : `Meteorologia · ${airports.join(', ')}`,
+  lines,
+  audioContext: { kind: 'weather', spoken: telegramConciergeWeatherAudioText({ request, airports, metarByStation, tafByStation, alerts }) },
+ };
+}
+/* CREWCHECK_TELEGRAM_METAR_INTENT_PRIORITY_END */
+
+function telegramConciergeHomeBase(rosters = []) {
+ for (const item of rosters) {
+  const base = normalizeAirportCode(item?.roster?.base || '', '');
+  if (base) return base;
+ }
+ return 'BSB';
+}
+
+function telegramConciergeBuildAwayHomeSummary(rosters = []) {
+ const base = telegramConciergeHomeBase(rosters);
+ const flights = telegramConciergeFlattenFlights(rosters).filter((item) => item.iso >= telegramConciergeDatePlus(0));
+ const layovers = [];
+ let firstAwayIso = '';
+ let returnHome = null;
+ let currentAway = null;
+ for (const item of flights) {
+  const origin = normalizeAirportCode(item.leg?.origin || item.leg?.from || '', '');
+  const destination = normalizeAirportCode(item.leg?.destination || item.leg?.to || '', '');
+  if (!destination) continue;
+  if (!currentAway && destination && destination !== base) {
+   currentAway = { airport: destination, startIso: item.iso, fromFlight: telegramConciergeLegNumber(item.leg), fromRoute: `${origin || ''}→${destination}` };
+   if (!firstAwayIso) firstAwayIso = item.iso;
+  } else if (currentAway && destination === base) {
+   returnHome = { iso: item.iso, flight: telegramConciergeLegNumber(item.leg), route: `${origin || ''}→${destination}`, leg: item.leg, day: item.day };
+   layovers.push({ ...currentAway, endIso: item.iso, returnFlight: returnHome.flight, returnRoute: returnHome.route });
+   currentAway = null;
+   break;
+  } else if (currentAway && origin === currentAway.airport && destination !== currentAway.airport) {
+   layovers.push({ ...currentAway, endIso: item.iso, returnFlight: telegramConciergeLegNumber(item.leg), returnRoute: `${origin || ''}→${destination}` });
+   currentAway = destination !== base ? { airport: destination, startIso: item.iso, fromFlight: telegramConciergeLegNumber(item.leg), fromRoute: `${origin || ''}→${destination}` } : null;
+   if (!currentAway && destination === base) returnHome = { iso: item.iso, flight: telegramConciergeLegNumber(item.leg), route: `${origin || ''}→${destination}`, leg: item.leg, day: item.day };
+  }
+ }
+ if (currentAway) layovers.push(currentAway);
+ const start = firstAwayIso ? new Date(`${firstAwayIso}T12:00:00Z`) : null;
+ const end = returnHome?.iso ? new Date(`${returnHome.iso}T12:00:00Z`) : null;
+ const daysAway = start && end ? Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1) : (layovers.length ? layovers.length : 0);
+ return { base, layovers, returnHome, daysAway, firstAwayIso };
+}
+
+async function telegramConciergeAwayHomeLines(rosters = []) {
+ const summary = telegramConciergeBuildAwayHomeSummary(rosters);
+ const lines = [];
+ if (summary.returnHome) lines.push(`Volta pra casa: ${telegramConciergeReadableDate(summary.returnHome.iso)} no ${summary.returnHome.flight || 'voo a confirmar'} (${summary.returnHome.route || 'rota a confirmar'}).`);
+ else lines.push('Ainda não achei, na escala salva, um voo futuro terminando em casa. Verifique se a escala completa/continuidade do mês está sincronizada.');
+ if (summary.daysAway) lines.push(`Tempo fora de casa: aproximadamente ${summary.daysAway} dia(s), considerando a primeira saída fora de casa até a volta.`);
+ if (summary.layovers.length) {
+  lines.push('Pernoites/chave encontrados:');
+  for (const layover of summary.layovers.slice(0, 6)) {
+   const weather = await fetchAirportWeatherSnapshot({ airport: layover.airport, date: layover.startIso, days: 3 }).catch(() => null);
+   const daily = weather?.daily?.find((item) => item.date === layover.startIso) || weather?.daily?.[0] || null;
+   const weatherText = daily ? `${daily.tone?.toUpperCase() || ''} ${daily.label}, ${Math.round(daily.temperatureMin)}–${Math.round(daily.temperatureMax)}°C, chuva ${Math.round(daily.precipitationProbability || 0)}%` : 'meteorologia não disponível';
+   lines.push(`${layover.airport}: ${telegramConciergeReadableDate(layover.startIso)}${layover.endIso ? ` até ${telegramConciergeReadableDate(layover.endIso)}` : ''} · ${weatherText}.`);
+  }
+ } else {
+  lines.push('Não encontrei pernoite futuro fora de casa nesta escala sincronizada.');
+ }
+ lines.push('Para opções de voo para voltar pra casa, abra Vivo de Extra e use origem livre + destino casa; o CrewCheck calcula chance de embarque e rota inversa.');
+ return lines;
+}
+
+
 async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
  const clean = telegramConciergeNormalizeText(text);
+ const inputMode = message?._crewcheckInputMode === 'audio' ? 'audio' : 'text';
+ const preferAudio = Boolean(message?._crewcheckPreferAudio);
  const user = await reloadUserById(db, row.user_id).catch(() => null);
  if (!user?.id) {
   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Conta não localizada', ['Não encontrei sua conta CrewCheck vinculada a este Telegram.', 'Abra o app e conecte novamente em Configurações > Telegram.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
   return { ok: false, reason: 'user not found' };
  }
  const preferences = normalizeTelegramPreferences(row.preferences_json || {});
+ const premium = telegramConciergeIsPremium(user);
+ const reply = async (title, lines = [], options = {}) => telegramSendConciergeReply(chat.id, {
+  row,
+  user,
+  title,
+  lines,
+  footer: options.footer || null,
+  actionLabel: options.actionLabel || 'Abrir CrewCheck',
+  preferAudio,
+  inputMode,
+  audioContext: options.audioContext || null,
+ });
  if (preferences.concierge === false) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Concierge desativado', ['O atendimento por texto está desligado nas preferências.', 'Ative em Configurações > Telegram > Concierge por texto.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  await reply('Concierge desativado', ['O atendimento está desligado nas preferências.', 'Ative em Configurações > Telegram > Concierge.'], { actionLabel: 'Abrir CrewCheck' });
   return { ok: true, skipped: true };
  }
- const premium = telegramConciergeIsPremium(user);
+ if (inputMode === 'audio' && preferences.conciergeVoice === false) {
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio desativado', ['Seu Concierge está conectado, mas perguntas por áudio estão desligadas nas preferências.', 'Ative “Perguntas por áudio” em Configurações > Telegram ou envie a pergunta digitada.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  return { ok: true, skipped: true, voiceDisabledByPreference: true };
+ }
  const isHelp = telegramConciergeIsHelp(text);
- if (!premium && !isHelp) {
+ // v11.1.29: uso gratuito do Concierge sem limite diário. Mantém apenas contagem interna para diagnóstico.
+ if (!premium && !isHelp && TELEGRAM_CONCIERGE_FREE_DAILY_LIMIT > 0) {
   const usage = telegramConciergeFreeUsage(row, false);
   if (usage.used >= usage.limit) {
-   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Limite gratuito atingido', [`Você usou ${usage.used}/${usage.limit} consultas gratuitas hoje.`, 'O Premium libera perguntas ilimitadas e recursos completos: portão, saída, trânsito, diárias e rotina.'], { footer: 'A escala continua disponível no app. Assine Premium para liberar o Concierge completo.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+   await reply('Limite gratuito atingido', [`Você usou ${usage.used}/${usage.limit} consultas gratuitas hoje.`, 'O Premium libera recursos avançados, mas o Concierge gratuito continua sem bloqueio quando o limite está em zero.'], { footer: 'A escala continua disponível no app.', actionLabel: 'Abrir CrewCheck' });
    return { ok: true, limited: true };
   }
  }
- const rosters = await telegramConciergeLatestRosters(db, user);
- const usageAfter = !premium && !isHelp ? telegramConciergeFreeUsage(row, true) : telegramConciergeFreeUsage(row, false);
+ const aviationWeatherRequest = telegramConciergeParseAviationWeatherRequest(text);
+ if (aviationWeatherRequest) {
+  const payload = await telegramConciergeAviationWeatherLines(aviationWeatherRequest).catch((error) => ({
+   ok: false,
+   title: 'Meteorologia indisponível',
+   lines: ['Não consegui consultar METAR/TAF agora.', sanitizePublicError(error?.message || String(error)), 'Tente novamente em instantes ou confira a fonte oficial.'],
+   audioContext: { kind: 'weather', spoken: 'Não consegui consultar o METAR ou TAF agora. Tenta de novo em instantes.' },
+  }));
+  await reply(payload.title, payload.lines, { actionLabel: 'Abrir Meteorologia', audioContext: payload.audioContext });
+  return { ok: true, intent: 'aviation_weather', airports: aviationWeatherRequest.airports };
+ }
+ const rosters = await telegramConciergeLatestRosters(db, user, 24, row);
+ const usageAfter = !premium && !isHelp ? telegramConciergeFreeUsage(row, TELEGRAM_CONCIERGE_FREE_DAILY_LIMIT > 0) : telegramConciergeFreeUsage(row, false);
  if (isHelp) {
   const lines = premium ? [
-   'Pergunte por texto: “minha programação de hoje”, “dia 25”, “qual meu portão?”, “que horas sair de casa?”, “diárias da semana”, “que horas tenho que acordar?”.',
-   'Comandos rápidos: /hoje, /amanha, /proximo, /portao, /saida, /diarias, /rotina.',
-   'O bot responde só por texto por enquanto, sem áudio.',
+   'Pergunte por texto ou áudio: “minha programação de hoje”, “dia 25”, “qual meu portão?”, “METAR de SBBR” ou “METAR de Sierra Bravo Bravo Romeo”.',
+   'Comandos rápidos: /hoje, /amanha, /proximo, /portao, /saida, /diarias, /rotina, /conformidade.',
+   `Nome atual do Concierge: ${telegramConciergeDisplayName(row, user)}. Você pode alterar em Configurações > Telegram.`,
   ] : [
-   'Plano gratuito: /hoje, /amanha, /proximo e ajuda básica.',
-   `Limite gratuito: ${usageAfter.used}/${usageAfter.limit} consultas hoje.`,
-   'Premium libera portão/radar, Saída Inteligente, trânsito, diárias, rotina e perguntas por data.',
+   'Plano gratuito: Concierge liberado sem limite diário de uso.',
+   'Áudio ativado por tts-api, com fallback premium quando disponível.',
+   'Alguns recursos avançados ainda podem ser destacados como Premium no app.',
   ];
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', premium ? 'Concierge Premium por texto' : 'Concierge gratuito', lines), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  await reply(premium ? 'Concierge Premium' : 'Concierge gratuito', lines);
   return { ok: true, help: true };
  }
  if (!rosters.length) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Escala não sincronizada', ['Ainda não encontrei uma escala salva no servidor da sua conta.', 'Abra o CrewCheck e toque em Configurações > Telegram > Sincronizar escala.', 'Ou envie o PDF da escala aqui no Telegram para importar direto no Concierge.'], { footer: 'Sem escala sincronizada, o Concierge não chuta programação.' }), { reply_markup: telegramPremiumReplyMarkup('Sincronizar escala') });
+  await reply('Escala não sincronizada', [
+   'Ainda não encontrei escala salva no servidor desta conta.',
+   'No app: Configurações > Telegram > Sincronizar escala. Este botão força o envio online mesmo se a escala já existir no aparelho.',
+   'Alternativa: envie o PDF original da escala aqui no Telegram para eu importar direto no Concierge.',
+  ], { footer: 'Sem escala no servidor, o Concierge não chuta programação.', actionLabel: 'Sincronizar escala' });
   return { ok: true, noRoster: true };
+ }
+ const wantsUpcoming = telegramConciergeWantsUpcoming(text);
+ if (wantsUpcoming) {
+  const items = telegramConciergeUpcomingDays(rosters, { limit: premium ? 5 : 2 });
+  const lines = telegramConciergeUpcomingLines(items, { free: !premium });
+  await reply(premium ? 'Próximas programações' : 'Próximas programações · gratuito', lines, {
+   actionLabel: premium ? 'Abrir escala' : 'Assinar Premium',
+   audioContext: { kind: 'upcoming', items, audioLimit: premium ? 3 : 1 },
+  });
+  return { ok: true, intent: 'upcoming' };
+ }
+ if (telegramConciergeWantsRegulation(text) || /^\/(conformidade|regulamentacao|regulamentação|alertas|irregularidades)\b/i.test(String(text || ''))) {
+  const lines = telegramConciergeRegulationLines(rosters, { premium });
+  await reply(premium ? 'Conformidade e regulamentação' : 'Conformidade · gratuito', lines, {
+   actionLabel: premium ? 'Abrir conformidade' : 'Assinar Premium',
+   audioContext: { kind: 'generic', lines, title: 'Conformidade e regulamentação' },
+  });
+  return { ok: true, intent: 'regulation' };
  }
  const basicAllowed = /\b(hoje|amanha|amanhã|proximo|próximo|programacao|programação|escala)\b/.test(String(text || '').toLowerCase()) || /^\/(hoje|amanha|amanhã|proximo|próximo)/i.test(String(text || ''));
  const premiumIntent = /\b(portao|portão|terminal|radar|transito|trânsito|sair|saida|saída|casa|diaria|diária|diarias|diárias|rotina|acordar|treinar|comer|hotel|pernoite)\b/.test(clean);
  if (!premium && premiumIntent && !basicAllowed) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Recurso Premium', telegramConciergeFreeBlockedLines(), { footer: `Uso gratuito hoje: ${usageAfter.used}/${usageAfter.limit}.` }), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
+  await reply('Recurso Premium', telegramConciergeFreeBlockedLines(), { footer: `Uso gratuito hoje: ${usageAfter.used}/${usageAfter.limit}.`, actionLabel: 'Assinar Premium' });
   return { ok: true, premiumBlocked: true };
+ }
+ if (/^(?:\/(voltar|casa|pernoites|tempochave))|\b(voltar pra casa|volta pra casa|quando volto|quando eu volto|dia que volto|quantos dias.*fora|fora de casa|pernoites da chave|meteorologia dos pernoites|tempo dos pernoites|voos.*voltar.*casa|voos.*casa)\b/i.test(String(text || ''))) {
+  if (!premium) {
+   await reply('Volta pra Casa é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
+   return { ok: true, premiumBlocked: true };
+  }
+  const lines = await telegramConciergeAwayHomeLines(rosters);
+  await reply('Volta pra Casa Inteligente', lines, { actionLabel: 'Abrir Volta pra Casa', audioContext: { kind: 'generic', title: 'Volta pra Casa Inteligente', lines } });
+  return { ok: true, intent: 'return_home' };
  }
  if (/^\/(portao|portão)|\b(portao|portão|terminal|gate)\b/.test(clean)) {
   if (!premium) {
-   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Portão é Premium', telegramConciergeFreeBlockedLines()), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
+   await reply('Portão é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
    return { ok: true, premiumBlocked: true };
   }
   const found = telegramConciergeFindFlight(rosters, text);
   const leg = found?.leg || {};
   const flight = telegramConciergeLegNumber(leg) || 'próximo voo';
+  const crew = telegramConciergeCollectCrewMembers(found?.day || {}, leg);
   const lines = found ? [
+   `Data da programação: ${telegramConciergeReadableDate(found.iso)}`,
    telegramConciergeLegLine(leg),
+   crew.length ? `Tripulação: ${crew.slice(0, 6).join('; ')}` : '',
    leg.gate ? `Portão: ${leg.gate}` : 'Portão: ainda não disponível no radar salvo.',
    leg.terminal ? `Terminal: ${leg.terminal}` : 'Terminal: ainda não disponível no radar salvo.',
-   leg.status || leg.flightStatus ? `Status: ${leg.status || leg.flightStatus}` : 'Status: confira o monitor do aeroporto quando estiver disponível.',
-   'Vou evitar repetir “Programado” sem mudança real.',
+   leg.status || leg.flightStatus ? `Status: ${telegramConciergeTranslateRosterAbbreviations(leg.status || leg.flightStatus)}` : 'Status: confira o monitor do aeroporto quando estiver disponível.',
+   'Evito repetir “Programado” sem mudança real.',
   ] : ['Não encontrei voo futuro na escala salva.'];
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', `Portão · ${flight}`, lines), { reply_markup: telegramPremiumReplyMarkup('Abrir radar') });
+  await reply(`Portão · ${flight}`, lines, { actionLabel: 'Abrir radar', audioContext: { kind: 'gate', found, leg, crew } });
   return { ok: true, intent: 'gate' };
  }
  if (/^\/(saida|saída)|\b(sair|saida|saída|casa|transito|trânsito|rota|uber|99)\b/.test(clean)) {
   if (!premium) {
-   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Saída Inteligente é Premium', telegramConciergeFreeBlockedLines()), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
+   await reply('Saída Inteligente é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
    return { ok: true, premiumBlocked: true };
   }
   const found = telegramConciergeFindFlight(rosters, text);
@@ -8522,42 +15010,91 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
   const report = telegramConciergeFormatTime(leg.dutyReport || leg.reportTime || leg.presentationTime || found?.day?.startTime || '');
   const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
   const origin = leg.origin || leg.from || found?.day?.location || 'origem não informada';
+  const crew = telegramConciergeCollectCrewMembers(found?.day || {}, leg);
   const lines = [
+   found ? `Data da programação: ${telegramConciergeReadableDate(found.iso)}` : '',
    found ? telegramConciergeLegLine(leg) : 'Não encontrei voo futuro na escala salva.',
+   crew.length ? `Tripulação: ${crew.slice(0, 6).join('; ')}` : '',
    report ? `Apresentação na escala: ${report}` : dep ? `Decolagem: ${dep}` : 'Horário de apresentação não localizado na escala.',
    `Origem: ${origin}`,
    'Para trânsito real, mantenha Localização ativada no app e calcule a Saída Inteligente uma vez.',
-   'Não vou mandar alerta automático sem sua preferência ativada.',
-  ];
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Saída Inteligente', lines), { reply_markup: telegramPremiumReplyMarkup('Calcular saída') });
+   'Não mando alerta automático sem sua preferência ativada.',
+  ].filter(Boolean);
+  await reply('Saída Inteligente', lines, { actionLabel: 'Calcular saída', audioContext: { kind: 'departure', found, leg, crew } });
   return { ok: true, intent: 'departure' };
  }
  if (/^\/(diarias|diárias|diaria|diária)|\b(diaria|diária|diarias|diárias|pernoite|hotel|inativo)\b/.test(clean)) {
   if (!premium) {
-   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Diárias é Premium', telegramConciergeFreeBlockedLines()), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
+   await reply('Diárias é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
    return { ok: true, premiumBlocked: true };
   }
   const target = telegramConciergeDateFromText(text, rosters);
   const found = telegramConciergeFindDay(rosters, target.iso);
-  const lines = found ? telegramConciergeMealLines(found.day, target.iso) : [`Não encontrei programação em ${target.label}.`, 'Importe/reprocesse a escala para recalcular as diárias.'];
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', `Diárias · ${target.label}`, lines), { reply_markup: telegramPremiumReplyMarkup('Abrir financeiro') });
+  const lines = found ? telegramConciergeMealLines(found.day, target.iso) : [`Não encontrei programação em ${target.label}.`, 'Importe ou reprocesse a escala para recalcular as diárias.'];
+  await reply(`Diárias · ${target.label}`, lines, { actionLabel: 'Abrir financeiro', audioContext: { kind: 'perdiem', target, found, lines } });
   return { ok: true, intent: 'perdiem' };
  }
  if (/^\/(rotina)|\b(rotina|acordar|treinar|academia|dormir|estudar|comer|x\b)\b/.test(clean)) {
   if (!premium) {
-   await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Rotina é Premium', telegramConciergeFreeBlockedLines()), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
+   await reply('Rotina é Premium', telegramConciergeFreeBlockedLines(), { actionLabel: 'Assinar Premium' });
    return { ok: true, premiumBlocked: true };
   }
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Rotina', telegramConciergeRoutineLines(rosters, text)), { reply_markup: telegramPremiumReplyMarkup('Abrir rotina') });
+  await reply('Rotina', telegramConciergeRoutineLines(rosters, text), { actionLabel: 'Abrir rotina' });
   return { ok: true, intent: 'routine' };
  }
- const target = /^\/(amanha|amanhã)/i.test(String(text || '')) ? { iso: telegramConciergeDatePlus(1), label: 'amanhã' } : telegramConciergeDateFromText(text, rosters);
- const found = telegramConciergeFindDay(rosters, target.iso);
- const title = /proximo|próximo/i.test(String(text || '')) ? 'Próxima programação' : `Programação · ${target.label}`;
- const lines = found ? telegramConciergeDayLines(found.day, target.iso) : [`Não encontrei programação para ${target.label}.`, 'A escala salva pode não conter essa data ou precisa ser reimportada.'];
+ const asksNext = /^\/(proximo|próximo)/i.test(String(text || '')) || /\b(proximo|próximo)\b/i.test(String(text || ''));
+ let target = /^\/(amanha|amanhã)/i.test(String(text || '')) ? { iso: telegramConciergeDatePlus(1), label: 'amanhã' } : telegramConciergeDateFromText(text, rosters);
+ let found = telegramConciergeFindDay(rosters, target.iso);
+ let title = `Programação · ${target.label}`;
+ if (asksNext && !/\b(hoje|amanha|amanhã|dia\s+\d{1,2}|\d{1,2}[\/\-.]\d{1,2})\b/i.test(String(text || ''))) {
+  const next = telegramConciergeUpcomingDays(rosters, { limit: 1 })[0] || null;
+  if (next) {
+   found = next;
+   target = { iso: next.iso, label: 'próxima' };
+   title = 'Próxima programação';
+  }
+ }
+ const lines = found ? telegramConciergeDayLines(found.day, found.iso || target.iso) : [`Não encontrei programação para ${target.label}.`, 'A escala salva pode não conter essa data ou precisa ser reimportada.'];
  if (!premium) lines.push(`Uso gratuito hoje: ${usageAfter.used}/${usageAfter.limit}.`);
- await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', title, lines), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+ await reply(title, lines, { actionLabel: 'Abrir CrewCheck', audioContext: found ? { kind: asksNext ? 'next' : 'day', day: found.day, iso: found.iso || target.iso, label: target.label, found, roster: found.roster } : null });
  return { ok: true, intent: 'schedule' };
+}
+
+
+async function handleTelegramConciergeAudio(db, row, chat, message = {}) {
+ const audio = telegramMessageAudioDocument(message);
+ if (!audio?.file_id) return { ok: false, ignored: true };
+ const user = await reloadUserById(db, row.user_id).catch(() => null);
+ const preferences = normalizeTelegramPreferences(row.preferences_json || {});
+ const premium = telegramConciergeIsPremium(user);
+ if (!TELEGRAM_CONCIERGE_VOICE_ENABLED || preferences.conciergeVoice === false) {
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio desativado', ['Perguntas por áudio estão desligadas neste Concierge.', 'Ative em Configurações > Telegram ou envie a pergunta digitada.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  return { ok: true, voiceDisabled: true };
+ }
+ if (TELEGRAM_CONCIERGE_VOICE_PREMIUM_ONLY && !premium) {
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz é Premium', telegramConciergeFreeBlockedLines()), { reply_markup: telegramPremiumReplyMarkup('Assinar Premium') });
+  return { ok: true, premiumBlocked: true };
+ }
+ if (audio.duration && audio.duration > TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS) {
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio muito longo', [`Envie perguntas de até ${TELEGRAM_CONCIERGE_AUDIO_MAX_SECONDS} segundos para manter o Concierge rápido.`, 'Para assuntos longos, envie por texto ou divida em partes.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  return { ok: true, audioTooLong: true };
+ }
+ if (!telegramSpeechHasProvider('stt')) {
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Voz não configurada', ['Configure ELEVENLABS_API_KEY no Render para usar ElevenLabs.', 'Também é possível usar AZURE_SPEECH_KEY/AZURE_SPEECH_REGION ou OPENAI_API_KEY como fallback. Enquanto isso, envie por texto.']), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
+  return { ok: false, speechNotConfigured: true };
+ }
+ try {
+  await telegramApi('sendChatAction', { chat_id: String(chat.id), action: 'typing' }).catch(() => null);
+  const file = await telegramDownloadFileObject(audio.file_id, 25 * 1024 * 1024);
+  const transcript = await transcribeTelegramAudio(file.buffer, { filename: audio.filename, mimeType: audio.mimeType });
+  await telegramApi('sendChatAction', { chat_id: String(chat.id), action: 'upload_voice' }).catch(() => null);
+  return await handleTelegramConciergeText(db, row, chat, transcript, { ...message, _crewcheckInputMode: 'audio', _crewcheckPreferAudio: true, _crewcheckTranscript: transcript });
+ } catch (error) {
+  const publicAudioError = classifySpeechAudioError(error);
+  console.warn('[telegram] falha ao processar áudio do Concierge', publicAudioError.kind, publicAudioError.log);
+  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', publicAudioError.title, publicAudioError.lines, { footer: 'Nenhuma ação operacional foi tomada.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') }).catch(() => null);
+  return { ok: false, audioError: publicAudioError.kind };
+ }
 }
 
 function telegramExtractStartCode(text = '') {
@@ -8588,7 +15125,24 @@ async function handleTelegramWebhookUpdate(update) {
   const result = await db.query('select * from crewcheck_telegram_links where lower(expected_username) = $1 and (chat_id is null or is_active = false) order by updated_at desc limit 1', [chatUsername]).catch(() => ({ rows: [] }));
   row = result.rows?.[0] || null;
  }
- if (pdfDocument && row?.is_active && row?.chat_id) {
+ if (pdfDocument && row?.user_id) {
+  if (!row?.is_active || !row?.chat_id) {
+   await db.query(
+    `update crewcheck_telegram_links
+      set chat_id = $1,
+          chat_username = $2,
+          expected_username = coalesce($2, expected_username),
+          chat_first_name = $3,
+          chat_last_name = $4,
+          is_active = true,
+          connected_at = coalesce(connected_at, now()),
+          last_message_at = now(),
+          updated_at = now()
+     where id = $5`,
+    [String(chat.id), chat.username || null, chat.first_name || null, chat.last_name || null, row.id],
+   ).catch(() => null);
+   row = await telegramLinkForChat(db, chat.id).catch(() => row) || row;
+  }
   try { return await importTelegramPdfRoster(db, row, message, pdfDocument); }
   catch (error) {
    await telegramSendMessage(chat.id, telegramPremiumMessage('roster', 'Não consegui importar este PDF', [sanitizePublicError(error?.message || String(error)), 'Confira se é o PDF original da escala e tente reenviar.', 'Se persistir, use o upload manual no app para diagnóstico.'], { footer: 'Nenhuma escala foi alterada quando a leitura falha.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') }).catch(() => null);
@@ -8606,8 +15160,7 @@ async function handleTelegramWebhookUpdate(update) {
  }
  const wasTelegramActive = Boolean(row?.is_active && row?.chat_id);
  if ((message.voice || message.audio) && row?.is_active) {
-  await telegramSendMessage(chat.id, telegramPremiumMessage('concierge', 'Áudio ainda não ativado', ['Por enquanto o Concierge responde apenas por texto.', 'Envie sua pergunta digitada: portão, saída, programação, diárias ou rotina.'], { footer: 'Voz fica reservada para uma fase futura Premium.' }), { reply_markup: telegramPremiumReplyMarkup('Abrir CrewCheck') });
-  return { ok: true, voiceDisabled: true };
+  return await handleTelegramConciergeAudio(db, row, chat, message);
  }
  if (text && !code && !pdfDocument && row?.is_active) {
   return await handleTelegramConciergeText(db, row, chat, text, message);
@@ -8630,7 +15183,768 @@ async function handleTelegramWebhookUpdate(update) {
  return { ok: true, connected: true, userId: row.user_id };
 }
 
+
+
+/* CREWCHECK_DEFESA_CIVIL_ALERTS_ONLY_START */
+const DEFESA_CIVIL_ALERTS_API_URL = String(
+ process.env.DEFESA_CIVIL_ALERTS_API_URL ||
+ process.env.CREWCHECK_DEFESA_CIVIL_ALERTS_API_URL ||
+ process.env.IDAP_ALERTS_API_URL ||
+ ''
+).trim();
+const DEFESA_CIVIL_ALERTS_API_TOKEN = String(
+ process.env.DEFESA_CIVIL_ALERTS_API_TOKEN ||
+ process.env.CREWCHECK_DEFESA_CIVIL_ALERTS_API_TOKEN ||
+ process.env.IDAP_ALERTS_API_TOKEN ||
+ ''
+).trim();
+const DEFESA_CIVIL_ALERTS_TTL_MS = Math.max(60_000, Number(process.env.DEFESA_CIVIL_ALERTS_TTL_MS || process.env.CREWCHECK_DEFESA_CIVIL_ALERTS_TTL_MS || 5 * 60 * 1000));
+const DEFESA_CIVIL_ALERTS_TIMEOUT_MS = Math.max(4_000, Number(process.env.DEFESA_CIVIL_ALERTS_TIMEOUT_MS || process.env.CREWCHECK_DEFESA_CIVIL_ALERTS_TIMEOUT_MS || 12_000));
+const DEFESA_CIVIL_INCLUDE_TEST_ALERTS = String(process.env.CREWCHECK_DEFESA_CIVIL_INCLUDE_TESTS || process.env.DEFESA_CIVIL_INCLUDE_TEST_ALERTS || 'false').toLowerCase() === 'true';
+const DEFESA_CIVIL_OFFICIAL_SIGNUP_URL = 'https://www.gov.br/mdr/pt-br/noticias/conheca-a-interface-de-divulgacao-de-alertas-publicos-idap';
+const DEFESA_CIVIL_SERVICE_10145_URL = 'https://www.servicos.gov.br/api/v1/servicos/10145';
+const civilDefenseAlertsCache = new Map();
+
+function civilDefenseText(value) {
+ return String(value ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function civilDefenseFirst(...values) {
+ for (const value of values) {
+  const clean = civilDefenseText(value);
+  if (clean) return clean;
+ }
+ return '';
+}
+
+function civilDefenseParseDate(value) {
+ const raw = civilDefenseText(value);
+ if (!raw) return null;
+ const parsed = Date.parse(raw);
+ if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+ const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+ if (br) {
+  const iso = `${br[3]}-${br[2]}-${br[1]}T${String(br[4] || '00').padStart(2, '0')}:${String(br[5] || '00').padStart(2, '0')}:00-03:00`;
+  const ms = Date.parse(iso);
+  if (Number.isFinite(ms)) return new Date(ms).toISOString();
+ }
+ return null;
+}
+
+function civilDefenseSeverity(value) {
+ const raw = civilDefenseText(value).toLowerCase();
+ if (/extreme|extremo|muito\s*alta|vermelh/.test(raw)) return 'extreme';
+ if (/severe|severo|alta|laranj/.test(raw)) return 'severe';
+ if (/moderate|moderado|aten[cç][aã]o|amarel/.test(raw)) return 'moderate';
+ if (/minor|baixo|baixa|observa/.test(raw)) return 'minor';
+ return raw || 'unknown';
+}
+
+function civilDefenseIsOfficialSource(record) {
+ const values = [
+  record?.sender,
+  record?.senderName,
+  record?.source,
+  record?.issuer,
+  record?.authority,
+  record?.orgao,
+  record?.orgaoEmissor,
+  record?.agency,
+  record?.provider,
+  record?.identifier,
+ ].join(' ');
+ return /defesa\s*civil|prote[cç][aã]o\s+e\s+defesa\s+civil|cenad|sedec|sinpdec|midr|idap/i.test(values);
+}
+
+function civilDefenseLooksLikeTest(record) {
+ const text = [record?.title, record?.headline, record?.event, record?.description, record?.instruction, record?.status, record?.messageType, record?.msgType, record?.purpose].join(' ');
+ return /\b(test|teste|exercise|exerc[ií]cio|demo|demonstra[cç][aã]o|simula[cç][aã]o)\b/i.test(text);
+}
+
+function civilDefenseAlertIsVigente(alert) {
+ const now = Date.now();
+ const expires = Date.parse(alert.expiresAt || alert.endsAt || alert.validUntil || '');
+ if (Number.isFinite(expires) && expires < now) return false;
+ const status = civilDefenseText(alert.status || alert.messageType || alert.msgType).toLowerCase();
+ if (/cancel|cancelado|expired|expirado|encerrado|past|passado/.test(status)) return false;
+ return true;
+}
+
+function civilDefenseAlertFromRecord(input, index = 0) {
+ const record = input?.properties && typeof input.properties === 'object' ? { ...input.properties, geometry: input.geometry } : (input || {});
+ const title = civilDefenseFirst(record.title, record.headline, record.event, record.evento, record.nomeEvento, record.tipo, record.tipoEvento, record.name);
+ const description = civilDefenseFirst(record.description, record.descricao, record.areaDesc, record.area, record.summary, record.text, record.mensagem);
+ const instruction = civilDefenseFirst(record.instruction, record.instrucoes, record.orientacao, record.recomendacao, record.saibaComoAgir);
+ const sender = civilDefenseFirst(record.sender, record.senderName, record.source, record.issuer, record.authority, record.orgao, record.orgaoEmissor, record.agency, record.provider);
+ const severity = civilDefenseSeverity(civilDefenseFirst(record.severity, record.severidade, record.level, record.nivel, record.cor, record.color));
+ const urgency = civilDefenseFirst(record.urgency, record.urgencia);
+ const certainty = civilDefenseFirst(record.certainty, record.certeza, record.confidence, record.confianca);
+ const area = civilDefenseFirst(record.areaDesc, record.area, record.municipio, record.municipios, record.city, record.cidade, record.uf, record.estado, record.region, record.regiao);
+ const startsAt = civilDefenseParseDate(record.effective || record.startsAt || record.start || record.inicio || record.dataInicio || record.onset || record.sent || record.createdAt || record.dataEnvio);
+ const endsAt = civilDefenseParseDate(record.expires || record.endsAt || record.end || record.fim || record.dataFim || record.validUntil || record.validade);
+ const updatedAt = civilDefenseParseDate(record.updatedAt || record.updated || record.dataAtualizacao || record.sent || record.createdAt || record.dataEnvio) || new Date().toISOString();
+ const id = civilDefenseFirst(record.id, record.identifier, record.capId, record.codigo, record.protocolo) || `defesa-civil-${index}`;
+ const url = civilDefenseFirst(record.web || record.url || record.link || record.infoUrl || record.capUrl);
+ if (!title && !description) return null;
+ const normalized = { id, title: title || 'Alerta da Defesa Civil', description, instruction, sender, severity, urgency, certainty, area, startsAt, endsAt, updatedAt, url, status: civilDefenseFirst(record.status, record.messageType, record.msgType), rawSource: 'configured-feed' };
+ if (!civilDefenseIsOfficialSource({ ...record, ...normalized })) return null;
+ if (!DEFESA_CIVIL_INCLUDE_TEST_ALERTS && civilDefenseLooksLikeTest({ ...record, ...normalized })) return null;
+ if (!civilDefenseAlertIsVigente(normalized)) return null;
+ return normalized;
+}
+
+function civilDefenseRecordsFromJson(payload) {
+ if (!payload) return [];
+ if (Array.isArray(payload)) return payload;
+ const candidates = [payload.alerts, payload.items, payload.data, payload.results, payload.records, payload.features, payload.alertas, payload.avisos, payload.value];
+ for (const candidate of candidates) if (Array.isArray(candidate)) return candidate;
+ if (payload.properties || payload.event || payload.headline || payload.title) return [payload];
+ return [];
+}
+
+function civilDefenseXmlTag(block, tag) {
+ const match = String(block || '').match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)<\\/(?:\\w+:)?${tag}>`, 'i'));
+ return match ? decodeCivilDefenseXml(match[1]) : '';
+}
+
+function decodeCivilDefenseXml(value) {
+ return String(value || '')
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, "'")
+  .trim();
+}
+
+function civilDefenseRecordsFromCapXml(text) {
+ const xml = String(text || '');
+ const blocks = [...xml.matchAll(/<(?:\w+:)?alert\b[^>]*>([\s\S]*?)<\/(?:\w+:)?alert>/gi)].map((m) => m[1]);
+ return blocks.map((block) => {
+  const info = civilDefenseXmlTag(block, 'info') || block;
+  const area = civilDefenseXmlTag(info, 'area') || info;
+  return {
+   identifier: civilDefenseXmlTag(block, 'identifier'),
+   sender: civilDefenseXmlTag(block, 'sender'),
+   sent: civilDefenseXmlTag(block, 'sent'),
+   status: civilDefenseXmlTag(block, 'status'),
+   messageType: civilDefenseXmlTag(block, 'msgType'),
+   event: civilDefenseXmlTag(info, 'event'),
+   urgency: civilDefenseXmlTag(info, 'urgency'),
+   severity: civilDefenseXmlTag(info, 'severity'),
+   certainty: civilDefenseXmlTag(info, 'certainty'),
+   effective: civilDefenseXmlTag(info, 'effective'),
+   onset: civilDefenseXmlTag(info, 'onset'),
+   expires: civilDefenseXmlTag(info, 'expires'),
+   headline: civilDefenseXmlTag(info, 'headline'),
+   description: civilDefenseXmlTag(info, 'description'),
+   instruction: civilDefenseXmlTag(info, 'instruction'),
+   areaDesc: civilDefenseXmlTag(area, 'areaDesc'),
+   web: civilDefenseXmlTag(info, 'web'),
+  };
+ });
+}
+
+function buildCivilDefenseAlertsUrl(base, params) {
+ const fallback = 'https://invalid.local/';
+ const target = String(base || '')
+  .replace(/\{uf\}/gi, encodeURIComponent(params.uf || ''))
+  .replace(/\{city\}/gi, encodeURIComponent(params.city || ''))
+  .replace(/\{cidade\}/gi, encodeURIComponent(params.city || ''))
+  .replace(/\{ibge\}/gi, encodeURIComponent(params.ibge || ''))
+  .replace(/\{lat\}/gi, encodeURIComponent(params.lat || ''))
+  .replace(/\{lng\}/gi, encodeURIComponent(params.lng || ''))
+  .replace(/\{lon\}/gi, encodeURIComponent(params.lng || ''));
+ const u = new URL(target, fallback);
+ if (!base.includes('{uf}') && params.uf) u.searchParams.set('uf', params.uf);
+ if (!base.includes('{city}') && !base.includes('{cidade}') && params.city) u.searchParams.set('city', params.city);
+ if (!base.includes('{ibge}') && params.ibge) u.searchParams.set('ibge', params.ibge);
+ if (!base.includes('{lat}') && params.lat) u.searchParams.set('lat', params.lat);
+ if (!base.includes('{lng}') && !base.includes('{lon}') && params.lng) u.searchParams.set('lng', params.lng);
+ return u.toString();
+}
+
+async function fetchCivilDefenseAlerts(params = {}) {
+ const query = {
+  uf: civilDefenseText(params.uf || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2),
+  city: civilDefenseText(params.city || params.cidade || '').slice(0, 90),
+  ibge: civilDefenseText(params.ibge || '').replace(/\D/g, '').slice(0, 7),
+  lat: civilDefenseText(params.lat || params.latitude || '').slice(0, 24),
+  lng: civilDefenseText(params.lng || params.lon || params.longitude || '').slice(0, 24),
+ };
+ const cacheKey = JSON.stringify(query);
+ const cached = civilDefenseAlertsCache.get(cacheKey);
+ const now = Date.now();
+ if (cached && now - cached.at < DEFESA_CIVIL_ALERTS_TTL_MS) return { ...cached.payload, cache: { hit: true, ttlMs: DEFESA_CIVIL_ALERTS_TTL_MS } };
+ if (!DEFESA_CIVIL_ALERTS_API_URL) {
+  const payload = {
+   ok: true,
+   sourceConfigured: false,
+   source: 'not-configured',
+   officialOnly: true,
+   alerts: [],
+   message: 'Nenhum feed público oficial de alertas ativos da Defesa Civil foi configurado. O CrewCheck não usa o cadastro 10145 como alerta operacional.',
+   officialChannels: {
+    sms: '40199',
+    whatsapp: 'https://wa.me/556120344611',
+    service10145: DEFESA_CIVIL_SERVICE_10145_URL,
+    idapInfo: DEFESA_CIVIL_OFFICIAL_SIGNUP_URL,
+   },
+   updatedAt: new Date().toISOString(),
+  };
+  civilDefenseAlertsCache.set(cacheKey, { at: now, payload });
+  return payload;
+ }
+ const requestUrl = buildCivilDefenseAlertsUrl(DEFESA_CIVIL_ALERTS_API_URL, query);
+ const headers = { accept: 'application/json, application/cap+xml, application/xml, text/xml, */*' };
+ if (DEFESA_CIVIL_ALERTS_API_TOKEN) headers.authorization = `Bearer ${DEFESA_CIVIL_ALERTS_API_TOKEN}`;
+ const response = await fetch(requestUrl, { headers, signal: AbortSignal.timeout(DEFESA_CIVIL_ALERTS_TIMEOUT_MS) });
+ const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+ const text = await response.text();
+ if (!response.ok) throw new Error(`Fonte Defesa Civil retornou HTTP ${response.status}`);
+ let records = [];
+ if (contentType.includes('json') || /^[\s\r\n]*[\[{]/.test(text)) {
+  records = civilDefenseRecordsFromJson(JSON.parse(text));
+ } else {
+  records = civilDefenseRecordsFromCapXml(text);
+ }
+ const alerts = records.map((record, index) => civilDefenseAlertFromRecord(record, index)).filter(Boolean);
+ const payload = {
+  ok: true,
+  sourceConfigured: true,
+  source: 'defesa-civil-official-feed',
+  officialOnly: true,
+  query,
+  alerts,
+  count: alerts.length,
+  message: alerts.length ? 'Alertas oficiais ativos da Defesa Civil encontrados.' : 'Nenhum alerta oficial ativo da Defesa Civil para os filtros informados.',
+  officialChannels: {
+   sms: '40199',
+   whatsapp: 'https://wa.me/556120344611',
+   service10145: DEFESA_CIVIL_SERVICE_10145_URL,
+   idapInfo: DEFESA_CIVIL_OFFICIAL_SIGNUP_URL,
+  },
+  updatedAt: new Date().toISOString(),
+ };
+ civilDefenseAlertsCache.set(cacheKey, { at: now, payload });
+ return payload;
+}
+/* CREWCHECK_DEFESA_CIVIL_ALERTS_ONLY_END */
+
+
+
+
+/* CREWCHECK_AVIATION_WEATHER_ALERTS_START */
+const AVIATION_WEATHER_API_BASE = String(process.env.AVIATION_WEATHER_API_BASE || 'https://aviationweather.gov/api/data').replace(/\/+$/, '');
+const AVIATION_WEATHER_TIMEOUT_MS = Math.max(4_000, Number(process.env.AVIATION_WEATHER_TIMEOUT_MS || 12_000));
+const AVIATION_WEATHER_TTL_MS = Math.max(60_000, Number(process.env.AVIATION_WEATHER_TTL_MS || 4 * 60 * 1000));
+const aviationWeatherCache = new Map();
+const CREWCHECK_IATA_TO_ICAO_SERVER = {
+ AJU:'SBAR', BEL:'SBBE', BPS:'SBPS', BSB:'SBBR', CGB:'SBCY', CGH:'SBSP', CGR:'SBCG', CNF:'SBCF', CWB:'SBCT', FLN:'SBFL', FOR:'SBFZ', GIG:'SBGL', GRU:'SBGR', GYN:'SBGO', IGU:'SBFI', IOS:'SBIL', JPA:'SBJP', MAO:'SBEG', MAB:'SBMA', MCZ:'SBMO', MCP:'SBMQ', NAT:'SBSG', NVT:'SBNF', PMW:'SBPJ', POA:'SBPA', PVH:'SBPV', RAO:'SBRP', REC:'SBRF', SDU:'SBRJ', SLZ:'SBSL', SSA:'SBSV', THE:'SBTE', UDI:'SBUL', VCP:'SBKP', VIX:'SBVT', XAP:'SBCH', MIA:'KMIA', JFK:'KJFK', LAX:'KLAX', MCO:'KMCO', LIS:'LPPT', MAD:'LEMD', CDG:'LFPG', FCO:'LIRF', FRA:'EDDF', LHR:'EGLL', EZE:'SAEZ', AEP:'SABE', SCL:'SCEL', LIM:'SPJC', BOG:'SKBO', MEX:'MMMX'
+};
+function aviationNormalizeAirport(value) {
+ const code = String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
+ if (code.length === 4) return code;
+ if (code.length === 3) return CREWCHECK_IATA_TO_ICAO_SERVER[code] || code;
+ return '';
+}
+function aviationRawText(record) {
+ return String(record?.rawOb || record?.raw_text || record?.rawTaf || record?.rawTAF || record?.raw || record?.text || record?.remarks || '').replace(/\s+/g, ' ').trim();
+}
+function aviationStation(record) {
+ return aviationNormalizeAirport(record?.icao || record?.icaoId || record?.stationId || record?.station_id || record?.id || record?.site || '');
+}
+function aviationParseNumber(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? n : null;
+}
+function aviationExtractWindKt(text, record) {
+ const direct = aviationParseNumber(record?.wspd ?? record?.windSpeedKt ?? record?.wind_speed_kt ?? record?.windSpeed);
+ const gust = aviationParseNumber(record?.wgst ?? record?.windGustKt ?? record?.wind_gust_kt ?? record?.windGust);
+ if (direct !== null || gust !== null) return { speed: direct || 0, gust: gust || 0 };
+ const match = String(text || '').match(/(?:^|\s)(?:VRB|\d{3})(\d{2,3})(?:G(\d{2,3}))?KT\b/);
+ return { speed: match ? Number(match[1]) : 0, gust: match?.[2] ? Number(match[2]) : 0 };
+}
+function aviationExtractVisibility(text, record) {
+ const meters = aviationParseNumber(record?.visib_m ?? record?.visibilityMeters ?? record?.visibility_m);
+ if (meters !== null) return meters;
+ const sm = aviationParseNumber(record?.visib ?? record?.visibility_statute_mi ?? record?.visibilitySm);
+ if (sm !== null) return sm * 1609.34;
+ const cavok = /\bCAVOK\b/i.test(text);
+ if (cavok) return 10000;
+ const metric = String(text || '').match(/\s(\d{4})\s/);
+ if (metric) return Number(metric[1]);
+ const smMatch = String(text || '').match(/\s(\d{1,2})(?:\s+\d\/\d|\/\d)?SM\b/);
+ if (smMatch) return Number(smMatch[1]) * 1609.34;
+ return null;
+}
+function aviationExtractCeilingFt(text, record) {
+ const direct = aviationParseNumber(record?.ceil ?? record?.ceiling ?? record?.ceiling_ft_agl);
+ if (direct !== null) return direct;
+ const candidates = [];
+ for (const match of String(text || '').matchAll(/\b(BKN|OVC|VV)(\d{3})\b/g)) candidates.push(Number(match[2]) * 100);
+ return candidates.length ? Math.min(...candidates) : null;
+}
+function aviationIssueTime(record) {
+ const raw = record?.reportTime || record?.obsTime || record?.issueTime || record?.issuance_time || record?.validTimeFrom || record?.validFrom || record?.time || record?.receiptTime || null;
+ const ms = Date.parse(raw || '');
+ return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+function aviationValidUntil(record) {
+ const raw = record?.validTimeTo || record?.validTo || record?.valid_until || record?.endTime || record?.expirationTime || null;
+ const ms = Date.parse(raw || '');
+ return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+function aviationPushHazard(hazards, severity, title, detail) {
+ hazards.push({ severity, title, detail });
+}
+function aviationSeverityRank(value) {
+ return ({ minor: 1, moderate: 2, severe: 3, extreme: 4 })[String(value || '').toLowerCase()] || 1;
+}
+function aviationAnalyzeStation(icao, metar, taf) {
+ const metarRaw = aviationRawText(metar);
+ const tafRaw = aviationRawText(taf);
+ const sourceText = `${metarRaw} ${tafRaw}`.toUpperCase();
+ const hazards = [];
+ if (/\b(?:\+?TS(?:RA|GR|GS|SN)?|VCTS|TS|CB|TCU|SQL|SQ)\b/.test(sourceText)) aviationPushHazard(hazards, 'severe', 'Tempestade/CB na área', 'TAF/METAR indica TS, VCTS, CB, TCU, SQ ou tempo convectivo relevante.');
+ if (/\b(?:\+RA|\+SHRA|GR|GS|FC|WS|WIND SHEAR)\b/.test(sourceText)) aviationPushHazard(hazards, 'moderate', 'Precipitação intensa ou cisalhamento', 'Há indicação de chuva forte, granizo, funnel cloud ou wind shear.');
+ const wind = aviationExtractWindKt(metarRaw, metar || {});
+ const tafWind = aviationExtractWindKt(tafRaw, taf || {});
+ const gust = Math.max(wind.gust || 0, tafWind.gust || 0);
+ const speed = Math.max(wind.speed || 0, tafWind.speed || 0);
+ if (gust >= 40 || speed >= 32) aviationPushHazard(hazards, 'severe', 'Vento forte', `Vento ${speed || '—'} kt, rajada ${gust || '—'} kt.`);
+ else if (gust >= 28 || speed >= 24) aviationPushHazard(hazards, 'moderate', 'Vento/rajada para monitorar', `Vento ${speed || '—'} kt, rajada ${gust || '—'} kt.`);
+ const vis = aviationExtractVisibility(metarRaw, metar || {});
+ if (vis !== null && vis < 1600) aviationPushHazard(hazards, 'severe', 'Visibilidade baixa', `Visibilidade estimada abaixo de 1.600 m (${Math.round(vis)} m).`);
+ else if (vis !== null && vis < 5000) aviationPushHazard(hazards, 'moderate', 'Visibilidade reduzida', `Visibilidade estimada abaixo de 5.000 m (${Math.round(vis)} m).`);
+ const ceil = aviationExtractCeilingFt(metarRaw, metar || {});
+ if (ceil !== null && ceil <= 500) aviationPushHazard(hazards, 'severe', 'Teto muito baixo', `Teto BKN/OVC/VV estimado em ${ceil} ft.`);
+ else if (ceil !== null && ceil <= 1500) aviationPushHazard(hazards, 'moderate', 'Teto baixo', `Teto BKN/OVC/VV estimado em ${ceil} ft.`);
+ if (/\bPROB\d{2}\b|\bTEMPO\b|\bBECMG\b/.test(sourceText) && /\bTS|CB|\+RA|SQ|GR\b/.test(sourceText)) aviationPushHazard(hazards, 'moderate', 'Janela de previsão com mudança relevante', 'TAF traz TEMPO/BECMG/PROB associado a tempestade, CB ou precipitação forte.');
+ if (!hazards.length) return null;
+ const severity = hazards.map((item) => item.severity).sort((a, b) => aviationSeverityRank(b) - aviationSeverityRank(a))[0] || 'minor';
+ return {
+  id: `aviation-${icao}-${Date.now()}`,
+  airport: icao,
+  icao,
+  title: hazards[0].title,
+  summary: hazards.map((item) => item.title).filter((value, index, array) => array.indexOf(value) === index).join(' · '),
+  severity,
+  source: 'AviationWeather.gov METAR/TAF',
+  category: 'aviation-weather',
+  issuedAt: aviationIssueTime(metar) || aviationIssueTime(taf) || new Date().toISOString(),
+  validUntil: aviationValidUntil(taf),
+  rawMetar: metarRaw,
+  rawTaf: tafRaw,
+  details: hazards.map((item) => item.detail),
+ };
+}
+async function aviationFetchJson(endpoint, params) {
+ const controller = new AbortController();
+ const timer = setTimeout(() => controller.abort(), AVIATION_WEATHER_TIMEOUT_MS);
+ try {
+  const query = new URLSearchParams(params);
+  const response = await fetch(`${AVIATION_WEATHER_API_BASE}/${endpoint}?${query.toString()}`, {
+   signal: controller.signal,
+   headers: { 'accept': 'application/json', 'user-agent': 'CrewCheck/11.1.10 telegram-metar-atis-natural (support@crewcheck.app)' },
+  });
+  if (response.status === 204) return [];
+  const text = await response.text();
+  if (!response.ok) throw new Error(`AviationWeather ${endpoint} HTTP ${response.status}`);
+  const parsed = text ? JSON.parse(text) : [];
+  return Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.features) ? parsed.features.map((feature) => feature.properties || feature) : []);
+ } finally {
+  clearTimeout(timer);
+ }
+}
+async function fetchAviationWeatherAlerts(query = {}) {
+ const requested = String(query.airports || query.ids || '').split(/[\s,;|]+/).map(aviationNormalizeAirport).filter(Boolean);
+ const airports = [...new Set(requested)].slice(0, 8);
+ if (!airports.length) return { ok: false, sourceConfigured: true, source: 'aviationweather.gov', airports: [], alerts: [], message: 'Informe ao menos um aeroporto ICAO/IATA.', updatedAt: new Date().toISOString() };
+ const cacheKey = airports.join(',');
+ const now = Date.now();
+ const cached = aviationWeatherCache.get(cacheKey);
+ if (cached && now - cached.at < AVIATION_WEATHER_TTL_MS) return cached.payload;
+ const ids = airports.join(',');
+ const [metars, tafs] = await Promise.all([
+  aviationFetchJson('metar', { ids, format: 'json', hours: '2' }),
+  aviationFetchJson('taf', { ids, format: 'json' }),
+ ]);
+ const byMetar = new Map();
+ const byTaf = new Map();
+ for (const record of metars) { const station = aviationStation(record); if (station && !byMetar.has(station)) byMetar.set(station, record); }
+ for (const record of tafs) { const station = aviationStation(record); if (station && !byTaf.has(station)) byTaf.set(station, record); }
+ const alerts = airports.map((icao) => aviationAnalyzeStation(icao, byMetar.get(icao), byTaf.get(icao))).filter(Boolean);
+ const observations = airports.map((icao) => byMetar.get(icao)).filter(Boolean).map((record) => ({ ...record, icao: aviationStation(record), rawOb: aviationRawText(record) }));
+ const forecasts = airports.map((icao) => byTaf.get(icao)).filter(Boolean).map((record) => ({ ...record, icao: aviationStation(record), rawTAF: aviationRawText(record) }));
+ const payload = {
+  ok: true,
+  sourceConfigured: true,
+  source: 'aviationweather.gov',
+  airports,
+  alerts,
+  observations,
+  forecasts,
+  count: alerts.length,
+  message: alerts.length ? 'Alertas meteorológicos aeronáuticos encontrados por METAR/TAF.' : 'Sem indício relevante de TS/CB, vento forte, teto baixo ou visibilidade crítica nos aeroportos consultados.',
+  updatedAt: new Date().toISOString(),
+ };
+ aviationWeatherCache.set(cacheKey, { at: now, payload });
+ return payload;
+}
+
+// --- CrewCheck v11.1.94: monitor operacional de portão, status de voo e meteorologia ---
+const crewcheckOperationalAlertMemory = new Map();
+
+function crewcheckOpsNormalize(value) {
+ return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+function crewcheckOpsIsoDateFromRoster(value, roster = {}) {
+ const raw = String(value || '').trim();
+ let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+ if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+ m = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+ if (m) {
+  const y = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${y}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+ }
+ m = raw.match(/^(\d{1,2})$/);
+ if (m && roster?.month && roster?.year) return `${roster.year}-${String(roster.month).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+ const d = new Date(raw);
+ return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : '';
+}
+function crewcheckOpsTimeMinutes(value) {
+ const m = String(value || '').match(/\b(\d{1,2})[:hH]?(\d{2})\b/);
+ if (!m) return null;
+ const h = Number(m[1]);
+ const min = Number(m[2]);
+ if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return null;
+ return h * 60 + min;
+}
+function crewcheckOpsLocalDateTimeMs(dateIso, time, carryDays = 0) {
+ const mins = crewcheckOpsTimeMinutes(time);
+ if (!dateIso || mins === null) return null;
+ const d = new Date(`${dateIso}T00:00:00-03:00`);
+ if (!Number.isFinite(d.getTime())) return null;
+ d.setUTCDate(d.getUTCDate() + Number(carryDays || 0));
+ d.setUTCHours(3 + Math.floor(mins / 60), mins % 60, 0, 0);
+ return d.getTime();
+}
+function crewcheckOpsFlightNumber(leg = {}) {
+ return normalizeFlightToken(leg.flightNumber || leg.flight || leg.number || leg.flight_number || '');
+}
+function crewcheckOpsAirport(value) {
+ return String(value || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+}
+function crewcheckOpsStatusCategory(status = '') {
+ const clean = crewcheckOpsNormalize(status).toLowerCase();
+ if (/cancel|cnl|cancelado/.test(clean)) return { level: 'critical', label: 'Cancelado' };
+ if (/ultima chamada|last call|gate closing|fechando|final call/.test(clean)) return { level: 'critical', label: 'Última chamada' };
+ if (/embarque|boarding/.test(clean)) return { level: 'important', label: 'Embarque próximo' };
+ if (/delay|atras|retido/.test(clean)) return { level: 'important', label: 'Atrasado' };
+ if (/confirm|on time|pontual|programado|previsto|scheduled/.test(clean)) return { level: 'info', label: 'Confirmado' };
+ if (/departed|decolou|landed|pousou|arrived|chegou|finalizado|encerrado/.test(clean)) return { level: 'info', label: 'Finalizado' };
+ return status ? { level: 'info', label: status } : { level: 'idle', label: '' };
+}
+function crewcheckOpsStatusFingerprint(status = {}) {
+ const parts = [
+  status.status,
+  status.gate,
+  status.terminal,
+  status.estimatedDeparture,
+  status.confirmedTime,
+  status.scheduledDeparture,
+  status.estimatedArrival,
+ ].map((item) => crewcheckOpsNormalize(item).toUpperCase()).filter(Boolean);
+ return parts.join('|');
+}
+function crewcheckOpsStatusHasChange(previousFingerprint = '', nextFingerprint = '') {
+ if (!nextFingerprint) return false;
+ if (!previousFingerprint) return true;
+ return previousFingerprint !== nextFingerprint;
+}
+function crewcheckOpsBuildFlightAlert(flight, status = {}, previousFingerprint = '') {
+ const nextFingerprint = crewcheckOpsStatusFingerprint(status);
+ if (!crewcheckOpsStatusHasChange(previousFingerprint, nextFingerprint)) return null;
+ const category = crewcheckOpsStatusCategory(status.status || '');
+ const previousParts = String(previousFingerprint || '').split('|');
+ const nextGate = crewcheckOpsNormalize(status.gate || '').toUpperCase();
+ const previousGate = previousParts[1] || '';
+ const gateChanged = Boolean(nextGate && previousGate && nextGate !== previousGate);
+ const firstGate = Boolean(nextGate && !previousGate);
+ const important = gateChanged || firstGate || category.level !== 'idle';
+ if (!important) return null;
+ const title = gateChanged ? 'Portão alterado' : firstGate ? 'Portão definido' : category.label || 'Status atualizado';
+ const details = [
+  status.status ? `Status: ${status.status}` : '',
+  status.gate ? `Portão: ${status.gate}` : '',
+  status.terminal ? `Terminal: ${status.terminal}` : '',
+  status.estimatedDeparture || status.confirmedTime ? `Partida: ${status.estimatedDeparture || status.confirmedTime}` : '',
+  status.estimatedArrival ? `Chegada: ${status.estimatedArrival}` : '',
+  status.sourceLabel || status.source ? `Fonte: ${status.sourceLabel || status.source}` : '',
+ ].filter(Boolean);
+ return {
+  category: 'flight-status',
+  level: gateChanged ? 'critical' : category.level,
+  title: `${title} · ${flight.flightNumber}`,
+  body: details.join(' · ') || 'Houve atualização operacional do voo.',
+  flightNumber: flight.flightNumber,
+  date: flight.date,
+  origin: flight.origin,
+  destination: flight.destination,
+  fingerprint: nextFingerprint,
+  payload: { flight, status },
+ };
+}
+function crewcheckOpsExtractFlights(roster = {}, options = {}) {
+ const days = Array.isArray(roster?.days) ? roster.days : [];
+ const now = Date.now();
+ const lookbackMs = Number(options.lookbackHours || CREWCHECK_OPERATIONAL_ALERTS_LOOKBACK_HOURS) * 60 * 60 * 1000;
+ const lookaheadMs = Number(options.lookaheadHours || CREWCHECK_OPERATIONAL_ALERTS_LOOKAHEAD_HOURS) * 60 * 60 * 1000;
+ const result = [];
+ for (const day of days) {
+  const dateIso = crewcheckOpsIsoDateFromRoster(day?.date, roster);
+  if (!dateIso) continue;
+  let lastDepartureMinutes = null;
+  let carryDays = 0;
+  const legs = Array.isArray(day?.legs) ? day.legs : [];
+  for (const leg of legs) {
+   const flightNumber = crewcheckOpsFlightNumber(leg);
+   if (!flightNumber) continue;
+   const depTime = leg.departureTime || leg.departure || leg.departureLocal || leg.std || day.dutyReport || '';
+   const depMinutes = crewcheckOpsTimeMinutes(depTime);
+   if (lastDepartureMinutes !== null && depMinutes !== null && depMinutes + 8 * 60 < lastDepartureMinutes) carryDays += 1;
+   if (depMinutes !== null) lastDepartureMinutes = depMinutes;
+   const departureMs = crewcheckOpsLocalDateTimeMs(dateIso, depTime, carryDays);
+   if (departureMs && (departureMs < now - lookbackMs || departureMs > now + lookaheadMs)) continue;
+   const origin = crewcheckOpsAirport(leg.origin || leg.departureAirport || day.origin || '');
+   const destination = crewcheckOpsAirport(leg.destination || leg.arrivalAirport || day.destination || '');
+   result.push({
+    flightNumber,
+    date: departureMs ? new Date(departureMs).toISOString().slice(0, 10) : dateIso,
+    scheduledLocalDate: dateIso,
+    scheduledTime: depTime,
+    departureMs,
+    origin,
+    destination,
+    route: [origin, destination].filter(Boolean).join('-'),
+   });
+  }
+ }
+ const seen = new Set();
+ return result
+  .sort((a, b) => (a.departureMs || 0) - (b.departureMs || 0))
+  .filter((item) => {
+   const key = `${item.flightNumber}|${item.date}|${item.origin}|${item.destination}|${item.scheduledTime}`;
+   if (seen.has(key)) return false;
+   seen.add(key);
+   return true;
+  })
+  .slice(0, CREWCHECK_OPERATIONAL_ALERTS_MAX_FLIGHTS);
+}
+async function latestActiveRosterRowForOperationalAlerts(db, userId) {
+ const result = await db.query(
+  `select * from crewcheck_rosters
+    where user_id = $1 and deleted_at is null
+    order by is_active desc, coalesce(active_at, updated_at, created_at) desc, created_at desc
+    limit 1`,
+  [userId],
+ );
+ return result.rows?.[0] || null;
+}
+async function crewcheckOpsReadState(db, userId, alertKey) {
+ if (!db || !userId || !alertKey) return crewcheckOperationalAlertMemory.get(`${userId}:${alertKey}`) || null;
+ try {
+  const result = await db.query('select * from crewcheck_operational_alert_state where user_id = $1 and alert_key = $2 limit 1', [userId, alertKey]);
+  return result.rows?.[0] || null;
+ } catch {
+  return crewcheckOperationalAlertMemory.get(`${userId}:${alertKey}`) || null;
+ }
+}
+async function crewcheckOpsWriteState(db, userId, alertKey, category, fingerprint, payload = {}) {
+ const memoryKey = `${userId}:${alertKey}`;
+ const nowIso = new Date().toISOString();
+ const row = { user_id: userId, alert_key: alertKey, category, fingerprint, payload_json: payload, updated_at: nowIso, last_notified_at: nowIso };
+ crewcheckOperationalAlertMemory.set(memoryKey, row);
+ if (!db || !userId || !alertKey) return row;
+ try {
+  const existing = await db.query('select id from crewcheck_operational_alert_state where user_id = $1 and alert_key = $2 limit 1', [userId, alertKey]);
+  if (existing.rows?.[0]?.id) {
+   await db.query('update crewcheck_operational_alert_state set updated_at = now(), last_notified_at = now(), category = $3, fingerprint = $4, payload_json = $5 where user_id = $1 and alert_key = $2', [userId, alertKey, category, fingerprint, payload]);
+  } else {
+   await db.query('insert into crewcheck_operational_alert_state (id, user_id, alert_key, category, fingerprint, last_notified_at, payload_json) values ($1, $2, $3, $4, $5, now(), $6)', [crypto.randomUUID(), userId, alertKey, category, fingerprint, payload]);
+  }
+ } catch {
+  // Tabela é cache confiável, mas o monitor não pode parar por falha de escrita.
+ }
+ return row;
+}
+async function crewcheckOpsNotifyTelegram(db, userId, alert) {
+ if (!alert?.title || !userId) return { ok: false, skipped: true };
+ try {
+  const row = await telegramLinkForUser(db, userId).catch(() => null);
+  const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+  if (prefs.operationalMonitor === false) return { ok: false, skipped: true, reason: 'monitor operacional desligado' };
+  if (alert.category === 'flight-status' && (prefs.radar === false || prefs.gateStatus === false || prefs.flightStatusPush === false)) return { ok: false, skipped: true, reason: 'radar/portão desligado' };
+  if (alert.category === 'aviation-weather' && prefs.aviationWeather === false) return { ok: false, skipped: true, reason: 'meteorologia desligada' };
+  return await notifyTelegramForUser(db, userId, alert.category === 'aviation-weather' ? 'weather' : 'gateStatus', alert.title, [alert.body, alert.origin && alert.destination ? `Rota: ${alert.origin} → ${alert.destination}` : '', alert.date ? `Data: ${alert.date}` : ''].filter(Boolean));
+ } catch (error) {
+  return { ok: false, skipped: true, reason: sanitizePublicError(error?.message || String(error)) };
+ }
+}
+function crewcheckOpsWeatherFingerprint(alert = {}) {
+ return [alert.airport || alert.icao, alert.severity, alert.title, alert.summary, alert.rawMetar, alert.rawTaf].map((item) => crewcheckOpsNormalize(item).toUpperCase()).join('|').slice(0, 500);
+}
+async function runCrewCheckOperationalAlerts(db, user, options = {}) {
+ if (!CREWCHECK_OPERATIONAL_ALERTS_ENABLED) return { ok: true, enabled: false, alerts: [], message: 'Monitor operacional desligado no servidor.' };
+ if (!user?.id) return { ok: false, alerts: [], message: 'Login necessário.' };
+ await ensureSchema().catch(() => null);
+ const row = await latestActiveRosterRowForOperationalAlerts(db, user.id);
+ const roster = row?.roster_json || null;
+ if (!roster?.days?.length) return { ok: true, enabled: true, alerts: [], trackedFlights: [], message: 'Nenhuma escala ativa para monitorar.' };
+ const notifyTelegram = options.notifyTelegram ?? CREWCHECK_OPERATIONAL_ALERTS_PUSH_TELEGRAM_DEFAULT;
+ const flights = crewcheckOpsExtractFlights(roster, options);
+ const alerts = [];
+ const diagnostics = [];
+ for (const flight of flights) {
+  try {
+   const params = new URLSearchParams();
+   params.set('flightNumber', flight.flightNumber);
+   params.set('flight', flight.flightNumber);
+   if (flight.date) params.set('date', flight.date);
+   if (flight.origin) params.set('origin', flight.origin);
+   if (flight.destination) params.set('destination', flight.destination);
+   if (flight.route) params.set('route', flight.route);
+   const status = await getFlightStatusSnapshot(params);
+   const sanitized = radarSanitizedStatus(status, Object.fromEntries(params.entries()));
+   const alertKey = `flight:${flight.flightNumber}:${flight.date}:${flight.origin}:${flight.destination}`;
+   const previous = await crewcheckOpsReadState(db, user.id, alertKey);
+   const alert = crewcheckOpsBuildFlightAlert(flight, sanitized, previous?.fingerprint || '');
+   await crewcheckOpsWriteState(db, user.id, alertKey, 'flight-status', crewcheckOpsStatusFingerprint(sanitized), { flight, status: sanitized });
+   if (alert) {
+    if (notifyTelegram) alert.telegram = await crewcheckOpsNotifyTelegram(db, user.id, alert);
+    alerts.push(alert);
+   }
+  } catch (error) {
+   diagnostics.push({ type: 'flight-status', flight: flight.flightNumber, message: sanitizePublicError(error?.message || String(error)) });
+  }
+ }
+ const weatherAirports = [...new Set(flights.flatMap((flight) => [flight.origin, flight.destination]).map(aviationNormalizeAirport).filter(Boolean))].slice(0, 8);
+ let weather = null;
+ if (weatherAirports.length) {
+  try {
+   weather = await fetchAviationWeatherAlerts({ airports: weatherAirports.join(',') });
+   for (const metAlert of weather.alerts || []) {
+    if (!metAlert) continue;
+    const fingerprint = crewcheckOpsWeatherFingerprint(metAlert);
+    const alertKey = `weather:${metAlert.airport || metAlert.icao}:${metAlert.severity}:${metAlert.title}`;
+    const previous = await crewcheckOpsReadState(db, user.id, alertKey);
+    await crewcheckOpsWriteState(db, user.id, alertKey, 'aviation-weather', fingerprint, metAlert);
+    if (previous?.fingerprint === fingerprint) continue;
+    const alert = {
+     category: 'aviation-weather',
+     level: metAlert.severity || 'important',
+     title: `Meteorologia · ${metAlert.airport || metAlert.icao} · ${metAlert.title || 'Alerta'}`,
+     body: metAlert.summary || (Array.isArray(metAlert.details) ? metAlert.details.join(' · ') : 'Condição meteorológica operacional relevante.'),
+     airport: metAlert.airport || metAlert.icao,
+     fingerprint,
+     payload: metAlert,
+    };
+    if (notifyTelegram) alert.telegram = await crewcheckOpsNotifyTelegram(db, user.id, alert);
+    alerts.push(alert);
+   }
+  } catch (error) {
+   diagnostics.push({ type: 'aviation-weather', airports: weatherAirports, message: sanitizePublicError(error?.message || String(error)) });
+  }
+ }
+ return {
+  ok: true,
+  enabled: true,
+  source: 'CrewCheck Operational Monitor',
+  trackedFlights: flights,
+  weatherAirports,
+  weather: weather ? { ok: weather.ok, count: weather.count, message: weather.message, updatedAt: weather.updatedAt } : null,
+  alerts,
+  alertsCount: alerts.length,
+  diagnostics,
+  updatedAt: new Date().toISOString(),
+  message: alerts.length ? 'Mudanças operacionais detectadas.' : 'Sem mudança operacional nova nos voos monitorados.',
+ };
+}
+// --- end CrewCheck v11.1.94 operational monitor ---
+
+/* CREWCHECK_AVIATION_WEATHER_ALERTS_END */
+
 async function handleApi(req, res, url) {
+
+
+ if ((url.pathname === '/api/operational-alerts/check' || url.pathname === '/api/alerts/operational/check' || url.pathname === '/api/radar/alerts/check') && (req.method === 'GET' || req.method === 'POST')) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   const body = req.method === 'POST' ? await readJsonBody(req, 128 * 1024).catch(() => ({})) : {};
+   const q = Object.fromEntries(url.searchParams.entries());
+   const notifyTelegram = /^(1|true|yes|sim)$/i.test(String(body.notifyTelegram ?? q.notifyTelegram ?? q.telegram ?? CREWCHECK_OPERATIONAL_ALERTS_PUSH_TELEGRAM_DEFAULT));
+   const payload = await runCrewCheckOperationalAlerts(db, user, {
+    notifyTelegram,
+    lookaheadHours: Number(body.lookaheadHours || q.lookaheadHours || CREWCHECK_OPERATIONAL_ALERTS_LOOKAHEAD_HOURS),
+    lookbackHours: Number(body.lookbackHours || q.lookbackHours || CREWCHECK_OPERATIONAL_ALERTS_LOOKBACK_HOURS),
+   });
+   sendJson(res, 200, payload);
+  } catch (error) {
+   sendJson(res, 200, { ok: false, alerts: [], message: 'Não consegui rodar o monitor operacional agora.', detail: sanitizePublicError(error?.message || String(error)), updatedAt: new Date().toISOString() });
+  }
+  return true;
+ }
+
+
+ if ((url.pathname === '/api/meteorologia/aviacao/alertas' || url.pathname === '/api/weather/aviation-alerts') && req.method === 'GET') {
+  try {
+   const payload = await fetchAviationWeatherAlerts({
+    airports: url.searchParams.get('airports') || url.searchParams.get('ids') || url.searchParams.get('icao') || url.searchParams.get('iata'),
+    scope: url.searchParams.get('scope') || 'roster',
+   });
+   sendJson(res, 200, payload);
+  } catch (error) {
+   sendJson(res, 502, {
+    ok: false,
+    sourceConfigured: true,
+    source: 'aviationweather.gov',
+    alerts: [],
+    message: 'Não foi possível consultar METAR/TAF na fonte aeronáutica agora.',
+    detail: sanitizePublicError(error?.message || String(error)),
+    updatedAt: new Date().toISOString(),
+   });
+  }
+  return true;
+ }
+
+ if ((url.pathname === '/api/meteorologia/defesa-civil/alertas' || url.pathname === '/api/weather/civil-defense-alerts') && req.method === 'GET') {
+  try {
+   const payload = await fetchCivilDefenseAlerts({
+    uf: url.searchParams.get('uf'),
+    city: url.searchParams.get('city') || url.searchParams.get('cidade'),
+    ibge: url.searchParams.get('ibge'),
+    lat: url.searchParams.get('lat') || url.searchParams.get('latitude'),
+    lng: url.searchParams.get('lng') || url.searchParams.get('lon') || url.searchParams.get('longitude'),
+   });
+   sendJson(res, 200, payload);
+  } catch (error) {
+   sendJson(res, 502, {
+    ok: false,
+    sourceConfigured: Boolean(DEFESA_CIVIL_ALERTS_API_URL),
+    officialOnly: true,
+    alerts: [],
+    message: 'Não foi possível consultar os alertas oficiais da Defesa Civil agora.',
+    detail: sanitizePublicError(error?.message || String(error)),
+    updatedAt: new Date().toISOString(),
+   });
+  }
+  return true;
+ }
 
  if (url.pathname === '/api/webhooks/asaas' && req.method === 'POST') {
   const db = requireDatabase(res);
@@ -8691,7 +16005,7 @@ async function handleApi(req, res, url) {
  if (url.pathname === '/api/billing/health' && req.method === 'GET') {
   const user = await requireAuth(req, res);
   if (!user) return true;
-  if (!isC32FAdminEmail(user.email) && String(user.role || '').toLowerCase() !== 'admin') {
+  if (!isCrewCheckAdminUser(user)) {
    sendJson(res, 403, { ok: false, message: 'Diagnóstico de cobrança restrito ao administrador.' });
    return true;
   }
@@ -8736,6 +16050,37 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+ if (url.pathname === '/api/telegram/roster-sync' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 20 * 1024 * 1024);
+   const roster = body.roster;
+   if (!roster || !Array.isArray(roster.days)) {
+    sendJson(res, 400, { ok: false, message: 'Envie uma escala válida para sincronizar com o Concierge.' });
+    return true;
+   }
+   const compliance = body.compliance || null;
+   const gym = Array.isArray(body.gym) ? body.gym : [];
+   const sourceFileName = body.sourceFileName || 'Escala CrewCheck sincronizada';
+   const saved = await saveRosterForUser(db, user, { roster, compliance, gym, sourceFileName, importSource: 'telegram_roster_sync' });
+   const row = await ensureTelegramLinkForUser(db, user).catch(() => null);
+   const snapshot = await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName, checksum: saved?.row?.checksum || null }).catch(() => null);
+   const bot = await telegramBotIdentity().catch(() => null);
+   const updated = await telegramLinkForUser(db, user.id).catch(() => row);
+   const status = telegramPublicStatusFromRow(updated, bot, user);
+   const synced = await telegramConciergeLatestRosters(db, user, 1, updated).catch(() => []);
+   status.syncedRoster = synced[0] ? { available: true, updatedAt: synced[0].updated_at || synced[0].created_at || snapshot?.updatedAt || null, periodYear: synced[0].period_year || synced[0].roster?.year || null, periodMonth: synced[0].period_month || synced[0].roster?.month || null } : { available: Boolean(snapshot), updatedAt: snapshot?.updatedAt || null, periodYear: snapshot?.periodYear || null, periodMonth: snapshot?.periodMonth || null };
+   sendJson(res, 200, { ok: true, roster: summarizeRosterRow(saved.row), status, syncedRoster: status.syncedRoster });
+  } catch (error) {
+   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)), detail: error?.code || null });
+  }
+  return true;
+ }
+
  if (url.pathname === '/api/telegram/status' && req.method === 'GET') {
   const user = await requireAuth(req, res);
   if (!user) return true;
@@ -8752,7 +16097,10 @@ async function handleApi(req, res, url) {
    await ensureSchema();
    const bot = await telegramBotIdentity().catch(() => null);
    const row = await telegramLinkForUser(db, user.id);
-   sendJson(res, 200, telegramPublicStatusFromRow(row, bot));
+   const status = telegramPublicStatusFromRow(row, bot, user);
+   const synced = row?.is_active ? await telegramConciergeLatestRosters(db, user, 1, row).catch(() => []) : [];
+   status.syncedRoster = synced[0] ? { available: true, updatedAt: synced[0].updated_at || synced[0].created_at || null, periodYear: synced[0].period_year || synced[0].roster?.year || null, periodMonth: synced[0].period_month || synced[0].roster?.month || null } : { available: false };
+   sendJson(res, 200, status);
   } catch (error) {
    sendJson(res, 200, { ok: false, configured: telegramIsConfigured(), connected: false, message: sanitizePublicError(error?.message || String(error)) });
   }
@@ -8779,7 +16127,7 @@ async function handleApi(req, res, url) {
    }
    const bot = await telegramBotIdentity();
    const row = await ensureTelegramLinkForUser(db, user, telegramUsername);
-   sendJson(res, 200, telegramPublicStatusFromRow(row, bot));
+   sendJson(res, 200, telegramPublicStatusFromRow(row, bot, user));
   } catch (error) {
    sendJson(res, error.statusCode || 500, { ok: false, configured: telegramIsConfigured(), message: sanitizePublicError(error?.message || String(error)) });
   }
@@ -8793,15 +16141,85 @@ async function handleApi(req, res, url) {
   if (!db) return true;
   try {
    await ensureSchema();
-   const body = await readJsonBody(req, 64 * 1024);
+   // Aceita até 1 MB para conseguir limpar preferências antigas que tenham ficado grandes,
+   // mas o front-end novo envia apenas patch enxuto.
+   const body = await readJsonBody(req, 1024 * 1024);
    const row = await ensureTelegramLinkForUser(db, user);
-   const preferences = normalizeTelegramPreferences(body.preferences || body || {});
+   const incoming = buildTelegramPreferencePatch(body.preferencesPatch || body.preferences || body || {});
+   const previous = normalizeTelegramPreferences(row?.preferences_json || {});
+   const preferences = normalizeTelegramPreferences({ ...previous, ...incoming });
+   const incomingApiKey = String(incoming.callmebotApiKey || incoming.callmebot_api_key || '').trim();
+   if (incoming.callmebotClearApiKey === true) preferences.callmebotApiKey = '';
+   else if (Object.prototype.hasOwnProperty.call(incoming, 'callmebotApiKey') || Object.prototype.hasOwnProperty.call(incoming, 'callmebot_api_key')) {
+    if (callmebotApiKeyLooksMasked(incomingApiKey)) preferences.callmebotApiKey = previous.callmebotApiKey || '';
+    else preferences.callmebotApiKey = incomingApiKey.replace(/\s+/g, '').slice(0, 90);
+   } else {
+    preferences.callmebotApiKey = previous.callmebotApiKey || '';
+   }
+   delete preferences.callmebotApiKeyMasked;
+   delete preferences.callmebotApiKeyConfigured;
+   if (!telegramConciergeIsPremium(user) && !isBillingAdmin(user)) preferences.conciergeName = TELEGRAM_DEFAULT_CONCIERGE_NAME;
+   if (!wakeupCallAllowedForUser(user)) {
+    preferences.wakeupCallEnabled = false;
+    preferences.wakeupCallProvider = 'auto';
+   }
    await db.query('update crewcheck_telegram_links set preferences_json = $1::jsonb, updated_at = now() where id = $2', [JSON.stringify(preferences), row.id]);
    const bot = await telegramBotIdentity().catch(() => null);
    const updated = await telegramLinkForUser(db, user.id);
-   sendJson(res, 200, telegramPublicStatusFromRow(updated, bot));
+   sendJson(res, 200, telegramPublicStatusFromRow(updated, bot, user));
   } catch (error) {
-   sendJson(res, 500, { ok: false, message: sanitizePublicError(error?.message || String(error)) });
+   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)), code: error.code || null });
+  }
+  return true;
+ }
+
+ if (['/api/telegram/callmebot/autoconfig', '/api/telegram/wakeup/autoconfig'].includes(url.pathname) && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 16 * 1024).catch(() => ({}));
+   const row = await ensureTelegramLinkForUser(db, user);
+   const previous = normalizeTelegramPreferences(row?.preferences_json || {});
+   const candidateUsername = normalizeTelegramUsername(
+    body.telegramUsername || body.telegram_username || row?.chat_username || row?.expected_username || previous.callmebotTelegramUser || ''
+   );
+   const premiumWakeupCall = wakeupCallAllowedForUser(user);
+   const patch = {
+    overnightWakeup: true,
+    wakeupCallEnabled: premiumWakeupCall,
+    wakeupCallProvider: ['callmebot','infobip','twilio','auto','voip','phone','direct','direct-voip','inout'].includes(CREWCHECK_WAKEUP_CALL_PROVIDER) ? CREWCHECK_WAKEUP_CALL_PROVIDER : 'auto',
+    infobipPhone: String(body.infobipPhone || body.infobip_phone || body.twilioPhone || body.twilio_phone || body.callmebotPhone || body.callmebot_phone || previous.infobipPhone || previous.twilioPhone || previous.callmebotPhone || TWILIO_TO_PHONE || INFOBIP_TO_PHONE || CALLMEBOT_PHONE || '').replace(/[^+\d]/g, '').slice(0, 22),
+    twilioPhone: String(body.twilioPhone || body.twilio_phone || body.infobipPhone || body.infobip_phone || previous.twilioPhone || previous.infobipPhone || TWILIO_TO_PHONE || INFOBIP_TO_PHONE || CALLMEBOT_PHONE || '').replace(/[^+\d]/g, '').slice(0, 22),
+    callmebotMode: (CALLMEBOT_PHONE && CALLMEBOT_API_KEY) ? 'phone' : 'telegram',
+    callmebotPhone: String(body.callmebotPhone || body.callmebot_phone || body.infobipPhone || body.infobip_phone || previous.callmebotPhone || CALLMEBOT_PHONE || '').replace(/[^+\d]/g, '').slice(0, 22),
+    callmebotTelegramUser: candidateUsername ? `@${candidateUsername}` : previous.callmebotTelegramUser || CALLMEBOT_TELEGRAM_CALL_USER || '',
+    callmebotLang: String(body.callmebotLang || previous.callmebotLang || CALLMEBOT_DEFAULT_LANG).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || CALLMEBOT_DEFAULT_LANG,
+    callmebotRepeat: String(Math.max(1, Math.min(5, Number(body.callmebotRepeat || previous.callmebotRepeat || CALLMEBOT_DEFAULT_REPEAT) || CALLMEBOT_DEFAULT_REPEAT))),
+    crewcheckVoiceProviderAuthorized: body.crewcheckVoiceProviderAuthorized === true || previous.crewcheckVoiceProviderAuthorized === true,
+   };
+   // Fallback opcional: se o administrador configurar telefone/apikey no Render,
+   // o usuário não precisa digitar apikey no app.
+   if ((INOUT_CALL_PHONE && INOUT_CALL_API_KEY) || (CALLMEBOT_PHONE && CALLMEBOT_API_KEY)) {
+    patch.callmebotMode = 'phone';
+    patch.wakeupCallProvider = 'auto';
+   }
+   const preferences = normalizeTelegramPreferences({ ...previous, ...patch });
+   preferences.callmebotApiKey = previous.callmebotApiKey || '';
+   delete preferences.callmebotApiKeyMasked;
+   delete preferences.callmebotApiKeyConfigured;
+   await db.query('update crewcheck_telegram_links set preferences_json = $1::jsonb, updated_at = now() where id = $2', [JSON.stringify(preferences), row.id]);
+   const bot = await telegramBotIdentity().catch(() => null);
+   const updated = await telegramLinkForUser(db, user.id);
+   const status = telegramPublicStatusFromRow(updated, bot, user);
+   const message = premiumWakeupCall
+    ? (status.callmebot?.configured || status.twilio?.configured || status.infobip?.configured ? 'Despertador CrewCheck configurado automaticamente. Ligação liberada no Premium.' : 'Telegram vinculado. Autorize o provedor de chamada e teste o Despertador CrewCheck.')
+    : 'Telegram vinculado para o plano gratuito. A ligação automática fica disponível ao assinar Premium.';
+   sendJson(res, 200, { ...status, message });
+  } catch (error) {
+   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)), code: error.code || null });
   }
   return true;
  }
@@ -8853,10 +16271,45 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+ const wakeupCallTestEndpointPaths = new Set(['/api/telegram/callmebot/test', '/api/telegram/wakeup/test', '/api/wakeup/test', '/api/wakeup/call/test', '/api/voip/test', '/api/voip/wakeup/test', '/api/voice/test', '/api/infobip/test', '/api/voice/infobip/test', '/api/wakeup/infobip/test']);
+ if (wakeupCallTestEndpointPaths.has(url.pathname) && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 64 * 1024).catch(() => ({}));
+   const savedRow = await ensureTelegramLinkForUser(db, user);
+   const bodyPremiumPhone = String(body.callmebotPhone || body.callmebot_phone || body.twilioPhone || body.twilio_phone || body.infobipPhone || body.infobip_phone || body.phone || '').replace(/[^+\d]/g, '').slice(0, 22);
+   const forcedProviderRaw = String(body.forceProvider || body.provider || CREWCHECK_WAKEUP_CALL_PROVIDER || 'voip').trim().toLowerCase();
+   const forcedProvider = CREWCHECK_WAKEUP_FORCE_INFOBIP && ['auto','phone','voip','direct','direct-voip','inout','callmebot','telegram','twilio'].includes(forcedProviderRaw) ? 'infobip' : forcedProviderRaw;
+   const row = bodyPremiumPhone
+    ? { ...savedRow, preferences_json: { ...(normalizeTelegramPreferences(savedRow?.preferences_json || {})), infobipPhone: bodyPremiumPhone, twilioPhone: bodyPremiumPhone, callmebotPhone: bodyPremiumPhone, callmebotMode: ['callmebot','voip','phone','direct','direct-voip','inout'].includes(forcedProvider) ? 'phone' : (normalizeTelegramPreferences(savedRow?.preferences_json || {}).callmebotMode || CALLMEBOT_DEFAULT_MODE), callmebotApiKey: String(body.callmebotApiKey || body.callmebot_api_key || normalizeTelegramPreferences(savedRow?.preferences_json || {}).callmebotApiKey || '').replace(/\s+/g, '').slice(0, 120), wakeupCallEnabled: true, overnightWakeup: true, wakeupCallProvider: forcedProvider } }
+    : savedRow;
+   const wakeupTimeZone = wakeupSafeTimeZone(body.timeZone || body.timezone || body.displayTimeZone || body.display_time_zone || CREWCHECK_WAKEUP_TIMEZONE);
+   const result = await sendWakeupCallIfConfigured({ row, user, text: body.text || '', context: { test: true, callOnly: true, forcePhoneCallOnly: true, disableFallback: true, allowTelegramVoice: false, forceProvider: forcedProvider, presentationTime: body.presentationTime || body.presentation_time || '', destination: body.destination || body.dest || body.airport || '', airport: body.airport || '', leadMinutes: body.leadMinutes || body.lead_minutes || null, date: body.date || body.dateKey || '', timeZone: wakeupTimeZone } });
+   if (result?.premiumRequired) {
+    sendJson(res, 403, { ok: false, premiumRequired: true, message: result.message || CREWCHECK_WAKEUP_FREE_TELEGRAM_ONLY_MESSAGE, result });
+    return true;
+   }
+   if (!result?.ok) {
+    sendJson(res, 409, { ok: false, message: result?.message || result?.error || 'Despertador CrewCheck ainda não configurado para este usuário.', result });
+    return true;
+   }
+   const bot = await telegramBotIdentity().catch(() => null);
+   const updated = await telegramLinkForUser(db, user.id);
+   sendJson(res, 200, { ok: true, message: String(result?.provider || '') === 'infobip' ? 'Ligação Infobip solicitada pelo Despertador CrewCheck.' : (['callmebot','direct-voip'].includes(String(result?.provider || '')) ? 'Ligação VOIP solicitada pelo Despertador CrewCheck.' : 'Ligação VOIP solicitada pelo Despertador CrewCheck. Nenhum áudio foi enviado ao Telegram neste teste.'), result, status: telegramPublicStatusFromRow(updated, bot, user) });
+  } catch (error) {
+   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
  if (url.pathname === '/api/admin/telegram-health' && req.method === 'GET') {
   const user = await requireAuth(req, res);
   if (!user) return true;
-  if (!isC32FAdminEmail(user.email) && String(user.role || '').toLowerCase() !== 'admin') {
+  if (!isCrewCheckAdminUser(user)) {
    sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
    return true;
   }
@@ -8873,7 +16326,7 @@ async function handleApi(req, res, url) {
  if (url.pathname === '/api/admin/telegram-setup-webhook' && req.method === 'POST') {
   const user = await requireAuth(req, res);
   if (!user) return true;
-  if (!isC32FAdminEmail(user.email) && String(user.role || '').toLowerCase() !== 'admin') {
+  if (!isCrewCheckAdminUser(user)) {
    sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
    return true;
   }
@@ -9237,7 +16690,7 @@ async function handleApi(req, res, url) {
  if (url.pathname === '/api/admin/billing/dashboard' && req.method === 'GET') {
    const user = await requireAuth(req, res);
    if (!user) return true;
-   if (!isC32FAdminEmail(user.email) && String(user.role || '').toLowerCase() !== 'admin') {
+   if (!isCrewCheckAdminUser(user)) {
     sendJson(res, 403, { ok: false, message: 'Dashboard financeiro restrito ao administrador.' });
     return true;
    }
@@ -9333,7 +16786,7 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/admin/system-dashboard' && req.method === 'GET') {
    const user = await requireAuth(req, res);
    if (!user) return true;
-   if (!isC32FAdminEmail(user.email) && String(user.role || '').toLowerCase() !== 'admin') {
+   if (!isCrewCheckAdminUser(user)) {
     sendJson(res, 403, { ok: false, message: 'Dashboard de saúde restrito ao administrador.' });
     return true;
    }
@@ -9440,7 +16893,7 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/admin/billing/sync-prices' && req.method === 'POST') {
   const user = await requireAuth(req, res);
   if (!user) return true;
-  if (!isC32FAdminEmail(user.email) && String(user.role || '').toLowerCase() !== 'admin') {
+  if (!isCrewCheckAdminUser(user)) {
    sendJson(res, 403, { ok: false, message: 'Sincronização de preços restrita ao administrador.' });
    return true;
   }
@@ -9520,7 +16973,7 @@ async function handleApi(req, res, url) {
   if (!user) return true;
   const role = String(user.role || '').toLowerCase();
   const email = String(user.email || '').toLowerCase();
-  const isAdmin = role.includes('admin') || isC32FAdminEmail(email) || email === 'bruno@crewcheck.local';
+  const isAdmin = role.includes('admin') || isC32FAdminEmail(email);
   if (!isAdmin) {
    sendJson(res, 403, { ok: false, message: 'Acesso administrativo restrito.' });
    return true;
@@ -9568,6 +17021,7 @@ async function handleApi(req, res, url) {
   sendJson(res, 200, {
    ok: true,
    app: 'CrewCheck',
+   version: '11.1.91',
    databaseConfigured: Boolean(DATABASE_URL),
    databaseEnvDetected: Boolean(DATABASE_URL),
    authRequired: AUTH_REQUIRED,
@@ -9694,6 +17148,197 @@ async function handleApi(req, res, url) {
 
 
 
+
+ if (url.pathname === '/api/overnight-hotel/presentation' && req.method === 'GET') {
+  const user = await getAuthUser(req).catch(() => null);
+  const result = await lookupOvernightHotelPresentation({ airport: url.searchParams.get('airport') || '', userId: user?.id || '', hotelName: url.searchParams.get('hotelName') || '' });
+  sendJson(res, 200, result);
+  return true;
+ }
+
+ if (url.pathname === '/api/overnight-hotel/presentation' && req.method === 'POST') {
+  const user = await getAuthUser(req).catch(() => null);
+  const body = await readJsonBody(req, 128 * 1024).catch(() => ({}));
+  const result = await saveOvernightHotelPresentation(user, body);
+  sendJson(res, result.ok ? 200 : 422, result);
+  return true;
+ }
+
+ if (url.pathname.startsWith('/api/wakeup-twilio/') && req.method === 'GET') {
+  const item = readTwilioWakeupTwiml(url);
+  if (!item) {
+   res.writeHead(404, { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store' });
+   res.end('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Camila" language="pt-BR">Áudio do CrewCheck expirado. Confira o aplicativo.</Say></Response>');
+   return true;
+  }
+  const xml = renderTwilioWakeupTwiml(item);
+  res.writeHead(200, { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store, max-age=0', 'x-content-type-options': 'nosniff' });
+  res.end(xml);
+  return true;
+ }
+
+ const infobipWakeupWebhookPaths = new Set([
+  '/api/webhooks/infobip/wakeup-status',
+  '/api/webhook/infobip/wakeup-status',
+  '/api/infobip/wakeup-status',
+  '/api/infobip/voice-status',
+  '/api/wakeup/infobip/status',
+  '/webhooks/infobip/wakeup-status',
+ ]);
+ if (infobipWakeupWebhookPaths.has(url.pathname) && (req.method === 'GET' || req.method === 'HEAD')) {
+  logInfobipDiagnostic('webhook-health', { path: url.pathname, method: req.method, userAgent: String(req.headers['user-agent'] || '').slice(0, 120) });
+  // v11.1.91: health-check público para não aparecer “API endpoint não encontrado”
+  // quando o administrador abre o link no navegador ou quando o provedor valida a URL.
+  const payload = {
+   ok: true,
+   endpoint: 'infobip-wakeup-status',
+   method: req.method,
+   ready: true,
+   message: 'Webhook VOIP CrewCheck ativo. Para status real da ligação, o provedor envia POST neste endereço.',
+   expectedMethod: 'POST',
+   publicUrl: PUBLIC_APP_URL || '',
+  };
+  if (req.method === 'HEAD') {
+   res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+   res.end();
+  } else {
+   sendJson(res, 200, payload);
+  }
+  return true;
+ }
+
+ if (infobipWakeupWebhookPaths.has(url.pathname) && req.method === 'POST') {
+  try {
+   let total = 0;
+   const chunks = [];
+   for await (const chunk of req) {
+    total += chunk.length;
+    if (total > 512 * 1024) throw new Error('Payload Infobip muito grande.');
+    chunks.push(chunk);
+   }
+   const rawBody = Buffer.concat(chunks).toString('utf8');
+   const contentType = String(req.headers['content-type'] || '').toLowerCase();
+   let payload = {};
+   if (rawBody.trim()) {
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+     payload = Object.fromEntries(new URLSearchParams(rawBody));
+    } else {
+     try { payload = JSON.parse(rawBody); }
+     catch { payload = { rawBody: rawBody.slice(0, 4000), parseError: 'invalid-json' }; }
+    }
+   }
+   const items = rememberInfobipWakeupStatus(payload);
+   logInfobipDiagnostic('webhook-post', { path: url.pathname, stored: items.length, contentType, userAgent: String(req.headers['user-agent'] || '').slice(0, 120), payloadPreview: payload, statuses: items.map((item) => ({ messageId: item.messageId, bulkId: item.bulkId, to: item.to, statusName: item.statusName, groupName: item.groupName, description: item.description })) });
+   sendJson(res, 200, { ok: true, received: true, stored: items.length, endpoint: 'infobip-wakeup-status' });
+  } catch (error) {
+   logInfobipDiagnostic('webhook-post-error', { path: url.pathname, message: sanitizePublicError(error?.message || String(error)) });
+   sendJson(res, 200, { ok: false, received: false, endpoint: 'infobip-wakeup-status', message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if ((url.pathname === '/api/infobip/status/latest' || url.pathname === '/api/infobip/diagnostics' || url.pathname === '/api/wakeup/infobip/diagnostics') && req.method === 'GET') {
+  sendJson(res, 200, latestInfobipWakeupDiagnostics());
+  return true;
+ }
+
+ if (url.pathname === '/api/webhooks/twilio/wakeup-status' && req.method === 'POST') {
+  // Webhook simples para a Twilio não receber 404. Não armazenamos PII aqui por padrão.
+  res.writeHead(204, { 'cache-control': 'no-store' });
+  res.end();
+  return true;
+ }
+
+ if (url.pathname.startsWith('/api/wakeup-voice/') && req.method === 'GET') {
+  const item = readWakeupVoiceFileFromUrl(url);
+  if (!item?.buffer?.length) {
+   sendJson(res, 404, { ok: false, message: 'Áudio expirado ou indisponível.' });
+   return true;
+  }
+  res.writeHead(200, {
+   'content-type': item.mimeType || 'audio/mpeg',
+   'content-length': String(item.buffer.length),
+   'cache-control': 'no-store, max-age=0',
+   'x-content-type-options': 'nosniff',
+  });
+  res.end(item.buffer);
+  return true;
+ }
+
+ if (url.pathname === '/api/overnight-wakeup/notify' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const body = await readJsonBody(req, 128 * 1024).catch(() => ({}));
+  const airport = String(body.airport || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  const destination = wakeupDestinationLabel(body.destination || body.dest || body.arrivalAirport || body.arrival_airport || '', airport);
+  const presentationTime = normalizeCrewClock(body.presentationTime || body.presentation_time || '');
+  const leadMinutes = Math.max(5, Math.min(360, Number(body.leadMinutes || body.lead_minutes || 120) || 120));
+  const wakeupTime = normalizeCrewClock(body.wakeupTime || body.wakeup_time || subtractMinutesFromClock(presentationTime, leadMinutes));
+  const wakeupTimeZone = wakeupSafeTimeZone(body.timeZone || body.timezone || body.displayTimeZone || body.display_time_zone || CREWCHECK_WAKEUP_TIMEZONE);
+  const db = await ensureOvernightHotelLearningSchema().catch(() => getPool());
+  const row = db && user?.id ? await telegramLinkForUser(db, user.id).catch(() => null) : null;
+  const prefs = normalizeTelegramPreferences(row?.preferences_json || {});
+  if (prefs.overnightWakeup === false) {
+   sendJson(res, 200, { ok: true, telegram: false, disabled: true, message: 'Notificação de apresentação/despertar desativada no menu Telegram.' });
+   return true;
+  }
+  const snoozeMinutes = wakeupSnoozeMinutesFromPreference(row, body);
+  const notificationMode = wakeupNotificationModeFromPreference(row, body);
+  const maxCalls = wakeupMaxCallsFromPreference(row, body);
+  const callAfterSnoozes = wakeupCallAfterSnoozesFromPreference(row, body);
+  const maxReminders = wakeupMaxSnoozesFromPreference(row, body);
+  const wakeupId = newId();
+  if (db) await db.query(`insert into crewcheck_wakeup_acks (id, user_id, airport, wakeup_time, presentation_time, chat_id, snooze_minutes, max_reminders, max_calls, call_after_snoozes, next_reminder_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now() + ($7 || ' minutes')::interval)`, [wakeupId, user.id || null, airport || null, wakeupTime || null, presentationTime || null, row?.chat_id || null, snoozeMinutes, maxReminders, maxCalls, callAfterSnoozes]).catch(() => null);
+  if (!row?.is_active || !row?.chat_id) {
+   sendJson(res, 200, { ok: true, telegram: false, wakeupId, message: 'Telegram não conectado; horário salvo localmente.' });
+   return true;
+  }
+  const text = telegramPremiumMessage('default', `Despertar CrewCheck · ${airport || 'hotel'}`, [
+   `Acordar às ${wakeupTime || 'horário a confirmar'} para apresentação/saída do hotel ${presentationTime || 'a confirmar'}.`,
+   `Antecedência configurada: ${leadMinutes} min. Soneca: ${snoozeMinutes} min.`,
+   destination ? `Destino: ${destination}.` : (airport ? `Local: ${airport}.` : 'Local do pernoite a confirmar.'),
+   'Toque em “Já acordei” para interromper os próximos avisos. Use “Soneca” para adiar.',
+  ], { footer: 'Alarme auxiliar. Mantenha também o despertador nativo do celular.' });
+  const sent = wakeupShouldSendTelegram(notificationMode) ? await telegramSendMessage(row.chat_id, text, { reply_markup: wakeupTelegramReplyMarkup(wakeupId, String(body.alarmUrl || ''), snoozeMinutes) }).catch((error) => ({ ok: false, error: error?.message || String(error) })) : { ok: false, skipped: true, reason: 'telegram_desativado_pelo_usuario' };
+  const callContext = { airport, destination, presentationTime, wakeupTime, leadMinutes, date: body.date || body.dateKey || body.date_key || '', timeZone: wakeupTimeZone };
+  const wakeupCall = wakeupShouldCall(notificationMode) && maxCalls > 0 ? await sendWakeupCallIfConfigured({ row, user, text: '', context: callContext }).catch((error) => ({ ok: false, error: error?.message || String(error) })) : { ok: false, skipped: true, reason: 'ligacao_desativada_pelo_usuario' };
+  if (sent?.ok) await scheduleWakeupTelegramLoop({ wakeupId, chatId: row.chat_id, text, alarmUrl: String(body.alarmUrl || ''), snoozeMinutes, maxReminders, row, user, context: callContext, notificationMode, maxCalls, callAfterSnoozes });
+  sendJson(res, 200, { ok: true, telegram: Boolean(sent?.ok), sent, wakeupCall, nativeTelegramCall: false, wakeupId, wakeupTime, presentationTime, destination, leadMinutes, timeZone: wakeupTimeZone, snoozeMinutes, maxReminders, notificationMode, maxCalls, callAfterSnoozes });
+  return true;
+ }
+
+ if (url.pathname === '/api/overnight-wakeup/ack' && req.method === 'GET') {
+  const id = String(url.searchParams.get('id') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+  const db = await ensureOvernightHotelLearningSchema().catch(() => getPool());
+  if (db && id) await db.query(`update crewcheck_wakeup_acks set acknowledged_at = now() where id = $1`, [id]).catch(() => null);
+  if (id && crewcheckWakeupTimers.has(id)) { clearTimeout(crewcheckWakeupTimers.get(id)); crewcheckWakeupTimers.delete(id); }
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(`<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:system-ui;background:#061425;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0"><main style="max-width:520px;padding:28px;border:1px solid rgba(255,255,255,.15);border-radius:28px;background:rgba(255,255,255,.06)"><h1>✅ Bom dia!</h1><p>Seu check-in de despertar foi registrado no CrewCheck.</p><p style="opacity:.75">Pode voltar ao Telegram ou abrir o app para acompanhar a programação.</p><a href="${PUBLIC_APP_URL}" style="display:inline-block;margin-top:12px;color:#061425;background:#67e8f9;padding:12px 18px;border-radius:16px;text-decoration:none;font-weight:800">Abrir CrewCheck</a></main></body></html>`);
+  return true;
+ }
+
+ if (url.pathname === '/api/staff-load/explain' && req.method === 'GET') {
+  sendJson(res, 200, {
+   ok: true,
+   title: 'Vivo de Extra · Lotação estimada',
+   exactLoadAvailable: false,
+   allowedApproach: [
+    'Integração oficial/autorizada com portal staff, ID travel, NDC/GDS ou companhia.',
+    'Sinal tarifário permitido, como disponibilidade bookable retornada por provedor autorizado.',
+    'Rede colaborativa verificada: tripulantes informam load/standby sem expor credenciais.',
+   ],
+   blockedApproach: [
+    'Não raspar portal interno sem autorização.',
+    'Não armazenar credenciais corporativas.',
+    'Não tentar burlar login, MFA, captcha ou políticas da companhia.',
+   ],
+   fields: ['chanceScore', 'riskLevel', 'seatsSignal', 'confidence', 'advisory'],
+   updatedAt: new Date().toISOString(),
+  });
+  return true;
+ }
+
+
  if (url.pathname === '/api/extra-flight-search' && req.method === 'GET') {
   try {
    const result = await fetchExtraFlightOffersWithDbCache(Object.fromEntries(url.searchParams.entries()));
@@ -9722,10 +17367,10 @@ async function handleApi(req, res, url) {
   if (!user) return true;
   try {
    const body = await readJsonBody(req, 128 * 1024).catch(() => ({}));
-   const isAdmin = isC32FAdminEmail(user.email) || String(user.role || '').toLowerCase() === 'admin';
+   const premiumRadar = radarConsultationLimitForUser(user) > CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS;
    const requested = Array.isArray(body?.airports) ? body.airports : AIRPORT_BOARD_DEFAULT_AIRPORTS;
-   const airports = [...new Set(requested.map((item) => String(item || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)).filter(Boolean))].slice(0, isAdmin ? 12 : 4);
-   const types = (Array.isArray(body?.types) ? body.types : ['departure']).map((item) => String(item).toLowerCase() === 'arrival' ? 'arrival' : 'departure').filter((value, index, arr) => arr.indexOf(value) === index).slice(0, isAdmin ? 2 : 1);
+   const airports = [...new Set(requested.map((item) => String(item || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)).filter(Boolean))].slice(0, premiumRadar ? CREWCHECK_RADAR_PREMIUM_AIRPORT_REFRESH_MAX : 4);
+   const types = (Array.isArray(body?.types) ? body.types : ['departure', 'arrival']).map((item) => String(item).toLowerCase() === 'arrival' ? 'arrival' : 'departure').filter((value, index, arr) => arr.indexOf(value) === index).slice(0, premiumRadar ? 2 : 1);
    const results = [];
    for (const airport of airports) {
     for (const type of types) {
@@ -9741,6 +17386,22 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+
+
+ if (url.pathname === '/api/radar/live-track' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  try {
+   const params = Object.fromEntries(url.searchParams.entries());
+   params.flightNumber = params.flightNumber || params.flight || params.number || '';
+   params.displayTimeZone = params.displayTimeZone || process.env.CREWCHECK_LOCAL_TIMEZONE || 'America/Sao_Paulo';
+   const snapshot = await getAirlabsLiveTrackSnapshot(params);
+   sendJson(res, 200, snapshot);
+  } catch (error) {
+   sendJson(res, 200, { ok: false, source: 'AirLabs Live ADS-B', message: error?.message || 'Rastreamento ao vivo indisponível no momento.', providerStatus: radarProviderStatus(), updatedAt: new Date().toISOString() });
+  }
+  return true;
+ }
 
 
  if (url.pathname === '/api/radar/private-status' && req.method === 'GET') {
@@ -9768,7 +17429,8 @@ async function handleApi(req, res, url) {
   if (!user) return true;
   try {
    const body = await readJsonBody(req, 256 * 1024);
-   const flights = Array.isArray(body?.flights) ? body.flights.slice(0, 12) : [];
+   const radarBatchLimit = radarConsultationLimitForUser(user);
+   const flights = Array.isArray(body?.flights) ? body.flights.slice(0, radarBatchLimit) : [];
    const rows = [];
    for (const item of flights) {
     const params = new URLSearchParams();
@@ -9783,7 +17445,7 @@ async function handleApi(req, res, url) {
     const status = await getFlightStatusSnapshot(params);
     rows.push(radarSanitizedStatus(status, Object.fromEntries(params.entries())));
    }
-   sendJson(res, 200, { ok: true, rows, sourceLabel: 'Radar CrewCheck', providerStatus: radarProviderStatus(), updatedAt: new Date().toISOString() });
+   sendJson(res, 200, { ok: true, rows, sourceLabel: 'Radar CrewCheck Multi-API', providerStatus: radarProviderStatus(), radarBatchLimit, premiumUnlimited: radarBatchLimit > CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS, updatedAt: new Date().toISOString() });
   } catch (error) {
    sendJson(res, 200, { ok: false, rows: [], sourceLabel: 'Radar CrewCheck', message: 'Radar em lote indisponível no momento.', updatedAt: new Date().toISOString() });
   }
@@ -9818,7 +17480,7 @@ async function handleApi(req, res, url) {
  if (url.pathname === '/api/sabre-health' && req.method === 'GET') {
   const user = await requireAuth(req, res);
   if (!user) return true;
-  const isAdmin = isC32FAdminEmail(user.email) || String(user.role || '').toLowerCase() === 'admin';
+  const isAdmin = isCrewCheckAdminUser(user);
   if (!isAdmin) { sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' }); return true; }
   const testToken = ['1', 'true', 'yes'].includes(String(url.searchParams.get('testToken') || '').toLowerCase());
   const health = await sabreHealthSnapshot({ testToken });
@@ -9826,9 +17488,36 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+ if (url.pathname === '/api/catalog/airlines' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const catalog = await getAirlineCatalog({ force: url.searchParams.get('refresh') === '1' });
+  sendJson(res, 200, { ok: true, count: catalog.data.length, source: catalog.source, error: catalog.error || null, data: filterCatalogItems(catalog.data, url.searchParams.get('q') || '', url.searchParams.get('limit') || 600) });
+  return true;
+ }
+
+ if (url.pathname === '/api/catalog/airports' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const catalog = await getAirportCatalog({ force: url.searchParams.get('refresh') === '1' });
+  const country = String(url.searchParams.get('country') || '').toUpperCase();
+  const base = country ? catalog.data.filter((item) => String(item.country_code || '').toUpperCase() === country) : catalog.data;
+  sendJson(res, 200, { ok: true, count: base.length, source: catalog.source, error: catalog.error || null, attribution: 'This site or product includes IATA/ICAO List data available from https://github.com/ip2location/ip2location-iata-icao.', data: filterCatalogItems(base, url.searchParams.get('q') || '', url.searchParams.get('limit') || 1000) });
+  return true;
+ }
+
+ if (url.pathname === '/api/catalog/lookup' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const data = await lookupCatalog({ airline: url.searchParams.get('airline') || '', airport: url.searchParams.get('airport') || '', force: url.searchParams.get('refresh') === '1' });
+  sendJson(res, 200, { ok: true, ...data });
+  return true;
+ }
+
  if (url.pathname === '/api/radar-health' && req.method === 'GET') {
   const user = await requireAuth(req, res);
   if (!user) return true;
+  const hasAirlabs = airlabsConfigured();
   const hasAviationstack = Boolean(aviationstackAccessKey());
   const airport = String(url.searchParams.get('airport') || 'BSB').toUpperCase().slice(0, 3);
   const type = String(url.searchParams.get('type') || 'departure').toLowerCase() === 'arrival' ? 'arrival' : 'departure';
@@ -9837,6 +17526,7 @@ async function handleApi(req, res, url) {
   const board = await getAirportBoardSnapshot(diagParams);
   sendJson(res, 200, {
    ok: true,
+   hasAirlabs,
    hasAviationstack,
    hasFlightStats: flightStatsCredentials().ready,
    hasSearchAPI: Boolean(SEARCHAPI_API_KEY),
@@ -9870,6 +17560,96 @@ async function handleApi(req, res, url) {
   };
   json(res, 200, result);
   return;
+ }
+
+
+ if (url.pathname === '/api/weather/airport' && req.method === 'GET') {
+  const user = await getAuthUser(req).catch(() => null);
+  if (!user) { sendJson(res, 401, { ok: false, message: 'Login necessário.' }); return true; }
+  const requestedDate = String(url.searchParams.get('date') || '').slice(0, 10);
+  const tripStartDate = String(url.searchParams.get('tripStartDate') || url.searchParams.get('trip_start_date') || '').slice(0, 10);
+  const nearWeatherWindowDays = Math.max(1, Number(process.env.CREWCHECK_WEATHER_PRELOAD_DAYS || 4));
+  const tripWeatherLookaheadDays = Math.max(4, Number(process.env.CREWCHECK_TRIP_WEATHER_LOOKAHEAD_DAYS || 10));
+  if (requestedDate) {
+   const target = new Date(`${requestedDate}T12:00:00`);
+   const today = new Date(); today.setHours(12, 0, 0, 0);
+   const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+   let allowedByTripStart = false;
+   if (tripStartDate) {
+    const tripStart = new Date(`${tripStartDate}T12:00:00`);
+    const untilTripStart = Math.round((tripStart.getTime() - today.getTime()) / 86400000);
+    const fromTripStart = Math.round((target.getTime() - tripStart.getTime()) / 86400000);
+    allowedByTripStart = Number.isFinite(untilTripStart) && Number.isFinite(fromTripStart) && untilTripStart <= 1 && fromTripStart >= 0 && fromTripStart <= tripWeatherLookaheadDays;
+   }
+   if (Number.isFinite(diffDays) && diffDays > nearWeatherWindowDays && !allowedByTripStart) {
+    sendJson(res, 200, { ok: false, deferred: true, message: 'Previsão será atualizada 1 dia antes do início da chave ou mais perto do pernoite para reduzir consultas.', airport: url.searchParams.get('airport') || 'BSB', daily: [], current: null, updatedAt: new Date().toISOString() });
+    return true;
+   }
+  }
+  const data = await fetchAirportWeatherSnapshot({ airport: url.searchParams.get('airport') || 'BSB', date: requestedDate || '', days: url.searchParams.get('days') || 3 });
+  sendJson(res, 200, data);
+  return true;
+ }
+
+ if (url.pathname === '/api/smart-return-home' && req.method === 'GET') {
+  try {
+   const airport = normalizeAirportCode(url.searchParams.get('airport') || url.searchParams.get('originAirport') || 'BSB');
+   const origin = CREWCHECK_AIRPORT_COORDS[airport] || CREWCHECK_AIRPORT_COORDS.BSB;
+   const destinationLat = parseFiniteNumber(url.searchParams.get('homeLat') || url.searchParams.get('lat') || url.searchParams.get('destinationLat'));
+   const destinationLng = parseFiniteNumber(url.searchParams.get('homeLng') || url.searchParams.get('lng') || url.searchParams.get('destinationLng'));
+   const homeCep = String(url.searchParams.get('homeCep') || url.searchParams.get('cep') || '').trim();
+   const homeAddress = String(url.searchParams.get('homeAddress') || url.searchParams.get('address') || '').trim();
+   const landingIso = isoOrNull(url.searchParams.get('landingIso') || url.searchParams.get('targetIso') || url.searchParams.get('departureTime')) || new Date().toISOString();
+   const bufferMinutes = Math.min(180, Math.max(0, parseFiniteNumber(url.searchParams.get('bufferMinutes'), 25) || 25));
+   let destination = null;
+   let geocoded = null;
+   if (destinationLat !== null && destinationLng !== null) destination = { lat: destinationLat, lng: destinationLng, name: 'Casa', source: 'endereço salvo' };
+   if (!destination && (homeCep || homeAddress)) {
+    geocoded = await geocodeCrewCheckAddress({ cep: homeCep, address: homeAddress }).catch((error) => ({ ok: false, message: sanitizePublicError(error?.message || String(error)) }));
+    if (geocoded?.ok) destination = { lat: geocoded.lat, lng: geocoded.lng, name: 'Casa', address: geocoded.formattedAddress, source: 'endereço validado' };
+   }
+   if (!destination?.lat || !destination?.lng) {
+    sendJson(res, 200, { ok: false, code: 'HOME_ADDRESS_REQUIRED', title: 'Volta pra Casa Inteligente', message: 'Cadastre/valide sua casa no app para calcular a volta do aeroporto até casa.' });
+    return true;
+   }
+   const departure = new Date(new Date(landingIso).getTime() + bufferMinutes * 60_000);
+   const modes = ['DRIVE', 'RIDE_APP', 'TWO_WHEELER', 'TRANSIT'];
+   const routeOptions = [];
+   const errors = [];
+   for (const mode of modes) {
+    try {
+     let route = null;
+     if (mode === 'RIDE_APP') route = await computeRideAppPlan({ origin, destination, airport, target: departure, arrivalDeadline: departure, now: new Date(), accuracyMeters: 50 });
+     else if (mode === 'TRANSIT') route = await computeGoogleRoutesPlan({ origin, destination, departureTime: departure.toISOString(), arrivalTime: null, mode: 'TRANSIT', sourceSuffix: 'volta para casa' });
+     else route = await computeGoogleRoutesPlan({ origin, destination, departureTime: departure.toISOString(), mode });
+     if (route?.durationSeconds) routeOptions.push({ ...route, durationMinutes: Math.max(1, Math.round(route.durationSeconds / 60)), leaveAtIso: departure.toISOString(), leaveAtLabel: formatClockIso(departure), arriveAtIso: new Date(departure.getTime() + route.durationSeconds * 1000).toISOString(), arriveAtLabel: formatClockIso(new Date(departure.getTime() + route.durationSeconds * 1000)) });
+    } catch (error) {
+     errors.push(`${mode}: ${sanitizePublicError(error?.message || error)}`);
+    }
+   }
+   routeOptions.sort((a, b) => (a.durationMinutes || 9999) - (b.durationMinutes || 9999));
+   const primary = routeOptions[0] || null;
+   sendJson(res, 200, {
+    ok: Boolean(primary),
+    returnHome: true,
+    title: 'Volta pra Casa Inteligente',
+    airport,
+    airportName: origin.name || airport,
+    home: { name: 'Casa', source: destination.source || geocoded?.source || 'endereço salvo', address: destination.address || geocoded?.formattedAddress || homeAddress || null },
+    landingIso,
+    bufferMinutes,
+    readyToLeaveIso: departure.toISOString(),
+    readyToLeaveLabel: formatClockIso(departure),
+    primary,
+    routeOptions,
+    message: primary ? `Após pousar em ${airport}, considere ${bufferMinutes} min para desembarque e saída do terminal. Melhor rota estimada: ${primary.label || primary.mode}, ${primary.localizedDuration || primary.durationMinutes + ' min'}.` : 'Não consegui calcular rota até casa agora.',
+    diagnostics: { tomTomConfigured: Boolean(getTomTomServerKey()), googleConfigured: Boolean(getGoogleServerKey()), errors: errors.slice(0, 4) },
+    updatedAt: new Date().toISOString(),
+   });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, returnHome: true, title: 'Volta pra Casa Inteligente', message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
  }
 
  if (url.pathname === '/api/smart-departure/address/validate' && (req.method === 'GET' || req.method === 'POST')) {
@@ -10160,6 +17940,11 @@ async function handleApi(req, res, url) {
     sendJson(res, 400, { ok: false, message: 'Informe um usuário do Telegram válido: 5 a 32 caracteres, usando letras, números ou underline. O @ já é automático.' });
     return true;
    }
+   const phoneCountryIso = normalizePhoneCountryIso(body.phoneCountryIso || body.phone_country_iso || 'BR');
+   const phoneCountryCode = normalizePhoneCountryCode(body.phoneCountryCode || body.phone_country_code || '+55');
+   const phoneE164 = normalizePhoneE164(body.phoneE164 || body.phone || body.phoneLocal || body.phone_local || '', phoneCountryCode);
+   const profileRank = String(body.rank || body.function || body.crewFunction || '').trim().replace(/[<>]/g, '').slice(0, 40) || null;
+   const profileBase = String(body.base || body.crewBase || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || null;
    const name = fullName;
    const emailVerification = makeEmailVerificationPayload(email);
    const shouldVerifyEmail = EMAIL_VERIFICATION_REQUIRED;
@@ -10168,8 +17953,9 @@ async function handleApi(req, res, url) {
       id, name, email, password_hash, role, crew_id, base, rank,
       temp_password_hash, temp_password_expires_at,
       email_verified, email_verified_at, email_verification_token_hash, email_verification_expires_at, email_verification_sent_at,
-      registration_ip, registration_user_agent, registration_captcha_provider, virtual_base_enabled, virtual_base_airport
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),$15,$16,$17,$18,$19)
+      registration_ip, registration_user_agent, registration_captcha_provider, virtual_base_enabled, virtual_base_airport,
+      phone_country_iso, phone_country_code, phone_e164
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),$15,$16,$17,$18,$19,$20,$21,$22)
      returning *`,
     [
      newId(),
@@ -10178,8 +17964,8 @@ async function handleApi(req, res, url) {
      hashPassword(password),
      body.role || 'crew',
      null,
-     null,
-     null,
+     profileBase,
+     profileRank,
      null,
      null,
      !shouldVerifyEmail,
@@ -10191,6 +17977,9 @@ async function handleApi(req, res, url) {
      captchaResult.provider || null,
      hasVirtualBase,
      virtualBaseAirport,
+     phoneCountryIso,
+     phoneCountryCode,
+     phoneE164 || null,
     ],
    );
    let user = userResult.rows[0];
@@ -10220,7 +18009,7 @@ async function handleApi(req, res, url) {
     newId(),
     user.id,
     'auth.register',
-    JSON.stringify({ email: maskEmailForLog(email), hasName: Boolean(name), emailVerificationRequired: shouldVerifyEmail, verificationEmailSent: Boolean(emailResult.ok), captcha: captchaResult.provider || null, hasVirtualBase, virtualBaseAirport, telegramUsernameRequested: Boolean(telegramUsername), telegramUsernameMasked: telegramMaskUsername(telegramUsername) }),
+    JSON.stringify({ email: maskEmailForLog(email), hasName: Boolean(name), emailVerificationRequired: shouldVerifyEmail, verificationEmailSent: Boolean(emailResult.ok), captcha: captchaResult.provider || null, hasVirtualBase, virtualBaseAirport, telegramUsernameRequested: Boolean(telegramUsername), telegramUsernameMasked: telegramMaskUsername(telegramUsername), profileRank, profileBase }),
    ]).catch(() => null);
    if (shouldVerifyEmail) {
     sendJson(res, 201, {
@@ -10261,8 +18050,8 @@ async function handleApi(req, res, url) {
    const user = result.rows[0];
    let emailResult = { ok: false, configured: false };
    if (user) {
-    const temporaryPassword = generateTemporaryPassword();
-    const temporaryExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const temporaryPassword = String(Math.floor(100000 + Math.random() * 900000));
+    const temporaryExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     await db.query('update crewcheck_users set temp_password_hash = $1, temp_password_expires_at = $2, updated_at = now() where id = $3', [hashPassword(temporaryPassword), temporaryExpiresAt, user.id]);
     try {
      const mail = buildPasswordResetEmail({ email, temporaryPassword });
@@ -10279,6 +18068,36 @@ async function handleApi(req, res, url) {
   }
   return true;
  }
+
+ if (url.pathname === '/api/auth/reset-password' && req.method === 'POST') {
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 128 * 1024);
+   const email = normalizeEmail(body.email);
+   const code = String(body.code || body.temporaryPassword || '').trim();
+   const password = String(body.password || '');
+   const confirmPassword = String(body.confirmPassword || '');
+   if (!email || !email.includes('@') || !code || password.length < 6 || password !== confirmPassword) {
+    sendJson(res, 400, { ok: false, message: 'Informe e-mail, código temporário e nova senha com confirmação idêntica.' });
+    return true;
+   }
+   const result = await db.query('select * from crewcheck_users where email = $1 and is_active = true limit 1', [email]);
+   const user = result.rows[0];
+   if (!user || !canUseTemporaryPassword(code, user)) {
+    sendJson(res, 400, { ok: false, code: 'INVALID_RESET_CODE', message: 'Código temporário inválido ou expirado. Solicite um novo código.' });
+    return true;
+   }
+   await db.query('update crewcheck_users set password_hash = $1, temp_password_hash = null, temp_password_expires_at = null, email_verified = true, email_verified_at = coalesce(email_verified_at, now()), updated_at = now() where id = $2', [hashPassword(password), user.id]);
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, metadata) values ($1, $2, $3, $4::jsonb)', [newId(), user.id, 'auth.password_reset.completed', JSON.stringify({ email: maskEmailForLog(email) })]).catch(() => null);
+   sendJson(res, 200, { ok: true, message: 'Senha redefinida com sucesso.' });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível redefinir a senha.', detail: error.message, code: error.code, db: dbErrorInfo(error) });
+  }
+  return true;
+ }
+
 
  if (url.pathname === '/api/auth/login' && req.method === 'POST') {
   const db = requireDatabase(res);
@@ -10309,7 +18128,8 @@ async function handleApi(req, res, url) {
     return true;
    }
    if (validTemporaryPassword) {
-    await db.query('update crewcheck_users set temp_password_hash = null, temp_password_expires_at = null, updated_at = now() where id = $1', [user.id]);
+    sendJson(res, 403, { ok: false, code: 'TEMP_PASSWORD_REQUIRES_RESET', message: 'Código temporário validado apenas na recuperação de senha. Defina uma nova senha antes de entrar.' });
+    return true;
    }
    const session = await createSession(db, user, req);
    sendJson(res, 200, { ok: true, user: publicUser(user), token: session.token, expiresAt: session.expiresAt });
@@ -10323,6 +18143,44 @@ async function handleApi(req, res, url) {
   const user = await requireAuth(req, res);
   if (!user) return true;
   sendJson(res, 200, { ok: true, user: publicUser(user) || user });
+  return true;
+ }
+
+
+ if (url.pathname === '/api/profile/contact' && (req.method === 'GET' || req.method === 'POST')) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  await ensureSchema();
+  if (req.method === 'GET') {
+   sendJson(res, 200, { ok: true, contact: { phoneCountryIso: user.phone_country_iso || 'BR', phoneCountryCode: user.phone_country_code || '+55', phoneE164: user.phone_e164 || '', rank: user.rank || '', base: user.base || '' }, user: publicUser(user) || user });
+   return true;
+  }
+  const body = await readJsonBody(req, 128 * 1024);
+  const phoneCountryIso = normalizePhoneCountryIso(body.phoneCountryIso || body.phone_country_iso || 'BR');
+  const phoneCountryCode = normalizePhoneCountryCode(body.phoneCountryCode || body.phone_country_code || '+55');
+  const phoneE164 = normalizePhoneE164(body.phoneE164 || body.phone || body.phoneLocal || body.phone_local || '', phoneCountryCode);
+  const profileRank = body.rank === undefined && body.function === undefined && body.crewFunction === undefined ? undefined : String(body.rank || body.function || body.crewFunction || '').trim().replace(/[<>]/g, '').slice(0, 40);
+  const profileBase = body.base === undefined && body.crewBase === undefined ? undefined : String(body.base || body.crewBase || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  if (profileRank !== undefined || profileBase !== undefined) {
+   await db.query('update crewcheck_users set phone_country_iso = $1, phone_country_code = $2, phone_e164 = $3, rank = coalesce($4, rank), base = coalesce($5, base), updated_at = now() where id = $6', [phoneCountryIso, phoneCountryCode, phoneE164 || null, profileRank || null, profileBase || null, user.id]);
+  } else {
+   await db.query('update crewcheck_users set phone_country_iso = $1, phone_country_code = $2, phone_e164 = $3, updated_at = now() where id = $4', [phoneCountryIso, phoneCountryCode, phoneE164 || null, user.id]);
+  }
+  const row = await telegramLinkForUser(db, user.id).catch(() => null);
+  if (row) {
+   const prefs = normalizeTelegramPreferences(row.preferences_json || {});
+   prefs.userPhone = phoneE164;
+   prefs.phoneE164 = phoneE164;
+   prefs.infobipPhone = phoneE164;
+   prefs.twilioPhone = phoneE164;
+   prefs.userPhoneCountryIso = phoneCountryIso;
+   prefs.userPhoneCountryCode = phoneCountryCode;
+   await db.query('update crewcheck_telegram_links set preferences_json = $1, updated_at = now() where id = $2', [JSON.stringify(prefs), row.id]).catch(() => null);
+  }
+  const fresh = await db.query('select * from crewcheck_users where id = $1 limit 1', [user.id]).catch(() => ({ rows: [user] }));
+  sendJson(res, 200, { ok: true, contact: { phoneCountryIso, phoneCountryCode, phoneE164, rank: fresh.rows?.[0]?.rank || '', base: fresh.rows?.[0]?.base || '' }, user: publicUser(fresh.rows?.[0] || user) || fresh.rows?.[0] || user });
   return true;
  }
 
@@ -10385,9 +18243,9 @@ async function handleApi(req, res, url) {
     ? await db.query(`select now() as now, database() as database_name, current_user() as user_name, @@hostname as server_name, @@port as server_port`)
     : await db.query(`select now() as now, current_database() as database, current_user as user_name,
         inet_server_addr()::text as server_addr, inet_server_port() as server_port`);
-   sendJson(res, 200, { ok: true, connected: true, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, ...result.rows[0] });
+   sendJson(res, 200, { ok: true, connected: true, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, storage: summarizeStorageStatus(), ...result.rows[0] });
   } catch (error) {
-   sendJson(res, 500, { ok: false, connected: false, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, message: 'Falha ao conectar ou migrar a base de dados.', detail: error.message, code: error.code, db: dbErrorInfo(error) });
+   sendJson(res, 500, { ok: false, connected: false, databaseConfigured: Boolean(DATABASE_URL), engine: DB_KIND, storage: summarizeStorageStatus(), message: 'Falha ao conectar ou migrar a base de dados.', detail: error.message, code: error.code, db: dbErrorInfo(error) });
   }
   return true;
  }
@@ -10440,16 +18298,34 @@ async function handleApi(req, res, url) {
     return true;
    }
    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 20), 1), 100);
+   const managerMode = /^(1|true|yes|sim)$/i.test(String(url.searchParams.get('manager') || url.searchParams.get('allVersions') || '').trim());
    const result = await db.query(
     `select id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-        source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum
+        source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+        is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+        source_file_size_bytes, storage_uploaded_at
       from crewcheck_rosters
-     where user_id = $2
-     order by created_at desc
+     where user_id = $2 and deleted_at is null
+     order by is_active desc, coalesce(active_at, updated_at, created_at) desc, created_at desc
      limit $1`,
     [limit, user.id],
    );
-   sendJson(res, 200, { ok: true, rosters: dedupeRosterRowsByPeriod(result.rows).map(summarizeRosterRow) });
+   let rows = managerMode ? result.rows : dedupeRosterRowsByPeriod(result.rows);
+   let summaries = rows.map(summarizeRosterRow);
+   if (managerMode) {
+    const linkRow = await telegramLinkForUser(db, user.id).catch(() => null);
+    const telegramSnapshot = telegramConciergeRosterSnapshotFromLink(linkRow);
+    const snapshotSummary = summarizeTelegramSnapshotRosterRow(telegramSnapshot);
+    if (snapshotSummary) {
+     const snapshotKey = snapshotSummary.checksum || `${snapshotSummary.year || ''}:${snapshotSummary.month || ''}:${snapshotSummary.crewId || snapshotSummary.crewName || ''}`;
+     const alreadyListed = summaries.some((item) => {
+      const itemKey = item.checksum || `${item.year || ''}:${item.month || ''}:${item.crewId || item.crewName || ''}`;
+      return item.id === snapshotSummary.id || (snapshotKey && itemKey === snapshotKey);
+     });
+     if (!alreadyListed) summaries = [snapshotSummary, ...summaries];
+    }
+   }
+   sendJson(res, 200, { ok: true, storage: summarizeStorageStatus(), rosters: summaries });
   } catch (error) {
    sendJson(res, 500, { ok: false, message: 'Não foi possível listar as escalas salvas.', detail: error.message });
   }
@@ -10463,24 +18339,39 @@ async function handleApi(req, res, url) {
   if (!db) return true;
   try {
    await ensureSchema();
-   const body = await readJsonBody(req);
+   const body = await readJsonBody(req, CREWCHECK_ROSTER_JSON_BODY_LIMIT_BYTES);
    const roster = body.roster;
    if (!roster || !Array.isArray(roster.days)) {
     sendJson(res, 400, { ok: false, message: 'Payload inválido: roster.days é obrigatório.' });
     return true;
    }
 
-   await assertRosterBelongsToPremiumUser(db, user, roster, body.sourceFileName || null);
+   await assertRosterBelongsToAccountUser(db, user, roster, body.sourceFileName || null);
+   const billingForRosterSave = billingStatusFromUser(user);
+   if (!billingForRosterSave?.premiumAccess && !isBillingAdmin(user)) {
+    const existingFree = await db.query('select count(*)::int as total from crewcheck_rosters where user_id = $1', [user.id]).catch(() => ({ rows: [{ total: 0 }] }));
+    const totalFree = Number(existingFree.rows?.[0]?.total || 0);
+    if (totalFree >= Number(process.env.CREWCHECK_FREE_ROSTER_ARCHIVE_LIMIT || 1)) {
+     sendJson(res, 402, { ok: false, code: 'PREMIUM_ARCHIVE_REQUIRED', message: 'O plano gratuito salva apenas uma escala no histórico. Premium libera histórico de meses, Telegram Concierge completo, diárias e salário.' });
+     return true;
+    }
+   }
 
    const compliance = body.compliance || null;
    const gym = Array.isArray(body.gym) ? body.gym : [];
    const alerts = Array.isArray(compliance?.alerts) ? compliance.alerts : [];
    const criticalAlerts = alerts.filter((alert) => alert?.severity === 'error');
+   const sourceFileSize = Number(body.sourceFileSize || 0) || null;
+   const rawSourceFileDataBase64 = typeof body.sourceFileDataBase64 === 'string' ? body.sourceFileDataBase64 : null;
+   const estimatedSourceBytes = rawSourceFileDataBase64 ? Math.floor(normalizeBase64Input(rawSourceFileDataBase64).length * 3 / 4) : 0;
+   const sourceFileTooLargeForInlineBackup = Boolean(rawSourceFileDataBase64 && estimatedSourceBytes > CREWCHECK_STORAGE_MAX_FILE_BYTES);
+   const sourceFileDataBase64 = sourceFileTooLargeForInlineBackup ? null : rawSourceFileDataBase64;
+   const sourceMimeType = typeof body.sourceMimeType === 'string' ? body.sourceMimeType : null;
    const payloadChecksum = body.checksum || checksumPayload({ roster, compliance, gym, sourceFileName: body.sourceFileName || null });
 
    const existing = await db.query(
     `select id from crewcheck_rosters
-     where checksum = $1 and (($2::uuid is null and user_id is null) or user_id = $2)
+     where checksum = $1 and deleted_at is null and (($2::uuid is null and user_id is null) or user_id = $2)
      limit 1`,
     [payloadChecksum, user.id || null],
    );
@@ -10530,7 +18421,9 @@ async function handleApi(req, res, url) {
          checksum = $17
       where id = $18
       returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+           is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+           source_file_size_bytes, storage_uploaded_at`,
      [...params, existing.rows[0].id],
     );
     action = 'roster.updated_dedup';
@@ -10542,10 +18435,19 @@ async function handleApi(req, res, url) {
        alerts_count, critical_alerts_count, checksum
       ) values ($18,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17)
       returning id, created_at, updated_at, crew_name, crew_id, base, rank, airline, period_year, period_month,
-           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum`,
+           source_file_name, score, intensity_score, alerts_count, critical_alerts_count, checksum,
+           is_active, active_at, deleted_at, import_status, storage_provider, source_storage_path,
+           source_file_size_bytes, storage_uploaded_at`,
      [...params, newId()],
     );
    }
+
+   await markRosterActive(db, user.id || null, result.rows[0].id);
+   let storageResult = sourceFileTooLargeForInlineBackup
+    ? { ok: false, skipped: true, reason: 'inline_backup_payload_trimmed', size: estimatedSourceBytes, max: CREWCHECK_STORAGE_MAX_FILE_BYTES }
+    : await processRosterStorageBackup(db, user, result.rows[0], { sourceFileDataBase64, sourceFileName: body.sourceFileName || null, sourceMimeType, sourceFileSize }, { importSource: 'app_upload' });
+   const refreshedRow = await refreshRosterSummaryRow(db, user.id || null, result.rows[0].id).catch(() => null);
+   if (refreshedRow) result.rows[0] = refreshedRow;
 
    if (user.id && (roster.crewId || roster.base || roster.rank || roster.crewName)) {
     await db.query(
@@ -10553,7 +18455,7 @@ async function handleApi(req, res, url) {
        set crew_id = coalesce(nullif($2, ''), crew_id),
          base = coalesce(nullif($3, ''), base),
          rank = coalesce(nullif($4, ''), rank),
-         name = case when $5 is not null and length(trim($5)) > 2 then $5 else name end,
+         name = case when $5 is not null and length(trim($5)) > 2 and upper(trim($5)) not in ('TRIPULANTE','TRIPULANTE EXEMPLO') then $5 else name end,
          updated_at = now()
       where id = $1`,
      [user.id, roster.crewId || null, roster.base || null, roster.rank || null, roster.crewName || null],
@@ -10565,10 +18467,13 @@ async function handleApi(req, res, url) {
     user.id || null,
     action,
     result.rows[0].id,
-    JSON.stringify({ sourceFileName: body.sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum }),
+    JSON.stringify({ sourceFileName: body.sourceFileName || null, alerts: alerts.length, criticalAlerts: criticalAlerts.length, checksum: payloadChecksum, storage: storageResult || null }),
    ]);
 
-   if (user.id) {
+   await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName: body.sourceFileName || null, checksum: payloadChecksum }).catch(() => null);
+
+   const wantsTelegramImportNotice = /^(1|true|yes|sim)$/i.test(String(body.notifyTelegram || body.telegramPush || '').trim());
+   if (user.id && wantsTelegramImportNotice) {
     await notifyTelegramForUser(db, user.id, 'roster', existing.rowCount ? 'Escala atualizada' : 'Nova escala importada', [
      `${String(roster.month || '').padStart(2, '0')}/${roster.year || '----'} · Base ${roster.base || 'não informada'}`,
      alerts.length ? `${alerts.length} alerta(s) mapeado(s) · ${criticalAlerts.length} crítico(s).` : 'Nenhum alerta crítico identificado na importação.',
@@ -10580,6 +18485,178 @@ async function handleApi(req, res, url) {
   } catch (error) {
    const status = error.statusCode || 500;
    sendJson(res, status, { ok: false, message: error.code === 'ROSTER_IDENTITY_MISMATCH' ? error.message : 'Não foi possível salvar a escala.', detail: error.message, code: error.code || null, metadata: error.metadata || null });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/rosters/active' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  if (!user.id) {
+   sendJson(res, 404, { ok: false, message: 'Escala ativa não encontrada.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const result = await db.query(
+    `select * from crewcheck_rosters
+      where user_id = $1 and deleted_at is null
+      order by is_active desc, coalesce(active_at, updated_at, created_at) desc, created_at desc
+      limit 18`,
+    [user.id],
+   );
+   if (!result.rowCount) {
+    const linkRow = await telegramLinkForUser(db, user.id).catch(() => null);
+    const snapshot = telegramConciergeRosterSnapshotFromLink(linkRow);
+    const snapshotSummary = summarizeTelegramSnapshotRosterRow(snapshot);
+    if (snapshotSummary && snapshot?.roster_json?.days?.length) {
+     sendJson(res, 200, {
+      ok: true,
+      roster: snapshotSummary,
+      data: { roster: snapshot.roster_json, compliance: snapshot.compliance_json, gym: snapshot.gym_json || [] },
+      source: 'telegram-snapshot',
+      notice: 'Escala ativa recuperada do espelho do Concierge Telegram.',
+     });
+     return true;
+    }
+    sendJson(res, 404, { ok: false, message: 'Nenhuma escala ativa salva para este usuário.' });
+    return true;
+   }
+
+   const parseRosterDayDate = (value) => {
+    const raw = String(value || '').trim();
+    let m = raw.match(/^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{2,4})$/);
+    if (m) {
+     const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+     return new Date(year, Number(m[2]) - 1, Number(m[1]), 12, 0, 0, 0);
+    }
+    m = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+    const date = new Date(raw);
+    return Number.isFinite(date.getTime()) ? date : null;
+   };
+   const rosterBounds = (row) => {
+    const days = Array.isArray(row?.roster_json?.days) ? row.roster_json.days : [];
+    const dates = days.map((day) => parseRosterDayDate(day?.date)).filter((date) => date && Number.isFinite(date.getTime()));
+    if (!dates.length) return { first: null, last: null };
+    return { first: new Date(Math.min(...dates.map((date) => date.getTime()))), last: new Date(Math.max(...dates.map((date) => date.getTime()))) };
+   };
+   const today = new Date();
+   today.setHours(0, 0, 0, 0);
+   const rows = result.rows.map((row) => ({ row, bounds: rosterBounds(row) })).filter((item) => item.bounds.first && item.bounds.last);
+   const active = rows.find((item) => item.row.is_active);
+   const liveRows = rows.filter((item) => item.bounds.last.getTime() >= today.getTime()).sort((a, b) => a.bounds.first.getTime() - b.bounds.first.getTime());
+   let chosen = active && active.bounds.last.getTime() >= today.getTime() ? active : liveRows[0] || active || rows[0];
+
+   // Se o mês atual ainda está em vigor e a próxima escala já foi salva, entrega uma escala contínua:
+   // final do mês atual + início do próximo. Depois que o mês atual vence, a próxima passa a ser exibida sozinha.
+   let mergedRoster = chosen?.row?.roster_json;
+   let mergedSource = chosen?.row?.is_active ? 'active-roster-smart' : 'latest-roster-smart';
+   const nextRow = liveRows.find((item) => item !== chosen && item.bounds.first.getTime() > chosen.bounds.first.getTime());
+   if (mergedRoster?.days?.length && nextRow?.row?.roster_json?.days?.length && chosen.bounds.last.getTime() >= today.getTime()) {
+    const bridgeLimit = chosen.bounds.last.getTime() + 10 * 24 * 60 * 60 * 1000;
+    if (nextRow.bounds.first.getTime() <= bridgeLimit) {
+     const seen = new Set();
+     const mergedDays = [];
+     for (const day of [...(mergedRoster.days || []), ...(nextRow.row.roster_json.days || [])]) {
+      const key = `${day?.date || ''}|${day?.type || ''}|${day?.pairingCode || ''}|${day?.dutyReport || ''}|${day?.dutyDebrief || ''}|${(day?.legs || []).map((leg) => leg.flightNumber).join('-')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      mergedDays.push(day);
+     }
+     mergedRoster = {
+      ...mergedRoster,
+      days: mergedDays,
+      month: Number(mergedRoster.month || today.getMonth() + 1),
+      year: Number(mergedRoster.year || today.getFullYear()),
+      rawText: `${mergedRoster.rawText || ''}\n\n--- Próxima escala anexada automaticamente ---\n${nextRow.row.roster_json.rawText || ''}`.trim(),
+      totals: mergedRoster.totals || nextRow.row.roster_json.totals,
+     };
+     mergedSource = 'continuous-current-next-roster';
+    }
+   }
+
+   const row = chosen.row;
+   sendJson(res, 200, {
+    ok: true,
+    roster: summarizeRosterRow(row),
+    data: { roster: mergedRoster, compliance: null, gym: [] },
+    source: mergedSource,
+    notice: mergedSource === 'continuous-current-next-roster' ? 'Escala contínua: final do mês atual com início da próxima escala já salva.' : undefined,
+   });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível recuperar a escala ativa.', detail: error.message, code: error.code || null });
+  }
+  return true;
+ }
+
+ const rosterOpenQueryMatch = url.pathname === '/api/rosters/open' && req.method === 'GET';
+ if (rosterOpenQueryMatch) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  if (!user.id) {
+   sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const id = String(url.searchParams.get('id') || '').trim();
+   if (!id) {
+    sendJson(res, 400, { ok: false, message: 'ID da escala é obrigatório.' });
+    return true;
+   }
+   const result = await db.query(
+    'select * from crewcheck_rosters where id = $1 and user_id = $2 and deleted_at is null limit 1',
+    [id, user.id],
+   );
+   if (!result.rowCount) {
+    sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+    return true;
+   }
+   const row = result.rows[0];
+   const mergedRoster = await maybeMergeAdjacentRosterForContinuity(db, user.id, row);
+   sendJson(res, 200, {
+    ok: true,
+    roster: summarizeRosterRow(row),
+    data: { roster: mergedRoster, compliance: row.compliance_json, gym: row.gym_json || [] },
+    source: mergedRoster === row.roster_json ? 'roster-open-query' : 'roster-open-query-continuous',
+   });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível abrir a escala salva.', detail: error.message, code: error.code || null });
+  }
+  return true;
+ }
+
+ const telegramSnapshotRosterMatch = url.pathname.match(/^\/api\/rosters\/(telegram-snapshot-[^/]+)$/i);
+ if (telegramSnapshotRosterMatch && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  if (!user.id) {
+   sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const linkRow = await telegramLinkForUser(db, user.id).catch(() => null);
+   const snapshot = telegramConciergeRosterSnapshotFromLink(linkRow);
+   if (!snapshot?.roster_json || !Array.isArray(snapshot.roster_json.days)) {
+    sendJson(res, 404, { ok: false, message: 'Escala do Telegram não encontrada no gerenciador.' });
+    return true;
+   }
+   sendJson(res, 200, {
+    ok: true,
+    roster: summarizeTelegramSnapshotRosterRow(snapshot),
+    data: { roster: snapshot.roster_json, compliance: snapshot.compliance_json, gym: snapshot.gym_json },
+    notice: 'Escala recuperada do espelho do Telegram. Reenvie o PDF ou importe pelo app para registrar novamente no banco principal, se necessário.',
+   });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível abrir a escala recebida pelo Telegram.', detail: error.message });
   }
   return true;
  }
@@ -10597,7 +18674,7 @@ async function handleApi(req, res, url) {
   try {
    await ensureSchema();
    const result = await db.query(
-    'select * from crewcheck_rosters where id = $1 and user_id = $2',
+    'select * from crewcheck_rosters where id = $1 and user_id = $2 and deleted_at is null',
     [rosterMatch[1], user.id],
    );
    if (!result.rowCount) {
@@ -10605,17 +18682,51 @@ async function handleApi(req, res, url) {
     return true;
    }
    const row = result.rows[0];
+   const mergedRoster = await maybeMergeAdjacentRosterForContinuity(db, user.id, row);
    sendJson(res, 200, {
     ok: true,
     roster: summarizeRosterRow(row),
     data: {
-     roster: row.roster_json,
+     roster: mergedRoster,
      compliance: row.compliance_json,
      gym: row.gym_json,
     },
+    source: mergedRoster === row.roster_json ? 'roster-open-id' : 'roster-open-id-continuous',
    });
   } catch (error) {
    sendJson(res, 500, { ok: false, message: 'Não foi possível abrir a escala salva.', detail: error.message });
+  }
+  return true;
+ }
+
+
+ if (rosterMatch && (req.method === 'PATCH' || req.method === 'POST') && url.pathname.endsWith('/activate') === false) {
+  // Mantido para compatibilidade futura; ações específicas ficam em /activate.
+ }
+
+ const rosterActivateMatch = url.pathname.match(/^\/api\/rosters\/([0-9a-f-]{36})\/activate$/i);
+ if (rosterActivateMatch && (req.method === 'POST' || req.method === 'PATCH')) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  if (!user.id) {
+   sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const exists = await db.query('select id from crewcheck_rosters where id = $1 and user_id = $2 and deleted_at is null limit 1', [rosterActivateMatch[1], user.id]);
+   if (!exists.rowCount) {
+    sendJson(res, 404, { ok: false, message: 'Escala não encontrada.' });
+    return true;
+   }
+   await markRosterActive(db, user.id, rosterActivateMatch[1]);
+   const row = await refreshRosterSummaryRow(db, user.id, rosterActivateMatch[1]);
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [newId(), user.id, 'roster.activated', rosterActivateMatch[1], JSON.stringify({ source: 'manager' })]).catch(() => null);
+   sendJson(res, 200, { ok: true, roster: summarizeRosterRow(row) });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível tornar esta escala ativa.', detail: error.message });
   }
   return true;
  }
@@ -10631,7 +18742,8 @@ async function handleApi(req, res, url) {
   }
   try {
    await ensureSchema();
-   const result = await db.query('delete from crewcheck_rosters where id = $1 and user_id = $2 returning id', [rosterMatch[1], user.id]);
+   const result = await db.query('update crewcheck_rosters set deleted_at = now(), is_active = false, updated_at = now(), import_status = $3 where id = $1 and user_id = $2 and deleted_at is null returning id', [rosterMatch[1], user.id, 'deleted_by_user']);
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [newId(), user.id, 'roster.deleted_by_user', rosterMatch[1], JSON.stringify({ softDelete: true })]).catch(() => null);
    sendJson(res, result.rowCount ? 200 : 404, { ok: Boolean(result.rowCount) });
   } catch (error) {
    sendJson(res, 500, { ok: false, message: 'Não foi possível apagar a escala.', detail: error.message });
@@ -10639,6 +18751,225 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+
+
+ if (url.pathname === '/api/whatsapp/concierge/status' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = getPool();
+  const systemNumber = crewcheckSystemWhatsAppNumber();
+  const access = whatsAppBillingAccess(user);
+  const trial = db ? await whatsAppTrialUsage(db, user).catch(() => null) : null;
+  const directText = `Olá, sou usuário CrewCheck e quero ativar o WhatsApp Concierge.`;
+  sendJson(res, 200, {
+   ok: true,
+   endpoint: 'whatsapp-concierge-status',
+   configured: Boolean(CREWCHECK_WHATSAPP_CONCIERGE_ENABLED && systemNumber),
+   apiConfigured: Boolean(CREWCHECK_WHATSAPP_API_KEY),
+   premiumOnly: CREWCHECK_WHATSAPP_PREMIUM_ONLY,
+   allowed: access.allowed,
+   paidPremium: access.paidPremium,
+   trialing: access.trialing,
+   premiumRequired: access.premiumRequired,
+   numberMasked: systemNumber ? maskGenericPhone(systemNumber) : '',
+   directLink: systemNumber ? whatsAppClickToChatUrl(systemNumber, directText) : '',
+   trial: trial || { dailyLimit: CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT, totalLimit: CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT },
+   canSendRosterByApi: Boolean(access.allowed && CREWCHECK_WHATSAPP_API_KEY),
+   canShareRosterByLink: Boolean(access.allowed && systemNumber),
+   canImportRosterByWhatsApp: Boolean(access.allowed && CREWCHECK_WHATSAPP_IMPORT_ENABLED && systemNumber),
+   importEnabled: CREWCHECK_WHATSAPP_IMPORT_ENABLED,
+   webhookUrl: whatsappWebhookConfiguredPublicUrl(),
+   message: !CREWCHECK_WHATSAPP_CONCIERGE_ENABLED
+    ? 'WhatsApp Concierge está desativado no servidor.'
+    : access.premiumRequired
+     ? 'WhatsApp é recurso Premium porque a API tem custo por mensagem.'
+     : access.trialing
+      ? `Teste Premium: WhatsApp limitado a ${CREWCHECK_WHATSAPP_TRIAL_DAILY_LIMIT}/dia e ${CREWCHECK_WHATSAPP_TRIAL_TOTAL_LIMIT} no teste.`
+      : 'WhatsApp Premium ativo. Chaves e provedor ficam ocultos do usuário.',
+  });
+  return true;
+ }
+
+ if (url.pathname === '/api/whatsapp/concierge/link' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const systemNumber = crewcheckSystemWhatsAppNumber();
+  const access = whatsAppBillingAccess(user);
+  if (!access.allowed) {
+   sendJson(res, 402, { ok: false, code: 'WHATSAPP_PREMIUM_REQUIRED', message: 'WhatsApp Concierge está disponível somente no Premium.' });
+   return true;
+  }
+  if (!systemNumber) {
+   sendJson(res, 501, { ok: false, code: 'WHATSAPP_NUMBER_MISSING', message: 'Configure CREWCHECK_WHATSAPP_NUMBER no Render.' });
+   return true;
+  }
+  const text = String(url.searchParams.get('text') || 'Olá, quero ativar o WhatsApp Concierge do CrewCheck.').slice(0, CREWCHECK_WHATSAPP_MAX_TEXT_CHARS);
+  sendJson(res, 200, { ok: true, url: whatsAppClickToChatUrl(systemNumber, text), numberMasked: maskGenericPhone(systemNumber), message: 'Abrindo WhatsApp do CrewCheck.' });
+  return true;
+ }
+
+
+ if (url.pathname === '/api/whatsapp/import/link' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const systemNumber = crewcheckSystemWhatsAppNumber();
+  const access = whatsAppBillingAccess(user);
+  if (!access.allowed) {
+   sendJson(res, 402, { ok: false, code: 'WHATSAPP_PREMIUM_REQUIRED', message: 'Importar escala pelo WhatsApp é recurso Premium.' });
+   return true;
+  }
+  if (!systemNumber) {
+   sendJson(res, 501, { ok: false, code: 'WHATSAPP_NUMBER_MISSING', message: 'Configure CREWCHECK_WHATSAPP_NUMBER no Render.' });
+   return true;
+  }
+  const text = 'Olá CrewCheck. Quero importar minha escala. Vou anexar o PDF original da escala nesta conversa.';
+  sendJson(res, 200, { ok: true, url: whatsAppClickToChatUrl(systemNumber, text), numberMasked: maskGenericPhone(systemNumber), message: 'Abra o WhatsApp do CrewCheck e anexe o PDF original da escala.' });
+  return true;
+ }
+
+ if (url.pathname === '/api/whatsapp/roster/link' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  const access = whatsAppBillingAccess(user);
+  if (!access.allowed) {
+   sendJson(res, 402, { ok: false, code: 'WHATSAPP_PREMIUM_REQUIRED', message: 'Compartilhar escala pelo WhatsApp é recurso Premium.' });
+   return true;
+  }
+  const systemNumber = crewcheckSystemWhatsAppNumber();
+  if (!systemNumber) {
+   sendJson(res, 501, { ok: false, code: 'WHATSAPP_NUMBER_MISSING', message: 'Configure CREWCHECK_WHATSAPP_NUMBER no Render.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const row = await latestRosterRowForWhatsApp(db, user.id);
+   if (!row?.roster_json) {
+    sendJson(res, 404, { ok: false, message: 'Nenhuma escala ativa encontrada para compartilhar.' });
+    return true;
+   }
+   const text = buildCrewCheckWhatsAppRosterText(row.roster_json, user);
+   sendJson(res, 200, { ok: true, url: whatsAppClickToChatUrl(systemNumber, text), numberMasked: maskGenericPhone(systemNumber), preview: text.slice(0, 500), message: 'Link WhatsApp com resumo da escala criado.' });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível criar o link da escala para WhatsApp.', detail: error.message });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/whatsapp/roster/send' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  const access = whatsAppBillingAccess(user);
+  if (!access.allowed) {
+   sendJson(res, 402, { ok: false, code: 'WHATSAPP_PREMIUM_REQUIRED', message: 'Envio automático por WhatsApp é recurso Premium.' });
+   return true;
+  }
+  try {
+   await ensureSchema();
+   const trial = await whatsAppTrialUsage(db, user);
+   if (trial?.trialing && trial.exceeded) {
+    sendJson(res, 429, { ok: false, code: 'WHATSAPP_TRIAL_LIMIT_REACHED', trial, message: 'Limite de mensagens WhatsApp do teste Premium atingido. Assine o Premium para liberar uso contínuo.' });
+    return true;
+   }
+   const body = await readJsonBody(req, 512 * 1024).catch(() => ({}));
+   const row = await latestRosterRowForWhatsApp(db, user.id);
+   if (!row?.roster_json) {
+    sendJson(res, 404, { ok: false, message: 'Nenhuma escala ativa encontrada para enviar.' });
+    return true;
+   }
+   const to = body.to || user.phone_e164 || normalizeTelegramPreferences((await telegramLinkForUser(db, user.id).catch(() => null))?.preferences_json || {}).userPhone || '';
+   const text = buildCrewCheckWhatsAppRosterText(row.roster_json, user);
+   const result = await sendWhatsAppTextMessage({ to, text });
+   await db.query('insert into crewcheck_audit_logs (id, user_id, action, entity_id, metadata) values ($1, $2, $3, $4, $5::jsonb)', [newId(), user.id, result.ok ? 'whatsapp.roster.sent' : 'whatsapp.roster.failed', row.id, JSON.stringify({ provider: result.provider || null, status: result.status || null, trialing: access.trialing, targetMasked: result.targetMasked || maskGenericPhone(to), ok: result.ok })]).catch(() => null);
+   if (!result.ok) {
+    sendJson(res, 502, { ok: false, ...result });
+    return true;
+   }
+   const updatedTrial = await whatsAppTrialUsage(db, user).catch(() => trial);
+   sendJson(res, 200, { ok: true, result, trial: updatedTrial, message: 'Escala enviada por WhatsApp.' });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível enviar a escala por WhatsApp.', detail: error.message });
+  }
+  return true;
+ }
+
+
+ if ((url.pathname === '/api/webhooks/whatsapp/concierge' || url.pathname === '/api/whatsapp/webhook' || url.pathname === '/webhooks/whatsapp/concierge') && (req.method === 'GET' || req.method === 'HEAD')) {
+  if (CREWCHECK_WHATSAPP_WEBHOOK_TOKEN && url.searchParams.has('hub.challenge') && String(url.searchParams.get('hub.verify_token') || '') === CREWCHECK_WHATSAPP_WEBHOOK_TOKEN) {
+   const challenge = String(url.searchParams.get('hub.challenge') || '');
+   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+   res.end(challenge);
+   return true;
+  }
+  sendJson(res, 200, { ok: true, endpoint: 'whatsapp-concierge-webhook', method: req.method, ready: true, importEnabled: CREWCHECK_WHATSAPP_IMPORT_ENABLED, expectedMethod: 'POST', publicUrl: PUBLIC_APP_URL, message: 'Webhook WhatsApp CrewCheck ativo. O provedor deve enviar POST com texto, áudio ou PDF.' });
+  return true;
+ }
+
+ if ((url.pathname === '/api/webhooks/whatsapp/concierge' || url.pathname === '/api/whatsapp/webhook' || url.pathname === '/webhooks/whatsapp/concierge') && req.method === 'POST') {
+  const db = getPool();
+  if (!db) { sendJson(res, 200, { ok: false, message: 'Banco indisponível para WhatsApp Concierge.' }); return true; }
+  const body = await readJsonBody(req, CREWCHECK_WHATSAPP_INBOUND_MAX_BYTES + 1024 * 1024).catch(() => ({}));
+  if (!whatsappWebhookTokenOk(req, url, body)) { sendJson(res, 403, { ok: false, message: 'Webhook WhatsApp não autorizado.' }); return true; }
+  try {
+   await ensureSchema();
+   const inbound = extractWhatsAppInboundMessage(body);
+   if (!inbound.from) { sendJson(res, 200, { ok: true, ignored: true, reason: 'sender_not_found' }); return true; }
+   const user = await findCrewCheckUserByWhatsAppPhone(db, inbound.from);
+   if (!user?.id) {
+    sendJson(res, 200, { ok: true, ignored: true, reason: 'user_not_linked', message: 'Telefone não encontrado em uma conta CrewCheck.' });
+    return true;
+   }
+   const access = whatsAppBillingAccess(user);
+   if (!access.allowed || (CREWCHECK_WHATSAPP_IMPORT_PREMIUM_ONLY && !access.allowed)) {
+    await recordWhatsAppAudit(db, user.id, 'whatsapp.inbound.blocked', null, { reason: 'premium_required', from: maskGenericPhone(inbound.from) });
+    sendJson(res, 200, { ok: true, blocked: true, code: 'WHATSAPP_PREMIUM_REQUIRED' });
+    return true;
+   }
+   if (inbound.isPdf) {
+    if (!CREWCHECK_WHATSAPP_IMPORT_ENABLED) { sendJson(res, 200, { ok: true, blocked: true, code: 'WHATSAPP_IMPORT_DISABLED' }); return true; }
+    const trial = await whatsAppTrialUsage(db, user).catch(() => null);
+    if (trial?.trialing && trial.exceeded) { sendJson(res, 200, { ok: true, blocked: true, code: 'WHATSAPP_TRIAL_LIMIT_REACHED', trial }); return true; }
+    const imported = await importWhatsAppPdfRoster(db, user, inbound);
+    const reply = `✅ Escala importada pelo WhatsApp.
+${imported.roster?.month ? `Período: ${String(imported.roster.month).padStart(2,'0')}/${imported.roster.year || ''}
+` : ''}${imported.days} dia(s) · ${imported.flights} trecho(s).
+Abra o CrewCheck para conferir o Gerenciador de Escalas.`;
+    const sent = await sendWhatsAppPremiumReply(db, user, inbound.from, reply, { action: 'whatsapp.roster.imported', entityId: imported.saved?.row?.id || null, metadata: { days: imported.days, flights: imported.flights, filename: imported.filename, source: 'whatsapp_webhook' } }).catch((error) => ({ ok: false, message: sanitizePublicError(error?.message || String(error)) }));
+    sendJson(res, 200, { ok: true, imported: true, rosterId: imported.saved?.row?.id || null, days: imported.days, flights: imported.flights, replySent: Boolean(sent?.ok), message: 'PDF recebido e escala importada pelo WhatsApp.' });
+    return true;
+   }
+   const clean = String(inbound.text || '').trim();
+   const lower = clean.toLowerCase();
+   let lines = ['Sou o Concierge WhatsApp do CrewCheck. Envie o PDF original da escala para importar, ou pergunte por sua programação.'];
+   if (/\b(escala|programa[cç][aã]o|hoje|amanh[aã]|voo|pernoite|hotel|quarto)\b/i.test(clean)) {
+    const rosters = await telegramConciergeLatestRosters(db, user, 4, null).catch(() => []);
+    const requested = telegramConciergeDateFromText(clean || 'hoje', rosters);
+    const match = telegramConciergeFindDay(rosters, requested.iso);
+    if (match?.day) {
+     const day = match.day;
+     const legs = telegramConciergeDayLegs(day);
+     const firstLeg = legs[0] || {};
+     const lastLeg = legs[legs.length - 1] || {};
+     const label = telegramConciergeDayKind(day);
+     const startTime = telegramConciergeDayStartTime(day, firstLeg) || 'horário não informado';
+     const endTime = telegramConciergeDayEndTime(day, lastLeg) || '';
+     lines = [`Programação de ${requested.label}: ${label}.`, `Início: ${startTime}${endTime ? ` · fim previsto: ${endTime}` : ''}.`];
+     if (legs.length) lines.push(`Voos: ${legs.slice(0, 5).map((leg) => [telegramConciergeLegNumber(leg), [telegramConciergeDayStartPlace(day, leg), telegramConciergeDayEndPlace(day, leg)].filter(Boolean).join('→'), telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '')].filter(Boolean).join(' ')).join(' · ')}.`);
+    } else lines = [`Não encontrei programação salva para ${requested.label}. Envie o PDF da escala pelo WhatsApp ou importe pelo app.`];
+   } else if (/\b(importar|pdf|enviar)\b/i.test(lower)) {
+    lines = ['Para importar a escala, anexe aqui o PDF original da escala. Prints e imagens não são ideais.', 'O CrewCheck salva na sua conta pelo telefone cadastrado no Perfil.'];
+   }
+   const sent = await sendWhatsAppPremiumReply(db, user, inbound.from, lines.join('\n'), { action: 'whatsapp.concierge.reply', metadata: { source: 'whatsapp_webhook', textPreview: clean.slice(0, 80) } }).catch((error) => ({ ok: false, message: sanitizePublicError(error?.message || String(error)) }));
+   sendJson(res, 200, { ok: true, concierge: true, replySent: Boolean(sent?.ok), message: 'Mensagem WhatsApp processada pelo Concierge.' });
+  } catch (error) {
+   console.warn('[whatsapp] webhook failed', sanitizePublicError(error?.message || String(error)));
+   sendJson(res, 200, { ok: false, message: sanitizePublicError(error?.message || 'Falha ao processar WhatsApp.') });
+  }
+  return true;
+ }
 
  if (url.pathname === '/api/support/whatsapp-link' && req.method === 'GET') {
    const user = await requireAuth(req, res);
@@ -10792,7 +19123,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/healthz') {
    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-   res.end(JSON.stringify({ ok: true, app: 'CrewCheck', databaseConfigured: Boolean(DATABASE_URL), authRequired: AUTH_REQUIRED }));
+   res.end(JSON.stringify({ ok: true, app: 'CrewCheck', version: '11.1.91', databaseConfigured: Boolean(DATABASE_URL), authRequired: AUTH_REQUIRED }));
    return;
   }
 
@@ -10975,13 +19306,13 @@ findBestFlightPatternV3 = function(tokens) {
  const upper = tokens.map((token) => String(token || '').toUpperCase());
  const candidates = [];
  for (let i = 0; i < upper.length; i++) {
-  if (!AIRPORTS.has(upper[i])) continue;
+  if (!isAirportCodeToken(upper[i])) continue;
   const origin = upper[i];
   for (let j = Math.max(0, i - 3); j < Math.min(upper.length, i + 3); j++) {
    if (!isTimeToken(tokens[j]) || Math.abs(j - i) > 2) continue;
    const departureTime = normalizeTimeToken(tokens[j]);
    for (let k = i + 1; k < Math.min(upper.length, i + 8); k++) {
-    if (!AIRPORTS.has(upper[k]) || upper[k] === origin) continue;
+    if (!isAirportCodeToken(upper[k]) || upper[k] === origin) continue;
     for (let l = k + 1; l < Math.min(upper.length, k + 5); l++) {
      if (!isTimeToken(tokens[l])) continue;
      const arrivalTime = normalizeTimeToken(tokens[l]);
@@ -11050,13 +19381,13 @@ parseAimsTokensIntoEventsV3 = function(tokens, dayNum, month, year, base, nextTo
 parseAimsFlightSeq = function(flightNumber, seq) {
  const tokens = seq.map((t)=>String(t||'').trim()).filter(Boolean).filter((t)=>t !== '[extra]');
  const upper = tokens.map((t)=>t.toUpperCase());
- const firstAirportIdx = upper.findIndex((t)=>AIRPORTS.has(t));
+ const firstAirportIdx = upper.findIndex((t)=>isAirportCodeToken(t));
  if (firstAirportIdx < 0) return null;
  const origin = upper[firstAirportIdx];
  const beforeOriginTimes = tokens.slice(0, firstAirportIdx).filter(isTimeToken).map(normalizeTimeToken);
  const departureTime = beforeOriginTimes.at(-1); if (!departureTime) return null;
  let destIdx = -1;
- for (let i = firstAirportIdx + 1; i < upper.length; i++) if (AIRPORTS.has(upper[i]) && upper[i] !== origin) { destIdx = i; break; }
+ for (let i = firstAirportIdx + 1; i < upper.length; i++) if (isAirportCodeToken(upper[i]) && upper[i] !== origin) { destIdx = i; break; }
  if (destIdx < 0) return null;
  const destination = upper[destIdx];
  const afterDestTimes = tokens.slice(destIdx + 1).filter(isTimeToken).map(normalizeTimeToken);
@@ -11081,7 +19412,7 @@ function buildAimsTextBlocksPrecise(fullText, baseMonth, baseYear) {
 function normalizeActivityCodePrecise(code, raw='') { const c=String(code||'').toUpperCase(); if (c === 'CRMB' || /\bCRMB\s*SB\b/i.test(raw)) return 'CRM'; return c; }
 function activityTypeFromCodePrecise(code) { const c=normalizeActivityCodePrecise(code); if (c==='ASB'||c==='HSB'||c==='HSBE') return c; if (c==='CRM'||/^C\d{2,3}F$/.test(c)||c==='CBF'||c==='EMER') return 'CRM'; return 'OTHER'; }
 function pickActivityWindowFromTokensPrecise(tokens) { const cleaned=tokens.map((t)=>String(t||'').trim()).filter(Boolean); const stationTimes=[]; for(let i=0;i<cleaned.length-1;i++){ if(AIRPORTS.has(cleaned[i].toUpperCase()) && isTimeToken(cleaned[i+1])) stationTimes.push(normalizeTimeToken(cleaned[i+1])); } const stationUnique=uniqueTimesV3(stationTimes).filter((t)=>!looksLikeDurationV3(t)); if(stationUnique.length>=2) return {start:stationUnique[0], end:stationUnique[stationUnique.length-1]}; const allTimes=uniqueTimesV3(cleaned.filter(isTimeToken).map(normalizeTimeToken)).filter((t)=>!looksLikeDurationV3(t)); if(!allTimes.length) return {start:null,end:null}; const start=allTimes[0]; let end=allTimes[1]||allTimes[0]; for(const t of allTimes.slice(1)){ const h=diffHours(start,t); if(h>=0.25 && h<=14) end=t; } return {start,end}; }
-function hasCompleteLegTokensPrecise(tokens) { const upper=tokens.map((t)=>String(t).toUpperCase()); const airports=upper.filter((t)=>AIRPORTS.has(t)); const times=tokens.filter(isTimeToken); return airports.length >= 2 && airports.some((a)=>a !== airports[0]) && times.length >= 2; }
+function hasCompleteLegTokensPrecise(tokens) { const upper=tokens.map((t)=>String(t).toUpperCase()); const airports=upper.filter((t)=>isAirportCodeToken(t)); const times=tokens.filter(isTimeToken); return airports.length >= 2 && airports.some((a)=>a !== airports[0]) && times.length >= 2; }
 function nextDayContinuationPrefixPrecise(tokens) { const prefix=[]; const operational=new Set(['LA','DOPR','DOP','DOPR','DOP','DO','DOF','DR','OFF','VC','VC','HSB','HSBE','ASB','CBF','EMER','MT','CRM','CRMB','NS','NSJ','IJ','DM']); for(const token of tokens||[]){ const upper=String(token).toUpperCase(); if(prefix.length && operational.has(upper)) break; prefix.push(token); if(/^\([A-Z0-9]{3}\)$/.test(upper)) break; } return prefix; }
 function inferAimsDebriefPrecise(tokens,lastLeg,nextTokens=[]) { if(!lastLeg) return null; const upper=tokens.map((t)=>String(t).toUpperCase()); let destIdx=-1; for(let i=upper.length-1;i>=0;i--) if(upper[i]===lastLeg.destination){ destIdx=i; break; } let after=destIdx>=0?tokens.slice(destIdx+1):[]; if(after.length<2 && nextTokens?.length) after=after.concat(nextDayContinuationPrefixPrecise(nextTokens)); const times=after.filter(isTimeToken).map(normalizeTimeToken); return times[1] || times[0] || null; }
 function inferWorkTypePrecise(text, idx) { const near=String(text||'').slice(Math.max(0,idx-20), idx+35).toUpperCase(); return near.match(/\b(OP|PS|DH)\b/)?.[1] || null; }
@@ -11313,14 +19644,14 @@ function findBestFlightPatternRC5(tokens) {
  const upper = tokens.map((t) => String(t).toUpperCase());
  const candidates = [];
  for (let i = 0; i < upper.length; i++) {
-  if (!AIRPORTS.has(upper[i])) continue;
+  if (!isAirportCodeToken(upper[i])) continue;
   const origin = upper[i];
   const depCandidates = [];
   for (let j = Math.max(0, i - 3); j <= Math.min(upper.length - 1, i + 2); j++) if (isTimeToken(tokens[j])) depCandidates.push(j);
   for (const j of depCandidates) {
    const departureTime = normalizeTimeToken(tokens[j]);
    for (let k = i + 1; k < Math.min(upper.length, i + 9); k++) {
-    if (!AIRPORTS.has(upper[k]) || upper[k] === origin) continue;
+    if (!isAirportCodeToken(upper[k]) || upper[k] === origin) continue;
     for (let l = k + 1; l < Math.min(upper.length, k + 5); l++) {
      if (!isTimeToken(tokens[l])) continue;
      const arrivalTime = normalizeTimeToken(tokens[l]);
@@ -11340,7 +19671,7 @@ function makeLegRC5(flightNumber, origin, destination, departureTime, arrivalTim
  const cleanDestination = String(destination || '').toUpperCase();
  const dep = normalizeTimeToken(departureTime);
  const arrRaw = normalizeTimeToken(arrivalTime);
- if (!AIRPORTS.has(cleanOrigin) || !AIRPORTS.has(cleanDestination) || cleanOrigin === cleanDestination) return null;
+ if (!isAirportCodeToken(cleanOrigin) || !isAirportCodeToken(cleanDestination) || cleanOrigin === cleanDestination) return null;
  return { flightNumber: String(flightNumber || '').replace(/\s+/g, ''), origin: cleanOrigin, destination: cleanDestination, departureTime: dep, arrivalTime: arrRaw.replace('(+1)', ''), workType: String(workType || 'OP').toUpperCase(), aircraftType, isNextDay: /\(\+1\)/.test(arrRaw) || toMin(arrRaw) < toMin(dep), duration: diffHours(dep, arrRaw) };
 }
 
@@ -11426,7 +19757,7 @@ function parseAimsFlightSeqRC5(flightNumber, seq) {
  const tokens = seq.map((t) => String(t || '').trim()).filter((t) => t && t !== '[extra]');
  const upper = tokens.map((t) => t.toUpperCase());
  const airportIndexes = [];
- for (let i = 0; i < upper.length; i++) if (AIRPORTS.has(upper[i])) airportIndexes.push(i);
+ for (let i = 0; i < upper.length; i++) if (isAirportCodeToken(upper[i])) airportIndexes.push(i);
  if (airportIndexes.length < 2) return null;
  for (let a = 0; a < airportIndexes.length - 1; a++) {
   const originIdx = airportIndexes[a];
@@ -11803,7 +20134,7 @@ function parseAimsLegSeqRC7(flightNumber, seq, nextTokens = [], forcedWorkType =
  if (tokens.some((t) => String(t).startsWith('(...)'))) tokens = tokens.concat(nextAimsContinuationRC7(nextTokens));
  const upper = tokens.map((t) => t.toUpperCase());
  const airports = [];
- for (let i = 0; i < upper.length; i++) if (AIRPORTS.has(upper[i])) airports.push(i);
+ for (let i = 0; i < upper.length; i++) if (isAirportCodeToken(upper[i])) airports.push(i);
  if (airports.length < 2) return null;
  let best = null;
  for (let a = 0; a < airports.length - 1; a++) {
@@ -12616,10 +20947,15 @@ function parseIFlightStructuredCalendarV10846({ text, filename = 'iFlight_Roster
   };
   if (type === 'VOO') {
    const flightNumbers = Array.from(new Set((String(event.text).match(/\bLA\s*\d{3,4}\b|\bLA\d{3,4}\b/gi) || []).map(flightKeyV10845)));
+   // CrewCheck Fix: Try to extract origin and destination from text if available (e.g., GRU-BSB)
+   const routeMatch = String(event.text).match(/\b([A-Z]{3})\s*[-/]?\s*([A-Z]{3})\b/);
+   const origin = routeMatch ? routeMatch[1] : '';
+   const destination = routeMatch ? routeMatch[2] : '';
+   
    row.legs = (flightNumbers.length ? flightNumbers : [code]).map((flightNumber, index) => ({
     flightNumber,
-    origin: '',
-    destination: '',
+    origin: index === 0 ? origin : '',
+    destination: index === flightNumbers.length - 1 ? destination : '',
     departureTime: times[index] || start || '',
     arrivalTime: times[index + 1] || end || times[index] || start || '',
     workType: /\b(?:PS|EXTRA)\b/i.test(event.text) ? 'PS' : 'OP',
@@ -13335,45 +21671,29 @@ function parseCrewRosterReportColumnarV108105(pages, fullText = '', filename = '
   header.month = monthNameToNum(periodMatch[2]) || header.month;
   header.year = Number(periodMatch[3]) || header.year;
  }
- const rows = buildColumnarVisualRowsV108105(pages);
- if (!rows.length) throw new Error('Layout columnar não encontrado.');
- const days = [];
- let current = null;
- let prelude = [];
- const pushCurrent = () => {
-  const finished = finalizeColumnarDayV108105(current);
-  if (finished) days.push(finished);
-  current = null;
- };
- for (const row of rows) {
-  const text = cleanColumnarTextV108105(row.text);
-  if (isColumnarIgnorableRowV108105(text)) continue;
-  const dateToken = primaryColumnarDateTokenV108105(text);
-  if (dateToken) {
-   pushCurrent();
-   const parts = dateTokenToPartsV108105(dateToken, header.month, header.year);
-   if (!parts) continue;
-   current = makeDay(parts.day, parts.month, parts.year, header.base);
-   const withoutDate = cleanColumnarTextV108105(text.replace(dateToken, ' '));
-   const raw = cleanColumnarTextV108105([...prelude.slice(-3), withoutDate].join(' '));
-   current.rawText = raw;
-   parseColumnarFlightsIntoDayV108105(current, raw);
-   parseColumnarActivityIntoDayV108105(current, raw);
-   prelude = [];
-   continue;
-  }
-  if (current && (isColumnarContinuationV108105(text) || /\b\d{1,2}:\d{2}(?:\(\+1\))?\b/.test(text) || /\b[A-Z]{3}\b/.test(text))) {
-   current.rawText = cleanColumnarTextV108105(`${current.rawText || ''} ${text}`);
-   parseColumnarFlightsIntoDayV108105(current, current.rawText);
-   parseColumnarActivityIntoDayV108105(current, text);
-  } else if (isColumnarPreludeV108105(text)) {
-   prelude.push(text);
-   if (prelude.length > 4) prelude = prelude.slice(-4);
-  }
+ const groups = buildServerRosterColumnGroups(pages);
+ if (!groups.length) throw new Error('Layout columnar não encontrado.');
+ if (!periodMatch) {
+  const firstToken = groups.map((group) => String(group.text || '').match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0]).find(Boolean);
+  const firstParts = firstToken ? serverDateFromToken(firstToken, header.month, header.year) : null;
+  if (firstParts) { header.month = firstParts.month; header.year = firstParts.year; }
  }
- pushCurrent();
+ const days = [];
+ let currentMarker = null;
+ for (const group of groups.sort((a, b) => a.page - b.page || a.x - b.x)) {
+  const text = cleanColumnarTextV108105(group.text);
+  if (isColumnarIgnorableRowV108105(text) || /Airport stand by|Instructor recycle|Home Stand by|Annual fixed day off|Day off|Requested day off|Pairing\/Flight extends/i.test(text)) continue;
+  const dateToken = text.match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0] || null;
+  if (dateToken) currentMarker = serverDateFromToken(dateToken, header.month, header.year);
+  if (!currentMarker) continue;
+  if (text.includes('<==') && !dateToken) continue;
+  const parsed = parseServerColumnarGroupToDay({ ...group, text }, currentMarker, header.base);
+  if (!parsed) continue;
+  if (parsed.month !== header.month || parsed.year !== header.year) continue;
+  days.push(parsed);
+ }
  const roster = { ...header, days: dedupeAndSortColumnarDaysV108105(days), rawText: fullText, totals: extractTotals(fullText) };
- if (process.env.CREWCHECK_DEBUG_PARSER === 'true') console.warn('CrewCheck columnar parser debug', { rows: rows.length, days: roster.days.length, sample: roster.days.map((d) => `${d.date} ${d.type} ${d.pairingCode} ${d.dutyReport || ''}-${d.dutyDebrief || ''} L${d.legs?.length || 0} ${(d.legs||[]).map(l=>l.flightNumber+':'+l.origin+'-'+l.destination+'@'+l.departureTime+'/'+l.arrivalTime).join(',')}`).slice(0, 32) });
+ if (process.env.CREWCHECK_DEBUG_PARSER === 'true') console.warn('CrewCheck columnar parser debug', { rows: groups.length, days: roster.days.length, sample: roster.days.map((d) => `${d.date} ${d.type} ${d.pairingCode} ${d.dutyReport || ''}-${d.dutyDebrief || ''} L${d.legs?.length || 0} ${(d.legs||[]).map(l=>l.flightNumber+':'+l.origin+'-'+l.destination+'@'+l.departureTime+'/'+l.arrivalTime).join(',')}`).slice(0, 42) });
  if (!roster.days.length) throw new Error('Nenhum evento lido no layout columnar CrewRosterReport.');
  return roster;
 }
@@ -13407,7 +21727,7 @@ parsePdfOnServer = async function parsePdfOnServerV108105({ filename, dataBase64
   visual = buildServerFullText(pages);
   linear = pages.map((page) => page.items.map((item) => item.str).join('\n')).join('\n');
   if (/Roster\s+Report/i.test(visual + '\n' + linear)) {
-   try { candidates.push({ source: 'crewroster-columnar-mac-v108105', roster: parseCrewRosterReportColumnarV108105(pages, visual || linear, filename) }); } catch (error) { tried.push(`crewroster-columnar-mac-v108105: ${error?.message || error}`); }
+   try { candidates.push({ source: 'crewroster-columnar-mac-v108105', roster: parseCrewRosterReportColumnarV108105(pages, `${visual || ''}\n${linear || ''}`, filename) }); } catch (error) { tried.push(`crewroster-columnar-mac-v108105: ${error?.message || error}`); }
   }
  } catch (error) {
   tried.push(`pdfjs-columnar: ${error?.message || error}`);
@@ -13446,3 +21766,120 @@ parsePdfOnServer = async function parsePdfOnServerV108105({ filename, dataBase64
  return { roster: best.roster, diagnostics: { ...best.diagnostics, appVersion: CREWCHECK_VERSION_V108105, attempts: tried.slice(0, 14) } };
 };
 // --- end CrewCheck v10.8.105 ---
+
+
+// --- CrewCheck v11.1.91: leitura de escala com auditoria humana ---
+function crewcheckIsRestCodeV11179(code) {
+ return /^(DOF?|DOPR?|DR|OFF|VC)$/.test(String(code || '').toUpperCase());
+}
+function crewcheckIsRestTypeV11179(day) {
+ return crewcheckIsRestCodeV11179(day?.type) || crewcheckIsRestCodeV11179(day?.pairingCode);
+}
+function crewcheckCredibleLegV11179(leg) {
+ if (!leg?.flightNumber || !leg.origin || !leg.destination || !leg.departureTime || !leg.arrivalTime) return false;
+ if (leg.origin === leg.destination) return false;
+ const h = Number(leg.duration || diffHours(leg.departureTime, leg.arrivalTime));
+ return Number.isFinite(h) && h >= 0.15 && h <= 8.5;
+}
+function crewcheckDayScoreV11179(day) {
+ const legs = day?.legs || [];
+ let score = legs.length * 1000;
+ if (day?.dutyReport && day?.dutyDebrief) score += 120;
+ if (day?.type === 'VOO') score += 90;
+ if (['ASB','HSB','HSBE'].includes(day?.type)) score += 70;
+ if (day?.type === 'CRM') score += 60;
+ if (crewcheckIsRestTypeV11179(day)) score += 15;
+ score += Math.min(String(day?.rawText || '').length, 800) / 100;
+ return score;
+}
+function crewcheckRestHoursBetweenDaysV11179(prev, next) {
+ if (!prev?.dutyDebrief || !next?.dutyReport) return null;
+ const [pd, pm, py] = String(prev.date || '').split('/').map(Number);
+ const [nd, nm, ny] = String(next.date || '').split('/').map(Number);
+ if (!pd || !pm || !py || !nd || !nm || !ny) return null;
+ let rest = (new Date(ny, nm - 1, nd).getTime() - new Date(py, pm - 1, pd).getTime()) / 36e5;
+ rest += (toMin(next.dutyReport) - toMin(prev.dutyDebrief)) / 60;
+ if (prev.isNextDay) rest -= 24;
+ while (rest < 0) rest += 24;
+ return Math.round(rest * 10) / 10;
+}
+function crewcheckHumanNormalizeRosterV11179(roster) {
+ const base = roster?.base || 'BSB';
+ const normalized = [];
+ for (const original of roster?.days || []) {
+  let day = { ...original, legs: (original.legs || []).filter(crewcheckCredibleLegV11179) };
+  const raw = String(day.rawText || '');
+  const upper = `${raw} ${day.pairingCode || ''} ${day.type || ''}`.toUpperCase();
+
+  // Voo/acionamento ganha de folga contaminada. Uma folga nunca deve carregar pernas.
+  if (day.legs.length) {
+   const first = day.legs[0];
+   const last = day.legs[day.legs.length - 1];
+   const activation = upper.match(/\b(HSBE|HSB|ASB|RES)\b/)?.[1] || '';
+   day.type = activation === 'HSBE' ? 'HSBE' : activation === 'HSB' ? 'HSB' : (activation === 'ASB' || activation === 'RES' ? 'ASB' : 'VOO');
+   day.pairingCode = day.type === 'VOO' ? first.flightNumber : day.type;
+   day.dutyReport = day.dutyReport || first.departureTime;
+   day.dutyDebrief = day.dutyDebrief || addMinutesServer(last.arrivalTime, 30);
+   day.flyingHours = day.legs.reduce((sum, leg) => sum + Number(leg.duration || diffHours(leg.departureTime, leg.arrivalTime) || 0), 0);
+   day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : day.dutyHours;
+   day.isNextDay = Boolean(day.isNextDay || day.legs.some((leg) => leg.isNextDay) || (day.dutyReport && day.dutyDebrief && toMin(day.dutyDebrief) <= toMin(day.dutyReport)));
+   if (last.destination && last.destination !== base) day.hotel = last.destination;
+  } else if (/\b(HSBE|HSB|ASB|RES)\b/.test(upper) && crewcheckIsRestTypeV11179(day)) {
+   // Sobreaviso/reserva não pode virar folga por causa de DO/DR/OFF no mesmo bloco visual.
+   const code = upper.match(/\b(HSBE|HSB|ASB|RES)\b/)?.[1] || 'HSB';
+   day.type = code === 'RES' ? 'ASB' : code;
+   day.pairingCode = day.type;
+   day.hotel = null;
+   day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : day.dutyHours;
+  } else if (crewcheckIsRestTypeV11179(day)) {
+   const code = upper.match(/\b(DOF|DO|DR|OFF|DOPR|DOP|VC)\b/)?.[1] || day.type || 'DO';
+   day.type = code === 'DOF' ? 'DOF' : code === 'DR' ? 'DR' : code === 'OFF' ? 'OFF' : 'DO';
+   day.pairingCode = day.pairingCode || code;
+   day.dutyReport = null;
+   day.dutyDebrief = null;
+   day.legs = [];
+   day.dutyHours = 0;
+   day.flyingHours = 0;
+   day.isNextDay = false;
+   day.hotel = null;
+  } else if (day.type === 'LAYOVER') {
+   day.dutyReport = null;
+   day.dutyDebrief = null;
+   day.dutyHours = 0;
+   day.flyingHours = 0;
+   day.legs = [];
+  }
+  normalized.push(day);
+ }
+ const byDate = new Map();
+ for (const day of normalized) {
+  const current = byDate.get(day.date);
+  if (!current || crewcheckDayScoreV11179(day) > crewcheckDayScoreV11179(current)) byDate.set(day.date, day);
+ }
+ const days = [...byDate.values()].sort((a, b) => {
+  const [ad, am, ay] = String(a.date || '').split('/').map(Number);
+  const [bd, bm, by] = String(b.date || '').split('/').map(Number);
+  return new Date(ay, am - 1, ad).getTime() - new Date(by, bm - 1, bd).getTime();
+ });
+ for (let i = 1; i < days.length; i++) {
+  const prev = days[i - 1];
+  const day = days[i];
+  const rest = crewcheckRestHoursBetweenDaysV11179(prev, day);
+  const prevLast = prev.legs?.[prev.legs.length - 1];
+  const nextFirst = day.legs?.[0];
+  const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
+  const early = day.dutyReport ? toMin(day.dutyReport) <= 5 * 60 : false;
+  if (prevLast && nextFirst && rest !== null && rest >= 0 && rest <= 5 && (sameStation || early || /\(\.\.\.\)/.test(day.rawText || ''))) {
+   day.rawText = [day.rawText, `CrewCheck v11.1.91: continuação operacional da jornada anterior (${rest.toFixed(1)}h em solo), não repouso/pernoite.`].filter(Boolean).join(' | ');
+  }
+ }
+ return { ...roster, days };
+}
+const parsePdfOnServerBefore11179 = parsePdfOnServer;
+parsePdfOnServer = async function parsePdfOnServerV11179(args) {
+ const result = await parsePdfOnServerBefore11179(args);
+ const roster = crewcheckHumanNormalizeRosterV11179(result.roster);
+ const diagnostics = (typeof buildParseDiagnosticsRC5 === 'function') ? buildParseDiagnosticsRC5(roster, result.diagnostics?.sourceFormat || 'Parser humano v11.1.91') : result.diagnostics;
+ return { ...result, roster, diagnostics: { ...(result.diagnostics || diagnostics || {}), ...(diagnostics || {}), appVersion: '11.1.91 · Leitura humana de escala' } };
+};
+// --- end CrewCheck v11.1.91 ---

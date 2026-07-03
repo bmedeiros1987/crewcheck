@@ -24,7 +24,8 @@ export function normalizeRosterSchedule(roster: CrewRoster): CrewRoster {
   const mergedTimedActivities = mergeTimedActivityRows(activitiesMergedIntoFlights);
   const dedupedDays = dropDisplayDuplicates(dropAllDayDuplicates(mergedTimedActivities));
   const flightWindowsFixed = normalizeSuspiciousFlightWindows(dedupedDays);
-  const finalDays = fixUnreadReserveStandbyEnd(stabilizeSameDaySequentialWindows(flightWindowsFixed)).sort(compareRosterDays);
+  const continuousDays = fillPublishedRosterContinuity(flightWindowsFixed, roster);
+  const finalDays = fixUnreadReserveStandbyEnd(stabilizeSameDaySequentialWindows(continuousDays)).sort(compareRosterDays);
 
   return { ...roster, days: finalDays };
 }
@@ -159,6 +160,72 @@ function inferAirportReserveEnd(start: string): { time: string; nextDay: boolean
     return { time: end, nextDay: endMinutes >= 1440, reason: 'CrewCheck: fim da reserva ASB estimado por janela operacional máxima de 6h quando o PDF não trouxe o fim legível.' };
   }
   return { time: '23:00', nextDay: false, reason: 'CrewCheck: fim da reserva ASB limitado às 23:00 quando o PDF não trouxe o fim legível.' };
+}
+
+
+function fillPublishedRosterContinuity(days: RosterDay[], roster: CrewRoster): RosterDay[] {
+  const sorted = days.filter(Boolean).sort(compareRosterDays);
+  if (sorted.length < 2) return sorted;
+
+  const byDate = new Map<string, RosterDay[]>();
+  for (const day of sorted) {
+    const list = byDate.get(day.date) || [];
+    list.push(day);
+    byDate.set(day.date, list);
+  }
+
+  const first = parseDate(sorted[0].date);
+  const last = parseDate(sorted[sorted.length - 1].date);
+  if (!Number.isFinite(first.getTime()) || !Number.isFinite(last.getTime()) || first.getTime() > last.getTime()) return sorted;
+
+  // PDFs de escala costumam trazer dias de transição do mês anterior/posterior.
+  // O usuário precisa enxergar a linha do tempo completa para não se perder na próxima
+  // programação; quando o parser não lê uma coluna vazia, criamos um dia neutro.
+  const output: RosterDay[] = [];
+  const cursor = new Date(first);
+  cursor.setHours(12, 0, 0, 0);
+  const stop = new Date(last);
+  stop.setHours(12, 0, 0, 0);
+  const maxDays = 70;
+  let guard = 0;
+
+  while (cursor.getTime() <= stop.getTime() && guard++ < maxDays) {
+    const key = formatDate(cursor);
+    const existing = byDate.get(key);
+    if (existing?.length) {
+      output.push(...existing);
+    } else {
+      output.push(createContinuityEmptyDay(cursor, roster.base || sorted[0]?.base || 'BSB'));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return output.sort(compareRosterDays);
+}
+
+function createContinuityEmptyDay(date: Date, base: string): RosterDay {
+  return {
+    date: formatDate(date),
+    dayNumber: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
+    dayOfWeek: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][date.getDay()],
+    type: 'OTHER',
+    pairingCode: '',
+    dutyReport: null,
+    dutyDebrief: null,
+    legs: [],
+    dutyHours: null,
+    flyingHours: null,
+    isNextDay: false,
+    hotel: null,
+    base,
+    rawText: 'CrewCheck: dia incluído automaticamente para manter continuidade visual da escala publicada.',
+  };
+}
+
+function formatDate(date: Date): string {
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
 function cloneDay(day: RosterDay): RosterDay {
@@ -352,7 +419,9 @@ function shouldMergeFlightDays(a: RosterDay, b: RosterDay): boolean {
   const sameChain = aLast.destination === bFirst.origin;
   const gap = minutesBetween(aLast.arrivalTime, bFirst.departureTime);
   const dutyGap = a.dutyDebrief && b.dutyReport ? minutesBetween(a.dutyDebrief, b.dutyReport) : gap;
-  return sameChain || (gap >= 0 && gap <= 180) || (dutyGap >= -30 && dutyGap <= 180);
+  // CrewCheck Fix: Only merge if strictly sequential (same chain) or very close gap (<= 60 mins). 
+  // 180 mins was too aggressive and caused teleportation between independent flights.
+  return sameChain || (gap >= 0 && gap <= 60) || (dutyGap >= -15 && dutyGap <= 60);
 }
 
 function mergeActivityRowsIntoFlights(days: RosterDay[]): RosterDay[] {
@@ -374,7 +443,8 @@ function mergeActivityRowsIntoFlights(days: RosterDay[]): RosterDay[] {
         // do voo gerava jornadas visuais enormes (ex.: 22h) quando havia voo após check.
         if (/^C\d{2,3}F$/i.test(activityCode)) continue;
         const mentionedInFlight = flightActivityCodes.includes(activityCode);
-        const overlaps = windowsOverlapOrTouch(activity, flight, 180);
+        // CrewCheck Fix: Reduce overlap tolerance to 30 mins to avoid pulling random standby/training into flights.
+        const overlaps = windowsOverlapOrTouch(activity, flight, 30);
         if (mentionedInFlight || overlaps) {
           flight.rawText = joinRaw(flight.rawText, activity.rawText || activityCode);
           flight.dutyReport = minTime(flight.dutyReport, activity.dutyReport) || flight.dutyReport || activity.dutyReport;
@@ -440,7 +510,8 @@ function mergeTimedActivityRows(days: RosterDay[]): RosterDay[] {
     const mergedGroups: RosterDay[] = [];
     for (const day of timed) {
       const last = mergedGroups[mergedGroups.length - 1];
-      if (last && windowsOverlapOrTouch(last, day, STANDBY_RE.test(code) ? 90 : 15)) {
+      // CrewCheck Fix: Reduce standby overlap tolerance from 90 to 15 mins to avoid merging independent standbys.
+      if (last && windowsOverlapOrTouch(last, day, 15)) {
         last.dutyReport = minTime(last.dutyReport, day.dutyReport) || last.dutyReport;
         last.dutyDebrief = maxTime(last.dutyReport, last.dutyDebrief, day.dutyDebrief) || last.dutyDebrief;
         last.rawText = joinRaw(last.rawText, day.rawText);
