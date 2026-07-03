@@ -129,33 +129,33 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const menuItems = [
-    { icon: HomeIcon, label: 'Cockpit', caption: 'visão geral minimalista', color: 'from-cyan-300 to-blue-500', onClick: () => onNavigate('home') },
-    { icon: FileText, label: 'Nova escala', caption: 'PDF, AIMS ou oficial', color: 'from-cyan-300 to-blue-500', onClick: () => onNavigate('import') },
-    { icon: CreditCard, label: 'Assinatura', caption: 'planos e pagamento', color: 'from-amber-200 to-orange-500', onClick: () => onNavigate('billing') },
-    { icon: Calendar, label: 'Escala', caption: 'linha do tempo premium', color: 'from-blue-400 to-indigo-600', onClick: () => onNavigate('roster') },
-    { icon: Navigation, label: 'Saída Inteligente', caption: 'Maps · transporte · Uber/99', color: 'from-emerald-300 to-cyan-600', onClick: () => onNavigate('departure') },
-    { icon: Bell, label: 'BIDS', caption: 'janela de solicitação e calendário', color: 'from-amber-300 to-orange-600', onClick: () => onNavigate('bids') },
-    { icon: Monitor, label: 'Radar de Voos', caption: 'status, portão e aeroporto', color: 'from-cyan-200 to-sky-600', onClick: () => onNavigate('flightboard') },
-    { icon: Wifi, label: 'Meteorologia', caption: 'METAR/TAF e risco por escala', color: 'from-sky-200 to-cyan-700', onClick: () => onNavigate('weather') },
-    { icon: UserRound, label: 'Chefe de Cabine', caption: 'caderno, água e horários', color: 'from-indigo-200 to-violet-600', onClick: () => onNavigate('chief') },
-    { icon: FileText, label: 'Checklist Médico', caption: 'ocorrência e PDF', color: 'from-rose-200 to-red-600', onClick: () => onNavigate('medical') },
-    { icon: FileText, label: 'Diárias', caption: 'previsão e memória de cálculo', color: 'from-emerald-300 to-teal-600', onClick: () => onNavigate('perdiem') },
-    { icon: DollarSign, label: 'Moedas', caption: 'cotação do dia e diárias internacionais', color: 'from-cyan-200 to-blue-600', onClick: () => onNavigate('currency') },
-    { icon: Car, label: 'Meu carro', caption: 'GPS, piso e vaga do estacionamento', color: 'from-sky-200 to-cyan-600', onClick: () => onNavigate('parking') },
-    { icon: TrendingUp, label: 'Salário', caption: 'bonificação, bruto e líquido', color: 'from-lime-300 to-emerald-600', onClick: () => onNavigate('salary') },
-    { icon: FolderSync, label: 'Rotina', caption: 'treino, estudo e recuperação', color: 'from-emerald-300 to-teal-600', onClick: () => onNavigate('routine') },
-    { icon: AlertCircle, label: 'Conformidade', caption: 'avisos e pontos de atenção', color: 'from-rose-400 to-red-600', onClick: () => onNavigate('irregularities') },
-    { icon: BarChart3, label: 'Relatórios', caption: 'métricas e exportações', color: 'from-sky-300 to-cyan-600', onClick: () => onNavigate('reports') },
-    { icon: Clock, label: 'Histórico', caption: 'escalas salvas', color: 'from-amber-300 to-orange-600', onClick: () => onNavigate('history') },
-    { icon: FileText, label: 'Notas privadas', caption: 'somente neste dispositivo', color: 'from-yellow-300 to-amber-500', onClick: () => onNavigate('notes') },
+    { icon: HomeIcon, label: 'Cockpit', color: 'from-cyan-300 to-blue-500', onClick: () => onNavigate('home') },
+    { icon: FileText, label: 'Nova escala', color: 'from-cyan-300 to-blue-500', onClick: () => onNavigate('import') },
+    { icon: CreditCard, label: 'Assinatura', color: 'from-amber-200 to-orange-500', onClick: () => onNavigate('billing') },
+    { icon: Calendar, label: 'Escala', color: 'from-blue-400 to-indigo-600', onClick: () => onNavigate('roster') },
+    { icon: Navigation, label: 'Saída', color: 'from-emerald-300 to-cyan-600', onClick: () => onNavigate('departure') },
+    { icon: Bell, label: 'BIDS', color: 'from-amber-300 to-orange-600', onClick: () => onNavigate('bids') },
+    { icon: Monitor, label: 'Radar', color: 'from-cyan-200 to-sky-600', onClick: () => onNavigate('flightboard') },
+    { icon: Wifi, label: 'Meteorologia', color: 'from-sky-200 to-cyan-700', onClick: () => onNavigate('weather') },
+    { icon: UserRound, label: 'Chefe Cabine', color: 'from-indigo-200 to-violet-600', onClick: () => onNavigate('chief') },
+    { icon: FileText, label: 'Checklist', color: 'from-rose-200 to-red-600', onClick: () => onNavigate('medical') },
+    { icon: FileText, label: 'Diárias', color: 'from-emerald-300 to-teal-600', onClick: () => onNavigate('perdiem') },
+    { icon: DollarSign, label: 'Moedas', color: 'from-cyan-200 to-blue-600', onClick: () => onNavigate('currency') },
+    { icon: Car, label: 'Meu Carro', color: 'from-sky-200 to-cyan-600', onClick: () => onNavigate('parking') },
+    { icon: TrendingUp, label: 'Salário', color: 'from-lime-300 to-emerald-600', onClick: () => onNavigate('salary') },
+    { icon: FolderSync, label: 'Rotina', color: 'from-emerald-300 to-teal-600', onClick: () => onNavigate('routine') },
+    { icon: AlertCircle, label: 'Conformidade', color: 'from-rose-400 to-red-600', onClick: () => onNavigate('irregularities') },
+    { icon: BarChart3, label: 'Relatórios', color: 'from-sky-300 to-cyan-600', onClick: () => onNavigate('reports') },
+    { icon: Clock, label: 'Histórico', color: 'from-amber-300 to-orange-600', onClick: () => onNavigate('history') },
+    { icon: FileText, label: 'Notas', color: 'from-yellow-300 to-amber-500', onClick: () => onNavigate('notes') },
     ...(canAccessC32FAcademy ? [
-      { icon: Monitor, label: 'iFlight Admin', caption: 'AutoPull e varredura autorizada', color: 'from-orange-200 to-amber-600', onClick: () => onNavigate('iflight') },
-      { icon: ShieldCheck, label: 'Admin', caption: 'uso, saúde e ferramentas', color: 'from-slate-200 to-cyan-600', onClick: () => onNavigate('admin') },
-      { icon: Gauge, label: 'Status do Sistema', caption: 'banco, mapas, radar e e-mail', color: 'from-cyan-200 to-blue-700', onClick: () => onNavigate('systemstatus') },
-      { icon: GraduationCap, label: 'C32F', caption: 'módulo privado de estudo', color: 'from-violet-300 to-fuchsia-600', onClick: () => onNavigate('c32f') },
+      { icon: Monitor, label: 'iFlight Admin', color: 'from-orange-200 to-amber-600', onClick: () => onNavigate('iflight') },
+      { icon: ShieldCheck, label: 'Admin', color: 'from-slate-200 to-cyan-600', onClick: () => onNavigate('admin') },
+      { icon: Gauge, label: 'Sistema', color: 'from-cyan-200 to-blue-700', onClick: () => onNavigate('systemstatus') },
+      { icon: GraduationCap, label: 'C32F', color: 'from-violet-300 to-fuchsia-600', onClick: () => onNavigate('c32f') },
     ] : []),
-    { icon: Mail, label: 'Ajuda', caption: 'falar com suporte', color: 'from-sky-300 to-cyan-600', onClick: () => onNavigate('support') },
-    { icon: Settings, label: 'Configurações', caption: 'perfil, agenda e manual', color: 'from-slate-300 to-slate-600', onClick: () => onNavigate('settings') },
+    { icon: Mail, label: 'Ajuda', color: 'from-sky-300 to-cyan-600', onClick: () => onNavigate('support') },
+    { icon: Settings, label: 'Config.', color: 'from-slate-300 to-slate-600', onClick: () => onNavigate('settings') },
   ];
 
   return (
@@ -189,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               return (
                 <button key={item.label} onClick={item.onClick} className={`group flex w-full items-center gap-3 rounded-2xl border border-white/0 px-3 py-2.5 text-left transition hover:border-cyan-200/15 hover:bg-white/[0.07] ${sidebarCollapsed ? 'justify-center' : ''}`} title={item.label}>
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${item.color} text-[#06101d] shadow-lg shadow-black/10 transition group-hover:scale-105`}><Icon className="h-5 w-5" /></span>
-                  {!sidebarCollapsed && <span className="min-w-0"><span className="block truncate text-sm font-black text-white">{item.label}</span><span className="block truncate text-[0.68rem] font-semibold text-slate-400">{item.caption}</span></span>}
+                  {!sidebarCollapsed && <span className="min-w-0"><span className="block truncate text-sm font-black text-white">{item.label}</span></span>}
                 </button>
               );
             })}
@@ -219,17 +219,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="min-w-0">
                   <p className="text-[0.7rem] font-black uppercase tracking-[0.32em] text-cyan-100/70">Cockpit pessoal</p>
                   <h2 className="mt-2 max-w-xl break-words text-3xl font-black leading-[0.95] tracking-tight sm:text-5xl">{firstName}</h2>
-                  <p className="mt-3 text-sm font-semibold text-slate-300 sm:text-base">Cockpit · {user.base || 'BSB'} · escala, rotina reliable, radar, saída inteligente e alertas em leitura rápida.</p>
+                  <p className="mt-2 text-sm font-medium text-slate-400">{user.base || 'BSB'} · {user.company || 'LATAM'}</p>
                 </div>
               </div>
-              <div className="mt-5 grid max-w-xl grid-cols-3 gap-2 sm:gap-3">
-                <MiniStatus icon={Wifi} value="Offline" label="pronto" />
-                <MiniStatus icon={ShieldCheck} value="LGPD" label="privado" />
-                <MiniStatus icon={RefreshCw} value="Trust" label="auditável" />
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="cc-badge-conforme cc-badge">✓ Offline</span>
+                <span className="cc-badge-conforme cc-badge">✓ LGPD</span>
+                {alertsCount > 0 && <span className="cc-badge-alerta cc-badge">{alertsCount} alerta{alertsCount > 1 ? 's' : ''}</span>}
               </div>
-              <div className="mt-5 max-w-2xl rounded-3xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm leading-6 text-amber-50/90">
-                <b>Fase de testes privados:</b> confira sempre os dados com a escala oficial. Se encontrar divergência, envie o PDF/print pela aba Suporte para ajustarmos o CrewCheck.
-              </div>
+
             </div>
           </section>
 
@@ -243,12 +241,8 @@ const Dashboard: React.FC<DashboardProps> = ({
           <PremiumTrustStrip hasRoster={hasRoster} alertsCount={alertsCount} daysLoaded={daysLoaded} complianceScore={complianceScore} />
 
           <section className="crewcheck-cockpit-module-center rounded-[2rem] border border-cyan-200/12 bg-white/[0.04] p-4 shadow-2xl shadow-black/20 backdrop-blur-2xl">
-            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-[0.66rem] font-black uppercase tracking-[0.28em] text-cyan-100/65">Central CrewCheck</p>
-                <h3 className="text-2xl font-black tracking-tight text-white">Todos os módulos no Cockpit</h3>
-              </div>
-              <p className="max-w-md text-xs font-semibold leading-5 text-slate-400">Acesso rápido sem menu flutuante: escala, chefe, checklist médico, diárias, salário, ajuda e relatórios.</p>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-black tracking-tight" style={{ color: 'var(--foreground)' }}>Módulos</h3>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {menuItems.filter((item) => item.label !== 'Cockpit').map((item) => <MenuCard key={item.label} {...item} compact adminMode={canAccessC32FAcademy} onAdminNavigate={onNavigate} />)}
@@ -1256,7 +1250,7 @@ function MenuCard({ icon: Icon, label, caption, color, onClick, compact = false,
           </div>
           <span className={compact ? 'inline-flex min-w-0 flex-col align-middle' : 'block'}>
             <p className="text-[0.74rem] font-black leading-tight text-white sm:text-sm">{label}</p>
-            <p className="mt-1 hidden text-[10px] font-bold leading-4 text-slate-500 sm:block">{caption}</p>
+
           </span>
         </button>
         {adminMode ? (

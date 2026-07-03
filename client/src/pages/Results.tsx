@@ -238,6 +238,40 @@ function resultsCurrentUserScope(): string {
   }
 }
 
+
+const CREWCHECK_RESULTS_ENGINE_VERSION = '11.1.105';
+
+function clearCrewCheckRosterCachesForReimport() {
+  try {
+    sessionStorage.removeItem('crewcheck_roster');
+    sessionStorage.removeItem('crewcheck_compliance');
+    sessionStorage.removeItem('crewcheck_gym');
+    Object.keys(localStorage).forEach((key) => {
+      if (/crewcheck_(roster|latest_roster|active_roster|last_roster_bundle|roster_sync)/i.test(key)) localStorage.removeItem(key);
+    });
+    if ('caches' in window) {
+      caches.keys().then((keys) => Promise.all(keys.filter((key) => /crewcheck/i.test(key)).map((key) => caches.delete(key)))).catch(() => undefined);
+    }
+    navigator.serviceWorker?.controller?.postMessage?.('CLEAR_CREWCHECK_CACHE');
+  } catch {}
+}
+
+function rosterHasGoldCriticalFlight(roster: CrewRoster | null | undefined): boolean {
+  return Boolean(roster?.days?.some((day) => day.date === '07/07/2026' && (day.legs || []).some((leg) => String(leg.flightNumber || '').replace(/\s+/g, '').toUpperCase() === 'LA3395' && String(leg.origin || '').toUpperCase() === 'PMW' && String(leg.destination || '').toUpperCase() === 'GRU')));
+}
+
+function rosterNeedsForcedReimport(roster: CrewRoster | null | undefined): boolean {
+  if (!roster?.days?.length) return false;
+  const raw = String(roster.rawText || '').toUpperCase();
+  const hasGoldContext = raw.includes('3394') && raw.includes('3395') && raw.includes('3838');
+  const version = String((roster as any).parserVersion || (roster as any).engineVersion || '');
+  return hasGoldContext && !rosterHasGoldCriticalFlight(roster) && version !== CREWCHECK_RESULTS_ENGINE_VERSION;
+}
+
+function ensureResultsRosterVersion(roster: CrewRoster): CrewRoster {
+  return { ...(roster as any), parserVersion: CREWCHECK_RESULTS_ENGINE_VERSION } as CrewRoster;
+}
+
 function readResultsPersistedRosterPayload(): any | null {
   try {
     const scope = resultsCurrentUserScope();
@@ -268,7 +302,8 @@ function readResultsPersistedRosterPayload(): any | null {
 }
 
 function persistResultsSession(rosterInput: CrewRoster, complianceInput?: ComplianceResult | null, gymInput?: GymRecommendation[] | null) {
-  const normalizedRoster = normalizeRosterSchedule(rosterInput);
+  let normalizedRoster = normalizeRosterSchedule(rosterInput);
+  normalizedRoster = ensureResultsRosterVersion(normalizedRoster);
   const roleSelection = (sessionStorage.getItem("crewcheck_role_selection") || "auto") as any;
   const recalculatedCompliance = complianceInput || analyzeCompliance(normalizedRoster, roleSelection);
   const recalculatedGym = Array.isArray(gymInput) ? gymInput : getGymRecommendations(normalizedRoster, roleSelection);
@@ -354,7 +389,14 @@ export default function Results() {
 
       try {
         if (rosterData && complianceData) {
-          const restored = persistResultsSession(JSON.parse(rosterData), JSON.parse(complianceData), gymData ? JSON.parse(gymData) : []);
+          const parsedRoster = JSON.parse(rosterData);
+          if (rosterNeedsForcedReimport(parsedRoster)) {
+            clearCrewCheckRosterCachesForReimport();
+            toast.warning('Escala antiga removida para reimportação com o motor v11.1.105. Importe o PDF original novamente para validar a Escala Ouro.');
+            if (active) setLocation('/?view=import');
+            return;
+          }
+          const restored = persistResultsSession(parsedRoster, JSON.parse(complianceData), gymData ? JSON.parse(gymData) : []);
           if (!active) return;
           setRoster(restored.normalizedRoster);
           setCompliance(restored.recalculatedCompliance);
@@ -364,6 +406,12 @@ export default function Results() {
 
         const localPayload = readResultsPersistedRosterPayload();
         if (localPayload?.roster?.days?.length) {
+          if (rosterNeedsForcedReimport(localPayload.roster)) {
+            clearCrewCheckRosterCachesForReimport();
+            toast.warning('Escala antiga removida para reimportação com o motor v11.1.105. Importe o PDF original novamente.');
+            if (active) setLocation('/?view=import');
+            return;
+          }
           const restored = persistResultsSession(localPayload.roster, localPayload.compliance, localPayload.gym);
           if (!active) return;
           setRoster(restored.normalizedRoster);
@@ -375,6 +423,12 @@ export default function Results() {
 
         const cloudPayload = await openActiveRoster();
         if (cloudPayload?.roster?.days?.length) {
+          if (rosterNeedsForcedReimport(cloudPayload.roster)) {
+            clearCrewCheckRosterCachesForReimport();
+            toast.warning('Escala da nuvem estava em formato antigo. Reimporte o PDF original para evitar teletransporte visual.');
+            if (active) setLocation('/?view=import');
+            return;
+          }
           const restored = persistResultsSession(cloudPayload.roster, cloudPayload.compliance, cloudPayload.gym);
           if (!active) return;
           setRoster(restored.normalizedRoster);
@@ -759,39 +813,13 @@ export default function Results() {
         <PremiumMobileDrawer open={mobileMenuOpen} activeView={activeView} displayName={displayCrewName} rank={roster.rank || "Flight Crew"} base={roster.base} errorsCount={errors.length} themeMode={themeMode === 'dark' || themeMode === 'light' ? themeMode : 'dark'} onThemeToggle={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')} onClose={() => setMobileMenuOpen(false)} onChange={switchView} onOpenHomeView={openHomeView} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />
         <main className={appMode ? "px-2.5 pb-24 pt-3 sm:px-4 md:px-5 android-premium-main" : "px-4 py-6 md:px-7 lg:py-8"}>
           <div className={activeView === "roster" && !appMode ? "mx-auto w-full max-w-none" : "mx-auto max-w-[1540px]"}>
-            {!appMode && (
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#0b4f7a]/20 pb-3">
-                <div className="text-sm font-medium text-sky-500">
-                  HOME <span className="mx-2 text-[#6d8397]">/</span> <span className="font-black text-[#092846]">{viewTitle(activeView)}</span>
-                </div>
-                <Badge className="rounded-full border-0 px-3 py-1 text-xs font-bold" style={{ backgroundColor: status.bg, color: status.fg }}>
-                  <StatusIcon className="h-3.5 w-3.5" /> {status.label}
-                </Badge>
-              </div>
-            )}
 
-            {!appMode && <MobileViewTabs activeView={activeView} onChange={switchView} errors={errors.length} />}
 
-            {!appMode && <section className="mb-4 overflow-hidden rounded-[1.4rem] border border-white bg-white shadow-[0_18px_55px_rgba(20,54,84,0.08)]">
-              <div className="relative flex min-h-[7.2rem] items-center justify-between gap-6 overflow-hidden px-5 py-5 md:px-7">
-                <div className="absolute inset-y-0 right-0 hidden w-[42%] bg-[radial-gradient(circle_at_70%_50%,rgba(72,190,255,0.28),transparent_34%),linear-gradient(90deg,transparent,#eaf7ff)] md:block" />
-                <div className="relative z-10 flex items-center gap-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-inner shadow-blue-200/60">
-                    {viewHeroIcon(activeView)}
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black tracking-tight md:text-3xl">{viewTitle(activeView)}</h2>
-                    <p className="mt-1 max-w-2xl text-sm text-[#60758a] md:text-base">{viewSubtitle(activeView)}</p>
-                  </div>
-                </div>
-                <div className="relative z-10 hidden h-20 min-w-[18rem] items-end justify-end md:flex">
-                  <div className="h-1 w-36 rounded-full bg-[#9ed4ef]" />
-                  <div className="-ml-8 h-16 w-40 skew-x-[-24deg] rounded-tl-[3rem] rounded-br-2xl bg-gradient-to-br from-[#1d6f9d] to-[#063153] shadow-lg" />
-                </div>
-              </div>
-            </section>}
 
-            {!appMode && <div className="mb-4 rounded-[1.15rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm"><strong>Fase de testes privados:</strong> confira sempre com sua escala oficial. Encontrou divergência? Use Configurações &gt; Suporte e envie o PDF/print para melhoria do CrewCheck.</div>}
+
+
+
+
 
             {rosterIsStale && <div className="mb-4 rounded-[1.2rem] border border-orange-200 bg-orange-50 px-4 py-4 text-sm leading-6 text-orange-950 shadow-sm">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -830,7 +858,7 @@ export default function Results() {
             {activeView === "statistics" && <StatisticsPanel storedStats={storedStats} savedRosters={savedRosters} />}
             {activeView === "settings" && <SettingsPanel roster={roster} gym={gym} load={loadAnalysis} themeMode={themeMode} onThemeModeChange={setThemeMode} ignoredAlertKeys={ignoredAlertKeys} onClearIgnoredAlerts={() => { setIgnoredAlertKeys([]); saveIgnoredAlertKeys([]); toast.success("Aprendizado de falsos positivos limpo."); }} handleExportCalendar={handleExportCalendar} handleExportPdf={handleExportPdf} handleSharePdf={handleSharePdf} handleWhatsAppPdf={handleWhatsAppPdf} handleEmailPdf={handleEmailPdf} handleCopy={handleCopy} handleEmailReport={handleEmailReport} isSendingEmail={isSendingEmail} />}
             {activeView === "manual" && <ManualPanel />}
-            <div className="mt-5"><PrivacyTrustBanner /></div>
+
           </div>
         </main>
       </div>
@@ -5126,7 +5154,19 @@ function buildBaseEvent(day: RosterDay, date: Date): Omit<RosterEvent, "id" | "a
   if (Number.isFinite(h) && h >= 0 && h <= 23) target.setHours(h, Number.isFinite(m) ? m : 0, 0, 0);
   const weekday = WEEKDAYS_SHORT[safeDate.getDay()] || '—';
   const monthLabel = MONTHS_SHORT[safeDate.getMonth()] || '—';
-  return { day, date: safeDate, dateLabel: day.date || dateOnlyIsoSafe(safeDate), weekday, dayNumber: String(safeDate.getDate()).padStart(2, "0"), monthLabel, time, targetIso: safeRosterIso(target, safeDate) };
+  return {
+    day,
+    date: safeDate,
+    // v11.1.100: o rótulo do card precisa seguir a data real do evento.
+    // Antes usava day.date; em voo virando meia-noite isso fazia o card
+    // carregar a data original da jornada e podia inverter/ocultar dias na UI.
+    dateLabel: formatRosterDate(safeDate),
+    weekday,
+    dayNumber: String(safeDate.getDate()).padStart(2, "0"),
+    monthLabel,
+    time,
+    targetIso: safeRosterIso(target, safeDate),
+  };
 }
 
 function displayTimeForRosterDay(day: RosterDay): string {
