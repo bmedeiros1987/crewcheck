@@ -5696,9 +5696,14 @@ async function fetchExtraFlightOffersWithDbCache(query) {
   targetIso: String(query.targetIso || query.presentationIso || '').trim(),
  };
  const cached = await readExtraFlightSearchDbCache(params);
- if (cached) return enrichExtraFlightOptionsWithStaffLoad(cached, params);
+ if (cached) {
+  const withLoad = enrichExtraFlightOptionsWithStaffLoad(cached, params);
+  // v12.3: enrich with real Amadeus seat availability (best-effort, non-blocking)
+  return enrichExtraFlightOptionsWithRealOccupancy(withLoad).catch(() => withLoad);
+ }
  const fresh = enrichExtraFlightOptionsWithStaffLoad(await fetchExtraFlightOffers(query), params);
- return writeExtraFlightSearchDbCache(params, fresh);
+ const withRealOccupancy = await enrichExtraFlightOptionsWithRealOccupancy(fresh).catch(() => fresh);
+ return writeExtraFlightSearchDbCache(params, withRealOccupancy);
 }
 
 async function fetchExtraFlightOffers(query) {
@@ -10995,7 +11000,8 @@ async function getSmartDeparturePlan(query) {
      if (departure.getTime() < now.getTime()) departure = now;
     }
    } else if (wantedMode === 'TRANSIT') {
-    const premium = await computePremiumTransitCandidates({ origin, destination, departureTime: now.toISOString(), arrivalDeadline: arrivalDeadline.toISOString() });
+    // v12.3: use enhanced transit with Transitous GTFS-RT first, then Google Routes
+    const premium = await computeEnhancedTransitCandidates({ origin, destination, departureTime: now.toISOString(), arrivalDeadline: arrivalDeadline.toISOString() });
     errors.push(...premium.errors.slice(0, 2));
     const sortedTransit = premium.candidates.sort((a, b) => (a.durationSeconds || 999999) - (b.durationSeconds || 999999));
     for (const candidate of sortedTransit.slice(0, 3)) {
@@ -11088,36 +11094,55 @@ async function getSmartDeparturePlan(query) {
    errors: errors.slice(0, 4).map(sanitizePublicError),
   },
  };
- // Fetch Waze traffic alerts in parallel (non-blocking, best-effort)
+ // Fetch Waze traffic alerts and previous-day recommendation in parallel (non-blocking, best-effort)
  let trafficAlerts = null;
+ let previousDayRec = null;
  try {
-  if (!isLongDistance) {
-   trafficAlerts = await getSmartDepartureTrafficAlerts({ origin, destination, airport }).catch(() => null);
-  }
+  const [trafficResult, prevDayResult] = await Promise.allSettled([
+   !isLongDistance ? getSmartDepartureTrafficAlerts({ origin, destination, airport }) : Promise.resolve(null),
+   isLongDistance ? computePreviousDayDepartureRecommendation({ origin, destination, airport, targetIso, marginMinutes }) : Promise.resolve(null),
+  ]);
+  trafficAlerts = trafficResult.status === 'fulfilled' ? trafficResult.value : null;
+  previousDayRec = prevDayResult.status === 'fulfilled' ? prevDayResult.value : null;
  } catch {
-  // traffic alerts are best-effort, never block the plan
+  // best-effort, never block the plan
  }
  const usedOSRM = routeOptions.some((item) => /OSRM|OpenStreetMap/.test(String(item.source || '')));
+ const usedTransitous = routeOptions.some((item) => /Transitous|GTFS-RT/.test(String(item.source || '')));
+ const transitRealtimeCount = routeOptions
+  .filter((item) => item.mode === 'TRANSIT')
+  .reduce((sum, item) => sum + ((item.realtimeSteps || 0) > 0 ? 1 : 0), 0);
  const valueWithTraffic = {
   ...value,
   trafficAlerts: trafficAlerts || null,
   trafficLevel: trafficAlerts?.trafficLevel || null,
   trafficLabel: trafficAlerts?.trafficLabel || null,
   trafficIcon: trafficAlerts?.trafficIcon || null,
+  previousDayRecommendation: previousDayRec || null,
+  shouldRecommendPreviousDay: previousDayRec?.shouldRecommendPreviousDay || false,
   osrmEnabled: CREWCHECK_OSRM_ENABLED,
   wazeEnabled: CREWCHECK_WAZE_ENABLED,
-  estimateDisclosure: usedGoogle ? 'Dados reais' : usedOSRM ? 'OSRM/OpenStreetMap' : 'Estimativa CrewCheck',
-  dataQualityLabel: usedGoogle ? 'dados reais' : usedOSRM ? 'OSRM/OSM' : 'estimado',
-  warning: isLongDistance && !userAllowsFlightAboveThreshold
-   ? `Trajeto longo detectado. Ative a opção de voo em longa distância para o Automático considerar ponte aérea.`
-   : (usedGoogle ? null : usedOSRM ? 'Rota calculada via OSRM/OpenStreetMap com fator de tráfego estimado. Para dados em tempo real, configure Google Maps ou TomTom.' : 'Google Maps não retornou rota em tempo real. O CrewCheck mantém estimativa segura e usa TomTom/OSRM como fallback.'),
+  transitRealtimeEnabled: CREWCHECK_TRANSITOUS_ENABLED,
+  usedTransitous,
+  transitRealtimeCount,
+  estimateDisclosure: usedGoogle ? 'Dados reais' : usedTransitous ? 'Transitous/GTFS-RT' : usedOSRM ? 'OSRM/OpenStreetMap' : 'Estimativa CrewCheck',
+  dataQualityLabel: usedGoogle ? 'dados reais' : usedTransitous ? 'GTFS-RT' : usedOSRM ? 'OSRM/OSM' : 'estimado',
+  warning: previousDayRec?.shouldRecommendPreviousDay
+   ? previousDayRec.recommendation
+   : isLongDistance && !userAllowsFlightAboveThreshold
+    ? `Trajeto longo detectado. Ative a opção de voo em longa distância para o Automático considerar ponte aérea.`
+    : (usedGoogle ? null : usedTransitous ? 'Horários de transporte público via Transitous/GTFS-RT. Dados em tempo real quando disponíveis pelo operador.' : usedOSRM ? 'Rota calculada via OSRM/OpenStreetMap com fator de tráfego estimado. Para dados em tempo real, configure Google Maps ou TomTom.' : 'Google Maps não retornou rota em tempo real. O CrewCheck mantém estimativa segura e usa TomTom/OSRM como fallback.'),
   diagnostics: {
    ...value.diagnostics,
    osrmEnabled: CREWCHECK_OSRM_ENABLED,
    wazeEnabled: CREWCHECK_WAZE_ENABLED,
+   transitousEnabled: CREWCHECK_TRANSITOUS_ENABLED,
    usedOSRM,
+   usedTransitous,
+   transitRealtimeCount,
    trafficAlertsCount: trafficAlerts?.alerts?.length || 0,
    trafficLevel: trafficAlerts?.trafficLevel || null,
+   previousDayRecommended: previousDayRec?.shouldRecommendPreviousDay || false,
   },
  };
  commuteCache.set(cacheKey, { time: Date.now(), value: valueWithTraffic });
@@ -16351,37 +16376,55 @@ async function runSmartDepartureTrafficMonitor() {
     const airport = config.airport || nextDuty.base || 'BSB';
     const destination = CREWCHECK_AIRPORT_COORDS[normalizeAirportCode(airport)] || CREWCHECK_AIRPORT_COORDS.BSB;
     const origin = { lat: Number(originLat), lng: Number(originLng), name: config.origin_name || 'Casa' };
-    // Get traffic alerts
-    const trafficData = await getSmartDepartureTrafficAlerts({ origin, destination, airport }).catch(() => null);
-    // Get OSRM route for ETA
-    const osrmRoute = await computeOSRMRoutePlan({ origin, destination, mode: 'DRIVE' }).catch(() => null);
+    // Get traffic alerts, OSRM route, transit realtime and previous-day recommendation in parallel
     const marginMinutes = config.margin_minutes || 30;
     const dutyDate = new Date(nextDuty.dutyReport);
     const arrivalDeadline = new Date(dutyDate.getTime() - marginMinutes * 60_000);
+    const targetIso = dutyDate.toISOString();
+    const [trafficData, osrmRoute, transitItins, prevDayRec] = await Promise.all([
+     getSmartDepartureTrafficAlerts({ origin, destination, airport }).catch(() => null),
+     computeOSRMRoutePlan({ origin, destination, mode: 'DRIVE' }).catch(() => null),
+     fetchTransitousItineraries({ origin, destination, departureTime: now.toISOString(), arrivalTime: arrivalDeadline.toISOString(), numItineraries: 2 }).catch(() => []),
+     computePreviousDayDepartureRecommendation({ origin, destination, airport, targetIso, marginMinutes }).catch(() => null),
+    ]);
     const durationMinutes = osrmRoute ? Math.max(1, Math.round(osrmRoute.durationSeconds / 60)) : null;
     const leaveAt = durationMinutes ? new Date(arrivalDeadline.getTime() - durationMinutes * 60_000) : null;
     const msUntilLeave = leaveAt ? leaveAt.getTime() - now.getTime() : null;
-    // Only notify if leave time is within the notification window
-    if (msUntilLeave !== null && (msUntilLeave < 0 || msUntilLeave > notifyWindowMs)) continue;
+    // Only notify if leave time is within the notification window (or if previous-day recommendation is urgent)
+    const isPrevDayUrgent = prevDayRec?.shouldRecommendPreviousDay && prevDayRec?.previousDayIso === now.toISOString().slice(0, 10);
+    if (!isPrevDayUrgent && msUntilLeave !== null && (msUntilLeave < 0 || msUntilLeave > notifyWindowMs)) continue;
     // Build Telegram message
     const dutyLabel = formatClockIso(dutyDate);
     const leaveLabel = leaveAt ? formatClockIso(leaveAt) : null;
     const trafficIcon = trafficData?.trafficIcon || '🟢';
     const trafficLabel = trafficData?.trafficLabel || 'Via livre';
     const criticalAlerts = trafficData?.criticalAlerts || [];
+    // Transit realtime info
+    const bestTransit = Array.isArray(transitItins) && transitItins.length > 0 ? transitItins[0] : null;
+    const transitLine = bestTransit?.transitSteps?.[0];
+    const transitInfo = bestTransit
+     ? `🚌 Transporte público: ${bestTransit.localizedDuration}${transitLine ? ` · ${transitLine.line || transitLine.mode}` : ''}${bestTransit.realtimeSteps > 0 ? ' (tempo real)' : ' (programado)'}`
+     : null;
     const lines = [
+     prevDayRec?.shouldRecommendPreviousDay ? `⚠️ ${prevDayRec.recommendation}` : null,
      `Apresentação: ${dutyLabel} em ${destination.name || airport}`,
-     leaveLabel ? `Horário de saída: ${leaveLabel}` : null,
-     durationMinutes ? `Tempo estimado: ${durationMinutes} min${osrmRoute?.distanceMeters ? ` · ${Math.round((osrmRoute.distanceMeters / 1000) * 10) / 10} km` : ''}` : null,
+     leaveLabel ? `🕒 Horário de saída: ${leaveLabel}` : null,
+     durationMinutes ? `🚗 Tempo estimado: ${durationMinutes} min${osrmRoute?.distanceMeters ? ` · ${Math.round((osrmRoute.distanceMeters / 1000) * 10) / 10} km` : ''}` : null,
+     transitInfo,
      `${trafficIcon} ${trafficLabel}`,
      ...criticalAlerts.slice(0, 3).map((a) => `⚠️ ${a.description}${a.street ? ` — ${a.street}` : ''}`),
-     trafficData?.trafficLevel === 'heavy' ? 'Considere sair mais cedo ou usar transporte público.' : null,
+     trafficData?.trafficLevel === 'heavy' ? '💡 Considere sair mais cedo ou usar transporte público.' : null,
+     prevDayRec?.shouldRecommendPreviousDay && prevDayRec.previousDayOptions?.length
+      ? `✈️ Voos na véspera (${prevDayRec.previousDayIso}): ${prevDayRec.previousDayOptions.slice(0, 2).map((opt) => `${opt.leaveAt || '?'} ${opt.carriers || ''}`).join(' / ')}`
+      : null,
     ].filter(Boolean);
-    const title = leaveLabel ? `Saia às ${leaveLabel} para ${airport}` : `Alerta de saída para ${airport}`;
+    const title = prevDayRec?.shouldRecommendPreviousDay
+     ? `Atenção: sair na véspera para ${airport}`
+     : (leaveLabel ? `Saia às ${leaveLabel} para ${airport}` : `Alerta de saída para ${airport}`);
     await notifyTelegramForUser(db, userId, 'smartDeparture', title, lines).catch(() => null);
     departureMonitorLastNotified.set(dedupeKey, Date.now());
     // Update last monitored
-    await db.query('update crewcheck_departure_config set last_monitored_at = now(), last_traffic_json = $1 where user_id = $2', [JSON.stringify(trafficData || {}), userId]).catch(() => null);
+    await db.query('update crewcheck_departure_config set last_monitored_at = now(), last_traffic_json = $1 where user_id = $2', [JSON.stringify({ trafficData: trafficData || {}, prevDayRec: prevDayRec || null }), userId]).catch(() => null);
    } catch {
     // per-user errors must not stop the monitor
    }
@@ -16399,6 +16442,436 @@ if (CREWCHECK_DEPARTURE_MONITOR_ENABLED) {
 }
 
 // --- end CrewCheck v12.2 Smart Departure Monitor ---
+
+// ============================================================
+// CrewCheck v12.3 — Transporte Público em Tempo Real
+//   + Lógica de Saída no Dia Anterior
+//   + Ocupação de Voos Melhorada
+// ============================================================
+
+const CREWCHECK_TRANSIT_REALTIME_ENABLED = String(process.env.CREWCHECK_TRANSIT_REALTIME_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_TRANSITOUS_BASE = String(process.env.CREWCHECK_TRANSITOUS_BASE || 'https://api.transitous.org').replace(/\/+$/, '');
+const CREWCHECK_TRANSITOUS_ENABLED = String(process.env.CREWCHECK_TRANSITOUS_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_PREVIOUS_DAY_DEPARTURE_ENABLED = String(process.env.CREWCHECK_PREVIOUS_DAY_DEPARTURE_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_PREVIOUS_DAY_DEPARTURE_THRESHOLD_KM = Math.max(100, Number(process.env.CREWCHECK_PREVIOUS_DAY_DEPARTURE_THRESHOLD_KM || 300));
+const CREWCHECK_FLIGHT_OCCUPANCY_ENABLED = String(process.env.CREWCHECK_FLIGHT_OCCUPANCY_ENABLED || 'true').toLowerCase() !== 'false';
+
+// ---- Transitous / OpenTripPlanner transit realtime ----
+
+/**
+ * Queries Transitous (free, no key, GTFS-RT data for Brazil and worldwide)
+ * for real-time transit itineraries between two coordinates.
+ * Returns an array of transit route options with real departure times.
+ */
+async function fetchTransitousItineraries({ origin, destination, departureTime, arrivalTime, numItineraries = 3 }) {
+ if (!CREWCHECK_TRANSITOUS_ENABLED) return [];
+ const originLat = Number(origin?.lat);
+ const originLng = Number(origin?.lng);
+ const destLat = Number(destination?.lat);
+ const destLng = Number(destination?.lng);
+ if (![originLat, originLng, destLat, destLng].every(Number.isFinite)) return [];
+ // Transitous uses the MOTIS API (OpenTripPlanner-compatible GraphQL)
+ const depTime = departureTime ? new Date(departureTime) : new Date();
+ const depIso = depTime.toISOString();
+ // Use the MOTIS v2 REST API for itinerary planning
+ const url = new URL(`${CREWCHECK_TRANSITOUS_BASE}/api/v1/plan`);
+ url.searchParams.set('fromPlace', `${originLat},${originLng}`);
+ url.searchParams.set('toPlace', `${destLat},${destLng}`);
+ url.searchParams.set('time', depIso);
+ url.searchParams.set('numItineraries', String(numItineraries));
+ url.searchParams.set('mode', 'TRANSIT,WALK');
+ if (arrivalTime) url.searchParams.set('arriveBy', 'true');
+ try {
+  const response = await fetch(url.toString(), {
+   headers: { 'accept': 'application/json', 'user-agent': 'CrewCheck/12.3 transit-realtime' },
+   signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) return [];
+  const payload = await response.json();
+  const itineraries = Array.isArray(payload?.plan?.itineraries) ? payload.plan.itineraries : (Array.isArray(payload?.itineraries) ? payload.itineraries : []);
+  return itineraries.map((itin) => normalizeTransitousItinerary(itin, { origin, destination })).filter(Boolean);
+ } catch {
+  return [];
+ }
+}
+
+function normalizeTransitousItinerary(itin, { origin, destination }) {
+ if (!itin || !Number.isFinite(itin.duration)) return null;
+ const durationSeconds = Math.round(Number(itin.duration));
+ if (durationSeconds <= 0) return null;
+ const legs = Array.isArray(itin.legs) ? itin.legs : [];
+ const transitLegs = legs.filter((leg) => leg.mode !== 'WALK');
+ const walkLegs = legs.filter((leg) => leg.mode === 'WALK');
+ const totalWalkMeters = walkLegs.reduce((sum, leg) => sum + Number(leg.distance || 0), 0);
+ const startTime = itin.startTime ? new Date(Number(itin.startTime)) : null;
+ const endTime = itin.endTime ? new Date(Number(itin.endTime)) : null;
+ const steps = transitLegs.map((leg) => {
+  const line = leg.route || leg.routeShortName || leg.tripHeadsign || '';
+  const agency = leg.agencyName || leg.agency || '';
+  const from = leg.from?.name || leg.from?.stopName || '';
+  const to = leg.to?.name || leg.to?.stopName || '';
+  const depTime = leg.startTime ? new Date(Number(leg.startTime)) : null;
+  const arrTime = leg.endTime ? new Date(Number(leg.endTime)) : null;
+  const vehicleType = normalizeTransitModeLabel(leg.mode || leg.vehicleType || '');
+  const realtime = Boolean(leg.realTime || leg.departureDelay !== undefined || leg.arrivalDelay !== undefined);
+  const delay = Number(leg.departureDelay || 0);
+  return {
+   type: 'TRANSIT',
+   mode: vehicleType,
+   vehicleType: leg.mode || null,
+   line: cleanTransitLineLabel(line, vehicleType),
+   agency,
+   headsign: leg.tripHeadsign || '',
+   from,
+   to,
+   departureTime: depTime?.toISOString() || null,
+   arrivalTime: arrTime?.toISOString() || null,
+   departureLabel: depTime ? localTransitTimeLabel(depTime.toISOString()) : null,
+   arrivalLabel: arrTime ? localTransitTimeLabel(arrTime.toISOString()) : null,
+   text: [cleanTransitLineLabel(line, vehicleType), leg.tripHeadsign && `sentido ${leg.tripHeadsign}`, from && `de ${from}`, to && `até ${to}`].filter(Boolean).join(' · '),
+   durationText: leg.duration ? `${Math.round(Number(leg.duration) / 60)} min` : '',
+   realtime,
+   delayMinutes: delay ? Math.round(delay / 60) : 0,
+   realtimeLabel: realtime ? (delay > 60 ? `${Math.round(delay / 60)} min de atraso` : delay < -60 ? `${Math.round(-delay / 60)} min adiantado` : 'no horário') : null,
+  };
+ }).filter(Boolean);
+ const firstTransit = steps[0];
+ const distanceMeters = Math.round(legs.reduce((sum, leg) => sum + Number(leg.distance || 0), 0));
+ const transfers = Number(itin.transfers || 0);
+ const realtimeCount = steps.filter((s) => s.realtime).length;
+ return {
+  mode: 'TRANSIT',
+  durationSeconds,
+  staticDurationSeconds: durationSeconds,
+  distanceMeters,
+  localizedDuration: `${Math.max(1, Math.round(durationSeconds / 60))} min`,
+  localizedDistance: distanceMeters ? `${Math.round(distanceMeters / 100) / 10} km` : null,
+  label: steps.length ? `Transporte público · ${steps.map((s) => s.line || s.mode).filter(Boolean).slice(0, 3).join(' + ')}` : 'Transporte público',
+  transitSteps: steps,
+  firstTransitDeparture: firstTransit?.departureLabel || null,
+  firstTransitDepartureIso: firstTransit?.departureTime || null,
+  transfers,
+  walkMeters: Math.round(totalWalkMeters),
+  realtimeSteps: realtimeCount,
+  source: `Transitous · GTFS-RT${realtimeCount > 0 ? ' · tempo real' : ' · horário programado'}`,
+  transitPreference: transfers === 0 ? 'FEWER_TRANSFERS' : null,
+  startTime: startTime?.toISOString() || null,
+  endTime: endTime?.toISOString() || null,
+ };
+}
+
+/**
+ * Enhanced transit candidates: tries Transitous first (real-time GTFS),
+ * then falls back to Google Routes, then OSRM.
+ */
+async function computeEnhancedTransitCandidates({ origin, destination, departureTime, arrivalDeadline }) {
+ const candidates = [];
+ const errors = [];
+ // 1. Try Transitous (free, GTFS-RT, no key needed)
+ if (CREWCHECK_TRANSITOUS_ENABLED) {
+  try {
+   const transitousResults = await fetchTransitousItineraries({
+    origin,
+    destination,
+    departureTime,
+    arrivalTime: arrivalDeadline,
+    numItineraries: 4,
+   });
+   for (const result of transitousResults) {
+    if (result?.durationSeconds) candidates.push({ ...result, source: result.source || 'Transitous GTFS-RT' });
+   }
+  } catch (error) {
+   errors.push(`Transitous: ${String(error?.message || error).slice(0, 120)}`);
+  }
+ }
+ // 2. Try Google Routes (premium, requires API key)
+ try {
+  const arrivals = [arrivalDeadline, new Date(new Date(arrivalDeadline).getTime() - 10 * 60_000).toISOString()];
+  const preferences = [
+   { value: 'FEWER_TRANSFERS', label: 'menos baldeações' },
+   { value: 'LESS_WALKING', label: 'menos caminhada' },
+  ];
+  for (const arrivalTime of arrivals) {
+   for (const pref of preferences) {
+    try {
+     const route = await computeGoogleRoutesPlan({ origin, destination, departureTime, arrivalTime, mode: 'TRANSIT', transitPreference: pref.value, sourceSuffix: pref.label });
+     if (route?.durationSeconds) candidates.push(route);
+    } catch (error) {
+     errors.push(String(error?.message || error));
+    }
+   }
+  }
+ } catch (error) {
+  errors.push(String(error?.message || error));
+ }
+ // 3. Legacy Google Directions fallback
+ try {
+  const legacy = await computeLegacyDirectionsPlan({ origin, destination, departureTime, arrivalTime: arrivalDeadline, mode: 'TRANSIT' });
+  if (legacy?.durationSeconds) candidates.push({ ...legacy, source: 'Google Directions · transporte público · alternativa' });
+ } catch (error) {
+  errors.push(String(error?.message || error));
+ }
+ return { candidates: dedupeSmartRoutes(candidates), errors };
+}
+
+// ---- Lógica de Saída no Dia Anterior ----
+
+/**
+ * Checks if there are viable flights on the presentation day.
+ * Returns { hasViableFlights, options, previousDayOptions, recommendation }
+ */
+async function computePreviousDayDepartureRecommendation({ origin, destination, airport, targetIso, marginMinutes = 30 }) {
+ if (!CREWCHECK_PREVIOUS_DAY_DEPARTURE_ENABLED) return null;
+ const originAirport = nearestCrewCheckAirportFromCoords(origin);
+ const destAirportCode = airport || Object.entries(CREWCHECK_AIRPORT_COORDS).find(([, v]) => v === destination)?.[0] || null;
+ if (!originAirport?.code || !destAirportCode) return null;
+ if (originAirport.code === destAirportCode) return null;
+ const straightKm = haversineKm(origin, destination);
+ const policyKm = straightKm * 1.25;
+ // Only recommend previous day for long-distance routes
+ if (policyKm < CREWCHECK_PREVIOUS_DAY_DEPARTURE_THRESHOLD_KM) return null;
+ const presentationDate = targetIso ? targetIso.slice(0, 10) : null;
+ if (!presentationDate) return null;
+ // Calculate previous day
+ const presentationDateObj = new Date(`${presentationDate}T12:00:00-03:00`);
+ const previousDayObj = new Date(presentationDateObj.getTime() - 24 * 60 * 60_000);
+ const previousDayIso = previousDayObj.toISOString().slice(0, 10);
+ try {
+  // Fetch flights for presentation day
+  const sameDayFlights = await fetchExtraFlightOffersWithDbCache({
+   origin: originAirport.code,
+   destination: destAirportCode,
+   date: presentationDate,
+   targetIso,
+   limit: 8,
+  }).catch(() => null);
+  // Fetch flights for previous day
+  const prevDayFlights = await fetchExtraFlightOffersWithDbCache({
+   origin: originAirport.code,
+   destination: destAirportCode,
+   date: previousDayIso,
+   limit: 8,
+  }).catch(() => null);
+  const sameDayOptions = Array.isArray(sameDayFlights?.options) ? sameDayFlights.options : [];
+  const prevDayOptions = Array.isArray(prevDayFlights?.options) ? prevDayFlights.options : [];
+  // Determine viability: a flight is viable if it arrives before the presentation deadline
+  const presentationDeadline = new Date(new Date(targetIso).getTime() - marginMinutes * 60_000);
+  const viableOnDay = sameDayOptions.filter((opt) => {
+   const arrLeg = Array.isArray(opt.legs) ? opt.legs[opt.legs.length - 1] : null;
+   if (!arrLeg?.arrival) return true; // can't determine, assume viable
+   const arrTime = parseFlightTimeToDate(arrLeg.arrival, presentationDate);
+   return !arrTime || arrTime.getTime() < presentationDeadline.getTime();
+  });
+  // Check if viable flights have good occupancy
+  const goodOccupancyOnDay = viableOnDay.filter((opt) => {
+   const load = opt.staffLoad;
+   if (!load) return true;
+   return load.riskLevel !== 'critical';
+  });
+  const hasViableFlights = goodOccupancyOnDay.length > 0;
+  const hasCriticalOnlyFlights = viableOnDay.length > 0 && goodOccupancyOnDay.length === 0;
+  const noFlightsOnDay = sameDayOptions.length === 0;
+  // Build recommendation
+  let recommendation = null;
+  let shouldRecommendPreviousDay = false;
+  if (noFlightsOnDay) {
+   shouldRecommendPreviousDay = true;
+   recommendation = `Nenhum voo encontrado para ${originAirport.code} → ${destAirportCode} em ${presentationDate}. Recomendamos sair na véspera (${previousDayIso}) para garantir chegada no dia da apresentação.`;
+  } else if (hasCriticalOnlyFlights) {
+   shouldRecommendPreviousDay = true;
+   recommendation = `Voos para ${originAirport.code} → ${destAirportCode} em ${presentationDate} com ocupação crítica (muito cheio). Considere sair na véspera (${previousDayIso}) para maior segurança.`;
+  } else if (!hasViableFlights && sameDayOptions.length > 0) {
+   shouldRecommendPreviousDay = true;
+   recommendation = `Voos disponíveis em ${presentationDate} chegam após o horário de apresentação. Recomendamos sair na véspera (${previousDayIso}).`;
+  }
+  return {
+   originAirport: originAirport.code,
+   destinationAirport: destAirportCode,
+   presentationDate,
+   previousDayIso,
+   hasViableFlights,
+   noFlightsOnDay,
+   hasCriticalOnlyFlights,
+   shouldRecommendPreviousDay,
+   recommendation,
+   sameDayFlightCount: sameDayOptions.length,
+   viableFlightCount: viableOnDay.length,
+   goodOccupancyCount: goodOccupancyOnDay.length,
+   sameDayOptions: sameDayOptions.slice(0, 5),
+   previousDayOptions: prevDayOptions.slice(0, 5),
+   source: sameDayFlights?.source || prevDayFlights?.source || 'Vivo de Extra',
+   updatedAt: new Date().toISOString(),
+  };
+ } catch {
+  return null;
+ }
+}
+
+/**
+ * Parses a flight time string (HH:MM) into a Date on the given date.
+ */
+function parseFlightTimeToDate(timeStr, dateIso) {
+ if (!timeStr || !dateIso) return null;
+ const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+ if (!match) return null;
+ const [, h, m] = match;
+ try {
+  return new Date(`${dateIso}T${String(h).padStart(2, '0')}:${m}:00-03:00`);
+ } catch {
+  return null;
+ }
+}
+
+// ---- Ocupação de Voos Melhorada ----
+
+/**
+ * Fetches Amadeus Seat Availability for a specific flight offer.
+ * Returns seat map data with available/occupied counts per cabin.
+ * Requires AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET.
+ */
+async function fetchAmadeusSeatAvailability(flightOffer) {
+ if (!CREWCHECK_FLIGHT_OCCUPANCY_ENABLED) return null;
+ const token = await getAmadeusAccessToken().catch(() => '');
+ if (!token) return null;
+ const base = String(process.env.AMADEUS_API_BASE || 'https://test.api.amadeus.com').replace(/\/$/, '');
+ try {
+  // Use Amadeus Flight Availabilities Search to get real seat counts
+  const legs = Array.isArray(flightOffer.legs) ? flightOffer.legs : [];
+  if (!legs.length) return null;
+  const firstLeg = legs[0];
+  const lastLeg = legs[legs.length - 1];
+  if (!firstLeg.flightNumber || !firstLeg.origin || !firstLeg.destination) return null;
+  // Build availability request
+  const body = {
+   originDestinations: [{
+    id: '1',
+    originLocationCode: firstLeg.origin,
+    destinationLocationCode: lastLeg.destination,
+    departureDateTime: {
+     date: flightOffer.selectedDate || new Date().toISOString().slice(0, 10),
+    },
+   }],
+   travelers: [{ id: '1', travelerType: 'ADULT' }],
+   sources: ['GDS'],
+  };
+  const response = await fetch(`${base}/v1/shopping/availability/flight-availabilities`, {
+   method: 'POST',
+   headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' },
+   body: JSON.stringify(body),
+   signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) return null;
+  const payload = await response.json();
+  const availabilities = Array.isArray(payload?.data) ? payload.data : [];
+  // Find matching flight
+  const matched = availabilities.find((avail) => {
+   const segments = Array.isArray(avail?.segments) ? avail.segments : [];
+   return segments.some((seg) => {
+    const carrier = String(seg.carrierCode || '').toUpperCase();
+    const number = String(seg.number || '').trim();
+    const flightNum = `${carrier}${number}`;
+    return legs.some((leg) => String(leg.flightNumber || '').replace(/\s/g, '').toUpperCase() === flightNum);
+   });
+  });
+  if (!matched) return null;
+  const segments = Array.isArray(matched.segments) ? matched.segments : [];
+  const cabinData = [];
+  for (const seg of segments) {
+   const classes = Array.isArray(seg.availabilityClasses) ? seg.availabilityClasses : [];
+   for (const cls of classes) {
+    cabinData.push({
+     cabin: cls.cabin || 'ECONOMY',
+     bookingClass: cls.class || '',
+     numberOfBookableSeats: Number(cls.numberOfBookableSeats || 0),
+    });
+   }
+  }
+  if (!cabinData.length) return null;
+  const economyCabin = cabinData.filter((c) => /ECONOMY|ECO|Y/i.test(c.cabin || ''));
+  const totalEconomySeats = economyCabin.reduce((sum, c) => sum + c.numberOfBookableSeats, 0);
+  const maxSeats = Math.max(...cabinData.map((c) => c.numberOfBookableSeats), 0);
+  const score = extraStaffLoadScoreFromAvailability(totalEconomySeats || maxSeats);
+  return {
+   ok: true,
+   source: 'Amadeus Flight Availabilities',
+   cabins: cabinData,
+   economySeatsAvailable: totalEconomySeats,
+   totalSeatsSignal: totalEconomySeats || maxSeats,
+   scoreSignal: score,
+   summary: score ? `${score.label} · ${score.seatsLabel}` : `${totalEconomySeats || maxSeats} vagas disponíveis`,
+   confidence: 'sinal de disponibilidade tarifária · não é lista standby oficial',
+   updatedAt: new Date().toISOString(),
+  };
+ } catch {
+  return null;
+ }
+}
+
+/**
+ * Enriches extra flight options with real seat availability from Amadeus.
+ * Runs in parallel for all options, best-effort (never blocks).
+ */
+async function enrichExtraFlightOptionsWithRealOccupancy(payload = {}) {
+ if (!CREWCHECK_FLIGHT_OCCUPANCY_ENABLED || !payload || typeof payload !== 'object') return payload;
+ const options = Array.isArray(payload.options) ? payload.options : [];
+ if (!options.length) return payload;
+ const token = await getAmadeusAccessToken().catch(() => '');
+ if (!token) return payload; // Amadeus not configured, skip
+ const enriched = await Promise.all(options.map(async (option) => {
+  try {
+   const availability = await fetchAmadeusSeatAvailability(option).catch(() => null);
+   if (!availability?.ok) return option;
+   const existingLoad = option.staffLoad || {};
+   const newScore = availability.scoreSignal?.score ?? existingLoad.chanceScore;
+   const newLabel = availability.scoreSignal?.label ?? existingLoad.chanceLabel;
+   const newRisk = availability.scoreSignal?.risk ?? existingLoad.riskLevel;
+   return {
+    ...option,
+    seatsAvailable: availability.totalSeatsSignal,
+    seatAvailabilityData: availability,
+    staffLoad: {
+     ...existingLoad,
+     ok: true,
+     exactLoad: false,
+     source: 'Amadeus Flight Availabilities · sinal tarifário',
+     statusLabel: newLabel || existingLoad.statusLabel,
+     chanceLabel: newLabel || existingLoad.chanceLabel,
+     chanceScore: newScore ?? existingLoad.chanceScore,
+     riskLevel: newRisk || existingLoad.riskLevel,
+     seatsSignal: availability.summary || existingLoad.seatsSignal,
+     confidence: availability.confidence,
+     summary: `${newLabel || existingLoad.chanceLabel} · ${newScore ?? existingLoad.chanceScore}%`,
+     details: [
+      `Disponibilidade real: ${availability.summary}.`,
+      ...(Array.isArray(existingLoad.details) ? existingLoad.details.filter((d) => !d.includes('Sinal de disponibilidade')) : []),
+     ],
+     updatedAt: availability.updatedAt,
+    },
+   };
+  } catch {
+   return option;
+  }
+ }));
+ return {
+  ...payload,
+  options: enriched,
+  loadIntelligence: {
+   ...(payload.loadIntelligence || {}),
+   enabled: CREWCHECK_FLIGHT_OCCUPANCY_ENABLED,
+   mode: 'amadeus-availability + heurística',
+   exactLoadAvailable: false,
+   message: 'Disponibilidade de assentos via Amadeus Flight Availabilities. Não substitui lista standby, fechamento de voo ou portal staff oficial.',
+  },
+ };
+}
+
+// ---- Endpoint: /api/extra-flight-search/previous-day ----
+// Returns previous-day departure recommendation for a given route and presentation date.
+
+// ---- Endpoint: /api/transit/realtime ----
+// Returns real-time transit itineraries via Transitous/GTFS-RT.
+
+// ---- end CrewCheck v12.3 ----
 
 async function handleApi(req, res, url) {
 
@@ -18323,6 +18796,82 @@ async function handleApi(req, res, url) {
    sendJson(res, 200, { ok: true, message: 'Monitor de sa\u00edda executado.' });
   } catch (error) {
    sendJson(res, 200, { ok: false, message: 'Erro ao executar monitor de sa\u00edda.', detail: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ // v12.3: Transit realtime endpoint
+ if (url.pathname === '/api/transit/realtime' && req.method === 'GET') {
+  try {
+   const lat = parseFiniteNumber(url.searchParams.get('lat') || url.searchParams.get('originLat'));
+   const lng = parseFiniteNumber(url.searchParams.get('lng') || url.searchParams.get('originLng'));
+   const airport = normalizeAirportCode(url.searchParams.get('airport') || url.searchParams.get('base'));
+   const targetIso = url.searchParams.get('targetIso') || url.searchParams.get('arrivalTime');
+   const numItineraries = Math.min(6, Math.max(1, Number(url.searchParams.get('numItineraries') || 3)));
+   if (!lat || !lng || !airport) {
+    sendJson(res, 200, { ok: false, itineraries: [], message: 'Informe lat, lng e airport.' });
+    return true;
+   }
+   const origin = { lat, lng };
+   const destination = CREWCHECK_AIRPORT_COORDS[airport] || CREWCHECK_AIRPORT_COORDS.BSB;
+   const departureTime = new Date().toISOString();
+   const arrivalTime = targetIso || null;
+   const itineraries = await fetchTransitousItineraries({ origin, destination, departureTime, arrivalTime, numItineraries });
+   sendJson(res, 200, {
+    ok: true,
+    itineraries,
+    count: itineraries.length,
+    realtimeCount: itineraries.filter((i) => (i.realtimeSteps || 0) > 0).length,
+    source: itineraries.length ? (itineraries[0].source || 'Transitous/GTFS-RT') : 'Transitous/GTFS-RT',
+    enabled: CREWCHECK_TRANSITOUS_ENABLED,
+    updatedAt: new Date().toISOString(),
+   });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, itineraries: [], message: sanitizePublicError(error?.message || String(error)), updatedAt: new Date().toISOString() });
+  }
+  return true;
+ }
+
+ // v12.3: Previous-day departure recommendation endpoint
+ if (url.pathname === '/api/smart-departure/previous-day' && req.method === 'GET') {
+  try {
+   const lat = parseFiniteNumber(url.searchParams.get('lat') || url.searchParams.get('originLat'));
+   const lng = parseFiniteNumber(url.searchParams.get('lng') || url.searchParams.get('originLng'));
+   const airport = normalizeAirportCode(url.searchParams.get('airport') || url.searchParams.get('base'));
+   const targetIso = url.searchParams.get('targetIso') || url.searchParams.get('presentationIso');
+   const marginMinutes = Math.min(180, Math.max(15, Number(url.searchParams.get('marginMinutes') || 30)));
+   if (!lat || !lng || !airport || !targetIso) {
+    sendJson(res, 200, { ok: false, message: 'Informe lat, lng, airport e targetIso.' });
+    return true;
+   }
+   const origin = { lat, lng };
+   const destination = CREWCHECK_AIRPORT_COORDS[airport] || CREWCHECK_AIRPORT_COORDS.BSB;
+   const rec = await computePreviousDayDepartureRecommendation({ origin, destination, airport, targetIso, marginMinutes });
+   sendJson(res, 200, rec || { ok: true, shouldRecommendPreviousDay: false, message: 'Rota dentro do raio local; saída no dia da apresentação recomendada.', updatedAt: new Date().toISOString() });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, message: sanitizePublicError(error?.message || String(error)), updatedAt: new Date().toISOString() });
+  }
+  return true;
+ }
+
+ // v12.3: Flight occupancy endpoint
+ if (url.pathname === '/api/extra-flight-search/occupancy' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  try {
+   const origin = normalizeAirportCode(url.searchParams.get('origin') || url.searchParams.get('from'));
+   const destination = normalizeAirportCode(url.searchParams.get('destination') || url.searchParams.get('to'));
+   const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
+   const targetIso = url.searchParams.get('targetIso') || url.searchParams.get('presentationIso') || '';
+   if (!origin || !destination) {
+    sendJson(res, 200, { ok: false, message: 'Informe origin e destination.' });
+    return true;
+   }
+   const payload = await fetchExtraFlightOffersWithDbCache({ origin, destination, date, targetIso, limit: 8 });
+   const enriched = await enrichExtraFlightOptionsWithRealOccupancy(payload).catch(() => payload);
+   sendJson(res, 200, { ...enriched, occupancyEnriched: true, updatedAt: new Date().toISOString() });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, options: [], message: sanitizePublicError(error?.message || String(error)), updatedAt: new Date().toISOString() });
   }
   return true;
  }
