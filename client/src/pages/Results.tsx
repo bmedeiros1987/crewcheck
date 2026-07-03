@@ -825,7 +825,7 @@ export default function Results() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div><strong>Escala antiga detectada:</strong> este mês ({currentRosterMonthLabel(roster)}) fica disponível para consulta e diárias, mas não entra em Próxima Programação nem em Saída Inteligente.</div>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => setLocation('/?view=import')} className="rounded-xl bg-[#092846] text-white hover:bg-[#0f3558]">Importar escala atual</Button>
+                  <Button onClick={() => setLocation('/?view=import')} className="rounded-xl cc-btn-primary">Importar escala atual</Button>
                   <Button onClick={handleDeleteCurrentMonth} variant="outline" className="rounded-xl border-orange-300 bg-white text-orange-900 hover:bg-orange-100"><Trash2 className="mr-2 h-4 w-4" />Apagar mês</Button>
                 </div>
               </div>
@@ -931,7 +931,7 @@ function ResultsSpeedDial({ onNavigate, onResultsNavigate }: { onNavigate: (view
 function RosterQuickToolbar({ onOpenSummary, onOpenFilters, onDeleteMonth }: { onOpenSummary: () => void; onOpenFilters: () => void; onDeleteMonth: () => void }) {
   const actionClass = "min-w-0 flex-1 justify-center rounded-xl px-3 py-2 text-xs font-black sm:flex-none sm:px-4";
   return (
-    <div className="overflow-hidden rounded-[1.1rem] border border-white bg-white p-3 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="overflow-hidden rounded-[1.1rem] cc-card p-3">
       <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <h3 className="text-lg font-black text-[#092846]">Escala</h3>
@@ -981,10 +981,10 @@ function SummaryPanel({ roster, stats, load, compliance, events, onOpenRoster, o
           <CleanMetric icon={CalendarDays} label="Eventos" value={events.length} tone="#2f80ed" />
           <CleanMetric icon={Bell} label="Alertas" value={alerts} tone={alerts ? '#dc2626' : '#15963a'} />
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <div className="flex items-center justify-between gap-3">
             <div><h3 className="text-xl font-black text-[#092846]">Próximas programações</h3><p className="text-sm text-[#60758a]">A partir do dia vigente, sem voltar para o início do mês.</p></div>
-            <Button onClick={onOpenRoster} className="rounded-xl bg-[#092846] text-white">Abrir escala</Button>
+            <Button onClick={onOpenRoster} className="rounded-xl cc-btn-primary">Abrir escala</Button>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             {upcoming.map((event) => <CompactEventRow key={event.id} event={event} />)}
@@ -1003,7 +1003,7 @@ function SummaryPanel({ roster, stats, load, compliance, events, onOpenRoster, o
           <p className="mt-1 text-3xl font-black text-[#092846]">{compliance.score}/100</p>
           <p className="text-sm text-[#60758a]">Veja as métricas usadas para calcular a nota.</p>
         </button>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">carga da escala</p>
           <p className="mt-1 text-3xl font-black text-[#092846]">{load.intensityScore}/100</p>
           <p className="text-sm text-[#60758a]">{load.grade}</p>
@@ -1040,7 +1040,7 @@ function MetricsPanel({ compliance, load, stats, roster }: { compliance: Complia
     ['Carga da escala', `${load.intensityScore}/100`, load.summary],
     ['Dias carregados', String(roster.days.length), 'Quantidade de dias interpretados pelo parser.'],
   ];
-  return <section className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]"><h3 className="text-2xl font-black text-[#092846]">Métricas do CrewCheck</h3><div className="mt-4 divide-y divide-[#edf3f8]">{rows.map(([a,b,c]) => <div key={a} className="grid gap-2 py-3 md:grid-cols-[14rem_8rem_minmax(0,1fr)]"><b className="text-[#092846]">{a}</b><span className="font-black text-blue-600">{b}</span><p className="text-sm text-[#60758a]">{c}</p></div>)}</div></section>;
+  return <section className="rounded-[1.25rem] cc-card p-5"><h3 className="text-2xl font-black text-[#092846]">Métricas do CrewCheck</h3><div className="mt-4 divide-y divide-[#edf3f8]">{rows.map(([a,b,c]) => <div key={a} className="grid gap-2 py-3 md:grid-cols-[14rem_8rem_minmax(0,1fr)]"><b className="text-[#092846]">{a}</b><span className="font-black text-blue-600">{b}</span><p className="text-sm text-[#60758a]">{c}</p></div>)}</div></section>;
 }
 
 function GlossaryPanel() {
@@ -1060,11 +1060,11 @@ function GlossaryPanel() {
     ['KME / KIM / MedAire', 'Ocorrência médica: abertura, lacres, autorização e MOR conforme procedimento.'],
     ['Inativo/Pernoite', 'Dia em branco após programação ou hotel/localidade.'],
   ];
-  return <section className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]"><h3 className="text-2xl font-black text-[#092846]">Glossário</h3><div className="mt-4 grid gap-3 md:grid-cols-2">{terms.map(([code, text]) => <div key={code} className="rounded-2xl border border-[#e5edf5] bg-[#f8fbfd] p-4"><b className="text-[#092846]">{code}</b><p className="mt-1 text-sm text-[#60758a]">{text}</p></div>)}</div></section>;
+  return <section className="rounded-[1.25rem] cc-card p-5"><h3 className="text-2xl font-black text-[#092846]">Glossário</h3><div className="mt-4 grid gap-3 md:grid-cols-2">{terms.map(([code, text]) => <div key={code} className="rounded-2xl border border-[#e5edf5] bg-[#f8fbfd] p-4"><b className="text-[#092846]">{code}</b><p className="mt-1 text-sm text-[#60758a]">{text}</p></div>)}</div></section>;
 }
 
 function CleanMetric({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: number | string; tone: string }) {
-  return <div className="rounded-[1.1rem] border border-white bg-white p-4 shadow-[0_14px_45px_rgba(20,54,84,0.07)]"><Icon className="h-6 w-6" style={{ color: tone }} /><p className="mt-2 text-xs font-black uppercase tracking-[0.14em] text-[#71869b]">{label}</p><p className="text-3xl font-black text-[#092846]">{value}</p></div>;
+  return <div className="rounded-[1.1rem] cc-card p-4"><Icon className="h-6 w-6" style={{ color: tone }} /><p className="mt-2 text-xs font-black uppercase tracking-[0.14em] text-[#71869b]">{label}</p><p className="text-3xl font-black text-[#092846]">{value}</p></div>;
 }
 
 
@@ -1075,15 +1075,15 @@ function PremiumNextProgramHero({ event, onOpenRoster }: { event: RosterEvent; o
   const route = isFlight && event.leg ? `${event.leg.origin} → ${event.leg.destination}` : event.activity;
   const countdown = useLiveCountdown(event);
   return (
-    <div className="cc-next-program-hero overflow-hidden rounded-[1.45rem] border border-white bg-white shadow-[0_18px_55px_rgba(20,54,84,0.08)]">
+    <div className="cc-next-program-hero overflow-hidden rounded-[1.45rem] cc-card">
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="relative overflow-hidden p-5 md:p-6">
-          <div className="absolute -right-12 top-3 h-40 w-40 rounded-full bg-blue-100/70 blur-2xl" />
+          <div className="absolute -right-12 top-3 h-40 w-40 rounded-full blur-2xl" style={{background:'var(--accent)',opacity:0.08}} />
           <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[0.68rem] font-black uppercase tracking-[0.24em] text-sky-600">próxima programação</p>
-              <h3 className="mt-2 break-words text-2xl font-black tracking-tight text-[#092846] md:text-4xl">{route}</h3>
-              <p className="mt-1 text-sm font-semibold text-[#60758a]">{event.dateLabel} · {event.time} · {event.activity}</p>
+              <h3 className="mt-2 break-words text-2xl font-black tracking-tight cc-text-primary md:text-4xl">{route}</h3>
+              <p className="mt-1 text-sm font-semibold cc-text-muted">{event.dateLabel} · {event.time} · {event.activity}</p>
             </div>
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg" style={{ backgroundColor: style.solid }}>
               <Plane className="h-7 w-7" />
@@ -1105,14 +1105,14 @@ function PremiumNextProgramHero({ event, onOpenRoster }: { event: RosterEvent; o
               <FlightMiniPill label="Horário" value={event.time || '—'} />
             </div>
           )}
-          <p className="relative z-10 mt-3 text-xs font-semibold text-[#60758a]">Status, portão e terminal aparecem somente para voos. Atividades, folgas, reservas e treinamentos ficam limpos, com foco em horário, rotina e recuperação.</p>
+          <p className="relative z-10 mt-3 text-xs font-semibold cc-text-muted">Status, portão e terminal aparecem somente para voos. Atividades, folgas, reservas e treinamentos ficam limpos, com foco em horário, rotina e recuperação.</p>
           <div className="relative z-10 mt-3"><PilotReserveStandbyWeatherCard event={event} /></div>
         </div>
-        <div className="flex flex-col justify-between border-t border-[#e5edf5] bg-[#f8fbfd] p-5 lg:border-l lg:border-t-0">
+        <div className="flex flex-col justify-between border-t p-5 lg:border-l lg:border-t-0" style={{background:'var(--surface)',borderColor:'var(--surface-border)'}}>
           <div>
-            <p className="text-[0.65rem] font-black uppercase tracking-[0.22em] text-[#71869b]">tempo até apresentar</p>
-            <p className="mt-2 text-4xl font-black text-[#092846]">{countdown}</p>
-            <p className="mt-2 text-sm leading-6 text-[#60758a]">Rotina, descanso e alertas ficam dentro dos detalhes do dia.</p>
+            <p className="text-[0.65rem] font-black uppercase tracking-[0.22em] cc-text-muted">tempo até apresentar</p>
+            <p className="mt-2 text-4xl font-black cc-text-primary">{countdown}</p>
+            <p className="mt-2 text-sm leading-6 cc-text-muted">Rotina, descanso e alertas ficam dentro dos detalhes do dia.</p>
           </div>
           <button onClick={onOpenRoster} className="cc-button-primary mt-4 rounded-2xl px-4 py-3 text-sm font-black shadow-lg transition active:scale-95">Abrir escala completa</button>
         </div>
@@ -1148,16 +1148,16 @@ function CompactEventRow({ event }: { event: RosterEvent }) {
   const flight = useFlightStatus(event);
   const isFlight = event.typeLabel === 'Flight' && Boolean(event.leg);
   return (
-    <div className="cc-next-program-card overflow-hidden rounded-2xl border border-[#e5edf5] bg-[#f8fbfd] shadow-[0_10px_30px_rgba(20,54,84,0.05)]">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="grid w-full min-w-0 grid-cols-[2.75rem_minmax(0,1fr)_auto] items-start gap-3 p-3 text-left transition hover:bg-white/70">
+    <div className="cc-next-program-card overflow-hidden rounded-2xl cc-card">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="grid w-full min-w-0 grid-cols-[2.75rem_minmax(0,1fr)_auto] items-start gap-3 p-3 text-left transition hover:bg-black/5">
         <span className="flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm" style={{ backgroundColor: style.solid }}><Icon className="h-5 w-5" /></span>
         <div className="min-w-0">
-          <p className="break-words font-black leading-tight text-[#092846]">{event.dateLabel} · {event.time}</p>
-          <p className="mt-0.5 break-words text-sm leading-5 text-[#60758a]">{event.activity} · {event.subtitle}</p>
+          <p className="break-words font-black leading-tight cc-text-primary">{event.dateLabel} · {event.time}</p>
+          <p className="mt-0.5 break-words text-sm leading-5 cc-text-muted">{event.activity} · {event.subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <span className="max-w-[7.5rem] truncate rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-[#60758a] shadow-sm">{event.code || '—'}</span>
-          <ChevronDown className={`h-4 w-4 text-[#60758a] transition ${open ? 'rotate-180' : ''}`} />
+          <span className="max-w-[7.5rem] truncate rounded-full cc-pill-light px-2.5 py-1 text-[11px] font-black shadow-sm">{event.code || '—'}</span>
+          <ChevronDown className={`h-4 w-4 cc-text-muted transition ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
       {isFlight && (
@@ -1182,20 +1182,20 @@ function LanguageSettingsCard({ themeMode, onThemeModeChange }: { themeMode: Cre
   const [language, setLanguage] = useState(() => localStorage.getItem('crewcheck_language') || 'system');
   function saveLanguage(value: string) { const normalized = value === 'system' || value === 'pt-BR' ? 'pt' : value; setLanguage(normalized); localStorage.setItem('crewcheck_language', normalized); window.dispatchEvent(new CustomEvent('crewcheck:language-change', { detail: { language: normalized } })); toast.success('Preferência de idioma salva.'); }
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">aparência</p>
       <h3 className="text-xl font-black text-[#092846]">Tema, idioma e região</h3>
       <p className="mt-1 text-sm text-[#60758a]">O CrewCheck pode seguir automaticamente o tema e o idioma do sistema do aparelho.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <label className="text-xs font-black uppercase tracking-[0.12em] text-[#60758a]">Tema
-          <select value={themeMode} onChange={(e)=>onThemeModeChange(e.target.value as CrewThemeMode)} className="mt-2 h-11 w-full rounded-2xl border border-[#d7e4ef] bg-white px-3 text-sm font-bold text-[#092846] outline-none focus:border-blue-400">
+          <select value={themeMode} onChange={(e)=>onThemeModeChange(e.target.value as CrewThemeMode)} className="mt-2 h-11 w-full rounded-2xl border cc-input-border bg-[var(--surface)] px-3 text-sm font-bold cc-text-primary outline-none focus:border-blue-400">
             <option value="system">Automático pelo sistema</option>
             <option value="light">Claro</option>
             <option value="dark">Escuro</option>
           </select>
         </label>
         <label className="text-xs font-black uppercase tracking-[0.12em] text-[#60758a]">Idioma
-          <select value={language} onChange={(e)=>saveLanguage(e.target.value)} className="mt-2 h-11 w-full rounded-2xl border border-[#d7e4ef] bg-white px-3 text-sm font-bold text-[#092846] outline-none focus:border-blue-400"><option value="pt">Português (Brasil)</option><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="it">Italiano</option><option value="de">Deutsch</option></select>
+          <select value={language} onChange={(e)=>saveLanguage(e.target.value)} className="mt-2 h-11 w-full rounded-2xl border cc-input-border bg-[var(--surface)] px-3 text-sm font-bold cc-text-primary outline-none focus:border-blue-400"><option value="pt">Português (Brasil)</option><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="it">Italiano</option><option value="de">Deutsch</option></select>
         </label>
       </div>
     </div>
@@ -1205,7 +1205,7 @@ function LanguageSettingsCard({ themeMode, onThemeModeChange }: { themeMode: Cre
 
 function PrivacyTrustBanner() {
   return (
-    <section className="mb-4 rounded-[1.1rem] border border-emerald-100 bg-white px-4 py-3 shadow-[0_10px_35px_rgba(20,54,84,0.05)]">
+    <section className="mb-4 rounded-[1.1rem] cc-card px-4 py-3">
       <div className="flex flex-col gap-2 text-sm text-[#425a72] md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2 font-bold text-[#092846]"><Lock className="h-4 w-4 text-emerald-600" /> Privacidade e proteção de dados</div>
         <p className="max-w-3xl leading-6">Cadastro mínimo, senha com hash, histórico por usuário e uso dos dados apenas para leitura da escala, conformidade e exportações solicitadas. Sistema orientado às boas práticas da LGPD.</p>
@@ -1219,7 +1219,7 @@ function LegalProfileBanner({ profile }: { profile: ComplianceResult['legalProfi
     <section className="mb-4 rounded-[1.25rem] border border-sky-100 bg-gradient-to-r from-white to-sky-50 p-4 shadow-[0_14px_45px_rgba(20,54,84,0.06)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#092846] text-white"><ShieldCheck className="h-5 w-5" /></div>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl cc-btn-primary"><ShieldCheck className="h-5 w-5" /></div>
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">ACT / base legal</p>
             <h3 className="mt-1 text-lg font-black text-[#092846]">{profile.actName} · {profile.roleLabel} · {profile.functionLabel}</h3>
@@ -1227,8 +1227,8 @@ function LegalProfileBanner({ profile }: { profile: ComplianceResult['legalProfi
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#092846] shadow-sm">Confiança: {profile.confidence}</span>
-          <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#092846] shadow-sm">Vigência: {profile.actValidity}</span>
+          <span className="rounded-full cc-pill-light px-3 py-1 text-xs font-black shadow-sm">Confiança: {profile.confidence}</span>
+          <span className="rounded-full cc-pill-light px-3 py-1 text-xs font-black shadow-sm">Vigência: {profile.actValidity}</span>
         </div>
       </div>
     </section>
@@ -1240,11 +1240,11 @@ function RosterFilters({ roster, query, setQuery, dutyType, setDutyType, uniqueT
   const fromDate = sorted[0]?.date || `01/${String(roster.month).padStart(2, "0")}/${roster.year}`;
   const toDate = sorted[sorted.length - 1]?.date || `${daysInMonth(roster.month, roster.year)}/${String(roster.month).padStart(2, "0")}/${roster.year}`;
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-4 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <Field label="Mês / período">
           <div className="relative">
-            <select value={selectedMonthKey} onChange={(event) => setSelectedMonthKey(event.target.value)} className="h-[42px] w-full appearance-none rounded-xl border border-[#d8e4ee] bg-white px-3 pr-9 text-sm font-semibold text-[#092846] outline-none focus:border-blue-400">
+            <select value={selectedMonthKey} onChange={(event) => setSelectedMonthKey(event.target.value)} className="h-[42px] w-full appearance-none rounded-xl border cc-input-border bg-[var(--surface)] px-3 pr-9 text-sm font-semibold text-[#092846] outline-none focus:border-blue-400">
               <option value="live">Da data atual em diante</option>
               <option value="all">Todos os meses da escala</option>
               <option value="context">Mês ativo + últimos dias anexados</option>
@@ -1254,20 +1254,20 @@ function RosterFilters({ roster, query, setQuery, dutyType, setDutyType, uniqueT
           </div>
         </Field>
         <Field label="De">
-          <div className="rounded-xl border border-[#d8e4ee] bg-white px-3 py-2.5 text-sm">{fromDate}</div>
+          <div className="rounded-xl border cc-input-border bg-[var(--surface)] px-3 py-2.5 text-sm">{fromDate}</div>
         </Field>
         <Field label="Até">
-          <div className="rounded-xl border border-[#d8e4ee] bg-white px-3 py-2.5 text-sm">{toDate}</div>
+          <div className="rounded-xl border cc-input-border bg-[var(--surface)] px-3 py-2.5 text-sm">{toDate}</div>
         </Field>
         <Field label="Tipo">
-          <select value={dutyType} onChange={(event) => setDutyType(event.target.value)} className="h-[42px] w-full rounded-xl border border-[#d8e4ee] bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400">
+          <select value={dutyType} onChange={(event) => setDutyType(event.target.value)} className="h-[42px] w-full rounded-xl border cc-input-border bg-[var(--surface)] px-3 text-sm font-semibold outline-none focus:border-blue-400">
             {uniqueTypes.map((type) => <option key={type}>{type}</option>)}
           </select>
         </Field>
         <Field label="Buscar">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7890a4]" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar voo, rota, código ou data..." className="h-[42px] w-full rounded-xl border border-[#d8e4ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar voo, rota, código ou data..." className="h-[42px] w-full rounded-xl border cc-input-border bg-[var(--surface)] pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
           </div>
         </Field>
       </div>
@@ -1281,7 +1281,7 @@ function RightActions({ roster, gym, events, stats, load, dbStatus, savedRosters
     <aside className="space-y-4">
       <ActionCard title="Importar escala" description="Escolher PDF no dispositivo e substituir a escala atual sem duplicar histórico." icon={CloudUpload} button="Escolher PDF no dispositivo" onClick={() => setLocation("/?view=import")} />
       <DatabaseCard dbStatus={dbStatus} savedRosters={savedRosters} isSavingDb={isSavingDb} onSave={handleSaveDatabase} />
-      <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+      <div className="rounded-[1.25rem] cc-card p-5">
         <h3 className="text-lg font-black">Offline / APK</h3>
         <p className="mt-1 text-sm text-[#60758a]">Pendências ficam salvas no aparelho e sincronizam depois sem duplicar.</p>
         <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3">
@@ -1291,7 +1291,7 @@ function RightActions({ roster, gym, events, stats, load, dbStatus, savedRosters
       </div>
       <ActionCard title="Enviar por e-mail" description="Envia um resumo premium da análise para qualquer e-mail, se SendGrid ou MailerSend estiver configurado no Render." icon={Mail} button={isSendingEmail ? "Enviando..." : "Enviar"} onClick={handleEmailReport} />
       <GoogleCalendarQuickCard roster={roster} gym={gym} load={load} onOpenSettings={onOpenSettings} />
-      <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+      <div className="rounded-[1.25rem] cc-card p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-black">Exportar ICS</h3>
@@ -1307,7 +1307,7 @@ function RightActions({ roster, gym, events, stats, load, dbStatus, savedRosters
           <Button onClick={() => handleExportCalendar("routine")} variant="outline" className="justify-start rounded-xl border-[#d8e4ee] text-[#092846]"><BookOpen className="h-4 w-4" /> Rotina</Button>
         </div>
       </div>
-      <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+      <div className="rounded-[1.25rem] cc-card p-5">
         <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-lg font-black">Roster Summary</h3><span className="rounded-lg border border-[#d8e4ee] px-2 py-1 text-xs font-semibold text-[#60758a]">This Month</span></div>
         <div className="space-y-3 text-sm">
           <SummaryLine icon={CalendarDays} label="Total Events" value={events.length} color="#2f80ed" />
@@ -1321,7 +1321,7 @@ function RightActions({ roster, gym, events, stats, load, dbStatus, savedRosters
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Button onClick={handleExportPdf} className="rounded-xl bg-[#092846] text-white hover:bg-[#0d365e]"><FileText className="h-4 w-4" /> PDF</Button>
+        <Button onClick={handleExportPdf} className="rounded-xl cc-btn-primary"><FileText className="h-4 w-4" /> PDF</Button>
         <Button onClick={handleCopy} variant="outline" className="rounded-xl border-[#d8e4ee]"><Copy className="h-4 w-4" /> Copiar</Button>
       </div>
       <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">A análise é automática e depende da leitura correta do PDF. Para decisão trabalhista/oficial, confira escala publicada, ACT aplicável, CCT, manual do operador, GRF/SGRF e setor responsável.</p>
@@ -1383,7 +1383,7 @@ function ProfileAccountCard({ roster }: { roster: CrewRoster }) {
   const user = getStoredUser();
   const name = resolvedCrewName(roster, user);
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#092846] text-lg font-black text-white">{initials(name)}</div>
@@ -1406,7 +1406,7 @@ function RoutineSettingsCard() {
   const activities = loadRoutineActivities();
   const maxRoutineActivities = 12;
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-600">configurações de rotina</p>
@@ -1440,7 +1440,7 @@ function ReliabilityCenterCard({ ignoredAlertKeys, onClear }: { ignoredAlertKeys
 
 function ExportSettingsCard({ handleExportCalendar, handleExportPdf, handleSharePdf, handleWhatsAppPdf, handleEmailPdf, handleCopy, handleEmailReport, isSendingEmail }: { handleExportCalendar: (mode?: CalendarExportMode) => void; handleExportPdf: () => void; handleSharePdf: () => void; handleWhatsAppPdf: () => void; handleEmailPdf: () => void; handleCopy: () => void; handleEmailReport: () => void; isSendingEmail: boolean }) {
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">exportações</p>
       <h3 className="mt-1 text-xl font-black text-[#092846]">PDF, ICS e compartilhamento</h3>
       <p className="mt-1 text-sm leading-6 text-[#60758a]">As opções de exportação ficam centralizadas aqui para manter a tela de escala limpa.</p>
@@ -1448,7 +1448,7 @@ function ExportSettingsCard({ handleExportCalendar, handleExportPdf, handleShare
         <Button onClick={() => handleExportCalendar("flights-rest")} variant="outline" className="rounded-xl border-[#d8e4ee] text-[#092846]"><Download className="h-4 w-4" /> ICS voo + folgas</Button>
         <Button onClick={() => handleExportCalendar("flights")} variant="outline" className="rounded-xl border-[#d8e4ee] text-[#092846]"><Plane className="h-4 w-4" /> Voos detalhados</Button>
         <Button onClick={() => handleExportCalendar("routine")} variant="outline" className="rounded-xl border-[#d8e4ee] text-[#092846]"><Dumbbell className="h-4 w-4" /> Rotina</Button>
-        <Button onClick={handleExportPdf} className="rounded-xl bg-[#092846] text-white hover:bg-[#0d365e]"><FileText className="h-4 w-4" /> PDF</Button>
+        <Button onClick={handleExportPdf} className="rounded-xl cc-btn-primary"><FileText className="h-4 w-4" /> PDF</Button>
         <Button onClick={handleSharePdf} variant="outline" className="rounded-xl border-emerald-200 text-emerald-700"><Download className="h-4 w-4" /> Compartilhar arquivo</Button>
         <Button onClick={handleWhatsAppPdf} variant="outline" className="rounded-xl border-green-200 text-green-700"><Mail className="h-4 w-4" /> WhatsApp</Button>
         <Button onClick={handleEmailPdf} variant="outline" className="rounded-xl border-blue-200 text-blue-700"><Mail className="h-4 w-4" /> E-mail com PDF</Button>
@@ -1477,7 +1477,7 @@ function SupportSettingsCard() {
     window.location.href = url;
   };
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-600">suporte</p>
       <h3 className="mt-1 text-xl font-black text-[#092846]">Ajuda e atendimento</h3>
       <p className="mt-1 text-sm leading-6 text-[#60758a]">Abrimos WhatsApp/e-mail fora do CrewCheck, sem gravar mensagem, telefone ou dados pessoais no sistema.</p>
@@ -1604,7 +1604,7 @@ function SettingsPanel({ roster, gym, load, themeMode, onThemeModeChange, ignore
         <ReliabilityCenterCard ignoredAlertKeys={ignoredAlertKeys} onClear={onClearIgnoredAlerts} />
         <ExportSettingsCard handleExportCalendar={handleExportCalendar} handleExportPdf={handleExportPdf} handleSharePdf={handleSharePdf} handleWhatsAppPdf={handleWhatsAppPdf} handleEmailPdf={handleEmailPdf} handleCopy={handleCopy} handleEmailReport={handleEmailReport} isSendingEmail={isSendingEmail} />
         <SupportSettingsCard />
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">configurações</p>
@@ -1625,7 +1625,7 @@ function SettingsPanel({ roster, gym, load, themeMode, onThemeModeChange, ignore
                     : <>Agenda automática ainda não está disponível para esta conta. Use o link ICS enquanto isso.</>}
                 </p>
               )}
-              <Button onClick={handleConnectAndLoad} disabled={!configured || isLoadingCalendars} className="mt-4 rounded-xl bg-[#092846] text-white hover:bg-[#0d365e]">
+              <Button onClick={handleConnectAndLoad} disabled={!configured || isLoadingCalendars} className="mt-4 rounded-xl cc-btn-primary">
                 <RefreshCw className={`h-4 w-4 ${isLoadingCalendars ? "animate-spin" : ""}`} /> {isLoadingCalendars ? "Gerando" : "Conectar Google"}
               </Button>
               {isAdminUser && !hasEnvClientId && (
@@ -1652,7 +1652,7 @@ function SettingsPanel({ roster, gym, load, themeMode, onThemeModeChange, ignore
               <select value={settings.selectedCalendarId} onChange={(event) => {
                 const selected = options.find((item) => item.id === event.target.value);
                 persist({ ...settings, selectedCalendarId: event.target.value, selectedCalendarName: selected?.summary || event.target.value });
-              }} className="mt-4 h-12 w-full rounded-2xl border border-[#d7e4ef] bg-white px-3 text-sm font-bold text-[#092846] outline-none focus:border-blue-400">
+              }} className="mt-4 h-12 w-full rounded-2xl border cc-input-border bg-[var(--surface)] px-3 text-sm font-bold cc-text-primary outline-none focus:border-blue-400">
                 {options.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? " · principal" : ""}</option>)}
               </select>
               <div className="mt-3 rounded-2xl border border-blue-100 bg-white p-3">
@@ -1670,7 +1670,7 @@ function SettingsPanel({ roster, gym, load, themeMode, onThemeModeChange, ignore
           <div className="mt-4 rounded-2xl border border-[#d7e4ef] bg-[#f8fbfe] p-4">
             <h4 className="font-black text-[#092846]">3. O que sincronizar/exportar</h4>
             <p className="mt-2 text-sm leading-6 text-[#60758a]">Escolha o padrão limpo para o Google Calendar. O recomendado é Voo + folgas: a tripulação, rotina, diárias e detalhes ficam dentro do próprio evento, sem compromissos extras.</p>
-            <select value={settings.exportMode || "flights-rest"} onChange={(event) => persist({ ...settings, exportMode: event.target.value as GoogleCalendarSyncMode })} className="mt-4 h-12 w-full rounded-2xl border border-[#d7e4ef] bg-white px-3 text-sm font-bold text-[#092846] outline-none focus:border-blue-400">
+            <select value={settings.exportMode || "flights-rest"} onChange={(event) => persist({ ...settings, exportMode: event.target.value as GoogleCalendarSyncMode })} className="mt-4 h-12 w-full rounded-2xl border cc-input-border bg-[var(--surface)] px-3 text-sm font-bold cc-text-primary outline-none focus:border-blue-400">
               <option value="flights-rest">Voo + folgas · recomendado, limpo e sem duplicar</option>
               <option value="all">Escala completa · atividades e folgas sem rotina separada</option>
               <option value="flights">Voos detalhados · cada etapa como evento</option>
@@ -1689,7 +1689,7 @@ function SettingsPanel({ roster, gym, load, themeMode, onThemeModeChange, ignore
       </section>
 
       <aside className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Atualizar ICS agora</h3>
           <p className="mt-2 text-sm leading-6 text-[#60758a]">Atualiza o link ICS usando o filtro: <b>{googleSyncModeLabel(settings.exportMode || "all")}</b>. Eventos que não existem mais nesse filtro são removidos para não sobrar duplicidade.</p>
           <Button onClick={handleSyncNow} disabled={!configured || isSyncing} className="mt-4 w-full rounded-xl bg-blue-600 text-white hover:bg-blue-700">
@@ -1845,7 +1845,7 @@ function ManualPanel() {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">manual do sistema</p>
           <h3 className="mt-1 text-2xl font-black">Como usar o CrewCheck</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758a]">Carregue o PDF da escala, confira os cartões interpretados, salve o histórico e use a sincronização Agenda automática para manter a agenda atualizada sem eventos repetidos.</p>
@@ -1864,7 +1864,7 @@ function ManualPanel() {
         </div>
       </section>
       <aside className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Regras de privacidade</h3>
           <p className="mt-2 text-sm leading-6 text-[#60758a]">O CrewCheck usa os dados da escala apenas para análise, histórico e exportações solicitadas. Tokens Google ficam no navegador e podem expirar; reconecte quando necessário.</p>
         </div>
@@ -1895,7 +1895,7 @@ function IrregularitiesPanel({ compliance, errors, warnings, onOpenAlert }: { co
           <ScoreCard title="Irregularidades" value={String(errors.length)} icon={AlertTriangle} tone="#dc2626" description="Alertas críticos encontrados." />
           <ScoreCard title="Pontos de atenção" value={String(warnings.length)} icon={Sparkles} tone="#f97316" description="Itens que exigem revisão." />
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="text-xl font-black">Irregularidades e alertas</h3><p className="mt-1 text-sm text-[#60758a]">Baseado em parâmetros regulatórios e operacionais configurados, com foco em jornada, repouso, sobreaviso, reserva e acionamentos.</p></div></div>
           {compliance.alerts.length === 0 ? (
             <div className="rounded-2xl bg-emerald-50 p-5 text-emerald-800"><CheckCircle2 className="mb-2 h-6 w-6" /><b>Nenhuma irregularidade automática encontrada.</b><p className="mt-1 text-sm">Ainda assim, revise ACT/CCT, escalas publicadas e eventuais extensões operacionais.</p></div>
@@ -1907,7 +1907,7 @@ function IrregularitiesPanel({ compliance, errors, warnings, onOpenAlert }: { co
         </div>
       </section>
       <aside className="space-y-4">
-        <div className="rounded-[1.25rem] border border-sky-100 bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">ACT aplicada</h3>
           <p className="mt-2 text-sm font-bold text-[#092846]">{compliance.legalProfile.roleLabel} · {compliance.legalProfile.functionLabel}</p>
           <p className="mt-2 text-sm leading-6 text-[#60758a]">{compliance.legalProfile.actName}. {compliance.legalProfile.inferenceReason}</p>
@@ -1920,7 +1920,7 @@ function IrregularitiesPanel({ compliance, errors, warnings, onOpenAlert }: { co
             {compliance.legalProfile.sourceFiles.map((source) => <a key={source} href={source} target="_blank" className="rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-700 hover:bg-sky-100">Abrir ACT</a>)}
           </div>
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Bases verificadas</h3>
           <div className="mt-4 space-y-3 text-sm text-[#425a72]">
             <LegalLine title="ACT correta por função" text="Prioriza a função definida no Perfil, aceita variações de siglas/cargos e só usa o PDF como fallback." />
@@ -2008,7 +2008,7 @@ function RoutinePanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnaly
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">rotina adaptada à escala</p>
@@ -2026,7 +2026,7 @@ function RoutinePanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnaly
           </div>
         </div>
 
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black">Adicionar atividade</h3>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <label className="space-y-1.5 text-xs font-bold text-[#61778e] xl:col-span-2">Tipo
@@ -2058,7 +2058,7 @@ function RoutinePanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnaly
             <div>
               <p className="mb-2 text-xs font-bold text-[#61778e]">Duração</p>
               <div className="flex flex-wrap gap-2">
-                {[45,60,120].map((duration) => <button key={duration} onClick={() => setDraft({ ...draft, durationMinutes: duration })} className={`rounded-full px-4 py-2 text-sm font-black ${draft.durationMinutes === duration ? 'bg-[#092846] text-white' : 'bg-[#eef5fb] text-[#425a72]'}`}>{duration === 60 ? '1h' : duration === 120 ? '2h' : '45min'}</button>)}
+                {[45,60,120].map((duration) => <button key={duration} onClick={() => setDraft({ ...draft, durationMinutes: duration })} className={`rounded-full px-4 py-2 text-sm font-black ${draft.durationMinutes === duration ? 'cc-btn-primary' : 'bg-[#eef5fb] text-[#425a72]'}`}>{duration === 60 ? '1h' : duration === 120 ? '2h' : '45min'}</button>)}
                 <input type="number" min={15} max={240} value={draft.durationMinutes} onChange={(e) => setDraft({ ...draft, durationMinutes: Number(e.target.value) })} className="w-24 rounded-full border border-[#d7e4ef] px-3 py-2 text-center text-sm font-black" />
               </div>
             </div>
@@ -2072,7 +2072,7 @@ function RoutinePanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnaly
           </div>
         </div>
 
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black">Plano reliable de atividades</h3>
           <p className="mt-1 text-sm leading-6 text-[#60758a]">Cada card só entra quando cabe inteiro em uma janela livre, com margem antes/depois de voo, reserva, sobreaviso, treinamento, alimentação e recuperação.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2098,7 +2098,7 @@ function RoutinePanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnaly
       </section>
 
       <aside className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Atividades configuradas</h3>
           <div className="mt-4 space-y-2">
             {activities.map((activity) => <div key={activity.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#f7fbff] p-3">
@@ -2107,7 +2107,7 @@ function RoutinePanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnaly
             </div>)}
           </div>
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Resumo por tipo</h3>
           <div className="mt-4 grid gap-2">
             <MiniMetric label="Treinos físicos" value={String(physicalSuggestions.length)} />
@@ -2181,7 +2181,7 @@ function GymPanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnalysis 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <section className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black">Análise completa para academia</h3>
           <p className="mt-2 text-sm leading-6 text-[#60758a]">A recomendação agora considera a escala inteira: voos, madrugadas, repouso antes/depois, pernoites/inativos, OFF e folgas formais. A ideia é proteger sono e recuperação antes de sugerir treino pesado.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -2192,7 +2192,7 @@ function GymPanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnalysis 
         </div>
         <RecommendationBlock title="Melhores janelas para treinar" items={best} empty="Não encontrei dias ideais; priorize descanso e treinos curtos." />
         <RecommendationBlock title="Dias para evitar carga alta" items={limited} empty="Nenhum dia crítico para treino foi identificado." compact />
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black">Leitura por dia</h3>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {load.days.map((day) => <LoadCard key={`gym-load-${day.date}`} day={day} compact />)}
@@ -2200,7 +2200,7 @@ function GymPanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnalysis 
         </div>
       </section>
       <aside className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Como o sistema escolhe</h3>
           <div className="mt-4 space-y-3 text-sm text-[#425a72]">
             <LegalLine title="Folga formal" text="DO, DR, DOF, DOP e VC são os melhores dias para treino completo, desde que a jornada anterior não tenha sido muito pesada." />
@@ -2209,7 +2209,7 @@ function GymPanel({ gym, load }: { gym: GymRecommendation[]; load: LoadAnalysis 
             <LegalLine title="Voo e madrugada" text="Quanto mais trechos, maior jornada, início cedo, término tarde ou madrugada, menor a prioridade para treino pesado." />
           </div>
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Regra prática</h3>
           <p className="mt-2 text-sm leading-6 text-[#60758a]">Priorize treino completo em folgas formais. Em pernoite, faça treino curto/moderado. Após madrugada, jornada longa ou repouso justo, prefira alongamento, mobilidade, caminhada leve e sono.</p>
         </div>
@@ -2228,14 +2228,14 @@ function FatiguePanel({ load, compliance }: { load: LoadAnalysis; compliance: Co
           <ScoreCard title="Score legal" value={`${compliance.score}/100`} icon={ShieldCheck} tone="#2f80ed" description="Quanto maior, melhor." />
           <ScoreCard title="Repouso médio" value={`${compliance.metrics.averageTurnaround.toFixed(1)}h`} icon={Moon} tone="#7c3aed" description="Entre jornadas calculadas." />
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black">Dias mais puxados</h3>
           <p className="mt-1 text-sm text-[#60758a]">Ordenados por jornada, voos, trechos, madrugada, início cedo, término tarde e repouso.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {load.hardestDays.map((day) => <LoadCard key={day.date} day={day} />)}
           </div>
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black">Dias mais leves</h3>
           <p className="mt-1 text-sm text-[#60758a]">Melhores candidatos para academia, compromissos pessoais e recuperação ativa.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2244,13 +2244,13 @@ function FatiguePanel({ load, compliance }: { load: LoadAnalysis; compliance: Co
         </div>
       </section>
       <aside className="space-y-4">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Resumo de fadiga</h3>
           <p className="mt-3 text-sm leading-6 text-[#60758a]">{load.summary}</p>
           <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e6edf4]"><div className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500" style={{ width: `${load.intensityScore}%` }} /></div>
           <div className="mt-2 flex justify-between text-xs font-bold text-[#60758a]"><span>leve</span><span>muito puxada</span></div>
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-lg font-black">Sugestões minhas</h3>
           <ul className="mt-3 space-y-2 text-sm leading-6 text-[#425a72]">
             <li>• Adicionar configuração de ACT/CCT e tipo de tripulação para reduzir falsos positivos.</li>
@@ -2399,7 +2399,7 @@ function MobileViewTabs({ activeView, onChange, errors }: { activeView: ViewKey;
         const Icon = tab.icon;
         const active = tab.key === activeView;
         return (
-          <button key={tab.key} onClick={() => onChange(tab.key)} className={`relative rounded-2xl border px-2 py-3 text-xs font-black shadow-sm ${active ? "border-[#092846] bg-[#092846] text-white" : "border-white bg-white text-[#60758a]"}`}>
+          <button key={tab.key} onClick={() => onChange(tab.key)} className={`relative rounded-2xl border px-2 py-3 text-xs font-black shadow-sm ${active ? "border-[#092846] cc-btn-primary" : "border-white bg-white text-[#60758a]"}`}>
             <Icon className="mx-auto mb-1 h-5 w-5" />{tab.label}
             {Boolean(tab.badge) && <span className="absolute right-1 top-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white">{tab.badge}</span>}
           </button>
@@ -2448,7 +2448,7 @@ function AndroidFeatureShortcuts({ activeView, onChange, errors, onNewRoster, on
 
 function KpiCard({ icon: Icon, label, value, hint, tone }: { icon: LucideIcon; label: string; value: string; hint: string; tone: string }) {
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <div className="flex items-center gap-4">
         <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}16`, color: tone }}><Icon className="h-7 w-7" /></div>
         <div><p className="text-xs font-bold uppercase tracking-wide text-[#71869b]">{label}</p><p className="mt-1 text-2xl font-black tabular-nums text-[#092846]">{value}</p><p className="text-xs font-medium text-[#71869b]">{hint}</p></div>
@@ -2669,7 +2669,7 @@ function RosterMapPanel({ groups, todayId }: { groups: RosterDayGroup[]; todayId
   const dayCount = new Set(segments.map((segment) => segment.dateLabel)).size;
   if (!segments.length) {
     return (
-      <section className="overflow-hidden rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+      <section className="overflow-hidden rounded-[1.25rem] cc-card p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><MapPin className="h-5 w-5" /></div>
           <div>
@@ -4070,7 +4070,7 @@ function formatRoutineSuggestionSummary(items: RoutineSuggestion[]): string {
 function DatabaseCard({ dbStatus, savedRosters, isSavingDb, onSave }: { dbStatus: DatabaseStatus | null; savedRosters: SavedRosterSummary[]; isSavingDb: boolean; onSave: () => void }) {
   const connected = Boolean(dbStatus?.ok || dbStatus?.connected);
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-black">Banco de dados</h3>
@@ -4079,7 +4079,7 @@ function DatabaseCard({ dbStatus, savedRosters, isSavingDb, onSave }: { dbStatus
         <span className={`rounded-full px-3 py-1 text-xs font-black ${connected ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{connected ? "Online" : "Configurar"}</span>
       </div>
       {!connected && <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">Configure DATABASE_URL no Render para ativar salvamento. O site continua funcionando localmente sem banco.</p>}
-      <Button onClick={onSave} disabled={isSavingDb || !connected} className="w-full rounded-xl bg-[#092846] text-white hover:bg-[#0d365e] disabled:cursor-not-allowed disabled:opacity-60">
+      <Button onClick={onSave} disabled={isSavingDb || !connected} className="w-full rounded-xl cc-btn-primary disabled:cursor-not-allowed disabled:opacity-60">
         <ShieldCheck className="h-4 w-4" /> {isSavingDb ? "Salvando..." : "Salvar análise"}
       </Button>
       {savedRosters.length > 0 && (
@@ -4101,7 +4101,7 @@ function DatabaseCard({ dbStatus, savedRosters, isSavingDb, onSave }: { dbStatus
 }
 
 function ActionCard({ title, description, icon: Icon, button, onClick }: { title: string; description: string; icon: LucideIcon; button: string; onClick: () => void }) {
-  return <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]"><div className="mb-5 flex items-start justify-between gap-3"><div><h3 className="text-lg font-black">{title}</h3><p className="mt-3 text-sm leading-6 text-[#60758a]">{description}</p></div><Icon className="h-10 w-10 text-blue-100" /></div><Button onClick={onClick} variant="outline" className="w-full rounded-xl border-blue-200 text-blue-600 hover:bg-blue-50"><Icon className="h-4 w-4" /> {button}</Button></div>;
+  return <div className="rounded-[1.25rem] cc-card p-5"><div className="mb-5 flex items-start justify-between gap-3"><div><h3 className="text-lg font-black">{title}</h3><p className="mt-3 text-sm leading-6 text-[#60758a]">{description}</p></div><Icon className="h-10 w-10 text-blue-100" /></div><Button onClick={onClick} variant="outline" className="w-full rounded-xl border-blue-200 text-blue-600 hover:bg-blue-50"><Icon className="h-4 w-4" /> {button}</Button></div>;
 }
 
 function MiniApp({ label, text }: { label: string; text: string }) {
@@ -4113,7 +4113,7 @@ function SummaryLine({ icon: Icon, label, value, color }: { icon: LucideIcon; la
 }
 
 function ScoreCard({ title, value, icon: Icon, tone, description }: { title: string; value: string; icon: LucideIcon; tone: string; description: string }) {
-  return <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-[#61778e]">{title}</h3><Icon className="h-6 w-6" style={{ color: tone }} /></div><p className="text-3xl font-black" style={{ color: tone }}>{value}</p><p className="mt-1 text-sm text-[#60758a]">{description}</p></div>;
+  return <div className="rounded-[1.25rem] cc-card p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-[#61778e]">{title}</h3><Icon className="h-6 w-6" style={{ color: tone }} /></div><p className="text-3xl font-black" style={{ color: tone }}>{value}</p><p className="mt-1 text-sm text-[#60758a]">{description}</p></div>;
 }
 
 function AlertCard({ alert, onOpen }: { alert: ComplianceResult['alerts'][number]; onOpen: () => void }) {
@@ -4163,7 +4163,7 @@ function IrregularityDetailPage({ alert, onBack, onOpenDay, isAdminUser, onSuppr
         </div>
       </section>
       <aside className="space-y-3">
-        {alert.date && <Button onClick={onOpenDay} className="w-full rounded-xl bg-[#092846] text-white hover:bg-[#0d365e]"><CalendarDays className="h-4 w-4" /> Abrir dia na escala</Button>}
+        {alert.date && <Button onClick={onOpenDay} className="w-full rounded-xl cc-btn-primary"><CalendarDays className="h-4 w-4" /> Abrir dia na escala</Button>}
         {isAdminUser && <Button onClick={onSuppressFalsePositive} variant="outline" className="w-full rounded-xl border-emerald-200 text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Ensinar falso positivo</Button>}
         <Button onClick={onBack} variant="outline" className="w-full rounded-xl border-[#d8e4ee]"><ShieldAlert className="h-4 w-4" /> Ver outros alertas</Button>
       </aside>
@@ -4203,7 +4203,7 @@ function StatisticsPanel({ storedStats, savedRosters }: { storedStats: StoredSta
         <StatsSummaryCard title="Quadro comparativo geral" subtitle="Amostra agregada e superficial" summary={global} tone="#7c3aed" />
       </section>
 
-      <section className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+      <section className="rounded-[1.25rem] cc-card p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-black text-[#092846]">Histórico das suas escalas</h3>
@@ -4228,13 +4228,13 @@ function StatisticsPanel({ storedStats, savedRosters }: { storedStats: StoredSta
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black text-[#092846]">Escalas salvas recentemente</h3>
           <div className="mt-4 space-y-2">
             {savedRosters.length === 0 ? <p className="text-sm text-[#60758a]">Nenhum registro recente encontrado.</p> : savedRosters.map((item) => <div key={item.id} className="rounded-2xl bg-[#f7fbff] p-3 text-sm"><p className="font-black text-[#092846]">{String(item.month || '').padStart(2, '0')}/{item.year || '----'} · {item.base || 'Base'}</p><p className="mt-1 text-xs text-[#60758a]">Score {item.score ?? '-'} · Puxada {item.intensityScore ?? '-'} · Alertas {item.criticalAlertsCount ?? 0}/{item.alertsCount ?? 0}</p></div>)}
           </div>
         </div>
-        <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+        <div className="rounded-[1.25rem] cc-card p-5">
           <h3 className="text-xl font-black text-[#092846]">Como ler os números</h3>
           <div className="mt-4 space-y-3 text-sm leading-6 text-[#60758a]">
             <p><b className="text-[#092846]">Seu histórico:</b> usa apenas escalas salvas na sua conta.</p>
@@ -4249,7 +4249,7 @@ function StatisticsPanel({ storedStats, savedRosters }: { storedStats: StoredSta
 
 function StatsSummaryCard({ title, subtitle, summary, tone }: { title: string; subtitle: string; summary: StoredStatsResponse['personal']['summary']; tone: string }) {
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <div className="flex items-start justify-between gap-3"><div><h3 className="text-xl font-black text-[#092846]">{title}</h3><p className="mt-1 text-sm text-[#60758a]">{subtitle}</p></div><span className="rounded-full px-3 py-1 text-xs font-black" style={{ backgroundColor: `${tone}16`, color: tone }}>{summary.rostersCount} escala(s)</span></div>
       <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
         <StatMini label="Puxada média" value={`${summary.avgIntensity}/100`} />
@@ -4274,7 +4274,7 @@ function LegalLine({ title, text }: { title: string; text: string }) {
 
 function RecommendationBlock({ title, items, empty, compact = false }: { title: string; items: GymRecommendation[]; empty: string; compact?: boolean }) {
   return (
-    <div className="rounded-[1.25rem] border border-white bg-white p-5 shadow-[0_14px_45px_rgba(20,54,84,0.07)]">
+    <div className="rounded-[1.25rem] cc-card p-5">
       <h3 className="text-xl font-black">{title}</h3>
       {items.length === 0 ? <p className="mt-3 rounded-2xl bg-[#f7fbff] p-4 text-sm text-[#60758a]">{empty}</p> : <div className={`mt-4 grid gap-3 ${compact ? "md:grid-cols-2" : "md:grid-cols-2 xl:grid-cols-3"}`}>{items.map((item) => <GymCard key={`${item.date}-${item.priority}`} item={item} />)}</div>}
     </div>

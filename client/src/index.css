@@ -2203,3 +2203,64 @@ html, body, #root {
 [data-crew-theme="light"] .crewcheck-v10855-home-sidebar .text-cyan-100\/60 {
   color: var(--foreground-subtle) !important;
 }
+
+/* ============================================================
+   UTILITY CLASSES — Theme-aware replacements for hardcoded colors
+   ============================================================ */
+
+/* Cards */
+.cc-card {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+[data-crew-theme="dark"] .cc-card {
+  box-shadow: 0 4px 24px rgba(0,0,0,0.32);
+}
+
+/* Subtle surface (previously bg-[#f8fbfd]) */
+.cc-surface-subtle {
+  background: var(--surface-subtle, rgba(0,0,0,0.03));
+}
+[data-crew-theme="dark"] .cc-surface-subtle {
+  background: rgba(255,255,255,0.04);
+}
+[data-crew-theme="light"] .cc-surface-subtle {
+  background: #f8fbfd;
+}
+
+/* Borders */
+.cc-border-subtle { border-color: var(--surface-border); }
+.cc-divide-subtle > * + * { border-top: 1px solid var(--surface-border); }
+
+/* Text tokens */
+.cc-text-primary { color: var(--foreground); }
+.cc-text-secondary { color: var(--foreground-muted); }
+.cc-text-muted { color: var(--foreground-subtle); }
+
+/* Primary button */
+.cc-btn-primary {
+  background: var(--accent);
+  color: var(--primary-foreground);
+}
+.cc-btn-primary:hover {
+  opacity: 0.88;
+}
+
+/* Input border */
+.cc-input-border { border-color: var(--surface-border); }
+.cc-input-border:focus { border-color: var(--accent); }
+
+/* Pills */
+.cc-pill-light {
+  background: var(--surface);
+  color: var(--foreground-muted);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+[data-crew-theme="dark"] .cc-pill-light {
+  background: rgba(255,255,255,0.07);
+  color: var(--foreground-muted);
+  border-color: rgba(255,255,255,0.10);
+}
+
