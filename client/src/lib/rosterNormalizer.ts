@@ -419,7 +419,9 @@ function shouldMergeFlightDays(a: RosterDay, b: RosterDay): boolean {
   const sameChain = aLast.destination === bFirst.origin;
   const gap = minutesBetween(aLast.arrivalTime, bFirst.departureTime);
   const dutyGap = a.dutyDebrief && b.dutyReport ? minutesBetween(a.dutyDebrief, b.dutyReport) : gap;
-  return sameChain || (gap >= 0 && gap <= 180) || (dutyGap >= -30 && dutyGap <= 180);
+  // CrewCheck Fix: Only merge if strictly sequential (same chain) or very close gap (<= 60 mins). 
+  // 180 mins was too aggressive and caused teleportation between independent flights.
+  return sameChain || (gap >= 0 && gap <= 60) || (dutyGap >= -15 && dutyGap <= 60);
 }
 
 function mergeActivityRowsIntoFlights(days: RosterDay[]): RosterDay[] {
@@ -441,7 +443,8 @@ function mergeActivityRowsIntoFlights(days: RosterDay[]): RosterDay[] {
         // do voo gerava jornadas visuais enormes (ex.: 22h) quando havia voo após check.
         if (/^C\d{2,3}F$/i.test(activityCode)) continue;
         const mentionedInFlight = flightActivityCodes.includes(activityCode);
-        const overlaps = windowsOverlapOrTouch(activity, flight, 180);
+        // CrewCheck Fix: Reduce overlap tolerance to 30 mins to avoid pulling random standby/training into flights.
+        const overlaps = windowsOverlapOrTouch(activity, flight, 30);
         if (mentionedInFlight || overlaps) {
           flight.rawText = joinRaw(flight.rawText, activity.rawText || activityCode);
           flight.dutyReport = minTime(flight.dutyReport, activity.dutyReport) || flight.dutyReport || activity.dutyReport;
@@ -507,7 +510,8 @@ function mergeTimedActivityRows(days: RosterDay[]): RosterDay[] {
     const mergedGroups: RosterDay[] = [];
     for (const day of timed) {
       const last = mergedGroups[mergedGroups.length - 1];
-      if (last && windowsOverlapOrTouch(last, day, STANDBY_RE.test(code) ? 90 : 15)) {
+      // CrewCheck Fix: Reduce standby overlap tolerance from 90 to 15 mins to avoid merging independent standbys.
+      if (last && windowsOverlapOrTouch(last, day, 15)) {
         last.dutyReport = minTime(last.dutyReport, day.dutyReport) || last.dutyReport;
         last.dutyDebrief = maxTime(last.dutyReport, last.dutyDebrief, day.dutyDebrief) || last.dutyDebrief;
         last.rawText = joinRaw(last.rawText, day.rawText);

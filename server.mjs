@@ -20947,10 +20947,15 @@ function parseIFlightStructuredCalendarV10846({ text, filename = 'iFlight_Roster
   };
   if (type === 'VOO') {
    const flightNumbers = Array.from(new Set((String(event.text).match(/\bLA\s*\d{3,4}\b|\bLA\d{3,4}\b/gi) || []).map(flightKeyV10845)));
+   // CrewCheck Fix: Try to extract origin and destination from text if available (e.g., GRU-BSB)
+   const routeMatch = String(event.text).match(/\b([A-Z]{3})\s*[-/]?\s*([A-Z]{3})\b/);
+   const origin = routeMatch ? routeMatch[1] : '';
+   const destination = routeMatch ? routeMatch[2] : '';
+   
    row.legs = (flightNumbers.length ? flightNumbers : [code]).map((flightNumber, index) => ({
     flightNumber,
-    origin: '',
-    destination: '',
+    origin: index === 0 ? origin : '',
+    destination: index === flightNumbers.length - 1 ? destination : '',
     departureTime: times[index] || start || '',
     arrivalTime: times[index + 1] || end || times[index] || start || '',
     workType: /\b(?:PS|EXTRA)\b/i.test(event.text) ? 'PS' : 'OP',

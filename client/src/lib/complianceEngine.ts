@@ -1193,7 +1193,7 @@ function addStandbyActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: Ros
   const details = [
     `Cálculo: início do sobreaviso ${standbyWindow.startTime} até ${end.time}${end.isNextDay ? ' (+1)' : ''}, abatendo ${calloutMinutes} min de deslocamento.`,
     `Resultado regulatório estimado: ${formatHoursForAlert(regulatedHours)} de limite combinado.`,
-    `Limite usado: ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h para tripulação simples; para composta/revezamento, o limite da jornada aplicável deve ser reduzido conforme o tempo de sobreaviso acima de 8h quando aplicável.`,
+    `Limite usado: ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h (RBAC 117). O ACT ${actRules.actName} não amplia esse limite diário, apenas regula o teto do sobreaviso isolado.`,
     'Este alerta só vira irregularidade quando há horários suficientes; caso contrário, fica como leitura incerta para evitar falso positivo.',
   ].join(' ');
 
@@ -1248,7 +1248,10 @@ function addReserveActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: Ros
   const sectors = Math.max(1, day.legs?.length || 1);
   const flightHours = getFlightHours(day);
   const combinedHours = round1(diffHours(start, end.time, Boolean(end.isNextDay)));
-  const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(start, sectors), profile);
+  const rbacLimit = getRbac117B1SimpleDutyLimit(start, sectors);
+  // CrewCheck Fix: Apply ACT rules over RBAC 117 for reserve limit if applicable
+  const actLimitHours = actRules.reserve.maxHours + 11; // ACT limits reserve to 6h, plus 11h max duty = 17h theoretical max, but RBAC is more restrictive
+  const limit = applyMostRestrictiveDutyLimit(rbacLimit, profile);
   const details = [
     `Cálculo: início da reserva/apresentação ${start} até ${end.time}${end.isNextDay ? ' (+1)' : ''} (${end.source}).`,
     `Reserva acionada é analisada como jornada completa a partir do início da reserva, e não a partir do horário do acionamento/voo.`,
