@@ -10203,8 +10203,14 @@ async function computeGoogleRoutesPlan({ origin, destination, departureTime, arr
   if (tomTomFirst?.durationSeconds) return { ...tomTomFirst, source: `${tomTomFirst.source || 'TomTom'} · principal` };
  }
  if (!key) {
-  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }) : null;
-  return tomTom?.durationSeconds ? { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` } : null;
+  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }).catch(() => null) : null;
+  if (tomTom?.durationSeconds) return { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` };
+  // OSRM fallback: free OpenStreetMap routing when no API keys are configured
+  if (travelMode !== 'TRANSIT') {
+   const osrm = await computeOSRMRoutePlan({ origin, destination, mode: travelMode }).catch(() => null);
+   if (osrm?.durationSeconds) return { ...osrm, source: `${osrm.source || 'OSRM'} · fallback gratuito` };
+  }
+  return null;
  }
  const body = {
   origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
@@ -10243,10 +10249,15 @@ async function computeGoogleRoutesPlan({ origin, destination, departureTime, arr
  try {
   response = await fetchGoogleRoutesWithFallbackAuth({ key, fieldMask, body, travelMode });
  } catch (error) {
-  const legacy = await computeLegacyDirectionsPlan({ origin, destination, departureTime, arrivalTime, mode: travelMode });
+  const legacy = await computeLegacyDirectionsPlan({ origin, destination, departureTime, arrivalTime, mode: travelMode }).catch(() => null);
   if (legacy?.durationSeconds) return legacy;
-  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }) : null;
+  const tomTom = travelMode !== 'TRANSIT' ? await computeTomTomRoutePlan({ origin, destination, departureTime, mode: travelMode }).catch(() => null) : null;
   if (tomTom?.durationSeconds) return { ...tomTom, source: `${tomTom.source || 'TomTom'} · fallback` };
+  // OSRM as last-resort fallback when all paid APIs fail
+  if (travelMode !== 'TRANSIT') {
+   const osrm = await computeOSRMRoutePlan({ origin, destination, mode: travelMode }).catch(() => null);
+   if (osrm?.durationSeconds) return { ...osrm, source: `${osrm.source || 'OSRM'} · fallback gratuito` };
+  }
   throw error;
  }
  const payload = await response.json();
@@ -11077,8 +11088,40 @@ async function getSmartDeparturePlan(query) {
    errors: errors.slice(0, 4).map(sanitizePublicError),
   },
  };
- commuteCache.set(cacheKey, { time: Date.now(), value });
- return value;
+ // Fetch Waze traffic alerts in parallel (non-blocking, best-effort)
+ let trafficAlerts = null;
+ try {
+  if (!isLongDistance) {
+   trafficAlerts = await getSmartDepartureTrafficAlerts({ origin, destination, airport }).catch(() => null);
+  }
+ } catch {
+  // traffic alerts are best-effort, never block the plan
+ }
+ const usedOSRM = routeOptions.some((item) => /OSRM|OpenStreetMap/.test(String(item.source || '')));
+ const valueWithTraffic = {
+  ...value,
+  trafficAlerts: trafficAlerts || null,
+  trafficLevel: trafficAlerts?.trafficLevel || null,
+  trafficLabel: trafficAlerts?.trafficLabel || null,
+  trafficIcon: trafficAlerts?.trafficIcon || null,
+  osrmEnabled: CREWCHECK_OSRM_ENABLED,
+  wazeEnabled: CREWCHECK_WAZE_ENABLED,
+  estimateDisclosure: usedGoogle ? 'Dados reais' : usedOSRM ? 'OSRM/OpenStreetMap' : 'Estimativa CrewCheck',
+  dataQualityLabel: usedGoogle ? 'dados reais' : usedOSRM ? 'OSRM/OSM' : 'estimado',
+  warning: isLongDistance && !userAllowsFlightAboveThreshold
+   ? `Trajeto longo detectado. Ative a opção de voo em longa distância para o Automático considerar ponte aérea.`
+   : (usedGoogle ? null : usedOSRM ? 'Rota calculada via OSRM/OpenStreetMap com fator de tráfego estimado. Para dados em tempo real, configure Google Maps ou TomTom.' : 'Google Maps não retornou rota em tempo real. O CrewCheck mantém estimativa segura e usa TomTom/OSRM como fallback.'),
+  diagnostics: {
+   ...value.diagnostics,
+   osrmEnabled: CREWCHECK_OSRM_ENABLED,
+   wazeEnabled: CREWCHECK_WAZE_ENABLED,
+   usedOSRM,
+   trafficAlertsCount: trafficAlerts?.alerts?.length || 0,
+   trafficLevel: trafficAlerts?.trafficLevel || null,
+  },
+ };
+ commuteCache.set(cacheKey, { time: Date.now(), value: valueWithTraffic });
+ return valueWithTraffic;
 }
 
 
@@ -13613,7 +13656,7 @@ function telegramEscapeHtml(value) {
 }
 
 const TELEGRAM_PREMIUM_CATEGORIES = {
- smartDeparture: { icon: '🧭', label: 'Saída Inteligente', footer: 'Use como apoio. Confirme sempre a escala, portão e canais oficiais antes de sair.' },
+ smartDeparture: { icon: '🧭', label: 'Saída Inteligente', footer: 'Alerta automático de trânsito e horário de saída. Use como apoio — confirme sempre a escala, portão e canais oficiais antes de sair.' },
  roster: { icon: '📅', label: 'Escala', footer: 'Escala importada no CrewCheck. Confira a publicação oficial antes de qualquer decisão operacional.' },
  radar: { icon: '🛫', label: 'Radar de voo', footer: 'Status sujeito a atualização do aeroporto e da companhia.' },
  irregularities: { icon: '⚠️', label: 'Irregularidades', footer: 'Análise auxiliar. Valide a regra aplicável antes de acionar qualquer canal.' },
@@ -13629,9 +13672,21 @@ function telegramLineIcon(line = '') {
  if (/destino|aeroporto|base|origem|local/.test(lower)) return '📍';
  if (/\bla\s?\d{3,4}\b|voo|trecho|decolagem|chegada/.test(lower)) return '🛫';
  if (/modal|carro|uber|99|moto|transporte/.test(lower)) return '🚘';
+ if (/trânsito parado|standstill/.test(lower)) return '🔴';
+ if (/trânsito pesado|lentidão|lento|congestion/.test(lower)) return '🟠';
+ if (/trânsito moderado|moderado/.test(lower)) return '🟡';
+ if (/via livre|trânsito livre|fluindo/.test(lower)) return '🟢';
+ if (/acidente|grave/.test(lower)) return '🚨';
+ if (/via fechada|fechada|bloqueada/.test(lower)) return '🚫';
+ if (/obra|construção/.test(lower)) return '🚧';
+ if (/risco|buraco|objeto/.test(lower)) return '🚧';
+ if (/fiscalização|polícia/.test(lower)) return '👮';
  if (/alerta|crítico|irregular|atenção|falha/.test(lower)) return '⚠️';
  if (/escala|programação|importada|atualizada|mês|base/.test(lower)) return '📅';
- if (/ganho|diária|valor|salário|resumo/.test(lower)) return '💎';
+ if (/ganho|diária|valor|salário|resumo/.test(lower)) return '📎';
+ if (/tempo estimado|duração/.test(lower)) return '⏱️';
+ if (/horário de saída|sair às/.test(lower)) return '🕒';
+ if (/considere sair|saia mais cedo|transporte público/.test(lower)) return '💡';
  return '•';
 }
 
@@ -15990,6 +16045,361 @@ async function runCrewCheckOperationalAlerts(db, user, options = {}) {
 
 /* CREWCHECK_AVIATION_WEATHER_ALERTS_END */
 
+// --- CrewCheck v12.2 Smart Departure: OSRM + Waze + Departure Monitor ---
+
+const CREWCHECK_OSRM_BASE = String(process.env.CREWCHECK_OSRM_BASE || 'https://router.project-osrm.org').replace(/\/+$/, '');
+const CREWCHECK_OSRM_ENABLED = String(process.env.CREWCHECK_OSRM_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_WAZE_ENABLED = String(process.env.CREWCHECK_WAZE_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_DEPARTURE_MONITOR_ENABLED = String(process.env.CREWCHECK_DEPARTURE_MONITOR_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_DEPARTURE_MONITOR_INTERVAL_MS = Math.max(5 * 60_000, Number(process.env.CREWCHECK_DEPARTURE_MONITOR_INTERVAL_MS || 10 * 60_000));
+const CREWCHECK_DEPARTURE_MONITOR_LEAD_MINUTES = Math.max(30, Math.min(240, Number(process.env.CREWCHECK_DEPARTURE_MONITOR_LEAD_MINUTES || 90)));
+const CREWCHECK_DEPARTURE_MONITOR_NOTIFY_WINDOW_MINUTES = Math.max(5, Math.min(60, Number(process.env.CREWCHECK_DEPARTURE_MONITOR_NOTIFY_WINDOW_MINUTES || 30)));
+const departureMonitorLastNotified = new Map();
+
+async function computeOSRMRoutePlan({ origin, destination, mode = 'DRIVE' }) {
+ if (!CREWCHECK_OSRM_ENABLED) return null;
+ const originLat = Number(origin?.lat);
+ const originLng = Number(origin?.lng);
+ const destLat = Number(destination?.lat);
+ const destLng = Number(destination?.lng);
+ if (![originLat, originLng, destLat, destLng].every(Number.isFinite)) return null;
+ const profile = mode === 'TWO_WHEELER' ? 'bike' : mode === 'WALK' ? 'foot' : 'driving';
+ const url = `${CREWCHECK_OSRM_BASE}/route/v1/${profile}/${originLng},${originLat};${destLng},${destLat}?overview=false&annotations=false`;
+ try {
+  const response = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) return null;
+  const payload = await response.json().catch(() => null);
+  if (payload?.code !== 'Ok' || !Array.isArray(payload?.routes) || !payload.routes[0]) return null;
+  const route = payload.routes[0];
+  const durationSeconds = Math.round(Number(route.duration || 0));
+  const distanceMeters = Math.round(Number(route.distance || 0));
+  if (!durationSeconds) return null;
+  const peak = isPeakCommuteWindow(new Date());
+  const trafficFactor = peak ? 1.35 : 1.10;
+  const adjustedDuration = Math.round(durationSeconds * trafficFactor);
+  return {
+   mode: mode === 'TWO_WHEELER' ? 'TWO_WHEELER' : mode === 'WALK' ? 'WALK' : 'DRIVE',
+   durationSeconds: adjustedDuration,
+   staticDurationSeconds: durationSeconds,
+   distanceMeters,
+   localizedDuration: `${Math.max(1, Math.round(adjustedDuration / 60))} min`,
+   localizedDistance: distanceMeters ? `${Math.round((distanceMeters / 1000) * 10) / 10} km` : '',
+   label: mode === 'TWO_WHEELER' ? 'Moto · OSRM/OpenStreetMap' : mode === 'WALK' ? 'A pé · OSRM' : `Carro · OSRM/OSM${peak ? ' (horário de pico)' : ''}`,
+   transitSteps: [],
+   source: `OSRM/OpenStreetMap · ${peak ? 'pico estimado' : 'trânsito estimado'}`,
+   osrmRaw: { durationSeconds, distanceMeters, trafficFactor },
+  };
+ } catch {
+  return null;
+ }
+}
+
+async function fetchWazeTrafficAlerts({ origin, destination, radiusKm = 15 }) {
+ if (!CREWCHECK_WAZE_ENABLED) return [];
+ try {
+  const midLat = ((Number(origin?.lat) + Number(destination?.lat)) / 2).toFixed(5);
+  const midLng = ((Number(origin?.lng) + Number(destination?.lng)) / 2).toFixed(5);
+  const distKm = haversineKm(origin, destination);
+  const bbox = Math.min(0.8, Math.max(0.15, (distKm / 111) * 1.3));
+  const top = (Number(midLat) + bbox).toFixed(5);
+  const bottom = (Number(midLat) - bbox).toFixed(5);
+  const left = (Number(midLng) - bbox).toFixed(5);
+  const right = (Number(midLng) + bbox).toFixed(5);
+  const url = `https://www.waze.com/live-map/api/georss?top=${top}&bottom=${bottom}&left=${left}&right=${right}&env=row&types=alerts,traffic`;
+  const response = await fetch(url, {
+   headers: {
+    'User-Agent': 'Mozilla/5.0 (compatible; CrewCheck/12.2)',
+    'Accept': 'application/json',
+    'Referer': 'https://www.waze.com/live-map',
+   },
+   signal: AbortSignal.timeout(7_000),
+  });
+  if (!response.ok) return [];
+  const payload = await response.json().catch(() => null);
+  if (!payload) return [];
+  const rawAlerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
+  const rawJams = Array.isArray(payload?.jams) ? payload.jams : [];
+  const alerts = rawAlerts
+   .filter((item) => item?.type && (item.location?.x || item.location?.y))
+   .map((item) => ({
+    type: String(item.type || 'HAZARD').toUpperCase(),
+    subtype: String(item.subtype || '').toUpperCase(),
+    description: wazeAlertDescription(item.type, item.subtype),
+    lat: Number(item.location?.y || 0),
+    lng: Number(item.location?.x || 0),
+    severity: wazeAlertSeverity(item.type, item.subtype, item.reportRating),
+    street: String(item.street || item.roadType || '').slice(0, 80),
+    reportedAt: item.pubMillis ? new Date(item.pubMillis).toISOString() : null,
+    source: 'Waze',
+   }))
+   .slice(0, 10);
+  const jams = rawJams
+   .filter((item) => item?.speedKMH !== undefined && Number(item.speedKMH) < 25)
+   .map((item) => ({
+    type: 'TRAFFIC_JAM',
+    subtype: Number(item.speedKMH) < 5 ? 'STANDSTILL' : 'SLOW',
+    description: Number(item.speedKMH) < 5 ? 'Trânsito parado' : `Lentidão (${Math.round(Number(item.speedKMH))} km/h)`,
+    lat: Number(item.line?.[0]?.y || 0),
+    lng: Number(item.line?.[0]?.x || 0),
+    severity: Number(item.speedKMH) < 5 ? 'critical' : Number(item.speedKMH) < 15 ? 'high' : 'medium',
+    street: String(item.street || '').slice(0, 80),
+    speedKmh: Math.round(Number(item.speedKMH)),
+    delaySeconds: Number(item.delay || 0),
+    source: 'Waze',
+   }))
+   .slice(0, 5);
+  return [...alerts, ...jams];
+ } catch {
+  return [];
+ }
+}
+
+function wazeAlertDescription(type = '', subtype = '') {
+ const t = String(type || '').toUpperCase();
+ const s = String(subtype || '').toUpperCase();
+ if (t === 'ACCIDENT') return s.includes('MAJOR') ? 'Acidente grave' : 'Acidente';
+ if (t === 'JAM') return s.includes('STAND_STILL') ? 'Trânsito parado' : s.includes('HEAVY') ? 'Trânsito pesado' : 'Lentidão';
+ if (t === 'ROAD_CLOSED') return 'Via fechada';
+ if (t === 'HAZARD') {
+  if (s.includes('WEATHER')) return 'Risco climático na via';
+  if (s.includes('POT_HOLE')) return 'Buraco na pista';
+  if (s.includes('OBJECT')) return 'Objeto na pista';
+  if (s.includes('CONSTRUCTION')) return 'Obra na via';
+  return 'Risco na via';
+ }
+ if (t === 'POLICE') return 'Fiscalização policial';
+ return String(type || 'Alerta').replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+}
+
+function wazeAlertSeverity(type = '', subtype = '', reportRating = 0) {
+ const t = String(type || '').toUpperCase();
+ const s = String(subtype || '').toUpperCase();
+ if (t === 'ACCIDENT' && s.includes('MAJOR')) return 'critical';
+ if (t === 'ROAD_CLOSED') return 'critical';
+ if (t === 'JAM' && s.includes('STAND_STILL')) return 'high';
+ if (t === 'ACCIDENT') return 'high';
+ if (t === 'JAM') return 'medium';
+ if (Number(reportRating) >= 4) return 'high';
+ return 'low';
+}
+
+async function getSmartDepartureTrafficAlerts({ origin, destination, airport }) {
+ const [wazeAlerts, osrmRoute] = await Promise.allSettled([
+  fetchWazeTrafficAlerts({ origin, destination }),
+  computeOSRMRoutePlan({ origin, destination, mode: 'DRIVE' }),
+ ]);
+ const alerts = wazeAlerts.status === 'fulfilled' ? (wazeAlerts.value || []) : [];
+ const osrm = osrmRoute.status === 'fulfilled' ? osrmRoute.value : null;
+ const criticalAlerts = alerts.filter((a) => a.severity === 'critical' || a.severity === 'high');
+ const trafficLevel = criticalAlerts.length >= 2 ? 'heavy' : criticalAlerts.length === 1 ? 'moderate' : alerts.length > 0 ? 'light' : 'clear';
+ const trafficLabel = trafficLevel === 'heavy' ? 'Trânsito pesado' : trafficLevel === 'moderate' ? 'Trânsito moderado' : trafficLevel === 'light' ? 'Trânsito leve' : 'Via livre';
+ const trafficIcon = trafficLevel === 'heavy' ? '🔴' : trafficLevel === 'moderate' ? '🟠' : trafficLevel === 'light' ? '🟡' : '🟢';
+ return {
+  ok: true,
+  airport,
+  trafficLevel,
+  trafficLabel,
+  trafficIcon,
+  alerts,
+  criticalAlerts,
+  osrmDurationMinutes: osrm ? Math.max(1, Math.round(osrm.durationSeconds / 60)) : null,
+  osrmDistanceKm: osrm?.distanceMeters ? Math.round((osrm.distanceMeters / 1000) * 10) / 10 : null,
+  osrmSource: osrm?.source || null,
+  updatedAt: new Date().toISOString(),
+ };
+}
+
+async function ensureDepartureConfigSchema(db) {
+ if (!db) return;
+ try {
+  await db.query(`
+   create table if not exists crewcheck_departure_config (
+    id uuid primary key,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    user_id uuid not null references crewcheck_users(id) on delete cascade,
+    airport text not null default 'BSB',
+    origin_lat double precision,
+    origin_lng double precision,
+    origin_address text,
+    origin_cep text,
+    origin_name text,
+    margin_minutes integer not null default 30,
+    monitor_enabled boolean not null default true,
+    monitor_lead_minutes integer not null default 90,
+    monitor_notify_telegram boolean not null default true,
+    preferred_mode text not null default 'AUTO',
+    last_plan_json jsonb,
+    last_traffic_json jsonb,
+    last_monitored_at timestamptz
+   );
+  `).catch(() => null);
+  await db.query(`create unique index if not exists crewcheck_departure_config_user_uidx on crewcheck_departure_config (user_id);`).catch(() => null);
+  await db.query(`create index if not exists crewcheck_departure_config_airport_idx on crewcheck_departure_config (airport);`).catch(() => null);
+ } catch {
+  // schema migration is best-effort
+ }
+}
+
+async function getDepartureConfig(db, userId) {
+ if (!db || !userId) return null;
+ try {
+  const result = await db.query('select * from crewcheck_departure_config where user_id = $1 limit 1', [userId]);
+  return result.rows?.[0] || null;
+ } catch {
+  return null;
+ }
+}
+
+async function upsertDepartureConfig(db, userId, patch = {}) {
+ if (!db || !userId) return null;
+ await ensureDepartureConfigSchema(db);
+ const existing = await getDepartureConfig(db, userId);
+ if (existing) {
+  const fields = [];
+  const values = [];
+  let idx = 1;
+  const allowed = ['airport','origin_lat','origin_lng','origin_address','origin_cep','origin_name','margin_minutes','monitor_enabled','monitor_lead_minutes','monitor_notify_telegram','preferred_mode','last_plan_json','last_traffic_json','last_monitored_at'];
+  for (const key of allowed) {
+   if (Object.prototype.hasOwnProperty.call(patch, key) && patch[key] !== undefined) {
+    fields.push(`${key} = $${idx}`);
+    values.push(patch[key]);
+    idx++;
+   }
+  }
+  if (!fields.length) return existing;
+  fields.push(`updated_at = now()`);
+  values.push(existing.id);
+  await db.query(`update crewcheck_departure_config set ${fields.join(', ')} where id = $${idx}`, values);
+  return { ...existing, ...patch, updated_at: new Date().toISOString() };
+ } else {
+  const id = newId();
+  const row = {
+   id,
+   user_id: userId,
+   airport: patch.airport || 'BSB',
+   origin_lat: patch.origin_lat || null,
+   origin_lng: patch.origin_lng || null,
+   origin_address: patch.origin_address || null,
+   origin_cep: patch.origin_cep || null,
+   origin_name: patch.origin_name || null,
+   margin_minutes: patch.margin_minutes || 30,
+   monitor_enabled: patch.monitor_enabled !== false,
+   monitor_lead_minutes: patch.monitor_lead_minutes || CREWCHECK_DEPARTURE_MONITOR_LEAD_MINUTES,
+   monitor_notify_telegram: patch.monitor_notify_telegram !== false,
+   preferred_mode: patch.preferred_mode || 'AUTO',
+  };
+  await db.query(
+   `insert into crewcheck_departure_config (id, user_id, airport, origin_lat, origin_lng, origin_address, origin_cep, origin_name, margin_minutes, monitor_enabled, monitor_lead_minutes, monitor_notify_telegram, preferred_mode) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+   [row.id, row.user_id, row.airport, row.origin_lat, row.origin_lng, row.origin_address, row.origin_cep, row.origin_name, row.margin_minutes, row.monitor_enabled, row.monitor_lead_minutes, row.monitor_notify_telegram, row.preferred_mode]
+  );
+  return row;
+ }
+}
+
+async function runSmartDepartureTrafficMonitor() {
+ if (!CREWCHECK_DEPARTURE_MONITOR_ENABLED) return;
+ const db = getPool();
+ if (!db) return;
+ try {
+  await ensureDepartureConfigSchema(db);
+  const result = await db.query(
+   `select dc.*, u.id as uid, u.name as uname, u.base as ubase
+    from crewcheck_departure_config dc
+    join crewcheck_users u on u.id = dc.user_id
+    where dc.monitor_enabled = true and dc.monitor_notify_telegram = true
+    limit 200`
+  ).catch(() => ({ rows: [] }));
+  const configs = result.rows || [];
+  if (!configs.length) return;
+  // Find users with upcoming flights in the next monitor_lead_minutes window
+  for (const config of configs) {
+   try {
+    const userId = config.user_id;
+    // Get the user's active roster to find next duty
+    const rosterResult = await db.query(
+     `select roster_json from crewcheck_rosters where user_id = $1 and deleted_at is null order by is_active desc, coalesce(active_at, updated_at, created_at) desc limit 1`,
+     [userId]
+    ).catch(() => ({ rows: [] }));
+    const roster = rosterResult.rows?.[0]?.roster_json;
+    if (!roster?.days?.length) continue;
+    const now = new Date();
+    const leadMs = (config.monitor_lead_minutes || CREWCHECK_DEPARTURE_MONITOR_LEAD_MINUTES) * 60_000;
+    const notifyWindowMs = CREWCHECK_DEPARTURE_MONITOR_NOTIFY_WINDOW_MINUTES * 60_000;
+    // Find next duty report time within the lead window
+    let nextDuty = null;
+    for (const day of roster.days) {
+     if (!day.dutyReport) continue;
+     const dutyDate = new Date(day.dutyReport);
+     if (!Number.isFinite(dutyDate.getTime())) continue;
+     const msUntilDuty = dutyDate.getTime() - now.getTime();
+     if (msUntilDuty > 0 && msUntilDuty <= leadMs) {
+      if (!nextDuty || dutyDate.getTime() < new Date(nextDuty.dutyReport).getTime()) {
+       nextDuty = day;
+      }
+     }
+    }
+    if (!nextDuty) continue;
+    // Deduplicate: don't notify more than once per 30 min per user per duty
+    const dedupeKey = `${userId}:${nextDuty.dutyReport}`;
+    const lastNotified = departureMonitorLastNotified.get(dedupeKey) || 0;
+    if (Date.now() - lastNotified < 30 * 60_000) continue;
+    // Check if we have origin coordinates
+    const originLat = config.origin_lat;
+    const originLng = config.origin_lng;
+    if (!originLat || !originLng) continue;
+    const airport = config.airport || nextDuty.base || 'BSB';
+    const destination = CREWCHECK_AIRPORT_COORDS[normalizeAirportCode(airport)] || CREWCHECK_AIRPORT_COORDS.BSB;
+    const origin = { lat: Number(originLat), lng: Number(originLng), name: config.origin_name || 'Casa' };
+    // Get traffic alerts
+    const trafficData = await getSmartDepartureTrafficAlerts({ origin, destination, airport }).catch(() => null);
+    // Get OSRM route for ETA
+    const osrmRoute = await computeOSRMRoutePlan({ origin, destination, mode: 'DRIVE' }).catch(() => null);
+    const marginMinutes = config.margin_minutes || 30;
+    const dutyDate = new Date(nextDuty.dutyReport);
+    const arrivalDeadline = new Date(dutyDate.getTime() - marginMinutes * 60_000);
+    const durationMinutes = osrmRoute ? Math.max(1, Math.round(osrmRoute.durationSeconds / 60)) : null;
+    const leaveAt = durationMinutes ? new Date(arrivalDeadline.getTime() - durationMinutes * 60_000) : null;
+    const msUntilLeave = leaveAt ? leaveAt.getTime() - now.getTime() : null;
+    // Only notify if leave time is within the notification window
+    if (msUntilLeave !== null && (msUntilLeave < 0 || msUntilLeave > notifyWindowMs)) continue;
+    // Build Telegram message
+    const dutyLabel = formatClockIso(dutyDate);
+    const leaveLabel = leaveAt ? formatClockIso(leaveAt) : null;
+    const trafficIcon = trafficData?.trafficIcon || '🟢';
+    const trafficLabel = trafficData?.trafficLabel || 'Via livre';
+    const criticalAlerts = trafficData?.criticalAlerts || [];
+    const lines = [
+     `Apresentação: ${dutyLabel} em ${destination.name || airport}`,
+     leaveLabel ? `Horário de saída: ${leaveLabel}` : null,
+     durationMinutes ? `Tempo estimado: ${durationMinutes} min${osrmRoute?.distanceMeters ? ` · ${Math.round((osrmRoute.distanceMeters / 1000) * 10) / 10} km` : ''}` : null,
+     `${trafficIcon} ${trafficLabel}`,
+     ...criticalAlerts.slice(0, 3).map((a) => `⚠️ ${a.description}${a.street ? ` — ${a.street}` : ''}`),
+     trafficData?.trafficLevel === 'heavy' ? 'Considere sair mais cedo ou usar transporte público.' : null,
+    ].filter(Boolean);
+    const title = leaveLabel ? `Saia às ${leaveLabel} para ${airport}` : `Alerta de saída para ${airport}`;
+    await notifyTelegramForUser(db, userId, 'smartDeparture', title, lines).catch(() => null);
+    departureMonitorLastNotified.set(dedupeKey, Date.now());
+    // Update last monitored
+    await db.query('update crewcheck_departure_config set last_monitored_at = now(), last_traffic_json = $1 where user_id = $2', [JSON.stringify(trafficData || {}), userId]).catch(() => null);
+   } catch {
+    // per-user errors must not stop the monitor
+   }
+  }
+ } catch {
+  // monitor errors are non-fatal
+ }
+}
+
+// Start departure monitor job
+if (CREWCHECK_DEPARTURE_MONITOR_ENABLED) {
+ setInterval(() => { runSmartDepartureTrafficMonitor().catch(() => null); }, CREWCHECK_DEPARTURE_MONITOR_INTERVAL_MS);
+ // Run once at startup after a short delay
+ setTimeout(() => { runSmartDepartureTrafficMonitor().catch(() => null); }, 45_000);
+}
+
+// --- end CrewCheck v12.2 Smart Departure Monitor ---
+
 async function handleApi(req, res, url) {
 
 
@@ -17798,20 +18208,121 @@ async function handleApi(req, res, url) {
     const optionalUser = await getAuthUser(req).catch(() => null);
     const db = getPool();
     if (db && optionalUser?.id) {
-     await notifyTelegramForUser(db, optionalUser.id, 'smartDeparture', 'Saída Inteligente calculada', [
-      plan.leaveLabel || plan.message || 'Plano calculado com sucesso.',
-      plan.targetLabel ? `Destino: ${plan.targetLabel}` : '',
-      plan.modeLabel ? `Melhor deslocamento: ${plan.modeLabel}` : '',
+     const trafficAlerts = plan.trafficAlerts;
+     const criticalAlerts = trafficAlerts?.criticalAlerts || [];
+     const trafficLine = trafficAlerts?.trafficLabel ? `${trafficAlerts.trafficIcon || ''} ${trafficAlerts.trafficLabel}`.trim() : '';
+     const telegramLines = [
+      plan.leaveAtFullLabel || plan.leaveLabel || plan.message || 'Plano calculado com sucesso.',
+      plan.airportName ? `Destino: ${plan.airportName}` : '',
+      plan.label ? `Modal: ${plan.label}` : '',
       plan.durationMinutes ? `Tempo estimado: ${plan.durationMinutes} min${plan.distanceKm ? ` · ${plan.distanceKm} km` : ''}` : '',
-      plan.estimateDisclosure ? `Trânsito/dados: ${plan.estimateDisclosure}${plan.source ? ` · ${plan.source}` : ''}` : '',
-      plan.warning ? `Atenção: ${plan.warning}` : '',
+      trafficLine,
+      ...criticalAlerts.slice(0, 2).map((a) => `${a.description}${a.street ? ` — ${a.street}` : ''}`),
       Array.isArray(plan.transitBoard) && plan.transitBoard[0]?.line ? `Transporte público: ${plan.transitBoard[0].line}${plan.transitBoard[0].departureLabel ? ` · ${plan.transitBoard[0].departureLabel}` : ''}` : '',
-     ]).catch(() => null);
+      plan.warning ? `Atenção: ${plan.warning}` : '',
+     ].filter(Boolean);
+     const title = plan.leaveAtLabel ? `Saída: ${plan.leaveAtLabel} para ${plan.airport || 'aeroporto'}` : 'Saída Inteligente calculada';
+     await notifyTelegramForUser(db, optionalUser.id, 'smartDeparture', title, telegramLines).catch(() => null);
     }
    }
    sendJson(res, plan.ok === false ? 400 : 200, plan);
   } catch (error) {
    sendJson(res, 200, { ok: false, code: 'SMART_DEPARTURE_UNAVAILABLE', message: 'Não foi possível calcular a saída inteligente agora.', detail: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/smart-departure/traffic-alerts' && req.method === 'GET') {
+  try {
+   const originLat = parseFiniteNumber(url.searchParams.get('lat') || url.searchParams.get('originLat'));
+   const originLng = parseFiniteNumber(url.searchParams.get('lng') || url.searchParams.get('originLng'));
+   const airport = normalizeAirportCode(url.searchParams.get('airport') || url.searchParams.get('base') || 'BSB');
+   const destination = CREWCHECK_AIRPORT_COORDS[airport] || CREWCHECK_AIRPORT_COORDS.BSB;
+   if (originLat === null || originLng === null) {
+    sendJson(res, 200, { ok: false, code: 'MISSING_LOCATION', message: 'Informe lat/lng de origem para consultar alertas de tr\u00e2nsito.' });
+    return true;
+   }
+   const origin = { lat: originLat, lng: originLng };
+   const result = await getSmartDepartureTrafficAlerts({ origin, destination, airport });
+   sendJson(res, 200, result);
+  } catch (error) {
+   sendJson(res, 200, { ok: false, code: 'TRAFFIC_ALERTS_ERROR', message: 'N\u00e3o foi poss\u00edvel consultar alertas de tr\u00e2nsito agora.', detail: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/smart-departure/osrm' && req.method === 'GET') {
+  try {
+   const originLat = parseFiniteNumber(url.searchParams.get('lat') || url.searchParams.get('originLat'));
+   const originLng = parseFiniteNumber(url.searchParams.get('lng') || url.searchParams.get('originLng'));
+   const airport = normalizeAirportCode(url.searchParams.get('airport') || url.searchParams.get('base') || 'BSB');
+   const mode = normalizeSmartMode(url.searchParams.get('mode') || 'DRIVE');
+   const destination = CREWCHECK_AIRPORT_COORDS[airport] || CREWCHECK_AIRPORT_COORDS.BSB;
+   if (originLat === null || originLng === null) {
+    sendJson(res, 200, { ok: false, code: 'MISSING_LOCATION', message: 'Informe lat/lng de origem para calcular rota OSRM.' });
+    return true;
+   }
+   const origin = { lat: originLat, lng: originLng };
+   const route = await computeOSRMRoutePlan({ origin, destination, mode });
+   sendJson(res, 200, route ? { ok: true, ...route, airport, airportName: destination.name } : { ok: false, code: 'OSRM_NO_ROUTE', message: 'OSRM n\u00e3o retornou rota para este trajeto.' });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, code: 'OSRM_ERROR', message: 'N\u00e3o foi poss\u00edvel calcular rota via OSRM agora.', detail: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/smart-departure/config' && (req.method === 'GET' || req.method === 'POST' || req.method === 'PATCH')) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureDepartureConfigSchema(db);
+   if (req.method === 'GET') {
+    const config = await getDepartureConfig(db, user.id);
+    sendJson(res, 200, { ok: true, config: config || null });
+    return true;
+   }
+   const body = await readJsonBody(req, 64 * 1024).catch(() => ({}));
+   const patch = {};
+   if (body.airport !== undefined) patch.airport = normalizeAirportCode(body.airport || 'BSB');
+   if (body.originLat !== undefined || body.lat !== undefined) patch.origin_lat = parseFiniteNumber(body.originLat ?? body.lat);
+   if (body.originLng !== undefined || body.lng !== undefined) patch.origin_lng = parseFiniteNumber(body.originLng ?? body.lng);
+   if (body.originAddress !== undefined || body.address !== undefined) patch.origin_address = String(body.originAddress || body.address || '').trim().slice(0, 300) || null;
+   if (body.originCep !== undefined || body.cep !== undefined) patch.origin_cep = String(body.originCep || body.cep || '').replace(/\D/g, '').slice(0, 8) || null;
+   if (body.originName !== undefined) patch.origin_name = String(body.originName || '').trim().slice(0, 100) || null;
+   if (body.marginMinutes !== undefined) patch.margin_minutes = Math.min(180, Math.max(10, Number(body.marginMinutes) || 30));
+   if (body.monitorEnabled !== undefined) patch.monitor_enabled = body.monitorEnabled !== false && body.monitorEnabled !== 'false';
+   if (body.monitorLeadMinutes !== undefined) patch.monitor_lead_minutes = Math.min(240, Math.max(30, Number(body.monitorLeadMinutes) || CREWCHECK_DEPARTURE_MONITOR_LEAD_MINUTES));
+   if (body.monitorNotifyTelegram !== undefined) patch.monitor_notify_telegram = body.monitorNotifyTelegram !== false && body.monitorNotifyTelegram !== 'false';
+   if (body.preferredMode !== undefined) patch.preferred_mode = normalizeSmartMode(body.preferredMode) || 'AUTO';
+   // If address/CEP provided, geocode to get lat/lng
+   if ((body.originAddress || body.address || body.originCep || body.cep) && (!patch.origin_lat || !patch.origin_lng)) {
+    const geocoded = await geocodeCrewCheckAddress({ address: patch.origin_address || '', cep: patch.origin_cep || '' }).catch(() => null);
+    if (geocoded?.ok) {
+     patch.origin_lat = geocoded.lat;
+     patch.origin_lng = geocoded.lng;
+     if (!patch.origin_address) patch.origin_address = geocoded.formattedAddress;
+    }
+   }
+   const config = await upsertDepartureConfig(db, user.id, patch);
+   sendJson(res, 200, { ok: true, config, message: 'Configura\u00e7\u00e3o de sa\u00edda salva.' });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, code: 'DEPARTURE_CONFIG_ERROR', message: 'N\u00e3o foi poss\u00edvel salvar a configura\u00e7\u00e3o de sa\u00edda.', detail: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/smart-departure/monitor/run' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await runSmartDepartureTrafficMonitor();
+   sendJson(res, 200, { ok: true, message: 'Monitor de sa\u00edda executado.' });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, message: 'Erro ao executar monitor de sa\u00edda.', detail: sanitizePublicError(error?.message || String(error)) });
   }
   return true;
  }
