@@ -812,7 +812,8 @@ function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualR
     }
   }
 
-  const uniqueDays = dedupeAimsOperationalDays(days).sort(compareAimsOperationalDays);
+  const rescuedDays = rescueAimsAtomicFlightsFromColumns(rescueAimsColumnContinuationFlights(days, columns, header), columns, header);
+  const uniqueDays = dedupeAimsOperationalDays(rescuedDays).sort(compareAimsOperationalDays);
   const crewRecords = parseTripulationRecords(fullText, header.crewName, header.year);
   const daysWithCrew = applyTripulationRecords(uniqueDays, crewRecords, header.crewName);
 
@@ -923,6 +924,130 @@ function stitchAimsOvernightColumnContinuations(columns: AimsVisualColumn[]): Ai
   return output;
 }
 
+
+function rescueAimsColumnContinuationFlights(
+  days: RosterDay[],
+  columns: AimsVisualColumn[],
+  header: { base: string; month: number; year: number },
+): RosterDay[] {
+  const output = [...days];
+  const existing = new Set(output.flatMap(day => (day.legs || []).map(leg => aimsLegUniqueKey(day.date, leg))));
+
+  for (let i = 0; i < columns.length - 1; i += 1) {
+    const current = columns[i];
+    const next = columns[i + 1];
+    if (!current?.tokens?.length || !next?.tokens?.length) continue;
+    const prefixEnd = findAimsContinuationPrefixEnd(next.tokens);
+    if (prefixEnd <= 0) continue;
+    const prefix = next.tokens.slice(0, prefixEnd);
+    if (!prefixHasArrivalContinuation(prefix)) continue;
+
+    const starts = findAllAimsFlightStarts(current.tokens);
+    for (const start of starts) {
+      const nextStart = starts.find(idx => idx > start) ?? current.tokens.length;
+      const ownSegment = current.tokens.slice(start, nextStart);
+      const ownText = ownSegment.join(' ');
+      if (!/\(\.\.\.\)/.test(ownText) && parseAimsHumanLegs(ownSegment, header.base).length) continue;
+
+      const combined = [...ownSegment, ...prefix];
+      const parsedDays = buildAimsHumanFlightDays(combined, {
+        date: current.date,
+        dayOfWeek: current.dayOfWeek,
+        dateObj: current.dateObj,
+        base: header.base,
+        rawBlock: combined.join(' '),
+      });
+
+      for (const parsedDay of parsedDays) {
+        const validLegs = (parsedDay.legs || []).filter(isCredibleAimsLeg);
+        if (!validLegs.length) continue;
+        const hasContinuationLeg = validLegs.some(leg => /\(\.\.\.\)/.test(ownText) && minutesOfDay(leg.arrivalTime) <= 5 * 60);
+        if (!hasContinuationLeg && !/\(\.\.\.\)/.test(ownText)) continue;
+        const missingLegs = validLegs.filter(leg => !existing.has(aimsLegUniqueKey(parsedDay.date, leg)));
+        if (!missingLegs.length) continue;
+        const rescued: RosterDay = {
+          ...parsedDay,
+          legs: missingLegs,
+          pairingCode: missingLegs[0]?.flightNumber || parsedDay.pairingCode,
+          dutyReport: parsedDay.dutyReport || missingLegs[0]?.departureTime || null,
+          dutyDebrief: parsedDay.dutyDebrief || addClockMinutes(missingLegs[missingLegs.length - 1]?.arrivalTime || '00:00', 30),
+          flyingHours: Math.round(missingLegs.reduce((sum, leg) => sum + (Number(leg.duration) || diffHours(leg.departureTime, leg.arrivalTime)), 0) * 100) / 100,
+          dutyHours: parsedDay.dutyReport && parsedDay.dutyDebrief ? diffHours(parsedDay.dutyReport, parsedDay.dutyDebrief) : parsedDay.dutyHours,
+          rawText: [parsedDay.rawText, 'CrewCheck v11.1.100: voo noturno restaurado por continuidade de coluna AIMS.'].filter(Boolean).join(' | '),
+        };
+        output.push(rescued);
+        missingLegs.forEach(leg => existing.add(aimsLegUniqueKey(rescued.date, leg)));
+      }
+    }
+  }
+
+  return output;
+}
+
+function rescueAimsAtomicFlightsFromColumns(
+  days: RosterDay[],
+  columns: AimsVisualColumn[],
+  header: { base: string; month: number; year: number },
+): RosterDay[] {
+  const output = [...days];
+  const existing = new Set(output.flatMap(day => (day.legs || []).map(leg => `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`)));
+
+  for (let i = 0; i < columns.length; i += 1) {
+    const column = columns[i];
+    const next = columns[i + 1];
+    const starts = findAllAimsFlightStarts(column.tokens || []);
+    for (const start of starts) {
+      const nextStart = starts.find(idx => idx > start) ?? (column.tokens || []).length;
+      let segment = (column.tokens || []).slice(start, nextStart);
+      const parsedOwn = parseAimsHumanLegs(segment, header.base);
+      if (!parsedOwn.length && next?.tokens?.length && /\(\.\.\.\)/.test(segment.join(' '))) {
+        const prefixEnd = findAimsContinuationPrefixEnd(next.tokens);
+        if (prefixEnd > 0) segment = [...segment, ...next.tokens.slice(0, prefixEnd)];
+      }
+      const parsedLegs = parseAimsHumanLegs(segment, header.base).filter(item => isCredibleAimsLeg(item.leg));
+      for (const item of parsedLegs) {
+        const leg = item.leg;
+        const legKey = `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`;
+        if (existing.has(legKey)) continue;
+        existing.add(legKey);
+        const dutyReport = item.reportTime || leg.departureTime;
+        const dutyDebrief = item.debriefTime || addClockMinutes(leg.arrivalTime, 30);
+        output.push(makeAimsHumanRosterDay({
+          date: column.date,
+          dayOfWeek: column.dayOfWeek,
+          dateObj: column.dateObj,
+          base: header.base,
+          rawBlock: [segment.join(' '), 'CrewCheck v11.1.100: voo atômico restaurado da coluna visual AIMS.'].join(' | '),
+        }, {
+          type: 'VOO',
+          pairingCode: leg.flightNumber,
+          dutyReport,
+          dutyDebrief,
+          legs: [leg],
+          dutyHours: diffHours(dutyReport, dutyDebrief),
+          flyingHours: Number(leg.duration) || diffHours(leg.departureTime, leg.arrivalTime),
+          isNextDay: minutesOfDay(dutyDebrief) <= minutesOfDay(dutyReport) || Boolean(leg.isNextDay),
+          hotel: leg.destination && leg.destination !== header.base ? leg.destination : null,
+        }, segment.join(' ')));
+      }
+    }
+  }
+
+  return output;
+}
+
+function findAllAimsFlightStarts(tokens: string[]): number[] {
+  const starts: number[] = [];
+  for (let i = 0; i < tokens.length - 1; i += 1) {
+    if (String(tokens[i] || '').toUpperCase() === 'LA' && /^\d{3,4}$/.test(String(tokens[i + 1] || ''))) starts.push(i);
+  }
+  return starts;
+}
+
+function aimsLegUniqueKey(date: string, leg: FlightLeg): string {
+  return `${date}|${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`;
+}
+
 function findLastAimsFlightStart(tokens: string[]): number {
   let last = -1;
   for (let i = 0; i < tokens.length - 1; i += 1) {
@@ -978,8 +1103,15 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     if (token === 'LA' && /^\d{3,4}$/.test(next)) {
       const end = findAimsVisualFlightBlockEnd(source, i);
       const segment = source.slice(i, end);
-      const parsed = parseFlightDay(segment, context.base, /\(\.\.\.\)/.test(segment.join(' ')));
-      if (parsed.legs.length) output.push(makeAimsHumanRosterDay(context, parsed, segment.join(' ')));
+      // v11.1.100: o bloco visual de uma coluna pode conter duas jornadas no mesmo dia
+      // separadas por pernoite diurno/solo >=12h. parseFlightDay consolidava tudo em
+      // um único ParsedDay e perdia a segunda perna quando a chegada estava costurada
+      // no dia seguinte por "(...)". O motor canônico por pernas preserva todas as
+      // pernas e divide em cards/jornadas somente após calcular a continuidade física.
+      const parsedDays = buildAimsHumanFlightDays(segment, context);
+      for (const parsedDay of parsedDays) {
+        if (parsedDay.legs?.length) output.push(parsedDay);
+      }
       i = Math.max(end, i + 2);
       continue;
     }
@@ -987,8 +1119,10 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     if (isExtraAimsMarker(token) && source[i + 1]?.toUpperCase() === 'LA') {
       const end = findAimsVisualFlightBlockEnd(source, i);
       const segment = source.slice(i, end);
-      const parsed = parseFlightDay(segment, context.base, /\(\.\.\.\)/.test(segment.join(' ')));
-      if (parsed.legs.length) output.push(makeAimsHumanRosterDay(context, parsed, segment.join(' ')));
+      const parsedDays = buildAimsHumanFlightDays(segment, context);
+      for (const parsedDay of parsedDays) {
+        if (parsedDay.legs?.length) output.push(parsedDay);
+      }
       i = Math.max(end, i + 2);
       continue;
     }
@@ -1163,6 +1297,7 @@ function isAimsDaySuspicious(day: RosterDay): boolean {
   // Dias AIMS reais podem ter 4+ etapas, inclusive com duas pernas Extra/PS.
   // Só considerar contaminado quando o bloco parece carregar quase a página inteira.
   if (raw.length > 1400 && countRegexMatches(raw, /\bLA\s*\d{3,4}\b/gi) >= 8) return true;
+  if (raw.length > 1500 && countRegexMatches(raw, /\b(?:MON|TUE|WED|THU|FRI|SAT|SUN|SEG|TER|QUA|QUI|SEX|SAB|SÁB|DOM)\b/gi) >= 7 && countRegexMatches(raw, /\b(?:3\d{3}|4\d{3})\b/g) >= 8) return true;
   if (legs.length > 8) return true;
 
   const uniqueDates = countRegexMatches(raw, /\b\d{2}(?:Jan|Feb|Mar|Apr|May|Ma|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Fev|Abr|Mai|Ago|Set|Out|Dez)\b/gi);
@@ -1208,31 +1343,46 @@ function mergeMissingAimsLegs(target: RosterDay, source: RosterDay): void {
 }
 
 function mergeAimsParsedRosters(primary: CrewRoster, secondary: CrewRoster): CrewRoster {
-  const merged = new Map<string, RosterDay>();
+  // v11.1.100: a escala pode ter múltiplas programações no mesmo dia
+  // (reserva + voo, voo + pernoite diurno + voo noturno, RCFI + deslocamento etc.).
+  // O merge antigo usava Map por data e apagava atividades reais da própria data.
+  const merged: RosterDay[] = [];
+  const hasExactActivity = (day: RosterDay) => merged.some(item => aimsDayActivityKey(item) === aimsDayActivityKey(day));
+  const addActivity = (day: RosterDay) => {
+    if (!day?.date || isAimsDaySuspicious(day) || hasExactActivity(day)) return;
+    merged.push(day);
+  };
 
-  // 1) A leitura visual por coluna entra primeiro e tem prioridade.
-  (primary.days || []).forEach((day) => {
-    if (!day?.date || isAimsDaySuspicious(day)) return;
-    merged.set(day.date, day);
-  });
+  (primary.days || []).forEach(addActivity);
 
-  // 2) O fallback textual só complementa dias ausentes/fracos.
   (secondary.days || []).forEach((day) => {
-    if (!day?.date) return;
-    const current = merged.get(day.date);
-    if (!current) {
-      if (canUseAimsSecondaryDay(day)) merged.set(day.date, day);
+    if (!day?.date || isAimsDaySuspicious(day)) return;
+    if (hasExactActivity(day)) return;
+
+    const sameDate = merged.filter(item => item.date === day.date);
+    if (!sameDate.length) {
+      if (canUseAimsSecondaryDay(day)) addActivity(day);
       return;
     }
-    if (canUseAimsSecondaryDay(day, current)) {
-      merged.set(day.date, day);
-    } else {
-      mergeMissingAimsLegs(current, day);
+
+    const existingLegKeys = new Set(sameDate.flatMap(item => (item.legs || []).map(leg => `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`)));
+    const missingLegs = (day.legs || []).filter(leg => !existingLegKeys.has(`${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`));
+    if (missingLegs.length) {
+      addActivity({ ...day, legs: missingLegs, rawText: [day.rawText, 'CrewCheck v11.1.100: atividade adicionada sem substituir outra programação da mesma data.'].filter(Boolean).join(' | ') });
+      return;
     }
+
+    const sameKind = sameDate.some(item => item.type === day.type && (item.dutyReport || '') === (day.dutyReport || '') && (item.dutyDebrief || '') === (day.dutyDebrief || ''));
+    if (!sameKind && canUseAimsSecondaryDay(day)) addActivity(day);
   });
 
-  const days = Array.from(merged.values()).sort((a, b) => parseDateForSort(a.date) - parseDateForSort(b.date));
+  const days = dedupeAimsOperationalDays(merged).sort(compareAimsOperationalDays);
   return { ...primary, days, rawText: primary.rawText || secondary.rawText };
+}
+
+function aimsDayActivityKey(day: RosterDay): string {
+  const legsKey = (day.legs || []).map((leg) => `${leg.flightNumber}:${leg.origin}-${leg.destination}:${leg.departureTime}-${leg.arrivalTime}`).join('|');
+  return `${day.date}|${day.type}|${day.dutyReport || ''}|${day.dutyDebrief || ''}|${day.pairingCode || ''}|${legsKey}`;
 }
 
 
@@ -1254,7 +1404,10 @@ function humanReviewAimsRoster(roster: CrewRoster): CrewRoster {
 
   const normalized = Array.from(byActivity.values()).sort(compareAimsOperationalDays);
   const physicallySafe = enforceAimsPhysicalDutyContinuity(normalized, roster);
-  const linked = linkAimsMidnightContinuations(physicallySafe);
+  const linked = linkAimsMidnightContinuations(physicallySafe)
+    .filter(day => !(day.type === 'VOO' && Number(day.dutyHours || 0) > 18))
+    .filter(day => !(day.type === 'VOO' && !(day.legs || []).length))
+    .filter(day => !(day.type === 'OTHER' && !(day.legs || []).length && !day.dutyReport && !day.dutyDebrief));
   return { ...roster, days: linked };
 }
 
@@ -1326,6 +1479,7 @@ function humanReviewAimsDay(day: RosterDay, homeBase: string): RosterDay | null 
     fixed.dutyDebrief = fixed.dutyDebrief || addClockMinutes(last.arrivalTime, 30);
     fixed.flyingHours = fixed.legs.reduce((sum, leg) => sum + (leg.duration || diffHours(leg.departureTime, leg.arrivalTime)), 0);
     fixed.dutyHours = fixed.dutyReport && fixed.dutyDebrief ? diffHours(fixed.dutyReport, fixed.dutyDebrief) : fixed.dutyHours;
+    if (Number(fixed.dutyHours || 0) > 18) return null;
     fixed.isNextDay = Boolean(fixed.isNextDay || fixed.legs.some((leg) => leg.isNextDay) || (fixed.dutyReport && fixed.dutyDebrief && minutesOfDay(fixed.dutyDebrief) <= minutesOfDay(fixed.dutyReport)));
     fixed.hotel = last.destination && last.destination !== (homeBase || fixed.base) ? last.destination : fixed.hotel;
     return fixed;
@@ -1348,6 +1502,9 @@ function humanReviewAimsDay(day: RosterDay, homeBase: string): RosterDay | null 
   if (fixed.type === 'LAYOVER') {
     return { ...fixed, dutyReport: null, dutyDebrief: null, dutyHours: 0, flyingHours: 0, legs: [] };
   }
+
+  if (fixed.type === 'VOO' && !fixed.legs.length) return null;
+  if (fixed.type === 'OTHER' && !fixed.legs.length && !fixed.dutyReport && !fixed.dutyDebrief) return null;
 
   return fixed;
 }
@@ -1556,8 +1713,6 @@ function linkAimsMidnightContinuations(days: RosterDay[]): RosterDay[] {
     const nextFirst = day.legs[0];
     const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
     const nextStartsVeryEarly = minutesOfDay(day.dutyReport || nextFirst.departureTime) <= 5 * 60;
-    // Continuidade operacional: voo que cruza meia-noite e o próximo segmento começa
-    // muito cedo (<=5h de solo). Pernoite real (>12h) é tratado por detectAndMarkLayovers.
     if (rest !== null && rest >= 0 && rest <= 5 && (sameStation || nextStartsVeryEarly || /\(\.\.\.\)/.test(day.rawText || ''))) {
       return { ...day, rawText: [day.rawText, `CrewCheck: continuação operacional da jornada anterior (${rest.toFixed(1)}h em solo), não pernoite/repouso.`].filter(Boolean).join(' | ') };
     }
@@ -1862,20 +2017,13 @@ function parseDayContent(content: string, homeBase: string): ParsedDay {
     }
 
     // Em colunas AIMS, o marcador (...) pode aparecer antes de pernas reais do dia.
-    // Priorizar voo evita transformar 21/22-Jul em "sem programação" quando um DO/DR
+    // Priorizar voo evita transformar 21/22-Jul em “sem programação” quando um DO/DR
     // de outro dia ficou no mesmo bloco visual.
     const hasFlights = afterEllipsis.some(l => l === 'LA');
     if (hasFlights) {
       const laStart = afterEllipsis.findIndex(l => l === 'LA');
       const flightStartIdx = flightContextStartIndex(afterEllipsis, laStart);
-      // Fix: extract the layover airport from the tokens between (...) and the first LA.
-      // This is the station where the crew is resting and where the next duty originates.
-      // Pass it to parseFlightDay so it can anchor legs[0].origin correctly.
-      const preFlightTokens = afterEllipsis.slice(0, flightStartIdx);
-      const layoverAirport = preFlightTokens
-        .map(t => String(t || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))
-        .find(t => /^[A-Z]{3}$/.test(t) && t !== homeBase.toUpperCase() && !['ASB','HSB','RES','CRM','CBF','OFF','DOF'].includes(t)) || null;
-      return parseFlightDay(afterEllipsis.slice(flightStartIdx), homeBase, true, layoverAirport);
+      return parseFlightDay(afterEllipsis.slice(flightStartIdx), homeBase, true);
     }
 
     // Check for CRM after (...)
@@ -2266,7 +2414,7 @@ function findBestAimsLegPattern(tokens: string[]): { origin: string; destination
   return candidates[0] || null;
 }
 
-function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boolean, layoverAirport?: string | null): ParsedDay {
+function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boolean): ParsedDay {
   // AIMS/SLESCALE premium rule:
   // - first flight of a duty may show two times before the route: Apresentação, then decolagem.
   // - subsequent flights normally show only decolagem before the route.
@@ -2461,20 +2609,6 @@ function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boole
 
   if (legs.length > 0 && legs[legs.length - 1].destination !== homeBase) hotel = legs[legs.length - 1].destination;
   const flyingHours = totalFlyingMin > 0 ? totalFlyingMin / 60 : null;
-
-  // Fix: when this day starts from a layover (isLayoverStart=true) and we have the layover airport,
-  // validate that legs[0].origin matches. If it doesn't (parser inferred wrong origin), correct it.
-  // This prevents 'teleportation' where the crew appears to fly from a different station than where
-  // they actually rested after the previous duty.
-  if (isLayoverStart && layoverAirport && legs.length > 0) {
-    const firstLeg = legs[0];
-    if (firstLeg.origin !== layoverAirport) {
-      // Only override if the layover airport is plausible as origin (not the same as destination)
-      if (firstLeg.destination !== layoverAirport) {
-        legs[0] = { ...firstLeg, origin: layoverAirport };
-      }
-    }
-  }
 
   return {
     type: 'VOO',

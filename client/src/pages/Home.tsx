@@ -119,7 +119,7 @@ const CREWCHECK_ADMIN_EMAILS = [
  'bmedeiros1987@gmail.com',
  'bruno@crewcheck.local',
 ].filter(Boolean);
-const APP_VERSION = '11.1.98';
+const APP_VERSION = '11.1.100';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -3566,7 +3566,7 @@ function CrewCheckFloatingSpeedMenu({ active, onNavigate, canAccessC32FAcademy, 
        <p className="text-[10px] font-black uppercase tracking-[0.22em]">Menu completo</p>
        <p className="text-xs font-semibold opacity-70">Acesso rápido aos módulos grátis e premium</p>
       </div>
-      <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]">v11.1.98</span>
+      <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]">v11.1.100</span>
      </div>
      <div className="grid gap-2">
       {quickItems.map(({ label, hint, icon: Icon, view, premium }) => (

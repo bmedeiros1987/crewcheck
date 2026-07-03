@@ -1,4 +1,4 @@
-# CrewCheck v11.1.98 — BIDS Restaurado e Menu da Escala Padronizado
+# CrewCheck v11.1.100 — BIDS Restaurado e Menu da Escala Padronizado
 
 Correção estrutural do coração do sistema de escala.
 

@@ -27,13 +27,6 @@ import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.BroadcastReceiver;
-import android.provider.Telephony;
-import android.telephony.SmsMessage;
-import android.content.pm.PackageManager;
-import androidx.core.content.ContextCompat;
-import androidx.core.app.ActivityCompat;
 import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.webkit.CookieManager;
@@ -95,7 +88,6 @@ public class MainActivity extends Activity {
     private GeolocationPermissions.Callback pendingGeolocationCallback;
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
-    private BroadcastReceiver smsReceiver;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -220,40 +212,6 @@ public class MainActivity extends Activity {
         dispatchCrewCheckPermissionStatus();
         webView.postDelayed(() -> dispatchCrewCheckPermissionStatus(), 900);
         webView.postDelayed(() -> requestInitialCrewCheckPermissions(), 1600);
-        
-        requestSmsPermission();
-        registerSmsReceiver();
-    }
-
-    private void requestSmsPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS}, 101);
-            }
-        }
-    }
-
-    private void registerSmsReceiver() {
-        smsReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                if (Telephony.Sms.Intents.SMS_RECEIVED_ACTION.equals(intent.getAction())) {
-                    for (SmsMessage smsMessage : Telephony.Sms.Intents.getMessagesFromIntent(intent)) {
-                        String messageBody = smsMessage.getMessageBody();
-                        // Try to find a 6-digit code typical for MFA
-                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b\\d{6}\\b").matcher(messageBody);
-                        if (m.find() && portalWebView != null) {
-                            String code = m.group();
-                            // Inject code into the MFA input field
-                            portalWebView.evaluateJavascript(
-                                "var input = document.querySelector('input[type=\"text\"], input[type=\"number\"], input[name*=\"code\"], input[id*=\"code\"], input[name*=\"mfa\"], input[id*=\"mfa\"], input[name*=\"otp\"], input[id*=\"otp\"]');" +
-                                "if(input) { input.value = '" + code + "'; input.dispatchEvent(new Event('input', { bubbles: true })); }", null);
-                        }
-                    }
-                }
-            }
-        };
-        registerReceiver(smsReceiver, new IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION));
     }
 
 
@@ -2301,9 +2259,6 @@ try{
 
     @Override
     protected void onDestroy() {
-        if (smsReceiver != null) {
-            unregisterReceiver(smsReceiver);
-        }
         closePortalOnly();
         if (webView != null) {
             webView.destroy();

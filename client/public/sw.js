@@ -1,5 +1,5 @@
-const CACHE_NAME = 'crewcheck-11.1.98-shell';
-const RUNTIME_CACHE = 'crewcheck-11.1.98-runtime';
+const CACHE_NAME = 'crewcheck-11.1.100-shell';
+const RUNTIME_CACHE = 'crewcheck-11.1.100-runtime';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest'];
 
 async function trimCache(cacheName, maxEntries = 120) {

@@ -12474,32 +12474,6 @@ function markSpeechError(error, provider, fallbackCode = '') {
  return error;
 }
 
-async function invokeLLM({ model = 'gpt-5-mini', messages = [], response_format = null, max_tokens = null }) {
- if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY não configurada no Render.');
- const body = { model, messages };
- if (response_format) body.response_format = response_format;
- if (max_tokens) body.max_completion_tokens = max_tokens;
- 
- const controller = new AbortController();
- const timeout = setTimeout(() => controller.abort(), 90_000);
- try {
-  const response = await fetch(`${OPENAI_AUDIO_API_BASE || 'https://api.openai.com/v1'}/chat/completions`, {
-   method: 'POST',
-   headers: {
-    authorization: `Bearer ${OPENAI_API_KEY}`,
-    'content-type': 'application/json',
-   },
-   body: JSON.stringify(body),
-   signal: controller.signal,
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error?.message || `Erro na OpenAI (${response.status})`);
-  return data;
- } finally {
-  clearTimeout(timeout);
- }
-}
-
 async function openAiTranscribeAudio(buffer, { filename = 'audio.ogg', mimeType = 'audio/ogg' } = {}) {
  if (!openAiAudioIsConfigured()) {
   const err = new Error('OPENAI_API_KEY não configurada no Render.');
@@ -17783,107 +17757,6 @@ async function handleApi(req, res, url) {
   return true;
  }
 
- if (url.pathname === '/api/ai-parse-roster' && req.method === 'POST') {
-  try {
-   const body = await readJsonBody(req, 5 * 1024 * 1024);
-   const text = body.text || '';
-   if (!text) throw new Error('Texto da escala vazio.');
-
-   const prompt = `Você é um agente especialista em aviação e leitura de escalas (AIMS/LATAM).
-Sua tarefa é ler o texto extraído de um PDF de escala e convertê-lo em um JSON estruturado e fidedigno, mantendo a ordem cronológica estrita e respeitando a continuidade física e os pernoites.
-
-Regras vitais de extração e continuidade:
-1. TIPOS DE DIA:
-   - Folgas/Inativos: "DO", "DOF", "DR", "OFF", "VC", "MT".
-   - Reserva/Sobreaviso: "ASB", "HSB", "HSBE", "RES". Se não houver voo acoplado (ex: LA1234) no mesmo dia, a jornada é apenas o sobreaviso/reserva.
-   - Treinamento: "CRM", "CRMB", etc.
-   - Voo: "VOO" (qualquer dia que contenha voos "LA").
-
-2. IDENTIFICAÇÃO DE PERNAS DE VOO:
-   - Extraia flightNumber (ex: LA3394), origin (IATA 3 letras), destination (IATA), departureTime e arrivalTime.
-   - Se o voo cruzar a meia-noite, marque isNextDay=true.
-
-3. CONTINUIDADE E PERNOITES (MUITO IMPORTANTE):
-   - Pernoite real: Se o tempo de solo entre o último pouso e a próxima decolagem for maior que 12h, isso é um pernoite.
-   - Quando um dia começa após um pernoite (frequentemente marcado com "(...)" no AIMS), a PRIMEIRA perna de voo desse novo dia DEVE ter como 'origin' o aeroporto onde a tripulação pernoitou. NUNCA crie um "teletransporte" (ex: pernoitou em PMW, mas o próximo voo sai de GRU). Corrija a origem se o texto estiver ambíguo.
-   - Continuidade operacional curta: Se o solo for <= 5h e cruzar a meia-noite, o voo pertence à mesma jornada operacional, mas aloque-o no dia correto cronologicamente.
-   - Hotel: Se a jornada terminar fora da base, defina o campo 'hotel' com o IATA do destino final.
-
-4. HORÁRIOS DA JORNADA:
-   - dutyReport: Horário de apresentação (geralmente antes do primeiro voo).
-   - dutyDebrief: Horário de encerramento (geralmente 30min após o último pouso).
-
-Retorne estritamente o JSON no formato solicitado, sem explicações adicionais.`;
-
-   const schema = {
-    type: "json_schema",
-    json_schema: {
-     name: "roster",
-     strict: true,
-     schema: {
-      type: "object",
-      properties: {
-       base: { type: "string", description: "Base do tripulante (ex: BSB, GRU)" },
-       month: { type: "integer" },
-       year: { type: "integer" },
-       days: {
-        type: "array",
-        items: {
-         type: "object",
-         properties: {
-          date: { type: "string", description: "DD/MM/YYYY" },
-          type: { type: "string", description: "VOO, DO, DOF, DR, OFF, VC, ASB, HSB, HSBE, CRM, LAYOVER, OTHER" },
-          pairingCode: { type: "string" },
-          dutyReport: { type: "string", description: "HH:MM", nullable: true },
-          dutyDebrief: { type: "string", description: "HH:MM", nullable: true },
-          hotel: { type: "string", description: "IATA de 3 letras do pernoite", nullable: true },
-          rawText: { type: "string", description: "Texto original daquele dia" },
-          legs: {
-           type: "array",
-           items: {
-            type: "object",
-            properties: {
-             flightNumber: { type: "string" },
-             origin: { type: "string" },
-             destination: { type: "string" },
-             departureTime: { type: "string", description: "HH:MM" },
-             arrivalTime: { type: "string", description: "HH:MM" },
-             isNextDay: { type: "boolean" }
-            },
-            required: ["flightNumber", "origin", "destination", "departureTime", "arrivalTime", "isNextDay"],
-            additionalProperties: false
-           }
-          }
-         },
-         required: ["date", "type", "pairingCode", "dutyReport", "dutyDebrief", "hotel", "rawText", "legs"],
-         additionalProperties: false
-        }
-       }
-      },
-      required: ["base", "month", "year", "days"],
-      additionalProperties: false
-     }
-    }
-   };
-
-   const result = await invokeLLM({
-    model: 'gpt-5-mini', // Workhorse for structured output
-    messages: [
-     { role: 'system', content: prompt },
-     { role: 'user', content: text }
-    ],
-    response_format: schema,
-    max_tokens: 16000
-   });
-
-   const parsedJson = JSON.parse(result.choices[0].message.content);
-   sendJson(res, 200, { ok: true, roster: parsedJson });
-  } catch (err) {
-   sendJson(res, 422, { ok: false, message: 'Falha ao ler escala com IA.', detail: err?.message || String(err) });
-  }
-  return true;
- }
-
  if (url.pathname === '/api/parse-iflight-calendar' && req.method === 'POST') {
   try {
    const body = await readJsonBody(req, 3 * 1024 * 1024);
@@ -21074,15 +20947,10 @@ function parseIFlightStructuredCalendarV10846({ text, filename = 'iFlight_Roster
   };
   if (type === 'VOO') {
    const flightNumbers = Array.from(new Set((String(event.text).match(/\bLA\s*\d{3,4}\b|\bLA\d{3,4}\b/gi) || []).map(flightKeyV10845)));
-   // CrewCheck Fix: Try to extract origin and destination from text if available (e.g., GRU-BSB)
-   const routeMatch = String(event.text).match(/\b([A-Z]{3})\s*[-/]?\s*([A-Z]{3})\b/);
-   const origin = routeMatch ? routeMatch[1] : '';
-   const destination = routeMatch ? routeMatch[2] : '';
-   
    row.legs = (flightNumbers.length ? flightNumbers : [code]).map((flightNumber, index) => ({
     flightNumber,
-    origin: index === 0 ? origin : '',
-    destination: index === flightNumbers.length - 1 ? destination : '',
+    origin: '',
+    destination: '',
     departureTime: times[index] || start || '',
     arrivalTime: times[index + 1] || end || times[index] || start || '',
     workType: /\b(?:PS|EXTRA)\b/i.test(event.text) ? 'PS' : 'OP',
@@ -22005,114 +21873,8 @@ function crewcheckHumanNormalizeRosterV11179(roster) {
 const parsePdfOnServerBefore11179 = parsePdfOnServer;
 parsePdfOnServer = async function parsePdfOnServerV11179(args) {
  const result = await parsePdfOnServerBefore11179(args);
- let roster = crewcheckHumanNormalizeRosterV11179(result.roster);
- 
- // INTEGRAÇÃO IA (FALLBACK INTELIGENTE)
- // Se o parser nativo (Regex) não encontrou voos suficientes, tenta usar a IA.
- // OPENAI_API_KEY deve estar configurada no Render.
- const hasEnoughFlights = (roster?.days || []).filter(d => d?.legs?.length > 0).length > 0;
- let aiUsed = false;
- 
- if (!hasEnoughFlights && OPENAI_API_KEY && result.rawText) {
-  try {
-   const prompt = \`Você é um agente especialista em aviação e leitura de escalas (AIMS/LATAM).
-Sua tarefa é ler o texto extraído de um PDF de escala e convertê-lo em um JSON estruturado e fidedigno, mantendo a ordem cronológica estrita e respeitando a continuidade física e os pernoites.
-
-Regras vitais de extração e continuidade:
-1. TIPOS DE DIA:
-   - Folgas/Inativos: "DO", "DOF", "DR", "OFF", "VC", "MT".
-   - Reserva/Sobreaviso: "ASB", "HSB", "HSBE", "RES". Se não houver voo acoplado (ex: LA1234) no mesmo dia, a jornada é apenas o sobreaviso/reserva.
-   - Treinamento: "CRM", "CRMB", etc.
-   - Voo: "VOO" (qualquer dia que contenha voos "LA").
-
-2. IDENTIFICAÇÃO DE PERNAS DE VOO:
-   - Extraia flightNumber (ex: LA3394), origin (IATA 3 letras), destination (IATA), departureTime e arrivalTime.
-   - Se o voo cruzar a meia-noite, marque isNextDay=true.
-
-3. CONTINUIDADE E PERNOITES (MUITO IMPORTANTE):
-   - Pernoite real: Se o tempo de solo entre o último pouso e a próxima decolagem for maior que 12h, isso é um pernoite.
-   - Quando um dia começa após um pernoite (frequentemente marcado com "(...)" no AIMS), a PRIMEIRA perna de voo desse novo dia DEVE ter como 'origin' o aeroporto onde a tripulação pernoitou. NUNCA crie um "teletransporte" (ex: pernoitou em PMW, mas o próximo voo sai de GRU). Corrija a origem se o texto estiver ambíguo.
-   - Continuidade operacional curta: Se o solo for <= 5h e cruzar a meia-noite, o voo pertence à mesma jornada operacional, mas aloque-o no dia correto cronologicamente.
-   - Hotel: Se a jornada terminar fora da base, defina o campo 'hotel' com o IATA do destino final.
-
-4. HORÁRIOS DA JORNADA:
-   - dutyReport: Horário de apresentação (geralmente antes do primeiro voo).
-   - dutyDebrief: Horário de encerramento (geralmente 30min após o último pouso).
-
-Retorne estritamente o JSON no formato solicitado, sem explicações adicionais.\`;
-
-   const schema = {
-    type: "json_schema",
-    json_schema: {
-     name: "roster",
-     strict: true,
-     schema: {
-      type: "object",
-      properties: {
-       base: { type: "string", description: "Base do tripulante (ex: BSB, GRU)" },
-       month: { type: "integer" },
-       year: { type: "integer" },
-       days: {
-        type: "array",
-        items: {
-         type: "object",
-         properties: {
-          date: { type: "string", description: "DD/MM/YYYY" },
-          type: { type: "string", description: "VOO, DO, DOF, DR, OFF, VC, ASB, HSB, HSBE, CRM, LAYOVER, OTHER" },
-          pairingCode: { type: "string" },
-          dutyReport: { type: "string", description: "HH:MM", nullable: true },
-          dutyDebrief: { type: "string", description: "HH:MM", nullable: true },
-          hotel: { type: "string", description: "IATA de 3 letras do pernoite", nullable: true },
-          rawText: { type: "string", description: "Texto original daquele dia" },
-          legs: {
-           type: "array",
-           items: {
-            type: "object",
-            properties: {
-             flightNumber: { type: "string" },
-             origin: { type: "string" },
-             destination: { type: "string" },
-             departureTime: { type: "string", description: "HH:MM" },
-             arrivalTime: { type: "string", description: "HH:MM" },
-             isNextDay: { type: "boolean" }
-            },
-            required: ["flightNumber", "origin", "destination", "departureTime", "arrivalTime", "isNextDay"],
-            additionalProperties: false
-           }
-          }
-         },
-         required: ["date", "type", "pairingCode", "dutyReport", "dutyDebrief", "hotel", "rawText", "legs"],
-         additionalProperties: false
-        }
-       }
-      },
-      required: ["base", "month", "year", "days"],
-      additionalProperties: false
-     }
-    }
-   };
-
-   const aiResult = await invokeLLM({
-    model: 'gpt-5-mini',
-    messages: [
-     { role: 'system', content: prompt },
-     { role: 'user', content: result.rawText }
-    ],
-    response_format: schema,
-    max_tokens: 16000
-   });
-
-   const aiRoster = JSON.parse(aiResult.choices[0].message.content);
-   if (aiRoster && aiRoster.days && aiRoster.days.length > 0) {
-    roster = aiRoster;
-    aiUsed = true;
-   }
-  } catch (err) {
-   console.error('AI parsing fallback failed:', err);
-  }
- }
-
- const diagnostics = (typeof buildParseDiagnosticsRC5 === 'function') ? buildParseDiagnosticsRC5(roster, result.diagnostics?.sourceFormat || (aiUsed ? 'AI Parser v1' : 'Parser humano v11.1.91')) : result.diagnostics;
- return { ...result, roster, diagnostics: { ...(result.diagnostics || diagnostics || {}), ...(diagnostics || {}), appVersion: aiUsed ? '11.1.91 · Leitura por Inteligência Artificial' : '11.1.91 · Leitura humana de escala', aiUsed } };
+ const roster = crewcheckHumanNormalizeRosterV11179(result.roster);
+ const diagnostics = (typeof buildParseDiagnosticsRC5 === 'function') ? buildParseDiagnosticsRC5(roster, result.diagnostics?.sourceFormat || 'Parser humano v11.1.91') : result.diagnostics;
+ return { ...result, roster, diagnostics: { ...(result.diagnostics || diagnostics || {}), ...(diagnostics || {}), appVersion: '11.1.91 · Leitura humana de escala' } };
 };
 // --- end CrewCheck v11.1.91 ---

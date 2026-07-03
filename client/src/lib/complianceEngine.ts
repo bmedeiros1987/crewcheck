@@ -552,9 +552,6 @@ function isSameOperationalContinuation(prev: RosterDay, next: RosterDay): boolea
   if (!prev || !next) return false;
   if (!isActiveDuty(prev) || !isActiveDuty(next)) return false;
   const rest = getRestBetween(prev, next);
-  // Continuidade operacional curta: voo que cruza meia-noite com solo <= 5h.
-  // Pernoite real (>12h) é tratado por detectAndMarkLayovers e não deve ser confundido
-  // com continuação de jornada.
   if (rest === null || rest < 0 || rest > 5) return false;
 
   const prevLast = prev.legs?.[prev.legs.length - 1];
@@ -615,20 +612,16 @@ function isActivatedStandbyOrReserve(day?: RosterDay): boolean {
   if (!day) return false;
   if (!(isStandby(day) || isReserve(day))) return false;
   if ((day.legs || []).length > 0) return true;
-  // Fix: only use explicit activation tokens — NOT 'ASB' or 'RESERVA' as they are the reserve type itself,
-  // not evidence of activation. Including them caused every ASB to self-activate.
-  const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  return /\b(ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|CALL-OUT|ATIVAD[OA]|CONVOCAD[OA]|REPROGRAMAD[OA]|ALTERACAO|ALTERAD[OA]|MUDANCA|MUDADO|VOO|LA\s*\d{3,4}|PS|EXTRA)\b/.test(raw);
+  const raw = `${day.rawText || ''} ${day.type || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /\b(ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|CALL-OUT|ATIVAD[OA]|CONVOCAD[OA]|REPROGRAMAD[OA]|ALTERACAO|ALTERAD[OA]|MUDANCA|MUDADO|VOO|LA\s*\d{3,4}|PS|EXTRA|ASB|RESERVA)\b/.test(raw);
 }
 
 function isActivationLikeDuty(day?: RosterDay): boolean {
   if (!day) return false;
   if ((day.legs || []).length > 0) return true;
-  // Fix: 'VOO' type with legs is an activation, but isReserve(day) alone is NOT —
-  // an ASB/RES without legs is a reserve period, not an activation event.
-  if (day.type === 'VOO') return true;
-  const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  return /\b(LA\s*\d{3,4}|PS|EXTRA|ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|VOO)\b/.test(raw);
+  if (day.type === 'VOO' || isReserve(day)) return true;
+  const raw = `${day.rawText || ''} ${day.type || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /\b(LA\s*\d{3,4}|PS|EXTRA|ASB|RES|RESERVA|ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|VOO)\b/.test(raw);
 }
 
 function hasLinkedActivationInRoster(days: RosterDay[], day: RosterDay, index: number): boolean {
@@ -649,12 +642,9 @@ function hasLinkedActivationInRoster(days: RosterDay[], day: RosterDay, index: n
       if (gap >= -15 && gap <= 6 * 60) return true;
     }
     if (dayStart !== null && candidateStart !== null) {
-      // Fix: tighten the loose 12h window that was linking any two same-day events.
-      // Only link if the candidate starts within 3h of the reserve/standby start.
-      return Math.abs(candidateStart - dayStart) <= 3 * 60;
+      return Math.abs(candidateStart - dayStart) <= 12 * 60;
     }
-    // Fix: do NOT return true as a fallback — that caused every reserve to be activated.
-    return false;
+    return true;
   });
 }
 
@@ -1203,7 +1193,7 @@ function addStandbyActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: Ros
   const details = [
     `Cálculo: início do sobreaviso ${standbyWindow.startTime} até ${end.time}${end.isNextDay ? ' (+1)' : ''}, abatendo ${calloutMinutes} min de deslocamento.`,
     `Resultado regulatório estimado: ${formatHoursForAlert(regulatedHours)} de limite combinado.`,
-    `Limite usado: ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h (RBAC 117). O ACT ${actRules.actName} não amplia esse limite diário, apenas regula o teto do sobreaviso isolado.`,
+    `Limite usado: ${DUTY_LIMITS_117.standbyActivationSimpleCombined}h para tripulação simples; para composta/revezamento, o limite da jornada aplicável deve ser reduzido conforme o tempo de sobreaviso acima de 8h quando aplicável.`,
     'Este alerta só vira irregularidade quando há horários suficientes; caso contrário, fica como leitura incerta para evitar falso positivo.',
   ].join(' ');
 
@@ -1258,10 +1248,7 @@ function addReserveActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: Ros
   const sectors = Math.max(1, day.legs?.length || 1);
   const flightHours = getFlightHours(day);
   const combinedHours = round1(diffHours(start, end.time, Boolean(end.isNextDay)));
-  const rbacLimit = getRbac117B1SimpleDutyLimit(start, sectors);
-  // CrewCheck Fix: Apply ACT rules over RBAC 117 for reserve limit if applicable
-  const actLimitHours = actRules.reserve.maxHours + 11; // ACT limits reserve to 6h, plus 11h max duty = 17h theoretical max, but RBAC is more restrictive
-  const limit = applyMostRestrictiveDutyLimit(rbacLimit, profile);
+  const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(start, sectors), profile);
   const details = [
     `Cálculo: início da reserva/apresentação ${start} até ${end.time}${end.isNextDay ? ' (+1)' : ''} (${end.source}).`,
     `Reserva acionada é analisada como jornada completa a partir do início da reserva, e não a partir do horário do acionamento/voo.`,

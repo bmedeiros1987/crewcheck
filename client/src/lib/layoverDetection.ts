@@ -200,25 +200,11 @@ function isEmptyDay(day: RosterDay): boolean {
 }
 
 function findNextFlightFromStation(days: RosterDay[], startIndex: number, station: string): RosterDay | null {
-  const normalizedStation = cleanAirport(station);
   for (let i = startIndex; i < days.length; i++) {
     const day = days[i];
     if (!isFlightDay(day)) continue;
-    // Fix: use cleanAirport for fuzzy matching to handle case/whitespace differences.
-    // Also check the last leg's destination of the previous day in case the parser
-    // anchored the origin incorrectly but the pairing code or rawText contains the station.
-    const origin = cleanAirport(day.legs[0]?.origin);
-    if (origin === normalizedStation) return day;
-    // Secondary check: if origin is missing/wrong but rawText contains the station IATA
-    // as a departure point (e.g. "GRU LA3838"), accept it and fix the origin.
-    if (!origin && normalizedStation) {
-      const raw = (day.rawText || '').toUpperCase();
-      const stationPattern = new RegExp(`\\b${normalizedStation}\\s+LA\\s*\\d{3,4}\\b`);
-      if (stationPattern.test(raw)) {
-        if (day.legs[0]) day.legs[0].origin = normalizedStation;
-        return day;
-      }
-    }
+    const origin = day.legs[0]?.origin;
+    if (origin === station) return day;
   }
   return null;
 }
