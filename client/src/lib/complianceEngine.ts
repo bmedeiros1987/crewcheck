@@ -552,21 +552,22 @@ function isSameOperationalContinuation(prev: RosterDay, next: RosterDay): boolea
   if (!prev || !next) return false;
   if (!isActiveDuty(prev) || !isActiveDuty(next)) return false;
   const rest = getRestBetween(prev, next);
-  // Fix: extend rest window to 10h to cover overnight layovers (e.g. land 02:00, depart 09:50 = 7h50min).
-  // The old 5h limit was too tight and caused the system to treat the next day as a new independent duty.
-  if (rest === null || rest < 0 || rest > 10) return false;
+  // Continuidade operacional curta: voo que cruza meia-noite com solo <= 5h.
+  // Pernoite real (>12h) é tratado por detectAndMarkLayovers e não deve ser confundido
+  // com continuação de jornada.
+  if (rest === null || rest < 0 || rest > 5) return false;
 
   const prevLast = prev.legs?.[prev.legs.length - 1];
   const nextFirst = next.legs?.[0];
   const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
-  const nextStartsEarly = (minutesOfDay(next.dutyReport || nextFirst?.departureTime) ?? 9999) < 10 * 60;
+  const nextStartsEarly = (minutesOfDay(next.dutyReport || nextFirst?.departureTime) ?? 9999) < 7 * 60;
   const previousEndedAfterMidnight = Boolean(prev.isNextDay || prevLast?.isNextDay || (minutesOfDay(prev.dutyDebrief || prevLast?.arrivalTime) ?? 9999) <= 6 * 60);
 
   // Escalas AIMS frequentemente quebram a mesma missão na virada do dia. Se o "repouso"
   // calculado é 1h/2h entre pouso e nova decolagem/apresentação cedo, não é repouso:
   // é continuação operacional/solo curto e não deve gerar alerta de repouso mínimo.
-  const explicitContinuation = /continua[cç][aã]o operacional|pernoite diurno|\(\.\.\.\)|fim de jornada anterior|mesma jornada/i.test(`${next.rawText || ''} ${prev.rawText || ''}`);
-  if (rest <= 10 && (sameStation || nextStartsEarly || explicitContinuation) && (prev.legs?.length || 0) > 0 && (next.legs?.length || 0) > 0) return true;
+  const explicitContinuation = /continua[cç][aã]o operacional|\(\.\.\.\)|fim de jornada anterior|mesma jornada/i.test(`${next.rawText || ''} ${prev.rawText || ''}`);
+  if (rest <= 5 && (nextStartsEarly || explicitContinuation) && (prev.legs?.length || 0) > 0 && (next.legs?.length || 0) > 0) return true;
   return Boolean((sameStation || previousEndedAfterMidnight || explicitContinuation) && nextStartsEarly);
 }
 

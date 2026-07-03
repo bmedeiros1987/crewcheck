@@ -1556,13 +1556,10 @@ function linkAimsMidnightContinuations(days: RosterDay[]): RosterDay[] {
     const nextFirst = day.legs[0];
     const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
     const nextStartsVeryEarly = minutesOfDay(day.dutyReport || nextFirst.departureTime) <= 5 * 60;
-    // Fix: extend continuity window from 5h to 10h to cover overnight layovers where the
-    // crew lands after midnight (e.g. 02:00) and departs again the next morning (e.g. 09:50).
-    // Without this, the system treats the next day as a brand-new duty with no origin context.
-    // Also: accept sameStation with up to 10h rest, or very early departure regardless of station.
-    if (rest !== null && rest >= 0 && rest <= 10 && (sameStation || nextStartsVeryEarly || /\(\.\.\.\)/.test(day.rawText || ''))) {
-      const label = rest <= 5 ? 'continuação operacional' : 'pernoite diurno/curto';
-      return { ...day, rawText: [day.rawText, `CrewCheck: ${label} da jornada anterior (${rest.toFixed(1)}h em solo em ${prevLast?.destination || '?'}), origem confirmada.`].filter(Boolean).join(' | ') };
+    // Continuidade operacional: voo que cruza meia-noite e o próximo segmento começa
+    // muito cedo (<=5h de solo). Pernoite real (>12h) é tratado por detectAndMarkLayovers.
+    if (rest !== null && rest >= 0 && rest <= 5 && (sameStation || nextStartsVeryEarly || /\(\.\.\.\)/.test(day.rawText || ''))) {
+      return { ...day, rawText: [day.rawText, `CrewCheck: continuação operacional da jornada anterior (${rest.toFixed(1)}h em solo), não pernoite/repouso.`].filter(Boolean).join(' | ') };
     }
     return day;
   });
@@ -1865,13 +1862,20 @@ function parseDayContent(content: string, homeBase: string): ParsedDay {
     }
 
     // Em colunas AIMS, o marcador (...) pode aparecer antes de pernas reais do dia.
-    // Priorizar voo evita transformar 21/22-Jul em “sem programação” quando um DO/DR
+    // Priorizar voo evita transformar 21/22-Jul em "sem programação" quando um DO/DR
     // de outro dia ficou no mesmo bloco visual.
     const hasFlights = afterEllipsis.some(l => l === 'LA');
     if (hasFlights) {
       const laStart = afterEllipsis.findIndex(l => l === 'LA');
       const flightStartIdx = flightContextStartIndex(afterEllipsis, laStart);
-      return parseFlightDay(afterEllipsis.slice(flightStartIdx), homeBase, true);
+      // Fix: extract the layover airport from the tokens between (...) and the first LA.
+      // This is the station where the crew is resting and where the next duty originates.
+      // Pass it to parseFlightDay so it can anchor legs[0].origin correctly.
+      const preFlightTokens = afterEllipsis.slice(0, flightStartIdx);
+      const layoverAirport = preFlightTokens
+        .map(t => String(t || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))
+        .find(t => /^[A-Z]{3}$/.test(t) && t !== homeBase.toUpperCase() && !['ASB','HSB','RES','CRM','CBF','OFF','DOF'].includes(t)) || null;
+      return parseFlightDay(afterEllipsis.slice(flightStartIdx), homeBase, true, layoverAirport);
     }
 
     // Check for CRM after (...)
@@ -2262,7 +2266,7 @@ function findBestAimsLegPattern(tokens: string[]): { origin: string; destination
   return candidates[0] || null;
 }
 
-function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boolean): ParsedDay {
+function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boolean, layoverAirport?: string | null): ParsedDay {
   // AIMS/SLESCALE premium rule:
   // - first flight of a duty may show two times before the route: Apresentação, then decolagem.
   // - subsequent flights normally show only decolagem before the route.
@@ -2457,6 +2461,20 @@ function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boole
 
   if (legs.length > 0 && legs[legs.length - 1].destination !== homeBase) hotel = legs[legs.length - 1].destination;
   const flyingHours = totalFlyingMin > 0 ? totalFlyingMin / 60 : null;
+
+  // Fix: when this day starts from a layover (isLayoverStart=true) and we have the layover airport,
+  // validate that legs[0].origin matches. If it doesn't (parser inferred wrong origin), correct it.
+  // This prevents 'teleportation' where the crew appears to fly from a different station than where
+  // they actually rested after the previous duty.
+  if (isLayoverStart && layoverAirport && legs.length > 0) {
+    const firstLeg = legs[0];
+    if (firstLeg.origin !== layoverAirport) {
+      // Only override if the layover airport is plausible as origin (not the same as destination)
+      if (firstLeg.destination !== layoverAirport) {
+        legs[0] = { ...firstLeg, origin: layoverAirport };
+      }
+    }
+  }
 
   return {
     type: 'VOO',
