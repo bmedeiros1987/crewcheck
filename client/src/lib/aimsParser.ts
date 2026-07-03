@@ -1556,8 +1556,13 @@ function linkAimsMidnightContinuations(days: RosterDay[]): RosterDay[] {
     const nextFirst = day.legs[0];
     const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
     const nextStartsVeryEarly = minutesOfDay(day.dutyReport || nextFirst.departureTime) <= 5 * 60;
-    if (rest !== null && rest >= 0 && rest <= 5 && (sameStation || nextStartsVeryEarly || /\(\.\.\.\)/.test(day.rawText || ''))) {
-      return { ...day, rawText: [day.rawText, `CrewCheck: continuação operacional da jornada anterior (${rest.toFixed(1)}h em solo), não pernoite/repouso.`].filter(Boolean).join(' | ') };
+    // Fix: extend continuity window from 5h to 10h to cover overnight layovers where the
+    // crew lands after midnight (e.g. 02:00) and departs again the next morning (e.g. 09:50).
+    // Without this, the system treats the next day as a brand-new duty with no origin context.
+    // Also: accept sameStation with up to 10h rest, or very early departure regardless of station.
+    if (rest !== null && rest >= 0 && rest <= 10 && (sameStation || nextStartsVeryEarly || /\(\.\.\.\)/.test(day.rawText || ''))) {
+      const label = rest <= 5 ? 'continuação operacional' : 'pernoite diurno/curto';
+      return { ...day, rawText: [day.rawText, `CrewCheck: ${label} da jornada anterior (${rest.toFixed(1)}h em solo em ${prevLast?.destination || '?'}), origem confirmada.`].filter(Boolean).join(' | ') };
     }
     return day;
   });

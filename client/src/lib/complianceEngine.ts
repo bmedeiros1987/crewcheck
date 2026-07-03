@@ -552,19 +552,21 @@ function isSameOperationalContinuation(prev: RosterDay, next: RosterDay): boolea
   if (!prev || !next) return false;
   if (!isActiveDuty(prev) || !isActiveDuty(next)) return false;
   const rest = getRestBetween(prev, next);
-  if (rest === null || rest < 0 || rest > 5) return false;
+  // Fix: extend rest window to 10h to cover overnight layovers (e.g. land 02:00, depart 09:50 = 7h50min).
+  // The old 5h limit was too tight and caused the system to treat the next day as a new independent duty.
+  if (rest === null || rest < 0 || rest > 10) return false;
 
   const prevLast = prev.legs?.[prev.legs.length - 1];
   const nextFirst = next.legs?.[0];
   const sameStation = Boolean(prevLast?.destination && nextFirst?.origin && prevLast.destination === nextFirst.origin);
-  const nextStartsEarly = (minutesOfDay(next.dutyReport || nextFirst?.departureTime) ?? 9999) < 7 * 60;
+  const nextStartsEarly = (minutesOfDay(next.dutyReport || nextFirst?.departureTime) ?? 9999) < 10 * 60;
   const previousEndedAfterMidnight = Boolean(prev.isNextDay || prevLast?.isNextDay || (minutesOfDay(prev.dutyDebrief || prevLast?.arrivalTime) ?? 9999) <= 6 * 60);
 
   // Escalas AIMS frequentemente quebram a mesma missão na virada do dia. Se o "repouso"
   // calculado é 1h/2h entre pouso e nova decolagem/apresentação cedo, não é repouso:
   // é continuação operacional/solo curto e não deve gerar alerta de repouso mínimo.
-  const explicitContinuation = /continua[cç][aã]o operacional|\(\.\.\.\)|fim de jornada anterior|mesma jornada/i.test(`${next.rawText || ''} ${prev.rawText || ''}`);
-  if (rest <= 5 && (nextStartsEarly || explicitContinuation) && (prev.legs?.length || 0) > 0 && (next.legs?.length || 0) > 0) return true;
+  const explicitContinuation = /continua[cç][aã]o operacional|pernoite diurno|\(\.\.\.\)|fim de jornada anterior|mesma jornada/i.test(`${next.rawText || ''} ${prev.rawText || ''}`);
+  if (rest <= 10 && (sameStation || nextStartsEarly || explicitContinuation) && (prev.legs?.length || 0) > 0 && (next.legs?.length || 0) > 0) return true;
   return Boolean((sameStation || previousEndedAfterMidnight || explicitContinuation) && nextStartsEarly);
 }
 
@@ -612,16 +614,20 @@ function isActivatedStandbyOrReserve(day?: RosterDay): boolean {
   if (!day) return false;
   if (!(isStandby(day) || isReserve(day))) return false;
   if ((day.legs || []).length > 0) return true;
-  const raw = `${day.rawText || ''} ${day.type || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  return /\b(ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|CALL-OUT|ATIVAD[OA]|CONVOCAD[OA]|REPROGRAMAD[OA]|ALTERACAO|ALTERAD[OA]|MUDANCA|MUDADO|VOO|LA\s*\d{3,4}|PS|EXTRA|ASB|RESERVA)\b/.test(raw);
+  // Fix: only use explicit activation tokens — NOT 'ASB' or 'RESERVA' as they are the reserve type itself,
+  // not evidence of activation. Including them caused every ASB to self-activate.
+  const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /\b(ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|CALL-OUT|ATIVAD[OA]|CONVOCAD[OA]|REPROGRAMAD[OA]|ALTERACAO|ALTERAD[OA]|MUDANCA|MUDADO|VOO|LA\s*\d{3,4}|PS|EXTRA)\b/.test(raw);
 }
 
 function isActivationLikeDuty(day?: RosterDay): boolean {
   if (!day) return false;
   if ((day.legs || []).length > 0) return true;
-  if (day.type === 'VOO' || isReserve(day)) return true;
-  const raw = `${day.rawText || ''} ${day.type || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  return /\b(LA\s*\d{3,4}|PS|EXTRA|ASB|RES|RESERVA|ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|VOO)\b/.test(raw);
+  // Fix: 'VOO' type with legs is an activation, but isReserve(day) alone is NOT —
+  // an ASB/RES without legs is a reserve period, not an activation event.
+  if (day.type === 'VOO') return true;
+  const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /\b(LA\s*\d{3,4}|PS|EXTRA|ACIONAMENTO|ACIONAD[OA]|CHAMAD[OA]|CALL\s*OUT|VOO)\b/.test(raw);
 }
 
 function hasLinkedActivationInRoster(days: RosterDay[], day: RosterDay, index: number): boolean {
@@ -642,9 +648,12 @@ function hasLinkedActivationInRoster(days: RosterDay[], day: RosterDay, index: n
       if (gap >= -15 && gap <= 6 * 60) return true;
     }
     if (dayStart !== null && candidateStart !== null) {
-      return Math.abs(candidateStart - dayStart) <= 12 * 60;
+      // Fix: tighten the loose 12h window that was linking any two same-day events.
+      // Only link if the candidate starts within 3h of the reserve/standby start.
+      return Math.abs(candidateStart - dayStart) <= 3 * 60;
     }
-    return true;
+    // Fix: do NOT return true as a fallback — that caused every reserve to be activated.
+    return false;
   });
 }
 
