@@ -4526,13 +4526,20 @@ function limitEndLabel(startTime: string, hours: number): string {
 function rosterRegulatoryLimitForEvent(event: RosterEvent): RosterRegulatoryLimit | null {
   const day = event.day;
   const hasFlight = event.typeLabel === 'Flight' || Boolean(event.leg) || Boolean((day.legs || []).length);
-  const reserveLike = isReserveOrStandbyDay(day) || /\b(ASB|HSB|HSBE|RES|SOBREAVISO|RESERVA)\b/i.test(`${event.code || ''} ${event.typeLabel || ''} ${event.activity || ''}`);
+  // Fix: reserveLike must only be true when the day itself IS a reserve/standby type.
+  // Do NOT use event.code or event.activity to detect this — a flight event on a normal
+  // VOO day should never show "Reserva acionada" just because the event code contains ASB/HSB.
+  // Only use isReserveOrStandbyDay(day) which checks day.type directly.
+  const reserveLike = isReserveOrStandbyDay(day);
   if (hasFlight) {
     const sectors = Math.max(1, (day.legs || event.legs || []).length || 1);
     const start = regulatoryStartTimeForRosterEvent(event);
     const limit = rbac117DutyLimitHours(start, sectors);
     if (!limit) return null;
-    const prefix = reserveLike ? 'Reserva acionada · RBAC/ACT' : 'RBAC 117 B.1 / ACT';
+    // Only show "Reserva acionada" prefix when the day is genuinely a reserve/standby day
+    // that was activated (has flights). Normal VOO days always show RBAC 117 B.1 / ACT.
+    const isActivatedReserveDay = reserveLike && (day.legs || []).length > 0;
+    const prefix = isActivatedReserveDay ? 'Reserva acionada · RBAC/ACT' : 'RBAC 117 B.1 / ACT';
     return {
       label: `${prefix} · ${limit}h`,
       detail: `${sectorsLabelForLimit(sectors)} · início ${start} · encerra até ${limitEndLabel(start, limit)} · aplica o mais restritivo`,
