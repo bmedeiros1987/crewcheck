@@ -86,7 +86,7 @@ const BILLING_PRICE_POLICY_NOTICE = `Preço promocional de lançamento válido p
 const CREWCHECK_SUPPORT_DESTINATION_EMAIL = normalizeEmail(process.env.SUPPORT_DESTINATION_EMAIL || process.env.CREWCHECK_SUPPORT_EMAIL || '');
 const CREWCHECK_SUPPORT_FROM_LABEL = process.env.CREWCHECK_SUPPORT_FROM_LABEL || 'Equipe CrewCheck';
 const CREWCHECK_SUPPORT_WHATSAPP_URL = String(process.env.SUPPORT_WHATSAPP_URL || process.env.CREWCHECK_SUPPORT_WHATSAPP_URL || '').trim();
-// CrewCheck v11.1.97 — Motor Canônico de Escala e Auditoria Anti-Teletransporte, com agregação anti-redundância.
+// CrewCheck v11.1.98 — BIDS Restaurado e Menu da Escala Padronizado, com agregação anti-redundância.
 const CREWCHECK_WHATSAPP_CONCIERGE_ENABLED = String(process.env.CREWCHECK_WHATSAPP_CONCIERGE_ENABLED || process.env.WHATSAPP_CONCIERGE_ENABLED || 'true').toLowerCase() !== 'false';
 const CREWCHECK_WHATSAPP_PREMIUM_ONLY = String(process.env.CREWCHECK_WHATSAPP_PREMIUM_ONLY || 'true').toLowerCase() !== 'false';
 const CREWCHECK_WHATSAPP_API_KEY = String(process.env.CREWCHECK_WHATSAPP_API_KEY || process.env.WHATSAPP_API_KEY || '').trim();

@@ -1,4 +1,4 @@
-# CrewCheck v11.1.97 — Motor Canônico de Escala e Auditoria Anti-Teletransporte
+# CrewCheck v11.1.98 — BIDS Restaurado e Menu da Escala Padronizado
 
 Correção estrutural do coração do sistema de escala.
 

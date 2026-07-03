@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v11-premium-system",
-  "version": "11.1.97",
+  "version": "11.1.98",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v11.1.97: motor canônico de escala, parser visual AIMS por colunas, auditoria anti-teletransporte e jornadas confiáveis.",
+  "description": "CrewCheck v11.1.98: menu BIDS restaurado, escala padronizada ao Premium e motor canônico preservado.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

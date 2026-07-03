@@ -881,6 +881,7 @@ function ResultsSpeedDial({ onNavigate, onResultsNavigate }: { onNavigate: (view
     { label: 'Minha Escala', hint: 'cards e detalhes', icon: Calendar, action: () => goResults('roster') },
     { label: 'Rotina', hint: 'janelas seguras', icon: Dumbbell, action: () => goResults('gym') },
     { label: 'Alertas', hint: 'atenção e revisão', icon: Bell, action: () => goResults('alerts') },
+    { label: 'BIDS / PBS', hint: 'janela de solicitação', icon: Bell, action: () => goHome('bids'), premium: true },
     { label: 'Chefe de Cabine', hint: 'caderno, água e checklist', icon: ClipboardList, action: () => goHome('chief'), premium: true },
     { label: 'Checklist Médico', hint: 'ocorrência e PDF', icon: FileText, action: () => goHome('medical'), premium: true },
     { label: 'Saída Inteligente', hint: 'GPS e transporte', icon: Navigation, action: () => goHome('departure') },
@@ -2250,6 +2251,7 @@ function MobileSideDrawer({ open, activeView, displayName, rank, base, errors, c
     { view: 'home', label: 'Cockpit', caption: 'tela inicial', icon: Home },
     { view: 'settings', label: 'Configurações completas', caption: 'conta, Telegram e Premium', icon: Settings },
     { view: 'departure', label: 'Saída inteligente', caption: 'Maps · Uber/99', icon: Clock },
+    { view: 'bids', label: 'BIDS / PBS', caption: 'janela de solicitação', icon: Bell },
     ...(canAccessAdmin ? [{ view: 'iflight', label: 'iFlight Admin', caption: 'admin', icon: Plane }] : []),
     { view: 'perdiem', label: 'Diárias', caption: 'valores previstos', icon: Coffee },
     { view: 'salary', label: 'Salário', caption: 'prévia mensal', icon: BriefcaseBusiness },
@@ -2302,9 +2304,12 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
     { key: "summary", label: "Resumo", caption: "visão geral", icon: LayoutDashboard },
     { key: "roster", label: "Escala", caption: "agenda completa", icon: CalendarDays },
     { view: "departure", label: "Saída inteligente", caption: "Maps · Uber/99", icon: Clock },
+    { view: "wakeup", label: "Despertador Premium", caption: "hotel, quarto e ligação", icon: Bell },
+    { view: "bids", label: "BIDS / PBS", caption: "janela de solicitação", icon: Bell },
     { view: "settings", label: "Configurações", caption: "menu completo", icon: Settings },
     ...(canAccessAdmin ? [{ view: "iflight", label: "iFlight Admin", caption: "admin", icon: Plane }] : []),
     { view: "flightboard", label: "Radar", caption: "status e portão", icon: Gauge },
+    { view: "weather", label: "Meteorologia", caption: "METAR/TAF por escala", icon: ShieldAlert },
     { view: "perdiem", label: "Diárias", caption: "previsão mensal", icon: Coffee },
     { view: "salary", label: "Salário", caption: "bonificação e variáveis", icon: BriefcaseBusiness },
     { key: "alerts", label: "Alertas", caption: "avisos e atenção", icon: Bell },
@@ -2313,7 +2318,7 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
     { key: "fatigue", label: "Carga da escala", caption: "fadiga e descanso", icon: Gauge },
     { key: "statistics", label: "Gerenciador", caption: "escalas salvas", icon: BarChart3 },
     { view: "support", label: "Ajuda", caption: "falar com suporte", icon: Mail },
-    { key: "settings", label: "Ajustes da escala", caption: "exportações e relatório", icon: Settings },
+    { key: "settings", label: "Configurações", caption: "exportações e relatório", icon: Settings },
       ];
   const handleNav = (item: typeof nav[number]) => item.key ? onChange(item.key) : item.view ? onOpenHomeView(item.view) : undefined;
   return (

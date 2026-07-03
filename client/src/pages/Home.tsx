@@ -119,7 +119,7 @@ const CREWCHECK_ADMIN_EMAILS = [
  'bmedeiros1987@gmail.com',
  'bruno@crewcheck.local',
 ].filter(Boolean);
-const APP_VERSION = '11.1.97';
+const APP_VERSION = '11.1.98';
 const PREMIUM_SAFETY_NOTICE_VERSION = 'premium-safety-notice-v1-short-2026-06-20';
 const PREMIUM_SAFETY_NOTICE_TEXT = 'O CrewCheck é uma ferramenta independente de apoio pessoal. Não é aplicativo oficial de companhia aérea, não substitui a escala oficial e pode apresentar informações incorretas, incompletas ou desatualizadas. Sempre confirme sua escala, horários, alterações, voos, portões e demais informações nos canais oficiais da sua companhia aérea antes de tomar qualquer decisão operacional.';
 
@@ -3446,6 +3446,7 @@ function CrewCheckMobileMenu({ active, onNavigate, canAccessAdmin = false, crewR
    { label: 'Gerenciador de Escalas', icon: History, view: 'history', activeId: 'more', hint: 'ativa, abrir ou excluir' },
    { label: 'Regulamentação', icon: ShieldAlert, view: 'regulation', activeId: 'roster', hint: 'jornada e acionamento' },
    { label: 'Despertador Premium', icon: Bell, view: 'wakeup', activeId: 'settings', hint: 'hotel, quarto e ligação' },
+   { label: 'BIDS / PBS', icon: Bell, view: 'bids', activeId: 'more', hint: 'janela de solicitação' },
    { label: 'Importar', icon: CloudUpload, view: 'import', activeId: 'roster', hint: 'PDF/manual' },
    { label: 'iFlight', icon: Monitor, view: 'iflight', activeId: 'iflight', admin: true, hint: 'varredura calendário' },
    { label: 'Saída', icon: Navigation, view: 'departure', activeId: 'vivo', hint: 'deslocamento' },
@@ -3565,7 +3566,7 @@ function CrewCheckFloatingSpeedMenu({ active, onNavigate, canAccessC32FAcademy, 
        <p className="text-[10px] font-black uppercase tracking-[0.22em]">Menu completo</p>
        <p className="text-xs font-semibold opacity-70">Acesso rápido aos módulos grátis e premium</p>
       </div>
-      <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]">v11.1.97</span>
+      <span className="rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]">v11.1.98</span>
      </div>
      <div className="grid gap-2">
       {quickItems.map(({ label, hint, icon: Icon, view, premium }) => (

@@ -9592,3 +9592,130 @@ html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 .text-cyan-100\/70 
   color: rgba(198, 246, 255, .72) !important;
 }
 .cc-roster-regulatory-chip { white-space: nowrap; }
+
+/* CrewCheck v11.1.98 — BIDS restaurado e menu da Escala padronizado ao Premium claro/escuro */
+html[data-crew-theme="light"] .crewcheck-results-premium:not(.android-premium-shell) {
+  background: radial-gradient(circle at 12% 2%, rgba(56,189,248,.15), transparent 28%), linear-gradient(180deg, #eef8ff 0%, #f7fbff 48%, #edf6fb 100%) !important;
+  color: #071426 !important;
+}
+html[data-crew-theme="light"] .crewcheck-results-premium:not(.android-premium-shell) header {
+  background: rgba(248, 252, 255, .92) !important;
+  color: #071426 !important;
+  border-color: rgba(14, 116, 144, .14) !important;
+  box-shadow: 0 18px 45px rgba(20, 54, 84, .10) !important;
+  backdrop-filter: blur(18px) !important;
+}
+html[data-crew-theme="light"] .crewcheck-results-premium:not(.android-premium-shell) header button,
+html[data-crew-theme="light"] .crewcheck-results-premium:not(.android-premium-shell) header h1,
+html[data-crew-theme="light"] .crewcheck-results-premium:not(.android-premium-shell) header p {
+  color: #071426 !important;
+  text-shadow: none !important;
+}
+html[data-crew-theme="light"] .crewcheck-results-premium:not(.android-premium-shell) header button:hover {
+  background: rgba(14, 165, 233, .10) !important;
+}
+.crewcheck-v10855-results-sidebar,
+.crewcheck-results-drawer-v1192 {
+  background: linear-gradient(180deg, #edf8ff 0%, #f8fcff 48%, #edf6fb 100%) !important;
+  color: #0b1c33 !important;
+  border-right: 1px solid rgba(14, 116, 144, .14) !important;
+  box-shadow: 18px 0 48px rgba(20, 54, 84, .12) !important;
+}
+.crewcheck-v10855-results-sidebar .bg-white\/8,
+.crewcheck-results-drawer-v1192 .bg-white\/8 {
+  background: rgba(255,255,255,.72) !important;
+  border: 1px solid rgba(125, 211, 252, .18) !important;
+}
+.crewcheck-v10855-results-sidebar button,
+.crewcheck-results-drawer-v1192 button {
+  color: #0b1c33 !important;
+  text-shadow: none !important;
+}
+.crewcheck-v10855-results-sidebar nav button,
+.crewcheck-results-drawer-v1192 nav button {
+  background: rgba(255,255,255,.72) !important;
+  border: 1px solid rgba(125, 211, 252, .18) !important;
+  color: #0b1c33 !important;
+  box-shadow: 0 10px 30px rgba(20,54,84,.07) !important;
+}
+.crewcheck-v10855-results-sidebar nav button:hover,
+.crewcheck-results-drawer-v1192 nav button:hover {
+  background: #ffffff !important;
+  border-color: rgba(14,165,233,.32) !important;
+  color: #071426 !important;
+}
+.crewcheck-v10855-results-sidebar nav button.bg-blue-600,
+.crewcheck-results-drawer-v1192 nav button.bg-blue-600 {
+  background: linear-gradient(135deg, #e0f5ff 0%, #faffff 100%) !important;
+  color: #071426 !important;
+  border-color: rgba(14,165,233,.38) !important;
+  box-shadow: 0 16px 38px rgba(14,116,144,.12), inset 4px 0 0 #0ea5e9 !important;
+}
+.crewcheck-v10855-results-sidebar nav button.bg-blue-600 .bg-white\/18,
+.crewcheck-results-drawer-v1192 nav button.bg-blue-600 .bg-white\/18,
+.crewcheck-v10855-results-sidebar nav button .bg-white\/8,
+.crewcheck-results-drawer-v1192 nav button .bg-white\/8 {
+  background: rgba(255,255,255,.88) !important;
+  color: #0b2f4a !important;
+}
+.crewcheck-v10855-results-sidebar .text-cyan-100\/60,
+.crewcheck-v10855-results-sidebar .text-cyan-100\/65,
+.crewcheck-v10855-results-sidebar .text-cyan-100\/70,
+.crewcheck-v10855-results-sidebar .text-cyan-50\/78,
+.crewcheck-v10855-results-sidebar .text-cyan-50\/80,
+.crewcheck-results-drawer-v1192 .text-cyan-100\/60,
+.crewcheck-results-drawer-v1192 .text-cyan-100\/65,
+.crewcheck-results-drawer-v1192 .text-cyan-100\/70,
+.crewcheck-results-drawer-v1192 .text-cyan-50\/78,
+.crewcheck-results-drawer-v1192 .text-cyan-50\/80 {
+  color: #60758a !important;
+}
+.crewcheck-v10855-results-sidebar .border-white\/10,
+.crewcheck-results-drawer-v1192 .border-white\/10 {
+  border-color: rgba(14, 116, 144, .14) !important;
+}
+html[data-crew-theme="dark"] .crewcheck-results-premium:not(.android-premium-shell) {
+  background: radial-gradient(circle at 12% 2%, rgba(14,165,233,.18), transparent 26%), linear-gradient(180deg, #020817 0%, #071426 54%, #020817 100%) !important;
+  color: #eaffff !important;
+}
+html[data-crew-theme="dark"] .crewcheck-results-premium:not(.android-premium-shell) header,
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 {
+  background: linear-gradient(180deg, #071426 0%, #09223b 52%, #071426 100%) !important;
+  color: #eaffff !important;
+  border-color: rgba(125, 211, 252, .12) !important;
+  box-shadow: 18px 0 48px rgba(0,0,0,.28) !important;
+}
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar button,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 button,
+html[data-crew-theme="dark"] .crewcheck-results-premium:not(.android-premium-shell) header button,
+html[data-crew-theme="dark"] .crewcheck-results-premium:not(.android-premium-shell) header h1,
+html[data-crew-theme="dark"] .crewcheck-results-premium:not(.android-premium-shell) header p {
+  color: #eaffff !important;
+}
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar nav button,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 nav button {
+  background: rgba(255,255,255,.06) !important;
+  border-color: rgba(125, 211, 252, .10) !important;
+  color: #eaffff !important;
+  box-shadow: 0 14px 34px rgba(0,0,0,.22) !important;
+}
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar nav button.bg-blue-600,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 nav button.bg-blue-600 {
+  background: linear-gradient(135deg, rgba(14,165,233,.23), rgba(37,99,235,.22)) !important;
+  border-color: rgba(56, 189, 248, .34) !important;
+  color: #ffffff !important;
+  box-shadow: 0 16px 36px rgba(14,165,233,.18), inset 4px 0 0 #38bdf8 !important;
+}
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar .text-cyan-100\/60,
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar .text-cyan-100\/65,
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar .text-cyan-100\/70,
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar .text-cyan-50\/78,
+html[data-crew-theme="dark"] .crewcheck-v10855-results-sidebar .text-cyan-50\/80,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 .text-cyan-100\/60,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 .text-cyan-100\/65,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 .text-cyan-100\/70,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 .text-cyan-50\/78,
+html[data-crew-theme="dark"] .crewcheck-results-drawer-v1192 .text-cyan-50\/80 {
+  color: rgba(198,246,255,.72) !important;
+}
