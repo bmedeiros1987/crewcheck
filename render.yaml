@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: crewcheck-premium
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node server.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        sync: false
+      - key: MYSQL_SSL_MODE
+        value: REQUIRED
+      - key: CREWCHECK_AUTO_MIGRATE
+        value: true
+      - key: CREWCHECK_AUTH_REQUIRED
+        value: true
+      - key: MAILERSEND_API_KEY
+        sync: false
+      - key: MAILERSEND_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: CrewCheck
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: CREWCHECK_WAKEUP_CALL_PROVIDER
+        value: callmebot
+      - key: CALLMEBOT_MODE
+        sync: false
+      - key: CALLMEBOT_PHONE
+        sync: false
+      - key: CALLMEBOT_API_KEY
+        sync: false
+      - key: CALLMEBOT_TELEGRAM_CALL_USER
+        sync: false
