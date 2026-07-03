@@ -159,15 +159,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   ];
 
   return (
-    <div className="min-h-screen overflow-x-hidden overflow-y-auto bg-[#030914] text-white crewcheck-commercial-dashboard">
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_4%,rgba(14,165,233,0.33),transparent_31%),radial-gradient(circle_at_88%_8%,rgba(37,99,235,0.26),transparent_30%),linear-gradient(180deg,#030914_0%,#07111f_43%,#020817_100%)]" />
-        <div className="absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.16),transparent_44%)]" />
-        <div className="absolute -bottom-28 left-1/2 h-80 w-[48rem] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
-      </div>
+    <div className="min-h-screen overflow-x-hidden overflow-y-auto crewcheck-commercial-dashboard" style={{background:'var(--background)',color:'var(--foreground)'}}>
+      <div className="pointer-events-none fixed inset-0 cc-dashboard-bg-overlay" />
 
       <div className={`relative z-10 mx-auto grid min-h-[100dvh] w-full max-w-[118rem] grid-cols-1 gap-5 px-4 pb-32 pt-[calc(1rem+env(safe-area-inset-top,0px))] sm:px-6 ${sidebarCollapsed ? 'lg:grid-cols-[6.2rem_minmax(0,1fr)]' : 'lg:grid-cols-[18rem_minmax(0,1fr)]'} lg:pb-10 lg:pt-6 crewcheck-home-ultra-minimal`}>
-        <aside className={`crewcheck-v10855-home-sidebar hidden rounded-[2rem] border border-white/10 bg-white/[0.045] p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl lg:flex lg:flex-col ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
+        <aside className={`crewcheck-v10855-home-sidebar hidden rounded-[2rem] p-3 shadow-2xl lg:flex lg:flex-col ${sidebarCollapsed ? 'is-collapsed' : ''}`} style={{background:'var(--sidebar-bg)',border:'1px solid var(--sidebar-border)',backdropFilter:'blur(20px)'}}>
           <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
             <button onClick={() => onNavigate('home')} className="flex min-w-0 items-center gap-3 rounded-3xl p-2 text-left transition hover:bg-white/[0.07]" title="CrewCheck Home">
               <img src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" className="crewcheck-brand-icon-image h-12 w-12 rounded-2xl shadow-2xl shadow-cyan-950/40" />
@@ -189,7 +185,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               return (
                 <button key={item.label} onClick={item.onClick} className={`group flex w-full items-center gap-3 rounded-2xl border border-white/0 px-3 py-2.5 text-left transition hover:border-cyan-200/15 hover:bg-white/[0.07] ${sidebarCollapsed ? 'justify-center' : ''}`} title={item.label}>
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${item.color} text-[#06101d] shadow-lg shadow-black/10 transition group-hover:scale-105`}><Icon className="h-5 w-5" /></span>
-                  {!sidebarCollapsed && <span className="min-w-0"><span className="block truncate text-sm font-black text-white">{item.label}</span></span>}
+                  {!sidebarCollapsed && <span className="min-w-0">                  <span className="block truncate text-sm font-black" style={{color:'var(--foreground)'}}>{item.label}</span></span>}
                 </button>
               );
             })}
@@ -200,7 +196,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <button onClick={() => onNavigate('settings')} className="cc-profile-quick-card w-full rounded-3xl border border-white/10 bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.07]">
               <div className="flex items-center gap-3">
                 <ProfileAvatar avatar={user.avatar} initials={initials} size="sm" />
-                <div className="min-w-0"><p className="truncate font-black leading-tight">{firstName}</p><p className="text-xs text-slate-400">{user.base || 'Base'} · perfil</p></div>
+                <div className="min-w-0"><p className="truncate font-black leading-tight" style={{color:'var(--foreground)'}}>{firstName}</p><p className="text-xs" style={{color:'var(--foreground-muted)'}}>{user.base || 'Base'} · perfil</p></div>
               </div>
             </button>
           </div>}

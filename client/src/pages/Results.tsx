@@ -773,10 +773,10 @@ export default function Results() {
   const effectiveDark = getEffectiveCrewTheme(themeMode) === "dark";
 
   return (
-    <div className={appMode ? "crewcheck-results-premium min-h-screen bg-[#020817] text-slate-50 android-premium-shell" : effectiveDark ? "crewcheck-results-premium min-h-screen bg-[#08111f] text-slate-50 crewcheck-dark-shell" : "crewcheck-results-premium min-h-screen bg-[#eef5f8] text-[#06213d]"}>
+    <div className="crewcheck-results-premium min-h-screen" style={{background:'var(--background)',color:'var(--foreground)'}}>
       {!appMode && <DesktopSidebar activeView={activeView} collapsed={desktopSidebarCollapsed} canAccessAdmin={isAdminUser} onToggleCollapsed={toggleDesktopSidebar} onChange={switchView} onOpenHomeView={openHomeView} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />}
       <div className={appMode ? "" : desktopSidebarCollapsed ? "lg:pl-24" : "lg:pl-72"}>
-        <header className={`sticky top-0 z-40 border-b text-white shadow-[0_10px_30px_rgba(7,26,51,0.18)] ${appMode ? "border-cyan-300/10 bg-[#061424]/92 backdrop-blur-xl" : "border-white/10 bg-[#092846]"}`}>
+        <header className="sticky top-0 z-40 border-b shadow-[0_4px_20px_rgba(0,0,0,0.08)]" style={{background:'var(--sidebar-bg)',borderColor:'var(--sidebar-border)',backdropFilter:'blur(16px)',color:'var(--foreground)'}}>
           <div className={appMode ? "flex h-14 items-center justify-between px-3 sm:px-4 lg:px-7" : "flex h-16 items-center justify-between px-4 lg:px-7"}>
             <div className="flex items-center gap-3">
               <button onClick={() => setMobileMenuOpen(true)} className="rounded-xl p-2 text-white/85 transition hover:bg-white/10" aria-label="Abrir menu lateral">
@@ -2351,12 +2351,12 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
       ];
   const handleNav = (item: typeof nav[number]) => item.key ? onChange(item.key) : item.view ? onOpenHomeView(item.view) : undefined;
   return (
-    <aside className={`crewcheck-v10855-results-sidebar fixed inset-y-0 left-0 z-50 hidden ${collapsed ? 'w-24' : 'w-72'} flex-col bg-[#071f38] text-white shadow-[20px_0_50px_rgba(7,31,56,0.22)] transition-all duration-300 lg:flex`}>
-      <div className="border-b border-white/10 p-4">
+    <aside className={`crewcheck-v10855-results-sidebar fixed inset-y-0 left-0 z-50 hidden ${collapsed ? 'w-24' : 'w-72'} flex-col transition-all duration-300 lg:flex`} style={{background:'var(--sidebar-bg)',color:'var(--foreground)',borderRight:'1px solid var(--sidebar-border)',boxShadow:'4px 0 24px rgba(0,0,0,0.12)'}}>
+      <div className="p-4" style={{borderBottom:'1px solid var(--sidebar-border)'}}>
         <div className={`flex items-center ${collapsed ? 'flex-col justify-center' : 'justify-between'} gap-3 rounded-2xl bg-white/8 p-2`}>
           <button onClick={() => onOpenHomeView('home')} className="flex min-w-0 items-center gap-3 text-left">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-300 to-blue-500 text-[#071f38]"><Plane className="h-6 w-6" /></div>
-            {!collapsed && <div><p className="text-base font-black leading-tight">CrewCheck</p><p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-100/65">Premium Roster</p></div>}
+            {!collapsed && <div><p className="text-base font-black leading-tight" style={{color:'var(--foreground)'}}>CrewCheck</p><p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{color:'var(--foreground-subtle)'}}>Premium Roster</p></div>}
           </button>
           <button onClick={onToggleCollapsed} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/8 text-cyan-50 hover:bg-white/12" title={collapsed ? 'Expandir menu' : 'Encolher menu'} aria-label={collapsed ? 'Expandir menu lateral' : 'Encolher menu lateral'}>{collapsed ? <Plus className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
         </div>
@@ -2366,14 +2366,14 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
           const Icon = item.icon;
           const active = item.key === activeView;
           return (
-            <button key={item.key || item.view} onClick={() => handleNav(item)} className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${active ? "bg-blue-600 text-white shadow-lg shadow-blue-950/20" : "text-cyan-50/78 hover:bg-white/10 hover:text-white"} ${collapsed ? 'justify-center' : ''}`} title={item.label}>
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${active ? "bg-white/18" : "bg-white/8"}`}><Icon className="h-5 w-5" /></div>
-              {!collapsed && <div className="min-w-0"><p className="truncate font-black">{item.label}</p><p className="truncate text-xs text-cyan-100/60">{item.caption}</p></div>}
+            <button key={item.key || item.view} onClick={() => handleNav(item)} className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${collapsed ? 'justify-center' : ''}`} style={{background: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--primary-foreground)' : 'var(--foreground-muted)'}} title={item.label}>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{background: active ? 'rgba(255,255,255,0.18)' : 'var(--surface)'}}><Icon className="h-4 w-4" /></div>
+              {!collapsed && <div className="min-w-0"><p className="truncate font-black" style={{color:'var(--foreground)'}}>{item.label}</p></div>}
             </button>
           );
         })}
       </nav>
-      <div className="space-y-2 border-t border-white/10 p-3">
+      <div className="space-y-2 p-3" style={{borderTop:'1px solid var(--sidebar-border)'}}>
         <button onClick={() => onOpenHomeView('settings')} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-cyan-300 px-3 py-3 text-sm font-black text-[#052032] shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-200 ${collapsed ? 'px-2' : ''}`}><Settings className="h-4 w-4" /> {!collapsed && 'Configurações'}</button>
         <button onClick={onNewRoster} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-3 py-3 text-sm font-black text-[#071f38] transition hover:bg-cyan-50 ${collapsed ? 'px-2' : ''}`}><CloudUpload className="h-4 w-4" /> {!collapsed && 'Nova escala'}</button>
         <button onClick={onPowerOff} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-red-300/20 bg-red-500/10 px-3 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/20 ${collapsed ? 'px-2' : ''}`}><LogOut className="h-4 w-4" /> {!collapsed && 'Sair'}</button>
