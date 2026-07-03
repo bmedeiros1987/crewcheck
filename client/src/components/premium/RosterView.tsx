@@ -1,194 +1,544 @@
-import React from 'react';
-import { 
-  Search, 
-  Filter, 
-  MoreVertical, 
-  ChevronRight, 
-  Plane, 
+import React, { useState } from 'react';
+import {
+  Plane,
   Moon,
-  Sun
+  Sun,
+  BedDouble,
+  UserCheck,
+  Clock,
+  ChevronDown,
+  ChevronRight,
+  ShieldCheck,
+  AlertTriangle,
+  Users,
+  MapPin,
+  Search,
+  Filter,
+  ArrowLeft,
 } from 'lucide-react';
 
-interface RosterViewProps {
-  onBack: () => void;
+/* ── Types ─────────────────────────────────────────────────── */
+interface FlightLeg {
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  departure: string;
+  arrival: string;
+  nextDay?: boolean;
+  aircraft?: string;
+  crew?: number;
 }
 
-const RosterView: React.FC<RosterViewProps> = ({ onBack }) => {
+interface RosterEvent {
+  id: string;
+  type: 'flight' | 'layover' | 'reserve' | 'standby' | 'off' | 'continuation';
+  date: string;
+  dayOfWeek: string;
+  dayNum: number;
+  month: string;
+  title?: string;
+  subtitle?: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: string;
+  station?: string;
+  legs?: FlightLeg[];
+  compliance?: {
+    status: 'conforme' | 'atencao' | 'alerta';
+    label: string;
+    detail?: string;
+  };
+}
+
+interface RosterViewProps {
+  onBack?: () => void;
+  events?: RosterEvent[];
+}
+
+/* ── Compliance Badge ───────────────────────────────────────── */
+function ComplianceBadge({ status, label }: { status: 'conforme' | 'atencao' | 'alerta'; label: string }) {
+  const cls = {
+    conforme: 'cc-badge cc-badge-conforme',
+    atencao:  'cc-badge cc-badge-atencao',
+    alerta:   'cc-badge cc-badge-alerta',
+  }[status];
+
+  const Icon = {
+    conforme: ShieldCheck,
+    atencao:  AlertTriangle,
+    alerta:   AlertTriangle,
+  }[status];
+
   return (
-    <div className="flex flex-col min-h-screen bg-[#08111f] text-white font-sans pb-24">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 pt-8">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="h-10 w-10 rounded-2xl bg-white/5 flex items-center justify-center">
-            <ChevronRight className="h-5 w-5 rotate-180" />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold">Minha Escala</h2>
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">30 Mai 2026 - 02 Jul 2026</p>
-              <span className="px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[8px] font-black text-blue-400 uppercase tracking-widest">LT</span>
+    <span className={cls}>
+      <Icon size={9} />
+      {label}
+    </span>
+  );
+}
+
+/* ── Flight Leg Row ─────────────────────────────────────────── */
+function LegRow({ leg }: { leg: FlightLeg }) {
+  return (
+    <div className="flex items-center gap-3 py-2 border-b last:border-0" style={{ borderColor: 'var(--surface-border)' }}>
+      <div className="flex items-center gap-1.5 w-20 flex-shrink-0">
+        <Plane size={11} style={{ color: 'var(--event-flight)' }} />
+        <span className="text-xs font-bold tracking-wide" style={{ color: 'var(--foreground)' }}>{leg.flightNumber}</span>
+      </div>
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <span className="text-sm font-black" style={{ color: 'var(--foreground)' }}>{leg.origin}</span>
+        <div className="flex-1 flex items-center gap-1 min-w-0">
+          <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>{leg.departure}</span>
+          <div className="flex-1 h-px" style={{ background: 'var(--surface-border)' }} />
+          <Plane size={10} className="flex-shrink-0 rotate-90" style={{ color: 'var(--foreground-subtle)' }} />
+          <div className="flex-1 h-px" style={{ background: 'var(--surface-border)' }} />
+          <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+            {leg.arrival}
+            {leg.nextDay && <span style={{ color: 'var(--event-flight)' }}> +1</span>}
+          </span>
+        </div>
+        <span className="text-sm font-black" style={{ color: 'var(--foreground)' }}>{leg.destination}</span>
+      </div>
+      {leg.crew && (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <Users size={10} style={{ color: 'var(--foreground-subtle)' }} />
+          <span className="text-xs" style={{ color: 'var(--foreground-subtle)' }}>{leg.crew}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Event Card ─────────────────────────────────────────────── */
+function EventCard({ event }: { event: RosterEvent }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const typeClass: Record<string, string> = {
+    flight:       'flight',
+    layover:      'layover',
+    reserve:      'reserve',
+    standby:      'standby',
+    off:          'off',
+    continuation: 'off',
+  };
+
+  const TypeIcon: Record<string, React.FC<{ size?: number }>> = {
+    flight:       ({ size }) => <Plane size={size} style={{ color: 'var(--event-flight)' }} />,
+    layover:      ({ size }) => <BedDouble size={size} style={{ color: 'var(--event-layover)' }} />,
+    reserve:      ({ size }) => <UserCheck size={size} style={{ color: 'var(--event-reserve)' }} />,
+    standby:      ({ size }) => <Clock size={size} style={{ color: 'var(--event-standby)' }} />,
+    off:          ({ size }) => <Moon size={size} style={{ color: 'var(--event-off)' }} />,
+    continuation: ({ size }) => <Sun size={size} style={{ color: 'var(--event-layover)' }} />,
+  };
+
+  const Icon = TypeIcon[event.type] ?? TypeIcon.off;
+  const hasLegs = event.legs && event.legs.length > 0;
+  const hasDetails = hasLegs || event.subtitle;
+
+  return (
+    <div
+      className={`cc-event-card ${typeClass[event.type] ?? 'off'}`}
+      onClick={() => hasDetails && setExpanded((v) => !v)}
+      role={hasDetails ? 'button' : undefined}
+      tabIndex={hasDetails ? 0 : undefined}
+    >
+      <div className="flex items-start gap-3 p-4 pl-5">
+        {/* Icon */}
+        <div className="flex-shrink-0 mt-0.5">
+          <Icon size={18} />
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          {/* Title row */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold leading-tight line-clamp-1" style={{ color: 'var(--foreground)' }}>
+                {event.title}
+              </h3>
+              {event.subtitle && !expanded && (
+                <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--foreground-muted)' }}>
+                  {event.subtitle}
+                </p>
+              )}
             </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {event.compliance && (
+                <ComplianceBadge status={event.compliance.status} label={event.compliance.label} />
+              )}
+              {hasDetails && (
+                <ChevronDown
+                  size={16}
+                  style={{
+                    color: 'var(--foreground-subtle)',
+                    transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease',
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Times */}
+          {(event.startTime || event.duration) && (
+            <div className="flex items-center gap-3 mt-2">
+              {event.startTime && event.endTime && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-black tracking-tight" style={{ color: 'var(--foreground)' }}>
+                    {event.startTime}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <div className="w-8 h-px" style={{ background: 'var(--surface-border)' }} />
+                    <Plane size={10} className="rotate-90" style={{ color: 'var(--foreground-subtle)' }} />
+                    <div className="w-8 h-px" style={{ background: 'var(--surface-border)' }} />
+                  </div>
+                  <span className="text-xl font-black tracking-tight" style={{ color: 'var(--foreground)' }}>
+                    {event.endTime}
+                  </span>
+                </div>
+              )}
+              {event.duration && (
+                <span className="text-xs font-semibold" style={{ color: 'var(--foreground-muted)' }}>
+                  {event.duration}
+                </span>
+              )}
+              {event.station && (
+                <div className="flex items-center gap-1 ml-auto">
+                  <MapPin size={10} style={{ color: 'var(--foreground-subtle)' }} />
+                  <span className="text-xs font-bold" style={{ color: 'var(--foreground-muted)' }}>
+                    {event.station}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Compliance detail */}
+          {event.compliance?.detail && !expanded && (
+            <p className="text-xs mt-1.5 line-clamp-1" style={{ color: 'var(--foreground-subtle)' }}>
+              {event.compliance.detail}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && hasDetails && (
+        <div className="px-5 pb-4 pt-0">
+          <div className="pt-3" style={{ borderTop: '1px solid var(--surface-border)' }}>
+            {event.subtitle && (
+              <p className="text-xs mb-3" style={{ color: 'var(--foreground-muted)' }}>
+                {event.subtitle}
+              </p>
+            )}
+            {hasLegs && (
+              <div>
+                {event.legs!.map((leg, i) => (
+                  <LegRow key={i} leg={leg} />
+                ))}
+              </div>
+            )}
+            {event.compliance?.detail && (
+              <div
+                className="mt-3 rounded-lg px-3 py-2 flex items-start gap-2"
+                style={{ background: 'var(--surface)', border: '1px solid var(--surface-border)' }}
+              >
+                <ShieldCheck size={13} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--event-conforme)' }} />
+                <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+                  {event.compliance.detail}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Day Group ──────────────────────────────────────────────── */
+function DayGroup({ dayOfWeek, dayNum, month, events }: {
+  dayOfWeek: string;
+  dayNum: number;
+  month: string;
+  events: RosterEvent[];
+}) {
+  const isToday = (() => {
+    const now = new Date();
+    return now.getDate() === dayNum && now.toLocaleString('pt-BR', { month: 'short' }).toLowerCase() === month.toLowerCase();
+  })();
+
+  return (
+    <div className="flex gap-4">
+      {/* Date column */}
+      <div className="flex flex-col items-center w-10 flex-shrink-0 pt-1">
+        <span
+          className="text-[10px] font-bold uppercase tracking-wider"
+          style={{ color: isToday ? 'var(--accent)' : 'var(--foreground-subtle)' }}
+        >
+          {dayOfWeek}
+        </span>
+        <span
+          className="text-2xl font-black leading-none mt-0.5"
+          style={{ color: isToday ? 'var(--accent)' : 'var(--foreground)' }}
+        >
+          {dayNum}
+        </span>
+        <span
+          className="text-[10px] font-bold uppercase tracking-wider mt-0.5"
+          style={{ color: isToday ? 'var(--accent)' : 'var(--foreground-subtle)' }}
+        >
+          {month}
+        </span>
+        {isToday && (
+          <div className="cc-live-dot mt-2" />
+        )}
+      </div>
+
+      {/* Events column */}
+      <div className="flex-1 min-w-0 space-y-2 pb-2">
+        {events.map((event) => (
+          <EventCard key={event.id} event={event} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Demo Data ──────────────────────────────────────────────── */
+const DEMO_EVENTS: RosterEvent[] = [
+  {
+    id: 'f1',
+    type: 'flight',
+    date: '2026-07-06',
+    dayOfWeek: 'SEG',
+    dayNum: 6,
+    month: 'JUL',
+    title: 'LA 3455 · FOR → GRU',
+    subtitle: 'Apres. 04:15 · Solo 15h15 · Guarulhos',
+    startTime: '04:45',
+    endTime: '08:20',
+    legs: [
+      { flightNumber: 'LA3455', origin: 'FOR', destination: 'GRU', departure: '04:45', arrival: '08:20', aircraft: 'A320', crew: 4 },
+    ],
+    compliance: {
+      status: 'conforme',
+      label: 'Conforme',
+      detail: 'RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo',
+    },
+  },
+  {
+    id: 'l1',
+    type: 'layover',
+    date: '2026-07-06',
+    dayOfWeek: 'SEG',
+    dayNum: 6,
+    month: 'JUL',
+    title: 'Pernoite diurno · GRU',
+    subtitle: 'Pernoite diurno em Guarulhos',
+    startTime: '08:20',
+    endTime: '23:35',
+    duration: '15h 15min',
+    station: 'GRU',
+    compliance: {
+      status: 'conforme',
+      label: 'Repouso OK',
+      detail: 'Repouso mínimo de 10h cumprido. Próxima apresentação às 23:05.',
+    },
+  },
+  {
+    id: 'f2',
+    type: 'flight',
+    date: '2026-07-06',
+    dayOfWeek: 'SEG',
+    dayNum: 6,
+    month: 'JUL',
+    title: 'LA 3394 · GRU → PMW',
+    subtitle: 'Decolagem 23:35 · Chegada 02:00 +1 · Após solo 10h40',
+    startTime: '23:35',
+    endTime: '02:00',
+    legs: [
+      { flightNumber: 'LA3394', origin: 'GRU', destination: 'PMW', departure: '23:35', arrival: '02:00', nextDay: true, aircraft: 'B738', crew: 4 },
+    ],
+    compliance: {
+      status: 'conforme',
+      label: 'Conforme',
+      detail: 'RBAC 117 B.1 / ACT · 8h25 · 1 etapa · início 23:05 · encerra até 07:05 +1',
+    },
+  },
+  {
+    id: 'f3',
+    type: 'flight',
+    date: '2026-07-08',
+    dayOfWeek: 'QUA',
+    dayNum: 8,
+    month: 'JUL',
+    title: 'LA 3838 · GRU → CXJ',
+    subtitle: 'Apres. 09:03 · Solo 1h · Guarulhos',
+    startTime: '09:50',
+    endTime: '11:30',
+    legs: [
+      { flightNumber: 'LA3838', origin: 'GRU', destination: 'CXJ', departure: '09:50', arrival: '11:30', aircraft: 'E195', crew: 3 },
+    ],
+    compliance: {
+      status: 'conforme',
+      label: 'Conforme',
+      detail: 'RBAC 117 B.1 / ACT · 13h · 3-4 etapas · início 09:03 · encerra até 22:03',
+    },
+  },
+  {
+    id: 'r1',
+    type: 'reserve',
+    date: '2026-07-10',
+    dayOfWeek: 'SEX',
+    dayNum: 10,
+    month: 'JUL',
+    title: 'ASB · Reserva Aeroporto',
+    subtitle: 'Airport Stand By — aguardando acionamento',
+    startTime: '06:00',
+    endTime: '14:00',
+    duration: '8h',
+    station: 'BSB',
+    compliance: {
+      status: 'atencao',
+      label: 'Em reserva',
+      detail: 'ACT Art. 23 · Reserva aeroporto · máx 8h · não acionado',
+    },
+  },
+  {
+    id: 'sb1',
+    type: 'standby',
+    date: '2026-07-11',
+    dayOfWeek: 'SÁB',
+    dayNum: 11,
+    month: 'JUL',
+    title: 'HSB · Sobreaviso',
+    subtitle: 'Home Stand By — disponível para acionamento',
+    startTime: '08:00',
+    endTime: '20:00',
+    duration: '12h',
+    station: 'BSB',
+    compliance: {
+      status: 'atencao',
+      label: 'Sobreaviso',
+      detail: 'ACT Art. 24 · Sobreaviso domiciliar · máx 12h · não acionado',
+    },
+  },
+];
+
+/* ── Group events by day ────────────────────────────────────── */
+function groupByDay(events: RosterEvent[]) {
+  const map = new Map<string, { dayOfWeek: string; dayNum: number; month: string; events: RosterEvent[] }>();
+  for (const event of events) {
+    const key = `${event.dayNum}-${event.month}`;
+    if (!map.has(key)) {
+      map.set(key, { dayOfWeek: event.dayOfWeek, dayNum: event.dayNum, month: event.month, events: [] });
+    }
+    map.get(key)!.events.push(event);
+  }
+  return Array.from(map.values());
+}
+
+/* ── Main Component ─────────────────────────────────────────── */
+const RosterView: React.FC<RosterViewProps> = ({ onBack, events }) => {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const sourceEvents = events ?? DEMO_EVENTS;
+  const filtered = query
+    ? sourceEvents.filter((e) =>
+        (e.title ?? '').toLowerCase().includes(query.toLowerCase()) ||
+        (e.subtitle ?? '').toLowerCase().includes(query.toLowerCase())
+      )
+    : sourceEvents;
+
+  const days = groupByDay(filtered);
+
+  return (
+    <div className="flex flex-col min-h-screen" style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
+      {/* Header */}
+      <header
+        className="sticky top-0 z-30 flex items-center justify-between px-4 py-3"
+        style={{
+          background: 'var(--sidebar-bg)',
+          borderBottom: '1px solid var(--surface-border)',
+          backdropFilter: 'blur(20px)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button className="cc-icon-btn" onClick={onBack} aria-label="Voltar">
+              <ArrowLeft size={18} />
+            </button>
+          )}
+          <div>
+            <h1 className="text-base font-bold leading-tight" style={{ color: 'var(--foreground)' }}>
+              Minha Escala
+            </h1>
+            <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+              Julho 2026 · Horário local
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="h-10 w-10 rounded-2xl bg-white/5 flex items-center justify-center">
-            <Search className="h-5 w-5 text-slate-400" />
+          <button
+            className="cc-icon-btn"
+            onClick={() => setSearchOpen((v) => !v)}
+            aria-label="Buscar"
+          >
+            <Search size={16} />
           </button>
-          <button className="h-10 w-10 rounded-2xl bg-white/5 flex items-center justify-center">
-            <Filter className="h-5 w-5 text-slate-400" />
-          </button>
-          <button className="h-10 w-10 rounded-2xl bg-white/5 flex items-center justify-center">
-            <MoreVertical className="h-5 w-5 text-slate-400" />
+          <button className="cc-icon-btn" aria-label="Filtrar">
+            <Filter size={16} />
           </button>
         </div>
       </header>
 
-      {/* Roster List */}
-      <section className="px-6 py-4 space-y-4">
-        {/* White Card Theme based on screenshot */}
-        <div className="bg-white rounded-[32px] p-5 shadow-sm text-slate-900">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <span className="text-[14px] font-black text-slate-800 uppercase block leading-none">SEG</span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-[40px] font-black text-[#071D33] leading-none tracking-tighter">06</span>
-                <span className="text-[14px] font-black text-[#071D33] uppercase leading-none">JUL</span>
-              </div>
-            </div>
-            <div className="w-full max-w-[200px] h-1 rounded-full bg-gradient-to-r from-emerald-400 to-blue-500 mt-2"></div>
-          </div>
-          
-          <div className="flex gap-3 mb-6">
-            <div className="flex-1 bg-[#20C997] rounded-full py-2.5 px-4 flex items-center justify-center shadow-[0_4px_12px_rgba(32,201,151,0.3)]">
-              <span className="text-xs font-bold text-white">Diárias R$ 355,68</span>
-            </div>
-            <div className="flex-1 bg-[#6366F1] rounded-full py-2.5 px-4 flex items-center justify-center shadow-[0_4px_12px_rgba(99,102,241,0.3)]">
-              <span className="text-xs font-bold text-white">Ganhos R$ 458,23</span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {/* Flight Item */}
-            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex gap-4 shadow-sm relative overflow-hidden">
-              <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#0ea5e9]"></div>
-              <div className="flex flex-col items-center justify-center min-w-[48px]">
-                <Plane className="h-5 w-5 text-slate-800 mb-1" />
-                <span className="text-lg font-black text-slate-800 leading-none">04:45</span>
-                <span className="text-lg font-black text-slate-800 leading-none">08:20</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black text-slate-800 tracking-tight">LA3455 · FOR → GRU</h3>
-                  <ChevronRight className="h-5 w-5 text-slate-400 rotate-90" />
-                </div>
-                <p className="text-sm text-slate-600 font-medium mt-1">Apres. 04:15 · Chegada 08:20 · Solo 15h15 ·...</p>
-                <div className="mt-3 bg-[#f1f5f9] rounded-2xl p-3 flex gap-2 items-start border border-slate-200">
-                  <div className="mt-0.5"><div className="w-3.5 h-3.5 rounded-full border border-slate-400 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div></div></div>
-                  <p className="text-[11px] font-bold text-slate-600 leading-tight">RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Layover Item */}
-            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex gap-4 shadow-sm relative overflow-hidden">
-              <div className="flex flex-col items-center justify-center min-w-[48px]">
-                <Moon className="h-5 w-5 text-slate-800 mb-1" />
-                <span className="text-lg font-black text-slate-800 leading-none">15h</span>
-                <span className="text-lg font-black text-slate-800 leading-none">15min</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black text-slate-800 tracking-tight">Pernoite diurno · GRU</h3>
-                  <ChevronRight className="h-5 w-5 text-slate-400 rotate-90" />
-                </div>
-                <p className="text-sm text-slate-600 font-medium mt-1">Pernoite diurno em Guarulhos · 15h 15min ·...</p>
-                <div className="mt-3 bg-[#f1f5f9] rounded-2xl p-3 flex gap-2 items-start border border-slate-200">
-                  <div className="mt-0.5"><div className="w-3.5 h-3.5 rounded-full border border-slate-400 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div></div></div>
-                  <p className="text-[11px] font-bold text-slate-600 leading-tight">RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Flight Item 2 */}
-            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex gap-4 shadow-sm relative overflow-hidden">
-              <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#0ea5e9]"></div>
-              <div className="flex flex-col items-center justify-center min-w-[48px]">
-                <Plane className="h-5 w-5 text-slate-800 mb-1" />
-                <span className="text-lg font-black text-slate-800 leading-none">23:35</span>
-                <span className="text-lg font-black text-slate-800 leading-none">02:00</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black text-slate-800 tracking-tight">LA3394 · GRU → PMW</h3>
-                  <ChevronRight className="h-5 w-5 text-slate-400 rotate-90" />
-                </div>
-                <p className="text-sm text-slate-600 font-medium mt-1">Decolagem 23:35 · Chegada 02:00 +1 · Após...</p>
-                <div className="mt-3 bg-[#f1f5f9] rounded-2xl p-3 flex gap-2 items-start border border-slate-200">
-                  <div className="mt-0.5"><div className="w-3.5 h-3.5 rounded-full border border-slate-400 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div></div></div>
-                  <p className="text-[11px] font-bold text-slate-600 leading-tight">RBAC 117 B.1 / ACT · 9h · 1-2 etapas · início 04:15 · encerra até 13:15 · aplica o mais restritivo</p>
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Search bar */}
+      {searchOpen && (
+        <div className="px-4 py-2" style={{ background: 'var(--sidebar-bg)', borderBottom: '1px solid var(--surface-border)' }}>
+          <input
+            className="cc-input text-sm"
+            placeholder="Buscar voo, aeroporto..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
         </div>
+      )}
 
-        {/* Day Item - Another Flight */}
-        <div className="flex gap-4">
-          <div className="flex flex-col items-center pt-2">
-            <span className="text-[10px] font-black text-slate-500 uppercase">Ter</span>
-            <span className="text-2xl font-black">23</span>
-            <span className="text-[10px] font-black text-slate-500 uppercase">Jun</span>
-          </div>
-          
-          <div className="flex-1 space-y-3">
-            <div className="bg-purple-600/10 border border-purple-500/20 rounded-3xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-purple-400">
-                  <Moon className="h-4 w-4" />
-                  <span className="text-xs font-bold">Apresentação: 05:00</span>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <FlightRow flight="LA3501" from="MAB" to="BSB" dep="05:30" arr="07:35" />
-                <FlightRow flight="LA3980" from="BSB" to="CPV" dep="08:40" arr="10:55" />
-              </div>
+      {/* Month pills */}
+      <div className="flex items-center gap-2 px-4 py-3 overflow-x-auto" style={{ borderBottom: '1px solid var(--surface-border)' }}>
+        {['MAI', 'JUN', 'JUL', 'AGO', 'SET'].map((m) => (
+          <button key={m} className={`cc-month-pill ${m === 'JUL' ? 'active' : ''}`}>
+            {m}
+          </button>
+        ))}
+      </div>
 
-              <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <div className="h-8 w-8 rounded-xl bg-white/5 flex items-center justify-center text-[10px] font-bold text-slate-400">OP</div>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase">Fim de Jornada</p>
-                  <div className="flex items-center gap-1 justify-end">
-                    <Sun className="h-4 w-4 text-amber-400" />
-                    <p className="text-lg font-black">11:25</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+      {/* Roster list */}
+      <main className="flex-1 px-4 py-4 space-y-6 overflow-y-auto pb-28">
+        {days.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <Plane size={32} style={{ color: 'var(--foreground-subtle)' }} />
+            <p className="text-sm font-semibold" style={{ color: 'var(--foreground-muted)' }}>
+              Nenhum evento encontrado
+            </p>
           </div>
-        </div>
-      </section>
+        ) : (
+          days.map((day) => (
+            <DayGroup
+              key={`${day.dayNum}-${day.month}`}
+              dayOfWeek={day.dayOfWeek}
+              dayNum={day.dayNum}
+              month={day.month}
+              events={day.events}
+            />
+          ))
+        )}
+      </main>
     </div>
   );
 };
-
-const FlightRow = ({ flight, from, to, dep, arr, nextDay }: any) => (
-  <div className="flex items-center justify-between py-1">
-    <div className="flex items-center gap-3">
-      <Plane className="h-3 w-3 text-slate-500 rotate-90" />
-      <span className="text-xs font-bold tracking-wider">{flight}</span>
-    </div>
-    <div className="flex items-center gap-3 flex-1 justify-center px-4">
-      <span className="text-xs font-black">{from}</span>
-      <span className="text-[10px] font-bold text-slate-500">{dep}</span>
-      <ChevronRight className="h-3 w-3 text-slate-600" />
-      <span className="text-xs font-black">{to}</span>
-      <span className="text-[10px] font-bold text-slate-500">{arr} {nextDay && <span className="text-blue-400">+1</span>}</span>
-    </div>
-    <div className="h-6 w-8 rounded bg-white/5 flex items-center justify-center text-[8px] font-bold text-slate-500">OP</div>
-  </div>
-);
 
 export default RosterView;

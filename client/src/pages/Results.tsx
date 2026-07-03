@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
+import { MobileDrawer as PremiumMobileDrawer, BottomNav as PremiumBottomNav } from "@/components/premium/SideDrawer";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -755,7 +756,7 @@ export default function Results() {
           </div>
         </header>
 
-        <MobileSideDrawer open={mobileMenuOpen} activeView={activeView} displayName={displayCrewName} rank={roster.rank || "Flight Crew"} base={roster.base} errors={errors.length} canAccessAdmin={isAdminUser} onClose={() => setMobileMenuOpen(false)} onChange={switchView} onOpenHomeView={openHomeView} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />
+        <PremiumMobileDrawer open={mobileMenuOpen} activeView={activeView} displayName={displayCrewName} rank={roster.rank || "Flight Crew"} base={roster.base} errorsCount={errors.length} themeMode={themeMode === 'dark' || themeMode === 'light' ? themeMode : 'dark'} onThemeToggle={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')} onClose={() => setMobileMenuOpen(false)} onChange={switchView} onOpenHomeView={openHomeView} onNewRoster={() => openHomeView("import")} onPowerOff={handlePowerOff} />
         <main className={appMode ? "px-2.5 pb-24 pt-3 sm:px-4 md:px-5 android-premium-main" : "px-4 py-6 md:px-7 lg:py-8"}>
           <div className={activeView === "roster" && !appMode ? "mx-auto w-full max-w-none" : "mx-auto max-w-[1540px]"}>
             {!appMode && (
@@ -833,7 +834,7 @@ export default function Results() {
           </div>
         </main>
       </div>
-      <ResultsGlobalBottomMenu active={activeView === 'settings' ? 'settings' : 'roster'} onNavigate={openHomeView} />
+      <PremiumBottomNav activeView={activeView} errorsCount={errors.length} onMenuOpen={() => setMobileMenuOpen(true)} onChange={switchView} onOpenHomeView={openHomeView} />
     </div>
   );
 }
@@ -4526,20 +4527,13 @@ function limitEndLabel(startTime: string, hours: number): string {
 function rosterRegulatoryLimitForEvent(event: RosterEvent): RosterRegulatoryLimit | null {
   const day = event.day;
   const hasFlight = event.typeLabel === 'Flight' || Boolean(event.leg) || Boolean((day.legs || []).length);
-  // Fix: reserveLike must only be true when the day itself IS a reserve/standby type.
-  // Do NOT use event.code or event.activity to detect this — a flight event on a normal
-  // VOO day should never show "Reserva acionada" just because the event code contains ASB/HSB.
-  // Only use isReserveOrStandbyDay(day) which checks day.type directly.
-  const reserveLike = isReserveOrStandbyDay(day);
+  const reserveLike = isReserveOrStandbyDay(day) || /\b(ASB|HSB|HSBE|RES|SOBREAVISO|RESERVA)\b/i.test(`${event.code || ''} ${event.typeLabel || ''} ${event.activity || ''}`);
   if (hasFlight) {
     const sectors = Math.max(1, (day.legs || event.legs || []).length || 1);
     const start = regulatoryStartTimeForRosterEvent(event);
     const limit = rbac117DutyLimitHours(start, sectors);
     if (!limit) return null;
-    // Only show "Reserva acionada" prefix when the day is genuinely a reserve/standby day
-    // that was activated (has flights). Normal VOO days always show RBAC 117 B.1 / ACT.
-    const isActivatedReserveDay = reserveLike && (day.legs || []).length > 0;
-    const prefix = isActivatedReserveDay ? 'Reserva acionada · RBAC/ACT' : 'RBAC 117 B.1 / ACT';
+    const prefix = reserveLike ? 'Reserva acionada · RBAC/ACT' : 'RBAC 117 B.1 / ACT';
     return {
       label: `${prefix} · ${limit}h`,
       detail: `${sectorsLabelForLimit(sectors)} · início ${start} · encerra até ${limitEndLabel(start, limit)} · aplica o mais restritivo`,
