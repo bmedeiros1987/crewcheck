@@ -779,10 +779,10 @@ export default function Results() {
         <header className="sticky top-0 z-40 border-b shadow-[0_4px_20px_rgba(0,0,0,0.08)]" style={{background:'var(--sidebar-bg)',borderColor:'var(--sidebar-border)',backdropFilter:'blur(16px)',color:'var(--foreground)'}}>
           <div className={appMode ? "flex h-14 items-center justify-between px-3 sm:px-4 lg:px-7" : "flex h-16 items-center justify-between px-4 lg:px-7"}>
             <div className="flex items-center gap-3">
-              <button onClick={() => setMobileMenuOpen(true)} className="rounded-xl p-2 text-white/85 transition hover:bg-white/10" aria-label="Abrir menu lateral">
+              <button onClick={() => setMobileMenuOpen(true)} className="rounded-xl p-2 transition" style={{color:'var(--foreground-muted)'}} aria-label="Abrir menu lateral">
                 <Menu className="h-5 w-5" />
               </button>
-              <button onClick={() => setLocation("/?view=import")} className="hidden items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-white/85 transition hover:bg-white/10 lg:inline-flex" aria-label="Carregar nova escala">
+              <button onClick={() => setLocation("/?view=import")} className="hidden items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold transition lg:inline-flex" style={{color:'var(--foreground-muted)'}} aria-label="Carregar nova escala">
                 <CloudUpload className="h-4 w-4" /> Nova escala
               </button>
             </div>
@@ -791,19 +791,19 @@ export default function Results() {
               <h1 className={appMode ? "text-base font-black tracking-tight md:text-lg" : "text-sm font-black tracking-[0.18em] md:text-base"}>{appMode ? viewTitle(activeView) : viewTitle(activeView).toUpperCase()}</h1>
             </div>
             <div className="flex items-center gap-3">
-              <button className="relative hidden rounded-xl p-2 text-white/85 transition hover:bg-white/10 sm:inline-flex" aria-label="Notificações">
+              <button className="relative hidden rounded-xl p-2 transition sm:inline-flex" style={{color:'var(--foreground-muted)'}} aria-label="Notificações">
                 <Bell className="h-5 w-5" />
                 <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold">{errors.length + warnings.length}</span>
               </button>
-              <button onClick={() => openHomeView("settings")} className="hidden items-center gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-white/10 md:flex" aria-label="Abrir configurações completas de perfil e conta">
+              <button onClick={() => openHomeView("settings")} className="hidden items-center gap-3 rounded-2xl px-2 py-1 text-left transition md:flex" style={{color:'var(--foreground)'}} aria-label="Abrir configurações completas de perfil e conta">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-sm font-black">{initials(displayCrewName)}</div>
                 <div className="leading-tight">
                   <p className="text-sm font-bold">{titleCase(displayCrewName)}</p>
-                  <p className="text-xs text-cyan-100/70">Perfil e conta · {roster.base}</p>
+                  <p className="text-xs" style={{color:'var(--foreground-subtle)'}}>Perfil e conta · {roster.base}</p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-white/65" />
+                <ChevronDown className="h-4 w-4" style={{color:'var(--foreground-subtle)'}} />
               </button>
-              <button onClick={handlePowerOff} className="rounded-xl p-2 text-white/85 transition hover:bg-white/10" aria-label="Desligar e sair do sistema">
+              <button onClick={handlePowerOff} className="rounded-xl p-2 transition" style={{color:'var(--foreground-muted)'}} aria-label="Desligar e sair do sistema">
                 <LogOut className="h-5 w-5" />
               </button>
             </div>
@@ -2320,7 +2320,7 @@ function MobileSideDrawer({ open, activeView, displayName, rank, base, errors, c
         </nav>
         <div className="mt-4 grid gap-2 border-t border-white/10 pt-4">
           <button onClick={onNewRoster} className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#071f38]"><CloudUpload className="mr-2 inline h-4 w-4" />Nova escala</button>
-          <button onClick={onPowerOff} className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-black text-red-100"><LogOut className="mr-2 inline h-4 w-4" />Sair</button>
+          <button onClick={onPowerOff} className="rounded-2xl px-4 py-3 text-sm font-black" style={{background:'var(--surface)',color:'var(--event-alert)',border:'1px solid var(--surface-border)'}}><LogOut className="mr-2 inline h-4 w-4" />Sair</button>
         </div>
       </aside>
     </div>
@@ -2376,7 +2376,7 @@ function DesktopSidebar({ activeView, collapsed, canAccessAdmin, onToggleCollaps
       <div className="space-y-2 p-3" style={{borderTop:'1px solid var(--sidebar-border)'}}>
         <button onClick={() => onOpenHomeView('settings')} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-cyan-300 px-3 py-3 text-sm font-black text-[#052032] shadow-lg shadow-cyan-950/20 transition hover:bg-cyan-200 ${collapsed ? 'px-2' : ''}`}><Settings className="h-4 w-4" /> {!collapsed && 'Configurações'}</button>
         <button onClick={onNewRoster} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-3 py-3 text-sm font-black text-[#071f38] transition hover:bg-cyan-50 ${collapsed ? 'px-2' : ''}`}><CloudUpload className="h-4 w-4" /> {!collapsed && 'Nova escala'}</button>
-        <button onClick={onPowerOff} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-red-300/20 bg-red-500/10 px-3 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/20 ${collapsed ? 'px-2' : ''}`}><LogOut className="h-4 w-4" /> {!collapsed && 'Sair'}</button>
+        <button onClick={onPowerOff} className={`flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-black transition ${collapsed ? 'px-2' : ''}`} style={{background:'var(--surface)',color:'var(--event-alert)',border:'1px solid var(--surface-border)'}}><LogOut className="h-4 w-4" /> {!collapsed && 'Sair'}</button>
       </div>
     </aside>
   );

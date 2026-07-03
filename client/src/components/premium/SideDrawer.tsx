@@ -399,7 +399,7 @@ export function MobileDrawer({
           </button>
           <button
             onClick={() => { onPowerOff?.(); onClose?.(); }}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '0.875rem', padding: '0.625rem', fontSize: '0.875rem', fontWeight: 700, background: 'rgba(248,113,113,0.10)', color: 'var(--event-alert)', border: '1px solid rgba(248,113,113,0.20)', cursor: 'pointer', width: '100%' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: '0.875rem', padding: '0.625rem', fontSize: '0.875rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--event-alert)', border: '1px solid var(--surface-border)', cursor: 'pointer', width: '100%' }}
           >
             <LogOut size={15} />
             Sair
@@ -495,7 +495,7 @@ export function DesktopSidebar({
         <button
           onClick={onPowerOff}
           title={collapsed ? 'Sair' : undefined}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: collapsed ? 0 : '0.5rem', borderRadius: '0.875rem', padding: '0.5rem', fontSize: '0.8125rem', fontWeight: 700, background: 'rgba(248,113,113,0.08)', color: 'var(--event-alert)', border: '1px solid rgba(248,113,113,0.18)', cursor: 'pointer', width: '100%' }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: collapsed ? 0 : '0.5rem', borderRadius: '0.875rem', padding: '0.5rem', fontSize: '0.8125rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--event-alert)', border: '1px solid var(--surface-border)', cursor: 'pointer', width: '100%' }}
         >
           <LogOut size={14} />
           {!collapsed && 'Sair'}
