@@ -5026,6 +5026,7 @@ type AirLabsLiveTrackSnapshot = {
 
 
 const BOARD_AIRPORTS = [
+ // Principais hubs
  { code: 'BSB', city: 'Brasília' },
  { code: 'GRU', city: 'Guarulhos' },
  { code: 'CGH', city: 'Congonhas' },
@@ -5033,14 +5034,47 @@ const BOARD_AIRPORTS = [
  { code: 'GIG', city: 'Galeão' },
  { code: 'CNF', city: 'Confins' },
  { code: 'VCP', city: 'Viracopos' },
+ // Nordeste
  { code: 'SSA', city: 'Salvador' },
  { code: 'REC', city: 'Recife' },
  { code: 'FOR', city: 'Fortaleza' },
  { code: 'NAT', city: 'Natal' },
+ { code: 'THE', city: 'Teresina' },
+ { code: 'SLZ', city: 'São Luís' },
+ { code: 'JPA', city: 'João Pessoa' },
+ { code: 'MCZ', city: 'Maceió' },
+ { code: 'AJU', city: 'Aracaju' },
+ // Sul
  { code: 'POA', city: 'Porto Alegre' },
  { code: 'CWB', city: 'Curitiba' },
+ { code: 'FLN', city: 'Florianópolis' },
+ { code: 'NVT', city: 'Navegantes' },
+ // Centro-Oeste
+ { code: 'GYN', city: 'Goiânia' },
+ { code: 'CGB', city: 'Cuiabá' },
+ { code: 'CGR', city: 'Campo Grande' },
+ { code: 'PMW', city: 'Palmas' },
+ // Norte
  { code: 'MAO', city: 'Manaus' },
-];
+ { code: 'BEL', city: 'Belém' },
+ { code: 'PVH', city: 'Porto Velho' },
+ { code: 'MCP', city: 'Macapá' },
+ // Interior SP/MG/ES
+ { code: 'RAO', city: 'Ribeirão Preto' },
+ { code: 'UDI', city: 'Uberlândia' },
+ { code: 'VIX', city: 'Vitória' },
+ { code: 'IGU', city: 'Foz do Iguaçu' },
+ // Internacional
+ { code: 'GRU', city: 'Guarulhos' },
+ { code: 'EZE', city: 'Buenos Aires' },
+ { code: 'SCL', city: 'Santiago' },
+ { code: 'LIM', city: 'Lima' },
+ { code: 'BOG', city: 'Bogotá' },
+ { code: 'MIA', city: 'Miami' },
+ { code: 'JFK', city: 'Nova York' },
+ { code: 'LIS', city: 'Lisboa' },
+ { code: 'MAD', city: 'Madri' },
+].filter((a, i, arr) => arr.findIndex(b => b.code === a.code) === i);
 
 const BOARD_AIRLINES = [
  { code: '', label: 'Todas' },
@@ -5053,6 +5087,7 @@ const BOARD_AIRLINES = [
 ];
 
 const BOARD_AIRPORT_COORDS: Record<string, { lat: number; lon: number; city: string }> = {
+ // Principais hubs
  BSB: { lat: -15.8711, lon: -47.9186, city: 'Brasília' },
  GRU: { lat: -23.4356, lon: -46.4731, city: 'Guarulhos' },
  CGH: { lat: -23.6267, lon: -46.6554, city: 'Congonhas' },
@@ -5060,13 +5095,45 @@ const BOARD_AIRPORT_COORDS: Record<string, { lat: number; lon: number; city: str
  GIG: { lat: -22.8099, lon: -43.2506, city: 'Galeão' },
  CNF: { lat: -19.6357, lon: -43.9669, city: 'Confins' },
  VCP: { lat: -23.0074, lon: -47.1345, city: 'Viracopos' },
+ // Nordeste
  SSA: { lat: -12.9086, lon: -38.3225, city: 'Salvador' },
  REC: { lat: -8.1265, lon: -34.9236, city: 'Recife' },
  FOR: { lat: -3.7763, lon: -38.5326, city: 'Fortaleza' },
  NAT: { lat: -5.7681, lon: -35.3761, city: 'Natal' },
+ THE: { lat: -5.0599, lon: -42.8235, city: 'Teresina' },
+ SLZ: { lat: -2.5855, lon: -44.2341, city: 'São Luís' },
+ JPA: { lat: -7.1459, lon: -34.9501, city: 'João Pessoa' },
+ MCZ: { lat: -9.5109, lon: -35.7917, city: 'Maceió' },
+ AJU: { lat: -10.9840, lon: -37.0703, city: 'Aracaju' },
+ // Sul
  POA: { lat: -29.9944, lon: -51.1714, city: 'Porto Alegre' },
  CWB: { lat: -25.5327, lon: -49.1758, city: 'Curitiba' },
+ FLN: { lat: -27.6703, lon: -48.5522, city: 'Florianópolis' },
+ NVT: { lat: -26.8799, lon: -48.6514, city: 'Navegantes' },
+ // Centro-Oeste
+ GYN: { lat: -16.6320, lon: -49.2207, city: 'Goiânia' },
+ CGB: { lat: -15.6529, lon: -56.1167, city: 'Cuiabá' },
+ CGR: { lat: -20.4687, lon: -54.6725, city: 'Campo Grande' },
+ PMW: { lat: -10.2915, lon: -48.3569, city: 'Palmas' },
+ // Norte
  MAO: { lat: -3.0386, lon: -60.0497, city: 'Manaus' },
+ BEL: { lat: -1.3792, lon: -48.4763, city: 'Belém' },
+ PVH: { lat: -8.7093, lon: -63.9023, city: 'Porto Velho' },
+ MCP: { lat: 0.0507, lon: -51.0722, city: 'Macapá' },
+ // Interior
+ RAO: { lat: -21.1363, lon: -47.7766, city: 'Ribeirão Preto' },
+ UDI: { lat: -18.8836, lon: -48.2253, city: 'Uberlândia' },
+ VIX: { lat: -20.2581, lon: -40.2864, city: 'Vitória' },
+ IGU: { lat: -25.5962, lon: -54.4872, city: 'Foz do Iguaçu' },
+ // Internacional
+ EZE: { lat: -34.8222, lon: -58.5358, city: 'Buenos Aires' },
+ SCL: { lat: -33.3930, lon: -70.7858, city: 'Santiago' },
+ LIM: { lat: -12.0219, lon: -77.1143, city: 'Lima' },
+ BOG: { lat: 4.7016, lon: -74.1469, city: 'Bogotá' },
+ MIA: { lat: 25.7959, lon: -80.2870, city: 'Miami' },
+ JFK: { lat: 40.6413, lon: -73.7781, city: 'Nova York' },
+ LIS: { lat: 38.7742, lon: -9.1342, city: 'Lisboa' },
+ MAD: { lat: 40.4936, lon: -3.5668, city: 'Madri' },
 };
 
 const BRAZILIAN_AIRPORT_IATA = new Set([

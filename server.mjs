@@ -180,7 +180,7 @@ const AIRPORT_BOARD_CACHE_CURRENT_DAY_ONLY = String(process.env.AIRPORT_BOARD_CA
 const AIRPORT_BOARD_DEFAULT_AIRPORTS = String(process.env.AIRPORT_BOARD_DEFAULT_AIRPORTS || 'BSB,GRU,CGH,GIG,SDU,VCP,CNF,POA,REC,SSA,FOR,NAT').split(',').map((item) => item.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)).filter(Boolean);
 const AIRPORT_BOARD_API_FIRST = String(process.env.AIRPORT_BOARD_API_FIRST || 'true').toLowerCase() !== 'false';
 const AIRPORT_BOARD_STORE_EMPTY_CACHE = String(process.env.AIRPORT_BOARD_STORE_EMPTY_CACHE || 'false').toLowerCase() === 'true';
-const AIRPORT_BOARD_API_PROVIDER_ORDER = String(process.env.AIRPORT_BOARD_API_PROVIDER_ORDER || 'FLIGHTAWARE,FLIGHTSTATS,CIRIUM,AERODATABOX,AIRLABS,AVIATIONSTACK,OFFICIAL').split(',').map((item) => item.trim().toUpperCase()).filter(Boolean);
+const AIRPORT_BOARD_API_PROVIDER_ORDER = String(process.env.AIRPORT_BOARD_API_PROVIDER_ORDER || 'FR24,FLIGHTAWARE,FLIGHTSTATS,CIRIUM,AERODATABOX,AIRLABS,AVIATIONSTACK,OFFICIAL').split(',').map((item) => item.trim().toUpperCase()).filter(Boolean);
 const CREWCHECK_RADAR_AGGREGATE_PROVIDERS = String(process.env.CREWCHECK_RADAR_AGGREGATE_PROVIDERS || 'true').toLowerCase() !== 'false';
 const CREWCHECK_RADAR_STATUS_PROVIDER_ORDER = String(process.env.CREWCHECK_RADAR_STATUS_PROVIDER_ORDER || 'FLIGHTAWARE,FLIGHTSTATS,CIRIUM,AERODATABOX,AIRLABS,AVIATIONSTACK,AMADEUS,OFFICIAL,CUSTOM').split(',').map((item) => item.trim().toUpperCase()).filter(Boolean);
 const CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS = Math.max(4, Number(process.env.CREWCHECK_RADAR_FREE_BATCH_MAX_FLIGHTS || 12));
@@ -6488,6 +6488,118 @@ function normalizeFlightStatsBoardRow(item, type, airport, appendix = {}) {
  };
 }
 
+// ─── Flightradar24 public API (free, no key required) ───────────────────────
+const FR24_IATA_TO_ICAO = { AJU:'SBAR',BEL:'SBBE',BPS:'SBPS',BSB:'SBBR',CGB:'SBCY',CGH:'SBSP',CGR:'SBCG',CNF:'SBCF',CWB:'SBCT',FLN:'SBFL',FOR:'SBFZ',GIG:'SBGL',GRU:'SBGR',GYN:'SBGO',IGU:'SBFI',IOS:'SBIL',JPA:'SBJP',MAO:'SBEG',MCZ:'SBMO',MCP:'SBMQ',NAT:'SBSG',NVT:'SBNF',PMW:'SBPJ',POA:'SBPA',PVH:'SBPV',RAO:'SBRP',REC:'SBRF',SDU:'SBRJ',SLZ:'SBSL',SSA:'SBSV',THE:'SBTE',UDI:'SBUL',VCP:'SBKP',VIX:'SBVT',XAP:'SBCH',MIA:'KMIA',JFK:'KJFK',LAX:'KLAX',MCO:'KMCO',LIS:'LPPT',MAD:'LEMD',CDG:'LFPG',FCO:'LIRF',FRA:'EDDF',LHR:'EGLL',EZE:'SAEZ',AEP:'SABE',SCL:'SCEL',LIM:'SPJC',BOG:'SKBO',MEX:'MMMX' };
+
+function fr24UnixToLocalTime(unix, tz) {
+ try {
+ if (!unix) return null;
+ const d = new Date(unix * 1000);
+ return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: tz || 'America/Sao_Paulo' });
+ } catch { return null; }
+}
+
+function normalizeFr24AirlineCode(callsign) {
+ if (!callsign) return null;
+ const m = String(callsign).match(/^([A-Z]{2,3})\d/);
+ return m ? m[1] : null;
+}
+
+const FR24_AIRLINE_NAMES = { LA:'LATAM',JJ:'LATAM',G3:'GOL',AD:'Azul',TP:'TAP',AA:'American Airlines',CM:'Copa Airlines',AF:'Air France',KL:'KLM',IB:'Iberia',UA:'United',DL:'Delta',LH:'Lufthansa',AV:'Avianca',AM:'Aeromexico',AR:'Aerolíneas Argentinas' };
+
+async function fetchFlightradar24AirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone }) {
+ const tz = safeRadarTimeZone(displayTimeZone || 'America/Sao_Paulo');
+ const cacheKey = `fr24-board-v1:${airport}:${type}:${airline}:${date || todayIsoInBrazil()}`;
+ const cached = cacheGet(flightProviderCache, cacheKey, 4 * 60 * 1000);
+ if (cached) {
+ diagnostics?.push?.({ provider: 'FR24', ok: Boolean(cached.rows?.length), cached: true, count: cached.rows?.length || 0 });
+ return cached;
+ }
+ const mode = type === 'arrival' ? 'arrivals' : 'departures';
+ const url = `https://api.flightradar24.com/common/v1/airport.json?code=${airport.toLowerCase()}&plugin[]=schedule&plugin-setting[schedule][mode]=${mode}&limit=${Math.min(Number(limit || 100), 200)}&page=1`;
+ try {
+ const response = await fetch(url, {
+ headers: {
+ 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
+ 'Accept': 'application/json',
+ 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+ 'Referer': 'https://www.flightradar24.com/',
+ },
+ signal: AbortSignal.timeout(14000),
+ });
+ if (!response.ok) {
+ diagnostics?.push?.({ provider: 'FR24', ok: false, status: response.status, reason: `HTTP ${response.status}` });
+ return cacheSet(flightProviderCache, cacheKey, { rows: [], source: 'FR24 indisponível' }, 60_000);
+ }
+ const payload = await response.json().catch(() => null);
+ const scheduleData = payload?.result?.response?.airport?.pluginData?.schedule || {};
+ const rawList = (scheduleData[mode]?.data || []);
+ const rows = rawList.map((item) => {
+ const f = item?.flight || {};
+ const ident = f?.identification || {};
+ const airports = f?.airport || {};
+ const timeData = f?.time || {};
+ const statusData = f?.status || {};
+ const originData = airports?.origin || {};
+ const destData = airports?.destination || {};
+ const flightNumber = ident?.number?.default || ident?.number?.alternative || '';
+ if (!flightNumber) return null;
+ const airlineCode = normalizeFr24AirlineCode(flightNumber) || normalizeFr24AirlineCode(ident?.callsign);
+ if (airline && airlineCode && !airlineCodeMatches(airlineCode, airline)) return null;
+ const scheduledUnix = timeData?.scheduled?.departure || timeData?.scheduled?.arrival || 0;
+ const estimatedUnix = timeData?.estimated?.departure || timeData?.estimated?.arrival || 0;
+ const realUnix = timeData?.real?.departure || timeData?.real?.arrival || 0;
+ const scheduledTime = fr24UnixToLocalTime(scheduledUnix, tz);
+ const confirmedTime = fr24UnixToLocalTime(realUnix || estimatedUnix, tz);
+ const relatedAirport = type === 'departure'
+ ? (destData?.code?.iata || destData?.code?.icao || '')
+ : (originData?.code?.iata || originData?.code?.icao || '');
+ const gate = type === 'departure'
+ ? (originData?.info?.gate || destData?.info?.gate || null)
+ : (destData?.info?.gate || originData?.info?.gate || null);
+ const terminal = type === 'departure'
+ ? (originData?.info?.terminal || null)
+ : (destData?.info?.terminal || null);
+ const statusText = statusData?.generic?.status?.text || statusData?.text || null;
+ const statusNorm = statusText ? String(statusText).toLowerCase() : null;
+ let status = null;
+ if (statusNorm) {
+ if (statusNorm.includes('landed') || statusNorm.includes('arrived')) status = 'Pousou';
+ else if (statusNorm.includes('departed') || statusNorm.includes('airborne') || statusNorm.includes('en route')) status = 'Em voo';
+ else if (statusNorm.includes('cancelled') || statusNorm.includes('cancelado')) status = 'Cancelado';
+ else if (statusNorm.includes('delayed') || statusNorm.includes('atrasado')) status = 'Atrasado';
+ else if (statusNorm.includes('boarding')) status = 'Embarque';
+ else if (statusNorm.includes('scheduled') || statusNorm.includes('estimated')) status = scheduledTime ? `Prev. ${scheduledTime}` : 'Programado';
+ else status = statusText;
+ }
+ const codeshares = (ident?.number?.codeshares || []).map((cs) => cs?.number?.default).filter(Boolean);
+ return {
+ flightNumber,
+ airlineCode,
+ airlineName: FR24_AIRLINE_NAMES[airlineCode] || airlineCode || null,
+ relatedAirport: relatedAirport || null,
+ origin: type === 'arrival' ? relatedAirport : airport,
+ destination: type === 'departure' ? relatedAirport : airport,
+ scheduledTime,
+ confirmedTime: confirmedTime !== scheduledTime ? confirmedTime : null,
+ gate,
+ terminal,
+ status,
+ source: 'FR24',
+ codeshareFlights: codeshares.length ? codeshares : null,
+ trafficScope: 'passenger',
+ };
+ }).filter(Boolean);
+ diagnostics?.push?.({ provider: 'FR24', ok: true, count: rows.length });
+ const value = { rows, source: 'Flightradar24' };
+ return cacheSet(flightProviderCache, cacheKey, value);
+ } catch (error) {
+ diagnostics?.push?.({ provider: 'FR24', ok: false, reason: error?.message || String(error) });
+ return cacheSet(flightProviderCache, cacheKey, { rows: [], source: 'FR24 erro' }, 60_000);
+ }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function fetchFlightStatsAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone }) {
  const credentials = flightStatsCredentials();
  if (!credentials.ready) {
@@ -7307,7 +7419,9 @@ async function fetchAirportBoardFromConfiguredApis({ airport, type, airline, lim
   if (provider === 'OFFICIAL' || provider === 'MONITOR') continue;
   let result = null;
   try {
-   if (provider === 'FLIGHTAWARE' || provider === 'AEROAPI') {
+   if (provider === 'FR24' || provider === 'FLIGHTRADAR24') {
+    result = await fetchFlightradar24AirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone });
+   } else if (provider === 'FLIGHTAWARE' || provider === 'AEROAPI') {
     result = await fetchFlightAwareAirportBoard({ airport, type, airline, limit, diagnostics, date, refresh, displayTimeZone });
    } else if (provider === 'FLIGHTSTATS' || provider === 'CIRIUM') {
     result = await fetchFlightStatsAirportBoard({ airport, type, airline, limit, diagnostics, date, displayTimeZone });
