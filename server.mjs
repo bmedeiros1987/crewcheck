@@ -4067,6 +4067,172 @@ function calendarFeedUrl(req, token) {
  return `${externalBaseUrl(req)}/calendar-feed/${encodeURIComponent(token)}.ics`;
 }
 
+// --- Enriched iCal Builder (v12.4) ---
+function icalEscape(str) {
+ return String(str || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n').replace(/\r/g, '');
+}
+
+function icalFoldLine(line) {
+ // RFC 5545: fold lines longer than 75 octets
+ const bytes = Buffer.from(line, 'utf8');
+ if (bytes.length <= 75) return line;
+ const parts = [];
+ let pos = 0;
+ while (pos < bytes.length) {
+  const chunk = bytes.slice(pos, pos + (pos === 0 ? 75 : 74));
+  parts.push((pos === 0 ? '' : ' ') + chunk.toString('utf8'));
+  pos += pos === 0 ? 75 : 74;
+ }
+ return parts.join('\r\n');
+}
+
+function icalDateTimeFromIso(iso, allDay = false) {
+ if (!iso) return null;
+ if (allDay) return `${String(iso).slice(0, 10).replace(/-/g, '')}`;
+ const d = new Date(iso);
+ if (!Number.isFinite(d.getTime())) return null;
+ return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '') + 'Z';
+}
+
+function buildIcalEvent({ uid, summary, description, location, dtstart, dtend, allDay = false, categories = [], alarmMinutes = null, url = null, color = null } = {}) {
+ const lines = [
+  'BEGIN:VEVENT',
+  `UID:${icalEscape(uid)}`,
+  `DTSTAMP:${icalDateTimeFromIso(new Date().toISOString())}`,
+  `SUMMARY:${icalEscape(summary)}`,
+ ];
+ if (allDay) {
+  lines.push(`DTSTART;VALUE=DATE:${String(dtstart).replace(/-/g, '').slice(0, 8)}`);
+  lines.push(`DTEND;VALUE=DATE:${String(dtend || dtstart).replace(/-/g, '').slice(0, 8)}`);
+ } else {
+  const ds = icalDateTimeFromIso(dtstart);
+  const de = icalDateTimeFromIso(dtend || dtstart);
+  if (ds) lines.push(`DTSTART:${ds}`);
+  if (de) lines.push(`DTEND:${de}`);
+ }
+ if (description) lines.push(icalFoldLine(`DESCRIPTION:${icalEscape(description)}`));
+ if (location) lines.push(icalFoldLine(`LOCATION:${icalEscape(location)}`));
+ if (url) lines.push(`URL:${icalEscape(url)}`);
+ if (categories.length) lines.push(`CATEGORIES:${categories.map(icalEscape).join(',')}`);
+ if (color) lines.push(`COLOR:${icalEscape(color)}`);
+ if (alarmMinutes !== null) {
+  lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icalEscape(summary)}`, `TRIGGER:-PT${alarmMinutes}M`, 'END:VALARM');
+ }
+ lines.push('END:VEVENT');
+ return lines.join('\r\n');
+}
+
+function buildEnrichedIcalFromRoster(roster, options = {}) {
+ if (!CREWCHECK_ICAL_ENRICHED_ENABLED) return null;
+ const days = Array.isArray(roster?.days) ? roster.days : [];
+ if (!days.length) return null;
+ const events = [];
+ const appUrl = String(options.appUrl || '').replace(/\/+$/, '');
+
+ for (const day of days) {
+  const dateStr = String(day?.date || '').slice(0, 10);
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+  const legs = Array.isArray(day.legs) ? day.legs : [];
+  const dutyType = String(day.type || day.dutyType || '').toLowerCase();
+
+  // Flight legs
+  for (const leg of legs) {
+   const fn = String(leg.flightNumber || leg.flight || '').toUpperCase();
+   if (!fn) continue;
+   const origin = String(leg.origin || leg.departureAirport || '').toUpperCase();
+   const destination = String(leg.destination || leg.arrivalAirport || '').toUpperCase();
+   const depTime = leg.departureTime || leg.departure || leg.std || '';
+   const arrTime = leg.arrivalTime || leg.arrival || leg.sta || '';
+   const depIso = depTime ? `${dateStr}T${String(depTime).slice(0, 5)}:00Z` : null;
+   const arrIso = arrTime ? `${dateStr}T${String(arrTime).slice(0, 5)}:00Z` : null;
+   const uid = `crewcheck-flight-${fn}-${dateStr}-${origin}-${destination}@crewcheck.app`;
+   const summary = `✈️ ${fn} ${origin}→${destination}`;
+   const desc = [
+    `Voo: ${fn}`,
+    origin ? `Origem: ${origin}` : '',
+    destination ? `Destino: ${destination}` : '',
+    depTime ? `Partida: ${depTime}` : '',
+    arrTime ? `Chegada: ${arrTime}` : '',
+    leg.aircraft ? `Aeronave: ${leg.aircraft}` : '',
+    leg.cabin ? `Cabine: ${leg.cabin}` : '',
+    'CrewCheck · Escala Enriquecida',
+   ].filter(Boolean).join('\n');
+   events.push(buildIcalEvent({
+    uid,
+    summary,
+    description: desc,
+    location: origin,
+    dtstart: depIso || dateStr,
+    dtend: arrIso || depIso || dateStr,
+    allDay: !depIso,
+    categories: ['CrewCheck', 'Voo', fn],
+    alarmMinutes: depIso ? 90 : null,
+    url: appUrl ? `${appUrl}/escala` : null,
+    color: 'steelblue',
+   }));
+  }
+
+  // Duty types: folga, pernoite, treinamento, sobreaviso
+  if (!legs.length && dutyType) {
+   const typeEmoji = dutyType.includes('folga') ? '🏠' : dutyType.includes('pernoite') ? '🏨' : dutyType.includes('treino') || dutyType.includes('treinamento') ? '📚' : dutyType.includes('sobreaviso') ? '📲' : '📅';
+   const typeLabel = dutyType.includes('folga') ? 'Folga' : dutyType.includes('pernoite') ? 'Pernoite' : dutyType.includes('treino') || dutyType.includes('treinamento') ? 'Treinamento' : dutyType.includes('sobreaviso') ? 'Sobreaviso' : String(day.type || day.dutyType || 'Serviço');
+   const uid = `crewcheck-duty-${dateStr}-${typeLabel.replace(/\s+/g, '-').toLowerCase()}@crewcheck.app`;
+   events.push(buildIcalEvent({
+    uid,
+    summary: `${typeEmoji} ${typeLabel}`,
+    description: `${typeLabel} · CrewCheck`,
+    dtstart: dateStr,
+    dtend: dateStr,
+    allDay: true,
+    categories: ['CrewCheck', typeLabel],
+    url: appUrl ? `${appUrl}/escala` : null,
+   }));
+  }
+ }
+
+ if (!events.length) return null;
+
+ const calName = String(options.calName || 'CrewCheck · Escala');
+ const lines = [
+  'BEGIN:VCALENDAR',
+  'VERSION:2.0',
+  'PRODID:-//CrewCheck//Enriched Roster Calendar v12.4//PT-BR',
+  'CALSCALE:GREGORIAN',
+  'METHOD:PUBLISH',
+  `X-WR-CALNAME:${icalEscape(calName)}`,
+  'X-WR-CALDESC:Escala enriquecida com voos, folgas, pernoites e treinamentos. Gerado pelo CrewCheck v12.4.',
+  'X-WR-TIMEZONE:America/Sao_Paulo',
+  ...events,
+  'END:VCALENDAR',
+  '',
+ ];
+ return lines.join('\r\n');
+}
+
+async function rebuildEnrichedCalendarFeedForUser(db, user, options = {}) {
+ if (!CREWCHECK_ICAL_ENRICHED_ENABLED || !db || !user?.id) return null;
+ try {
+  const rosterRow = await db.query(
+   'select roster_json from crewcheck_rosters where user_id = $1 and deleted_at is null order by is_active desc, coalesce(active_at, updated_at, created_at) desc limit 1',
+   [user.id],
+  );
+  if (!rosterRow.rowCount) return null;
+  const roster = typeof rosterRow.rows[0].roster_json === 'string' ? JSON.parse(rosterRow.rows[0].roster_json) : rosterRow.rows[0].roster_json;
+  const ical = buildEnrichedIcalFromRoster(roster, options);
+  if (!ical) return null;
+  const feed = await ensureCalendarFeedForUser(db, user);
+  const days = Array.isArray(roster?.days) ? roster.days : [];
+  const eventsCount = days.reduce((s, d) => s + (Array.isArray(d.legs) ? d.legs.length : 0) + (!Array.isArray(d.legs) || !d.legs.length ? 1 : 0), 0);
+  await db.query(
+   'update crewcheck_calendar_feeds set updated_at = now(), ics_content = $1, period_label = $2, mode = $3, events_count = $4 where id = $5',
+   [ical, `${days.length} dias`, 'enriched-v12.4', eventsCount, feed.id],
+  );
+  return { ok: true, eventsCount, feedId: feed.id };
+ } catch (error) {
+  return { ok: false, error: error?.message };
+ }
+}
+
 async function ensureCalendarFeedForUser(db, user) {
  await ensureSchema();
  const userId = user.id || null;
@@ -5706,6 +5872,454 @@ async function fetchExtraFlightOffersWithDbCache(query) {
  return writeExtraFlightSearchDbCache(params, withRealOccupancy);
 }
 
+// ============================================================
+// CrewCheck v12.4 — Sabre BargainFinder Max + Staff Load
+//   Crowdsourced + LLM Payslip + CabinChief + iCal Enriquecido
+// ============================================================
+
+const CREWCHECK_SABRE_BARGAINFINDER_ENABLED = String(process.env.CREWCHECK_SABRE_BARGAINFINDER_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_SABRE_BARGAINFINDER_MAX_RESULTS = Math.max(3, Math.min(20, Number(process.env.CREWCHECK_SABRE_BARGAINFINDER_MAX_RESULTS || 10)));
+const CREWCHECK_STAFF_LOAD_CROWDSOURCE_ENABLED = String(process.env.CREWCHECK_STAFF_LOAD_CROWDSOURCE_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_STAFF_LOAD_CROWDSOURCE_TTL_HOURS = Math.max(1, Number(process.env.CREWCHECK_STAFF_LOAD_CROWDSOURCE_TTL_HOURS || 4));
+const CREWCHECK_PAYSLIP_LLM_ENABLED = String(process.env.CREWCHECK_PAYSLIP_LLM_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_CABIN_CHIEF_ENABLED = String(process.env.CREWCHECK_CABIN_CHIEF_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_CABIN_CHIEF_MODEL = String(process.env.CREWCHECK_CABIN_CHIEF_MODEL || 'gpt-4o-mini').trim();
+const CREWCHECK_CABIN_CHIEF_MAX_TOKENS = Math.max(200, Math.min(2000, Number(process.env.CREWCHECK_CABIN_CHIEF_MAX_TOKENS || 800)));
+const CREWCHECK_ICAL_ENRICHED_ENABLED = String(process.env.CREWCHECK_ICAL_ENRICHED_ENABLED || 'true').toLowerCase() !== 'false';
+const CREWCHECK_OPENAI_CHAT_BASE = String(process.env.CREWCHECK_OPENAI_CHAT_BASE || process.env.OPENAI_API_BASE || 'https://api.openai.com/v1').replace(/\/+$/, '');
+
+// --- Sabre BargainFinder Max ---
+async function fetchSabreBargainFinderFlights({ origin, destination, date, currency = 'BRL', adults = 1, limit = 10, targetIso = '' } = {}) {
+ const diagnostics = [];
+ if (!CREWCHECK_SABRE_BARGAINFINDER_ENABLED) return { ok: false, options: [], diagnostics, message: 'Sabre BargainFinder desligado.' };
+ const token = await getSabreSessionlessToken({ diagnostics }).catch(() => null);
+ if (!token) return { ok: false, options: [], diagnostics, message: 'Sabre sem token. Configure SABRE_USERNAME e SABRE_PASSWORD.' };
+ const base = SABRE_REST_BASE;
+ const url = `${base}/v4/offers/shop`;
+ const body = {
+  OTA_AirLowFareSearchRQ: {
+   Version: '4',
+   POS: { Source: [{ PseudoCityCode: String(process.env.SABRE_PCC || 'B4HJ'), RequestorID: { Type: '1', ID: '1', CompanyName: { Code: 'TN' } } }] },
+   OriginDestinationInformation: [{
+    RPH: '1',
+    DepartureDateTime: `${date}T00:00`,
+    OriginLocation: { LocationCode: origin },
+    DestinationLocation: { LocationCode: destination },
+    TPA_Extensions: { SegmentType: { Code: 'O' } },
+   }],
+   TravelPreferences: { ValidInterlineTicket: true, CabinPref: [{ Cabin: 'Y', PreferLevel: 'Preferred' }], TPA_Extensions: { TripType: { Value: 'OneWay' } } },
+   TravelerInfoSummary: { SeatsRequested: [adults], AirTravelerAvail: [{ PassengerTypeQuantity: [{ Code: 'ADT', Quantity: adults }] }] },
+   TPA_Extensions: { IntelliSellTransaction: { RequestType: { Name: '200ITINS' } } },
+  },
+ };
+ try {
+  const response = await fetch(url, {
+   method: 'POST',
+   headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json', 'user-agent': 'CrewCheck/12.4 SabreBFM' },
+   body: JSON.stringify(body),
+   signal: AbortSignal.timeout(Number(process.env.SABRE_TIMEOUT_MS || 15000)),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+   const reason = payload?.OTA_AirLowFareSearchRS?.Errors?.Error?.[0]?.ShortText || payload?.message || `SABRE_BFM_HTTP_${response.status}`;
+   diagnostics.push({ provider: 'Sabre BargainFinder', ok: false, status: response.status, reason });
+   return { ok: false, options: [], diagnostics, message: reason };
+  }
+  const itins = payload?.OTA_AirLowFareSearchRS?.PricedItineraries?.PricedItinerary || [];
+  const options = itins
+   .slice(0, CREWCHECK_SABRE_BARGAINFINDER_MAX_RESULTS)
+   .map((itin) => normalizeSabreBargainFinderOffer(itin, { origin, destination, date, currency, targetIso }))
+   .filter(Boolean)
+   .filter((opt) => optionArrivesBeforeTarget(opt, targetIso));
+  diagnostics.push({ provider: 'Sabre BargainFinder', ok: true, count: options.length, total: itins.length });
+  return { ok: true, options, source: 'Sabre BargainFinder Max', diagnostics, message: options.length ? `${options.length} opção(es) via Sabre GDS.` : 'Sabre não retornou opções para esta rota/data.' };
+ } catch (error) {
+  diagnostics.push({ provider: 'Sabre BargainFinder', ok: false, reason: error?.message || String(error) });
+  return { ok: false, options: [], diagnostics, message: error?.message || String(error) };
+ }
+}
+
+function normalizeSabreBargainFinderOffer(itin, query) {
+ try {
+  const airItin = itin?.AirItinerary;
+  const pricing = itin?.AirItineraryPricingInfo?.[0] || itin?.AirItineraryPricingInfo;
+  const segments = airItin?.OriginDestinationOptions?.OriginDestinationOption?.[0]?.FlightSegment || [];
+  if (!segments.length) return null;
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  const totalFare = pricing?.ItinTotalFare?.TotalFare;
+  const priceLabel = totalFare ? formatTicketCurrency(Number(totalFare.Amount || 0), totalFare.CurrencyCode || query.currency || 'BRL') : null;
+  const legs = segments.map((seg, idx) => {
+   const carrier = String(seg.MarketingAirline?.Code || seg.OperatingAirline?.Code || '').toUpperCase();
+   const flightNum = `${carrier}${String(seg.FlightNumber || '').trim()}`;
+   return {
+    label: `Trecho ${idx + 1}`,
+    flightNumber: flightNum,
+    airlineCode: carrier,
+    airlineName: normalizeAirportBoardAirlineName(carrier, ''),
+    origin: String(seg.DepartureAirport?.LocationCode || '').toUpperCase(),
+    destination: String(seg.ArrivalAirport?.LocationCode || '').toUpperCase(),
+    departure: String(seg.DepartureDateTime || '').slice(11, 16) || '—',
+    arrival: String(seg.ArrivalDateTime || '').slice(11, 16) || '—',
+    departureDate: String(seg.DepartureDateTime || '').slice(0, 10) || query.date,
+    arrivalDate: String(seg.ArrivalDateTime || '').slice(0, 10) || query.date,
+    terminal: seg.DepartureAirport?.TerminalID || 'não informado',
+    aircraft: seg.Equipment?.[0]?.AirEquipType || 'não informado',
+    cabin: pricing?.FareInfos?.FareInfo?.[idx]?.TPA_Extensions?.Cabin?.Cabin || 'Econômica',
+    bookingClass: pricing?.FareInfos?.FareInfo?.[idx]?.FilingAirline?.ResBookDesigCode || '',
+    baggage: 'verificar regra tarifária',
+    note: 'Voo retornado pelo Sabre BargainFinder Max.',
+    source: 'Sabre BargainFinder',
+   };
+  });
+  const route = legs.map((l) => l.origin).concat(legs[legs.length - 1].destination).join(' → ');
+  const carriers = [...new Set(legs.map((l) => `${l.airlineName}${l.flightNumber ? ` · ${l.flightNumber}` : ''}`))].join(' + ');
+  const depDt = String(first.DepartureDateTime || '');
+  const arrDt = String(last.ArrivalDateTime || '');
+  const durationMinutes = (depDt && arrDt) ? Math.max(0, Math.round((new Date(arrDt).getTime() - new Date(depDt).getTime()) / 60000)) : 0;
+  return {
+   kind: legs.length > 1 ? 'connection' : 'direct',
+   title: legs.length > 1 ? 'Vivo de Extra com conexão · Sabre GDS' : 'Vivo de Extra direto · Sabre GDS',
+   route,
+   carriers,
+   leaveAt: legs[0]?.departure || '—',
+   arriveAt: legs[legs.length - 1]?.arrival || '—',
+   leaveDate: legs[0]?.departureDate || query.date,
+   arriveDate: legs[legs.length - 1]?.arrivalDate || query.date,
+   durationMinutes,
+   connection: legs.length > 1 ? legs.slice(0, -1).map((l) => l.destination).join(' / ') : undefined,
+   confidence: priceLabel ? 'tarifa GDS · confirmar disponibilidade no canal oficial' : 'voo GDS · preço indisponível',
+   source: 'Sabre BargainFinder Max',
+   selectedDate: query.date,
+   priceLabel,
+   priceSource: priceLabel ? 'Sabre BargainFinder Max · valor sujeito a alteração' : 'preço não retornado',
+   priceConfidence: priceLabel ? 'tarifa GDS' : 'consultar companhia',
+   seatsAvailable: null,
+   bookingLinks: flightSearchLinks(query.origin, query.destination, query.date, [legs[0]?.airlineCode].filter(Boolean)),
+   rawProvider: 'Sabre',
+   details: `Opção tarifária Sabre GDS para ${route}.`,
+   advisory: 'Confirme aceitação do Vivo de Extra, emissão, franquia, conexão, check-in e regras de bagagem antes de usar.',
+   legs,
+  };
+ } catch { return null; }
+}
+
+// --- Staff Load Crowdsourced Reports ---
+const staffLoadCrowdsourceCache = new Map();
+
+async function fetchCrowdsourcedStaffLoad(db, flightNumber, date, origin, destination) {
+ if (!CREWCHECK_STAFF_LOAD_CROWDSOURCE_ENABLED || !db) return null;
+ const cacheKey = `crowd:${flightNumber}:${date}:${origin}:${destination}`;
+ const cached = staffLoadCrowdsourceCache.get(cacheKey);
+ if (cached && Date.now() - cached.ts < CREWCHECK_STAFF_LOAD_CROWDSOURCE_TTL_HOURS * 3600_000) return cached.data;
+ try {
+  const cutoff = new Date(Date.now() - CREWCHECK_STAFF_LOAD_CROWDSOURCE_TTL_HOURS * 3600_000).toISOString();
+  const result = await db.query(
+   `select seats_available, seats_total, cabin, reported_at, reporter_role
+    from crewcheck_staff_load_reports
+    where flight_number = $1 and flight_date = $2 and origin = $3 and destination = $4
+      and reported_at > $5 and verified = true
+    order by reported_at desc limit 10`,
+   [flightNumber, date, origin, destination, cutoff],
+  );
+  if (!result.rowCount) { staffLoadCrowdsourceCache.set(cacheKey, { ts: Date.now(), data: null }); return null; }
+  const reports = result.rows;
+  const avgSeats = Math.round(reports.reduce((s, r) => s + Number(r.seats_available || 0), 0) / reports.length);
+  const avgTotal = Math.round(reports.reduce((s, r) => s + Number(r.seats_total || 0), 0) / reports.length);
+  const data = {
+   crowdsourcedSeats: avgSeats,
+   crowdsourcedTotal: avgTotal,
+   crowdsourcedReports: reports.length,
+   crowdsourcedCabin: reports[0]?.cabin || 'Y',
+   crowdsourcedAt: reports[0]?.reported_at,
+   crowdsourcedConfidence: reports.length >= 3 ? 'alta' : reports.length >= 2 ? 'média' : 'baixa',
+  };
+  staffLoadCrowdsourceCache.set(cacheKey, { ts: Date.now(), data });
+  return data;
+ } catch { return null; }
+}
+
+async function submitCrowdsourcedStaffLoadReport(db, userId, { flightNumber, flightDate, origin, destination, seatsAvailable, seatsTotal, cabin = 'Y', reporterRole = 'crew' } = {}) {
+ if (!CREWCHECK_STAFF_LOAD_CROWDSOURCE_ENABLED || !db) throw new Error('Relatórios crowdsourced desligados.');
+ if (!flightNumber || !flightDate || !origin || !destination) throw new Error('Informe voo, data, origem e destino.');
+ if (!Number.isFinite(Number(seatsAvailable))) throw new Error('Informe o número de vagas disponíveis.');
+ await db.query(
+  `create table if not exists crewcheck_staff_load_reports (
+   id text primary key,
+   user_id text not null,
+   flight_number text not null,
+   flight_date text not null,
+   origin text not null,
+   destination text not null,
+   seats_available integer not null default 0,
+   seats_total integer,
+   cabin text default 'Y',
+   reporter_role text default 'crew',
+   verified boolean default false,
+   reported_at timestamptz default now(),
+   created_at timestamptz default now()
+  )`,
+ ).catch(() => null);
+ await db.query(
+  `create index if not exists crewcheck_staff_load_reports_flight_idx on crewcheck_staff_load_reports (flight_number, flight_date, origin, destination, reported_at desc)`,
+ ).catch(() => null);
+ // Auto-verify if user is premium or has reported before
+ const prevReports = await db.query('select count(*) as cnt from crewcheck_staff_load_reports where user_id = $1', [userId]).catch(() => ({ rows: [{ cnt: 0 }] }));
+ const verified = Number(prevReports.rows?.[0]?.cnt || 0) >= 2;
+ const id = newId();
+ await db.query(
+  `insert into crewcheck_staff_load_reports (id, user_id, flight_number, flight_date, origin, destination, seats_available, seats_total, cabin, reporter_role, verified)
+   values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+  [id, userId, String(flightNumber).toUpperCase().slice(0, 10), String(flightDate).slice(0, 10), String(origin).toUpperCase().slice(0, 3), String(destination).toUpperCase().slice(0, 3), Math.max(0, Number(seatsAvailable)), seatsTotal ? Math.max(0, Number(seatsTotal)) : null, String(cabin).toUpperCase().slice(0, 3), String(reporterRole).slice(0, 20), verified],
+ );
+ // Invalidate cache
+ staffLoadCrowdsourceCache.delete(`crowd:${String(flightNumber).toUpperCase()}:${String(flightDate).slice(0, 10)}:${String(origin).toUpperCase()}:${String(destination).toUpperCase()}`);
+ return { ok: true, id, verified, message: verified ? 'Relatório registrado e verificado.' : 'Relatório recebido. Será verificado após validação.' };
+}
+
+// --- LLM Payslip Parser (v12.4) ---
+async function callOpenAIChatCompletion({ model, messages, maxTokens = 800, temperature = 0.1, jsonMode = false } = {}) {
+ const key = OPENAI_API_KEY;
+ if (!key) throw new Error('OPENAI_API_KEY não configurada.');
+ const body = {
+  model: model || CREWCHECK_CABIN_CHIEF_MODEL,
+  messages,
+  max_tokens: maxTokens,
+  temperature,
+  ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+ };
+ const response = await fetch(`${CREWCHECK_OPENAI_CHAT_BASE}/chat/completions`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'user-agent': 'CrewCheck/12.4' },
+  body: JSON.stringify(body),
+  signal: AbortSignal.timeout(30000),
+ });
+ const payload = await response.json().catch(() => null);
+ if (!response.ok) throw new Error(payload?.error?.message || `OpenAI HTTP ${response.status}`);
+ return payload?.choices?.[0]?.message?.content || '';
+}
+
+async function parsePayslipOnServerWithLLM({ filename, dataBase64 } = {}) {
+ // First try the existing regex-based parser
+ let regexResult = null;
+ try {
+  regexResult = await parsePayslipOnServer({ filename, dataBase64 });
+ } catch { /* fall through to LLM */ }
+
+ // If LLM is disabled or regex already found good data, return regex result
+ if (!CREWCHECK_PAYSLIP_LLM_ENABLED || !OPENAI_API_KEY) return regexResult || { filename, gross: null, discounts: null, net: null, baseSalary: null, recurringDeductions: 0, lines: [], parsedAt: new Date().toISOString() };
+
+ // Extract text from PDF
+ let text = '';
+ try {
+  const buffer = Buffer.from(String(dataBase64).replace(/^data:application\/pdf;base64,/, ''), 'base64');
+  const mod = await import('pdf-parse');
+  const parse = mod.default || mod;
+  const out = await parse(buffer);
+  text = String(out?.text || '').slice(0, 8000); // limit to 8k chars for LLM
+ } catch (error) {
+  if (regexResult) return regexResult;
+  throw new Error(`Falha ao extrair texto do holerite: ${error?.message || error}`);
+ }
+
+ // If regex found good data (net salary found), return it enriched with LLM extras
+ const regexHasGoodData = regexResult && (regexResult.net || regexResult.gross);
+
+ try {
+  const systemPrompt = `Você é um especialista em holerites brasileiros de aviação. Extraia os dados do holerite e retorne JSON válido com os campos: gross (salário bruto em float), discounts (total descontos em float), net (líquido em float), baseSalary (salário base em float), lines (array de {label: string, value: float, type: 'earning'|'deduction'} para cada rubrica), month (mês/ano no formato MM/YYYY), company (nome da empresa), employeeName (nome do funcionário), employeeId (matrícula), position (cargo). Use null para campos não encontrados.`;
+  const userPrompt = `Holerite:\n${text}`;
+  const llmText = await callOpenAIChatCompletion({
+   model: 'gpt-4o-mini',
+   messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+   maxTokens: 1200,
+   temperature: 0.0,
+   jsonMode: true,
+  });
+  const llmData = JSON.parse(llmText);
+  const lines = Array.isArray(llmData.lines) ? llmData.lines.filter((l) => l.label && Number.isFinite(Number(l.value))) : (regexResult?.lines || []);
+  return {
+   filename,
+   gross: Number.isFinite(Number(llmData.gross)) ? Number(llmData.gross) : (regexResult?.gross ?? null),
+   discounts: Number.isFinite(Number(llmData.discounts)) ? Number(llmData.discounts) : (regexResult?.discounts ?? null),
+   net: Number.isFinite(Number(llmData.net)) ? Number(llmData.net) : (regexResult?.net ?? null),
+   baseSalary: Number.isFinite(Number(llmData.baseSalary)) ? Number(llmData.baseSalary) : (regexResult?.baseSalary ?? null),
+   recurringDeductions: lines.filter((l) => l.type === 'deduction' && !/INSS|IRRF|VGBL/i.test(l.label)).reduce((s, l) => s + Number(l.value || 0), 0),
+   lines,
+   month: llmData.month || null,
+   company: llmData.company || null,
+   employeeName: llmData.employeeName || null,
+   employeeId: llmData.employeeId || null,
+   position: llmData.position || null,
+   parsedAt: new Date().toISOString(),
+   parsedBy: 'llm+regex',
+  };
+ } catch (llmError) {
+  // LLM failed, return regex result or minimal
+  if (regexHasGoodData) return { ...regexResult, parsedBy: 'regex' };
+  return { filename, gross: null, discounts: null, net: null, baseSalary: null, recurringDeductions: 0, lines: [], parsedAt: new Date().toISOString(), parsedBy: 'failed', detail: llmError?.message };
+ }
+}
+
+// --- CabinChief LLM Assistant (v12.4) ---
+const cabinChiefSessionCache = new Map();
+
+async function handleCabinChiefQuery(db, user, { question, context = {}, sessionId = null } = {}) {
+ if (!CREWCHECK_CABIN_CHIEF_ENABLED) return { ok: false, answer: null, message: 'CabinChief desligado. Configure CREWCHECK_CABIN_CHIEF_ENABLED=true.' };
+ if (!OPENAI_API_KEY) return { ok: false, answer: null, message: 'Configure OPENAI_API_KEY para usar o CabinChief.' };
+ if (!question || String(question).trim().length < 3) return { ok: false, answer: null, message: 'Informe uma pergunta.' };
+
+ // Load user roster for context
+ let rosterContext = '';
+ try {
+  const rosterRow = await db.query(
+   'select roster_json from crewcheck_rosters where user_id = $1 and deleted_at is null order by is_active desc, coalesce(active_at, updated_at, created_at) desc limit 1',
+   [user.id],
+  );
+  if (rosterRow.rowCount) {
+   const roster = typeof rosterRow.rows[0].roster_json === 'string' ? JSON.parse(rosterRow.rows[0].roster_json) : rosterRow.rows[0].roster_json;
+   const today = new Date().toISOString().slice(0, 10);
+   const days = Array.isArray(roster?.days) ? roster.days.filter((d) => {
+    const dateStr = String(d?.date || '').slice(0, 10);
+    return dateStr >= today;
+   }).slice(0, 7) : [];
+   if (days.length) {
+    rosterContext = `\nEscala dos próximos 7 dias:\n${days.map((d) => {
+     const legs = Array.isArray(d.legs) ? d.legs.map((l) => `${l.flightNumber || l.flight || ''} ${l.origin || ''}-${l.destination || ''} ${l.departureTime || l.departure || ''}`).join(', ') : '';
+     return `${d.date}: ${d.type || d.dutyType || 'voo'} ${legs}`;
+    }).join('\n')}`;
+   }
+  }
+ } catch { /* ignore */ }
+
+ // Session history
+ const sid = sessionId || `${user.id}:cabin-chief`;
+ const history = cabinChiefSessionCache.get(sid) || [];
+
+ const systemPrompt = `Você é o CabinChief, assistente especializado em aviação civil brasileira para tripulantes da ${context.airline || 'companhia aérea'}. Você conhece profundamente:
+- RBAC 117 (gerenciamento de fadiga e tempo de serviço)
+- Regulamentos ANAC (RBAC 121, 135)
+- Procedimentos de cabine e segurança
+- Direitos trabalhistas de avião (ACT, CCT)
+- Meteorologia aeronáutica (METAR, TAF, SIGMET)
+- Procedimentos de voo, aeroportos brasileiros
+- Vivo de Extra e staff travel
+Responda em português brasileiro, de forma concisa e precisa. Se não souber, diga claramente.${rosterContext ? `\n${rosterContext}` : ''}`;
+
+ const messages = [
+  { role: 'system', content: systemPrompt },
+  ...history.slice(-6), // last 3 exchanges
+  { role: 'user', content: String(question).trim() },
+ ];
+
+ try {
+  const answer = await callOpenAIChatCompletion({
+   model: CREWCHECK_CABIN_CHIEF_MODEL,
+   messages,
+   maxTokens: CREWCHECK_CABIN_CHIEF_MAX_TOKENS,
+   temperature: 0.3,
+  });
+
+  // Update session history
+  history.push({ role: 'user', content: String(question).trim() }, { role: 'assistant', content: answer });
+  cabinChiefSessionCache.set(sid, history.slice(-12)); // keep last 6 exchanges
+
+  return {
+   ok: true,
+   answer,
+   sessionId: sid,
+   model: CREWCHECK_CABIN_CHIEF_MODEL,
+   hasRosterContext: Boolean(rosterContext),
+   updatedAt: new Date().toISOString(),
+  };
+ } catch (error) {
+  return { ok: false, answer: null, message: sanitizePublicError(error?.message || String(error)) };
+ }
+}
+
+// --- Expanded Operational Monitor v2 (v12.4) ---
+async function runCrewCheckOperationalAlertsV2(db, user, { notifyTelegram = false } = {}) {
+ const alerts = [];
+ const userId = user?.id;
+ if (!userId) return { ok: false, alerts, message: 'Usuário não identificado.' };
+
+ // 1. Run existing operational alerts (flight status, gate changes)
+ try {
+  const existingResult = await runCrewCheckOperationalAlerts(db, userId, { notifyTelegram });
+  if (Array.isArray(existingResult?.alerts)) alerts.push(...existingResult.alerts);
+ } catch { /* non-fatal */ }
+
+ // 2. Civil defense alerts for airports in upcoming roster
+ try {
+  const rosterRow = await latestActiveRosterRowForOperationalAlerts(db, userId);
+  if (rosterRow) {
+   const roster = typeof rosterRow.roster_json === 'string' ? JSON.parse(rosterRow.roster_json) : rosterRow.roster_json;
+   const flights = crewcheckOpsExtractFlights(roster, { lookaheadHours: 48 });
+   const airports = [...new Set(flights.flatMap((f) => [f.origin, f.destination].filter(Boolean)))];
+   if (airports.length) {
+    const civilAlerts = await fetchCivilDefenseAlerts({ state: null }).catch(() => ({ alerts: [] }));
+    const relevantAlerts = (civilAlerts?.alerts || []).filter((a) => {
+     const alertText = `${a.event || ''} ${a.areaDesc || ''} ${a.description || ''}`.toUpperCase();
+     return airports.some((ap) => alertText.includes(ap) || alertText.includes(String(a.state || '').toUpperCase()));
+    });
+    for (const civil of relevantAlerts.slice(0, 3)) {
+     const alertObj = {
+      category: 'civil-defense',
+      level: civil.severity === 'Extreme' || civil.severity === 'Severe' ? 'critical' : 'warning',
+      title: `Alerta Defesa Civil · ${civil.event || 'Alerta'}`,
+      body: `${civil.areaDesc || ''}: ${(civil.description || civil.headline || '').slice(0, 200)}`,
+      source: 'INMET / Defesa Civil',
+      airports,
+     };
+     alerts.push(alertObj);
+     if (notifyTelegram) {
+      const telegramLinks = await db.query('select * from crewcheck_telegram_links where user_id = $1 and unlinked_at is null limit 5', [userId]).catch(() => ({ rows: [] }));
+      for (const link of telegramLinks.rows) {
+       await crewcheckOpsNotifyTelegram(db, userId, alertObj).catch(() => null);
+      }
+     }
+    }
+   }
+  }
+ } catch { /* non-fatal */ }
+
+ // 3. Check for flight cancellations in upcoming 24h
+ try {
+  const rosterRow = await latestActiveRosterRowForOperationalAlerts(db, userId);
+  if (rosterRow) {
+   const roster = typeof rosterRow.roster_json === 'string' ? JSON.parse(rosterRow.roster_json) : rosterRow.roster_json;
+   const flights = crewcheckOpsExtractFlights(roster, { lookaheadHours: 24 });
+   for (const flight of flights.slice(0, 5)) {
+    try {
+     const status = await getFlightStatusSnapshot(new URLSearchParams({ flight: flight.flightNumber, date: flight.date, origin: flight.origin, destination: flight.destination }));
+     if (status?.status && /cancel|cancelad|CNCL/i.test(status.status)) {
+      const alertObj = {
+       category: 'flight-cancelled',
+       level: 'critical',
+       title: `Voo cancelado · ${flight.flightNumber}`,
+       body: `${flight.flightNumber} ${flight.origin}→${flight.destination} em ${flight.date} aparece como cancelado. Status: ${status.status}. Confirme com a companhia.`,
+       flightNumber: flight.flightNumber,
+       date: flight.date,
+       origin: flight.origin,
+       destination: flight.destination,
+       source: status.source || 'radar',
+      };
+      alerts.push(alertObj);
+      if (notifyTelegram) await crewcheckOpsNotifyTelegram(db, userId, alertObj).catch(() => null);
+     }
+    } catch { /* non-fatal per flight */ }
+   }
+  }
+ } catch { /* non-fatal */ }
+
+ return {
+  ok: true,
+  alerts,
+  alertCount: alerts.length,
+  criticalCount: alerts.filter((a) => a.level === 'critical').length,
+  updatedAt: new Date().toISOString(),
+ };
+}
+
 async function fetchExtraFlightOffers(query) {
  const origin = normalizeAirportCode(query.origin, '').toUpperCase();
  const destination = normalizeAirportCode(query.destination, '').toUpperCase();
@@ -5767,6 +6381,22 @@ async function fetchExtraFlightOffers(query) {
    }
   }
   if (provider === 'AMADEUS') break;
+  if (provider === 'SABRE') {
+   const sabreResult = await fetchSabreBargainFinderFlights({ origin, destination, date, currency, adults, limit, targetIso }).catch((e) => ({ ok: false, options: [], message: e?.message || String(e) }));
+   diagnostics.push(...(Array.isArray(sabreResult?.diagnostics) ? sabreResult.diagnostics : [{ provider: 'Sabre BargainFinder', ok: Boolean(sabreResult?.options?.length), reason: sabreResult?.message || sabreResult?.source }]));
+   if (Array.isArray(sabreResult?.options) && sabreResult.options.length) {
+    const mergedOptions = sortExtraFlightOptionsForPresentation(dedupeExtraFlightOptionsServer(sabreResult.options)).slice(0, limit);
+    return cacheSet(flightProviderCache, cacheKey, {
+     ok: true, origin, destination, date,
+     options: mergedOptions,
+     source: sabreResult.source || 'Sabre BargainFinder',
+     message: `${mergedOptions.length} opção(ões) via Sabre GDS com companhia, voo e tarifa.`,
+     estimatedFare: fallbackFare, diagnostics,
+     providerStatus: { serpapi: Boolean(SERPAPI_API_KEY), searchapi: Boolean(SEARCHAPI_API_KEY), sabre: sabreReady(), ...radarProviderStatus() },
+     updatedAt: new Date().toISOString(),
+    });
+   }
+  }
  }
 
  try {
@@ -15106,6 +15736,30 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
    return { ok: true, limited: true };
   }
  }
+ // v12.4: /cabinchief command — LLM aviation assistant
+ if (/^\/cabinchief\b/i.test(clean)) {
+  const question = clean.replace(/^\/cabinchief\s*/i, '').trim();
+  if (!question) {
+   await reply('CabinChief', [
+    'Assistente de aviação com IA. Envie /cabinchief seguido da sua pergunta.',
+    'Exemplos: /cabinchief qual o limite de jornada RBAC 117? · /cabinchief o que é pernoite? · /cabinchief direitos em voo cancelado?',
+    CREWCHECK_CABIN_CHIEF_ENABLED && OPENAI_API_KEY ? 'CabinChief ativo.' : 'Configure OPENAI_API_KEY no Render para ativar o CabinChief.',
+   ]);
+   return { ok: true, intent: 'cabin_chief_help' };
+  }
+  if (!CREWCHECK_CABIN_CHIEF_ENABLED || !OPENAI_API_KEY) {
+   await reply('CabinChief indisponível', ['Configure OPENAI_API_KEY no Render para ativar o CabinChief.']);
+   return { ok: true, intent: 'cabin_chief_unavailable' };
+  }
+  const ccResult = await handleCabinChiefQuery(db, user, { question, context: { airline: user?.airline || '' }, sessionId: `telegram:${row.chat_id}:cabin-chief` }).catch((e) => ({ ok: false, answer: null, message: e?.message }));
+  if (ccResult.ok && ccResult.answer) {
+   await reply('CabinChief', [ccResult.answer], { footer: `Modelo: ${ccResult.model || CREWCHECK_CABIN_CHIEF_MODEL} · Confirme sempre com fontes oficiais.`, actionLabel: 'Abrir CrewCheck' });
+  } else {
+   await reply('CabinChief', ['Não consegui responder agora.', ccResult.message || 'Tente novamente em instantes.']);
+  }
+  return { ok: true, intent: 'cabin_chief', question };
+ }
+
  const aviationWeatherRequest = telegramConciergeParseAviationWeatherRequest(text);
  if (aviationWeatherRequest) {
   const payload = await telegramConciergeAviationWeatherLines(aviationWeatherRequest).catch((error) => ({
@@ -15122,7 +15776,8 @@ async function handleTelegramConciergeText(db, row, chat, text, message = {}) {
  if (isHelp) {
   const lines = premium ? [
    'Pergunte por texto ou áudio: “minha programação de hoje”, “dia 25”, “qual meu portão?”, “METAR de SBBR” ou “METAR de Sierra Bravo Bravo Romeo”.',
-   'Comandos rápidos: /hoje, /amanha, /proximo, /portao, /saida, /diarias, /rotina, /conformidade.',
+   'Comandos rápidos: /hoje, /amanha, /proximo, /portao, /saida, /diarias, /rotina, /conformidade, /cabinchief.',
+   '/cabinchief [pergunta] — Assistente de aviação com IA (RBAC 117, ACT, procedimentos, staff travel e mais).',
    `Nome atual do Concierge: ${telegramConciergeDisplayName(row, user)}. Você pode alterar em Configurações > Telegram.`,
   ] : [
    'Plano gratuito: Concierge liberado sem limite diário de uso.',
@@ -18118,6 +18773,42 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+ // v12.4: Rebuild enriched iCal from roster automatically
+ if (url.pathname === '/api/calendar-feed/rebuild-enriched' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   const result = await rebuildEnrichedCalendarFeedForUser(db, user, { appUrl: externalBaseUrl(req) });
+   if (!result) {
+    sendJson(res, 200, { ok: false, message: 'Nenhuma escala encontrada para gerar calendário enriquecido.' });
+    return true;
+   }
+   const feed = await ensureCalendarFeedForUser(db, user);
+   sendJson(res, 200, { ok: true, ...result, feedUrl: calendarFeedUrl(req, feed.token), updatedAt: new Date().toISOString() });
+  } catch (error) {
+   sendJson(res, 500, { ok: false, message: 'Não foi possível gerar o calendário enriquecido.', detail: error?.message });
+  }
+  return true;
+ }
+
+ // v12.4: CabinChief assistant via Telegram (also handles /cabinchief command)
+ if (url.pathname === '/api/cabin-chief/status' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  sendJson(res, 200, {
+   ok: true,
+   enabled: CREWCHECK_CABIN_CHIEF_ENABLED,
+   hasOpenAI: Boolean(OPENAI_API_KEY),
+   model: CREWCHECK_CABIN_CHIEF_MODEL,
+   maxTokens: CREWCHECK_CABIN_CHIEF_MAX_TOKENS,
+   message: CREWCHECK_CABIN_CHIEF_ENABLED && OPENAI_API_KEY ? 'CabinChief pronto.' : !OPENAI_API_KEY ? 'Configure OPENAI_API_KEY para ativar o CabinChief.' : 'CabinChief desligado.',
+   updatedAt: new Date().toISOString(),
+  });
+  return true;
+ }
+
  if (url.pathname === '/api/c32f/apostila-pdf' && req.method === 'GET') {
   const user = await requireAuth(req, res);
   if (!user) return true;
@@ -18876,6 +19567,45 @@ async function handleApi(req, res, url) {
   return true;
  }
 
+ // v12.4: Staff load crowdsource report submission
+ if (url.pathname === '/api/staff-load/report' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   const body = await readJsonBody(req, 64 * 1024);
+   const result = await submitCrowdsourcedStaffLoadReport(db, user.id, body);
+   sendJson(res, 200, result);
+  } catch (error) {
+   sendJson(res, 422, { ok: false, message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ // v12.4: Staff load crowdsource fetch
+ if (url.pathname === '/api/staff-load/crowdsource' && req.method === 'GET') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   const flightNumber = String(url.searchParams.get('flight') || url.searchParams.get('flightNumber') || '').toUpperCase();
+   const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
+   const origin = normalizeAirportCode(url.searchParams.get('origin') || '');
+   const destination = normalizeAirportCode(url.searchParams.get('destination') || '');
+   if (!flightNumber || !origin || !destination) {
+    sendJson(res, 200, { ok: false, message: 'Informe flight, origin e destination.' });
+    return true;
+   }
+   const data = await fetchCrowdsourcedStaffLoad(db, flightNumber, date, origin, destination);
+   sendJson(res, 200, { ok: true, crowdsource: data, flightNumber, date, origin, destination, updatedAt: new Date().toISOString() });
+  } catch (error) {
+   sendJson(res, 200, { ok: false, message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
  if (url.pathname === '/api/flight-status' && req.method === 'GET') {
   try {
    const status = await getFlightStatusSnapshot(url.searchParams);
@@ -18889,10 +19619,42 @@ async function handleApi(req, res, url) {
  if (url.pathname === '/api/parse-payslip' && req.method === 'POST') {
   try {
    const body = await readJsonBody(req, 25 * 1024 * 1024);
-   const parsed = await parsePayslipOnServer({ filename: body.filename || 'holerite.pdf', dataBase64: body.dataBase64 });
+   const parsed = await parsePayslipOnServerWithLLM({ filename: body.filename || 'holerite.pdf', dataBase64: body.dataBase64 });
    sendJson(res, 200, { ok: true, ...parsed });
   } catch (err) {
    sendJson(res, 422, { ok: false, message: 'Não consegui ler o holerite no servidor.', detail: err?.message || String(err) });
+  }
+  return true;
+ }
+
+ // v12.4: CabinChief LLM assistant
+ if (url.pathname === '/api/cabin-chief' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   const body = await readJsonBody(req, 64 * 1024);
+   const result = await handleCabinChiefQuery(db, user, body);
+   sendJson(res, 200, result);
+  } catch (error) {
+   sendJson(res, 200, { ok: false, message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ // v12.4: Operational alerts with civil defense
+ if (url.pathname === '/api/radar/alerts/check-v2' && (req.method === 'GET' || req.method === 'POST')) {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   const body = req.method === 'POST' ? await readJsonBody(req, 64 * 1024).catch(() => ({})) : {};
+   const result = await runCrewCheckOperationalAlertsV2(db, user, { notifyTelegram: body.notifyTelegram ?? url.searchParams.get('notifyTelegram') === '1' });
+   sendJson(res, 200, result);
+  } catch (error) {
+   sendJson(res, 200, { ok: false, alerts: [], message: sanitizePublicError(error?.message || String(error)) });
   }
   return true;
  }
@@ -19645,6 +20407,11 @@ async function handleApi(req, res, url) {
    ]);
 
    await storeTelegramRosterSnapshotForUser(db, user, { roster, compliance, gym, sourceFileName: body.sourceFileName || null, checksum: payloadChecksum }).catch(() => null);
+
+   // v12.4: Auto-rebuild enriched iCal calendar feed when roster is saved
+   if (CREWCHECK_ICAL_ENRICHED_ENABLED && user.id) {
+    rebuildEnrichedCalendarFeedForUser(db, user, { appUrl: externalBaseUrl(req) }).catch(() => null);
+   }
 
    const wantsTelegramImportNotice = /^(1|true|yes|sim)$/i.test(String(body.notifyTelegram || body.telegramPush || '').trim());
    if (user.id && wantsTelegramImportNotice) {
