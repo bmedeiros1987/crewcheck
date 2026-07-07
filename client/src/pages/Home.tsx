@@ -101,8 +101,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '12.5.78';
-const CREWCHECK_UI_CORE_NOTE = 'ui-safe-functional-core: layout novo preservado; núcleo funcional importado sem voltar o sistema antigo';
+const DEFAULT_VERSION = '13.2.0';
+const CREWCHECK_UI_CORE_NOTE = 'v13.2.0-hotfix: PR #1 reforçado com próxima programação vigente, diárias/salário reais, despertador e hotéis sem voltar layout antigo';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -188,8 +188,8 @@ function placeholderLeg(): ZeroLeg {
     id: 'placeholder-import',
     day: { date: `${pad2(now.getDate())}/${pad2(now.getMonth()+1)}/${now.getFullYear()}`, dayNumber: now.getDate(), month: now.getMonth()+1, year: now.getFullYear(), type: 'IMPORTAR', legs: [] } as any,
     kind: 'duty',
-    title: 'Importe sua escala real de julho',
-    subtitle: 'Nenhum dado fictício será exibido. Envie o PDF oficial para ativar Cockpit, escala completa, diárias, rotina e alertas.',
+    title: 'Importe sua escala real',
+    subtitle: 'Nenhum dado fictício será exibido. Envie o PDF oficial para ativar Cockpit, escala completa, diárias, salário, rotina e alertas.',
     date: now,
     origin: safe(storage.get('crewcheck_virtual_base', 'BSB'), 'BSB'),
     destination: safe(storage.get('crewcheck_virtual_base', 'BSB'), 'BSB'),
@@ -299,7 +299,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     const type = String((day as any).type || '').toUpperCase();
     const base = safe((day as any).base || (day as any).airport || (day as any).hotel, roster.base || '—');
     if ((day as any).hotel || type.includes('LAYOVER') || type.includes('HOTEL') || type.includes('PERNOITE')) {
-      legs.push({ id: `${dayIndex}-hotel`, day, kind: 'stay', date: d, title: `Estadia diurna · ${base}`, subtitle: `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}`, origin: base, destination: base, flightNumber: 'HOTEL', presentation: '—', departure: '—', arrival: '—', timeRange: safe((day as any).duration || (day as any).dutyHours, '15h 15min') });
+      legs.push({ id: `${dayIndex}-hotel`, day, kind: 'stay', date: d, title: `Estadia diurna · ${base}`, subtitle: `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}`, origin: base, destination: base, flightNumber: 'HOTEL', presentation: time((day as any).dutyReport || (day as any).startTime, '—'), departure: time((day as any).startTime || (day as any).dutyReport, '—'), arrival: time((day as any).endTime || (day as any).dutyDebrief, '—'), hotel: safe((day as any).hotel, ''), status: safe((day as any).status, 'Pernoite'), routine: [`Descanso em ${safe((day as any).hotel || city(base), city(base))}`, `Academia/restaurante/mercado/farmácia/lavanderia em ${city(base)}`], timeRange: safe((day as any).duration || (day as any).dutyHours, 'Pernoite') });
     } else if (type && !['DO', 'OFF', 'FOLGA'].includes(type)) {
       legs.push({ id: `${dayIndex}-duty`, day, kind: 'duty', date: d, title: safe((day as any).pairingCode || type, 'Programação'), subtitle: safe((day as any).description || (day as any).rawText, 'Programação operacional'), origin: base, destination: base, flightNumber: safe((day as any).pairingCode || type, 'DUTY'), presentation: time((day as any).dutyReport, '—'), departure: time((day as any).startTime, time((day as any).dutyReport, '—')), arrival: time((day as any).endTime, time((day as any).dutyDebrief, '—')), timeRange: `${time((day as any).startTime || (day as any).dutyReport, '—')} → ${time((day as any).endTime || (day as any).dutyDebrief, '—')}` });
     }
@@ -320,14 +320,48 @@ function eventStartDateTime(event: ZeroLeg): Date {
   else base.setHours(0, 0, 0, 0);
   return base;
 }
+function eventEndDateTime(event: ZeroLeg): Date {
+  const start = eventStartDateTime(event);
+  const raw = event.arrival !== '—' ? event.arrival : event.departure !== '—' ? event.departure : event.presentation;
+  const m = String(raw || '').match(/(\d{1,2}):(\d{2})/);
+  const end = new Date(event.date);
+  if (m) {
+    end.setHours(Number(m[1]), Number(m[2]), 0, 0);
+    if (end.getTime() < start.getTime()) end.setDate(end.getDate() + 1);
+  } else {
+    end.setTime(start.getTime() + (event.kind === 'stay' ? 12 : 6) * 60 * 60 * 1000);
+  }
+  return end;
+}
+function isOperationalEvent(event: ZeroLeg) {
+  if (event.placeholder) return false;
+  const code = `${event.flightNumber} ${(event.day as any)?.type || ''} ${(event.day as any)?.pairingCode || ''}`.toUpperCase();
+  if (/(^|\s)(DO|DOF|DOP|OFF|FOLGA|FÉRIAS|FERIAS|EAD)(\s|$)/.test(code)) return false;
+  if (code.includes('SOBREAVISO') && !/(VOO|RESERVA|ACION|CHAMAD|LA\d+)/.test(code)) return false;
+  return ['flight', 'duty', 'stay'].includes(event.kind);
+}
+function eventIsNow(event: ZeroLeg, now = new Date()) {
+  const start = eventStartDateTime(event).getTime();
+  const end = eventEndDateTime(event).getTime() + 2 * 60 * 60 * 1000;
+  return now.getTime() >= start - 30 * 60 * 1000 && now.getTime() <= end;
+}
 function nextFlight(events: ZeroLeg[]) {
   const now = new Date();
-  const real = events.filter((e) => !e.placeholder).sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
-  return real.find((e) => eventStartDateTime(e).getTime() >= now.getTime()) || real[0] || placeholderLeg();
+  const real = events
+    .filter(isOperationalEvent)
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  return real.find((e) => eventIsNow(e, now))
+    || real.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
+    || real[0]
+    || placeholderLeg();
 }
 function currentDayAnchor(events: ZeroLeg[]) {
   const now = new Date();
-  const today = events.find((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate());
+  const current = events.find((e) => isOperationalEvent(e) && eventIsNow(e, now));
+  if (current) return current;
+  const today = events
+    .filter(isOperationalEvent)
+    .find((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate());
   return today || nextFlight(events);
 }
 
@@ -349,7 +383,7 @@ function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: Z
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Roster',CalendarDays],['alerts','Alerts',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -418,7 +452,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
   const first = currentDayAnchor(events);
   const [selected, setSelected] = useState<ZeroLeg | null>(null);
   const hasRoster = days.length > 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, '—')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, '—')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, '—')} · {safe(selected.terminal, '—')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{selected.subtitle}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, '—')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, '—')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, '—')} · {safe(selected.terminal, '—')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{selected.subtitle}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
 }
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   const alerts = ((compliance as any)?.alerts || []);
@@ -487,16 +521,109 @@ function WeatherView({ event }: { event: ZeroLeg }) {
   const dest = weather?.stations?.[event.destination] || weather?.stations?.[weather?.destinationIcao] || weather?.destination || origin || {};
   return <><Brand back/><section className="cz-panel-head"><h1>Meteorologia</h1><p>METAR, TAF, Defesa Civil e concierge meteorológico. Fonte AviationWeather.gov com cache operacional de 60 minutos.</p></section><section className="cz-weather-grid"><article><CloudSun/><h2>{event.origin}</h2><strong>METAR</strong><p>{origin?.metar || weather?.metar || weather?.message || 'Aguardando METAR da fonte oficial.'}</p><small>{origin?.icao || weather?.originIcao || 'Aeroporto origem'}</small></article><article><Wifi/><h2>{event.destination}</h2><strong>TAF</strong><p>{dest?.taf || weather?.taf || 'Previsão será exibida quando disponível.'}</p><small>{dest?.icao || weather?.destinationIcao || 'Aeroporto destino'}</small></article></section>{!weather?.ok && <article className="cz-empty-real"><CloudSun/><h2>METAR/TAF indisponível agora</h2><p>Confira rede do Render. O endpoint interno /api/aviation-weather foi restaurado nesta versão.</p></article>}</>;
 }
+function moneyBRL(value: number) {
+  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function overlapsWindow(start: Date, end: Date, hourStart: number, hourEnd: number) {
+  const a = new Date(start); a.setHours(hourStart, 0, 0, 0);
+  const b = new Date(start); b.setHours(hourEnd, 0, 0, 0);
+  if (hourEnd <= hourStart) b.setDate(b.getDate() + 1);
+  return start.getTime() < b.getTime() && end.getTime() > a.getTime();
+}
+function durationHours(event: ZeroLeg) {
+  const start = eventStartDateTime(event).getTime();
+  const end = eventEndDateTime(event).getTime();
+  return Math.max(0, (end - start) / 36e5);
+}
+function currentWeekBounds() {
+  const now = new Date();
+  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  const end = new Date(start); end.setDate(start.getDate() + 7);
+  return { start, end };
+}
+function calculatePerDiem(events: ZeroLeg[]) {
+  const mealRate = Number(storage.get('crewcheck_perdiem_meal_brl', '68.40')) || 68.4;
+  const breakfastRate = Number(storage.get('crewcheck_perdiem_breakfast_brl', String(mealRate * 0.25))) || mealRate * 0.25;
+  const rows: Array<{ date: string; label: string; value: number; source: string }> = [];
+  const seen = new Set<string>();
+  const add = (event: ZeroLeg, label: string, value: number, source: string) => {
+    const key = `${dateChip(event.date)}-${label}-${event.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ date: dateChip(event.date), label, value, source });
+  };
+  events.filter(isOperationalEvent).forEach((event) => {
+    const start = eventStartDateTime(event);
+    const end = new Date(eventEndDateTime(event).getTime() + 30 * 60 * 1000);
+    const international = [event.origin, event.destination].some((a) => !['BSB','GRU','CGH','SDU','GIG','CNF','REC','SSA','CWB','POA','BEL','MAO','FOR','PMW','NAT','MCZ','SLZ','THE','AJU','VIX'].includes(String(a || '').toUpperCase()));
+    if (international && event.kind === 'flight') {
+      add(event, 'Internacional', 88.2 * Number(storage.get('crewcheck_usd_brl', '5.20')), 'USD 88,20 convertido');
+      return;
+    }
+    if (event.kind === 'stay' || event.hotel) {
+      add(event, 'Almoço pernoite', mealRate, 'Pernoite/hotel');
+      add(event, 'Jantar pernoite', mealRate, 'Pernoite/hotel');
+      return;
+    }
+    if (overlapsWindow(start, end, 5, 8)) add(event, 'Café', breakfastRate, '05:00–08:00');
+    if (overlapsWindow(start, end, 11, 13)) add(event, 'Almoço', mealRate, '11:00–13:00');
+    if (overlapsWindow(start, end, 19, 20)) add(event, 'Jantar', mealRate, '19:00–20:00');
+    if (overlapsWindow(start, end, 0, 1)) add(event, 'Ceia', mealRate, '00:00–01:00');
+  });
+  const { start, end } = currentWeekBounds();
+  const monthly = rows.reduce((sum, row) => sum + row.value, 0);
+  const weekly = rows.filter((row) => {
+    const [d, m] = row.date.split('/').map(Number);
+    const date = new Date(new Date().getFullYear(), m - 1, d, 12, 0, 0);
+    return date >= start && date < end;
+  }).reduce((sum, row) => sum + row.value, 0);
+  return { rows, monthly, weekly, mealRate, breakfastRate };
+}
+function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
+  const sectorRate = Number(storage.get('crewcheck_salary_sector_brl', '76.37')) || 76.37;
+  const chiefRate = Number(storage.get('crewcheck_salary_chief_brl', '45')) || 45;
+  const instructorRate = Number(storage.get('crewcheck_salary_instructor_brl', '60')) || 60;
+  const basePay = Number(storage.get('crewcheck_salary_base_brl', '0')) || 0;
+  const flightEvents = events.filter((e) => e.kind === 'flight');
+  const sectors = flightEvents.length;
+  const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
+  const userName = `${getStoredUser()?.name || roster.crewName || ''}`.toLowerCase().split(/\s+/)[0] || '';
+  const chiefSectors = flightEvents.filter((event) => userName && String(event.crew?.[0] || '').toLowerCase().includes(userName)).length;
+  const instructor = storage.get('crewcheck_instructor', '0') !== '0';
+  const nightHours = flightEvents.reduce((sum, event) => {
+    const start = eventStartDateTime(event);
+    const end = eventEndDateTime(event);
+    let cursor = new Date(start);
+    let night = 0;
+    while (cursor < end) {
+      const next = new Date(Math.min(cursor.getTime() + 30 * 60 * 1000, end.getTime()));
+      const h = cursor.getHours();
+      if (h >= 22 || h < 5) night += (next.getTime() - cursor.getTime()) / 36e5;
+      cursor = next;
+    }
+    return sum + night;
+  }, 0);
+  const production = sectors * sectorRate;
+  const chief = chiefSectors * chiefRate;
+  const instructorPay = instructor ? sectors * instructorRate : 0;
+  const night = nightHours * (sectorRate * 0.2);
+  const gross = basePay + production + chief + instructorPay + night;
+  const inss = Math.min(gross * 0.11, 908.85);
+  const irrf = gross > 4664.68 ? gross * 0.275 - 896 : gross > 2826.65 ? gross * 0.15 - 354.8 : gross > 2259.2 ? gross * 0.075 - 169.44 : 0;
+  const fgts = gross * 0.08;
+  const net = Math.max(0, gross - inss - Math.max(0, irrf));
+  return { sectors, blockHours, chiefSectors, nightHours, production, chief, instructorPay, night, gross, inss, irrf: Math.max(0, irrf), fgts, net };
+}
 function PerDiemView({ bundle }: { bundle: BundleState }) {
-  const flights = buildLegs(bundle.roster).filter(e => e.kind === 'flight').length;
-  const layovers = buildLegs(bundle.roster).filter(e => e.kind === 'stay').length;
-  const monthly = flights || layovers ? (flights * 118.56 + layovers * 180) : 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Diárias</h1><p>Cálculo preservado para janelas de café, almoço, jantar e ceia, com separação semanal/mensal.</p></section><section className="cz-finance-grid"><KpiCard icon={BriefcaseBusiness} title="Previsão mensal" value={`R$ ${monthly.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} detail="estimativa"/><KpiCard icon={CalendarDays} title="Voos" value={String(flights)} detail="no período"/><KpiCard icon={Plane} title="Pernoites" value={String(layovers)} detail="hotel/estadia"/></section><section className="cz-toolbox"><h2>Regras preservadas</h2><p>Café 05–08, almoço 11–13, jantar 19–20 e ceia 00–01, com tratamento de pernoite, reserva e voos internacionais.</p></section></>;
+  const events = buildLegs(bundle.roster);
+  const forecast = calculatePerDiem(events);
+  return <><Brand back/><section className="cz-panel-head"><h1>Diárias</h1><p>Previsão por janelas reais LT: café, almoço, jantar, ceia, pernoite e internacional.</p></section><section className="cz-finance-grid"><KpiCard icon={BriefcaseBusiness} title="Previsão mensal" value={moneyBRL(forecast.monthly)} detail={`${forecast.rows.length} eventos de diária`}/><KpiCard icon={CalendarDays} title="Semana atual" value={moneyBRL(forecast.weekly)} detail="fechamento operacional"/><KpiCard icon={Plane} title="Refeição base" value={moneyBRL(forecast.mealRate)} detail={`Café ${moneyBRL(forecast.breakfastRate)}`}/></section><section className="cz-finance-table"><h2>Itens previstos</h2>{forecast.rows.length ? forecast.rows.slice(0, 18).map((row, i) => <div className="cz-finance-row" key={`${row.date}-${row.label}-${i}`}><span>{row.date}</span><strong>{row.label}</strong><small>{row.source}</small><b>{moneyBRL(row.value)}</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem diárias detectadas</h2><p>Carregue uma escala com voos, reservas ou pernoites para calcular automaticamente.</p></article>}</section></>;
 }
 function SalaryView({ bundle }: { bundle: BundleState }) {
+  const events = buildLegs(bundle.roster);
   const compliance = currentCompliance(bundle);
-  const flights = buildLegs(bundle.roster).filter(e => e.kind === 'flight').length;
-  return <><Brand back/><section className="cz-panel-head"><h1>Salário</h1><p>Previsão de remuneração, adicionais, chefe de cabine e instrutor.</p></section><section className="cz-finance-grid"><KpiCard icon={DollarSign} title="Ganhos estimados" value={flights ? `R$ ${(flights * 76.37).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : 'R$ 0,00'} detail="baseado na escala"/><KpiCard icon={Plane} title="Voos" value={String(flights)} detail="contabilizados"/><KpiCard icon={AlertTriangle} title="Alertas" value={String((compliance as any).alerts?.length || 0)} detail="impacto operacional"/></section><section className="cz-toolbox"><h2>Adicionais preservados</h2><p>Chefe de cabine: primeiro CCM listado é chefe efetivo. Instrutor: opção no perfil. Internacional: separado das nacionais.</p></section></>;
+  const salary = calculateSalary(events, bundle.roster);
+  return <><Brand back/><section className="cz-panel-head"><h1>Salário</h1><p>Previsão com setores, chefe de cabine, instrutor, noturno, INSS, IRRF e FGTS estimados.</p></section><section className="cz-finance-grid"><KpiCard icon={DollarSign} title="Bruto estimado" value={moneyBRL(salary.gross)} detail={`${salary.sectors} setores`}/><KpiCard icon={ShieldCheck} title="Líquido estimado" value={moneyBRL(salary.net)} detail="após descontos estimados"/><KpiCard icon={UserRound} title="Chefe/Instrutor" value={moneyBRL(salary.chief + salary.instructorPay)} detail={`${salary.chiefSectors} setores chefe`}/></section><section className="cz-finance-table"><h2>Composição</h2><div className="cz-finance-row"><span>Produtividade</span><strong>{salary.sectors} setores</strong><small>{salary.blockHours.toFixed(1)} h bloco</small><b>{moneyBRL(salary.production)}</b></div><div className="cz-finance-row"><span>Chefe</span><strong>1º CCM</strong><small>somente quando aplicável</small><b>{moneyBRL(salary.chief)}</b></div><div className="cz-finance-row"><span>Instrutor</span><strong>Perfil</strong><small>{storage.get('crewcheck_instructor','0') !== '0' ? 'ativo' : 'inativo'}</small><b>{moneyBRL(salary.instructorPay)}</b></div><div className="cz-finance-row"><span>Noturno</span><strong>{salary.nightHours.toFixed(1)} h</strong><small>estimado</small><b>{moneyBRL(salary.night)}</b></div><div className="cz-finance-row muted"><span>INSS</span><strong>estimado</strong><small>não substitui holerite</small><b>-{moneyBRL(salary.inss)}</b></div><div className="cz-finance-row muted"><span>IRRF</span><strong>estimado</strong><small>faixas simplificadas</small><b>-{moneyBRL(salary.irrf)}</b></div><div className="cz-finance-row"><span>FGTS</span><strong>informativo</strong><small>8% estimado</small><b>{moneyBRL(salary.fgts)}</b></div></section><section className="cz-toolbox"><h2>Alertas de impacto</h2><p>{String((compliance as any).alerts?.length || 0)} alertas regulatórios podem impactar análise operacional.</p></section></>;
 }
 function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
@@ -511,11 +638,14 @@ function ExportToolsView({ actions }: { actions: QuickActions }) {
 function WakeupView({ event }: { event: ZeroLeg }) {
   const wake = event.presentation !== '—' ? addMinutesToTime(event.presentation, -90) : 'Calcular';
   const leave = event.presentation !== '—' ? addMinutesToTime(event.presentation, -55) : 'Calcular';
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Alarmes calculados com base na próxima apresentação real, hotel/local atual e margem operacional.</p></section><section className="cz-finance-grid"><KpiCard icon={Bell} title="Acordar" value={wake} detail="90 min antes"/><KpiCard icon={Car} title="Sair" value={leave} detail={`${event.hotel ? 'Hotel' : 'Origem'} → ${event.origin}`}/><KpiCard icon={Plane} title="Apresentação" value={event.presentation} detail={event.flightNumber}/></section></>;
+  const sleep = wake !== '—' && wake !== 'Calcular' ? addMinutesToTime(wake, -450) : 'Calcular';
+  const mode = storage.get('crewcheck_alarm_mode', 'Ligação + Telegram');
+  const setMode = (next: string) => { storage.set('crewcheck_alarm_mode', next); toast.success(`Despertador: ${next}`); window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' })); };
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Planejamento baseado na próxima apresentação real, sem armazenar credenciais ou dados sensíveis.</p></section><section className="cz-finance-grid"><KpiCard icon={Moon} title="Dormir" value={sleep} detail="7h30 antes de acordar"/><KpiCard icon={Bell} title="Acordar" value={wake} detail="90 min antes"/><KpiCard icon={Car} title="Sair" value={leave} detail={`${event.hotel ? 'Hotel' : 'Origem'} → ${event.origin}`}/></section><section className="cz-toolbox"><h2>Como notificar</h2><div className="cz-tool-actions cz-wakeup-options">{['Ligação + Telegram','Somente ligação','Somente Telegram','Ligação'].map((item) => <button className={mode === item ? 'active' : ''} key={item} onClick={() => setMode(item)}>{item}</button>)}</div><p>Confirmação de acordado, repetição escalonada e provedor VOIP ficam configuráveis por plano, sem expor nome de API ao usuário.</p></section><section className="cz-mini-status"><p><strong>Próxima programação:</strong> {event.title}</p><p><strong>Apresentação:</strong> {event.presentation} · <strong>Status:</strong> {safe(event.status, 'Programado')}</p></section></>;
 }
 function HotelsView({ events }: { events: ZeroLeg[] }) {
   const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
-  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites e entorno operacional detectados na escala real.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>Academia · Restaurante · Mercado · Farmácia · Lavanderia · Descanso</small></div></div></article>) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites, descanso e entorno operacional detectados na escala real.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Descanso</span><span>Wake-up</span><span>Academia</span><span>Restaurante</span><span>Mercado</span><span>Farmácia</span><span>Lavanderia</span></div></article>) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
 }
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];

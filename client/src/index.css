@@ -14098,3 +14098,20 @@ html[data-crew-theme="light"] b { color: #071427; }
 html[data-crew-theme="light"] input { background: rgba(245,249,255,.92) !important; color: #071427 !important; border-color: rgba(25,70,130,.18) !important; }
 html[data-crew-theme="light"] .cz-bottom-nav { background: rgba(255,255,255,.84) !important; border-color: rgba(25,70,130,.14) !important; }
 html[data-crew-theme="light"] .cz-bottom-nav button.active { background: linear-gradient(135deg, rgba(42, 194, 255, .16), rgba(139, 92, 246, .14)) !important; }
+
+/* CrewCheck v13.2.0 PR #1 Hotfix — módulos funcionais sem voltar layout antigo */
+.cz-crew-line{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.08);font-size:.9rem}
+.cz-crew-line span{opacity:.72;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.cz-crew-line strong{font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cz-routine-strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.cz-routine-strip span{padding:8px 10px;border-radius:999px;background:rgba(14,165,233,.14);font-size:.78rem;font-weight:850}
+.cz-finance-table{display:grid;gap:10px;margin:16px 0 96px}
+.cz-finance-table h2{font-size:1rem;margin:0 0 4px}
+.cz-finance-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:12px;border-radius:16px;background:rgba(15,23,42,.08)}
+.cz-finance-row span{font-weight:900;opacity:.8}
+.cz-finance-row small{opacity:.72}
+.cz-finance-row b{font-weight:950}
+.cz-finance-row.muted{opacity:.86}
+.cz-wakeup-options button.active{outline:2px solid rgba(14,165,233,.65);box-shadow:0 0 0 4px rgba(14,165,233,.12)}
+[data-crew-theme="light"] .cz-crew-line,[data-crew-theme="light"] .cz-finance-row{background:rgba(2,6,23,.06);color:#0f172a}
+[data-crew-theme="dark"] .cz-crew-line,[data-crew-theme="dark"] .cz-finance-row{background:rgba(255,255,255,.08)}
