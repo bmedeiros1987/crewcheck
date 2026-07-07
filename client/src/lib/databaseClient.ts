@@ -337,9 +337,10 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
   }
 
   const updatedBounds = rosterDataBounds(roster);
+  const currentLastTime = currentBounds.last.getTime();
   const nextSummary = candidates
     .map((item) => ({ item, bounds: rosterSummaryBounds(item) }))
-    .filter((entry) => entry.bounds.first && entry.bounds.first.getTime() <= (updatedBounds.last?.getTime() || currentBounds.last.getTime()) + 7 * 24 * 60 * 60 * 1000 && entry.bounds.first.getTime() > (updatedBounds.last?.getTime() || currentBounds.last.getTime()) - 24 * 60 * 60 * 1000)
+    .filter((entry) => entry.bounds.first && entry.bounds.first.getTime() <= (updatedBounds.last?.getTime() || currentLastTime) + 7 * 24 * 60 * 60 * 1000 && entry.bounds.first.getTime() > (updatedBounds.last?.getTime() || currentLastTime) - 24 * 60 * 60 * 1000)
     .sort((a, b) => (a.bounds.first?.getTime() || 0) - (b.bounds.first?.getTime() || 0))[0]?.item;
   if (nextSummary) {
     const next = await openSavedRoster(nextSummary.id).catch(() => null);

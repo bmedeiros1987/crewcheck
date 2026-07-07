@@ -2459,7 +2459,8 @@ function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boole
     if (airportIndexes.length < 2) return { leg: null, reportCandidate: null, debriefCandidate: null };
 
     type TimePick = { idx: number; value: string; source: 'before-origin' | 'after-origin' };
-    let best: { originIdx: number; destIdx: number; dep: string; depIdx: number; arrRaw: string; arrIdx: number; report: string | null; score: number } | null = null;
+    type BestLegPick = { originIdx: number; destIdx: number; dep: string; depIdx: number; arrRaw: string; arrIdx: number; report: string | null; score: number };
+    let best: BestLegPick | null = null;
     const timeIndexes = legTokens.map((token, idx) => ({ token, idx })).filter((item) => isAimsTime(item.token));
 
     const scoreCandidate = (originIdx: number, dep: TimePick, destIdx: number, arrIdx: number, arrRaw: string, report: string | null) => {
@@ -2506,26 +2507,27 @@ function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boole
     }
 
     if (!best) return { leg: null, reportCandidate: null, debriefCandidate: null };
-    const origin = upper[best.originIdx];
-    const destination = upper[best.destIdx];
-    const afterArrivalTimes = timeIndexes.filter((item) => item.idx > best.arrIdx).map((item) => cleanTime(item.token));
+    const bestLeg = best as BestLegPick;
+    const origin = upper[bestLeg.originIdx];
+    const destination = upper[bestLeg.destIdx];
+    const afterArrivalTimes = timeIndexes.filter((item) => item.idx > bestLeg.arrIdx).map((item) => cleanTime(item.token));
     const debriefCandidate = afterArrivalTimes.length ? afterArrivalTimes[afterArrivalTimes.length - 1] : null;
     const workType = (forcedWorkType || (hasExtraMarker ? 'PS' : 'OP')).toUpperCase();
-    const arrClean = best.arrRaw.replace('(+1)', '');
-    const nextDay = /\(\+1\)/.test(best.arrRaw) || minutesOfDay(best.arrRaw) < minutesOfDay(best.dep);
-    const durationHours = diffHours(best.dep, best.arrRaw);
+    const arrClean = bestLeg.arrRaw.replace('(+1)', '');
+    const nextDay = /\(\+1\)/.test(bestLeg.arrRaw) || minutesOfDay(bestLeg.arrRaw) < minutesOfDay(bestLeg.dep);
+    const durationHours = diffHours(bestLeg.dep, bestLeg.arrRaw);
     const leg: FlightLeg = {
       flightNumber,
       origin,
       destination,
-      departureTime: best.dep,
+      departureTime: bestLeg.dep,
       arrivalTime: arrClean,
       workType,
       aircraftType: aircraftFrom(legTokens),
       isNextDay: nextDay,
       duration: durationHours,
     };
-    return { leg, reportCandidate: best.report, debriefCandidate };
+    return { leg, reportCandidate: bestLeg.report, debriefCandidate };
   }
 
   while (i < source.length) {

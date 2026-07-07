@@ -57,7 +57,7 @@ import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels';
 
 type ZeroLeg = {
   id: string;
@@ -73,6 +73,14 @@ type ZeroLeg = {
   presentation: string;
   departure: string;
   arrival: string;
+  aircraft?: string;
+  registration?: string;
+  gate?: string;
+  terminal?: string;
+  status?: string;
+  hotel?: string;
+  crew?: string[];
+  routine?: string[];
   timeRange: string;
   placeholder?: boolean;
 };
@@ -115,6 +123,13 @@ function city(code?: string) {
     BEL: 'Belém', MAO: 'Manaus', NAT: 'Natal', MCZ: 'Maceió', SLZ: 'São Luís', THE: 'Teresina', AJU: 'Aracaju', VIX: 'Vitória',
   };
   return map[String(code || '').toUpperCase()] || safe(code, 'Aeroporto');
+}
+function addMinutesToTime(value: string, minutes: number) {
+  const m = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (!m) return '—';
+  const d = new Date();
+  d.setHours(Number(m[1]), Number(m[2]) + minutes, 0, 0);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 function time(value?: string | null, fallback = '—') {
   const text = String(value || '').trim();
@@ -261,7 +276,22 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
           day, leg, kind: 'flight', date: d,
           title: `${flightNumber} · ${origin} → ${destination}`,
           subtitle: `Apres. ${presentation} · Chegada ${arrival}${anyLeg.isNextDay || (day as any).isNextDay ? ' +1' : ''} · ${city(origin)} → ${city(destination)}`,
-          origin, destination, flightNumber, presentation, departure, arrival, timeRange: `${departure} → ${arrival}`,
+          origin, destination, flightNumber, presentation, departure, arrival,
+          aircraft: safe(anyLeg.aircraft || anyLeg.aircraftType || anyLeg.equipment, '—'),
+          registration: safe(anyLeg.registration || anyLeg.tailNumber || anyLeg.matricula, '—'),
+          gate: safe(anyLeg.gate || (day as any).gate, 'A confirmar'),
+          terminal: safe(anyLeg.terminal || (day as any).terminal, 'Terminal a confirmar'),
+          status: safe(anyLeg.status || (day as any).status, 'Programado'),
+          hotel: safe((day as any).hotel || anyLeg.hotel, ''),
+          crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
+          routine: [
+            `Despertador ${addMinutesToTime(presentation, -90)}`,
+            anyLeg.hotel || (day as any).hotel ? `Hotel ${safe(anyLeg.hotel || (day as any).hotel)}` : '',
+            `Descanso após chegada ${arrival}`,
+            `Academia/restaurante/mercado/farmácia/lavanderia em ${city(destination)}`,
+          ].filter(Boolean),
+          timeRange: `${departure} → ${arrival}`,
+
         });
       });
       return;
@@ -281,7 +311,26 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     return String(a.departure || a.presentation).localeCompare(String(b.departure || b.presentation));
   });
 }
-function nextFlight(events: ZeroLeg[]) { return events.find((e) => e.kind === 'flight') || events[0] || placeholderLeg(); }
+
+function eventStartDateTime(event: ZeroLeg): Date {
+  const base = new Date(event.date);
+  const raw = event.presentation !== '—' ? event.presentation : event.departure;
+  const m = raw.match(/(\d{1,2}):(\d{2})/);
+  if (m) base.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  else base.setHours(0, 0, 0, 0);
+  return base;
+}
+function nextFlight(events: ZeroLeg[]) {
+  const now = new Date();
+  const real = events.filter((e) => !e.placeholder).sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  return real.find((e) => eventStartDateTime(e).getTime() >= now.getTime()) || real[0] || placeholderLeg();
+}
+function currentDayAnchor(events: ZeroLeg[]) {
+  const now = new Date();
+  const today = events.find((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate());
+  return today || nextFlight(events);
+}
+
 function isAdmin() {
   const u = getStoredUser();
   const role = String((u as any)?.role || storage.get('crewcheck_role')).toLowerCase();
@@ -312,7 +361,11 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={19}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={25}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>Decolagem</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>Chegada</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo"><div><Lock size={25}/><span>Portão</span><strong>A confirmar</strong><small>Terminal 2</small></div><div><Plane size={25}/><span>Status</span><strong className="ok">Confirmado</strong><small>Operação Normal</small></div></div>}
+    {!compact && <div className="cz-info-duo"><div><Lock size={25}/><span>Portão</span><strong>{safe(event.gate, 'A confirmar')}</strong><small>{safe(event.terminal, 'Terminal a confirmar')}</small></div><div><Plane size={25}/><span>Status</span><strong className="ok">{safe(event.status, 'Programado')}</strong><small>{safe(event.aircraft, 'Aeronave a confirmar')} · {safe(event.registration, 'Matrícula a confirmar')}</small></div></div>}
+    {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
+    {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
+    {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
+    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
   </article>;
 }
 function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
@@ -327,7 +380,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','TomTom/hotel',Car],
-    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
+    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
@@ -362,10 +415,10 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
 }
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
   const days = Array.isArray(roster.days) ? [...roster.days].sort((a,b)=>parseDate(a).getTime()-parseDate(b).getTime()) : [];
-  const first = events[0] || placeholderLeg();
+  const first = currentDayAnchor(events);
   const [selected, setSelected] = useState<ZeroLeg | null>(null);
   const hasRoster = days.length > 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>Primeiro evento</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div></div><p>{selected.subtitle}</p><footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, '—')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, '—')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, '—')} · {safe(selected.terminal, '—')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{selected.subtitle}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
 }
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   const alerts = ((compliance as any)?.alerts || []);
@@ -411,13 +464,13 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>TomTom / hotel / pós-pouso</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>TomTom / hotel / pós-pouso</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
 function RadarView({ event }: { event: ZeroLeg }) {
   const [state, setState] = useState<any>(null);
   useEffect(() => { let alive = true; fetch(`/api/radar-health?airport=${encodeURIComponent(event.origin)}&type=departure`, { cache: 'no-store' }).then(r => r.json()).then(p => alive && setState(p)).catch(() => alive && setState({ ok: false, message: 'Radar em espera.' })); return () => { alive = false; }; }, [event.origin]);
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>Status operacional para {event.flightNumber} · {event.origin} → {event.destination}.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{event.flightNumber}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: A confirmar</strong><span>Status: Confirmado / monitorando</span></article><article><Plane/><h2>Fonte operacional</h2><p>Radar, portão, status e remoção de voos finalizados.</p><strong>{state?.ok ? 'Fonte ativa' : 'Fonte em espera'}</strong><span>{state?.message || state?.source || 'Radar pronto.'}</span></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>Status operacional para {event.flightNumber} · {event.origin} → {event.destination}.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{event.flightNumber}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {safe(event.gate, 'A confirmar')} · {safe(event.terminal, 'Terminal a confirmar')}</strong><span>Status: {safe(event.status, 'Monitorando')}</span></article><article><Plane/><h2>Fonte operacional</h2><p>Radar, portão, status e remoção de voos finalizados.</p><strong>{state?.ok ? 'Fonte ativa' : 'Fonte em espera'}</strong><span>{state?.message || state?.source || 'Radar pronto.'}</span></article></section></>;
 }
 function WeatherView({ event }: { event: ZeroLeg }) {
   const [weather, setWeather] = useState<any>(null);
@@ -454,6 +507,15 @@ function CalendarToolsView({ actions }: { actions: QuickActions }) {
 }
 function ExportToolsView({ actions }: { actions: QuickActions }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, WhatsApp, Telegram, copiar resumo, e-mail e arquivo de calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.email}>E-mail</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
+}
+function WakeupView({ event }: { event: ZeroLeg }) {
+  const wake = event.presentation !== '—' ? addMinutesToTime(event.presentation, -90) : 'Calcular';
+  const leave = event.presentation !== '—' ? addMinutesToTime(event.presentation, -55) : 'Calcular';
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Alarmes calculados com base na próxima apresentação real, hotel/local atual e margem operacional.</p></section><section className="cz-finance-grid"><KpiCard icon={Bell} title="Acordar" value={wake} detail="90 min antes"/><KpiCard icon={Car} title="Sair" value={leave} detail={`${event.hotel ? 'Hotel' : 'Origem'} → ${event.origin}`}/><KpiCard icon={Plane} title="Apresentação" value={event.presentation} detail={event.flightNumber}/></section></>;
+}
+function HotelsView({ events }: { events: ZeroLeg[] }) {
+  const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
+  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites e entorno operacional detectados na escala real.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>Academia · Restaurante · Mercado · Farmácia · Lavanderia · Descanso</small></div></div></article>) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
 }
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
@@ -495,6 +557,8 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'calendar') return 'calendar';
   if (value === 'exports') return 'exports';
   if (value === 'routine') return 'routine';
+  if (value === 'wakeup' || value === 'despertador') return 'wakeup';
+  if (value === 'hotels' || value === 'hoteis') return 'hotels';
   if (value === 'database') return 'database';
   if (value === 'crew') return 'crew';
   return 'cockpit';
@@ -577,25 +641,27 @@ export default function Home() {
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
-    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
-    {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
-    {view === 'alerts' && <Alerts compliance={compliance}/>} 
-    {view === 'departure' && <Departure event={event}/>} 
-    {view === 'settings' && <SettingsView setView={setView} actions={actions}/>} 
-    {view === 'maintenance' && <MaintenancePreview/>} 
-    {view === 'import' && <ImportPanel onUpload={actions.upload}/>} 
-    {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>} 
-    {view === 'radar' && <RadarView event={event}/>} 
-    {view === 'weather' && <WeatherView event={event}/>} 
-    {view === 'perdiem' && <PerDiemView bundle={bundle}/>} 
-    {view === 'salary' && <SalaryView bundle={bundle}/>} 
-    {view === 'reports' && <ReportsView bundle={bundle}/>} 
-    {view === 'load' && <LoadView bundle={bundle}/>} 
-    {view === 'calendar' && <CalendarToolsView actions={actions}/>} 
-    {view === 'exports' && <ExportToolsView actions={actions}/>} 
-    {view === 'routine' && <RoutineView bundle={bundle}/>} 
-    {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>} 
-    {view === 'crew' && <CrewToolsView bundle={bundle}/>} 
+    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>}
+    {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>}
+    {view === 'alerts' && <Alerts compliance={compliance}/>}
+    {view === 'departure' && <Departure event={event}/>}
+    {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
+    {view === 'maintenance' && <MaintenancePreview/>}
+    {view === 'import' && <ImportPanel onUpload={actions.upload}/>}
+    {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>}
+    {view === 'radar' && <RadarView event={event}/>}
+    {view === 'weather' && <WeatherView event={event}/>}
+    {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
+    {view === 'salary' && <SalaryView bundle={bundle}/>}
+    {view === 'reports' && <ReportsView bundle={bundle}/>}
+    {view === 'load' && <LoadView bundle={bundle}/>}
+    {view === 'calendar' && <CalendarToolsView actions={actions}/>}
+    {view === 'exports' && <ExportToolsView actions={actions}/>}
+    {view === 'routine' && <RoutineView bundle={bundle}/>}
+    {view === 'wakeup' && <WakeupView event={event}/>}
+    {view === 'hotels' && <HotelsView events={events}/>}
+    {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
+    {view === 'crew' && <CrewToolsView bundle={bundle}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
   </main>;
 }
