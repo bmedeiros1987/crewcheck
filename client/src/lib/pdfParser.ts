@@ -1,6 +1,7 @@
 import { isAimsFormat, parseAimsRoster } from './aimsParser';
 import { getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.js?url';
+import { normalizeRosterDays } from './canonicalRoster';
 
 let pdfjsModulePromise: Promise<any> | null = null;
 
@@ -277,7 +278,7 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
   const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);
   const days = applyGenericTripulationRecordsToDays(normalizeCrewRosterReportContinuationDays(rescuedDays, header.month, header.year, header.base), crewRecords, header.crewName);
 
-  return {
+  return normalizeRosterDays({
     crewName: header.crewName,
     crewId: header.crewId,
     base: header.base,
@@ -288,7 +289,7 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
     days,
     rawText: fullText,
     totals: header.totals,
-  };
+  });
 }
 
 
@@ -2259,7 +2260,7 @@ function parseRosterText(fullText: string): CrewRoster {
   }));
   const days = parseDaysFromRows(syntheticRows, header.month, header.year, header.base);
 
-  return {
+  return normalizeRosterDays({
     crewName: header.crewName,
     crewId: header.crewId,
     base: header.base,
@@ -2270,5 +2271,5 @@ function parseRosterText(fullText: string): CrewRoster {
     days,
     rawText: fullText,
     totals: header.totals,
-  };
+  });
 }

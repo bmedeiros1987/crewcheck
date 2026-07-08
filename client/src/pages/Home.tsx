@@ -54,6 +54,7 @@ import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routine
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, googleCalendarIntegrationDiagnostics } from '@/lib/googleCalendarSync';
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
+import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
@@ -83,6 +84,7 @@ type ZeroLeg = {
   routine?: string[];
   timeRange: string;
   placeholder?: boolean;
+  canonical?: CanonicalRosterEvent;
 };
 
 type BundleState = { roster: CrewRoster; compliance: ComplianceResult | null; source: string };
@@ -101,8 +103,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.2.3';
-const CREWCHECK_UI_CORE_NOTE = 'v13.2.3: prioriza leitura sequencial do CrewRosterReport para evitar voo deslocado e escala duplicada';
+const DEFAULT_VERSION = '13.3.0';
+const CREWCHECK_UI_CORE_NOTE = 'v13.3.0: Canonical Roster Core com parser normalizado, escala por data e próxima programação cronológica';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -257,84 +259,81 @@ function currentCompliance(bundle: BundleState) { return bundle.compliance || an
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
-  const legs: ZeroLeg[] = [];
-  const days = Array.isArray(roster.days) ? roster.days : [];
-  days.forEach((day, dayIndex) => {
-    const d = parseDate(day);
-    const dayLegs = Array.isArray(day.legs) ? day.legs : [];
-    if (dayLegs.length) {
-      dayLegs.forEach((leg: FlightLeg, legIndex: number) => {
-        const anyLeg = leg as any;
-        const presentation = time((day as any).dutyReport || anyLeg.presentationTime || anyLeg.reportTime || anyLeg.departureTime, time(anyLeg.departureTime, '—'));
-        const departure = time(anyLeg.departureTime || (day as any).departureTime, presentation);
-        const arrival = time(anyLeg.arrivalTime || (day as any).dutyDebrief || (day as any).arrivalTime, '—');
-        const origin = safe(anyLeg.origin || anyLeg.from || (day as any).origin, roster.base || '—');
-        const destination = safe(anyLeg.destination || anyLeg.to || (day as any).destination, roster.base || '—');
-        const flightNumber = safe(anyLeg.flightNumber || anyLeg.flight || (day as any).pairingCode, 'VOO');
-        legs.push({
-          id: `${dayIndex}-${legIndex}-${flightNumber}`,
-          day, leg, kind: 'flight', date: d,
-          title: `${flightNumber} · ${origin} → ${destination}`,
-          subtitle: `Apres. ${presentation} · Chegada ${arrival}${anyLeg.isNextDay || (day as any).isNextDay ? ' +1' : ''} · ${city(origin)} → ${city(destination)}`,
-          origin, destination, flightNumber, presentation, departure, arrival,
-          aircraft: safe(anyLeg.aircraft || anyLeg.aircraftType || anyLeg.equipment, '—'),
-          registration: safe(anyLeg.registration || anyLeg.tailNumber || anyLeg.matricula, '—'),
-          gate: safe(anyLeg.gate || (day as any).gate, 'A confirmar'),
-          terminal: safe(anyLeg.terminal || (day as any).terminal, 'Terminal a confirmar'),
-          status: safe(anyLeg.status || (day as any).status, 'Programado'),
-          hotel: safe((day as any).hotel || anyLeg.hotel, ''),
-          crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
-          routine: [
-            `Despertador ${addMinutesToTime(presentation, -90)}`,
-            anyLeg.hotel || (day as any).hotel ? `Hotel ${safe(anyLeg.hotel || (day as any).hotel)}` : '',
-            `Descanso após chegada ${arrival}`,
-            `Academia/restaurante/mercado/farmácia/lavanderia em ${city(destination)}`,
-          ].filter(Boolean),
-          timeRange: `${departure} → ${arrival}`,
+  const normalized = normalizeRosterDays(roster);
+  const canonicalEvents = buildCanonicalRosterEvents(normalized);
 
-        });
-      });
-      return;
+  const legs = canonicalEvents.map((event): ZeroLeg => {
+    const day = event.publishedDay;
+    const leg = event.leg;
+    const d = parseDate(day);
+
+    if (event.kind === 'flight' && leg) {
+      const anyLeg = leg as any;
+      return {
+        id: event.id,
+        day,
+        leg,
+        kind: 'flight',
+        date: d,
+        title: `${event.flightNumber} · ${event.origin} → ${event.destination}`,
+        subtitle: `Apres. ${event.presentation} · Chegada ${event.arrival}${event.isNextDay ? ' +1' : ''} · ${city(event.origin)} → ${city(event.destination)}`,
+        origin: event.origin,
+        destination: event.destination,
+        flightNumber: event.flightNumber,
+        presentation: event.presentation,
+        departure: event.departure,
+        arrival: event.arrival,
+        aircraft: safe(anyLeg.aircraft || anyLeg.aircraftType || anyLeg.equipment, '—'),
+        registration: safe(anyLeg.registration || anyLeg.tailNumber || anyLeg.matricula, '—'),
+        gate: safe(anyLeg.gate || (day as any).gate, 'A confirmar'),
+        terminal: safe(anyLeg.terminal || (day as any).terminal, 'Terminal a confirmar'),
+        status: safe(anyLeg.status || (day as any).status, 'Programado'),
+        hotel: safe((day as any).hotel || anyLeg.hotel, ''),
+        crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
+        routine: [
+          `Despertador ${addMinutesToTime(event.presentation, -90)}`,
+          anyLeg.hotel || (day as any).hotel ? `Hotel ${safe(anyLeg.hotel || (day as any).hotel)}` : '',
+          `Descanso após chegada ${event.arrival}`,
+          `Academia/restaurante/mercado/farmácia/lavanderia em ${city(event.destination)}`,
+        ].filter(Boolean),
+        timeRange: `${event.departure} → ${event.arrival}`,
+        canonical: event,
+      };
     }
-    const type = String((day as any).type || '').toUpperCase();
-    const base = safe((day as any).base || (day as any).airport || (day as any).hotel, roster.base || '—');
-    if ((day as any).hotel || type.includes('LAYOVER') || type.includes('HOTEL') || type.includes('PERNOITE')) {
-      legs.push({ id: `${dayIndex}-hotel`, day, kind: 'stay', date: d, title: `Estadia diurna · ${base}`, subtitle: `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}`, origin: base, destination: base, flightNumber: 'HOTEL', presentation: time((day as any).dutyReport || (day as any).startTime, '—'), departure: time((day as any).startTime || (day as any).dutyReport, '—'), arrival: time((day as any).endTime || (day as any).dutyDebrief, '—'), hotel: safe((day as any).hotel, ''), status: safe((day as any).status, 'Pernoite'), routine: [`Descanso em ${safe((day as any).hotel || city(base), city(base))}`, `Academia/restaurante/mercado/farmácia/lavanderia em ${city(base)}`], timeRange: safe((day as any).duration || (day as any).dutyHours, 'Pernoite') });
-    } else if (type && !['DO', 'OFF', 'FOLGA'].includes(type)) {
-      legs.push({ id: `${dayIndex}-duty`, day, kind: 'duty', date: d, title: safe((day as any).pairingCode || type, 'Programação'), subtitle: safe((day as any).description || (day as any).rawText, 'Programação operacional'), origin: base, destination: base, flightNumber: safe((day as any).pairingCode || type, 'DUTY'), presentation: time((day as any).dutyReport, '—'), departure: time((day as any).startTime, time((day as any).dutyReport, '—')), arrival: time((day as any).endTime, time((day as any).dutyDebrief, '—')), timeRange: `${time((day as any).startTime || (day as any).dutyReport, '—')} → ${time((day as any).endTime || (day as any).dutyDebrief, '—')}` });
-    }
+
+    const base = safe((day as any).base || (day as any).airport || (day as any).hotel || event.origin, roster.base || '—');
+    const kind = event.kind === 'stay' ? 'stay' : 'duty';
+    return {
+      id: event.id,
+      day,
+      kind,
+      date: d,
+      title: kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação'),
+      subtitle: kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional'),
+      origin: base,
+      destination: base,
+      flightNumber: event.flightNumber,
+      presentation: event.presentation,
+      departure: event.departure,
+      arrival: event.arrival,
+      hotel: safe((day as any).hotel, ''),
+      timeRange: `${event.departure} → ${event.arrival}`,
+      canonical: event,
+    };
   });
-  return legs.sort((a, b) => {
-    const ad = a.date?.getTime?.() || 0;
-    const bd = b.date?.getTime?.() || 0;
-    if (ad !== bd) return ad - bd;
-    return String(a.departure || a.presentation).localeCompare(String(b.departure || b.presentation));
-  });
+
+  return legs.sort((a, b) => (a.canonical ? new Date(a.canonical.startDateTime).getTime() : a.date.getTime()) - (b.canonical ? new Date(b.canonical.startDateTime).getTime() : b.date.getTime()));
 }
 
 function eventStartDateTime(event: ZeroLeg): Date {
-  const base = new Date(event.date);
-  const raw = event.presentation !== '—' ? event.presentation : event.departure;
-  const m = raw.match(/(\d{1,2}):(\d{2})/);
-  if (m) base.setHours(Number(m[1]), Number(m[2]), 0, 0);
-  else base.setHours(0, 0, 0, 0);
-  return base;
+  return event.canonical ? new Date(event.canonical.startDateTime) : new Date(event.date);
 }
 function eventEndDateTime(event: ZeroLeg): Date {
-  const start = eventStartDateTime(event);
-  const raw = event.arrival !== '—' ? event.arrival : event.departure !== '—' ? event.departure : event.presentation;
-  const m = String(raw || '').match(/(\d{1,2}):(\d{2})/);
-  const end = new Date(event.date);
-  if (m) {
-    end.setHours(Number(m[1]), Number(m[2]), 0, 0);
-    if (end.getTime() < start.getTime()) end.setDate(end.getDate() + 1);
-  } else {
-    end.setTime(start.getTime() + (event.kind === 'stay' ? 12 : 6) * 60 * 60 * 1000);
-  }
-  return end;
+  return event.canonical ? new Date(event.canonical.endDateTime) : eventStartDateTime(event);
 }
 function isOperationalEvent(event: ZeroLeg) {
   if (event.placeholder) return false;
+  if (event.canonical?.kind === 'rest') return false;
   const code = `${event.flightNumber} ${(event.day as any)?.type || ''} ${(event.day as any)?.pairingCode || ''}`.toUpperCase();
   if (/(^|\s)(DO|DOF|DOP|OFF|FOLGA|FÉRIAS|FERIAS|EAD)(\s|$)/.test(code)) return false;
   if (code.includes('SOBREAVISO') && !/(VOO|RESERVA|ACION|CHAMAD|LA\d+)/.test(code)) return false;
@@ -342,39 +341,20 @@ function isOperationalEvent(event: ZeroLeg) {
 }
 function eventIsNow(event: ZeroLeg, now = new Date()) {
   const start = eventStartDateTime(event).getTime();
-  const end = eventEndDateTime(event).getTime() + 2 * 60 * 60 * 1000;
-  return now.getTime() >= start - 30 * 60 * 1000 && now.getTime() <= end;
+  const end = eventEndDateTime(event).getTime();
+  return now.getTime() >= start && now.getTime() <= end;
 }
 function nextFlight(events: ZeroLeg[]) {
-  const now = new Date();
-  const real = events
-    .filter(isOperationalEvent)
-    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
-  return real.find((e) => eventIsNow(e, now))
-    || real.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
-    || real[0]
-    || placeholderLeg();
+  const selected = selectNextRosterEvent(events.map(event => event.canonical).filter(Boolean) as CanonicalRosterEvent[]);
+  return (selected && events.find(event => event.canonical?.id === selected.id)) || events.find((e) => !e.placeholder && isOperationalEvent(e)) || placeholderLeg();
 }
 function nextRealFlight(events: ZeroLeg[]) {
-  const now = new Date();
-  const flights = events
-    .filter((e) => e.kind === 'flight' && !e.placeholder)
-    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
-  return flights.find((e) => eventIsNow(e, now))
-    || flights.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
-    || flights[0]
-    || nextFlight(events);
+  const selected = selectNextRosterEvent(events.filter(e => e.kind === 'flight').map(event => event.canonical).filter(Boolean) as CanonicalRosterEvent[]);
+  return (selected && events.find(event => event.canonical?.id === selected.id)) || nextFlight(events);
 }
 function currentDayAnchor(events: ZeroLeg[]) {
-  const now = new Date();
-  const current = events.find((e) => isOperationalEvent(e) && eventIsNow(e, now));
-  if (current) return current;
-  const today = events
-    .filter(isOperationalEvent)
-    .find((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate());
-  return today || nextFlight(events);
+  return nextFlight(events);
 }
-
 function isAdmin() {
   const u = getStoredUser();
   const role = String((u as any)?.role || storage.get('crewcheck_role')).toLowerCase();
@@ -458,12 +438,18 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={ShieldCheck} title="Status RBAC" value={loaded ? 'Analisado' : 'Aguardando'} detail={loaded ? 'Escala real' : 'Importe PDF'}/><KpiCard icon={CalendarDays} title="Eventos" value={String(loaded ? events.length : 0)} detail="Escala carregada" tone="blue"/><KpiCard icon={Bell} title="Alerts" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>Nenhuma escala real carregada</h2><p>Suba o PDF oficial de julho para reativar escala completa, detalhes, diárias, radar, rotina, hotéis, academias, trânsito e saída inteligente com dados reais.</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/><section className="cz-shortcuts cz-shortcuts-full"><button onClick={() => setView('features')}><Settings/><strong>Funcionalidades</strong><small>Central completa</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar</strong><small>Gate e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal/mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Ganhos previstos</small></button><button onClick={() => setView('reports')}><FileText/><strong>Relatórios</strong><small>Indicadores</small></button><button onClick={() => setView('routine')}><Dumbbell/><strong>Rotina</strong><small>Academias/hotéis</small></button><button onClick={onUpload}><Upload/><strong>Importar PDF</strong><small>Escala oficial</small></button></section></>;
 }
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
-  const days = Array.isArray(roster.days) ? [...roster.days].sort((a,b)=>parseDate(a).getTime()-parseDate(b).getTime()) : [];
+  const normalizedRoster = normalizeRosterDays(roster);
+  const days = Array.isArray(normalizedRoster.days) ? normalizedRoster.days : [];
+  const groupedEvents = days
+    .map((day) => ({ day, events: events.filter((event) => event.day.date === day.date) }))
+    .filter((group) => group.events.length);
   const first = currentDayAnchor(events);
   const [selected, setSelected] = useState<ZeroLeg | null>(null);
   const hasRoster = days.length > 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, '—')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, '—')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, '—')} · {safe(selected.terminal, '—')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{selected.subtitle}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
+
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group" key={day.date}><header className="cz-day-group-head"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{dayEvents.length} evento(s)</span></header>{dayEvents.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, '—')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, '—')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, '—')} · {safe(selected.terminal, '—')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{selected.subtitle}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
 }
+
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   const alerts = ((compliance as any)?.alerts || []);
   const list = alerts.slice(0, 12);
