@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.2.2",
+  "version": "13.2.3",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.2.2 — hotfix do parser CrewRosterReport: corrige regex em jornadas com +1.",
+  "description": "CrewCheck v13.2.3 — corrige seleção de parser CrewRosterReport e reduz eventos duplicados/deslocados.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
