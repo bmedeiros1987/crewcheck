@@ -101,8 +101,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.2.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.2.2: corrige regex do parser CrewRosterReport com voos +1 e continuação de jornada';
+const DEFAULT_VERSION = '13.2.3';
+const CREWCHECK_UI_CORE_NOTE = 'v13.2.3: prioriza leitura sequencial do CrewRosterReport para evitar voo deslocado e escala duplicada';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
