@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.2.1",
+  "version": "13.2.2",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.2.1 — hotfix pós-merge: voo real separado para radar, meteorologia, saída e despertador.",
+  "description": "CrewCheck v13.2.2 — hotfix do parser CrewRosterReport: corrige regex em jornadas com +1.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
