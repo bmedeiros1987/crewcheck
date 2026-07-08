@@ -534,8 +534,9 @@ function normalizeCrewRosterReportContinuationDays(days: RosterDay[], referenceM
     const raw = day.rawText || '';
     const legsByOffset = new Map<number, FlightLeg[]>();
     for (const leg of day.legs) {
-      const safeFlight = leg.flightNumber.replace(/[^A-Z0-9]/gi, '');
-      const pattern = new RegExp(`${safeFlight}[\s\S]{0,80}?${leg.origin}\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)`, 'i');
+      const safeFlight = escapeColumnarRegExp(leg.flightNumber.replace(/[^A-Z0-9]/gi, ''));
+      const safeOrigin = escapeColumnarRegExp(String(leg.origin || '').toUpperCase());
+      const pattern = new RegExp(`${safeFlight}[\\s\\S]{0,80}?${safeOrigin}\\s+(\\d{1,2}:\\d{2}(?:\\(\\+\\d+\\))?)`, 'i');
       const rawDepart = raw.match(pattern)?.[1] || leg.departureTime;
       const offset = dayOffsetFromTime(rawDepart);
       const cleanedLeg = { ...leg, departureTime: cleanTime(leg.departureTime), arrivalTime: cleanTime(leg.arrivalTime), isNextDay: leg.isNextDay || offset > 0 };

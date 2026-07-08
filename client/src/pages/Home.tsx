@@ -101,8 +101,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.2.1';
-const CREWCHECK_UI_CORE_NOTE = 'v13.2.1: separa próxima programação geral de voo real para radar, meteorologia, saída e despertador';
+const DEFAULT_VERSION = '13.2.2';
+const CREWCHECK_UI_CORE_NOTE = 'v13.2.2: corrige regex do parser CrewRosterReport com voos +1 e continuação de jornada';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
