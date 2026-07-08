@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.3.1",
+  "version": "13.3.2",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.3.1 — safety net cronológico para não exibir voo encerrado como próxima programação.",
+  "description": "CrewCheck v13.3.2 — corrige período canônico da escala para Julho/2026 quando o PDF é de Julho.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
