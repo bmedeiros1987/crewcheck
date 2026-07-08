@@ -101,8 +101,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.2.3';
-const CREWCHECK_UI_CORE_NOTE = 'v13.2.3: prioriza leitura sequencial do CrewRosterReport para evitar voo deslocado e escala duplicada';
+const DEFAULT_VERSION = '13.2.4';
+const CREWCHECK_UI_CORE_NOTE = 'v13.2.4: endurece cronologia, ignora voos encerrados e corrige apresentação incoerente no CrewRosterReport';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -255,6 +255,23 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
 }
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
+function clockMinutesForDisplay(value?: string | null): number | null {
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+function normalizePresentationForDisplay(presentation: string, departure: string, isNextDay = false): string {
+  const pres = clockMinutesForDisplay(presentation);
+  const dep = clockMinutesForDisplay(departure);
+  if (pres === null || dep === null || isNextDay) return presentation;
+  // Em CrewRosterReport quebrado, às vezes o dutyReport do pairing anterior
+  // aparece como apresentação de uma perna da madrugada: ex. Apres. 09:30 / Decol. 04:34.
+  // Nesse caso, exibir a decolagem como referência operacional é mais seguro do que mostrar
+  // uma apresentação impossível.
+  if (pres > dep && pres - dep > 120) return departure;
+  return presentation;
+}
+
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
   const legs: ZeroLeg[] = [];
@@ -265,8 +282,10 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     if (dayLegs.length) {
       dayLegs.forEach((leg: FlightLeg, legIndex: number) => {
         const anyLeg = leg as any;
-        const presentation = time((day as any).dutyReport || anyLeg.presentationTime || anyLeg.reportTime || anyLeg.departureTime, time(anyLeg.departureTime, '—'));
-        const departure = time(anyLeg.departureTime || (day as any).departureTime, presentation);
+        const rawPresentation = time((day as any).dutyReport || anyLeg.presentationTime || anyLeg.reportTime || anyLeg.departureTime, time(anyLeg.departureTime, '—'));
+        const departure = time(anyLeg.departureTime || (day as any).departureTime, rawPresentation);
+        const legIsNextDay = Boolean(anyLeg.isNextDay || (day as any).isNextDay);
+        const presentation = normalizePresentationForDisplay(rawPresentation, departure, legIsNextDay);
         const arrival = time(anyLeg.arrivalTime || (day as any).dutyDebrief || (day as any).arrivalTime, '—');
         const origin = safe(anyLeg.origin || anyLeg.from || (day as any).origin, roster.base || '—');
         const destination = safe(anyLeg.destination || anyLeg.to || (day as any).destination, roster.base || '—');
@@ -275,7 +294,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
           id: `${dayIndex}-${legIndex}-${flightNumber}`,
           day, leg, kind: 'flight', date: d,
           title: `${flightNumber} · ${origin} → ${destination}`,
-          subtitle: `Apres. ${presentation} · Chegada ${arrival}${anyLeg.isNextDay || (day as any).isNextDay ? ' +1' : ''} · ${city(origin)} → ${city(destination)}`,
+          subtitle: `Apres. ${presentation} · Chegada ${arrival}${legIsNextDay ? ' +1' : ''} · ${city(origin)} → ${city(destination)}`,
           origin, destination, flightNumber, presentation, departure, arrival,
           aircraft: safe(anyLeg.aircraft || anyLeg.aircraftType || anyLeg.equipment, '—'),
           registration: safe(anyLeg.registration || anyLeg.tailNumber || anyLeg.matricula, '—'),
@@ -304,7 +323,20 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       legs.push({ id: `${dayIndex}-duty`, day, kind: 'duty', date: d, title: safe((day as any).pairingCode || type, 'Programação'), subtitle: safe((day as any).description || (day as any).rawText, 'Programação operacional'), origin: base, destination: base, flightNumber: safe((day as any).pairingCode || type, 'DUTY'), presentation: time((day as any).dutyReport, '—'), departure: time((day as any).startTime, time((day as any).dutyReport, '—')), arrival: time((day as any).endTime, time((day as any).dutyDebrief, '—')), timeRange: `${time((day as any).startTime || (day as any).dutyReport, '—')} → ${time((day as any).endTime || (day as any).dutyDebrief, '—')}` });
     }
   });
-  return legs.sort((a, b) => {
+  const unique = new Map<string, ZeroLeg>();
+  for (const item of legs) {
+    const key = [
+      item.date?.toISOString?.().slice(0, 10) || '',
+      item.kind,
+      item.flightNumber,
+      item.origin,
+      item.destination,
+      item.departure,
+      item.arrival,
+    ].join('|');
+    if (!unique.has(key)) unique.set(key, item);
+  }
+  return Array.from(unique.values()).sort((a, b) => {
     const ad = a.date?.getTime?.() || 0;
     const bd = b.date?.getTime?.() || 0;
     if (ad !== bd) return ad - bd;
@@ -312,25 +344,49 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
   });
 }
 
+function eventClockMinutes(value?: string | null): number | null {
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+function eventDateAt(event: ZeroLeg, value?: string | null, fallbackHour = 0): Date {
+  const date = new Date(event.date);
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (match) date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  else date.setHours(fallbackHour, 0, 0, 0);
+  return date;
+}
+function flightDepartureDateTime(event: ZeroLeg): Date {
+  const raw = event.departure !== '—' ? event.departure : event.presentation;
+  return eventDateAt(event, raw, 0);
+}
+function flightArrivalDateTime(event: ZeroLeg): Date {
+  const departure = flightDepartureDateTime(event);
+  const arrival = eventDateAt(event, event.arrival !== '—' ? event.arrival : event.departure, departure.getHours());
+  if (arrival.getTime() < departure.getTime()) arrival.setDate(arrival.getDate() + 1);
+  return arrival;
+}
 function eventStartDateTime(event: ZeroLeg): Date {
-  const base = new Date(event.date);
+  if (event.kind === 'flight') {
+    const dep = eventClockMinutes(event.departure);
+    const pres = eventClockMinutes(event.presentation);
+    const markedNextDay = Boolean((event.leg as any)?.isNextDay || (event.day as any)?.isNextDay);
+    const impossiblePresentation = dep !== null && pres !== null && !markedNextDay && pres > dep && pres - dep > 120;
+    const raw = impossiblePresentation
+      ? event.departure
+      : (event.presentation !== '—' ? event.presentation : event.departure);
+    return eventDateAt(event, raw, 0);
+  }
   const raw = event.presentation !== '—' ? event.presentation : event.departure;
-  const m = raw.match(/(\d{1,2}):(\d{2})/);
-  if (m) base.setHours(Number(m[1]), Number(m[2]), 0, 0);
-  else base.setHours(0, 0, 0, 0);
-  return base;
+  return eventDateAt(event, raw, 0);
 }
 function eventEndDateTime(event: ZeroLeg): Date {
+  if (event.kind === 'flight') return flightArrivalDateTime(event);
   const start = eventStartDateTime(event);
   const raw = event.arrival !== '—' ? event.arrival : event.departure !== '—' ? event.departure : event.presentation;
-  const m = String(raw || '').match(/(\d{1,2}):(\d{2})/);
-  const end = new Date(event.date);
-  if (m) {
-    end.setHours(Number(m[1]), Number(m[2]), 0, 0);
-    if (end.getTime() < start.getTime()) end.setDate(end.getDate() + 1);
-  } else {
-    end.setTime(start.getTime() + (event.kind === 'stay' ? 12 : 6) * 60 * 60 * 1000);
-  }
+  const end = eventDateAt(event, raw, start.getHours());
+  if (end.getTime() < start.getTime()) end.setDate(end.getDate() + 1);
+  if (end.getTime() === start.getTime()) end.setTime(start.getTime() + (event.kind === 'stay' ? 12 : 6) * 60 * 60 * 1000);
   return end;
 }
 function isOperationalEvent(event: ZeroLeg) {
@@ -342,8 +398,11 @@ function isOperationalEvent(event: ZeroLeg) {
 }
 function eventIsNow(event: ZeroLeg, now = new Date()) {
   const start = eventStartDateTime(event).getTime();
-  const end = eventEndDateTime(event).getTime() + 2 * 60 * 60 * 1000;
+  const end = eventEndDateTime(event).getTime() + (event.kind === 'flight' ? 60 : 120) * 60 * 1000;
   return now.getTime() >= start - 30 * 60 * 1000 && now.getTime() <= end;
+}
+function eventStillRelevant(event: ZeroLeg, now = new Date()) {
+  return eventEndDateTime(event).getTime() >= now.getTime() - 30 * 60 * 1000;
 }
 function nextFlight(events: ZeroLeg[]) {
   const now = new Date();
@@ -351,8 +410,9 @@ function nextFlight(events: ZeroLeg[]) {
     .filter(isOperationalEvent)
     .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
   return real.find((e) => eventIsNow(e, now))
-    || real.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
-    || real[0]
+    || real.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 30 * 60 * 1000)
+    || real.find((e) => eventStillRelevant(e, now))
+    || real[real.length - 1]
     || placeholderLeg();
 }
 function nextRealFlight(events: ZeroLeg[]) {
@@ -361,18 +421,20 @@ function nextRealFlight(events: ZeroLeg[]) {
     .filter((e) => e.kind === 'flight' && !e.placeholder)
     .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
   return flights.find((e) => eventIsNow(e, now))
-    || flights.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
-    || flights[0]
+    || flights.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 30 * 60 * 1000)
+    || flights.find((e) => eventStillRelevant(e, now))
+    || flights[flights.length - 1]
     || nextFlight(events);
 }
 function currentDayAnchor(events: ZeroLeg[]) {
   const now = new Date();
   const current = events.find((e) => isOperationalEvent(e) && eventIsNow(e, now));
   if (current) return current;
-  const today = events
+  const todayFuture = events
     .filter(isOperationalEvent)
-    .find((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate());
-  return today || nextFlight(events);
+    .filter((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate())
+    .find((e) => eventStillRelevant(e, now));
+  return todayFuture || nextFlight(events);
 }
 
 function isAdmin() {

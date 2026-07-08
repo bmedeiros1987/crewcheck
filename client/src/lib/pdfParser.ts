@@ -251,27 +251,20 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
   const columnarScore = scoreParsedDays(columnarDays, header.month, header.year);
   const looseScore = scoreParsedDays(looseDays, header.month, header.year);
 
-  // CrewRosterReport gerado em tabela costuma ter texto sequencial confiável.
-  // A leitura visual/transposta pode capturar "Updated Date" como data de escala,
-  // deslocando voos e inflando a quantidade de eventos. Para esse formato,
-  // preferimos o parser sequencial quando ele encontra uma escala completa.
-  const visualEventCount = countRosterEvents(transposedDays) + countRosterEvents(visualDays) + countRosterEvents(columnarDays);
-  const looseEventCount = countRosterEvents(looseDays);
-  const preferLooseText = looseDays.length >= 10
-    && looseEventCount >= 8
-    && (visualEventCount > looseEventCount * 1.35 || /Updated\s+Date/i.test(fullText));
+  // v13.2.4: CrewRosterReport deve ser text-first.
+  // Para o PDF tabular real, a leitura visual/transposta pode deslocar LA3455
+  // e manter FOR → GRU como se ainda estivesse vigente. Quando o texto sequencial
+  // já encontra uma escala consistente, não misturamos fontes visuais.
+  const textFirstDays = dedupeColumnarRosterDays(looseDays);
+  const useSequentialOnly = textFirstDays.length >= 8 && countRosterEvents(textFirstDays) >= 8;
 
-  const primaryVisual = preferLooseText
-    ? looseDays
-    : (transposedScore >= Math.max(columnarScore, visualScore, looseScore) ? transposedDays : (columnarScore > visualScore ? columnarDays : visualDays));
+  const primaryVisual = transposedScore >= Math.max(columnarScore, visualScore, looseScore)
+    ? transposedDays
+    : (columnarScore > visualScore ? columnarDays : visualDays);
 
-  const secondarySources = preferLooseText
-    ? []
-    : [...looseDays, ...(primaryVisual === transposedDays ? [...visualDays, ...columnarDays] : (columnarScore > visualScore ? visualDays : columnarDays))];
-
-  const mergedDays = preferLooseText
-    ? dedupeColumnarRosterDays(looseDays)
-    : mergeParsedDaySources(primaryVisual, secondarySources, header.month, header.year);
+  const mergedDays = useSequentialOnly
+    ? textFirstDays
+    : mergeParsedDaySources(primaryVisual, [...looseDays, ...(primaryVisual === transposedDays ? [...visualDays, ...columnarDays] : (columnarScore > visualScore ? visualDays : columnarDays))], header.month, header.year);
 
   const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);
   const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);
