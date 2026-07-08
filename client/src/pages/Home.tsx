@@ -103,8 +103,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.3.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.3.2: corrige mês canônico da escala para exibir Julho quando o PDF é Julho';
+const DEFAULT_VERSION = '13.3.3';
+const CREWCHECK_UI_CORE_NOTE = 'v13.3.3: filtra dias fora do período publicado e bloqueia artefatos msgsys/Updated Date';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {

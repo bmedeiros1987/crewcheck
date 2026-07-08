@@ -95,6 +95,39 @@ function sortLegs(legs: FlightLeg[]) {
   return [...legs].sort((a, b) => (minutes(a.departureTime) ?? 99999) - (minutes(b.departureTime) ?? 99999));
 }
 
+function parsePublishedRangeDate(day: string, monthToken: string, year: string): Date | null {
+  const month = MONTHS[String(monthToken || '').toUpperCase()];
+  const date = new Date(Number(year), (month || 1) - 1, Number(day), 12, 0, 0, 0);
+  return month && Number.isFinite(date.getTime()) ? date : null;
+}
+
+function inferPublishedRangeFromRawText(rawText?: string | null): { start: Date; end: Date } | null {
+  const text = String(rawText || '');
+  const match = text.match(/\b(\d{1,2})-([A-Za-z]{3})-(\d{4})\s+to\s+(\d{1,2})-([A-Za-z]{3})-(\d{4})\b/i);
+  if (!match) return null;
+  const start = parsePublishedRangeDate(match[1], match[2], match[3]);
+  const end = parsePublishedRangeDate(match[4], match[5], match[6]);
+  if (!start || !end) return null;
+  return { start, end };
+}
+
+function dayDateTime(day: RosterDay, fallbackMonth: number, fallbackYear: number): number {
+  const parsed = parseRosterDate(day.date, day.month || fallbackMonth, day.year || fallbackYear);
+  return new Date(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0, 0).getTime();
+}
+
+function filterDaysByPublishedRange(days: RosterDay[], roster: CrewRoster, fallbackMonth: number, fallbackYear: number): RosterDay[] {
+  const range = inferPublishedRangeFromRawText(roster.rawText);
+  if (!range) return days;
+
+  const start = range.start.getTime();
+  const end = range.end.getTime();
+  return days.filter((day) => {
+    const time = dayDateTime(day, fallbackMonth, fallbackYear);
+    return time >= start && time <= end;
+  });
+}
+
 function inferRosterPeriodFromRawText(rawText?: string | null): { month: number; year: number } | null {
   const text = String(rawText || '');
   const range = text.match(/\b\d{1,2}-([A-Za-z]{3})-(\d{4})\s+to\s+\d{1,2}-([A-Za-z]{3})-(\d{4})\b/i);
@@ -181,8 +214,9 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     current.isNextDay = Boolean(current.isNextDay || day.isNextDay || current.legs.some((leg) => leg.isNextDay));
   }
 
-  const normalizedDays = Array.from(byDate.values()).sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
-  const period = inferCanonicalRosterPeriod(roster, normalizedDays, defaultMonth, defaultYear);
+  const collectedDays = Array.from(byDate.values()).sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
+  const period = inferCanonicalRosterPeriod(roster, collectedDays, defaultMonth, defaultYear);
+  const normalizedDays = filterDaysByPublishedRange(collectedDays, roster, period.month, period.year);
 
   return {
     ...roster,

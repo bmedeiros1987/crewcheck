@@ -252,27 +252,23 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
   const columnarScore = scoreParsedDays(columnarDays, header.month, header.year);
   const looseScore = scoreParsedDays(looseDays, header.month, header.year);
 
-  // CrewRosterReport gerado em tabela costuma ter texto sequencial confiável.
-  // A leitura visual/transposta pode capturar "Updated Date" como data de escala,
-  // deslocando voos e inflando a quantidade de eventos. Para esse formato,
-  // preferimos o parser sequencial quando ele encontra uma escala completa.
-  const visualEventCount = countRosterEvents(transposedDays) + countRosterEvents(visualDays) + countRosterEvents(columnarDays);
-  const looseEventCount = countRosterEvents(looseDays);
-  const preferLooseText = looseDays.length >= 10
-    && looseEventCount >= 8
-    && (visualEventCount > looseEventCount * 1.35 || /Updated\s+Date/i.test(fullText));
+  // v13.3.3: CrewRosterReport oficial deve ser sequencial/text-first quando o texto
+  // já encontra uma escala suficiente. A leitura visual/transposta continua como
+  // fallback, mas não deve contaminar a escala com linhas técnicas como msgsys,
+  // Updated Date ou datas fora do período publicado.
+  const sequentialDays = dedupeColumnarRosterDays(looseDays);
+  const sequentialEventCount = countRosterEvents(sequentialDays);
+  const useSequentialOnly = /Roster\s+Report/i.test(fullText)
+    && sequentialDays.length >= 8
+    && sequentialEventCount >= 8;
 
-  const primaryVisual = preferLooseText
-    ? looseDays
-    : (transposedScore >= Math.max(columnarScore, visualScore, looseScore) ? transposedDays : (columnarScore > visualScore ? columnarDays : visualDays));
+  const primaryVisual = transposedScore >= Math.max(columnarScore, visualScore, looseScore)
+    ? transposedDays
+    : (columnarScore > visualScore ? columnarDays : visualDays);
 
-  const secondarySources = preferLooseText
-    ? []
-    : [...looseDays, ...(primaryVisual === transposedDays ? [...visualDays, ...columnarDays] : (columnarScore > visualScore ? visualDays : columnarDays))];
-
-  const mergedDays = preferLooseText
-    ? dedupeColumnarRosterDays(looseDays)
-    : mergeParsedDaySources(primaryVisual, secondarySources, header.month, header.year);
+  const mergedDays = useSequentialOnly
+    ? sequentialDays
+    : mergeParsedDaySources(primaryVisual, [...looseDays, ...(primaryVisual === transposedDays ? [...visualDays, ...columnarDays] : (columnarScore > visualScore ? visualDays : columnarDays))], header.month, header.year);
 
   const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);
   const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);
@@ -1476,7 +1472,8 @@ function stripUpdatedDate(text: string): string {
   return normalizeSpaces(text
     .replace(/\b(?:AIRCOM_SQS|JTA_SQS|SABREMM|SCHEDULER|msgsys)\s+\d{2}-[A-Za-z]{3}-\d{4}\s+\d{2}\.\d{2}\b/gi, ' ')
     .replace(/\b\d{2}-[A-Za-z]{3}-\d{4}\s+\d{2}\.\d{2}\b/g, ' ')
-    .replace(/\b(SCHEDULER|msgsys|AIRCOM_SQS|JTA_SQS|SABREMM|\d{6,})\b\s*$/i, '$1'));
+    .replace(/\b(?:Updated\s+Date|Updated\s+By|SCHEDULER|msgsys|AIRCOM_SQS|JTA_SQS|SABREMM)\b[\s\S]*$/i, ' ')
+    .replace(/\b(SCHEDULER|msgsys|AIRCOM_SQS|JTA_SQS|SABREMM|\d{6,})\b\s*$/i, ' '));
 }
 
 function cleanCellText(text: string): string {
