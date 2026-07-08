@@ -101,8 +101,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.2.0';
-const CREWCHECK_UI_CORE_NOTE = 'v13.2.0-hotfix: PR #1 reforçado com próxima programação vigente, diárias/salário reais, despertador e hotéis sem voltar layout antigo';
+const DEFAULT_VERSION = '13.2.1';
+const CREWCHECK_UI_CORE_NOTE = 'v13.2.1: separa próxima programação geral de voo real para radar, meteorologia, saída e despertador';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -354,6 +354,16 @@ function nextFlight(events: ZeroLeg[]) {
     || real.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
     || real[0]
     || placeholderLeg();
+}
+function nextRealFlight(events: ZeroLeg[]) {
+  const now = new Date();
+  const flights = events
+    .filter((e) => e.kind === 'flight' && !e.placeholder)
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  return flights.find((e) => eventIsNow(e, now))
+    || flights.find((e) => eventStartDateTime(e).getTime() >= now.getTime() - 2 * 60 * 60 * 1000)
+    || flights[0]
+    || nextFlight(events);
 }
 function currentDayAnchor(events: ZeroLeg[]) {
   const now = new Date();
@@ -703,7 +713,7 @@ export default function Home() {
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(() => storage.get('crewcheck_intro_seen_v1278', '0') !== '1');
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster]);
-  const event = nextFlight(events);
+  const event = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
 
