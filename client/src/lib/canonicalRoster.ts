@@ -95,6 +95,49 @@ function sortLegs(legs: FlightLeg[]) {
   return [...legs].sort((a, b) => (minutes(a.departureTime) ?? 99999) - (minutes(b.departureTime) ?? 99999));
 }
 
+function inferRosterPeriodFromRawText(rawText?: string | null): { month: number; year: number } | null {
+  const text = String(rawText || '');
+  const range = text.match(/\b\d{1,2}-([A-Za-z]{3})-(\d{4})\s+to\s+\d{1,2}-([A-Za-z]{3})-(\d{4})\b/i);
+  if (range) {
+    const month = MONTHS[range[1].toUpperCase()] || MONTHS[range[3].toUpperCase()];
+    const year = Number(range[2]) || Number(range[4]);
+    if (month && year) return { month, year };
+  }
+
+  const first = text.match(/\b\d{1,2}-([A-Za-z]{3})-(\d{4})\b/i);
+  if (first) {
+    const month = MONTHS[first[1].toUpperCase()];
+    const year = Number(first[2]);
+    if (month && year) return { month, year };
+  }
+
+  return null;
+}
+
+function inferRosterPeriodFromDays(days: RosterDay[], fallbackMonth: number, fallbackYear: number): { month: number; year: number } {
+  const counts = new Map<string, { month: number; year: number; count: number }>();
+
+  for (const day of days || []) {
+    const parsed = parseRosterDate(day.date, day.month || fallbackMonth, day.year || fallbackYear);
+    if (!parsed.month || !parsed.year) continue;
+    const key = `${parsed.month}|${parsed.year}`;
+    const current = counts.get(key) || { month: parsed.month, year: parsed.year, count: 0 };
+    current.count += Math.max(1, (day.legs || []).length);
+    counts.set(key, current);
+  }
+
+  return [...counts.values()].sort((a, b) => b.count - a.count)[0] || { month: fallbackMonth, year: fallbackYear };
+}
+
+function inferCanonicalRosterPeriod(roster: CrewRoster, days: RosterDay[], fallbackMonth: number, fallbackYear: number): { month: number; year: number } {
+  // Primeiro tenta o período publicado do CrewRosterReport: "01-Jul-2026 to 31-Jul-2026".
+  // Isso evita exibir Junho quando o PDF é de Julho.
+  const fromText = inferRosterPeriodFromRawText(roster.rawText);
+  if (fromText) return fromText;
+
+  return inferRosterPeriodFromDays(days, fallbackMonth, fallbackYear);
+}
+
 export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   const byDate = new Map<string, RosterDay>();
   const defaultMonth = roster.month || new Date().getMonth() + 1;
@@ -138,9 +181,14 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     current.isNextDay = Boolean(current.isNextDay || day.isNextDay || current.legs.some((leg) => leg.isNextDay));
   }
 
+  const normalizedDays = Array.from(byDate.values()).sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
+  const period = inferCanonicalRosterPeriod(roster, normalizedDays, defaultMonth, defaultYear);
+
   return {
     ...roster,
-    days: Array.from(byDate.values()).sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime()),
+    month: period.month,
+    year: period.year,
+    days: normalizedDays,
   };
 }
 

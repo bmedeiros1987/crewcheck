@@ -103,8 +103,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.3.1';
-const CREWCHECK_UI_CORE_NOTE = 'v13.3.1: trava fallback para não exibir voo encerrado como próxima programação';
+const DEFAULT_VERSION = '13.3.2';
+const CREWCHECK_UI_CORE_NOTE = 'v13.3.2: corrige mês canônico da escala para exibir Julho quando o PDF é Julho';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -162,8 +162,16 @@ function parseDate(day?: RosterDay): Date {
 function dateChip(date: Date) { return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`; }
 function weekday(date: Date) { return new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(date).replace('.', '').toUpperCase(); }
 function monthLong(roster: CrewRoster) {
-  try { return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(roster.year || 2026, (roster.month || 7) - 1, 1)); }
-  catch { return 'Julho 2026'; }
+  try {
+    const firstDate = Array.isArray(roster.days) && roster.days.length
+      ? parseDate([...roster.days].sort((a, b) => parseDate(a).getTime() - parseDate(b).getTime())[0])
+      : null;
+    const month = firstDate && !Number.isNaN(firstDate.getTime()) ? firstDate.getMonth() + 1 : (roster.month || 7);
+    const year = firstDate && !Number.isNaN(firstDate.getTime()) ? firstDate.getFullYear() : (roster.year || 2026);
+    return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
+  } catch {
+    return 'Julho 2026';
+  }
 }
 function dayTitle(day: RosterDay) {
   const d = parseDate(day);
