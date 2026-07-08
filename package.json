@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.3.0",
+  "version": "13.3.1",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.3.0 — Canonical Roster Core: escala por data e próxima programação cronológica.",
+  "description": "CrewCheck v13.3.1 — safety net cronológico para não exibir voo encerrado como próxima programação.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

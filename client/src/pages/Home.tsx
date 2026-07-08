@@ -103,8 +103,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.3.0';
-const CREWCHECK_UI_CORE_NOTE = 'v13.3.0: Canonical Roster Core com parser normalizado, escala por data e próxima programação cronológica';
+const DEFAULT_VERSION = '13.3.1';
+const CREWCHECK_UI_CORE_NOTE = 'v13.3.1: trava fallback para não exibir voo encerrado como próxima programação';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -265,7 +265,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
   const legs = canonicalEvents.map((event): ZeroLeg => {
     const day = event.publishedDay;
     const leg = event.leg;
-    const d = parseDate(day);
+    const d = event.startDateTime ? new Date(event.startDateTime) : parseDate(day);
 
     if (event.kind === 'flight' && leg) {
       const anyLeg = leg as any;
@@ -344,13 +344,50 @@ function eventIsNow(event: ZeroLeg, now = new Date()) {
   const end = eventEndDateTime(event).getTime();
   return now.getTime() >= start && now.getTime() <= end;
 }
+function noFutureLeg(events: ZeroLeg[]): ZeroLeg {
+  const base = events.find((e) => !e.placeholder) || placeholderLeg();
+  const today = new Date();
+  return {
+    ...base,
+    id: 'no-future-canonical-event',
+    placeholder: true,
+    kind: 'duty',
+    date: today,
+    title: 'Nenhuma programação futura',
+    subtitle: 'A escala carregada não possui evento operacional futuro no índice canônico. Reimporte o PDF oficial para reprocessar.',
+    origin: safe((base as any).origin, '—'),
+    destination: safe((base as any).destination, '—'),
+    flightNumber: '—',
+    presentation: '—',
+    departure: '—',
+    arrival: '—',
+    timeRange: '—',
+    canonical: undefined,
+  };
+}
 function nextFlight(events: ZeroLeg[]) {
-  const selected = selectNextRosterEvent(events.map(event => event.canonical).filter(Boolean) as CanonicalRosterEvent[]);
-  return (selected && events.find(event => event.canonical?.id === selected.id)) || events.find((e) => !e.placeholder && isOperationalEvent(e)) || placeholderLeg();
+  const canonicalEvents = events
+    .filter((event) => !event.placeholder && isOperationalEvent(event))
+    .map((event) => event.canonical)
+    .filter(Boolean) as CanonicalRosterEvent[];
+  const selected = selectNextRosterEvent(canonicalEvents);
+  if (selected) {
+    const found = events.find((event) => event.canonical?.id === selected.id);
+    if (found) return found;
+  }
+  return noFutureLeg(events);
 }
 function nextRealFlight(events: ZeroLeg[]) {
-  const selected = selectNextRosterEvent(events.filter(e => e.kind === 'flight').map(event => event.canonical).filter(Boolean) as CanonicalRosterEvent[]);
-  return (selected && events.find(event => event.canonical?.id === selected.id)) || nextFlight(events);
+  const canonicalFlights = events
+    .filter((event) => event.kind === 'flight' && !event.placeholder)
+    .map((event) => event.canonical)
+    .filter(Boolean) as CanonicalRosterEvent[];
+  const selected = selectNextRosterEvent(canonicalFlights);
+  if (selected) {
+    const found = events.find((event) => event.canonical?.id === selected.id);
+    if (found) return found;
+  }
+  return nextFlight(events);
 }
 function currentDayAnchor(events: ZeroLeg[]) {
   return nextFlight(events);
@@ -380,7 +417,7 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong>{value}</strong><p>{detail}</p></div></article>;
 }
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
-  const d = event.date;
+  const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
   return <article className={`cz-flight-card ${compact ? 'compact' : ''}`}>
     <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={19}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={25}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
@@ -433,7 +470,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
 
 function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
-  const loaded = !event.placeholder && events.length > 0;
+  const loaded = events.length > 0;
   const alertCount = Number((compliance as any)?.alerts?.length || 0);
   return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={ShieldCheck} title="Status RBAC" value={loaded ? 'Analisado' : 'Aguardando'} detail={loaded ? 'Escala real' : 'Importe PDF'}/><KpiCard icon={CalendarDays} title="Eventos" value={String(loaded ? events.length : 0)} detail="Escala carregada" tone="blue"/><KpiCard icon={Bell} title="Alerts" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>Nenhuma escala real carregada</h2><p>Suba o PDF oficial de julho para reativar escala completa, detalhes, diárias, radar, rotina, hotéis, academias, trânsito e saída inteligente com dados reais.</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/><section className="cz-shortcuts cz-shortcuts-full"><button onClick={() => setView('features')}><Settings/><strong>Funcionalidades</strong><small>Central completa</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar</strong><small>Gate e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal/mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Ganhos previstos</small></button><button onClick={() => setView('reports')}><FileText/><strong>Relatórios</strong><small>Indicadores</small></button><button onClick={() => setView('routine')}><Dumbbell/><strong>Rotina</strong><small>Academias/hotéis</small></button><button onClick={onUpload}><Upload/><strong>Importar PDF</strong><small>Escala oficial</small></button></section></>;
 }
