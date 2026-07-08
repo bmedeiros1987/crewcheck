@@ -88,7 +88,7 @@ jobs:
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-v12.5.78-android
+          name: CrewCheck-v13.2.0-android
           path: |
             android-wrapper/app/build/outputs/bundle/release/*.aab
             android-wrapper/app/build/outputs/apk/release/*.apk
