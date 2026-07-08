@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.2.0",
+  "version": "13.2.1",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.2.0 — PR #1 hotfix funcional: próxima programação vigente, diárias, salário, despertador e hotéis no layout Premium/EFB.",
+  "description": "CrewCheck v13.2.1 — hotfix pós-merge: voo real separado para radar, meteorologia, saída e despertador.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
