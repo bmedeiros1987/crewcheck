@@ -113,6 +113,114 @@ export function legCrossesNextDay(leg: FlightLeg): boolean {
   return Boolean(leg.isNextDay || (departure != null && arrival != null && arrival < departure));
 }
 
+function airportCode(value?: string | null): string {
+  return String(value || '').trim().toUpperCase();
+}
+
+function legSignature(leg: FlightLeg): string {
+  return [
+    String(leg.flightNumber || '').trim().toUpperCase(),
+    airportCode(leg.origin),
+    airportCode(leg.destination),
+    normalizeTime(leg.departureTime) || '',
+    normalizeTime(leg.arrivalTime) || '',
+  ].join('|');
+}
+
+function similarPublishedLeg(a: FlightLeg, b: FlightLeg): boolean {
+  const sameRoute = String(a.flightNumber || '').trim().toUpperCase() === String(b.flightNumber || '').trim().toUpperCase()
+    && airportCode(a.origin) === airportCode(b.origin)
+    && airportCode(a.destination) === airportCode(b.destination);
+  if (!sameRoute) return false;
+  const ad = minutes(a.departureTime);
+  const bd = minutes(b.departureTime);
+  const aa = minutes(a.arrivalTime);
+  const ba = minutes(b.arrivalTime);
+  if (ad == null || bd == null || aa == null || ba == null) return false;
+  return Math.abs(ad - bd) <= 45 && Math.abs(aa - ba) <= 90;
+}
+
+function legCompletenessScore(leg: FlightLeg): number {
+  const anyLeg = leg as any;
+  return [
+    leg.flightNumber,
+    leg.origin,
+    leg.destination,
+    leg.departureTime,
+    leg.arrivalTime,
+    leg.workType,
+    anyLeg.aircraft || anyLeg.aircraftType || anyLeg.equipment,
+    anyLeg.registration || anyLeg.tailNumber || anyLeg.matricula,
+  ].filter(Boolean).length;
+}
+
+function chooseBetterLeg(a: FlightLeg, b: FlightLeg): FlightLeg {
+  const left = legCompletenessScore(a);
+  const right = legCompletenessScore(b);
+  if (right > left) return b;
+  return a;
+}
+
+function dedupeSimilarLegs(legs: FlightLeg[]): FlightLeg[] {
+  const output: FlightLeg[] = [];
+  for (const leg of sortLegs(legs || [])) {
+    const index = output.findIndex((existing) => similarPublishedLeg(existing, leg));
+    if (index >= 0) {
+      output[index] = chooseBetterLeg(output[index], leg);
+      continue;
+    }
+    if (!output.some((existing) => legSignature(existing) === legSignature(leg))) output.push(leg);
+  }
+  return sortLegs(output);
+}
+
+function connectionGapMinutes(previous: FlightLeg, next: FlightLeg): number | null {
+  if (airportCode(previous.destination) !== airportCode(next.origin)) return null;
+  const arrival = minutes(previous.arrivalTime);
+  const departure = minutes(next.departureTime);
+  if (arrival == null || departure == null) return null;
+  const gap = departure >= arrival ? departure - arrival : departure + 1440 - arrival;
+  // Mesmo dia: aceita conexão apertada, mas não aceita "espera" enorme como mesma sequência.
+  if (gap < -15 || gap > 720) return null;
+  return gap;
+}
+
+function physicallyConnects(previous: FlightLeg, next: FlightLeg): boolean {
+  return connectionGapMinutes(previous, next) != null;
+}
+
+function chainScore(chain: FlightLeg[]): number {
+  if (!chain.length) return 0;
+  const uniqueAirports = new Set(chain.flatMap((leg) => [airportCode(leg.origin), airportCode(leg.destination)]).filter(Boolean)).size;
+  const continuity = Math.max(0, chain.length - 1);
+  const completeness = chain.reduce((sum, leg) => sum + legCompletenessScore(leg), 0);
+  return chain.length * 1000 + continuity * 100 + uniqueAirports * 10 + completeness;
+}
+
+export function selectPhysicalLegSequence(legs: FlightLeg[]): FlightLeg[] {
+  const clean = dedupeSimilarLegs(legs || []);
+  if (clean.length <= 2) return clean;
+
+  const chains: FlightLeg[][] = [];
+  for (let i = 0; i < clean.length; i += 1) {
+    let bestEndingHere: FlightLeg[] = [clean[i]];
+    for (let j = 0; j < i; j += 1) {
+      const previousChain = chains[j] || [clean[j]];
+      const previousLeg = previousChain[previousChain.length - 1];
+      if (!physicallyConnects(previousLeg, clean[i])) continue;
+      const candidate = [...previousChain, clean[i]];
+      if (chainScore(candidate) > chainScore(bestEndingHere)) bestEndingHere = candidate;
+    }
+    chains[i] = bestEndingHere;
+  }
+
+  const best = chains.sort((a, b) => chainScore(b) - chainScore(a))[0] || clean;
+  // Só filtra quando há uma sequência física real. Se o dia não formar sequência,
+  // preserva os dados para não apagar programação rara/múltipla sem evidência.
+  if (best.length >= 2 && best.length < clean.length) return sortLegs(best);
+  return clean;
+}
+
 function parsePublishedRangeDate(day: string, monthToken: string, year: string): Date | null {
   const month = MONTHS[String(monthToken || '').toUpperCase()];
   const date = new Date(Number(year), (month || 1) - 1, Number(day), 12, 0, 0, 0);
@@ -198,7 +306,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     const parsed = parseRosterDate(sourceDay.date, sourceDay.month || defaultMonth, sourceDay.year || defaultYear);
     const date = formatDate(parsed.day, parsed.month, parsed.year);
     const day = cloneDay({ ...sourceDay, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year });
-    day.legs = sortLegs(day.legs || []);
+    day.legs = selectPhysicalLegSequence(sortLegs(day.legs || []));
 
     const current = byDate.get(date);
     if (!current) {
@@ -222,7 +330,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
       }
     }
 
-    current.legs = sortLegs(current.legs || []);
+    current.legs = selectPhysicalLegSequence(sortLegs(current.legs || []));
     current.rawText = [current.rawText, day.rawText].filter(Boolean).join(' ');
     current.type = current.legs.length ? 'VOO' : current.type;
     current.pairingCode = current.pairingCode || day.pairingCode;
@@ -232,7 +340,9 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     current.isNextDay = Boolean(current.isNextDay || day.isNextDay || current.legs.some((leg) => legCrossesNextDay(leg)));
   }
 
-  const collectedDays = Array.from(byDate.values()).sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
+  const collectedDays = Array.from(byDate.values())
+    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [])) }))
+    .sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
   const period = inferCanonicalRosterPeriod(roster, collectedDays, defaultMonth, defaultYear);
   const normalizedDays = filterDaysByPublishedRange(collectedDays, roster, period.month, period.year);
 

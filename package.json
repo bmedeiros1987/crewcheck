@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.3.4",
+  "version": "13.3.5",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.3.4 — precisão por perna, roster compacto e cidades IATA ampliadas.",
+  "description": "CrewCheck v13.3.5 — continuidade física da escala, anti-teletransporte e dedupe de pernas.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
