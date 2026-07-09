@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.4.8';
-const CREWCHECK_UI_CORE_NOTE = 'v13.4.8: versão visível restaurada no menu e nas configurações';
+const DEFAULT_VERSION = '13.4.9';
+const CREWCHECK_UI_CORE_NOTE = 'v13.4.9: mapa mensal, rotas visuais e separação entre mapa, malha viária e trânsito';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -646,6 +646,83 @@ function nextRealFlight(events: ZeroLeg[]) {
 function currentDayAnchor(events: ZeroLeg[]) {
   return nextFlight(events);
 }
+
+
+type AirportMapPoint = { code: string; lat: number; lon: number; label?: string };
+const AIRPORT_MAP_POINTS: Record<string, AirportMapPoint> = {
+  BSB:{code:'BSB',lat:-15.8711,lon:-47.9186}, GRU:{code:'GRU',lat:-23.4356,lon:-46.4731}, CGH:{code:'CGH',lat:-23.6261,lon:-46.6564}, VCP:{code:'VCP',lat:-23.0074,lon:-47.1345},
+  SDU:{code:'SDU',lat:-22.9105,lon:-43.1631}, GIG:{code:'GIG',lat:-22.8099,lon:-43.2506}, CNF:{code:'CNF',lat:-19.6244,lon:-43.9719}, CWB:{code:'CWB',lat:-25.5317,lon:-49.1761},
+  POA:{code:'POA',lat:-29.9944,lon:-51.1714}, FLN:{code:'FLN',lat:-27.6705,lon:-48.5525}, SSA:{code:'SSA',lat:-12.9086,lon:-38.3225}, REC:{code:'REC',lat:-8.1265,lon:-34.9236},
+  FOR:{code:'FOR',lat:-3.7763,lon:-38.5326}, BEL:{code:'BEL',lat:-1.3793,lon:-48.4763}, MAO:{code:'MAO',lat:-3.0386,lon:-60.0497}, MAB:{code:'MAB',lat:-5.3686,lon:-49.1380},
+  SLZ:{code:'SLZ',lat:-2.5854,lon:-44.2341}, NAT:{code:'NAT',lat:-5.7681,lon:-35.3761}, MCZ:{code:'MCZ',lat:-9.5108,lon:-35.7917}, AJU:{code:'AJU',lat:-10.9840,lon:-37.0703},
+  PMW:{code:'PMW',lat:-10.2915,lon:-48.3569}, THE:{code:'THE',lat:-5.0599,lon:-42.8235}, VIX:{code:'VIX',lat:-20.2581,lon:-40.2864}, GYN:{code:'GYN',lat:-16.6320,lon:-49.2207},
+  CGB:{code:'CGB',lat:-15.6529,lon:-56.1167}, CGR:{code:'CGR',lat:-20.4687,lon:-54.6725}, BVB:{code:'BVB',lat:2.8463,lon:-60.6901}, MCP:{code:'MCP',lat:0.0507,lon:-51.0722},
+  RBR:{code:'RBR',lat:-9.8689,lon:-67.8981}, PVH:{code:'PVH',lat:-8.7093,lon:-63.9023}, IOS:{code:'IOS',lat:-14.8159,lon:-39.0332}, JPA:{code:'JPA',lat:-7.1458,lon:-34.9486},
+};
+function airportPoint(code?: string | null): AirportMapPoint | null {
+  const key = String(code || '').trim().toUpperCase();
+  return AIRPORT_MAP_POINTS[key] || null;
+}
+function projectSouthAmerica(point: AirportMapPoint): { x: number; y: number } {
+  const minLon = -82, maxLon = -30, minLat = -35, maxLat = 14;
+  const x = ((point.lon - minLon) / (maxLon - minLon)) * 100;
+  const y = ((maxLat - point.lat) / (maxLat - minLat)) * 100;
+  return { x: Math.max(3, Math.min(97, x)), y: Math.max(3, Math.min(97, y)) };
+}
+function routeDistanceKm(a: AirportMapPoint, b: AirportMapPoint): number {
+  const rad = (value: number) => value * Math.PI / 180;
+  const r = 6371;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const s1 = Math.sin(dLat / 2) ** 2;
+  const s2 = Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(s1 + s2));
+}
+function monthlyRouteData(events: ZeroLeg[]) {
+  const segments = events
+    .filter((event) => event.kind === 'flight' && !event.placeholder)
+    .map((event) => ({ event, from: airportPoint(event.origin), to: airportPoint(event.destination) }))
+    .filter((item): item is { event: ZeroLeg; from: AirportMapPoint; to: AirportMapPoint } => Boolean(item.from && item.to));
+  const destinations = new Map<string, AirportMapPoint & { count: number }>();
+  segments.forEach(({ from, to }) => {
+    [from, to].forEach((point) => {
+      const current = destinations.get(point.code) || { ...point, count: 0 };
+      current.count += 1;
+      destinations.set(point.code, current);
+    });
+  });
+  const totalKm = Math.round(segments.reduce((sum, segment) => sum + routeDistanceKm(segment.from, segment.to), 0));
+  return { segments, destinations: [...destinations.values()].sort((a, b) => b.count - a.count || a.code.localeCompare(b.code)), totalKm };
+}
+function openMapRoute(event: ZeroLeg) {
+  const airport = encodeURIComponent(`${safe(event.origin, 'BSB')} aeroporto`);
+  const origin = encodeURIComponent(event.hotel || 'Localização atual');
+  window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${airport}&travelmode=driving`, '_blank', 'noopener,noreferrer');
+}
+function openRoadNetwork(event: ZeroLeg) {
+  const point = airportPoint(event.origin) || airportPoint(event.destination) || AIRPORT_MAP_POINTS.BSB;
+  const query = `[out:json][timeout:25];(way["highway"](around:4500,${point.lat},${point.lon});node["amenity"~"parking|fuel|taxi"](around:4500,${point.lat},${point.lon}););out geom;`;
+  window.open(`https://overpass-turbo.eu/?Q=${encodeURIComponent(query)}&R`, '_blank', 'noopener,noreferrer');
+}
+function RouteVisual({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
+  const destination = `${safe(event.origin, 'Aeroporto')} · ${city(event.origin)}`;
+  const origin = event.hotel ? `Hotel · ${event.hotel}` : 'Localização atual / hotel';
+  return <div className={`cz-route-visual ${compact ? 'compact' : ''}`}>
+    <svg viewBox="0 0 360 170" role="img" aria-label="Representação visual do trajeto hotel aeroporto">
+      <defs>
+        <linearGradient id="czRouteGradient" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stopColor="#a855f7"/><stop offset="52%" stopColor="#6366f1"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient>
+        <filter id="czRouteGlow"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <path d="M62 112 C126 155, 234 155, 298 112" fill="none" stroke="url(#czRouteGradient)" strokeWidth="12" strokeLinecap="round" opacity=".95" filter="url(#czRouteGlow)"/>
+      <circle cx="72" cy="78" r="30" fill="#a855f7" filter="url(#czRouteGlow)"/>
+      <circle cx="288" cy="78" r="30" fill="#22d3ee" filter="url(#czRouteGlow)"/>
+      <text x="72" y="130" textAnchor="middle">Origem</text>
+      <text x="288" y="130" textAnchor="middle">Aeroporto</text>
+    </svg>
+    {!compact && <div className="cz-route-visual-copy"><strong>{origin}</strong><span>→</span><strong>{destination}</strong><small>Mapa apenas visual para rota. Tempo de trânsito fica separado quando o serviço estiver configurado.</small></div>}
+  </div>;
+}
+
 function isAdmin() {
   const u = getStoredUser();
   const role = String((u as any)?.role || storage.get('crewcheck_role')).toLowerCase();
@@ -664,7 +741,7 @@ function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: Z
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Roster',CalendarDays],['alerts','Alerts',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','mycar','iflight'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -680,7 +757,7 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
-    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
+    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Map/> Mapa</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
   </article>;
 }
 function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
@@ -695,7 +772,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
-    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
+    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
@@ -863,6 +940,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <button onClick={() => setView('departure')}><Car/> Saída</button>
       <button onClick={() => setView('radar')}><Radar/> Radar</button>
       <button onClick={() => setView('weather')}><CloudSun/> Meteo</button>
+      <button onClick={() => setView('map')}><Map/> Mapa</button>
       <button onClick={() => setView('perdiem')}><BriefcaseBusiness/> Diárias</button>
       <button onClick={() => setView('salary')}><DollarSign/> Salário</button>
     </div>
@@ -987,18 +1065,20 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b></div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>Carregue a escala real para que o motor regulatório refaça a análise completa.</p></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ensinar falso positivo</button><button>Ver base regulatória</button></footer></article></>;
 }
 function Departure({ event }: { event: ZeroLeg }) {
-  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com rota, trânsito real, origem/hotel, aeroporto e pós-pouso até o hotel.</p></article></>;
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Real</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>Rota inteligente</b><span>principal</span></header><div className="cz-map-canvas"><i/><em/><b/><span className="cz-map-label cz-map-label-a">Origem/hotel</span><span className="cz-map-label cz-map-label-b">{event.origin}</span><small className="cz-map-road">Trânsito real quando o serviço estiver configurado</small></div><ul><li><Radar/><span><strong>Localização dinâmica <b>ativa</b></strong><small>Ajustes em tempo real com base no tráfego.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar tempo até o hotel automaticamente.</small></span></li></ul><footer><button><Map/> Abrir mapa</button><button><Menu/> Ver detalhes</button></footer></article></section></>;
+  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, rota visual e pós-pouso até o hotel.</p></article></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Quando disponível</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>Rota inteligente</b><span>visual</span></header><RouteVisual event={event}/><ul><li><Radar/><span><strong>Localização dinâmica ativa</strong><small>Ajustes em tempo real quando a permissão e o serviço de tráfego estiverem disponíveis.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar trajeto aeroporto → hotel automaticamente.</small></span></li></ul><footer><button onClick={() => openMapRoute(event)}><Map/> Abrir mapa</button><button onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></footer></article></section></>;
 }
 
+function MonthlyMapView({ events }: { events: ZeroLeg[] }) {
+  const data = monthlyRouteData(events);
+  const currentMonth = events.find((event) => !event.placeholder)?.date || new Date();
+  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>{new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {data.segments.length} trecho(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card"><header><div><strong>Destinos e rotas</strong><span>Representação visual dos aeroportos publicados na escala.</span></div><button onClick={() => toast.info('Mapa visual de rotas. Trânsito em tempo real fica separado da rota.')}>Como funciona</button></header><svg className="cz-month-map" viewBox="0 0 100 100" role="img" aria-label="Mapa visual dos destinos do mês"><defs><linearGradient id="czMonthRoute" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stopColor="#a855f7"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient><filter id="czMonthGlow"><feGaussianBlur stdDeviation="1.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect x="0" y="0" width="100" height="100" rx="6"/><path d="M55 8 C70 18 76 33 71 48 C84 58 82 78 65 91 C50 98 36 86 38 70 C25 62 24 42 35 30 C39 20 43 12 55 8 Z" className="cz-brazil-shape"/>{data.segments.map((segment, index) => { const from = projectSouthAmerica(segment.from); const to = projectSouthAmerica(segment.to); return <line key={`${segment.event.id}-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="cz-month-route-line"/>; })}{data.destinations.map((point) => { const p = projectSouthAmerica(point); return <g key={point.code} className="cz-month-airport" filter="url(#czMonthGlow)"><circle cx={p.x} cy={p.y} r={point.code === 'BSB' ? 2.4 : 1.8}/><text x={p.x + 2.3} y={p.y + 1.2}>{point.code}</text></g>; })}</svg><div className="cz-destination-strip">{data.destinations.slice(0, 14).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!data.segments.length && <article className="cz-empty-real"><Map/><h2>Sem voos mapeáveis</h2><p>Importe a escala oficial para exibir todos os destinos do mês.</p></article>}</section></>;
+}
 
-function MyCarView({ event }: { event: ZeroLeg }) {
-  const parking = storage.get('crewcheck_car_parking', 'A definir');
-  return <><Brand back/><section className="cz-panel-head"><h1>Meu carro</h1><p>Rota pessoal, estacionamento, combustível, pedágio e retorno para casa integrados à Saída Inteligente.</p></section><section className="cz-finance-grid"><KpiCard icon={Car} title="Destino" value={safe(event.origin, '—')} detail="Aeroporto da próxima programação"/><KpiCard icon={Map} title="Estacionamento" value={parking || 'A definir'} detail="Local salvo"/><KpiCard icon={Clock} title="Sair" value={event.presentation !== '—' ? addMinutesToTime(event.presentation, -55) : 'Calcular'} detail="ajustável por trânsito"/></section><section className="cz-toolbox"><h2>Configurações do carro</h2><FieldSetting icon={Car} label="Modelo/cor" storageKey="crewcheck_car_model" placeholder="Ex.: Corolla prata"/><FieldSetting icon={Car} label="Placa" storageKey="crewcheck_car_plate" placeholder="Opcional"/><FieldSetting icon={Map} label="Estacionamento padrão" storageKey="crewcheck_car_parking" placeholder="Ex.: BSB bolsão / garagem"/><FieldSetting icon={DollarSign} label="Custo médio combustível" storageKey="crewcheck_car_fuel_cost" placeholder="R$/km ou mensal"/></section><section className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Abrir saída</button><button onClick={() => toast.success('Preferências do carro salvas localmente.') }><Save/> Salvar</button></section></>;
+function CarView({ event }: { event: ZeroLeg }) {
+  return <><Brand back/><section className="cz-panel-head"><h1>Meu Carro</h1><p>Rotas, estacionamento, retorno ao aeroporto e pós-pouso dentro do novo layout.</p></section><section className="cz-car-grid"><article className="cz-car-card"><Car/><h2>Hotel/local → aeroporto</h2><p>{event.placeholder ? 'Aguardando escala real.' : `${event.hotel ? event.hotel : 'Localização atual'} → ${event.origin} · ${city(event.origin)}`}</p><RouteVisual event={event} compact/><div className="cz-tool-actions"><button disabled={event.placeholder} onClick={() => openMapRoute(event)}><Map/> Abrir mapa</button><button disabled={event.placeholder} onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button></div></article><article className="cz-car-card"><ShieldCheck/><h2>Estacionamento e retorno</h2><p>Salve onde deixou o carro, tempo de retorno e observações do aeroporto.</p><div className="cz-tool-actions"><button onClick={() => { storage.set('crewcheck_car_note', window.prompt('Observação do carro/estacionamento') || storage.get('crewcheck_car_note','')); toast.success('Observação salva.'); }}><Save/> Salvar nota</button><button onClick={() => toast.info(storage.get('crewcheck_car_note','Nenhuma observação salva.'))}><FileText/> Ver nota</button></div></article><article className="cz-car-card"><Plane/><h2>Pós-pouso</h2><p>Ao chegar, o sistema pode abrir a rota aeroporto → hotel/casa sem misturar mapa com cálculo regulatório.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'hotels' }))}><Hotel/> Hotéis</button></div></article></section></>;
 }
-function IFlightPushView({ actions }: { actions: QuickActions }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Push iFlight</h1><p>Assistente seguro para receber nova escala, importar PDF oficial e atualizar a escala ativa sem armazenar senha, cookies ou sessão.</p></section><section className="cz-finance-grid"><KpiCard icon={ShieldCheck} title="Privacidade" value="Segura" detail="sem credenciais salvas"/><KpiCard icon={Upload} title="Importação" value="PDF" detail="validação antes de ativar"/><KpiCard icon={Bell} title="Alertas" value="Ativos" detail="nova escala / alteração"/></section><section className="cz-toolbox"><h2>Automação permitida</h2><ToggleSetting icon={Bell} label="Avisar nova escala disponível" storageKey="crewcheck_iflight_push_enabled"/><ToggleSetting icon={Upload} label="Abrir importador após download" storageKey="crewcheck_iflight_open_import"/><ToggleSetting icon={ShieldCheck} label="Validar mês antes de ativar" storageKey="crewcheck_iflight_guardian"/><p>Quando a integração estiver autorizada, o sistema abre o fluxo assistido e só ativa a escala após sua confirmação.</p></section><section className="cz-tool-actions"><button onClick={actions.upload}><Upload/> Importar PDF agora</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={() => toast.message('Push iFlight preparado. O fluxo automático depende da autorização segura do dispositivo.') }><Bell/> Testar aviso</button></section></>;
-}
+
 
 function LoadView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle) as any;
@@ -1028,7 +1108,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     } catch { toast.error('Não consegui alterar o modo manutenção.'); }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
-  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="TomTom como API principal" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={Map} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="A cada 60 min"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
+  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={Map} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
 }
 
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
@@ -1382,6 +1462,8 @@ export default function Home() {
     {view === 'wakeup' && <WakeupView event={event}/>}
     {view === 'hotels' && <HotelsView events={events}/>}
     {view === 'presentation' && <PresentationManagerView events={events}/>}
+    {view === 'map' && <MonthlyMapView events={events}/>}
+    {view === 'car' && <CarView event={event}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
