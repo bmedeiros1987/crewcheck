@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.4.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.4.2: hotfix do Gerenciador de Apresentação para evitar tela branca por programDateLabel';
+const DEFAULT_VERSION = '13.4.3';
+const CREWCHECK_UI_CORE_NOTE = 'v13.4.3: cards da escala expandem inline com detalhes operacionais e gerenciador de apresentação';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -689,6 +689,73 @@ function rosterEventLine(event: ZeroLeg): string {
   return `${label}${range ? ` · ${range}` : ''} · ${city(base)}`;
 }
 
+function inlineEventEndDateTime(event: ZeroLeg): Date {
+  if (event.canonical?.endDateTime) return new Date(event.canonical.endDateTime);
+  const base = new Date(event.date);
+  const raw = event.arrival || event.departure || event.presentation;
+  const match = String(raw || '').match(/(\d{1,2}):(\d{2})/);
+  if (match) base.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  else base.setHours(23, 59, 0, 0);
+  if (base.getTime() < eventStartDateTime(event).getTime()) base.setDate(base.getDate() + 1);
+  return base;
+}
+function inlineDurationLabel(event: ZeroLeg): string {
+  const start = eventStartDateTime(event).getTime();
+  const end = inlineEventEndDateTime(event).getTime();
+  const total = Math.max(0, Math.round((end - start) / 60000));
+  if (!total) return 'Duração a confirmar';
+  return `${Math.floor(total / 60)}:${pad2(total % 60)}`;
+}
+function inlinePresentationSource(event: ZeroLeg): string {
+  try { return managedPresentationForEvent(event).source || event.presentationSource || 'Escala publicada'; }
+  catch { return event.presentationSource || 'Escala publicada'; }
+}
+function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
+  const isFlight = event.kind === 'flight';
+  const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
+  const base = safe(event.origin || (event.day as any)?.base, 'BSB');
+  const route = isFlight ? `${event.origin} → ${event.destination}` : `${base} · ${city(base)}`;
+  const date = programDateLabel(event);
+  const source = inlinePresentationSource(event);
+  const detailStyle = {
+    margin: '-8px 0 18px 0',
+    border: '1px solid rgba(126, 200, 255, .22)',
+    background: 'linear-gradient(180deg, rgba(7, 19, 39, .94), rgba(5, 14, 29, .98))',
+    borderRadius: 24,
+    padding: 16,
+    boxShadow: '0 22px 55px rgba(0,0,0,.28)',
+  } as React.CSSProperties;
+
+  return <section className="cz-inline-detail" style={detailStyle}>
+    <header className="cz-day-group-head" style={{ marginBottom: 12 }}>
+      <span className="cz-day-headline"><strong>{date}</strong>{' · '}{rosterEventTitle(event)}{' · '}{route}</span>
+    </header>
+    <div className="cz-detail-grid">
+      <div><span>Apresentação</span><strong>{safe(presentation, 'A confirmar')}</strong></div>
+      <div><span>Decolagem/Início</span><strong>{safe(event.departure, 'A confirmar')}</strong></div>
+      <div><span>Chegada/Fim</span><strong>{safe(event.arrival, 'A confirmar')}</strong></div>
+      <div><span>Duração</span><strong>{inlineDurationLabel(event)}</strong></div>
+      <div><span>Fonte apresentação</span><strong>{source}</strong></div>
+      <div><span>Status</span><strong>{safe(event.status, 'Programado')}</strong></div>
+      <div><span>Aeronave</span><strong>{safe(event.aircraft, 'A confirmar')}</strong></div>
+      <div><span>Matrícula</span><strong>{safe(event.registration, 'A confirmar')}</strong></div>
+      <div><span>Portão/Terminal</span><strong>{safe(event.gate, 'A confirmar')} · {safe(event.terminal, 'A confirmar')}</strong></div>
+      <div><span>Hotel</span><strong>{safe(event.hotel, '—')}</strong></div>
+    </div>
+    {Boolean(event.crew?.length) && <p className="cz-mini-status"><strong>Tripulação:</strong> {event.crew?.slice(0, 8).join(' · ')}</p>}
+    {Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
+    <div className="cz-tool-actions" style={{ marginTop: 14 }}>
+      <button onClick={() => setView('presentation')}><Clock/> Apresentação</button>
+      <button onClick={() => setView('departure')}><Car/> Saída</button>
+      <button onClick={() => setView('radar')}><Radar/> Radar</button>
+      <button onClick={() => setView('weather')}><CloudSun/> Meteo</button>
+      <button onClick={() => setView('perdiem')}><BriefcaseBusiness/> Diárias</button>
+      <button onClick={() => setView('salary')}><DollarSign/> Salário</button>
+    </div>
+  </section>;
+}
+
+
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
   const normalizedRoster = normalizeRosterDays(roster);
   const days = Array.isArray(normalizedRoster.days) ? normalizedRoster.days : [];
@@ -696,10 +763,10 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     .map((day) => ({ day, events: events.filter((event) => event.day.date === day.date) }))
     .filter((group) => group.events.length);
   const first = currentDayAnchor(events);
-  const [selected, setSelected] = useState<ZeroLeg | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const hasRoster = days.length > 0;
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group" key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div></article>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{rosterEventTitle(selected)}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Início/Decolagem</span><strong>{selected.departure}</strong></div><div><span>Fim/Chegada</span><strong>{selected.arrival}</strong></div><div><span>Local/Base</span><strong>{selected.kind === 'flight' ? `${selected.origin} → ${selected.destination}` : safe(selected.origin, safe((selected.day as any).base, '—'))}</strong></div><div><span>Tipo</span><strong>{rosterCodeLabel(rosterCode(selected.day))}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, 'A confirmar')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, 'A confirmar')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, 'A confirmar')} · {safe(selected.terminal, 'A confirmar')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{rosterEventLine(selected)}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group" key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
