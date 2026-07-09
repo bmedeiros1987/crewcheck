@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.4.1",
+  "version": "13.4.2",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.4.1 — gerenciador de apresentação com aprendizado por hotel/local e ajuste manual.",
+  "description": "CrewCheck v13.4.2 — hotfix programDateLabel do Gerenciador de Apresentação.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
