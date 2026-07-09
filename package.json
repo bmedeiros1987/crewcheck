@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.4.2",
+  "version": "13.4.3",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.4.2 — hotfix programDateLabel do Gerenciador de Apresentação.",
+  "description": "CrewCheck v13.4.3 — cards expansíveis inline no Roster com detalhes operacionais.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
