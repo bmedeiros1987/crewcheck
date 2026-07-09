@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.4.1';
-const CREWCHECK_UI_CORE_NOTE = 'v13.4.1: gerenciador de apresentação com aprendizado por hotel/local e ajuste manual';
+const DEFAULT_VERSION = '13.4.2';
+const CREWCHECK_UI_CORE_NOTE = 'v13.4.2: hotfix do Gerenciador de Apresentação para evitar tela branca por programDateLabel';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -296,6 +296,12 @@ function promptPresentation(event: ZeroLeg, saveAsLearning = false) {
   if (!next) return false;
   savePresentationOverride(event, next, saveAsLearning);
   return true;
+}
+
+function programDateLabel(event: ZeroLeg): string {
+  const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return 'Data a confirmar';
+  return `${weekday(d)} ${pad2(d.getDate())}/${pad2(d.getMonth()+1)}`;
 }
 
 function emptyRoster(): CrewRoster {
