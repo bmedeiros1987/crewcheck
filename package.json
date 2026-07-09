@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.4.8",
+  "version": "13.4.9",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.4.8 — versão visível restaurada no menu e configurações.",
+  "description": "CrewCheck v13.4.9 — mapa mensal, rotas visuais e Meu Carro.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

@@ -14135,3 +14135,70 @@ html[data-crew-theme="light"] .cz-bottom-nav button.active { background: linear-
 .cz-weather-metar-grid p { margin:0; font-size:12px; line-height:1.35; opacity:.9; }
 .cz-weather-inline footer { margin-top: 10px; font-size: 12px; opacity: .82; font-weight: 800; }
 @media (max-width: 720px) { .cz-weather-metar-grid { grid-template-columns: 1fr; } .cz-roster-linked-chips span { font-size: 11px; } }
+
+/* CrewCheck v13.4.9 — Monthly map and visual routes */
+.cz-route-visual {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(34, 211, 238, .22);
+  border-radius: 28px;
+  background: radial-gradient(circle at 20% 25%, rgba(168, 85, 247, .20), transparent 34%), radial-gradient(circle at 80% 25%, rgba(34, 211, 238, .18), transparent 34%), rgba(4, 13, 29, .72);
+  min-height: 210px;
+  padding: 10px;
+}
+.cz-route-visual.compact { min-height: 150px; }
+.cz-route-visual svg { width: 100%; min-height: 145px; display: block; }
+.cz-route-visual text { fill: rgba(241, 245, 249, .76); font-size: 13px; font-weight: 800; letter-spacing: .3px; }
+.cz-route-visual-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 0 10px 10px; color: #f8fafc; }
+.cz-route-visual-copy strong { font-size: .95rem; }
+.cz-route-visual-copy span { color: #22d3ee; font-weight: 900; }
+.cz-route-visual-copy small { width: 100%; color: rgba(226, 232, 240, .72); }
+.cz-month-map-card, .cz-car-card {
+  margin: 18px 22px;
+  border: 1px solid rgba(148, 163, 184, .20);
+  border-radius: 30px;
+  background: linear-gradient(180deg, rgba(6, 18, 39, .92), rgba(4, 10, 24, .98));
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .28);
+  padding: 18px;
+}
+.cz-month-map-card header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.cz-month-map-card header strong { display: block; font-size: 1.35rem; color: #fff; }
+.cz-month-map-card header span { display: block; color: rgba(226, 232, 240, .70); margin-top: 4px; }
+.cz-month-map-card header button {
+  border: 1px solid rgba(148, 163, 184, .28);
+  background: rgba(15, 23, 42, .78);
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-weight: 800;
+}
+.cz-month-map {
+  width: 100%;
+  aspect-ratio: 1 / .92;
+  border-radius: 24px;
+  border: 1px solid rgba(34, 211, 238, .18);
+  background: radial-gradient(circle at 70% 30%, rgba(34, 211, 238, .20), transparent 30%), radial-gradient(circle at 35% 75%, rgba(168, 85, 247, .18), transparent 28%), rgba(2, 8, 23, .84);
+}
+.cz-month-map rect { fill: rgba(2, 8, 23, .10); }
+.cz-brazil-shape { fill: rgba(15, 118, 110, .24); stroke: rgba(34, 211, 238, .34); stroke-width: .6; }
+.cz-month-route-line { stroke: url(#czMonthRoute); stroke-width: .9; stroke-linecap: round; opacity: .74; }
+.cz-month-airport circle { fill: #f43f5e; stroke: #fff; stroke-width: .55; }
+.cz-month-airport text { fill: #fff; font-size: 4px; font-weight: 900; text-shadow: 0 1px 5px rgba(0,0,0,.8); }
+.cz-destination-strip { display: flex; overflow-x: auto; gap: 10px; padding: 14px 2px 2px; scroll-snap-type: x mandatory; }
+.cz-destination-strip span {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  border: 1px solid rgba(148, 163, 184, .20);
+  border-radius: 18px;
+  padding: 10px 12px;
+  min-width: 132px;
+  background: rgba(15, 23, 42, .64);
+  color: rgba(226, 232, 240, .78);
+  font-size: .78rem;
+}
+.cz-destination-strip b { display: block; color: #fff; font-size: 1rem; margin-bottom: 2px; }
+.cz-car-grid { display: grid; gap: 14px; }
+.cz-car-card > svg { color: #22d3ee; width: 34px; height: 34px; margin-bottom: 8px; }
+.cz-car-card h2 { margin: 0 0 8px; color: #fff; font-size: 1.22rem; }
+.cz-car-card p { margin: 0 0 14px; color: rgba(226, 232, 240, .74); line-height: 1.45; }
+@media (min-width: 820px) { .cz-car-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 20px; } }
