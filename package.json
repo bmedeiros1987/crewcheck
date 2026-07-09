@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.3.6",
+  "version": "13.3.7",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.3.6 — polimento de dias sem voo, DR/HSB e cabeçalho do Roster.",
+  "description": "CrewCheck v13.3.7 — espaçamento premium do cabeçalho do Roster e títulos compactos.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
