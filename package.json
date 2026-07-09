@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.4.6",
+  "version": "13.4.7",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.4.6 — UX operacional endurecida e próxima programação por evento real.",
+  "description": "CrewCheck v13.4.7 — Lounge Systems Restore.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

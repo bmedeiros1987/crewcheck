@@ -14115,3 +14115,23 @@ html[data-crew-theme="light"] .cz-bottom-nav button.active { background: linear-
 .cz-wakeup-options button.active{outline:2px solid rgba(14,165,233,.65);box-shadow:0 0 0 4px rgba(14,165,233,.12)}
 [data-crew-theme="light"] .cz-crew-line,[data-crew-theme="light"] .cz-finance-row{background:rgba(2,6,23,.06);color:#0f172a}
 [data-crew-theme="dark"] .cz-crew-line,[data-crew-theme="dark"] .cz-finance-row{background:rgba(255,255,255,.08)}
+
+/* CrewCheck v13.4.7 — Lounge systems restore */
+.cz-day-linked { position: relative; padding-left: 14px; }
+.cz-day-linked::before { content: ''; position: absolute; left: 2px; top: 34px; bottom: 8px; width: 2px; border-radius: 99px; background: linear-gradient(180deg, rgba(90,190,255,.70), rgba(100,255,210,.18)); }
+.cz-roster-card.now { outline: 1px solid rgba(99, 255, 204, .45); box-shadow: 0 0 0 1px rgba(99,255,204,.12), 0 18px 50px rgba(0,0,0,.28); }
+.cz-roster-card.future { border-color: rgba(126, 200, 255, .28); }
+.cz-roster-card.past { opacity: .78; }
+.cz-roster-linked-chips { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+.cz-roster-linked-chips span { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border-radius: 999px; border: 1px solid rgba(126,200,255,.20); background: rgba(9, 25, 50, .62); color: var(--cz-text, #eaf5ff); font-size: 12px; font-weight: 800; }
+.cz-weather-inline { margin-top: 14px; padding: 14px; border-radius: 22px; border: 1px solid rgba(126,200,255,.22); background: linear-gradient(180deg, rgba(8,24,49,.82), rgba(5,14,29,.92)); }
+.cz-weather-inline header { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.cz-weather-inline header strong { font-size: 15px; }
+.cz-weather-inline header span { margin-left: auto; font-size: 12px; opacity: .82; font-weight: 800; }
+.cz-weather-metar-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cz-weather-metar-grid article { padding: 12px; border-radius: 18px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.08); }
+.cz-weather-metar-grid small { display:block; opacity:.74; font-weight:800; margin-bottom:4px; }
+.cz-weather-metar-grid strong { display:block; font-size:18px; margin-bottom:4px; }
+.cz-weather-metar-grid p { margin:0; font-size:12px; line-height:1.35; opacity:.9; }
+.cz-weather-inline footer { margin-top: 10px; font-size: 12px; opacity: .82; font-weight: 800; }
+@media (max-width: 720px) { .cz-weather-metar-grid { grid-template-columns: 1fr; } .cz-roster-linked-chips span { font-size: 11px; } }
