@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.3.5",
+  "version": "13.3.6",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.3.5 — continuidade física da escala, anti-teletransporte e dedupe de pernas.",
+  "description": "CrewCheck v13.3.6 — polimento de dias sem voo, DR/HSB e cabeçalho do Roster.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
