@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.4.3';
-const CREWCHECK_UI_CORE_NOTE = 'v13.4.3: cards da escala expandem inline com detalhes operacionais e gerenciador de apresentação';
+const DEFAULT_VERSION = '13.4.5';
+const CREWCHECK_UI_CORE_NOTE = 'v13.4.5: guardião de importação, confirmação de período e fallback seguro do Cockpit';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -304,6 +304,112 @@ function programDateLabel(event: ZeroLeg): string {
   return `${weekday(d)} ${pad2(d.getDate())}/${pad2(d.getMonth()+1)}`;
 }
 
+
+type ImportGuardianDecision = {
+  ok: boolean;
+  summaryText: string;
+  toastText: string;
+  hasFuture: boolean;
+  periodLabel: string;
+};
+
+function monthNameBR(month?: number | null): string {
+  const names = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const index = Number(month || 0) - 1;
+  return names[index] || 'Mês a confirmar';
+}
+function rosterPeriodFromDays(roster: CrewRoster): { month: number; year: number } {
+  const days = Array.isArray(roster.days) ? roster.days : [];
+  const counts = new Map<string, { month: number; year: number; score: number }>();
+  for (const day of days) {
+    const month = Number((day as any).month || roster.month || 0);
+    const year = Number((day as any).year || roster.year || 0);
+    if (!month || !year) continue;
+    const key = `${month}|${year}`;
+    const current = counts.get(key) || { month, year, score: 0 };
+    current.score += Math.max(1, Array.isArray((day as any).legs) ? (day as any).legs.length : 1);
+    counts.set(key, current);
+  }
+  const best = [...counts.values()].sort((a, b) => b.score - a.score)[0];
+  return best || { month: Number(roster.month || new Date().getMonth() + 1), year: Number(roster.year || new Date().getFullYear()) };
+}
+function rosterPeriodLabel(roster: CrewRoster): string {
+  const period = rosterPeriodFromDays(roster);
+  return `${monthNameBR(period.month)}/${period.year}`;
+}
+function currentPeriodLabel(): string {
+  const now = new Date();
+  return `${monthNameBR(now.getMonth() + 1)}/${now.getFullYear()}`;
+}
+function isCurrentRosterPeriod(roster: CrewRoster): boolean {
+  const period = rosterPeriodFromDays(roster);
+  const now = new Date();
+  return period.month === now.getMonth() + 1 && period.year === now.getFullYear();
+}
+function chronologicalNextRosterLeg(events: ZeroLeg[], now = new Date()): ZeroLeg | null {
+  const real = events
+    .filter((event) => !event.placeholder && isOperationalEvent(event))
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+
+  const active = real.find((event) => eventStartDateTime(event).getTime() <= now.getTime() && eventEndDateTime(event).getTime() >= now.getTime());
+  if (active) return active;
+
+  return real.find((event) => eventStartDateTime(event).getTime() > now.getTime()) || null;
+}
+function importGuardianSummary(roster: CrewRoster, sourceFileName: string): ImportGuardianDecision {
+  const events = buildLegs(roster);
+  const flights = events.filter((event) => event.kind === 'flight').length;
+  const days = Array.isArray(roster.days) ? roster.days.length : 0;
+  const activities = events.filter((event) => event.kind !== 'flight' && event.canonical?.kind !== 'rest').length;
+  const rest = events.filter((event) => event.canonical?.kind === 'rest').length;
+  const future = chronologicalNextRosterLeg(events);
+  const periodLabel = rosterPeriodLabel(roster);
+  const lines = [
+    'CrewCheck detectou esta escala:',
+    '',
+    `Arquivo: ${sourceFileName}`,
+    `Período: ${periodLabel}`,
+    `Tripulante: ${safe(roster.crewName, 'Tripulante')}`,
+    `Base: ${safe(roster.base, '—')}`,
+    `Dias publicados: ${days}`,
+    `Voos: ${flights}`,
+    `Atividades: ${activities}`,
+    `Folgas/descanso: ${rest}`,
+    future ? `Próxima programação: ${rosterEventTitle(future)} · ${programDateLabel(future)} · ${safe(future.departure, '—')} → ${safe(future.arrival, '—')}` : 'Próxima programação: nenhuma programação futura detectada',
+  ];
+
+  if (!isCurrentRosterPeriod(roster)) {
+    lines.push('', `Atenção: o período detectado é ${periodLabel}, mas o período atual é ${currentPeriodLabel()}.`);
+  }
+  if (!future) {
+    lines.push('', 'Atenção: esta escala não possui evento operacional futuro após agora.');
+  }
+  lines.push('', 'Deseja ativar esta escala no CrewCheck?');
+
+  return {
+    ok: true,
+    summaryText: lines.join('\n'),
+    toastText: future ? `Escala ${periodLabel} importada.` : `Escala ${periodLabel} importada sem programação futura.`,
+    hasFuture: Boolean(future),
+    periodLabel,
+  };
+}
+function confirmRosterImport(roster: CrewRoster, sourceFileName: string): ImportGuardianDecision {
+  const decision = importGuardianSummary(roster, sourceFileName);
+  const days = Array.isArray(roster.days) ? roster.days.length : 0;
+  if (!days) {
+    return {
+      ...decision,
+      ok: false,
+      summaryText: 'O arquivo foi lido, mas nenhuma data de escala foi detectada. Verifique se é o PDF oficial da escala.',
+      toastText: 'Nenhuma data de escala detectada.',
+    };
+  }
+
+  const confirmed = window.confirm(decision.summaryText);
+  return { ...decision, ok: confirmed };
+}
+
 function emptyRoster(): CrewRoster {
   return {
     crewName: getStoredUser()?.name || 'Tripulante',
@@ -495,7 +601,7 @@ function noFutureLeg(events: ZeroLeg[]): ZeroLeg {
     kind: 'duty',
     date: today,
     title: 'Nenhuma programação futura',
-    subtitle: 'A escala carregada não possui evento operacional futuro no índice canônico. Reimporte o PDF oficial para reprocessar.',
+    subtitle: 'A escala carregada não possui evento operacional futuro após agora. Se houver divergência, confira o período importado ou reimporte o PDF oficial.',
     origin: safe((base as any).origin, '—'),
     destination: safe((base as any).destination, '—'),
     flightNumber: '—',
@@ -511,11 +617,16 @@ function nextFlight(events: ZeroLeg[]) {
     .filter((event) => !event.placeholder && isOperationalEvent(event))
     .map((event) => event.canonical)
     .filter(Boolean) as CanonicalRosterEvent[];
+
   const selected = selectNextRosterEvent(canonicalEvents);
   if (selected) {
     const found = events.find((event) => event.canonical?.id === selected.id);
     if (found) return found;
   }
+
+  const chronological = chronologicalNextRosterLeg(events);
+  if (chronological) return chronological;
+
   return noFutureLeg(events);
 }
 function nextRealFlight(events: ZeroLeg[]) {
@@ -523,11 +634,13 @@ function nextRealFlight(events: ZeroLeg[]) {
     .filter((event) => event.kind === 'flight' && !event.placeholder)
     .map((event) => event.canonical)
     .filter(Boolean) as CanonicalRosterEvent[];
+
   const selected = selectNextRosterEvent(canonicalFlights);
   if (selected) {
     const found = events.find((event) => event.canonical?.id === selected.id);
     if (found) return found;
   }
+
   return nextFlight(events);
 }
 function currentDayAnchor(events: ZeroLeg[]) {
@@ -620,7 +733,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
     rest: events.filter((e) => e.canonical?.kind === 'rest').length,
   } : { days: 0, flights: 0, activities: 0, rest: 0 };
 
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro no índice canônico.' : 'Suba o PDF oficial de julho para reativar escala completa, detalhes, diárias, radar, rotina, hotéis, academias, trânsito e saída inteligente com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/><section className="cz-shortcuts cz-shortcuts-full"><button onClick={() => setView('features')}><Settings/><strong>Funcionalidades</strong><small>Central completa</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar</strong><small>Gate e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal/mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Ganhos previstos</small></button><button onClick={() => setView('reports')}><FileText/><strong>Relatórios</strong><small>Indicadores</small></button><button onClick={() => setView('routine')}><Dumbbell/><strong>Rotina</strong><small>Academias/hotéis</small></button><button onClick={onUpload}><Upload/><strong>Importar PDF</strong><small>Escala oficial</small></button></section></>;
+  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial de julho para reativar escala completa, detalhes, diárias, radar, rotina, hotéis, academias, trânsito e saída inteligente com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/><section className="cz-shortcuts cz-shortcuts-full"><button onClick={() => setView('features')}><Settings/><strong>Funcionalidades</strong><small>Central completa</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar</strong><small>Gate e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal/mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Ganhos previstos</small></button><button onClick={() => setView('reports')}><FileText/><strong>Relatórios</strong><small>Indicadores</small></button><button onClick={() => setView('routine')}><Dumbbell/><strong>Rotina</strong><small>Academias/hotéis</small></button><button onClick={onUpload}><Upload/><strong>Importar PDF</strong><small>Escala oficial</small></button></section></>;
 }
 
 function rosterCode(day?: RosterDay): string {
@@ -1013,7 +1126,7 @@ function CrewToolsView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Crew e chefe de cabine</h1><p>Tripulação, adicional de chefe, instrutor e apoio operacional.</p></section><section className="cz-stack-list">{firstCrew.length ? firstCrew.map((c:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-copy"><h3>{c.name || c.employeeName || 'Tripulante'}</h3><p>{c.role || c.function || 'Crew'}</p></div><strong className="cz-roster-time">{i===0 ? 'Chefe efetivo' : 'Tripulante'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Regra preservada</h3><p>Quando houver lista de CCM, o primeiro CCM listado é considerado chefe efetivo do voo para fins de adicional.</p></div></article>}</section></>;
 }
 function MaintenancePreview() { return <><Brand/><section className="cz-maintenance"><article><div className="cz-maint-illu"><Settings size={72}/><Plane size={64}/></div><h1>Site em manutenção</h1><p>Estamos realizando melhorias e atualizações no CrewCheck. Em breve o sistema estará disponível novamente.</p><span><ShieldCheck/> Modo ativado pelo administrador</span><div><Lock/> Apenas administradores podem acessar o painel durante a manutenção.</div><button>Acessar painel admin <ChevronRight/></button><button>Ver status</button><a>Voltar mais tarde</a></article><section><h2>Status da operação <b>Em andamento</b></h2><div><p><CalendarDays/>Escala em atualização</p><p><Bell/>Alertas em revisão</p><p><CloudSun/>Meteorologia sincronizando</p></div></section></section></> }
-function ImportPanel({ onUpload }: { onUpload: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala para preencher Cockpit, Roster, Alertas, Diárias e Saída Inteligente no novo visual.</p><button onClick={onUpload}>Escolher PDF</button></section></>; }
+function ImportPanel({ onUpload }: { onUpload: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala. Antes de salvar, o CrewCheck valida período, tripulante, base, dias, voos e próxima programação para evitar ativar o mês errado.</p><button onClick={onUpload}>Escolher PDF</button></section></>; }
 
 function OpeningVideo({ onDone }: { onDone: () => void }) {
   const finish = () => { storage.set('crewcheck_intro_seen_v1278', '1'); onDone(); };
@@ -1085,10 +1198,18 @@ export default function Home() {
     setBusy(true);
     try {
       const roster = await parsePDF(file);
+      const decision = confirmRosterImport(roster, file.name);
+      if (!decision.ok) {
+        toast.error(decision.toastText || 'Importação cancelada.');
+        return;
+      }
       const newCompliance = saveRoster(roster, file.name);
+      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);
+      storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
       setBundle({ roster, compliance: newCompliance, source: file.name });
       setView('roster');
-      toast.success('Escala real importada e detalhes liberados.');
+      toast.success(decision.toastText || 'Escala real importada e detalhes liberados.');
+      if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui interpretar o PDF.');
