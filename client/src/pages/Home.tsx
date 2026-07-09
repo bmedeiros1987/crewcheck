@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.4.5';
-const CREWCHECK_UI_CORE_NOTE = 'v13.4.5: guardião de importação, confirmação de período e fallback seguro do Cockpit';
+const DEFAULT_VERSION = '13.4.6';
+const CREWCHECK_UI_CORE_NOTE = 'v13.4.6: UX operacional endurecida, próxima programação por evento real e importação sem ruído técnico';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -687,7 +687,7 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
   if (event.placeholder) {
     return <article className="cz-smart-card" onClick={() => setView('import')}><div className="cz-smart-title"><span><Upload size={26}/></span><div><h2>Importar escala real</h2><p>PDF oficial de julho</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>PDF</strong><em>REAL</em><p>Nenhum dado fictício será usado.</p><div><small>Status</small><b>Aguardando escala</b></div></div></article>;
   }
-  return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Saída Inteligente</h2><p>Recomendado para sua programação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>TOMTOM</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>API/Trânsito</b></div></div></article>;
+  return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Saída Inteligente</h2><p>Recomendado para sua programação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>Trânsito</b></div></div></article>;
 }
 
 
@@ -724,7 +724,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
 
 function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
-  const loaded = events.length > 0;
+  const loaded = events.some((event) => !event.placeholder);
   const alertCount = Number((compliance as any)?.alerts?.length || 0);
   const counters = loaded && events[0]?.day ? {
     days: new Set(events.map((e) => e.day.date)).size,
@@ -889,7 +889,7 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
 }
 function Departure({ event }: { event: ZeroLeg }) {
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com TomTom, trânsito real, origem/hotel, aeroporto e pós-pouso até o hotel.</p></article></>;
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>TOMTOM</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Real/API</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>TomTom</b><span>principal</span></header><div className="cz-map-canvas"><i/><em/><b/><span className="cz-map-label cz-map-label-a">Origem/hotel</span><span className="cz-map-label cz-map-label-b">{event.origin}</span><small className="cz-map-road">Trânsito real quando API estiver configurada</small></div><ul><li><Radar/><span><strong>Localização dinâmica <b>ativa</b></strong><small>Ajustes em tempo real com base no tráfego.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar tempo até o hotel automaticamente.</small></span></li></ul><footer><button><Map/> Abrir mapa</button><button><Menu/> Ver detalhes</button></footer></article></section></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Real/API</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>TomTom</b><span>principal</span></header><div className="cz-map-canvas"><i/><em/><b/><span className="cz-map-label cz-map-label-a">Origem/hotel</span><span className="cz-map-label cz-map-label-b">{event.origin}</span><small className="cz-map-road">Trânsito real quando API estiver configurada</small></div><ul><li><Radar/><span><strong>Localização dinâmica <b>ativa</b></strong><small>Ajustes em tempo real com base no tráfego.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar tempo até o hotel automaticamente.</small></span></li></ul><footer><button><Map/> Abrir mapa</button><button><Menu/> Ver detalhes</button></footer></article></section></>;
 }
 
 function LoadView({ bundle }: { bundle: BundleState }) {
@@ -1075,7 +1075,12 @@ function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
   const [version, setVersion] = useState(0);
   const rules = loadPresentationRules();
   const overrides = loadPresentationOverrides();
-  const upcoming = events.filter((event) => !event.placeholder && isOperationalEvent(event)).slice(0, 18);
+  const now = new Date();
+  const operationalEvents = events
+    .filter((event) => !event.placeholder && isOperationalEvent(event))
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  const upcoming = operationalEvents.filter((event) => eventEndDateTime(event).getTime() >= now.getTime()).slice(0, 18);
+  const visibleUpcoming = upcoming.length ? upcoming : operationalEvents.slice(0, 18);
   const ruleList = Object.values(rules).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 12);
   const refresh = () => setVersion((value) => value + 1);
 
@@ -1102,7 +1107,7 @@ function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
     refresh();
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Gerenciador de Apresentação</h1><p>Aprende horários por hotel/local e permite ajuste manual quando a escala vier incompleta ou diferente do padrão.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Hotéis/locais" value={String(Object.keys(rules).length)} detail="padrões aprendidos"/><KpiCard icon={ToggleRight} title="Ajustes manuais" value={String(Object.keys(overrides).length)} detail="por programação"/><KpiCard icon={ShieldCheck} title="Fonte" value="Local" detail="sem credenciais ou sessão"/></section><section className="cz-toolbox"><h2>Próximas programações</h2><p>Toque em “Alterar” para corrigir apenas a programação. Use “Aprender hotel/local” para salvar como padrão para próximas escalas.</p></section><section className="cz-stack-list">{upcoming.length ? upcoming.map((event) => { const managed = managedPresentationForEvent(event); return <article className="cz-roster-card compact" key={`pm-${event.id}-${version}`}><div className="cz-roster-main"><span className="cz-roster-icon">{event.kind === 'flight' ? <Plane/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · Apresentação {managed.presentation || '—'} · {managed.source}</p><small>{presentationLearningLabel(event)} · {event.origin} → {event.destination}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => edit(event, false)}>Alterar</button><button onClick={() => edit(event, true)}>Aprender hotel/local</button><button onClick={() => clearEvent(event)}>Limpar ajuste</button><button onClick={() => clearRule(event)}>Limpar aprendizado</button></div></article>; }) : <article className="cz-empty-real"><Clock/><h2>Nenhuma programação operacional</h2><p>Importe uma escala real para gerenciar apresentações por hotel/local.</p></article>}</section><section className="cz-toolbox"><h2>Padrões aprendidos</h2>{ruleList.length ? ruleList.map((rule) => <p key={rule.key}><strong>{rule.label}</strong><span>{rule.presentation} · {Math.round(rule.confidence * 100)}% confiança · {rule.samples} amostra(s)</span></p>) : <p>Nenhum padrão aprendido ainda. O sistema aprende quando você salva uma apresentação como padrão do hotel/local.</p>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Gerenciador de Apresentação</h1><p>Aprende horários por hotel/local e permite ajuste manual quando a escala vier incompleta ou diferente do padrão.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Hotéis/locais" value={String(Object.keys(rules).length)} detail="padrões aprendidos"/><KpiCard icon={ToggleRight} title="Ajustes manuais" value={String(Object.keys(overrides).length)} detail="por programação"/><KpiCard icon={ShieldCheck} title="Fonte" value="Local" detail="sem credenciais ou sessão"/></section><section className="cz-toolbox"><h2>Próximas programações</h2><p>Toque em “Alterar” para corrigir apenas a programação. Use “Aprender hotel/local” para salvar como padrão para próximas escalas.</p></section><section className="cz-stack-list">{visibleUpcoming.length ? visibleUpcoming.map((event) => { const managed = managedPresentationForEvent(event); return <article className="cz-roster-card compact" key={`pm-${event.id}-${version}`}><div className="cz-roster-main"><span className="cz-roster-icon">{event.kind === 'flight' ? <Plane/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · Apresentação {managed.presentation || '—'} · {managed.source}</p><small>{presentationLearningLabel(event)} · {event.origin} → {event.destination}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => edit(event, false)}>Alterar</button><button onClick={() => edit(event, true)}>Aprender hotel/local</button><button onClick={() => clearEvent(event)}>Limpar ajuste</button><button onClick={() => clearRule(event)}>Limpar aprendizado</button></div></article>; }) : <article className="cz-empty-real"><Clock/><h2>Nenhuma programação operacional</h2><p>Importe uma escala real para gerenciar apresentações por hotel/local.</p></article>}</section><section className="cz-toolbox"><h2>Padrões aprendidos</h2>{ruleList.length ? ruleList.map((rule) => <p key={rule.key}><strong>{rule.label}</strong><span>{rule.presentation} · {Math.round(rule.confidence * 100)}% confiança · {rule.samples} amostra(s)</span></p>) : <p>Nenhum padrão aprendido ainda. O sistema aprende quando você salva uma apresentação como padrão do hotel/local.</p>}</section></>;
 }
 
 function HotelsView({ events }: { events: ZeroLeg[] }) {
@@ -1151,6 +1156,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'routine') return 'routine';
   if (value === 'wakeup' || value === 'despertador') return 'wakeup';
   if (value === 'hotels' || value === 'hoteis') return 'hotels';
+  if (value === 'presentation' || value === 'apresentacao') return 'presentation';
   if (value === 'database') return 'database';
   if (value === 'crew') return 'crew';
   return 'cockpit';
@@ -1163,9 +1169,10 @@ export default function Home() {
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const [showIntro, setShowIntro] = useState(() => storage.get('crewcheck_intro_seen_v1278', '0') !== '1');
+  const [showIntro, setShowIntro] = useState(false);
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster]);
-  const event = nextRealFlight(events);
+  const event = nextFlight(events);
+  const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
 
@@ -1200,13 +1207,14 @@ export default function Home() {
       const roster = await parsePDF(file);
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
-        toast.error(decision.toastText || 'Importação cancelada.');
+        toast.message(decision.toastText || 'Importação cancelada.');
         return;
       }
       const newCompliance = saveRoster(roster, file.name);
       storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
       setBundle({ roster, compliance: newCompliance, source: file.name });
+      sessionStorage.setItem('crewcheck_force_view_once', 'roster');
       setView('roster');
       toast.success(decision.toastText || 'Escala real importada e detalhes liberados.');
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
@@ -1249,8 +1257,8 @@ export default function Home() {
     {view === 'maintenance' && <MaintenancePreview/>}
     {view === 'import' && <ImportPanel onUpload={actions.upload}/>}
     {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>}
-    {view === 'radar' && <RadarView event={event}/>}
-    {view === 'weather' && <WeatherView event={event}/>}
+    {view === 'radar' && <RadarView event={flightEvent}/>}
+    {view === 'weather' && <WeatherView event={flightEvent}/>}
     {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
     {view === 'salary' && <SalaryView bundle={bundle}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
