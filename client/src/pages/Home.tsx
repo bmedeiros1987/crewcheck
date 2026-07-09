@@ -59,7 +59,7 @@ import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent,
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation';
 
 type ZeroLeg = {
   id: string;
@@ -86,6 +86,7 @@ type ZeroLeg = {
   timeRange: string;
   placeholder?: boolean;
   canonical?: CanonicalRosterEvent;
+  presentationSource?: string;
 };
 
 type BundleState = { roster: CrewRoster; compliance: ComplianceResult | null; source: string };
@@ -104,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.3.8';
-const CREWCHECK_UI_CORE_NOTE = 'v13.3.8: separador literal com espaços no cabeçalho do Roster';
+const DEFAULT_VERSION = '13.4.1';
+const CREWCHECK_UI_CORE_NOTE = 'v13.4.1: gerenciador de apresentação com aprendizado por hotel/local e ajuste manual';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -170,6 +171,131 @@ function monthLong(roster: CrewRoster) {
 function dayTitle(day: RosterDay) {
   const d = parseDate(day);
   return `${weekday(d)} ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+}
+
+type PresentationLearningRule = {
+  key: string;
+  label: string;
+  presentation: string;
+  samples: number;
+  confidence: number;
+  lastUsedAt: string;
+  updatedAt: string;
+  source: 'manual' | 'aprendido';
+};
+const PRESENTATION_RULES_KEY = 'crewcheck_presentation_rules_v1341';
+const PRESENTATION_OVERRIDES_KEY = 'crewcheck_presentation_overrides_v1341';
+
+function parseTimeStrict(value?: string | null): string | null {
+  const match = String(value || '').trim().match(/^(\d{1,2})[:hH](\d{2})$/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return `${pad2(h)}:${pad2(m)}`;
+}
+function readJsonRecord<T>(key: string): Record<string, T> {
+  try {
+    const parsed = JSON.parse(storage.get(key, '{}'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function writeJsonRecord<T>(key: string, value: Record<string, T>) {
+  storage.set(key, JSON.stringify(value));
+}
+function presentationLearningKey(event: Pick<ZeroLeg, 'hotel' | 'origin' | 'destination' | 'day'>): string {
+  const hotel = String(event.hotel || (event.day as any)?.hotel || '').trim();
+  if (hotel) return `hotel:${hotel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}`;
+  const base = String((event.day as any)?.base || event.origin || event.destination || '').trim().toUpperCase();
+  const cityName = city(base);
+  return `local:${base || cityName}`.toLowerCase();
+}
+function presentationLearningLabel(event: Pick<ZeroLeg, 'hotel' | 'origin' | 'destination' | 'day'>): string {
+  const hotel = String(event.hotel || (event.day as any)?.hotel || '').trim();
+  if (hotel) return hotel;
+  const base = String((event.day as any)?.base || event.origin || event.destination || '').trim().toUpperCase();
+  return `${base || 'Local'} · ${city(base)}`;
+}
+function presentationOverrideKey(event: ZeroLeg): string {
+  const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
+  return [dateChip(d), event.flightNumber, event.origin, event.destination, event.departure].join('|');
+}
+function loadPresentationRules() {
+  return readJsonRecord<PresentationLearningRule>(PRESENTATION_RULES_KEY);
+}
+function loadPresentationOverrides() {
+  return readJsonRecord<{ presentation: string; updatedAt: string; label: string }>(PRESENTATION_OVERRIDES_KEY);
+}
+function managedPresentationForEvent(event: ZeroLeg): { presentation: string; source: string } {
+  if (event.placeholder) return { presentation: event.presentation, source: 'Escala' };
+  if (!event.presentation || event.presentation === '—' || event.presentation === 'Conexão/Solo') return { presentation: event.presentation, source: 'Escala' };
+  const override = loadPresentationOverrides()[presentationOverrideKey(event)];
+  if (override?.presentation) return { presentation: override.presentation, source: 'Manual desta programação' };
+  const rule = loadPresentationRules()[presentationLearningKey(event)];
+  if (rule?.presentation) return { presentation: rule.presentation, source: `Aprendido: ${rule.label}` };
+  return { presentation: event.presentation, source: 'Escala publicada' };
+}
+function savePresentationOverride(event: ZeroLeg, presentation: string, saveAsLearning = false) {
+  const clean = parseTimeStrict(presentation);
+  if (!clean) throw new Error('Informe um horário válido no formato HH:MM.');
+  const overrides = loadPresentationOverrides();
+  overrides[presentationOverrideKey(event)] = { presentation: clean, updatedAt: new Date().toISOString(), label: rosterEventTitle(event) };
+  writeJsonRecord(PRESENTATION_OVERRIDES_KEY, overrides);
+
+  if (saveAsLearning) {
+    const rules = loadPresentationRules();
+    const key = presentationLearningKey(event);
+    const previous = rules[key];
+    const samples = (previous?.samples || 0) + 1;
+    rules[key] = {
+      key,
+      label: presentationLearningLabel(event),
+      presentation: clean,
+      samples,
+      confidence: Math.min(0.98, 0.55 + samples * 0.08),
+      lastUsedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: 'manual',
+    };
+    writeJsonRecord(PRESENTATION_RULES_KEY, rules);
+  }
+}
+function clearPresentationOverride(event: ZeroLeg) {
+  const overrides = loadPresentationOverrides();
+  delete overrides[presentationOverrideKey(event)];
+  writeJsonRecord(PRESENTATION_OVERRIDES_KEY, overrides);
+}
+function clearPresentationLearning(event: ZeroLeg) {
+  const rules = loadPresentationRules();
+  delete rules[presentationLearningKey(event)];
+  writeJsonRecord(PRESENTATION_RULES_KEY, rules);
+}
+function applyPresentationManagement(event: ZeroLeg): ZeroLeg {
+  const managed = managedPresentationForEvent(event);
+  if (!managed.presentation || managed.presentation === event.presentation) {
+    return { ...event, presentationSource: managed.source };
+  }
+  const updatedRoutine = Array.isArray(event.routine)
+    ? event.routine.map((item) => item.startsWith('Despertador ') ? `Despertador ${addMinutesToTime(managed.presentation, -90)}` : item)
+    : event.routine;
+  const updatedSubtitle = String(event.subtitle || '').replace(/Apres\. \d{2}:\d{2}/, `Apres. ${managed.presentation}`);
+  return {
+    ...event,
+    presentation: managed.presentation,
+    presentationSource: managed.source,
+    subtitle: updatedSubtitle,
+    routine: updatedRoutine,
+  };
+}
+function promptPresentation(event: ZeroLeg, saveAsLearning = false) {
+  const current = managedPresentationForEvent(event).presentation || event.presentation || '';
+  const label = saveAsLearning ? 'Salvar como padrão deste hotel/local' : 'Alterar somente esta programação';
+  const next = window.prompt(`${label}\nInforme o horário no formato HH:MM`, current === 'Conexão/Solo' ? event.departure : current);
+  if (!next) return false;
+  savePresentationOverride(event, next, saveAsLearning);
+  return true;
 }
 
 function emptyRoster(): CrewRoster {
@@ -331,7 +457,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     };
   });
 
-  return legs.sort((a, b) => (a.canonical ? new Date(a.canonical.startDateTime).getTime() : a.date.getTime()) - (b.canonical ? new Date(b.canonical.startDateTime).getTime() : b.date.getTime()));
+  return legs.map(applyPresentationManagement).sort((a, b) => (a.canonical ? new Date(a.canonical.startDateTime).getTime() : a.date.getTime()) - (b.canonical ? new Date(b.canonical.startDateTime).getTime() : b.date.getTime()));
 }
 
 function eventStartDateTime(event: ZeroLeg): Date {
@@ -419,7 +545,7 @@ function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: Z
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Roster',CalendarDays],['alerts','Alerts',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -450,7 +576,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','TomTom/hotel',Car],
-    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
+    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
@@ -759,6 +885,40 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   const setMode = (next: string) => { storage.set('crewcheck_alarm_mode', next); toast.success(`Despertador: ${next}`); window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' })); };
   return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Planejamento baseado na próxima apresentação real, sem armazenar credenciais ou dados sensíveis.</p></section><section className="cz-finance-grid"><KpiCard icon={Bell} title="Dormir" value={sleep} detail="7h30 antes de acordar"/><KpiCard icon={Bell} title="Acordar" value={wake} detail="90 min antes"/><KpiCard icon={Car} title="Sair" value={leave} detail={`${event.hotel ? 'Hotel' : 'Origem'} → ${event.origin}`}/></section><section className="cz-toolbox"><h2>Como notificar</h2><div className="cz-tool-actions cz-wakeup-options">{['Ligação + Telegram','Somente ligação','Somente Telegram','Ligação'].map((item) => <button className={mode === item ? 'active' : ''} key={item} onClick={() => setMode(item)}>{item}</button>)}</div><p>Confirmação de acordado, repetição escalonada e provedor VOIP ficam configuráveis por plano, sem expor nome de API ao usuário.</p></section><section className="cz-mini-status"><p><strong>Próxima programação:</strong> {event.title}</p><p><strong>Apresentação:</strong> {event.presentation} · <strong>Status:</strong> {safe(event.status, 'Programado')}</p></section></>;
 }
+function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
+  const [version, setVersion] = useState(0);
+  const rules = loadPresentationRules();
+  const overrides = loadPresentationOverrides();
+  const upcoming = events.filter((event) => !event.placeholder && isOperationalEvent(event)).slice(0, 18);
+  const ruleList = Object.values(rules).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 12);
+  const refresh = () => setVersion((value) => value + 1);
+
+  function edit(event: ZeroLeg, learning = false) {
+    try {
+      if (promptPresentation(event, learning)) {
+        toast.success(learning ? 'Padrão de apresentação salvo para este hotel/local.' : 'Apresentação manual salva para esta programação.');
+        refresh();
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui salvar a apresentação.');
+    }
+  }
+
+  function clearEvent(event: ZeroLeg) {
+    clearPresentationOverride(event);
+    toast.success('Ajuste manual removido desta programação.');
+    refresh();
+  }
+
+  function clearRule(event: ZeroLeg) {
+    clearPresentationLearning(event);
+    toast.success('Aprendizado deste hotel/local removido.');
+    refresh();
+  }
+
+  return <><Brand back/><section className="cz-panel-head"><h1>Gerenciador de Apresentação</h1><p>Aprende horários por hotel/local e permite ajuste manual quando a escala vier incompleta ou diferente do padrão.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Hotéis/locais" value={String(Object.keys(rules).length)} detail="padrões aprendidos"/><KpiCard icon={ToggleRight} title="Ajustes manuais" value={String(Object.keys(overrides).length)} detail="por programação"/><KpiCard icon={ShieldCheck} title="Fonte" value="Local" detail="sem credenciais ou sessão"/></section><section className="cz-toolbox"><h2>Próximas programações</h2><p>Toque em “Alterar” para corrigir apenas a programação. Use “Aprender hotel/local” para salvar como padrão para próximas escalas.</p></section><section className="cz-stack-list">{upcoming.length ? upcoming.map((event) => { const managed = managedPresentationForEvent(event); return <article className="cz-roster-card compact" key={`pm-${event.id}-${version}`}><div className="cz-roster-main"><span className="cz-roster-icon">{event.kind === 'flight' ? <Plane/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · Apresentação {managed.presentation || '—'} · {managed.source}</p><small>{presentationLearningLabel(event)} · {event.origin} → {event.destination}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => edit(event, false)}>Alterar</button><button onClick={() => edit(event, true)}>Aprender hotel/local</button><button onClick={() => clearEvent(event)}>Limpar ajuste</button><button onClick={() => clearRule(event)}>Limpar aprendizado</button></div></article>; }) : <article className="cz-empty-real"><Clock/><h2>Nenhuma programação operacional</h2><p>Importe uma escala real para gerenciar apresentações por hotel/local.</p></article>}</section><section className="cz-toolbox"><h2>Padrões aprendidos</h2>{ruleList.length ? ruleList.map((rule) => <p key={rule.key}><strong>{rule.label}</strong><span>{rule.presentation} · {Math.round(rule.confidence * 100)}% confiança · {rule.samples} amostra(s)</span></p>) : <p>Nenhum padrão aprendido ainda. O sistema aprende quando você salva uma apresentação como padrão do hotel/local.</p>}</section></>;
+}
+
 function HotelsView({ events }: { events: ZeroLeg[] }) {
   const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
   return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites, descanso e entorno operacional detectados na escala real.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Descanso</span><span>Wake-up</span><span>Academia</span><span>Restaurante</span><span>Mercado</span><span>Farmácia</span><span>Lavanderia</span></div></article>) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
@@ -906,6 +1066,7 @@ export default function Home() {
     {view === 'routine' && <RoutineView bundle={bundle}/>}
     {view === 'wakeup' && <WakeupView event={event}/>}
     {view === 'hotels' && <HotelsView events={events}/>}
+    {view === 'presentation' && <PresentationManagerView events={events}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
