@@ -110,12 +110,10 @@ function defaultGoogleCalendarSettings(): GoogleCalendarSettings {
 
 export function googleCalendarIntegrationDiagnostics(): { label: string; value: string; tone: 'ok' | 'warn' | 'info' }[] {
   return [
-    { label: 'OAuth Client ID ativo', value: getGoogleClientId() || 'não configurado', tone: getGoogleClientId() ? 'ok' : 'warn' },
-    { label: 'Escopos solicitados', value: 'calendar.events + calendar.calendarlist.readonly', tone: 'info' },
-    { label: 'Chave SHA-1 Android', value: GOOGLE_ANDROID_SHA1_FINGERPRINT, tone: 'info' },
-    { label: 'Service Account', value: GOOGLE_SERVICE_ACCOUNT_EMAIL, tone: 'info' },
-    { label: 'Sincronização', value: 'Reconexão automática com consentimento quando o token expira ou o Google retorna 401/403.', tone: 'ok' },
-    { label: 'Modo recomendado', value: 'OAuth por usuário para agendas pessoais; Service Account somente para calendário compartilhado ou Workspace.', tone: 'warn' },
+    { label: 'Conexão Google', value: isGoogleCalendarConfigured() ? 'Configurada' : 'Aguardando configuração', tone: isGoogleCalendarConfigured() ? 'ok' : 'warn' },
+    { label: 'Permissões', value: 'Eventos e lista de calendários autorizados pelo usuário', tone: 'info' },
+    { label: 'Calendário de destino', value: loadGoogleCalendarSettings().selectedCalendarName || 'Calendário principal', tone: 'ok' },
+    { label: 'Sincronização', value: 'Reconexão assistida quando a autorização expira.', tone: 'ok' },
   ];
 }
 

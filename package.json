@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.5.4",
+  "version": "13.5.5",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.5.3 — sistema visual premium, tema claro e cards responsivos.",
+  "description": "CrewCheck v13.5.5 — recuperação funcional operacional",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -65,7 +65,8 @@
     "check:1269-blank-screen": "node -e \"console.log('CrewCheck v12.5.78 blank screen cache OK')\"",
     "check:1270-ui-polish": "node -e \"console.log('CrewCheck v12.5.78 true zero UI polish OK')\"",
     "check:1278-functional-final": "node -e \"console.log('CrewCheck v12.5.78 UI safe functional core OK')\"",
-    "regression:v13.5.4:maps": "node scripts/regression-v13-5-4-google-maps-premium-ops.mjs"
+    "regression:v13.5.4:maps": "node scripts/regression-v13-5-4-google-maps-premium-ops.mjs",
+    "regression:v13.5.5:core": "node scripts/regression-v13-5-5-operational-core-recovery.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

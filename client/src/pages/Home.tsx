@@ -52,14 +52,14 @@ import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard } from '@/lib/sharing';
 import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routinePlanner';
 import { sendRosterByEmail } from '@/lib/emailClient';
-import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, googleCalendarIntegrationDiagnostics } from '@/lib/googleCalendarSync';
+import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, saveGoogleCalendarSettings, listGoogleCalendars, googleCalendarIntegrationDiagnostics, type GoogleCalendarOption, type GoogleCalendarSettings } from '@/lib/googleCalendarSync';
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'iflight';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight';
 
 type ZeroLeg = {
   id: string;
@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.4';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.4: Meu Carro estacionamento, Mapa do mês Google e Saída Inteligente com rota real';
+const DEFAULT_VERSION = '13.5.5';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.5: recuperação funcional de motores, mapas, radar, calendário, rotina e auditoria operacional';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -243,6 +243,67 @@ function monthlyMapQuery(destinations: Array<AirportMapPoint & { count: number }
 function openMonthlyGoogleMap(destinations: Array<AirportMapPoint & { count: number }>) {
   const query = monthlyMapQuery(destinations);
   window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer');
+}
+
+
+type RoutePreviewInfo = {
+  ok?: boolean;
+  configured?: boolean;
+  distanceText?: string;
+  durationText?: string;
+  durationInTrafficText?: string;
+  trafficAware?: boolean;
+  message?: string;
+};
+
+type NearbyPlace = {
+  name: string;
+  address?: string;
+  rating?: number;
+  mapsUrl?: string;
+};
+
+function todayRosterKey(now = new Date()) {
+  return dateChip(now);
+}
+async function fetchRoutePreviewInfo(origin: string, destination: string): Promise<RoutePreviewInfo | null> {
+  try {
+    const params = new URLSearchParams({ origin, destination, mode: 'driving' });
+    const response = await fetch(`/api/maps/route-preview?${params.toString()}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === 'object') return payload as RoutePreviewInfo;
+  } catch {}
+  return null;
+}
+async function fetchNearbyFitnessPlaces(location: string): Promise<NearbyPlace[]> {
+  try {
+    const params = new URLSearchParams({ location, query: 'academia Smart Fit Wellhub fitness' });
+    const response = await fetch(`/api/places/fitness?${params.toString()}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => null) as { places?: NearbyPlace[] } | null;
+    return Array.isArray(payload?.places) ? payload!.places!.slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+function hotelSearchLocation(event: ZeroLeg): string {
+  return event.hotel || `${city(event.destination || event.origin)} ${event.destination || event.origin}`;
+}
+function openFitnessSearch(location: string, term = 'academia Smart Fit Wellhub') {
+  window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${term} perto de ${location}`)}`, '_blank', 'noopener,noreferrer');
+}
+function operationalAuditScore(bundle: BundleState) {
+  const events = buildLegs(bundle.roster);
+  const compliance = currentCompliance(bundle) as any;
+  const finance = financeSnapshot(bundle.roster);
+  return {
+    events: events.filter((event) => !event.placeholder).length,
+    flights: events.filter((event) => event.kind === 'flight' && !event.placeholder).length,
+    stays: events.filter((event) => event.kind === 'stay' || event.hotel).length,
+    alerts: Number(compliance?.alerts?.length || 0) + Number(compliance?.warnings?.length || 0),
+    perdiem: finance.perdiem.monthly,
+    salary: finance.salary.gross,
+    routine: currentGym(bundle).length,
+  };
 }
 function time(value?: string | null, fallback = '—') {
   const text = String(value || '').trim();
@@ -842,8 +903,14 @@ function RouteVisual({ event, compact = false }: { event: ZeroLeg; compact?: boo
 
 function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
   const [origin, setOrigin] = useState(() => eventRouteOrigin(event));
+  const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const destination = eventRouteDestination(event);
   const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, 'driving');
+  useEffect(() => {
+    let alive = true;
+    fetchRoutePreviewInfo(origin, destination).then((info) => { if (alive) setRoute(info); });
+    return () => { alive = false; };
+  }, [origin, destination]);
   async function refreshLocation() {
     try {
       const position = await getCurrentGeoPosition();
@@ -855,17 +922,19 @@ function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
     }
   }
   const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, 'driving');
+  const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';
   return <article className="cz-google-route-card">
     <header><div><b>Prévia da rota</b><span>Ponto A → Ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
     <div className="cz-route-kpis">
       <div><small>Origem</small><strong>{origin === 'Minha localização' ? 'Minha localização' : origin}</strong></div>
       <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
-      <div><small>Saída recomendada</small><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong></div>
-      <div><small>Trânsito/Maps</small><strong>Ao abrir no Google Maps</strong></div>
+      <div><small>Distância</small><strong>{route?.distanceText || 'Abrir Maps'}</strong></div>
+      <div><small>Trânsito/Maps</small><strong>{trafficText}</strong></div>
     </div>
     <div className="cz-google-map-preview">
-      {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa real indisponível sem configuração de mapas.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
+      {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa real indisponível sem configuração de mapas.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
     </div>
+    {route?.message && <p className="cz-mini-status">{route.message}</p>}
     <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
   </article>;
 }
@@ -1203,8 +1272,19 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const hasRoster = days.length > 0;
   const finance = financeSnapshot(normalizedRoster);
+  const todayKey = todayRosterKey();
+  const todayGroup = groupedEvents.find((group) => dateChip(parseDate(group.day)) === todayKey);
+  function openToday() {
+    const firstToday = todayGroup?.events?.[0];
+    if (!firstToday) {
+      toast.info('Não há programação publicada para hoje nesta escala.');
+      return;
+    }
+    setExpandedId(firstToday.id);
+    requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
@@ -1302,13 +1382,27 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
 function RadarView({ event }: { event: ZeroLeg }) {
   const [state, setState] = useState<any>(null);
-  useEffect(() => { let alive = true; fetch(`/api/radar-health?airport=${encodeURIComponent(event.origin)}&type=departure`, { cache: 'no-store' }).then(r => r.json()).then(p => alive && setState(p)).catch(() => alive && setState({ ok: false, message: 'Radar em espera.' })); return () => { alive = false; }; }, [event.origin]);
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>Status operacional para {event.flightNumber} · {event.origin} → {event.destination}.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{event.flightNumber}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {safe(event.gate, 'A confirmar')} · {safe(event.terminal, 'Terminal a confirmar')}</strong><span>Status: {safe(event.status, 'Monitorando')}</span></article><article><Plane/><h2>Fonte operacional</h2><p>Radar, portão, status e remoção de voos finalizados.</p><strong>{state?.ok ? 'Fonte ativa' : 'Fonte em espera'}</strong><span>{state?.message || state?.source || 'Radar pronto.'}</span></article></section></>;
+  const flight = safe(event.flightNumber, '');
+  useEffect(() => {
+    let alive = true;
+    const params = new URLSearchParams({ flight, origin: safe(event.origin, ''), destination: safe(event.destination, '') });
+    fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(p => alive && setState(p))
+      .catch(() => alive && setState({ ok: false, configured: false, message: 'Radar operacional aguardando configuração.' }));
+    return () => { alive = false; };
+  }, [flight, event.origin, event.destination]);
+  const status = state?.status || event.status || 'Monitorando';
+  const gate = state?.gate || event.gate || 'A confirmar';
+  const terminal = state?.terminal || event.terminal || 'A confirmar';
+  const dep = state?.departure || event.departure;
+  const arr = state?.arrival || event.arrival;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão, status e horários quando a fonte operacional estiver configurada.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Configure a fonte de voos no ambiente para status real.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section></>;
 }
 function WeatherView({ event }: { event: ZeroLeg }) {
   const [weather, setWeather] = useState<any>(null);
@@ -1433,8 +1527,48 @@ function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
   return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{(compliance as any).alerts?.length || 0}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
 }
-function CalendarToolsView({ actions }: { actions: QuickActions }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Calendário</h1><p>Exportação Connect Crew Lounge, ICS, Google Calendar e notas operacionais.</p></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={actions.ics}>Baixar ICS</button><button onClick={actions.google}>Sincronizar Google</button><button onClick={() => toast.info('Notas operacionais são incluídas quando aplicável.')}>Ver notas</button></div></section><section className="cz-diagnostics">{googleCalendarIntegrationDiagnostics().map((d: any) => <p key={d.label}><strong>{d.label}</strong><span>{d.value}</span></p>)}</section></>;
+function CalendarToolsView({ actions, bundle, gym }: { actions: QuickActions; bundle: BundleState; gym: any[] }) {
+  const [calendars, setCalendars] = useState<GoogleCalendarOption[]>([]);
+  const [settings, setSettings] = useState<GoogleCalendarSettings>(() => loadGoogleCalendarSettings());
+  const [busy, setBusy] = useState(false);
+  async function loadCalendars() {
+    setBusy(true);
+    try {
+      await connectGoogleCalendar();
+      const list = await listGoogleCalendars();
+      setCalendars(list);
+      const current = list.find((item) => item.id === settings.selectedCalendarId) || list[0];
+      if (current) {
+        const saved = saveGoogleCalendarSettings({ ...settings, selectedCalendarId: current.id, selectedCalendarName: current.summary });
+        setSettings(saved);
+      }
+      toast.success('Calendários carregados.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui carregar seus calendários.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  function selectCalendar(id: string) {
+    const selected = calendars.find((calendar) => calendar.id === id) || { id, summary: id };
+    const saved = saveGoogleCalendarSettings({ ...settings, selectedCalendarId: selected.id, selectedCalendarName: selected.summary });
+    setSettings(saved);
+    toast.success(`Calendário selecionado: ${selected.summary}`);
+  }
+  async function syncSelected() {
+    setBusy(true);
+    try {
+      await connectGoogleCalendar();
+      const saved = loadGoogleCalendarSettings();
+      const result = await syncRosterToGoogleCalendar(bundle.roster, saved, { gymRecommendations: gym });
+      toast.success(`Google Calendar: ${(result as any).total || 0} eventos sincronizados em ${saved.selectedCalendarName || saved.selectedCalendarId}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui sincronizar o Google Calendar.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>Calendário</h1><p>Escolha o calendário de destino, sincronize a escala e mantenha ICS como fallback.</p></section><section className="cz-toolbox"><h2>Calendário de destino</h2><p>{settings.selectedCalendarName || settings.selectedCalendarId || 'Calendário principal'}</p><div className="cz-tool-actions"><button onClick={loadCalendars} disabled={busy}><CalendarDays/> Carregar calendários</button><button onClick={syncSelected} disabled={busy}><CalendarDays/> Sincronizar selecionado</button><button onClick={actions.ics}>Baixar ICS</button></div>{calendars.length > 0 && <select className="cz-calendar-select" value={settings.selectedCalendarId} onChange={(event) => selectCalendar(event.target.value)}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' · principal' : ''}</option>)}</select>}</section><section className="cz-diagnostics">{googleCalendarIntegrationDiagnostics().map((d: any) => <p key={d.label}><strong>{d.label}</strong><span>{d.value}</span></p>)}</section></>;
 }
 function ExportToolsView({ actions }: { actions: QuickActions }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, WhatsApp, Telegram, copiar resumo, e-mail e arquivo de calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.email}>E-mail</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
@@ -1488,13 +1622,34 @@ function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
 
 function HotelsView({ events }: { events: ZeroLeg[] }) {
   const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
-  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites, descanso e entorno operacional detectados na escala real.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Descanso</span><span>Wake-up</span><span>Academia</span><span>Restaurante</span><span>Mercado</span><span>Farmácia</span><span>Lavanderia</span></div></article>) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites, descanso, entorno operacional e academias próximas ao hotel.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); return <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => openFitnessSearch(loc, 'academia Smart Fit Wellhub')}><Dumbbell/> Academias próximas</button><button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`restaurante mercado farmácia lavanderia perto de ${loc}`)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Entorno</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div><div className="cz-routine-strip"><span>Descanso</span><span>Wake-up</span><span>Academia</span><span>Restaurante</span><span>Mercado</span><span>Farmácia</span><span>Lavanderia</span></div></article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
 }
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
   try { suggestions = buildRoutineSuggestions(analyzeDayLoads(bundle.roster).days, defaultRoutineActivities()).slice(0, 8); } catch {}
   return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga de escala.</p></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina pronta</h3><p>Carregue uma escala para receber recomendações completas.</p></div></article>}</section></>;
 }
+
+function GymsView({ events }: { events: ZeroLeg[] }) {
+  const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
+  const target = stays[0] || events.find((e) => !e.placeholder) || placeholderLeg();
+  const location = hotelSearchLocation(target);
+  const [places, setPlaces] = useState<NearbyPlace[]>([]);
+  const [loading, setLoading] = useState(false);
+  async function search() {
+    setLoading(true);
+    try {
+      const found = await fetchNearbyFitnessPlaces(location);
+      setPlaces(found);
+      if (!found.length) toast.message('Não encontrei lista interna agora. Abrindo busca no Google Maps continua disponível.');
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { search(); }, [location]);
+  return <><Brand back/><section className="cz-panel-head"><h1>Academias</h1><p>Recomendações próximas ao hotel ou cidade do pernoite: Smart Fit, Wellhub e academias locais.</p></section><section className="cz-toolbox"><h2>Local de busca</h2><p>{location}</p><div className="cz-tool-actions"><button onClick={search} disabled={loading}><Dumbbell/> Atualizar recomendações</button><button onClick={() => openFitnessSearch(location, 'Smart Fit Wellhub academia')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><ShieldCheck/> Rotina sugerida</button></div></section><section className="cz-stack-list">{places.length ? places.map((place, index) => <article className="cz-roster-card" key={`${place.name}-${index}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.rating ? `Avaliação ${place.rating}` : 'Ver disponibilidade e convênio no app da academia/Wellhub'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + location)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir</button></div></article>) : <article className="cz-empty-real"><Dumbbell/><h2>Busca pronta</h2><p>Configure a chave de mapas/locais no ambiente para listar academias dentro do app. Enquanto isso, use “Abrir no Google Maps”.</p></article>}</section></>;
+}
+
 function DatabaseView({ setBundle, setView }: { setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
   const [items, setItems] = useState<any[]>([]);
   const [status, setStatus] = useState<any>(null);
@@ -1584,6 +1739,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'routine') return 'routine';
   if (value === 'wakeup' || value === 'despertador') return 'wakeup';
   if (value === 'hotels' || value === 'hoteis') return 'hotels';
+  if (value === 'gyms' || value === 'academias' || value === 'academia' || value === 'wellhub') return 'gyms';
   if (value === 'presentation' || value === 'apresentacao') return 'presentation';
   if (value === 'map' || value === 'mapa') return 'map';
   if (value === 'mycar' || value === 'meucarro' || value === 'carro' || value === 'car') return 'mycar';
@@ -1699,11 +1855,12 @@ export default function Home() {
     {view === 'salary' && <SalaryView bundle={bundle}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
     {view === 'load' && <LoadView bundle={bundle}/>}
-    {view === 'calendar' && <CalendarToolsView actions={actions}/>}
+    {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
     {view === 'exports' && <ExportToolsView actions={actions}/>}
     {view === 'routine' && <RoutineView bundle={bundle}/>}
     {view === 'wakeup' && <WakeupView event={event}/>}
     {view === 'hotels' && <HotelsView events={events}/>}
+    {view === 'gyms' && <GymsView events={events}/>}
     {view === 'presentation' && <PresentationManagerView events={events}/>}
     {view === 'map' && <MonthlyMapView events={events}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
