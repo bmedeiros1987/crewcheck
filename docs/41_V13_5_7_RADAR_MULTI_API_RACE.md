@@ -34,3 +34,11 @@ CREWCHECK_RADAR_TIMEOUT_MS
 - Motor canônico.
 - Continuidade física.
 - Sem credenciais, senha, MFA, cookies ou sessão.
+
+
+## Correção pós-auditoria
+Este PR preserva os endpoints de mapas/locais da v13.5.5:
+- `/api/maps/route-preview`
+- `/api/places/fitness`
+
+O radar multi-API não deve substituir nem remover as rotas de mapas, saída inteligente ou academias.

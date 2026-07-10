@@ -23,6 +23,11 @@ assert(server.includes('CREWCHECK_RADAR_TIMEOUT_MS'), 'timeout operacional confi
 assert(server.includes('scoreRadar'), 'seleção por qualidade existe');
 assert(server.includes('radarHealth'), 'cache de saúde das fontes existe');
 assert(server.includes('/api/radar-health'), 'health-check do radar existe');
+assert(server.includes('/api/maps/route-preview'), 'rota de mapas preservada');
+assert(server.includes('/api/places/fitness'), 'rota de academias preservada');
+assert(server.includes('GOOGLE_MAPS_SERVER_KEY'), 'chave backend de mapas preservada');
+assert(server.includes('routes.googleapis.com/directions/v2:computeRoutes'), 'Routes API preservada');
+assert(server.includes('places.googleapis.com/v1/places:searchText'), 'Places API preservada');
 assert(!server.includes('ghp_'), 'nenhum token GitHub foi gravado');
 assert(!server.includes('VITE_FLIGHTAWARE'), 'FlightAware não é exposto como VITE');
 if (home) {

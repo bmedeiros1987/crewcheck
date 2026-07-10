@@ -1,4 +1,3 @@
-
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -343,6 +342,100 @@ function handleRadarHealth(req, res) {
     timeoutMs: Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400),
   });
 }
+
+function mapsServerKey() {
+  return envAny(['GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);
+}
+function formatMeters(value) {
+  const n = Number(value || 0);
+  if (!n) return '';
+  return n >= 1000 ? `${(n / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(n)} m`;
+}
+function formatDuration(value) {
+  const seconds = Number(String(value || '0').replace(/[^\d.]/g, ''));
+  if (!seconds) return '';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}h${String(m).padStart(2, '0')}`;
+}
+async function handleRoutePreview(req, res, url) {
+  const key = mapsServerKey();
+  const origin = url.searchParams.get('origin') || '';
+  const destination = url.searchParams.get('destination') || '';
+  if (!origin || !destination) return sendJson(res, 400, { ok: false, message: 'Origem e destino são necessários.' });
+  if (!key) return sendJson(res, 200, { ok: false, configured: false, message: 'Mapa real configurável. Abra no Google Maps para ver rota e trânsito.' });
+  try {
+    const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'routes.duration,routes.staticDuration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.localizedValues',
+      },
+      body: JSON.stringify({
+        origin: { address: origin },
+        destination: { address: destination },
+        travelMode: 'DRIVE',
+        routingPreference: 'TRAFFIC_AWARE',
+        computeAlternativeRoutes: false,
+        languageCode: 'pt-BR',
+        units: 'METRIC',
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
+    const route = payload?.routes?.[0] || {};
+    sendJson(res, 200, {
+      ok: true,
+      configured: true,
+      trafficAware: true,
+      distanceMeters: route.distanceMeters || 0,
+      distanceText: route.localizedValues?.distance?.text || formatMeters(route.distanceMeters),
+      durationText: route.localizedValues?.duration?.text || formatDuration(route.duration),
+      durationInTrafficText: route.localizedValues?.duration?.text || formatDuration(route.duration),
+      polyline: route.polyline?.encodedPolyline || '',
+      message: 'Rota calculada com preferência de trânsito quando disponível.',
+    });
+  } catch {
+    sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
+  }
+}
+async function handleFitness(req, res, url) {
+  const key = mapsServerKey();
+  const location = url.searchParams.get('location') || '';
+  const query = url.searchParams.get('query') || 'academia Smart Fit Wellhub fitness';
+  if (!key) return sendJson(res, 200, { ok: false, configured: false, places: [], message: 'Busca interna de academias aguardando configuração.' });
+  try {
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.googleMapsUri',
+      },
+      body: JSON.stringify({
+        textQuery: `${query} perto de ${location}`.trim(),
+        languageCode: 'pt-BR',
+        regionCode: 'BR',
+        maxResultCount: 8,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return sendJson(res, 200, { ok: false, configured: true, places: [], message: 'Busca de academias indisponível agora.' });
+    const places = (payload?.places || []).map((place) => ({
+      name: place.displayName?.text || 'Academia',
+      address: place.formattedAddress || '',
+      rating: place.rating || undefined,
+      mapsUrl: place.googleMapsUri || '',
+    }));
+    sendJson(res, 200, { ok: true, configured: true, places });
+  } catch {
+    sendJson(res, 200, { ok: false, configured: true, places: [], message: 'Busca de academias indisponível agora.' });
+  }
+}
+
 function serveStatic(req, res, url) {
   let filePath = path.join(distDir, decodeURIComponent(url.pathname));
   if (url.pathname === '/' || !path.extname(filePath)) filePath = path.join(distDir, 'index.html');
