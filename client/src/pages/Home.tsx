@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.7';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.7: radar multi-API com seleção automática por velocidade e precisão';
+const DEFAULT_VERSION = '13.5.8';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.8: mapas estáticos, rota visual e previsão do tempo em pernoites';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -246,6 +246,54 @@ function openMonthlyGoogleMap(destinations: Array<AirportMapPoint & { count: num
 }
 
 
+function buildGoogleStaticMonthlyMapUrl(destinations: Array<AirportMapPoint & { count: number }>): string {
+  const key = mapsBrowserKey();
+  if (!key || !destinations.length) return '';
+  const points = destinations.slice(0, 18);
+  const markers = points.map((point, index) => `markers=${encodeURIComponent(`color:${index === 0 ? 'blue' : 'red'}|label:${point.code.slice(0, 1)}|${point.lat},${point.lon}`)}`).join('&');
+  const path = points.length > 1 ? `&path=${encodeURIComponent(`color:0x2563ebff|weight:3|${points.map((point) => `${point.lat},${point.lon}`).join('|')}`)}` : '';
+  return `https://maps.googleapis.com/maps/api/staticmap?size=900x520&scale=2&maptype=roadmap&${markers}${path}&key=${encodeURIComponent(key)}`;
+}
+function buildGoogleStaticRouteMapUrl(origin: string, destination: string, route?: RoutePreviewInfo | null): string {
+  const key = mapsBrowserKey();
+  if (!key || !origin || !destination) return '';
+  const markers = [
+    `markers=${encodeURIComponent(`color:blue|label:A|${origin}`)}`,
+    `markers=${encodeURIComponent(`color:red|label:B|${destination}`)}`,
+  ].join('&');
+  const path = route?.polyline
+    ? `&path=${encodeURIComponent(`color:0x22d3eeff|weight:5|enc:${route.polyline}`)}`
+    : '';
+  return `https://maps.googleapis.com/maps/api/staticmap?size=900x520&scale=2&maptype=roadmap&${markers}${path}&key=${encodeURIComponent(key)}`;
+}
+
+type WeatherSnapshot = {
+  ok?: boolean;
+  airport?: string;
+  city?: string;
+  temperature?: number;
+  wind?: number;
+  rainChance?: number;
+  condition?: string;
+  updatedAt?: string;
+  message?: string;
+};
+
+async function fetchAirportWeatherSnapshot(airport: string): Promise<WeatherSnapshot | null> {
+  const code = String(airport || '').trim().toUpperCase();
+  if (!code) return null;
+  try {
+    const response = await fetch(`/api/weather/airport?airport=${encodeURIComponent(code)}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === 'object') return payload as WeatherSnapshot;
+  } catch {}
+  return null;
+}
+function weatherTemperatureText(value?: number) {
+  return Number.isFinite(Number(value)) ? `${Math.round(Number(value))}°C` : 'A confirmar';
+}
+
+
 type RoutePreviewInfo = {
   ok?: boolean;
   configured?: boolean;
@@ -254,6 +302,7 @@ type RoutePreviewInfo = {
   durationInTrafficText?: string;
   trafficAware?: boolean;
   message?: string;
+  polyline?: string;
 };
 
 type NearbyPlace = {
@@ -922,6 +971,7 @@ function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
     }
   }
   const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, 'driving');
+  const staticRouteUrl = buildGoogleStaticRouteMapUrl(origin, destination, route);
   const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';
   return <article className="cz-google-route-card">
     <header><div><b>Prévia da rota</b><span>Ponto A → Ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
@@ -932,7 +982,7 @@ function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
       <div><small>Trânsito/Maps</small><strong>{trafficText}</strong></div>
     </div>
     <div className="cz-google-map-preview">
-      {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa real indisponível sem configuração de mapas.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
+      {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
     </div>
     {route?.message && <p className="cz-mini-status">{route.message}</p>}
     <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
@@ -1188,6 +1238,28 @@ function compactWeatherLine(event: ZeroLeg): string {
   const base = safe(event.destination || event.origin || (event.day as any)?.base, 'BSB');
   return `Previsão ${city(base)} · atualização automática`;
 }
+
+function LayoverWeatherBadge({ event }: { event: ZeroLeg }) {
+  const isStay = event.kind === 'stay' || Boolean(event.hotel);
+  const airport = safe(event.destination || event.origin, '');
+  const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
+  useEffect(() => {
+    if (!isStay || !airport) return;
+    let alive = true;
+    fetchAirportWeatherSnapshot(airport).then((payload) => { if (alive) setWeather(payload); });
+    return () => { alive = false; };
+  }, [isStay, airport, event.id]);
+  if (!isStay) return null;
+  const condition = weather?.condition || 'Previsão local';
+  const temp = weatherTemperatureText(weather?.temperature);
+  const rain = Number.isFinite(Number(weather?.rainChance)) ? `${Math.round(Number(weather?.rainChance))}% chuva` : 'Chuva a confirmar';
+  const wind = Number.isFinite(Number(weather?.wind)) ? `vento ${Math.round(Number(weather?.wind))} km/h` : 'vento a confirmar';
+  return <div className="cz-layover-weather-badge" onClick={(click) => click.stopPropagation()}>
+    <CloudSun size={16}/>
+    <span><strong>{temp} · {condition}</strong><small>{city(airport)} · {rain} · {wind}</small></span>
+  </div>;
+}
+
 function RosterEventChips({ event }: { event: ZeroLeg }) {
   const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
   const isStay = event.kind === 'stay' || Boolean(event.hotel);
@@ -1284,7 +1356,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
@@ -1303,7 +1375,8 @@ function MonthlyMapView({ events }: { events: ZeroLeg[] }) {
   const currentMonth = events.find((event) => !event.placeholder)?.date || new Date();
   const query = monthlyMapQuery(destinations);
   const embedUrl = buildGoogleMapsEmbedSearchUrl(query);
-  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>Destinos da escala vigente · {new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {destinations.length} cidade(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card cz-google-month-card"><header><div><strong>Destinos da escala vigente</strong><span>Cidades do mês marcadas a partir da escala importada.</span></div><button onClick={() => openMonthlyGoogleMap(destinations)}><MapIcon/> Abrir no Google Maps</button></header><div className="cz-google-map-preview cz-world-map">{embedUrl ? <iframe title="Mapa do mês pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><Globe2/><strong>Mapa real indisponível sem configuração de mapas.</strong><span>Use “Abrir no Google Maps” para visualizar os destinos da escala vigente.</span></div>}</div><div className="cz-destination-strip">{destinations.slice(0, 18).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!destinations.length && <article className="cz-empty-real"><MapIcon/><h2>Sem destinos mapeáveis</h2><p>Importe a escala oficial para exibir as cidades do mês.</p></article>}</section></>;
+  const staticMapUrl = buildGoogleStaticMonthlyMapUrl(destinations);
+  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>Destinos da escala vigente · {new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {destinations.length} cidade(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card cz-google-month-card"><header><div><strong>Destinos da escala vigente</strong><span>Cidades do mês marcadas a partir da escala importada.</span></div><button onClick={() => openMonthlyGoogleMap(destinations)}><MapIcon/> Abrir no Google Maps</button></header><div className="cz-google-map-preview cz-world-map">{staticMapUrl ? <img className="cz-static-map-img" src={staticMapUrl} alt="Mapa estático dos destinos do mês" loading="lazy"/> : embedUrl ? <iframe title="Mapa do mês pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><Globe2/><strong>Mapa estático aguardando configuração.</strong><span>Use Abrir no Google Maps para visualizar os destinos da escala vigente.</span></div>}</div><div className="cz-destination-strip">{destinations.slice(0, 18).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!destinations.length && <article className="cz-empty-real"><MapIcon/><h2>Sem destinos mapeáveis</h2><p>Importe a escala oficial para exibir as cidades do mês.</p></article>}</section></>;
 }
 
 function CarView({ event }: { event: ZeroLeg }) {

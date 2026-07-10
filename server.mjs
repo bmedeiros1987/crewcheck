@@ -436,6 +436,52 @@ async function handleFitness(req, res, url) {
   }
 }
 
+
+const WEATHER_AIRPORT_POINTS = {
+  BSB:{lat:-15.8711,lon:-47.9186,city:'Brasília'}, GRU:{lat:-23.4356,lon:-46.4731,city:'Guarulhos'}, CGH:{lat:-23.6261,lon:-46.6564,city:'São Paulo'}, VCP:{lat:-23.0074,lon:-47.1345,city:'Campinas'},
+  SDU:{lat:-22.9105,lon:-43.1631,city:'Rio de Janeiro'}, GIG:{lat:-22.8099,lon:-43.2506,city:'Rio de Janeiro'}, CNF:{lat:-19.6244,lon:-43.9719,city:'Belo Horizonte'}, CWB:{lat:-25.5317,lon:-49.1761,city:'Curitiba'},
+  POA:{lat:-29.9944,lon:-51.1714,city:'Porto Alegre'}, FLN:{lat:-27.6705,lon:-48.5525,city:'Florianópolis'}, SSA:{lat:-12.9086,lon:-38.3225,city:'Salvador'}, REC:{lat:-8.1265,lon:-34.9236,city:'Recife'},
+  FOR:{lat:-3.7763,lon:-38.5326,city:'Fortaleza'}, BEL:{lat:-1.3793,lon:-48.4763,city:'Belém'}, MAO:{lat:-3.0386,lon:-60.0497,city:'Manaus'}, SLZ:{lat:-2.5854,lon:-44.2341,city:'São Luís'},
+  NAT:{lat:-5.7681,lon:-35.3761,city:'Natal'}, MCZ:{lat:-9.5108,lon:-35.7917,city:'Maceió'}, AJU:{lat:-10.9840,lon:-37.0703,city:'Aracaju'}, VIX:{lat:-20.2581,lon:-40.2864,city:'Vitória'},
+  BVB:{lat:2.8463,lon:-60.6901,city:'Boa Vista'}, MCP:{lat:0.0507,lon:-51.0722,city:'Macapá'}, PMW:{lat:-10.2915,lon:-48.3569,city:'Palmas'}, THE:{lat:-5.0599,lon:-42.8235,city:'Teresina'}
+};
+function weatherCodeLabel(code) {
+  const value = Number(code);
+  if ([0].includes(value)) return 'Céu claro';
+  if ([1,2,3].includes(value)) return 'Parcialmente nublado';
+  if ([45,48].includes(value)) return 'Névoa';
+  if ([51,53,55,56,57].includes(value)) return 'Garoa';
+  if ([61,63,65,66,67,80,81,82].includes(value)) return 'Chuva';
+  if ([95,96,99].includes(value)) return 'Trovoada';
+  return 'Previsão local';
+}
+async function handleAirportWeather(req, res, url) {
+  const airport = String(url.searchParams.get('airport') || '').trim().toUpperCase();
+  const point = WEATHER_AIRPORT_POINTS[airport];
+  if (!point) return sendJson(res, 200, { ok: false, airport, message: 'Previsão indisponível para este aeroporto.' });
+  try {
+    const api = `https://api.open-meteo.com/v1/forecast?latitude=${point.lat}&longitude=${point.lon}&current_weather=true&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=auto`;
+    const response = await fetch(api, { headers: { accept: 'application/json' } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return sendJson(res, 200, { ok: false, airport, city: point.city, message: 'Previsão local indisponível agora.' });
+    const current = payload?.current_weather || {};
+    const rain = Array.isArray(payload?.daily?.precipitation_probability_max) ? payload.daily.precipitation_probability_max[0] : undefined;
+    return sendJson(res, 200, {
+      ok: true,
+      airport,
+      city: point.city,
+      temperature: current.temperature,
+      wind: current.windspeed,
+      rainChance: rain,
+      condition: weatherCodeLabel(current.weathercode),
+      updatedAt: current.time || new Date().toISOString(),
+      message: 'Previsão atualizada.',
+    });
+  } catch {
+    return sendJson(res, 200, { ok: false, airport, city: point.city, message: 'Previsão local indisponível agora.' });
+  }
+}
+
 function serveStatic(req, res, url) {
   let filePath = path.join(distDir, decodeURIComponent(url.pathname));
   if (url.pathname === '/' || !path.extname(filePath)) filePath = path.join(distDir, 'index.html');
@@ -457,7 +503,8 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.5.7' });
+  if (url.pathname === '/api/weather/airport') return handleAirportWeather(req, res, url);
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.5.8' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   return serveStatic(req, res, url);
