@@ -15212,3 +15212,55 @@ html[data-crew-theme="light"] .cz-calendar-select {
   opacity: .64;
   cursor: wait;
 }
+
+
+/* CrewCheck v13.5.8 — Static maps and layover weather */
+.cz-static-map-img {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+  display: block;
+  border: 0;
+  border-radius: inherit;
+}
+.cz-layover-weather-badge {
+  margin: 10px 12px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(93,231,255,.18);
+  border-radius: 18px;
+  background: rgba(255,255,255,.065);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(246,250,255,.94);
+  overflow: hidden;
+}
+.cz-layover-weather-badge span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.cz-layover-weather-badge strong,
+.cz-layover-weather-badge small {
+  overflow-wrap: anywhere;
+}
+.cz-layover-weather-badge small {
+  color: rgba(226,236,255,.70);
+}
+html[data-crew-theme="light"] .cz-layover-weather-badge {
+  background: rgba(3,105,161,.06);
+  color: #071427;
+  border-color: rgba(3,105,161,.14);
+}
+html[data-crew-theme="light"] .cz-layover-weather-badge small {
+  color: rgba(15,23,42,.68);
+}
+@media (max-width: 640px) {
+  .cz-static-map-img {
+    min-height: 240px;
+  }
+  .cz-layover-weather-badge {
+    margin-inline: 8px;
+  }
+}
