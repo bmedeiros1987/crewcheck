@@ -15196,3 +15196,19 @@ html[data-crew-theme="light"] .cz-calendar-select {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 }
+
+
+/* CrewCheck v13.5.7 — Radar Multi-API */
+.cz-radar-screen article {
+  max-width: 100%;
+  overflow: hidden;
+}
+.cz-radar-screen article p,
+.cz-radar-screen article span,
+.cz-radar-screen article strong {
+  overflow-wrap: anywhere;
+}
+.cz-tool-actions button[disabled] {
+  opacity: .64;
+  cursor: wait;
+}
