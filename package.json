@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.5.8",
+  "version": "13.5.9",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.5.8 — mapas estáticos, rota visual e previsão de pernoite",
+  "description": "CrewCheck v13.5.9 — premium reliability layer",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -68,7 +68,8 @@
     "regression:v13.5.4:maps": "node scripts/regression-v13-5-4-google-maps-premium-ops.mjs",
     "regression:v13.5.5:core": "node scripts/regression-v13-5-5-operational-core-recovery.mjs",
     "regression:v13.5.7:radar": "node scripts/regression-v13-5-7-radar-multi-api-race.mjs",
-    "regression:v13.5.8:maps-weather": "node scripts/regression-v13-5-8-static-maps-weather-recovery.mjs"
+    "regression:v13.5.8:maps-weather": "node scripts/regression-v13-5-8-static-maps-weather-recovery.mjs",
+    "regression:v13.5.9:premium": "node scripts/regression-v13-5-9-premium-reliability-layer.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
