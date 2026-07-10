@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.4.9';
-const CREWCHECK_UI_CORE_NOTE = 'v13.4.9: mapa mensal, rotas visuais e separação entre mapa, malha viária e trânsito';
+const DEFAULT_VERSION = '13.5.0';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.0: auditoria visual mobile, tema claro premium, toggles CrewCheck e roster EFB polish';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -738,7 +738,7 @@ function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
   </header>;
 }
 function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void }) {
-  const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Roster',CalendarDays],['alerts','Alerts',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
+  const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
     return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
@@ -750,8 +750,9 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
   const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
   return <article className={`cz-flight-card ${compact ? 'compact' : ''}`}>
-    <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={19}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
-    <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={25}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
+    <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
+    <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
+    <div className="cz-flight-pills"><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{event.arrival}</span></div>
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>Decolagem</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>Chegada</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
     {!compact && <div className="cz-info-duo"><div><Lock size={25}/><span>Portão</span><strong>{safe(event.gate, 'A confirmar')}</strong><small>{safe(event.terminal, 'A confirmar')}</small></div><div><Plane size={25}/><span>Status</span><strong className="ok">{safe(event.status, 'Programado')}</strong><small>Aeronave: {safe(event.aircraft, 'A confirmar')} · Matrícula: {safe(event.registration, 'A confirmar')}</small></div></div>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
