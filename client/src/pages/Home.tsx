@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.2: importacao PDF resiliente com fallback seguro no servidor';
+const DEFAULT_VERSION = '13.5.3';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.3: sistema visual premium, tema claro e cards responsivos';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {

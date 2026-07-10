@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.5.2",
+  "version": "13.5.3",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.5.2 — importacao PDF resiliente com fallback seguro no servidor.",
+  "description": "CrewCheck v13.5.3 — sistema visual premium, tema claro e cards responsivos.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
