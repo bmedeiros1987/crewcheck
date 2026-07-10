@@ -8,11 +8,15 @@ let pdfjsModulePromise: Promise<any> | null = null;
 async function loadPdfJs(): Promise<any> {
   if (!pdfjsModulePromise) {
     pdfjsModulePromise = import('pdfjs-dist/legacy/build/pdf').then((module: any) => {
+      const pdfjs = module.default || module;
       // Required on mobile Chrome/Safari: without an explicit workerSrc PDF.js
       // can throw "No GlobalWorkerOptions.workerSrc specified". We still keep
       // a no-worker retry below for devices that block Worker creation.
-      module.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-      return module;
+      if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+      return pdfjs;
+    }).catch((error) => {
+      pdfjsModulePromise = null;
+      throw error;
     });
   }
   return pdfjsModulePromise;

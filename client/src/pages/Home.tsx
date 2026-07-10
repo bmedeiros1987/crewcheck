@@ -16,7 +16,7 @@ import {
   Home as HomeIcon,
   Lock,
   LogOut,
-  Map,
+  Map as MapIcon,
   Menu,
   Moon,
   Plane,
@@ -59,7 +59,7 @@ import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent,
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'mycar' | 'iflight';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'iflight';
 
 type ZeroLeg = {
   id: string;
@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.1';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.1: hotfix visual mobile, menu rolavel e tema claro premium';
+const DEFAULT_VERSION = '13.5.2';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.2: importacao PDF resiliente com fallback seguro no servidor';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -758,7 +758,7 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
-    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Map/> Mapa</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
+    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><MapIcon/> Mapa</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
   </article>;
 }
 function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
@@ -941,7 +941,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <button onClick={() => setView('departure')}><Car/> Saída</button>
       <button onClick={() => setView('radar')}><Radar/> Radar</button>
       <button onClick={() => setView('weather')}><CloudSun/> Meteo</button>
-      <button onClick={() => setView('map')}><Map/> Mapa</button>
+      <button onClick={() => setView('map')}><MapIcon/> Mapa</button>
       <button onClick={() => setView('perdiem')}><BriefcaseBusiness/> Diárias</button>
       <button onClick={() => setView('salary')}><DollarSign/> Salário</button>
     </div>
@@ -1067,17 +1067,21 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
 }
 function Departure({ event }: { event: ZeroLeg }) {
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, rota visual e pós-pouso até o hotel.</p></article></>;
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Quando disponível</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>Rota inteligente</b><span>visual</span></header><RouteVisual event={event}/><ul><li><Radar/><span><strong>Localização dinâmica ativa</strong><small>Ajustes em tempo real quando a permissão e o serviço de tráfego estiverem disponíveis.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar trajeto aeroporto → hotel automaticamente.</small></span></li></ul><footer><button onClick={() => openMapRoute(event)}><Map/> Abrir mapa</button><button onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></footer></article></section></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Quando disponível</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>Rota inteligente</b><span>visual</span></header><RouteVisual event={event}/><ul><li><Radar/><span><strong>Localização dinâmica ativa</strong><small>Ajustes em tempo real quando a permissão e o serviço de tráfego estiverem disponíveis.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar trajeto aeroporto → hotel automaticamente.</small></span></li></ul><footer><button onClick={() => openMapRoute(event)}><MapIcon/> Abrir mapa</button><button onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></footer></article></section></>;
 }
 
 function MonthlyMapView({ events }: { events: ZeroLeg[] }) {
   const data = monthlyRouteData(events);
   const currentMonth = events.find((event) => !event.placeholder)?.date || new Date();
-  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>{new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {data.segments.length} trecho(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card"><header><div><strong>Destinos e rotas</strong><span>Representação visual dos aeroportos publicados na escala.</span></div><button onClick={() => toast.info('Mapa visual de rotas. Trânsito em tempo real fica separado da rota.')}>Como funciona</button></header><svg className="cz-month-map" viewBox="0 0 100 100" role="img" aria-label="Mapa visual dos destinos do mês"><defs><linearGradient id="czMonthRoute" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stopColor="#a855f7"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient><filter id="czMonthGlow"><feGaussianBlur stdDeviation="1.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect x="0" y="0" width="100" height="100" rx="6"/><path d="M55 8 C70 18 76 33 71 48 C84 58 82 78 65 91 C50 98 36 86 38 70 C25 62 24 42 35 30 C39 20 43 12 55 8 Z" className="cz-brazil-shape"/>{data.segments.map((segment, index) => { const from = projectSouthAmerica(segment.from); const to = projectSouthAmerica(segment.to); return <line key={`${segment.event.id}-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="cz-month-route-line"/>; })}{data.destinations.map((point) => { const p = projectSouthAmerica(point); return <g key={point.code} className="cz-month-airport" filter="url(#czMonthGlow)"><circle cx={p.x} cy={p.y} r={point.code === 'BSB' ? 2.4 : 1.8}/><text x={p.x + 2.3} y={p.y + 1.2}>{point.code}</text></g>; })}</svg><div className="cz-destination-strip">{data.destinations.slice(0, 14).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!data.segments.length && <article className="cz-empty-real"><Map/><h2>Sem voos mapeáveis</h2><p>Importe a escala oficial para exibir todos os destinos do mês.</p></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>{new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {data.segments.length} trecho(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card"><header><div><strong>Destinos e rotas</strong><span>Representação visual dos aeroportos publicados na escala.</span></div><button onClick={() => toast.info('Mapa visual de rotas. Trânsito em tempo real fica separado da rota.')}>Como funciona</button></header><svg className="cz-month-map" viewBox="0 0 100 100" role="img" aria-label="Mapa visual dos destinos do mês"><defs><linearGradient id="czMonthRoute" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stopColor="#a855f7"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient><filter id="czMonthGlow"><feGaussianBlur stdDeviation="1.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect x="0" y="0" width="100" height="100" rx="6"/><path d="M55 8 C70 18 76 33 71 48 C84 58 82 78 65 91 C50 98 36 86 38 70 C25 62 24 42 35 30 C39 20 43 12 55 8 Z" className="cz-brazil-shape"/>{data.segments.map((segment, index) => { const from = projectSouthAmerica(segment.from); const to = projectSouthAmerica(segment.to); return <line key={`${segment.event.id}-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="cz-month-route-line"/>; })}{data.destinations.map((point) => { const p = projectSouthAmerica(point); return <g key={point.code} className="cz-month-airport" filter="url(#czMonthGlow)"><circle cx={p.x} cy={p.y} r={point.code === 'BSB' ? 2.4 : 1.8}/><text x={p.x + 2.3} y={p.y + 1.2}>{point.code}</text></g>; })}</svg><div className="cz-destination-strip">{data.destinations.slice(0, 14).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!data.segments.length && <article className="cz-empty-real"><MapIcon/><h2>Sem voos mapeáveis</h2><p>Importe a escala oficial para exibir todos os destinos do mês.</p></article>}</section></>;
 }
 
 function CarView({ event }: { event: ZeroLeg }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Meu Carro</h1><p>Rotas, estacionamento, retorno ao aeroporto e pós-pouso dentro do novo layout.</p></section><section className="cz-car-grid"><article className="cz-car-card"><Car/><h2>Hotel/local → aeroporto</h2><p>{event.placeholder ? 'Aguardando escala real.' : `${event.hotel ? event.hotel : 'Localização atual'} → ${event.origin} · ${city(event.origin)}`}</p><RouteVisual event={event} compact/><div className="cz-tool-actions"><button disabled={event.placeholder} onClick={() => openMapRoute(event)}><Map/> Abrir mapa</button><button disabled={event.placeholder} onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button></div></article><article className="cz-car-card"><ShieldCheck/><h2>Estacionamento e retorno</h2><p>Salve onde deixou o carro, tempo de retorno e observações do aeroporto.</p><div className="cz-tool-actions"><button onClick={() => { storage.set('crewcheck_car_note', window.prompt('Observação do carro/estacionamento') || storage.get('crewcheck_car_note','')); toast.success('Observação salva.'); }}><Save/> Salvar nota</button><button onClick={() => toast.info(storage.get('crewcheck_car_note','Nenhuma observação salva.'))}><FileText/> Ver nota</button></div></article><article className="cz-car-card"><Plane/><h2>Pós-pouso</h2><p>Ao chegar, o sistema pode abrir a rota aeroporto → hotel/casa sem misturar mapa com cálculo regulatório.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'hotels' }))}><Hotel/> Hotéis</button></div></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Meu Carro</h1><p>Rotas, estacionamento, retorno ao aeroporto e pós-pouso dentro do novo layout.</p></section><section className="cz-car-grid"><article className="cz-car-card"><Car/><h2>Hotel/local → aeroporto</h2><p>{event.placeholder ? 'Aguardando escala real.' : `${event.hotel ? event.hotel : 'Localização atual'} → ${event.origin} · ${city(event.origin)}`}</p><RouteVisual event={event} compact/><div className="cz-tool-actions"><button disabled={event.placeholder} onClick={() => openMapRoute(event)}><MapIcon/> Abrir mapa</button><button disabled={event.placeholder} onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button></div></article><article className="cz-car-card"><ShieldCheck/><h2>Estacionamento e retorno</h2><p>Salve onde deixou o carro, tempo de retorno e observações do aeroporto.</p><div className="cz-tool-actions"><button onClick={() => { storage.set('crewcheck_car_note', window.prompt('Observação do carro/estacionamento') || storage.get('crewcheck_car_note','')); toast.success('Observação salva.'); }}><Save/> Salvar nota</button><button onClick={() => toast.info(storage.get('crewcheck_car_note','Nenhuma observação salva.'))}><FileText/> Ver nota</button></div></article><article className="cz-car-card"><Plane/><h2>Pós-pouso</h2><p>Ao chegar, o sistema pode abrir a rota aeroporto → hotel/casa sem misturar mapa com cálculo regulatório.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'hotels' }))}><Hotel/> Hotéis</button></div></article></section></>;
+}
+
+function IFlightPushView({ actions }: { actions: QuickActions }) {
+  return <><Brand back/><section className="cz-panel-head"><h1>Push iFlight assistido</h1><p>Importação assistida sem salvar usuário, senha, MFA, cookies ou sessão.</p></section><section className="cz-toolbox"><h2>Ambiente seguro</h2><p>Use apenas credenciais corporativas autorizadas no portal oficial. O CrewCheck processa somente o PDF ou calendário autorizado e limpa o estado temporário ao finalizar.</p><div className="cz-tool-actions"><button onClick={actions.upload}><Upload/> Importar PDF baixado</button><button onClick={() => window.open('https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage', '_blank', 'noopener,noreferrer')}><Globe2/> Abrir portal oficial</button><button onClick={() => toast.info('O acesso automático exige ponte corporativa segura. Por LGPD, login/MFA continuam manuais.') }><ShieldCheck/> Ver política segura</button></div></section><section className="cz-mini-status"><p><strong>Permitido:</strong> login manual, MFA manual e importação do PDF autorizado.</p><p><strong>Proibido:</strong> salvar senha, SMS, MFA, cookies, token ou sessão.</p></section></>;
 }
 
 
@@ -1109,7 +1113,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     } catch { toast.error('Não consegui alterar o modo manutenção.'); }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
-  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={Map} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
+  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
 }
 
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
@@ -1322,6 +1326,58 @@ function CrewToolsView({ bundle }: { bundle: BundleState }) {
 function MaintenancePreview() { return <><Brand/><section className="cz-maintenance"><article><div className="cz-maint-illu"><Settings size={72}/><Plane size={64}/></div><h1>Site em manutenção</h1><p>Estamos realizando melhorias e atualizações no CrewCheck. Em breve o sistema estará disponível novamente.</p><span><ShieldCheck/> Modo ativado pelo administrador</span><div><Lock/> Apenas administradores podem acessar o painel durante a manutenção.</div><button>Acessar painel admin <ChevronRight/></button><button>Ver status</button><a>Voltar mais tarde</a></article><section><h2>Status da operação <b>Em andamento</b></h2><div><p><CalendarDays/>Escala em atualização</p><p><Bell/>Alertas em revisão</p><p><CloudSun/>Meteorologia sincronizando</p></div></section></section></> }
 function ImportPanel({ onUpload }: { onUpload: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala. Antes de salvar, o CrewCheck valida período, tripulante, base, dias, voos e próxima programação para evitar ativar o mês errado.</p><button onClick={onUpload}>Escolher PDF</button></section></>; }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      result ? resolve(result) : reject(new Error('PDF vazio ou indisponível no dispositivo.'));
+    };
+    reader.onerror = () => reject(reader.error || new Error('Falha ao preparar o PDF.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function sanitizePdfImportError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  const message = raw.replace(/\s+/g, ' ').trim();
+  if (!message) return 'Não consegui interpretar o PDF.';
+  if (/connector|constructor|worker|pdfjs|setting up fake worker|globalworkeroptions|hl/i.test(message)) {
+    return 'O leitor local do navegador falhou. Tentei a leitura alternativa segura, mas o PDF ainda não pôde ser interpretado.';
+  }
+  return message;
+}
+
+async function parsePDFOnServer(file: File): Promise<CrewRoster> {
+  const dataBase64 = await fileToDataUrl(file);
+  const response = await fetch('/api/parse-pdf', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ filename: file.name || 'escala.pdf', dataBase64 }),
+  });
+  let payload: any = null;
+  try { payload = await response.json(); } catch {}
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.detail || payload?.message || 'Leitura alternativa do PDF indisponível.');
+  }
+  const roster = payload?.roster;
+  if (!roster || !Array.isArray(roster.days)) {
+    throw new Error('A leitura alternativa não retornou uma escala válida.');
+  }
+  return roster as CrewRoster;
+}
+
+async function parsePDFResilient(file: File): Promise<{ roster: CrewRoster; source: 'local' | 'server-fallback' }> {
+  try {
+    return { roster: await parsePDF(file), source: 'local' };
+  } catch (localError) {
+    storage.set('crewcheck_last_pdf_local_error', sanitizePdfImportError(localError));
+    const roster = await parsePDFOnServer(file);
+    return { roster, source: 'server-fallback' };
+  }
+}
+
 function OpeningVideo({ onDone }: { onDone: () => void }) {
   const finish = () => { storage.set('crewcheck_intro_seen_v1278', '1'); onDone(); };
   return <section className="cz-opening-video"><video src="/assets/opening/crewcheck-opening.mp4" autoPlay muted playsInline onEnded={finish}/><div><span><Plane/> CrewCheck</span><h1>Roster Intelligence</h1><p>Escala real, rotina, hotéis, academias, trânsito, radar, meteorologia e saída inteligente em um cockpit premium.</p><button onClick={finish}>Entrar no app <ChevronRight/></button></div></section>;
@@ -1346,7 +1402,8 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'wakeup' || value === 'despertador') return 'wakeup';
   if (value === 'hotels' || value === 'hoteis') return 'hotels';
   if (value === 'presentation' || value === 'apresentacao') return 'presentation';
-  if (value === 'mycar' || value === 'meucarro' || value === 'carro') return 'mycar';
+  if (value === 'map' || value === 'mapa') return 'map';
+  if (value === 'mycar' || value === 'meucarro' || value === 'carro' || value === 'car') return 'mycar';
   if (value === 'iflight' || value === 'push-iflight') return 'iflight';
   if (value === 'database') return 'database';
   if (value === 'crew') return 'crew';
@@ -1396,7 +1453,8 @@ export default function Home() {
     if (!file) return;
     setBusy(true);
     try {
-      const roster = await parsePDF(file);
+      const parsed = await parsePDFResilient(file);
+      const roster = parsed.roster;
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
@@ -1405,14 +1463,15 @@ export default function Home() {
       const newCompliance = saveRoster(roster, file.name);
       storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
+      storage.set('crewcheck_last_pdf_import_source', parsed.source);
       setBundle({ roster, compliance: newCompliance, source: file.name });
       sessionStorage.setItem('crewcheck_force_view_once', 'roster');
       setView('roster');
-      toast.success(decision.toastText || 'Escala real importada e detalhes liberados.');
+      toast.success(`${decision.toastText || 'Escala real importada e detalhes liberados.'}${parsed.source === 'server-fallback' ? ' Leitura alternativa concluída.' : ''}`);
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui interpretar o PDF.');
+      toast.error(sanitizePdfImportError(error));
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   }
 
@@ -1445,7 +1504,7 @@ export default function Home() {
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>}
     {view === 'alerts' && <Alerts compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
-    {view === 'mycar' && <MyCarView event={event}/>}
+    {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
     {view === 'maintenance' && <MaintenancePreview/>}
@@ -1464,7 +1523,6 @@ export default function Home() {
     {view === 'hotels' && <HotelsView events={events}/>}
     {view === 'presentation' && <PresentationManagerView events={events}/>}
     {view === 'map' && <MonthlyMapView events={events}/>}
-    {view === 'car' && <CarView event={event}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
