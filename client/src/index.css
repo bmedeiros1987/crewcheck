@@ -15110,3 +15110,89 @@ html[data-crew-theme="light"] .cz-parking-data span {
     border-radius: 20px;
   }
 }
+
+
+/* CrewCheck v13.5.5 — Functional Recovery / Anti-overflow */
+.cz-app,
+.cz-app * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+.cz-flight-card,
+.cz-smart-card,
+.cz-roster-card,
+.cz-google-route-card,
+.cz-google-month-card,
+.cz-car-card,
+.cz-toolbox,
+.cz-alert-detail,
+.cz-finance-table,
+.cz-report-grid article,
+.cz-weather-grid article,
+.cz-radar-screen article,
+.cz-menu-panel {
+  max-width: 100%;
+  overflow: hidden;
+}
+.cz-roster-copy,
+.cz-roster-copy h3,
+.cz-roster-copy p,
+.cz-roster-copy small,
+.cz-airline,
+.cz-route,
+.cz-detail-grid div,
+.cz-route-kpis div,
+.cz-parking-data span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cz-tool-actions,
+.cz-roster-actions,
+.cz-operational-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cz-tool-actions button,
+.cz-roster-actions button,
+.cz-operational-actions button {
+  min-width: min(100%, 150px);
+  flex: 1 1 150px;
+  border-radius: 18px;
+}
+.cz-calendar-select {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(93,231,255,.22);
+  background: rgba(255,255,255,.08);
+  color: inherit;
+}
+.cz-setting > span:last-child {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), 0 8px 24px rgba(0,0,0,.18) !important;
+}
+.cz-setting > span:last-child.on {
+  background: linear-gradient(135deg, #22d3ee, #3b82f6) !important;
+}
+html[data-crew-theme="light"] .cz-calendar-select {
+  background: rgba(255,255,255,.96);
+  color: #071427;
+  border-color: rgba(3,105,161,.18);
+}
+@media (max-width: 720px) {
+  .cz-money-row,
+  .cz-finance-grid,
+  .cz-report-grid,
+  .cz-weather-grid,
+  .cz-radar-screen,
+  .cz-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .cz-route {
+    grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr) !important;
+  }
+  .cz-roster-main {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
