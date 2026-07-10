@@ -15264,3 +15264,434 @@ html[data-crew-theme="light"] .cz-layover-weather-badge small {
     margin-inline: 8px;
   }
 }
+
+
+/* CrewCheck v13.5.9 — Premium Reliability Layer
+   Objetivo: deixar o sistema premium sem desligar motores antigos.
+   Não altera parser, motor canônico ou continuidade física. */
+
+:root {
+  --crew-bg-0: #030712;
+  --crew-bg-1: #071427;
+  --crew-bg-2: #0b1f3a;
+  --crew-card: rgba(8, 21, 42, .86);
+  --crew-card-strong: rgba(15, 34, 62, .92);
+  --crew-border: rgba(125, 211, 252, .22);
+  --crew-border-soft: rgba(148, 163, 184, .16);
+  --crew-text: #f8fbff;
+  --crew-muted: rgba(226, 236, 255, .72);
+  --crew-subtle: rgba(226, 236, 255, .56);
+  --crew-cyan: #22d3ee;
+  --crew-blue: #3b82f6;
+  --crew-purple: #8b5cf6;
+  --crew-green: #34d399;
+  --crew-warn: #f59e0b;
+  --crew-danger: #fb7185;
+  --crew-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+  --crew-radius-xl: 30px;
+  --crew-radius-lg: 24px;
+  --crew-radius-md: 18px;
+}
+
+html[data-crew-theme="light"] {
+  --crew-bg-0: #eef6ff;
+  --crew-bg-1: #f8fbff;
+  --crew-bg-2: #ffffff;
+  --crew-card: rgba(255, 255, 255, .94);
+  --crew-card-strong: rgba(255, 255, 255, .98);
+  --crew-border: rgba(3, 105, 161, .18);
+  --crew-border-soft: rgba(15, 23, 42, .10);
+  --crew-text: #071427;
+  --crew-muted: rgba(15, 23, 42, .72);
+  --crew-subtle: rgba(15, 23, 42, .55);
+  --crew-shadow: 0 22px 60px rgba(33, 71, 112, .14);
+}
+
+.cz-app,
+.cz-app * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.cz-app {
+  color: var(--crew-text);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(34, 211, 238, .16), transparent 28%),
+    radial-gradient(circle at 92% 12%, rgba(139, 92, 246, .18), transparent 32%),
+    linear-gradient(180deg, var(--crew-bg-1), var(--crew-bg-0));
+}
+
+.cz-panel-head,
+.cz-flight-card,
+.cz-smart-card,
+.cz-roster-card,
+.cz-toolbox,
+.cz-alert-detail,
+.cz-car-card,
+.cz-google-route-card,
+.cz-google-month-card,
+.cz-radar-screen article,
+.cz-weather-grid article,
+.cz-report-grid article,
+.cz-finance-table,
+.cz-profile,
+.cz-menu-panel,
+.cz-month-map-card,
+.cz-empty-real {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--crew-border);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025)),
+    var(--crew-card);
+  box-shadow: var(--crew-shadow);
+  border-radius: var(--crew-radius-lg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.cz-panel-head {
+  padding: clamp(18px, 4vw, 28px);
+  border-radius: var(--crew-radius-xl);
+}
+
+.cz-panel-head h1,
+.cz-flight-card h2,
+.cz-smart-card h2,
+.cz-roster-card h3,
+.cz-toolbox h2,
+.cz-alert-detail h2,
+.cz-car-card h2,
+.cz-google-route-card header b,
+.cz-google-month-card header strong,
+.cz-radar-screen article h2,
+.cz-weather-grid article h2,
+.cz-report-grid article h2 {
+  color: var(--crew-text) !important;
+  letter-spacing: -.02em;
+  line-height: 1.05;
+}
+
+.cz-panel-head p,
+.cz-flight-card p,
+.cz-smart-card p,
+.cz-roster-card p,
+.cz-toolbox p,
+.cz-alert-detail p,
+.cz-car-card p,
+.cz-google-route-card span,
+.cz-google-month-card span,
+.cz-radar-screen article span,
+.cz-weather-grid article p,
+.cz-report-grid article p {
+  color: var(--crew-muted) !important;
+  overflow-wrap: anywhere;
+}
+
+.cz-feature-grid,
+.cz-finance-grid,
+.cz-report-grid,
+.cz-weather-grid,
+.cz-radar-screen,
+.cz-car-grid,
+.cz-money-row,
+.cz-depart-kpis,
+.cz-route-kpis,
+.cz-parking-data {
+  gap: clamp(10px, 2.2vw, 16px);
+}
+
+.cz-feature-grid > button,
+.cz-tool-actions button,
+.cz-roster-actions button,
+.cz-operational-actions button,
+.cz-google-route-card footer button,
+.cz-google-month-card header button,
+.cz-empty-real button,
+.cz-alert-detail footer button,
+.cz-profile button,
+.cz-menu-panel button {
+  border: 1px solid rgba(125, 211, 252, .24) !important;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(34, 211, 238, .22), transparent 38%),
+    linear-gradient(135deg, rgba(59, 130, 246, .20), rgba(139, 92, 246, .16)),
+    rgba(255,255,255,.055) !important;
+  color: var(--crew-text) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 14px 32px rgba(0,0,0,.18);
+  min-height: 44px;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.cz-feature-grid > button:hover,
+.cz-tool-actions button:hover,
+.cz-roster-actions button:hover,
+.cz-operational-actions button:hover,
+.cz-google-route-card footer button:hover,
+.cz-google-month-card header button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(34, 211, 238, .52) !important;
+  box-shadow: 0 18px 40px rgba(34, 211, 238, .12), 0 16px 38px rgba(0,0,0,.22);
+}
+
+.cz-feature-grid > button:active,
+.cz-tool-actions button:active,
+.cz-roster-actions button:active,
+.cz-operational-actions button:active {
+  transform: translateY(0) scale(.99);
+}
+
+.cz-roster-card {
+  padding: clamp(13px, 3vw, 18px);
+}
+
+.cz-roster-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.cz-roster-copy,
+.cz-roster-copy h3,
+.cz-roster-copy p,
+.cz-roster-copy small,
+.cz-route,
+.cz-airline,
+.cz-day-headline,
+.cz-detail-grid div,
+.cz-detail-grid p,
+.cz-route-kpis div,
+.cz-parking-data span,
+.cz-routine-strip span,
+.cz-destination-strip span,
+.cz-calendar-select,
+.cz-mini-status,
+.cz-weather-inline,
+.cz-weather-inline p,
+.cz-layover-weather-badge,
+.cz-layover-weather-badge strong,
+.cz-layover-weather-badge small {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.cz-roster-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(34, 211, 238, .32), transparent 42%),
+    rgba(255,255,255,.07);
+  color: var(--crew-cyan);
+  border: 1px solid rgba(125, 211, 252, .18);
+}
+
+.cz-roster-linked-chips,
+.cz-routine-strip,
+.cz-destination-strip,
+.cz-tool-actions,
+.cz-roster-actions,
+.cz-operational-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cz-roster-linked-chips span,
+.cz-routine-strip span,
+.cz-destination-strip span,
+.cz-mini-status p {
+  border: 1px solid var(--crew-border-soft);
+  background: rgba(255,255,255,.055);
+  border-radius: 999px;
+  padding: 8px 10px;
+  color: var(--crew-muted);
+}
+
+.cz-google-map-preview,
+.cz-world-map,
+.cz-static-map-img {
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, .20);
+}
+
+.cz-static-map-img {
+  filter: saturate(1.08) contrast(1.02);
+}
+
+.cz-layover-weather-badge {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+}
+
+.cz-radar-screen article {
+  position: relative;
+}
+
+.cz-radar-screen article::after,
+.cz-google-route-card::after,
+.cz-google-month-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(34,211,238,.08), transparent 42%, rgba(139,92,246,.08));
+  opacity: .8;
+}
+
+.cz-radar-screen article > *,
+.cz-google-route-card > *,
+.cz-google-month-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.cz-finance-table table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.cz-finance-table th,
+.cz-finance-table td {
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border-bottom: 1px solid var(--crew-border-soft);
+}
+
+.cz-setting > span:last-child {
+  width: 52px !important;
+  height: 30px !important;
+  border-radius: 999px !important;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.03)),
+    rgba(100,116,139,.32) !important;
+  border: 1px solid rgba(148,163,184,.26) !important;
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 24px rgba(0,0,0,.18) !important;
+}
+
+.cz-setting > span:last-child::before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  left: 3px;
+  top: 2px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(0,0,0,.28);
+  transition: transform .20s ease;
+}
+
+.cz-setting > span:last-child.on {
+  background: linear-gradient(135deg, var(--crew-cyan), var(--crew-blue), var(--crew-purple)) !important;
+  border-color: rgba(255,255,255,.26) !important;
+  box-shadow: 0 0 0 1px rgba(34,211,238,.22), 0 0 28px rgba(34,211,238,.24) !important;
+}
+
+.cz-setting > span:last-child.on::before {
+  transform: translateX(21px);
+}
+
+html[data-crew-theme="light"] .cz-panel-head,
+html[data-crew-theme="light"] .cz-flight-card,
+html[data-crew-theme="light"] .cz-smart-card,
+html[data-crew-theme="light"] .cz-roster-card,
+html[data-crew-theme="light"] .cz-toolbox,
+html[data-crew-theme="light"] .cz-alert-detail,
+html[data-crew-theme="light"] .cz-car-card,
+html[data-crew-theme="light"] .cz-google-route-card,
+html[data-crew-theme="light"] .cz-google-month-card,
+html[data-crew-theme="light"] .cz-radar-screen article,
+html[data-crew-theme="light"] .cz-weather-grid article,
+html[data-crew-theme="light"] .cz-report-grid article,
+html[data-crew-theme="light"] .cz-finance-table,
+html[data-crew-theme="light"] .cz-profile,
+html[data-crew-theme="light"] .cz-menu-panel,
+html[data-crew-theme="light"] .cz-month-map-card,
+html[data-crew-theme="light"] .cz-empty-real {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(14,165,233,.10), transparent 30%),
+    var(--crew-card) !important;
+  color: var(--crew-text) !important;
+}
+
+html[data-crew-theme="light"] .cz-feature-grid > button,
+html[data-crew-theme="light"] .cz-tool-actions button,
+html[data-crew-theme="light"] .cz-roster-actions button,
+html[data-crew-theme="light"] .cz-operational-actions button {
+  background: linear-gradient(135deg, rgba(14,165,233,.08), rgba(99,102,241,.06)), #fff !important;
+  color: var(--crew-text) !important;
+}
+
+@media (max-width: 860px) {
+  .cz-feature-grid,
+  .cz-finance-grid,
+  .cz-report-grid,
+  .cz-weather-grid,
+  .cz-radar-screen,
+  .cz-car-grid,
+  .cz-money-row,
+  .cz-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cz-panel-head,
+  .cz-flight-card,
+  .cz-smart-card,
+  .cz-roster-card,
+  .cz-toolbox,
+  .cz-alert-detail,
+  .cz-car-card,
+  .cz-google-route-card,
+  .cz-google-month-card {
+    border-radius: 22px;
+  }
+
+  .cz-tool-actions button,
+  .cz-roster-actions button,
+  .cz-operational-actions button {
+    flex: 1 1 150px;
+    min-width: min(100%, 150px);
+  }
+
+  .cz-route {
+    grid-template-columns: minmax(0,1fr) 40px minmax(0,1fr) !important;
+  }
+
+  .cz-roster-main {
+    grid-template-columns: auto minmax(0,1fr) auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .cz-panel-head {
+    padding: 16px;
+  }
+
+  .cz-roster-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .cz-roster-linked-chips span,
+  .cz-routine-strip span,
+  .cz-destination-strip span {
+    flex: 1 1 100%;
+    border-radius: 16px;
+  }
+
+  .cz-google-map-preview {
+    aspect-ratio: 4 / 3 !important;
+  }
+
+  .cz-static-map-img {
+    min-height: 240px;
+  }
+}

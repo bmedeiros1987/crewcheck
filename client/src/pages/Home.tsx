@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.8';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.8: mapas estáticos, rota visual e previsão do tempo em pernoites';
+const DEFAULT_VERSION = '13.5.9';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.9: camada premium de confiabilidade, legibilidade e anti-overflow funcional';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
