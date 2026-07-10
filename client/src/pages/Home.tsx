@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.3';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.3: sistema visual premium, tema claro e cards responsivos';
+const DEFAULT_VERSION = '13.5.4';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.4: Meu Carro estacionamento, Mapa do mês Google e Saída Inteligente com rota real';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -127,6 +127,122 @@ function addMinutesToTime(value: string, minutes: number) {
   const d = new Date();
   d.setHours(Number(m[1]), Number(m[2]) + minutes, 0, 0);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+
+type ParkingPosition = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  label?: string;
+  savedAt: string;
+};
+
+const CAR_PARKING_STORAGE_KEY = 'crewcheck_my_car_parking_position_v1';
+
+function mapsBrowserKey(): string {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
+    return String(env.VITE_GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_MAPS_EMBED_KEY || env.VITE_GOOGLE_MAPS_BROWSER_KEY || '').trim();
+  } catch {
+    return '';
+  }
+}
+function coordsLabel(lat: number, lng: number) {
+  return `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
+}
+function buildGoogleMapsSearchUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coordsLabel(lat, lng))}`;
+}
+function buildGoogleMapsWalkingDirectionsUrl(originLat: number, originLng: number, destLat: number, destLng: number): string {
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(coordsLabel(originLat, originLng))}&destination=${encodeURIComponent(coordsLabel(destLat, destLng))}&travelmode=walking`;
+}
+function buildGoogleMapsDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' = 'driving'): string {
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${travelmode}`;
+}
+function buildGoogleMapsEmbedDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' = 'driving'): string {
+  const key = mapsBrowserKey();
+  if (!key || !origin || !destination) return '';
+  return `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(key)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${travelmode}`;
+}
+function buildGoogleMapsEmbedSearchUrl(query: string): string {
+  const key = mapsBrowserKey();
+  if (!key || !query) return '';
+  return `https://www.google.com/maps/embed/v1/search?key=${encodeURIComponent(key)}&q=${encodeURIComponent(query)}`;
+}
+function getCurrentGeoPosition(): Promise<{ lat: number; lng: number; accuracy?: number }> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Permissão de localização indisponível neste dispositivo.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = Number(position.coords.latitude);
+        const lng = Number(position.coords.longitude);
+        const accuracy = Number(position.coords.accuracy || 0);
+        storage.set('crewcheck_last_geo', coordsLabel(lat, lng));
+        resolve({ lat, lng, accuracy: Number.isFinite(accuracy) ? accuracy : undefined });
+      },
+      () => reject(new Error('Não consegui acessar sua localização. Ative a permissão e tente novamente.')),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
+    );
+  });
+}
+function saveCarParkingPosition(position: ParkingPosition): void {
+  storage.set(CAR_PARKING_STORAGE_KEY, JSON.stringify(position));
+}
+function loadCarParkingPosition(): ParkingPosition | null {
+  try {
+    const parsed = JSON.parse(storage.get(CAR_PARKING_STORAGE_KEY, 'null')) as ParkingPosition | null;
+    if (!parsed || !Number.isFinite(Number(parsed.lat)) || !Number.isFinite(Number(parsed.lng))) return null;
+    return { ...parsed, lat: Number(parsed.lat), lng: Number(parsed.lng) };
+  } catch {
+    return null;
+  }
+}
+function clearCarParkingPosition(): void {
+  try { localStorage.removeItem(CAR_PARKING_STORAGE_KEY); } catch {}
+}
+function airportRouteQuery(code?: string): string {
+  const point = airportPoint(code);
+  if (point) return coordsLabel(point.lat, point.lon);
+  const clean = String(code || '').trim().toUpperCase();
+  return clean ? `${clean} aeroporto` : 'aeroporto';
+}
+function eventRouteOrigin(event: ZeroLeg): string {
+  const manual = storage.get('crewcheck_manual_route_origin', '');
+  if (manual) return manual;
+  const saved = storage.get('crewcheck_last_geo', '');
+  if (saved) return saved;
+  if (event.hotel) return event.hotel;
+  return 'Minha localização';
+}
+function eventRouteDestination(event: ZeroLeg): string {
+  return airportRouteQuery(event.origin || event.destination);
+}
+function monthlyMapDestinations(events: ZeroLeg[]) {
+  const data = monthlyRouteData(events);
+  const byCode = new Map<string, AirportMapPoint & { count: number }>();
+  data.destinations.forEach((point) => byCode.set(point.code, point));
+  events.filter((event) => !event.placeholder && (event.kind === 'stay' || event.hotel)).forEach((event) => {
+    [event.origin, event.destination].forEach((code) => {
+      const point = airportPoint(code);
+      if (!point) return;
+      const current = byCode.get(point.code) || { ...point, count: 0 };
+      current.count += 1;
+      byCode.set(point.code, current);
+    });
+  });
+  return [...byCode.values()].sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+function monthlyMapQuery(destinations: Array<AirportMapPoint & { count: number }>): string {
+  if (!destinations.length) return 'Brasil aeroportos';
+  return destinations.slice(0, 8).map((point) => `${point.code} ${city(point.code)}`).join(' | ');
+}
+function openMonthlyGoogleMap(destinations: Array<AirportMapPoint & { count: number }>) {
+  const query = monthlyMapQuery(destinations);
+  window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer');
 }
 function time(value?: string | null, fallback = '—') {
   const text = String(value || '').trim();
@@ -695,9 +811,9 @@ function monthlyRouteData(events: ZeroLeg[]) {
   return { segments, destinations: [...destinations.values()].sort((a, b) => b.count - a.count || a.code.localeCompare(b.code)), totalKm };
 }
 function openMapRoute(event: ZeroLeg) {
-  const airport = encodeURIComponent(`${safe(event.origin, 'BSB')} aeroporto`);
-  const origin = encodeURIComponent(event.hotel || 'Localização atual');
-  window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${airport}&travelmode=driving`, '_blank', 'noopener,noreferrer');
+  const origin = eventRouteOrigin(event);
+  const destination = eventRouteDestination(event);
+  window.open(buildGoogleMapsDirectionsUrl(origin, destination, 'driving'), '_blank', 'noopener,noreferrer');
 }
 function openRoadNetwork(event: ZeroLeg) {
   const point = airportPoint(event.origin) || airportPoint(event.destination) || AIRPORT_MAP_POINTS.BSB;
@@ -721,6 +837,37 @@ function RouteVisual({ event, compact = false }: { event: ZeroLeg; compact?: boo
     </svg>
     {!compact && <div className="cz-route-visual-copy"><strong>{origin}</strong><span>→</span><strong>{destination}</strong><small>Mapa apenas visual para rota. Tempo de trânsito fica separado quando o serviço estiver configurado.</small></div>}
   </div>;
+}
+
+
+function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
+  const [origin, setOrigin] = useState(() => eventRouteOrigin(event));
+  const destination = eventRouteDestination(event);
+  const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, 'driving');
+  async function refreshLocation() {
+    try {
+      const position = await getCurrentGeoPosition();
+      const next = coordsLabel(position.lat, position.lng);
+      setOrigin(next);
+      toast.success('Localização atualizada para a prévia da rota.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui atualizar sua localização.');
+    }
+  }
+  const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, 'driving');
+  return <article className="cz-google-route-card">
+    <header><div><b>Prévia da rota</b><span>Ponto A → Ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
+    <div className="cz-route-kpis">
+      <div><small>Origem</small><strong>{origin === 'Minha localização' ? 'Minha localização' : origin}</strong></div>
+      <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
+      <div><small>Saída recomendada</small><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong></div>
+      <div><small>Trânsito/Maps</small><strong>Ao abrir no Google Maps</strong></div>
+    </div>
+    <div className="cz-google-map-preview">
+      {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa real indisponível sem configuração de mapas.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
+    </div>
+    <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
+  </article>;
 }
 
 function isAdmin() {
@@ -1067,17 +1214,53 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
 }
 function Departure({ event }: { event: ZeroLeg }) {
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, rota visual e pós-pouso até o hotel.</p></article></>;
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>Localização atual / hotel → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Quando disponível</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><article className="cz-map-card"><header><b>Rota inteligente</b><span>visual</span></header><RouteVisual event={event}/><ul><li><Radar/><span><strong>Localização dinâmica ativa</strong><small>Ajustes em tempo real quando a permissão e o serviço de tráfego estiverem disponíveis.</small></span></li><li><Plane/><span><strong>Ao chegar no aeroporto</strong><small>Pausar monitoramento até o pouso.</small></span></li><li><Car/><span><strong>Após pouso</strong><small>Estimar trajeto aeroporto → hotel automaticamente.</small></span></li></ul><footer><button onClick={() => openMapRoute(event)}><MapIcon/> Abrir mapa</button><button onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></footer></article></section></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Google Maps</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><GoogleMapsRoutePreview event={event}/><article className="cz-map-card"><header><b>Rota inteligente</b><span>visual</span></header><RouteVisual event={event}/><ul><li><Radar/><span><strong>Prévia real de deslocamento</strong><small>O mapa mostra ponto A → ponto B quando a configuração de mapas estiver ativa.</small></span></li><li><Plane/><span><strong>Trânsito pelo Maps</strong><small>O Google Maps exibe trânsito ao abrir a rota.</small></span></li><li><Car/><span><strong>Pós-pouso</strong><small>Use a mesma lógica para aeroporto → hotel quando aplicável.</small></span></li></ul><footer><button onClick={() => openMapRoute(event)}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></footer></article></section></>;
 }
 
 function MonthlyMapView({ events }: { events: ZeroLeg[] }) {
   const data = monthlyRouteData(events);
+  const destinations = monthlyMapDestinations(events);
   const currentMonth = events.find((event) => !event.placeholder)?.date || new Date();
-  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>{new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {data.segments.length} trecho(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card"><header><div><strong>Destinos e rotas</strong><span>Representação visual dos aeroportos publicados na escala.</span></div><button onClick={() => toast.info('Mapa visual de rotas. Trânsito em tempo real fica separado da rota.')}>Como funciona</button></header><svg className="cz-month-map" viewBox="0 0 100 100" role="img" aria-label="Mapa visual dos destinos do mês"><defs><linearGradient id="czMonthRoute" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stopColor="#a855f7"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient><filter id="czMonthGlow"><feGaussianBlur stdDeviation="1.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect x="0" y="0" width="100" height="100" rx="6"/><path d="M55 8 C70 18 76 33 71 48 C84 58 82 78 65 91 C50 98 36 86 38 70 C25 62 24 42 35 30 C39 20 43 12 55 8 Z" className="cz-brazil-shape"/>{data.segments.map((segment, index) => { const from = projectSouthAmerica(segment.from); const to = projectSouthAmerica(segment.to); return <line key={`${segment.event.id}-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="cz-month-route-line"/>; })}{data.destinations.map((point) => { const p = projectSouthAmerica(point); return <g key={point.code} className="cz-month-airport" filter="url(#czMonthGlow)"><circle cx={p.x} cy={p.y} r={point.code === 'BSB' ? 2.4 : 1.8}/><text x={p.x + 2.3} y={p.y + 1.2}>{point.code}</text></g>; })}</svg><div className="cz-destination-strip">{data.destinations.slice(0, 14).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!data.segments.length && <article className="cz-empty-real"><MapIcon/><h2>Sem voos mapeáveis</h2><p>Importe a escala oficial para exibir todos os destinos do mês.</p></article>}</section></>;
+  const query = monthlyMapQuery(destinations);
+  const embedUrl = buildGoogleMapsEmbedSearchUrl(query);
+  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>Destinos da escala vigente · {new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {destinations.length} cidade(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card cz-google-month-card"><header><div><strong>Destinos da escala vigente</strong><span>Cidades do mês marcadas a partir da escala importada.</span></div><button onClick={() => openMonthlyGoogleMap(destinations)}><MapIcon/> Abrir no Google Maps</button></header><div className="cz-google-map-preview cz-world-map">{embedUrl ? <iframe title="Mapa do mês pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><Globe2/><strong>Mapa real indisponível sem configuração de mapas.</strong><span>Use “Abrir no Google Maps” para visualizar os destinos da escala vigente.</span></div>}</div><div className="cz-destination-strip">{destinations.slice(0, 18).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!destinations.length && <article className="cz-empty-real"><MapIcon/><h2>Sem destinos mapeáveis</h2><p>Importe a escala oficial para exibir as cidades do mês.</p></article>}</section></>;
 }
 
 function CarView({ event }: { event: ZeroLeg }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Meu Carro</h1><p>Rotas, estacionamento, retorno ao aeroporto e pós-pouso dentro do novo layout.</p></section><section className="cz-car-grid"><article className="cz-car-card"><Car/><h2>Hotel/local → aeroporto</h2><p>{event.placeholder ? 'Aguardando escala real.' : `${event.hotel ? event.hotel : 'Localização atual'} → ${event.origin} · ${city(event.origin)}`}</p><RouteVisual event={event} compact/><div className="cz-tool-actions"><button disabled={event.placeholder} onClick={() => openMapRoute(event)}><MapIcon/> Abrir mapa</button><button disabled={event.placeholder} onClick={() => openRoadNetwork(event)}><Menu/> Malha viária</button></div></article><article className="cz-car-card"><ShieldCheck/><h2>Estacionamento e retorno</h2><p>Salve onde deixou o carro, tempo de retorno e observações do aeroporto.</p><div className="cz-tool-actions"><button onClick={() => { storage.set('crewcheck_car_note', window.prompt('Observação do carro/estacionamento') || storage.get('crewcheck_car_note','')); toast.success('Observação salva.'); }}><Save/> Salvar nota</button><button onClick={() => toast.info(storage.get('crewcheck_car_note','Nenhuma observação salva.'))}><FileText/> Ver nota</button></div></article><article className="cz-car-card"><Plane/><h2>Pós-pouso</h2><p>Ao chegar, o sistema pode abrir a rota aeroporto → hotel/casa sem misturar mapa com cálculo regulatório.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'hotels' }))}><Hotel/> Hotéis</button></div></article></section></>;
+  const [parking, setParking] = useState<ParkingPosition | null>(() => loadCarParkingPosition());
+  const [busy, setBusy] = useState(false);
+  async function markCar() {
+    setBusy(true);
+    try {
+      const position = await getCurrentGeoPosition();
+      const label = window.prompt('Referência opcional: nível, setor, vaga ou ponto de referência') || '';
+      const saved: ParkingPosition = { lat: position.lat, lng: position.lng, accuracy: position.accuracy, label: label.trim(), savedAt: new Date().toISOString() };
+      saveCarParkingPosition(saved);
+      setParking(saved);
+      toast.success('Carro marcado agora.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui marcar a posição.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function routeToCar() {
+    if (!parking) { toast.info('Marque primeiro a posição atual do carro.'); return; }
+    try {
+      const current = await getCurrentGeoPosition();
+      window.open(buildGoogleMapsWalkingDirectionsUrl(current.lat, current.lng, parking.lat, parking.lng), '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      window.open(buildGoogleMapsSearchUrl(parking.lat, parking.lng), '_blank', 'noopener,noreferrer');
+      toast.message('Abrindo a marcação do carro no Google Maps.');
+    }
+  }
+  function resetCar() {
+    clearCarParkingPosition();
+    setParking(null);
+    toast.success('Posição do carro resetada. Você pode marcar uma nova.');
+  }
+  const savedDate = parking ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(parking.savedAt)) : '';
+  return <><Brand back/><section className="cz-panel-head"><h1>Meu Carro</h1><p>Marque onde estacionou e depois volte até o carro pelo Google Maps. Sem rastreamento em segundo plano.</p></section><section className="cz-car-grid cz-parking-grid"><article className="cz-car-card cz-parking-hero"><Car/><h2>{parking ? 'Carro marcado' : 'Nenhuma posição marcada'}</h2><p>{parking ? `Marcado em ${savedDate}` : 'Toque em marcar quando estacionar. A posição fica salva apenas neste dispositivo.'}</p>{parking ? <div className="cz-parking-data"><span><b>Precisão</b>{parking.accuracy ? `~${Math.round(parking.accuracy)} m` : 'A confirmar'}</span><span><b>Referência</b>{safe(parking.label, 'Sem observação')}</span><span><b>Coordenadas</b>{coordsLabel(parking.lat, parking.lng)}</span></div> : <div className="cz-map-fallback"><Car/><strong>Pronto para marcar</strong><span>Use a localização atual quando estacionar no aeroporto, hotel ou shopping.</span></div>}<div className="cz-tool-actions"><button onClick={markCar} disabled={busy}><Radar/> {parking ? 'Atualizar posição do carro' : 'Marcar posição atual do carro'}</button>{parking && <button onClick={() => window.open(buildGoogleMapsSearchUrl(parking.lat, parking.lng), '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>}{parking && <button onClick={routeToCar}><Car/> Traçar rota até o carro</button>}{parking && <button onClick={resetCar}><RotateCcw/> Resetar posição</button>}</div></article><article className="cz-car-card"><ShieldCheck/><h2>Privacidade</h2><p>A marcação é local-first, usada somente para você voltar ao ponto salvo. O CrewCheck não rastreia seu deslocamento em background.</p><small>Permissão de localização é solicitada apenas ao marcar ou traçar rota.</small></article><article className="cz-car-card"><Plane/><h2>Operação</h2><p>{event.placeholder ? 'Aguardando escala real para integrar aeroporto/hotel.' : `Próxima origem: ${event.origin} · ${city(event.origin)}`}</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></div></article></section></>;
 }
 
 function IFlightPushView({ actions }: { actions: QuickActions }) {
