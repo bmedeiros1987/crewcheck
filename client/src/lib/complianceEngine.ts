@@ -20,12 +20,21 @@ export interface Metrics {
   maxFlightHoursMonth: number;
   totalDutyHours: number;
   maxDutyHoursMonth: number;
+  weeklyDutyHours: number;
+  maxWeeklyDutyHours: number;
+  weeklyDutyStartDate: string;
+  weeklyDutyEndDate: string;
   totalDaysOff: number;
   minDaysOffRequired: number;
   totalStandby: number;
   maxStandbyMonth: number;
+  standbyMinHours: number;
+  standbyMaxHours: number;
+  reserveMinHours: number;
+  reserveMaxHours: number;
   nightOperations: number;
   maxNightOps168h: number;
+  maxNightOpsWindow: number;
   weekendPairs: number;
   minWeekendPairs: number;
   restDays: number;
@@ -70,6 +79,39 @@ export interface LoadAnalysis {
   days: DayLoadAnalysis[];
 }
 
+export type RegulationLimitStatus = 'ok' | 'attention' | 'exceeded' | 'info' | 'unknown';
+
+export interface RegulationLimitCard {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  status: RegulationLimitStatus;
+  legalReference?: string;
+  informationalOnly?: boolean;
+}
+
+export interface RegulatoryAuditSummary {
+  hierarchy: string[];
+  weeklyDutyLimitHours: number;
+  weeklyDutyHours: number;
+  weeklyDutyStartDate: string;
+  weeklyDutyEndDate: string;
+  maxNightOpsWindow: number;
+  maxNightOps168h: number;
+  maxConsecutiveNights: number;
+  maxConsecutiveNightOps: number;
+  nightResetHours: number;
+  standbyCount: number;
+  standbyMonthlyLimit: number;
+  standbyMinHours: number;
+  standbyMaxHours: number;
+  reserveCount: number;
+  reserveMinHours: number;
+  reserveMaxHours: number;
+  notes: string[];
+}
+
 export interface ComplianceResult {
   engineVersion?: string;
   alerts: ComplianceAlert[];
@@ -79,6 +121,7 @@ export interface ComplianceResult {
   summary: string;
   loadAnalysis: LoadAnalysis;
   legalProfile: LegalProfileSummary;
+  regulatoryAudit: RegulatoryAuditSummary;
 }
 
 export interface GymRecommendation {
@@ -104,10 +147,13 @@ export interface GymRecommendation {
 
 const COMPLIANCE_ENGINE_VERSION = '12.5.17';
 const SHOW_TECHNICAL_CODE_ALERTS = false;
+const WEEKLY_DUTY_LIMIT_HOURS = 44;
+const RBAC117_ROLLING_DUTY_LIMIT_7_DAYS = 60;
 
 const LIMITS = {
   maxFlightHoursMonth: 80,
   maxDutyHoursMonth: 176,
+  maxWeeklyDutyHours: WEEKLY_DUTY_LIMIT_HOURS,
   maxDailyDutyHoursSimpleAttention: 11,
   maxDailyDutyHoursComposite: 14,
   absoluteDailyDutyLimit: 18,
@@ -681,9 +727,69 @@ function formatDate(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
-function getMadrugadaKeys(days: RosterDay[]): number[] {
+type ActivityTimeRange = { day: RosterDay; start: Date; end: Date; source: string };
+type NightOperationRecord = { key: number; day: RosterDay; activity: ActivityTimeRange | null };
+type NightOperationsAudit = { maxIn168h: number; maxConsecutive: number; records: NightOperationRecord[] };
+
+function addMinutesToDate(date: Date, minutes: number): Date {
+  const next = new Date(date);
+  next.setHours(0, minutes, 0, 0);
+  return next;
+}
+
+function getActivityTimeRange(day: RosterDay): ActivityTimeRange | null {
+  if (isEmptyCalendarDay(day) || isNonOperationalAbsence(day) || isFormalDayOff(day) || isRestExtension(day) || isLayoverOrInactive(day)) return null;
+  const windows = getDayBlockingWindows(day);
+  if (!windows.length) return null;
+
+  const baseDate = parseDate(day.date);
+  let startMin = Number.POSITIVE_INFINITY;
+  let endMin = Number.NEGATIVE_INFINITY;
+  const sources = new Set<string>();
+
+  windows.forEach((window) => {
+    const start = minutesOfDay(window.startTime);
+    const end = minutesOfDay(window.endTime);
+    if (start === null || end === null) return;
+    let normalizedEnd = end;
+    if (normalizedEnd <= start || window.isNextDay) normalizedEnd += 24 * 60;
+    startMin = Math.min(startMin, start);
+    endMin = Math.max(endMin, normalizedEnd);
+    sources.add(window.label || window.source);
+  });
+
+  if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || endMin <= startMin) return null;
+  return {
+    day,
+    start: addMinutesToDate(baseDate, startMin),
+    end: addMinutesToDate(baseDate, endMin),
+    source: [...sources].join(', ') || 'atividade publicada',
+  };
+}
+
+function hoursBetweenDates(start: Date, end: Date): number {
+  return round1((end.getTime() - start.getTime()) / (1000 * 60 * 60));
+}
+
+function freeHoursBeforeNightRecord(sortedDays: RosterDay[], record: NightOperationRecord): number | null {
+  const current = record.activity || getActivityTimeRange(record.day);
+  if (!current) return null;
+  let previousEnd: Date | null = null;
+  for (const day of sortedDays) {
+    const range = getActivityTimeRange(day);
+    if (!range) continue;
+    if (range.day.date === record.day.date) continue;
+    if (range.end.getTime() <= current.start.getTime() && (!previousEnd || range.end.getTime() > previousEnd.getTime())) {
+      previousEnd = range.end;
+    }
+  }
+  if (!previousEnd) return Number.POSITIVE_INFINITY;
+  return hoursBetweenDates(previousEnd, current.start);
+}
+
+function getMadrugadaRecords(days: RosterDay[]): NightOperationRecord[] {
   const sorted = sortDays(days);
-  const keys: number[] = [];
+  const records: NightOperationRecord[] = [];
   let previousDay: RosterDay | null = null;
 
   for (const day of sorted) {
@@ -698,37 +804,77 @@ function getMadrugadaKeys(days: RosterDay[]): number[] {
     const sameNightAsPrevious = Boolean(previousDay && hasMadrugadaDuty(previousDay) && previousDay.isNextDay && startsBeforeSix && !isRecoveryDay(previousDay));
     const keyDate = sameNightAsPrevious ? parseDate(previousDay!.date) : date;
     const key = keyDate.getTime();
-    if (!keys.includes(key)) keys.push(key);
+    if (!records.some(record => record.key === key)) records.push({ key, day, activity: getActivityTimeRange(day) });
     previousDay = day;
   }
 
-  return keys.sort((a, b) => a - b);
+  return records.sort((a, b) => a.key - b.key);
+}
+
+function splitNightOperationsByReset(days: RosterDay[], resetHours: number): NightOperationRecord[][] {
+  const sortedDays = sortDays(days);
+  const records = getMadrugadaRecords(sortedDays);
+  const segments: NightOperationRecord[][] = [];
+  let current: NightOperationRecord[] = [];
+
+  records.forEach((record, index) => {
+    const freeHours = index === 0 ? null : freeHoursBeforeNightRecord(sortedDays, record);
+    if (current.length && freeHours !== null && freeHours >= resetHours) {
+      segments.push(current);
+      current = [];
+    }
+    current.push(record);
+  });
+
+  if (current.length) segments.push(current);
+  return segments;
+}
+
+function analyzeNightOperations(days: RosterDay[], resetHours = 48): NightOperationsAudit {
+  const segments = splitNightOperationsByReset(days, resetHours);
+  const records = segments.flat();
+  let max = 0;
+
+  for (const segment of segments) {
+    const nightDates = segment.map(record => record.key);
+    for (let i = 0; i < nightDates.length; i++) {
+      const start = nightDates[i];
+      const end = start + 168 * 60 * 60 * 1000;
+      const count = nightDates.filter(value => value >= start && value <= end).length;
+      max = Math.max(max, count);
+    }
+  }
+
+  return {
+    maxIn168h: max,
+    maxConsecutive: countMaxConsecutiveMadrugadasInSegments(segments),
+    records,
+  };
 }
 
 function countNightOpsInRolling168h(days: RosterDay[]): number {
-  const nightDates = getMadrugadaKeys(days);
+  return analyzeNightOperations(days).maxIn168h;
+}
+
+function countMaxConsecutiveMadrugadasInSegments(segments: NightOperationRecord[][]): number {
+  const keysBySegment = segments.map(segment => segment.map(record => record.key));
   let max = 0;
-  for (let i = 0; i < nightDates.length; i++) {
-    const start = nightDates[i];
-    const end = start + 168 * 60 * 60 * 1000;
-    const count = nightDates.filter(value => value >= start && value <= end).length;
-    max = Math.max(max, count);
+  for (const keys of keysBySegment) {
+    if (!keys.length) continue;
+    let current = 1;
+    max = Math.max(max, current);
+    for (let i = 1; i < keys.length; i++) {
+      const dayGap = Math.round((keys[i] - keys[i - 1]) / (24 * 60 * 60 * 1000));
+      if (dayGap === 1) current += 1;
+      else current = 1;
+      max = Math.max(max, current);
+    }
   }
   return max;
 }
 
 function countMaxConsecutiveMadrugadas(days: RosterDay[]): number {
-  const keys = getMadrugadaKeys(days);
-  if (!keys.length) return 0;
-  let current = 1;
-  let max = 1;
-  for (let i = 1; i < keys.length; i++) {
-    const dayGap = Math.round((keys[i] - keys[i - 1]) / (24 * 60 * 60 * 1000));
-    if (dayGap === 1) current += 1;
-    else current = 1;
-    max = Math.max(max, current);
-  }
-  return max;
+  return analyzeNightOperations(days).maxConsecutive;
 }
 
 function hasMadrugadaDuty(day: RosterDay): boolean {
@@ -1069,8 +1215,8 @@ function applyMostRestrictiveDutyLimit(limit: Rbac117DutyLimit | null, profile?:
 
 const RBAC117_B1_SIMPLE_TABLE: Array<{ start: number; end: number; label: string; duty: [number, number, number, number, number]; flight: [number, number, number, number, number] }> = [
   { start: 6 * 60, end: 6 * 60 + 59, label: '06h00-06h59', duty: [11, 11, 10, 9, 9], flight: [9, 9, 8, 8, 8] },
-  { start: 7 * 60, end: 7 * 60 + 59, label: '07h00-07h59', duty: [13, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
-  { start: 8 * 60, end: 11 * 60 + 59, label: '08h00-11h59', duty: [13, 13, 12, 11, 10], flight: [10, 9.5, 9, 9, 8] },
+  { start: 7 * 60, end: 7 * 60 + 59, label: '07h00-07h59', duty: [12, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
+  { start: 8 * 60, end: 11 * 60 + 59, label: '08h00-11h59', duty: [12, 12, 12, 11, 10], flight: [10, 9.5, 9, 9, 8] },
   { start: 12 * 60, end: 13 * 60 + 59, label: '12h00-13h59', duty: [12, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
   { start: 14 * 60, end: 15 * 60 + 59, label: '14h00-15h59', duty: [11, 11, 10, 9, 9], flight: [9, 9, 8, 8, 8] },
   { start: 16 * 60, end: 17 * 60 + 59, label: '16h00-17h59', duty: [10, 10, 9, 9, 9], flight: [8, 8, 8, 8, 8] },
@@ -1266,7 +1412,7 @@ function addReserveActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: Ros
     `Cálculo: apresentação/primeiro voo ${start} até ${end.time}${end.isNextDay ? ' (+1)' : ''} (${end.source}).`,
     'A reserva publicada é validada separadamente; ela não entra no total de jornada RBAC/CLT nem na régua B.1.',
     limit ? describeRbac117Limit(limit) : 'Não foi possível enquadrar automaticamente a Tabela B.1 porque o horário operacional não ficou confiável.',
-    'Hierarquia usada pelo CrewCheck: ACT parametrizada do perfil > CCT aplicável > Lei do Aeronauta/CLT > RBAC, sempre usando a regra mais restritiva quando houver conflito operacional.',
+    'Hierarquia usada pelo CrewCheck: ACT/CCT parametrizada do perfil > RBAC 117 > Lei do Aeronauta > CLT para matéria residual, sempre usando a regra mais restritiva quando houver conflito operacional.',
   ].join(' ');
 
   if (!limit) {
@@ -1340,6 +1486,153 @@ function rollingDutyWindow(days: RosterDay[], windowDays = 7): { hours: number; 
   return best;
 }
 
+function daysInsideWindow(days: RosterDay[], startDate: string, endDate: string): RosterDay[] {
+  if (!startDate || !endDate) return [];
+  const start = parseDate(startDate);
+  const end = parseDate(endDate);
+  return sortDays(days).filter((day) => {
+    const current = parseDate(day.date);
+    return current >= start && current <= end;
+  });
+}
+
+function getRollingDutyWindowConfidence(days: RosterDay[], window: { startDate: string; endDate: string; hours: number }): ComplianceAlert['confidence'] {
+  if (window.hours <= 0) return 'alta';
+  const activeDays = daysInsideWindow(days, window.startDate, window.endDate).filter(day => getRegulatoryWorkHoursForTotals(day) > 0);
+  if (!activeDays.length) return 'media';
+  const confidences = activeDays.map(day => getDayTimingConfidence(day).confidence);
+  if (confidences.includes('baixa')) return 'baixa';
+  if (confidences.includes('media')) return 'media';
+  return 'alta';
+}
+
+function makeRegulatoryHierarchy(profile: LegalProfileSummary): string[] {
+  return [
+    `${profile.actName} e CCT aplicável quando forem mais restritivos`,
+    'RBAC 117/ANAC para limites operacionais de jornada, repouso e gerenciamento de fadiga',
+    'Lei do Aeronauta para regras específicas não cobertas pelo ACT/RBAC',
+    'CLT para matéria trabalhista residual, incluindo a referência semanal de 44h',
+  ];
+}
+
+function buildRegulatoryAuditSummary(roster: CrewRoster, profile: LegalProfileSummary, actRules: ReturnType<typeof getActRulesForProfile>): RegulatoryAuditSummary {
+  const sortedDays = sortDays(roster.days || []);
+  const weeklyDuty = rollingDutyWindow(sortedDays, 7);
+  const nightAudit = analyzeNightOperations(sortedDays, actRules.nightOps.resetAfterFreeHours);
+  const standbyCount = sortedDays.filter(isStandby).length;
+  const reserveCount = sortedDays.filter(isReserve).length;
+
+  return {
+    hierarchy: makeRegulatoryHierarchy(profile),
+    weeklyDutyLimitHours: WEEKLY_DUTY_LIMIT_HOURS,
+    weeklyDutyHours: round1(weeklyDuty.hours),
+    weeklyDutyStartDate: weeklyDuty.startDate,
+    weeklyDutyEndDate: weeklyDuty.endDate,
+    maxNightOpsWindow: nightAudit.maxIn168h,
+    maxNightOps168h: actRules.nightOps.maxIn168h,
+    maxConsecutiveNights: nightAudit.maxConsecutive,
+    maxConsecutiveNightOps: actRules.nightOps.maxConsecutive,
+    nightResetHours: actRules.nightOps.resetAfterFreeHours,
+    standbyCount,
+    standbyMonthlyLimit: actRules.standby.monthlyLimit,
+    standbyMinHours: actRules.standby.minHours,
+    standbyMaxHours: actRules.standby.maxHours,
+    reserveCount,
+    reserveMinHours: actRules.reserve.minHours,
+    reserveMaxHours: actRules.reserve.maxHours,
+    notes: [
+      `Jornada semanal: ACT/CCT observam 44h semanais; RBAC 117 mantém referência operacional de ${RBAC117_ROLLING_DUTY_LIMIT_7_DAYS}h em 7 dias.`,
+      `Sobreaviso e reserva publicados aparecem como limite informativo; só geram auditoria de jornada quando há acionamento/voo.`,
+      `Madrugadas contam em janela de 168h e só reiniciam após ${actRules.nightOps.resetAfterFreeHours}h livres de atividade.`,
+    ],
+  };
+}
+
+export function getRegulatoryAuditSummary(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): RegulatoryAuditSummary {
+  const profile = getLegalProfile(roster, roleSelection);
+  const actRules = getActRulesForProfile(profile);
+  return buildRegulatoryAuditSummary(roster, profile, actRules);
+}
+
+function makeRegulationStatus(current: number, limit: number, attentionMargin = 1): RegulationLimitStatus {
+  if (!Number.isFinite(current) || !Number.isFinite(limit) || limit <= 0) return 'unknown';
+  if (current > limit) return 'exceeded';
+  if (limit - current <= attentionMargin) return 'attention';
+  return 'ok';
+}
+
+export function getRegulatoryLimitCardsForDay(day: RosterDay, roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): RegulationLimitCard[] {
+  const profile = getLegalProfile(roster, roleSelection);
+  const actRules = getActRulesForProfile(profile);
+  const audit = buildRegulatoryAuditSummary(roster, profile, actRules);
+  const cards: RegulationLimitCard[] = [];
+  const sectors = Math.max(1, day.legs?.length || 1);
+  const start = getFirstOperationalStart(day).time;
+  const dutyLimit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(start, sectors), profile);
+
+  if ((day.legs?.length || day.type === 'VOO') && dutyLimit) {
+    const dutyHours = getDutyHours(day);
+    const deadline = start ? addMinutesToClock(start, Math.round(dutyLimit.maxDutyHours * 60)) : null;
+    cards.push({
+      key: 'daily-duty',
+      label: 'Jornada máx.',
+      value: formatHoursForAlert(dutyLimit.maxDutyHours),
+      detail: [
+        `Atual ${formatHoursForAlert(dutyHours)}`,
+        deadline ? `limite até ${deadline.time}${deadline.isNextDay ? ' +1' : ''}` : '',
+        `${dutyLimit.startBucket}, ${dutyLimit.sectorsBucket} etapa(s)`,
+      ].filter(Boolean).join(' · '),
+      status: makeRegulationStatus(dutyHours, dutyLimit.maxDutyHours),
+      legalReference: dutyLimit.legalReference,
+    });
+  } else if ((day.legs?.length || day.type === 'VOO') && !dutyLimit) {
+    cards.push({
+      key: 'daily-duty',
+      label: 'Jornada máx.',
+      value: 'A confirmar',
+      detail: 'Sem apresentação/início confiável para enquadrar automaticamente a Tabela B.1.',
+      status: 'unknown',
+      legalReference: 'RBAC 117, Apêndice B, B117.7, Tabela B.1',
+    });
+  }
+
+  cards.push({
+    key: 'weekly-duty',
+    label: 'Semana 44h',
+    value: `${formatHoursForAlert(audit.weeklyDutyHours)} / ${formatHoursForAlert(audit.weeklyDutyLimitHours)}`,
+    detail: audit.weeklyDutyStartDate && audit.weeklyDutyEndDate
+      ? `Maior janela: ${audit.weeklyDutyStartDate} a ${audit.weeklyDutyEndDate}`
+      : 'Janela semanal móvel da escala importada.',
+    status: makeRegulationStatus(audit.weeklyDutyHours, audit.weeklyDutyLimitHours, 2),
+    legalReference: `${profile.actName}, cláusula 3.3.9 · CLT, jornada semanal`,
+  });
+
+  cards.push({
+    key: 'night-ops',
+    label: 'Madrugadas',
+    value: `${audit.maxNightOpsWindow}/${audit.maxNightOps168h}`,
+    detail: `${audit.maxConsecutiveNights}/${audit.maxConsecutiveNightOps} seguidas · reset só após ${audit.nightResetHours}h livres`,
+    status: audit.maxNightOpsWindow > audit.maxNightOps168h || audit.maxConsecutiveNights > audit.maxConsecutiveNightOps
+      ? 'exceeded'
+      : audit.maxNightOpsWindow >= audit.maxNightOps168h || audit.maxConsecutiveNights >= audit.maxConsecutiveNightOps
+        ? 'attention'
+        : 'ok',
+    legalReference: actRules.nightOps.legalReference,
+  });
+
+  cards.push({
+    key: 'standby-reserve-limits',
+    label: 'SAV/RES',
+    value: `SAV ${audit.standbyCount}/${audit.standbyMonthlyLimit} mês`,
+    detail: `SAV ${audit.standbyMinHours}-${audit.standbyMaxHours}h · RES ${audit.reserveMinHours}-${audit.reserveMaxHours}h · informativo se não acionado`,
+    status: 'info',
+    legalReference: `${actRules.standby.legalReference}; ${actRules.reserve.legalReference}`,
+    informationalOnly: true,
+  });
+
+  return cards;
+}
+
 function auditAlertConfidence(alerts: ComplianceAlert[], days: RosterDay[]): ComplianceAlert[] {
   const dayByDate = new Map(days.map(day => [day.date, day]));
   const timingCritical = /repouso|jornada|sobreaviso|reserva|madrugada|voo diário|pousos|trechos/i;
@@ -1401,6 +1694,7 @@ function parseAlertHoursFromDescription(description: string, marker: RegExp): nu
 
 function isNoisyAutomaticAttention(alert: ComplianceAlert): boolean {
   const haystack = `${alert.title} ${alert.description} ${alert.details || ''}`;
+  if (/jornada semanal acima de 44h/i.test(alert.title)) return false;
 
   // v12.5.16: esses itens estavam poluindo Alertas com falso positivo por
   // continuidade/pernoite e horários cruzando meia-noite. Mantemos a informação
@@ -1424,7 +1718,6 @@ function sanitizeComplianceAlertsForProduction(alerts: ComplianceAlert[]): Compl
   const hiddenPatterns = [
     /tempo em solo entre etapas/i,
     /siglas não classificadas/i,
-    /jornada semanal acima/i,
     /limite mensal de horas de trabalho/i,
     /jornada diária acima do teto absoluto parametrizado/i,
     /repouso entre jornadas muito justo/i,
@@ -1511,12 +1804,21 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     maxFlightHoursMonth: limits.maxFlightHoursMonth,
     totalDutyHours: 0,
     maxDutyHoursMonth: limits.maxDutyHoursMonth,
+    weeklyDutyHours: 0,
+    maxWeeklyDutyHours: limits.maxWeeklyDutyHours,
+    weeklyDutyStartDate: '',
+    weeklyDutyEndDate: '',
     totalDaysOff: 0,
     minDaysOffRequired: limits.minDaysOffRequired,
     totalStandby: 0,
     maxStandbyMonth: limits.maxStandbyMonth,
+    standbyMinHours: actRules.standby.minHours,
+    standbyMaxHours: limits.maxStandbyHours,
+    reserveMinHours: actRules.reserve.minHours,
+    reserveMaxHours: limits.maxReserveHoursOther,
     nightOperations: 0,
     maxNightOps168h: limits.maxNightOps168h,
+    maxNightOpsWindow: 0,
     weekendPairs: 0,
     minWeekendPairs: limits.minWeekendPairs,
     restDays: 0,
@@ -1566,54 +1868,11 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     if (isStandby(day)) {
       metrics.totalStandby += 1;
       metrics.standbyCount += 1;
-      const standbyHours = getEffectiveStandbyHours(day);
-      const activatedStandby = hasLinkedActivationInRoster(sortedDays, day, index);
-      if (!activatedStandby && standbyHours > limits.maxStandbyHours) {
-        pushAlert(alerts, {
-          severity: 'error',
-          title: 'Sobreaviso acima de 12 horas',
-          description: `${day.date}: sobreaviso calculado de ${standbyHours.toFixed(1)}h.`,
-          details: 'O cálculo do sobreaviso agora usa apenas a janela do próprio HSB/HSBE no dia, evitando somar dois dias consecutivos como se fossem um único sobreaviso.',
-          legalReference: actRules.standby.legalReference,
-          date: day.date,
-        });
-      } else if (!activatedStandby && standbyHours > 0 && standbyHours < actRules.standby.minHours) {
-        pushAlert(alerts, {
-          severity: 'warning',
-          title: 'Sobreaviso abaixo de 3 horas — revisar leitura',
-          description: `${day.date}: sobreaviso calculado de ${standbyHours.toFixed(1)}h; parâmetro ACT mínimo: ${actRules.standby.minHours}h.`,
-          details: 'Pode ser falha de leitura do PDF, janela incompleta ou outro código operacional confundido com HSB/HSBE. Quando houver acionamento, o CrewCheck ignora o mínimo isolado de 3h e valida apenas a regra combinada de jornada.',
-          legalReference: actRules.standby.legalReference,
-          date: day.date,
-        });
-      }
       addStandbyActivationDutyLimitAlerts(alerts, day, roster, actRules);
     }
 
     if (isReserve(day)) {
       metrics.reserveCount += 1;
-      const activatedReserve = hasLinkedActivationInRoster(sortedDays, day, index);
-      const reserveWindow = getReserveWindowForCompliance(day);
-      const reserveWindowHours = reserveWindow ? round1(diffHours(reserveWindow.startTime, reserveWindow.endTime, Boolean(reserveWindow.isNextDay))) : 0;
-      if (!activatedReserve && reserveWindowHours > limits.maxReserveHoursOther) {
-        pushAlert(alerts, {
-          severity: 'warning',
-          title: 'Reserva acima do limite da janela publicada',
-          description: `${day.date}: reserva calculada de ${reserveWindowHours.toFixed(1)}h.`,
-          details: 'Validação feita somente sobre a janela ASB/RES. Este tempo não entra no total de jornada RBAC/CLT.',
-          legalReference: actRules.reserve.legalReference,
-          date: day.date,
-        });
-      } else if (!activatedReserve && reserveWindowHours > 0 && reserveWindowHours < actRules.reserve.minHours) {
-        pushAlert(alerts, {
-          severity: 'warning',
-          title: 'Reserva abaixo de 3 horas — revisar leitura',
-          description: `${day.date}: reserva calculada de ${reserveWindowHours.toFixed(1)}h; parâmetro ACT mínimo: ${actRules.reserve.minHours}h.`,
-          details: 'Pode ser reserva parcial, falha de parser ou programação operacional classificada incorretamente como ASB/RES.',
-          legalReference: actRules.reserve.legalReference,
-          date: day.date,
-        });
-      }
       addReserveActivationDutyLimitAlerts(alerts, day, actRules, legalProfile);
     }
 
@@ -1751,17 +2010,36 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   metrics.weekendPairs = calculateWeekendPairs(sortedDays);
   metrics.averageTurnaround = restCount > 0 ? restTotal / restCount : 0;
-  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(sortedDays);
-  const maxNightOpsWindow = countNightOpsInRolling168h(sortedDays);
+  const nightAudit = analyzeNightOperations(sortedDays, actRules.nightOps.resetAfterFreeHours);
+  metrics.maxConsecutiveNights = nightAudit.maxConsecutive;
+  const maxNightOpsWindow = nightAudit.maxIn168h;
+  metrics.maxNightOpsWindow = maxNightOpsWindow;
 
   if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;
   // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode
   // incluir solo/pernoite/continuação e inflar a escala. Mantemos cálculo próprio.
 
   const weeklyDuty = rollingDutyWindow(sortedDays, 7);
-  // v11.0.98: jornada semanal é mantida como métrica interna. Não vira alerta
-  // automático porque escalas com pernoite/continuação e reservas podem distorcer
-  // a janela móvel e gerar falsos positivos.
+  metrics.weeklyDutyHours = weeklyDuty.hours;
+  metrics.weeklyDutyStartDate = weeklyDuty.startDate;
+  metrics.weeklyDutyEndDate = weeklyDuty.endDate;
+  if (weeklyDuty.hours > limits.maxWeeklyDutyHours) {
+    const weeklyConfidence = getRollingDutyWindowConfidence(sortedDays, weeklyDuty);
+    pushAlert(alerts, {
+      severity: weeklyConfidence === 'alta' ? 'error' : 'warning',
+      title: 'Jornada semanal acima de 44h',
+      description: `${weeklyDuty.startDate} a ${weeklyDuty.endDate}: ${formatHoursForAlert(weeklyDuty.hours)} de jornada regulatória; limite semanal aplicado: ${formatHoursForAlert(limits.maxWeeklyDutyHours)}.`,
+      details: [
+        'O cálculo considera apenas jornada regulatória efetiva: voo/atividade acionada/treinamento com horário confiável.',
+        'Sobreaviso e reserva sem acionamento ficam fora da soma semanal para evitar falso positivo.',
+        `RBAC 117 mantém referência operacional de ${formatHoursForAlert(RBAC117_ROLLING_DUTY_LIMIT_7_DAYS)} em 7 dias, mas a régua trabalhista/ACT exibida ao usuário é 44h semanais.`,
+      ].join(' '),
+      legalReference: `${legalProfile.actName}, cláusula 3.3.9 · CLT, jornada semanal`,
+      confidence: weeklyConfidence,
+      classification: weeklyConfidence === 'alta' ? 'confirmada' : 'atencao',
+      evidence: `Janela móvel ${weeklyDuty.startDate}–${weeklyDuty.endDate}; total ${weeklyDuty.hours.toFixed(1)}h.`,
+    });
+  }
 
   const monthlyFlightBuckets = flightHoursByRosterMonth(sortedDays);
   const isMultiMonthRoster = monthlyFlightBuckets.length > 1;
@@ -1828,21 +2106,12 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     });
   }
 
-  if (metrics.totalStandby > limits.maxStandbyMonth) {
-    pushAlert(alerts, {
-      severity: 'warning',
-      title: 'Sobreavisos acima do limite mensal parametrizado',
-      description: `${metrics.totalStandby} sobreaviso(s) identificados no mês. Limite usado pelo sistema: ${limits.maxStandbyMonth}.`,
-      legalReference: actRules.standby.legalReference,
-    });
-  }
-
   if (maxNightOpsWindow > limits.maxNightOps168h) {
     pushAlert(alerts, {
       severity: 'warning',
       title: 'Madrugadas em 168h — revisar janela real',
       description: `Até ${maxNightOpsWindow} madrugada(s) em janela móvel de 168h. Revise a sequência real no PDF.`,
-      details: 'O sistema conta voo que toca 00:00–06:00 e sobreaviso que começa na madrugada; folga, reserva sem voo e voo sem madrugada quebram sequência. Mantido como atenção para evitar falso positivo.',
+      details: `O sistema conta voo que toca 00:00–06:00 e sobreaviso que começa na madrugada. A janela só zera após ${actRules.nightOps.resetAfterFreeHours}h livres de atividade; reserva/sobreaviso publicados impedem reset enquanto existirem na janela.`,
       legalReference: actRules.nightOps.legalReference,
       confidence: 'media',
       classification: 'atencao',
@@ -1854,7 +2123,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       severity: 'warning',
       title: 'Madrugadas consecutivas — revisar sequência real',
       description: `${metrics.maxConsecutiveNights} madrugada(s) consecutiva(s) detectada(s). Revise se houve folga, inativo ou pernoite quebrando a sequência.`,
-      details: 'Folga, pernoite/inativo, reserva sem voo e voo sem madrugada quebram a sequência; sobreaviso só conta quando começa na madrugada.',
+      details: `A sequência considera reset apenas quando há pelo menos ${actRules.nightOps.resetAfterFreeHours}h livres de atividade entre blocos. Sobreaviso só conta como madrugada quando começa entre 00:00 e 06:00.`,
       legalReference: actRules.nightOps.legalReference,
       confidence: 'media',
       classification: 'atencao',
@@ -1878,6 +2147,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   const warningCount = alerts.filter(alert => alert.severity === 'warning').length;
   const legalScore = Math.max(0, Math.min(100, 100 - errorCount * 18 - warningCount * 6));
   const overallStatus = errorCount > 0 ? 'violation' : warningCount > 0 ? 'warning' : 'compliant';
+  const regulatoryAudit = buildRegulatoryAuditSummary(roster, legalProfile, actRules);
   const summary = errorCount > 0
     ? `Foram encontradas ${errorCount} irregularidade(s) e ${warningCount} ponto(s) de atenção. Escala classificada como ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100 de puxada).`
     : warningCount > 0
@@ -1891,6 +2161,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       ...metrics,
       totalFlightHours: round1(metrics.totalFlightHours),
       totalDutyHours: round1(metrics.totalDutyHours),
+      weeklyDutyHours: round1(metrics.weeklyDutyHours),
+      maxNightOpsWindow: metrics.maxNightOpsWindow,
       averageTurnaround: round1(metrics.averageTurnaround),
     },
     overallStatus,
@@ -1898,6 +2170,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     summary,
     loadAnalysis,
     legalProfile,
+    regulatoryAudit,
   };
 }
 

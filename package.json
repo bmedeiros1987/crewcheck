@@ -64,7 +64,8 @@
     "check:1267-rebuild-zero": "node -e \"console.log('CrewCheck v12.5.78 rebuild zero premium + maintenance polish OK')\"",
     "check:1269-blank-screen": "node -e \"console.log('CrewCheck v12.5.78 blank screen cache OK')\"",
     "check:1270-ui-polish": "node -e \"console.log('CrewCheck v12.5.78 true zero UI polish OK')\"",
-    "check:1278-functional-final": "node -e \"console.log('CrewCheck v12.5.78 UI safe functional core OK')\""
+    "check:1278-functional-final": "node -e \"console.log('CrewCheck v12.5.78 UI safe functional core OK')\"",
+    "check:regulatory-audit": "node scripts/regression-v13-5-4-regulatory-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

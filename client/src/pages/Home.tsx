@@ -44,7 +44,7 @@ import {
   Dumbbell,
   Hotel,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getRegulatoryLimitCardsForDay, type ComplianceResult, type RegulationLimitCard } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -87,6 +87,7 @@ type ZeroLeg = {
   placeholder?: boolean;
   canonical?: CanonicalRosterEvent;
   presentationSource?: string;
+  regulation?: RegulationLimitCard[];
 };
 
 type BundleState = { roster: CrewRoster; compliance: ComplianceResult | null; source: string };
@@ -441,6 +442,7 @@ function placeholderLeg(): ZeroLeg {
     arrival: '—',
     timeRange: 'Aguardando PDF',
     placeholder: true,
+    regulation: [],
   };
 }
 
@@ -501,11 +503,15 @@ function currentGym(bundle: BundleState) { try { return getGymRecommendations(bu
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
   const normalized = normalizeRosterDays(roster);
   const canonicalEvents = buildCanonicalRosterEvents(normalized);
+  const regulationByDate = new Map(
+    (normalized.days || []).map((day) => [day.date, getRegulatoryLimitCardsForDay(day, normalized)])
+  );
 
   const legs = canonicalEvents.map((event): ZeroLeg => {
     const day = event.publishedDay;
     const leg = event.leg;
     const d = event.startDateTime ? new Date(event.startDateTime) : parseDate(day);
+    const regulation = regulationByDate.get(day.date) || [];
 
     if (event.kind === 'flight' && leg) {
       const anyLeg = leg as any;
@@ -545,6 +551,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         ].filter(Boolean),
         timeRange: `${event.departure} → ${event.arrival}${suffix}`,
         canonical: event,
+        regulation,
       };
     }
 
@@ -566,6 +573,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       hotel: safe((day as any).hotel, ''),
       timeRange: `${event.departure} → ${event.arrival}`,
       canonical: event,
+      regulation,
     };
   });
 
@@ -747,12 +755,33 @@ function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: Z
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong>{value}</strong><p>{detail}</p></div></article>;
 }
+function RegulationLimitGrid({ cards, compact = false }: { cards?: RegulationLimitCard[]; compact?: boolean }) {
+  const visible = (cards || []).filter(Boolean).slice(0, compact ? 2 : 4);
+  if (!visible.length) return null;
+  const iconFor = (card: RegulationLimitCard) => {
+    if (card.key === 'night-ops') return <Moon size={16}/>;
+    if (card.key === 'weekly-duty') return <BriefcaseBusiness size={16}/>;
+    if (card.key === 'standby-reserve-limits') return <Clock size={16}/>;
+    if (card.status === 'exceeded' || card.status === 'attention') return <AlertTriangle size={16}/>;
+    return <ShieldCheck size={16}/>;
+  };
+  return <section className={`cz-regulation-strip ${compact ? 'compact' : ''}`} aria-label="Limites regulatórios da programação">
+    <header><ShieldCheck size={17}/><strong>Regulamentação</strong><span>ACT · RBAC 117 · Lei · CLT</span></header>
+    <div className="cz-regulation-grid">
+      {visible.map((card) => <article className={`cz-regulation-card ${card.status}`} key={card.key} title={card.legalReference || card.detail}>
+        <span>{iconFor(card)}</span>
+        <div><small>{card.label}</small><strong>{card.value}</strong><p>{card.detail}</p></div>
+      </article>)}
+    </div>
+  </section>;
+}
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
   const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
   return <article className={`cz-flight-card ${compact ? 'compact' : ''}`}>
     <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
     <div className="cz-flight-pills"><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{event.arrival}</span></div>
+    {!compact && <RegulationLimitGrid cards={event.regulation}/>}
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>Decolagem</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>Chegada</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
     {!compact && <div className="cz-info-duo"><div><Lock size={25}/><span>Portão</span><strong>{safe(event.gate, 'A confirmar')}</strong><small>{safe(event.terminal, 'A confirmar')}</small></div><div><Plane size={25}/><span>Status</span><strong className="ok">{safe(event.status, 'Programado')}</strong><small>Aeronave: {safe(event.aircraft, 'A confirmar')} · Matrícula: {safe(event.registration, 'A confirmar')}</small></div></div>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
@@ -933,6 +962,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <div><span>Portão/Terminal</span><strong>{safe(event.gate, 'A confirmar')} · {safe(event.terminal, 'A confirmar')}</strong></div>
       <div><span>Hotel</span><strong>{safe(event.hotel, '—')}</strong></div>
     </div>
+    <RegulationLimitGrid cards={event.regulation}/>
     <RosterInlineWeatherBlock event={event}/>
     {Boolean(event.crew?.length) && <p className="cz-mini-status"><strong>Tripulação:</strong> {event.crew?.slice(0, 8).join(' · ')}</p>}
     {Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
@@ -975,8 +1005,10 @@ function compactWeatherLine(event: ZeroLeg): string {
 function RosterEventChips({ event }: { event: ZeroLeg }) {
   const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
   const isStay = event.kind === 'stay' || Boolean(event.hotel);
+  const primaryLimit = event.regulation?.find((card) => card.key === 'daily-duty') || event.regulation?.find((card) => card.key === 'weekly-duty');
   return <div className="cz-roster-linked-chips" onClick={(click) => click.stopPropagation()}>
     <span><Clock size={14}/> Apresentação {safe(presentation, 'A confirmar')}</span>
+    {primaryLimit && <span><ShieldCheck size={14}/> {primaryLimit.label} {primaryLimit.value}</span>}
     {isStay && <span><Hotel size={14}/> {safe(event.hotel, `Hotel em ${city(event.destination || event.origin)}`)}</span>}
     <span><CloudSun size={14}/> {compactWeatherLine(event)}</span>
     {event.kind === 'flight' && <span><Radar size={14}/> Alertas até pouso</span>}
@@ -1060,10 +1092,15 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
   return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
+function alertClassificationLabel(alert: any): string {
+  if (alert?.classification === 'confirmada') return 'Confirmada';
+  if (alert?.classification === 'leitura_inconsistente') return 'Leitura incerta';
+  return 'Atenção';
+}
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   const alerts = ((compliance as any)?.alerts || []);
   const list = alerts.slice(0, 12);
-  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b></div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>Carregue a escala real para que o motor regulatório refaça a análise completa.</p></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ensinar falso positivo</button><button>Ver base regulatória</button></footer></article></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{alertClassificationLabel(a)}</span><b>Confiança: {a.confidence || (a.severity === 'error' ? 'alta' : 'média')}</b></div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>Carregue a escala real para que o motor regulatório refaça a análise completa.</p></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ensinar falso positivo</button><button>Ver base regulatória</button></footer></article></>;
 }
 function Departure({ event }: { event: ZeroLeg }) {
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, rota visual e pós-pouso até o hotel.</p></article></>;
@@ -1087,9 +1124,10 @@ function IFlightPushView({ actions }: { actions: QuickActions }) {
 
 function LoadView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle) as any;
+  const audit = compliance.regulatoryAudit || {};
   const days = Array.isArray(bundle.roster.days) ? bundle.roster.days.length : 0;
   const flights = buildLegs(bundle.roster).filter(e => e.kind === 'flight').length;
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga de trabalho</h1><p>Jornada, carga, descanso, intensidade, academia/hotel e limites regulatórios. Este menu não abre mais a Saída Inteligente.</p></section><section className="cz-report-grid"><article><h2>Dias publicados</h2><strong>{days}</strong><p>Baseado somente na escala real importada.</p></article><article><h2>Voos</h2><strong>{flights}</strong><p>Trechos operacionais detectados.</p></article><article><h2>Score RBAC</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article></section><section className="cz-toolbox"><h2>Sistemas conectados</h2><p>Rotina, academias, hotéis, trânsito real, saída inteligente, radar de voos, meteorologia, diárias, salário e relatórios usam a mesma escala ativa.</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga de trabalho</h1><p>Jornada, carga, descanso, intensidade, academia/hotel e limites regulatórios. Este menu não abre mais a Saída Inteligente.</p></section><section className="cz-report-grid"><article><h2>Dias publicados</h2><strong>{days}</strong><p>Baseado somente na escala real importada.</p></article><article><h2>Voos</h2><strong>{flights}</strong><p>Trechos operacionais detectados.</p></article><article><h2>Score RBAC</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Semana 44h</h2><strong>{audit.weeklyDutyHours !== undefined ? `${audit.weeklyDutyHours}h` : '—'}</strong><p>{audit.weeklyDutyStartDate ? `${audit.weeklyDutyStartDate} a ${audit.weeklyDutyEndDate} · limite ${audit.weeklyDutyLimitHours}h` : 'Janela semanal móvel.'}</p></article><article><h2>Madrugadas</h2><strong>{audit.maxNightOpsWindow !== undefined ? `${audit.maxNightOpsWindow}/${audit.maxNightOps168h}` : '—'}</strong><p>{audit.maxConsecutiveNights !== undefined ? `${audit.maxConsecutiveNights}/${audit.maxConsecutiveNightOps} seguidas · reset ${audit.nightResetHours}h livres` : 'Limite por 168h e consecutivas.'}</p></article><article><h2>SAV / RES</h2><strong>{audit.standbyCount !== undefined ? `${audit.standbyCount}/${audit.standbyMonthlyLimit}` : '—'}</strong><p>{audit.standbyMinHours !== undefined ? `SAV ${audit.standbyMinHours}-${audit.standbyMaxHours}h · RES ${audit.reserveMinHours}-${audit.reserveMaxHours}h · informativo sem acionamento` : 'Limites informativos.'}</p></article></section><section className="cz-toolbox"><h2>Hierarquia regulatória</h2><p>{Array.isArray(audit.hierarchy) ? audit.hierarchy.join(' · ') : 'ACT/CCT acima das regras gerais, depois RBAC 117, Lei do Aeronauta e CLT quando a matéria não estiver prevista.'}</p></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {
