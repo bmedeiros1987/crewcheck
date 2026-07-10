@@ -14500,3 +14500,105 @@ html[data-crew-theme="light"] .cz-bottom-nav {
     white-space: nowrap;
   }
 }
+
+/* CrewCheck v13.5.1 - Visual/menu hotfix */
+.cz-menu-panel {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  max-height: 100dvh;
+  padding-bottom: calc(156px + env(safe-area-inset-bottom)) !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168,85,247,.65) rgba(2,8,23,.16);
+}
+.cz-menu-section>button,
+.cz-feature-grid button,
+.cz-tool-actions button,
+.cz-settings-actions button,
+.cz-roster-actions button {
+  min-width: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(168,85,247,.14);
+}
+.cz-menu-section>button span,
+.cz-feature-grid button small,
+.cz-feature-grid button strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+html[data-crew-theme="light"] .cz-radar-screen article,
+html[data-crew-theme="light"] .cz-weather-grid article,
+html[data-crew-theme="light"] .cz-feature-grid button,
+html[data-crew-theme="light"] .cz-report-grid article,
+html[data-crew-theme="light"] .cz-alert-detail,
+html[data-crew-theme="light"] .cz-diagnostics,
+html[data-crew-theme="light"] .cz-mini-status,
+html[data-crew-theme="light"] .cz-finance-grid .cz-kpi,
+html[data-crew-theme="light"] .cz-menu-section>button {
+  background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(247,250,255,.90)) !important;
+  color: var(--cc-light-text) !important;
+  border-color: rgba(15,55,95,.14) !important;
+  box-shadow: 0 18px 48px rgba(33,71,112,.13) !important;
+}
+html[data-crew-theme="light"] .cz-menu-section>button.active {
+  background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(241,247,255,.94)) !important;
+  border-color: rgba(124,58,237,.46) !important;
+  box-shadow: 0 18px 48px rgba(33,71,112,.13), 0 0 0 2px rgba(168,85,247,.18) !important;
+}
+html[data-crew-theme="light"] .cz-menu-section svg,
+html[data-crew-theme="light"] .cz-feature-grid svg,
+html[data-crew-theme="light"] .cz-radar-screen svg,
+html[data-crew-theme="light"] .cz-weather-grid svg {
+  color: #0369a1 !important;
+  filter: none !important;
+}
+html[data-crew-theme="light"] .cz-menu-section small,
+html[data-crew-theme="light"] .cz-feature-grid small,
+html[data-crew-theme="light"] .cz-radar-screen p,
+html[data-crew-theme="light"] .cz-radar-screen span,
+html[data-crew-theme="light"] .cz-weather-grid p,
+html[data-crew-theme="light"] .cz-weather-grid small,
+html[data-crew-theme="light"] .cz-toolbox p,
+html[data-crew-theme="light"] .cz-mini-status p,
+html[data-crew-theme="light"] .cz-diagnostics span,
+html[data-crew-theme="light"] .cz-report-grid p {
+  color: var(--cc-light-muted) !important;
+}
+html[data-crew-theme="light"] .cz-radar-screen article strong,
+html[data-crew-theme="light"] .cz-weather-grid article strong,
+html[data-crew-theme="light"] .cz-report-grid article strong {
+  color: var(--cc-light-text) !important;
+}
+html[data-crew-theme="light"] .cz-tool-actions button,
+html[data-crew-theme="light"] .cz-settings-actions button,
+html[data-crew-theme="light"] .cz-roster-actions button {
+  background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(239,247,255,.88)) !important;
+  border-color: rgba(15,55,95,.16) !important;
+  color: var(--cc-light-text) !important;
+  box-shadow: 0 12px 28px rgba(33,71,112,.10) !important;
+}
+html[data-crew-theme="light"] .cz-tool-actions button:active,
+html[data-crew-theme="light"] .cz-settings-actions button:active,
+html[data-crew-theme="light"] .cz-roster-actions button:active,
+html[data-crew-theme="light"] .cz-menu-section>button:active {
+  transform: translateY(1px);
+}
+@media (max-width: 640px) {
+  .cz-menu-panel {
+    width: 100%;
+    border-left: 0;
+    padding: 18px 14px calc(170px + env(safe-area-inset-bottom)) !important;
+  }
+  .cz-menu-section>button {
+    min-height: 64px;
+    border-radius: 20px;
+  }
+  .cz-radar-screen,
+  .cz-weather-grid,
+  .cz-feature-grid,
+  .cz-report-grid,
+  .cz-finance-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
