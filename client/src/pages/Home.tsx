@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.5.0';
-const CREWCHECK_UI_CORE_NOTE = 'v13.5.0: auditoria visual mobile, tema claro premium, toggles CrewCheck e roster EFB polish';
+const DEFAULT_VERSION = '13.5.1';
+const CREWCHECK_UI_CORE_NOTE = 'v13.5.1: hotfix visual mobile, menu rolavel e tema claro premium';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1115,7 +1115,6 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  useWeatherLandingMonitor(flightEvent);
   return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
@@ -1367,6 +1366,7 @@ export default function Home() {
   const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
+  useWeatherLandingMonitor(flightEvent);
 
   useEffect(() => {
     const mode = storage.get('crewcheck_theme_mode', storage.get('crewcheck_light_premium', '0') === '1' ? 'light' : 'dark');
