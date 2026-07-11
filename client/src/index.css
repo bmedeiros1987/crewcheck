@@ -16581,3 +16581,10 @@ html[data-crew-theme="light"] .cz-wakeup-card input,html[data-crew-theme="light"
 .cz-diagnostics-grid p{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin:8px 0;padding:10px;border-radius:16px;background:rgba(255,255,255,.055);min-width:0}
 .cz-diagnostics-grid p strong,.cz-diagnostics-grid p small{min-width:0;overflow-wrap:break-word}.cz-diagnostics-grid p small{grid-column:1/-1;opacity:.76}.cz-diagnostics-grid .ok{color:#22c55e;font-weight:900}.cz-diagnostics-grid .warn{color:#f59e0b;font-weight:900}
 html[data-crew-theme="light"] .cz-diagnostics-grid article{background:#fff;border-color:rgba(15,23,42,.10);box-shadow:0 16px 36px rgba(15,23,42,.08)}html[data-crew-theme="light"] .cz-diagnostics-grid p{background:rgba(15,23,42,.04)}
+
+
+/* CrewCheck v13.6.7 — Boot Rescue / Safe Start */
+.cz-opening-video{z-index:9999}
+.cz-opening-video button{touch-action:manipulation;position:relative;z-index:2}
+.cz-opening-video small{display:block;margin:10px 0;color:#bae6fd;font-weight:800}
+.cz-app[data-view="diagnostics"]{min-height:100dvh}

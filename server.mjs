@@ -763,6 +763,13 @@ function handleReliabilitySelfTest(req, res) {
   return sendJson(res, 200, { ok:true, version:'13.6.6', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
+
+function handleCrewCheckRepairPage(req, res) {
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><title>CrewCheck — Reparo Seguro</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px;background:#06101d;color:white;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}main{max-width:620px;width:100%;border:1px solid rgba(255,255,255,.16);border-radius:28px;padding:24px;background:linear-gradient(145deg,rgba(15,23,42,.96),rgba(8,47,73,.82));box-shadow:0 24px 80px rgba(0,0,0,.35)}h1{margin:0 0 10px;font-size:28px}p{color:#cbd5e1;line-height:1.55}button,a{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;border-radius:18px;border:0;margin-top:12px;font-weight:900;text-decoration:none}button{background:#22d3ee;color:#082f49}a{background:rgba(255,255,255,.1);color:white;border:1px solid rgba(255,255,255,.16)}small{display:block;margin-top:14px;color:#94a3b8}</style></head><body><main><h1>CrewCheck — Reparo Seguro</h1><p>Use esta página quando o app ficar preso na tela inicial. Ela remove cache operacional antigo, desativa service worker antigo e abre o app em modo Diagnóstico. Login, escala ativa e preferências principais são preservados sempre que o navegador permitir.</p><button onclick="repair()">Reparar e abrir modo seguro</button><a href="/?safe=1&v=13.6.7">Abrir somente em modo seguro</a><a href="/api/reliability/health">Ver saúde do sistema</a><small id="status">Nenhuma chave ou segredo é exibido nesta página.</small></main><script>async function repair(){const status=document.getElementById('status');status.textContent='Reparando cache local...';try{const keep=new Set(['crewcheck_auth_token','crewcheck_user','crewcheck_theme_mode','crewcheck_light_premium','crewcheck_language','crewcheck_latest_roster_bundle','crewcheck_last_roster','crewcheck_roster_sync_latest_v108134','crewcheck_roster_bundle_v1','crewcheck_telegram_chat_id','crewcheck_wakeup_phone','crewcheck_wakeup_channel','crewcheck_act_km_metric_brl','crewcheck_act_chief_sector_brl','crewcheck_act_instructor_sector_brl','crewcheck_act_night_hour_brl','crewcheck_salary_base_brl','crewcheck_perdiem_meal_brl','crewcheck_perdiem_breakfast_brl','crewcheck_virtual_base','crewcheck_manual_route_origin','crewcheck_last_geo','crewcheck_my_car_parking_position_v1','crewcheck_profile_avatar','crewcheck_profile_display_name','crewcheck_profile_company','crewcheck_profile_base','crewcheck_profile_rank','crewcheck_app_mode']);for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith('crewcheck_')&&!keep.has(k))localStorage.removeItem(k)}sessionStorage.clear();sessionStorage.setItem('crewcheck_force_view_once','diagnostics');localStorage.setItem('crewcheck_intro_seen_v1278','1');localStorage.setItem('crewcheck_external_repair_at',new Date().toISOString())}catch(e){}try{if('serviceWorker'in navigator){const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(r=>r.unregister()))}}catch(e){}try{if('caches'in window){const names=await caches.keys();await Promise.all(names.filter(n=>/crewcheck|workbox/i.test(n)).map(n=>caches.delete(n)))}}catch(e){}status.textContent='Reparo concluído. Abrindo modo seguro...';setTimeout(()=>{location.href='/?safe=1&v=13.6.7'},450)}</script></body></html>`;
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(html);
+}
+
 function serveStatic(req, res, url) {
   let filePath = path.join(distDir, decodeURIComponent(url.pathname));
   if (url.pathname === '/' || !path.extname(filePath)) filePath = path.join(distDir, 'index.html');
@@ -784,6 +791,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start') return handleCrewCheckRepairPage(req, res);
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
   if (url.pathname === '/api/reliability/self-test') return handleReliabilitySelfTest(req, res);
@@ -809,7 +817,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.6', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.7', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
