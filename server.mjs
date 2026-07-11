@@ -565,29 +565,13 @@ async function handleOsmRoutePreview(req, res, url) {
     return sendJson(res, 200, { ok: true, configured: true, mode: profile === 'foot' ? 'walking' : 'driving', distanceMeters: route.distance || 0, distanceText: formatMeters(route.distance || 0), durationText: formatDuration(route.duration || 0), durationInTrafficText: '', polyline: route.geometry || '', message: 'Rota de referência calculada. Não inclui trânsito em tempo real.', attribution: '© OpenStreetMap contributors' });
   } catch { return sendJson(res, 200, { ok: false, configured: true, message: 'Rota de referência indisponível agora.' }); }
 }
-function handleTelegramHealth(req, res) {
-  const configured = Boolean(envAny(['TELEGRAM_BOT_TOKEN']));
-  return sendJson(res, 200, { ok: configured, configured, message: configured ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
-}
-async function handleTelegramWebhook(req, res) {
-  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
-  let body = '';
-  req.on('data', (chunk) => { body += chunk; if (body.length > 1000000) req.destroy(); });
-  req.on('end', () => sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' }));
-}
-function handleAlarmHealth(req, res) {
-  const telegram = Boolean(envAny(['TELEGRAM_BOT_TOKEN']));
-  const voice = Boolean(envAny(['INFOBIP_API_KEY', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
-  return sendJson(res, 200, { ok: telegram || voice, configured: telegram || voice, telegram, voice, message: telegram || voice ? 'Despertador pronto para configuração.' : 'Despertador aguardando configuração de canal.' });
-}
 
-
-function readJsonBody(req, maxBytes = 1_000_000) {
+function readJsonBody(req, limit = 1_000_000) {
   return new Promise((resolve) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
-      if (body.length > maxBytes) req.destroy();
+      if (body.length > limit) req.destroy();
     });
     req.on('end', () => {
       try { resolve(body ? JSON.parse(body) : {}); }
@@ -596,138 +580,147 @@ function readJsonBody(req, maxBytes = 1_000_000) {
     req.on('error', () => resolve({}));
   });
 }
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
+
+function telegramToken() {
+  return envAny(['TELEGRAM_BOT_TOKEN', 'CREWCHECK_TELEGRAM_BOT_TOKEN']);
 }
-function validEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+
+function telegramDefaultChatId() {
+  return envAny(['TELEGRAM_DEFAULT_CHAT_ID', 'CREWCHECK_TELEGRAM_CHAT_ID']);
 }
-function blockedCorporateDomains() {
-  const raw = envAny(['CREWCHECK_BLOCKED_EMAIL_DOMAINS']) || 'latam.com,latamairlines.com,lan.com,tam.com.br';
-  return raw.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+
+function publicUrl() {
+  return String(envAny(['CREWCHECK_PUBLIC_URL', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL']) || '').replace(/\/$/, '');
 }
-function isBlockedCorporateEmail(email) {
-  const domain = normalizeEmail(email).split('@')[1] || '';
-  return blockedCorporateDomains().some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`));
+
+function telegramApiUrl(method) {
+  const token = telegramToken();
+  return token ? `https://api.telegram.org/bot${token}/${method}` : '';
 }
-function authSecret() {
-  return envAny(['CREWCHECK_AUTH_SECRET', 'SESSION_SECRET', 'JWT_SECRET']) || 'crewcheck-local-session-change-me';
+
+function telegramConfigured() {
+  return Boolean(telegramToken());
 }
-function authAdminEmails() {
-  const raw = envAny(['CREWCHECK_ADMIN_EMAILS']) || 'bmedeiros1987@gmail.com,bruno@crewcheck.local';
-  return raw.split(',').map((item) => normalizeEmail(item)).filter(Boolean);
+
+function buildTelegramReply(text = '') {
+  const value = String(text || '').toLowerCase();
+  if (/\/start|ajuda|help|comandos/.test(value)) {
+    return [
+      'Olá, sou o concierge da escala do CrewCheck.',
+      '',
+      'Posso ajudar com:',
+      '• próxima programação',
+      '• minha escala',
+      '• previsão do tempo',
+      '• portão/status do voo',
+      '• hotéis e academias',
+      '• despertador inteligente',
+      '',
+      'Para detalhes completos, mantenha sua escala ativa no app.'
+    ].join('\n');
+  }
+  if (/pr[oó]xim|voo|programa/.test(value)) return 'Próxima programação: consulte o card principal no CrewCheck. Quando a escala estiver sincronizada no app, eu retorno horários, rota e alertas.';
+  if (/escala|roster/.test(value)) return 'Sua escala fica protegida no CrewCheck. Use o app para importar/sincronizar o PDF e depois peça “próxima programação”.';
+  if (/volto|base|retorno/.test(value)) return 'Para calcular retorno à base, preciso da escala ativa. Abra o CrewCheck, confirme a escala e consulte o concierge novamente.';
+  if (/tempo|meteor|metar|taf|previs/.test(value)) return 'Meteorologia: consulte a aba Meteorologia no CrewCheck para METAR/TAF e previsão traduzida. Também posso receber comandos de previsão quando a escala estiver ativa.';
+  if (/port[aã]o|gate|status|radar/.test(value)) return 'Radar: o CrewCheck consulta portão, status e terminal quando disponível. Dados não confirmados aparecem como “a confirmar”.';
+  if (/hotel|academ|wellhub|smart fit|crossfit|pilates/.test(value)) return 'Hotéis e academias: abra Hotéis/Academias no CrewCheck. O sistema usa o hotel/pernoite detectado e oferece busca de entorno.';
+  if (/despert|wake|alarme|soneca/.test(value)) return 'Despertador Inteligente: configure o canal no app. Telegram fica disponível quando seu chat estiver vinculado; ligação depende do canal de voz configurado.';
+  return 'Recebi sua mensagem. Para uma resposta operacional completa, mantenha sua escala ativa no CrewCheck e use comandos como “próxima programação”, “meteorologia”, “radar”, “hotéis”, “academias” ou “despertador”.';
 }
-function base64UrlEncode(value) {
-  return Buffer.from(value).toString('base64url');
-}
-function base64UrlDecode(value) {
-  return Buffer.from(String(value || ''), 'base64url').toString('utf8');
-}
-function signAuthPayload(payload) {
-  return crypto.createHmac('sha256', authSecret()).update(payload).digest('base64url');
-}
-function createAuthToken(user) {
-  const exp = Date.now() + 1000 * 60 * 60 * 24 * 30;
-  const payload = base64UrlEncode(JSON.stringify({ sub: user.id, email: user.email, exp }));
-  const sig = signAuthPayload(payload);
-  return { token: `crewcheck.${payload}.${sig}`, expiresAt: new Date(exp).toISOString() };
-}
-function verifyAuthToken(req) {
-  const header = String(req.headers.authorization || '');
-  const token = header.replace(/^Bearer\s+/i, '').trim();
-  const parts = token.split('.');
-  if (parts.length !== 3 || parts[0] !== 'crewcheck') return null;
-  const expected = signAuthPayload(parts[1]);
-  if (expected !== parts[2]) return null;
+
+async function sendTelegramMessage(chatId, text, extra = {}) {
+  const url = telegramApiUrl('sendMessage');
+  if (!url) return { ok: false, configured: false, message: 'Concierge aguardando configuração.' };
+  if (!chatId) return { ok: false, configured: true, message: 'Chat do Telegram não configurado.' };
   try {
-    const payload = JSON.parse(base64UrlDecode(parts[1]));
-    if (!payload?.email || Number(payload.exp || 0) < Date.now()) return null;
-    return publicAuthUser(payload.email);
-  } catch { return null; }
+    const payload = { chat_id: chatId, text: String(text || '').slice(0, 3900), parse_mode: 'HTML', disable_web_page_preview: true, ...extra };
+    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await response.json().catch(() => ({}));
+    return { ok: Boolean(response.ok && data.ok !== false), configured: true, status: response.status, data, message: response.ok ? 'Mensagem enviada.' : 'Mensagem não entregue agora.' };
+  } catch {
+    return { ok: false, configured: true, message: 'Mensagem não entregue agora.' };
+  }
 }
-function publicAuthUser(email, extra = {}) {
-  const clean = normalizeEmail(email);
-  const name = String(extra.name || clean.split('@')[0] || 'Tripulante').replace(/[._-]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
-  const admin = authAdminEmails().includes(clean);
-  return {
-    id: crypto.createHash('sha256').update(clean).digest('hex').slice(0, 16),
-    name,
-    email: clean,
-    emailVerified: true,
-    role: admin ? 'admin' : 'crew',
-    rank: String(extra.rank || extra.role || 'CCM'),
-    base: String(extra.base || 'BSB'),
-    crewId: null,
-    hasVirtualBase: Boolean(extra.hasVirtualBase),
-    virtualBase: extra.virtualBase || null,
-    subscriptionPlan: admin ? 'admin' : 'free',
-    subscriptionStatus: admin ? 'active' : 'trial',
-    premiumAccess: admin,
-    trialEligible: !admin,
-    trialExpiresAt: admin ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    premiumExpiresAt: null,
-    phoneCountryIso: extra.phoneCountryIso || null,
-    phoneCountryCode: extra.phoneCountryCode || null,
-    phoneE164: extra.phoneE164 || null,
-  };
+
+function handleTelegramHealth(req, res) {
+  const webhookUrl = publicUrl() ? `${publicUrl()}/api/telegram/webhook` : '';
+  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), message: telegramConfigured() ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
 }
-function sendAuthSession(res, user) {
-  const token = createAuthToken(user);
-  return sendJson(res, 200, { ok: true, user, token: token.token, expiresAt: token.expiresAt, message: 'Acesso autorizado.' });
+
+async function handleTelegramSend(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Envio do concierge pronto.' });
+  const payload = await readJsonBody(req);
+  const chatId = String(payload.chatId || payload.chat_id || telegramDefaultChatId() || '').trim();
+  const text = String(payload.text || payload.message || '').trim();
+  if (!text) return sendJson(res, 400, { ok: false, message: 'Mensagem vazia.' });
+  const result = await sendTelegramMessage(chatId, text);
+  return sendJson(res, 200, result);
 }
-function handleAuthConfig(req, res) {
-  return sendJson(res, 200, { ok: true, emailVerificationRequired: false, captchaRequired: false, turnstileSiteKey: null, captchaProvider: null, message: 'Acesso operacional disponível.' });
+
+async function handleTelegramSetupWebhook(req, res) {
+  const url = telegramApiUrl('setWebhook');
+  const base = publicUrl();
+  if (!url || !base) return sendJson(res, 200, { ok: false, configured: Boolean(url), message: 'Webhook aguardando configuração do endereço público.' });
+  const secret = envAny(['TELEGRAM_WEBHOOK_SECRET']);
+  try {
+    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `${base}/api/telegram/webhook`, ...(secret ? { secret_token: secret } : {}), allowed_updates: ['message'], drop_pending_updates: false }) });
+    const data = await response.json().catch(() => ({}));
+    return sendJson(res, 200, { ok: Boolean(response.ok && data.ok !== false), configured: true, message: response.ok ? 'Webhook atualizado.' : 'Webhook não atualizado agora.' });
+  } catch {
+    return sendJson(res, 200, { ok: false, configured: true, message: 'Webhook não atualizado agora.' });
+  }
 }
-async function handleAuthLogin(req, res) {
-  const body = await readJsonBody(req);
-  const email = normalizeEmail(body.email);
-  const password = String(body.password || '');
-  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
-  if (isBlockedCorporateEmail(email)) return sendJson(res, 403, { ok: false, message: 'Use seu e-mail pessoal para acessar o CrewCheck.' });
-  if (password.length < 6) return sendJson(res, 400, { ok: false, message: 'Senha inválida. Informe no mínimo 6 caracteres.' });
-  return sendAuthSession(res, publicAuthUser(email));
+
+async function handleTelegramWebhook(req, res) {
+  const secret = envAny(['TELEGRAM_WEBHOOK_SECRET']);
+  if (secret) {
+    const received = String(req.headers['x-telegram-bot-api-secret-token'] || '');
+    if (received !== secret) return sendJson(res, 403, { ok: false, message: 'Webhook não autorizado.' });
+  }
+  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
+  const update = await readJsonBody(req);
+  const message = update?.message || update?.edited_message || {};
+  const chatId = message?.chat?.id;
+  const text = String(message?.text || message?.caption || '').trim();
+  if (chatId && text) await sendTelegramMessage(chatId, buildTelegramReply(text));
+  else if (chatId && (message?.voice || message?.audio)) await sendTelegramMessage(chatId, 'Recebi seu áudio. A transcrição ainda não está configurada neste ambiente; envie por texto que eu respondo por texto.');
+  return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
 }
-async function handleAuthRegister(req, res) {
-  const body = await readJsonBody(req);
-  const email = normalizeEmail(body.email);
-  const password = String(body.password || '');
-  const confirmPassword = String(body.confirmPassword || password);
-  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
-  if (isBlockedCorporateEmail(email)) return sendJson(res, 403, { ok: false, message: 'Use seu e-mail pessoal para acessar o CrewCheck.' });
-  if (password.length < 6) return sendJson(res, 400, { ok: false, message: 'A senha precisa ter no mínimo 6 caracteres.' });
-  if (password !== confirmPassword) return sendJson(res, 400, { ok: false, message: 'As senhas não conferem.' });
-  const name = String(body.name || `${body.firstName || ''} ${body.lastName || ''}`).trim();
-  return sendAuthSession(res, publicAuthUser(email, { ...body, name }));
+
+function alarmChannelConfigured(channel = '') {
+  const value = String(channel || '').toLowerCase();
+  const telegram = telegramConfigured();
+  const voice = Boolean(envAny(['INFOBIP_API_KEY', 'INFOBIP_BASE_URL', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
+  if (value.includes('telegram') && value.includes('liga')) return telegram || voice;
+  if (value.includes('telegram')) return telegram;
+  if (value.includes('liga') || value.includes('voz')) return voice;
+  return telegram || voice;
 }
-function handleAuthMe(req, res) {
-  const user = verifyAuthToken(req);
-  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada. Entre novamente.' });
-  return sendJson(res, 200, { ok: true, user });
+
+function handleAlarmHealth(req, res) {
+  const telegram = telegramConfigured();
+  const voice = Boolean(envAny(['INFOBIP_API_KEY', 'INFOBIP_BASE_URL', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
+  return sendJson(res, 200, { ok: telegram || voice, configured: telegram || voice, telegram, voice, channels: { telegram, call: voice, both: telegram || voice }, message: telegram || voice ? 'Despertador pronto para configuração.' : 'Despertador aguardando configuração de canal.' });
 }
-function handleAuthLogout(req, res) {
-  return sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
+
+async function handleAlarmPreview(req, res, url) {
+  const presentation = String(url.searchParams.get('presentation') || '').trim();
+  const lead = Number(url.searchParams.get('lead') || 90);
+  const channel = String(url.searchParams.get('channel') || 'telegram').trim();
+  return sendJson(res, 200, { ok: true, configured: alarmChannelConfigured(channel), presentation, leadMinutes: Number.isFinite(lead) ? lead : 90, channel, maxCallsPerLayover: 2, snoozeTelegram: telegramConfigured(), message: 'Prévia do despertador calculada no dispositivo. Confirme o horário no app antes de ativar.' });
 }
-async function handleAuthVerifyEmail(req, res) {
-  const body = await readJsonBody(req);
-  const email = normalizeEmail(body.email);
-  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
-  return sendAuthSession(res, publicAuthUser(email));
-}
-async function handleAuthResendVerification(req, res) {
-  const body = await readJsonBody(req);
-  const email = normalizeEmail(body.email);
-  return sendJson(res, 200, { ok: true, sent: false, emailSent: false, message: validEmail(email) ? 'Conta liberada para acesso operacional.' : 'Informe um e-mail válido.' });
-}
-async function handleAuthRequestReset(req, res) {
-  const body = await readJsonBody(req);
-  const email = normalizeEmail(body.email);
-  return sendJson(res, 200, { ok: true, emailSent: false, message: validEmail(email) ? 'Redefinição operacional disponível no app.' : 'Informe um e-mail válido.' });
-}
-async function handleAuthResetPassword(req, res) {
-  const body = await readJsonBody(req);
-  const email = normalizeEmail(body.email);
-  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
-  return sendJson(res, 200, { ok: true, message: 'Senha atualizada para acesso operacional.' });
+
+async function handleAlarmTest(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Teste do despertador pronto.' });
+  const payload = await readJsonBody(req);
+  const channel = String(payload.channel || 'telegram').toLowerCase();
+  const chatId = String(payload.chatId || telegramDefaultChatId() || '').trim();
+  const text = String(payload.message || 'Teste do Despertador Inteligente CrewCheck.').trim();
+  let telegramResult = null;
+  if (channel.includes('telegram') || channel.includes('ambos')) telegramResult = await sendTelegramMessage(chatId, text);
+  const voiceConfigured = Boolean(envAny(['INFOBIP_API_KEY', 'INFOBIP_BASE_URL', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
+  return sendJson(res, 200, { ok: Boolean((telegramResult && telegramResult.ok) || voiceConfigured), configured: Boolean((telegramResult && telegramResult.configured) || voiceConfigured), telegram: telegramResult, voice: { configured: voiceConfigured, message: voiceConfigured ? 'Canal de ligação configurado para uso operacional.' : 'Canal de ligação aguardando configuração.' }, message: 'Teste processado.' });
 }
 
 function serveStatic(req, res, url) {
@@ -768,7 +761,11 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/osm/route-preview') return handleOsmRoutePreview(req, res, url);
   if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
+  if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
+  if (url.pathname === '/api/telegram/setup-webhook') return handleTelegramSetupWebhook(req, res, url);
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
+  if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
+  if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
   if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.2' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
