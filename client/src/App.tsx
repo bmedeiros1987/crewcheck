@@ -132,15 +132,9 @@ export default function App() {
     applySavedTheme();
 
     try {
-<<<<<<< ours
       window.localStorage.setItem('crewcheck_last_loaded_version', '13.5.3');
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=13.5.3').then((registration) => {
-=======
-      window.localStorage.setItem('crewcheck_last_loaded_version', '13.5.0');
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=13.5.0').then((registration) => {
->>>>>>> theirs
           registration.update().catch(() => undefined);
           navigator.serviceWorker.controller?.postMessage('CLEAR_CREWCHECK_CACHE');
         }).catch(() => undefined);
