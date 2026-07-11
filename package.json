@@ -1,6 +1,11 @@
 {
+<<<<<<< ours
   "name": "crewcheck-v13-2-0-pr1-hotfix",
   "version": "13.6.1",
+=======
+  "name": "crewcheck-v12-5-78-functional-final-restore-realdata",
+  "version": "13.5.0",
+>>>>>>> theirs
   "type": "module",
   "private": true,
   "description": "CrewCheck v13.6.1 — mobile layout rescue",
