@@ -482,6 +482,104 @@ async function handleAirportWeather(req, res, url) {
   }
 }
 
+
+const CREWCHECK_AIRPORT_ICAO = {
+  BSB:'SBBR', GRU:'SBGR', CGH:'SBSP', VCP:'SBKP', SDU:'SBRJ', GIG:'SBGL', CNF:'SBCF', PLU:'SBBH',
+  CWB:'SBCT', POA:'SBPA', FLN:'SBFL', SSA:'SBSV', REC:'SBRF', FOR:'SBFZ', BEL:'SBBE', MAO:'SBEG',
+  SLZ:'SBSL', NAT:'SBSG', MCZ:'SBMO', AJU:'SBAR', VIX:'SBVT', BVB:'SBBV', MCP:'SBMQ', PMW:'SBPJ',
+  THE:'SBTE', GYN:'SBGO', CGB:'SBCY', CGR:'SBCG', PVH:'SBPV', RBR:'SBRB', JPA:'SBJP', IOS:'SBIL'
+};
+function airportIcao(value) {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return '';
+  if (/^[A-Z]{4}$/.test(raw)) return raw;
+  return CREWCHECK_AIRPORT_ICAO[raw] || raw;
+}
+function safeText(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+async function safeJsonFetch(url, options = {}, timeoutMs = 2400) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    const text = await response.text().catch(() => '');
+    if (!response.ok) return { response, payload: null, text, ok: false, contentType };
+    if (contentType.includes('application/json') || /^\s*[\[{]/.test(text)) {
+      try { return { response, payload: JSON.parse(text), text, ok: true, contentType }; }
+      catch { return { response, payload: null, text, ok: false, contentType }; }
+    }
+    return { response, payload: null, text, ok: false, contentType };
+  } finally { clearTimeout(timer); }
+}
+async function handleAviationWeather(req, res, url) {
+  const airport = String(url.searchParams.get('airport') || url.searchParams.get('station') || url.searchParams.get('id') || '').trim().toUpperCase();
+  const type = String(url.searchParams.get('type') || 'metar').trim().toLowerCase();
+  const station = airportIcao(airport);
+  if (!station) return sendJson(res, 200, { ok: false, configured: false, message: 'Informe um aeroporto para consultar meteorologia.' });
+  const endpointType = type === 'taf' ? 'taf' : 'metar';
+  const apiUrl = `https://aviationweather.gov/api/data/${endpointType}?ids=${encodeURIComponent(station)}&format=json`;
+  try {
+    const { payload, text, ok } = await safeJsonFetch(apiUrl, { headers: { accept: 'application/json' } }, 3200);
+    if (ok && Array.isArray(payload)) {
+      const row = payload[0] || {};
+      const raw = safeText(row.rawOb || row.rawTAF || row.raw_text || row.raw || '');
+      return sendJson(res, 200, { ok: Boolean(raw), configured: true, airport, station, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), message: raw ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
+    }
+    if (text && !text.trim().startsWith('<')) return sendJson(res, 200, { ok: Boolean(text.trim()), configured: true, airport, station, type: endpointType.toUpperCase(), raw: safeText(text), message: text.trim() ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
+    return sendJson(res, 200, { ok: false, configured: true, airport, station, type: endpointType.toUpperCase(), message: 'Meteorologia indisponível agora.' });
+  } catch {
+    return sendJson(res, 200, { ok: false, configured: true, airport, station, type: endpointType.toUpperCase(), message: 'Meteorologia indisponível agora.' });
+  }
+}
+function parseCoords(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lon = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+function osmEnabled() {
+  return String(process.env.OSM_ENABLE_PUBLIC_SERVICES || '').toLowerCase() === 'true' || Boolean(envAny(['OSM_ROUTING_URL']));
+}
+function handleOsmHealth(req, res) {
+  return sendJson(res, 200, { ok: osmEnabled(), configured: osmEnabled(), message: osmEnabled() ? 'Mapa de referência disponível.' : 'Mapa de referência disponível para visualização; cálculo interno requer configuração.', routing: osmEnabled(), tileUrlConfigured: Boolean(envAny(['OSM_TILE_URL'])), routingUrlConfigured: Boolean(envAny(['OSM_ROUTING_URL'])) });
+}
+async function handleOsmRoutePreview(req, res, url) {
+  const mode = String(url.searchParams.get('mode') || 'driving').toLowerCase();
+  const origin = parseCoords(url.searchParams.get('origin') || url.searchParams.get('from'));
+  const destination = parseCoords(url.searchParams.get('destination') || url.searchParams.get('to'));
+  if (!origin || !destination) return sendJson(res, 200, { ok: false, configured: osmEnabled(), message: 'Mapa de referência disponível. Para cálculo interno por mapa aberto, informe origem e destino por coordenadas.' });
+  if (!osmEnabled()) return sendJson(res, 200, { ok: false, configured: false, message: 'Cálculo por mapa de referência aguardando configuração.' });
+  const profile = mode === 'walking' || mode === 'foot' ? 'foot' : 'car';
+  const base = (envAny(['OSM_ROUTING_URL']) || 'https://router.project-osrm.org').replace(/\/$/, '');
+  const apiUrl = `${base}/route/v1/${profile}/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=full&geometries=polyline&steps=true`;
+  try {
+    const { payload, ok } = await safeJsonFetch(apiUrl, { headers: { accept: 'application/json' } }, 2400);
+    const route = ok && Array.isArray(payload?.routes) ? payload.routes[0] : null;
+    if (!route) return sendJson(res, 200, { ok: false, configured: true, message: 'Rota de referência indisponível agora.' });
+    return sendJson(res, 200, { ok: true, configured: true, mode: profile === 'foot' ? 'walking' : 'driving', distanceMeters: route.distance || 0, distanceText: formatMeters(route.distance || 0), durationText: formatDuration(route.duration || 0), durationInTrafficText: '', polyline: route.geometry || '', message: 'Rota de referência calculada. Não inclui trânsito em tempo real.', attribution: '© OpenStreetMap contributors' });
+  } catch { return sendJson(res, 200, { ok: false, configured: true, message: 'Rota de referência indisponível agora.' }); }
+}
+function handleTelegramHealth(req, res) {
+  const configured = Boolean(envAny(['TELEGRAM_BOT_TOKEN']));
+  return sendJson(res, 200, { ok: configured, configured, message: configured ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
+}
+async function handleTelegramWebhook(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
+  let body = '';
+  req.on('data', (chunk) => { body += chunk; if (body.length > 1000000) req.destroy(); });
+  req.on('end', () => sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' }));
+}
+function handleAlarmHealth(req, res) {
+  const telegram = Boolean(envAny(['TELEGRAM_BOT_TOKEN']));
+  const voice = Boolean(envAny(['INFOBIP_API_KEY', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
+  return sendJson(res, 200, { ok: telegram || voice, configured: telegram || voice, telegram, voice, message: telegram || voice ? 'Despertador pronto para configuração.' : 'Despertador aguardando configuração de canal.' });
+}
+
 function serveStatic(req, res, url) {
   let filePath = path.join(distDir, decodeURIComponent(url.pathname));
   if (url.pathname === '/' || !path.extname(filePath)) filePath = path.join(distDir, 'index.html');
@@ -504,8 +602,17 @@ function serveStatic(req, res, url) {
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   if (url.pathname === '/api/weather/airport') return handleAirportWeather(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.5.8' });
+  if (url.pathname === '/api/aviation-weather') return handleAviationWeather(req, res, url);
+  if (url.pathname === '/api/maps/route-preview') return handleRoutePreview(req, res, url);
+  if (url.pathname === '/api/places/fitness') return handleFitness(req, res, url);
+  if (url.pathname === '/api/osm/health') return handleOsmHealth(req, res, url);
+  if (url.pathname === '/api/osm/route-preview') return handleOsmRoutePreview(req, res, url);
+  if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
+  if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
+  if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.2' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
+  if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
   return serveStatic(req, res, url);
 }).listen(port, () => console.log(`CrewCheck server listening on ${port}`));
