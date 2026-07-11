@@ -16572,3 +16572,12 @@ html, body, #root, .cz-app { width:100%; max-width:100vw; overflow-x:hidden !imp
 .cz-wakeup-card input,.cz-wakeup-card select{width:100%;min-width:0;border-radius:15px;border:1px solid rgba(148,163,184,.26);padding:12px 14px;background:rgba(15,23,42,.72);color:#fff;font-weight:800}
 html[data-crew-theme="light"] .cz-wakeup-card label{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.12)}
 html[data-crew-theme="light"] .cz-wakeup-card input,html[data-crew-theme="light"] .cz-wakeup-card select{background:#fff;color:#071427;border-color:rgba(15,23,42,.16)}
+
+
+/* CrewCheck v13.6.6 — Reliability Core / Diagnostics */
+.cz-diagnostics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:14px;width:100%;max-width:100%}
+.cz-diagnostics-grid article{border-radius:24px;padding:16px;background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.18);box-shadow:0 18px 45px rgba(0,0,0,.2);overflow:hidden}
+.cz-diagnostics-grid h2{font-size:1rem;margin:0 0 12px;font-weight:900}
+.cz-diagnostics-grid p{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin:8px 0;padding:10px;border-radius:16px;background:rgba(255,255,255,.055);min-width:0}
+.cz-diagnostics-grid p strong,.cz-diagnostics-grid p small{min-width:0;overflow-wrap:break-word}.cz-diagnostics-grid p small{grid-column:1/-1;opacity:.76}.cz-diagnostics-grid .ok{color:#22c55e;font-weight:900}.cz-diagnostics-grid .warn{color:#f59e0b;font-weight:900}
+html[data-crew-theme="light"] .cz-diagnostics-grid article{background:#fff;border-color:rgba(15,23,42,.10);box-shadow:0 16px 36px rgba(15,23,42,.08)}html[data-crew-theme="light"] .cz-diagnostics-grid p{background:rgba(15,23,42,.04)}
