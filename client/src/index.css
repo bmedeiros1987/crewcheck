@@ -14099,6 +14099,7 @@ html[data-crew-theme="light"] input { background: rgba(245,249,255,.92) !importa
 html[data-crew-theme="light"] .cz-bottom-nav { background: rgba(255,255,255,.84) !important; border-color: rgba(25,70,130,.14) !important; }
 html[data-crew-theme="light"] .cz-bottom-nav button.active { background: linear-gradient(135deg, rgba(42, 194, 255, .16), rgba(139, 92, 246, .14)) !important; }
 
+<<<<<<< ours
 /* CrewCheck v13.2.0 PR #1 Hotfix — módulos funcionais sem voltar layout antigo */
 .cz-crew-line{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.08);font-size:.9rem}
 .cz-crew-line span{opacity:.72;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
@@ -14204,16 +14205,24 @@ html[data-crew-theme="light"] .cz-bottom-nav button.active { background: linear-
 @media (min-width: 820px) { .cz-car-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 20px; } }
 
 /* CrewCheck v13.5.0 - Visual Mobile + Light Theme Audit */
+=======
+/* CrewCheck v13.5.0 — Visual Mobile + Light Theme Audit
+   Não altera regra de escala: apenas tokens, overflow, mobile polish e toggles. */
+>>>>>>> theirs
 :root {
   --cc-bottom-nav-space: 132px;
   --cc-safe-inline: clamp(14px, 4vw, 28px);
   --cc-ios-on: linear-gradient(135deg, #24d3ee 0%, #3478ff 46%, #9d4edd 100%);
   --cc-ios-off: linear-gradient(180deg, rgba(255,255,255,.16), rgba(148,163,184,.18));
 }
+<<<<<<< ours
 html,
 body,
 #root,
 .cz-app {
+=======
+html, body, #root, .cz-app {
+>>>>>>> theirs
   max-width: 100%;
   min-width: 0;
   overflow-x: hidden;
@@ -14226,6 +14235,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   min-height: 100dvh;
   padding-bottom: calc(var(--cc-bottom-nav-space) + env(safe-area-inset-bottom));
 }
+<<<<<<< ours
 .cz-app *,
 .cz-app *::before,
 .cz-app *::after {
@@ -14404,11 +14414,48 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 html[data-crew-theme="light"] {
   --cc-light-page: #f4f8ff;
   --cc-light-surface: rgba(255,255,255,.94);
+=======
+.cz-app *, .cz-app *::before, .cz-app *::after { box-sizing: border-box; max-width: 100%; min-width: 0; }
+.cz-kpi-row, .cz-money-row, .cz-info-duo, .cz-time-trio, .cz-flight-pills, .cz-roster-actions, .cz-shortcuts, .cz-feature-grid, .cz-report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cz-kpi, .cz-flight-card, .cz-smart-card, .cz-roster-card, .cz-empty-real, .cz-toolbox, .cz-menu-panel, .cz-complete-days article { max-width: 100%; overflow: hidden; }
+.cz-brand-row, .cz-title, .cz-section-head, .cz-kpi-row, .cz-flight-card, .cz-smart-card, .cz-stack-list, .cz-roster-actions, .cz-money-row, .cz-panel-head, .cz-complete-days { margin-left: var(--cc-safe-inline); margin-right: var(--cc-safe-inline); }
+.cz-bottom-nav { bottom: calc(12px + env(safe-area-inset-bottom)); width: min(100% - 24px, 560px); left: 50%; transform: translateX(-50%); }
+.cz-flight-head, .cz-airline, .cz-route, .cz-roster-main, .cz-crew-line { min-width: 0; }
+.cz-airline strong, .cz-airline em, .cz-roster-copy h3, .cz-roster-copy p, .cz-route span, .cz-route strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-latam-mark { width: 24px; height: 24px; font-size: 12px; display: inline-grid; place-items: center; }
+.cz-date-chip { flex: 0 0 auto; transform: scale(.92); transform-origin: right center; }
+.cz-route-arc svg { width: 20px; height: 20px; }
+.cz-flight-pills { display: grid; gap: 8px; margin: 12px 0; }
+.cz-flight-pills span { display: grid; gap: 2px; padding: 9px 10px; border-radius: 999px; background: rgba(93,231,255,.10); border: 1px solid rgba(93,231,255,.20); color: var(--cz-text, #f8fbff); font-size: 12px; line-height: 1.15; overflow: hidden; }
+.cz-flight-pills b { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; opacity: .72; }
+.cz-roster-timeline { position: relative; }
+.cz-roster-timeline::before { content: ''; position: absolute; left: 31px; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: linear-gradient(180deg, rgba(93,231,255,.65), rgba(139,92,246,.42), rgba(255,79,216,.22)); }
+.cz-roster-timeline .cz-roster-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; }
+.cz-roster-timeline .cz-roster-card::before { content: ''; position: absolute; left: 24px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%); border-radius: 999px; background: var(--cc-ios-on); box-shadow: 0 0 0 5px rgba(3,10,24,.88), 0 0 24px rgba(93,231,255,.38); }
+.cz-card-chevron { width: 18px; height: 18px; color: rgba(226,236,255,.72); flex: 0 0 auto; }
+.cz-roster-card.stay .cz-roster-icon, .cz-roster-card:has(.cz-roster-icon svg[data-lucide="hotel"]) .cz-roster-icon { background: linear-gradient(135deg, rgba(245,158,11,.24), rgba(251,191,36,.12)); color: #fbbf24; }
+.cz-money-row button { border: 1px solid rgba(34,211,238,.24); border-radius: 22px; padding: 14px; min-height: 82px; background: linear-gradient(145deg, rgba(13,27,48,.84), rgba(8,18,34,.72)); color: #fff; display: grid; gap: 4px; text-align: left; }
+.cz-money-row button svg { color: #67e8f9; }
+.cz-money-row button span { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.cz-money-row button strong { font-size: clamp(22px, 7vw, 34px); line-height: 1; }
+.cz-setting > span:last-child { width: 54px; height: 32px; border-radius: 999px; padding: 3px; background: var(--cc-ios-off) !important; border: 1px solid rgba(255,255,255,.18); box-shadow: inset 0 1px 4px rgba(0,0,0,.20); transition: background .22s ease, border-color .22s ease, transform .12s ease; }
+.cz-setting > span:last-child::after { content: ''; display: block; width: 24px; height: 24px; border-radius: 999px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.22); transform: translateX(0); transition: transform .24s cubic-bezier(.2,.8,.2,1); }
+.cz-setting > span:last-child.on { background: var(--cc-ios-on) !important; border-color: rgba(93,231,255,.45); }
+.cz-setting > span:last-child.on::after { transform: translateX(22px); }
+.cz-setting:active > span:last-child { transform: scale(.96); }
+.cz-setting:focus-visible { outline: 3px solid rgba(93,231,255,.42); outline-offset: 3px; }
+.cz-setting[disabled] { opacity: .55; pointer-events: none; }
+html[data-crew-theme="light"] {
+  --cc-light-page: #f4f8ff;
+  --cc-light-surface: rgba(255,255,255,.94);
+  --cc-light-surface-strong: #ffffff;
+>>>>>>> theirs
   --cc-light-text: #071427;
   --cc-light-muted: #4b6078;
   --cc-light-border: rgba(15,55,95,.14);
   --cc-light-pill: rgba(3,105,161,.09);
 }
+<<<<<<< ours
 html[data-crew-theme="light"] .cz-app {
   background: var(--cc-light-page) !important;
   color: var(--cc-light-text) !important;
@@ -14490,11 +14537,37 @@ html[data-crew-theme="light"] .cz-bottom-nav {
     padding: 14px;
   }
   .cz-route { grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr); }
+=======
+html[data-crew-theme="light"] .cz-app { background: var(--cc-light-page) !important; color: var(--cc-light-text) !important; }
+html[data-crew-theme="light"] .cz-brand-row, html[data-crew-theme="light"] .cz-kpi, html[data-crew-theme="light"] .cz-flight-card, html[data-crew-theme="light"] .cz-smart-card, html[data-crew-theme="light"] .cz-roster-card, html[data-crew-theme="light"] .cz-money-row button, html[data-crew-theme="light"] .cz-menu-panel, html[data-crew-theme="light"] .cz-toolbox, html[data-crew-theme="light"] .cz-empty-real, html[data-crew-theme="light"] .cz-complete-days article { background: var(--cc-light-surface) !important; color: var(--cc-light-text) !important; border-color: var(--cc-light-border) !important; box-shadow: 0 18px 48px rgba(33,71,112,.14) !important; }
+html[data-crew-theme="light"] .cz-flight-pills span, html[data-crew-theme="light"] .cz-routine-strip span, html[data-crew-theme="light"] .cz-complete-days header span { background: var(--cc-light-pill) !important; color: var(--cc-light-text) !important; border-color: rgba(3,105,161,.14) !important; }
+html[data-crew-theme="light"] .cz-roster-actions button, html[data-crew-theme="light"] .cz-tool-actions button, html[data-crew-theme="light"] .cz-settings-actions button { background: linear-gradient(135deg, rgba(3,105,161,.12), rgba(124,58,237,.10)) !important; color: var(--cc-light-text) !important; border-color: rgba(3,105,161,.20) !important; }
+html[data-crew-theme="light"] p, html[data-crew-theme="light"] small, html[data-crew-theme="light"] span { color: var(--cc-light-muted); }
+html[data-crew-theme="light"] strong, html[data-crew-theme="light"] h1, html[data-crew-theme="light"] h2, html[data-crew-theme="light"] h3, html[data-crew-theme="light"] b { color: var(--cc-light-text); }
+html[data-crew-theme="light"] .cz-bottom-nav { background: rgba(255,255,255,.92) !important; color: var(--cc-light-text) !important; border-color: var(--cc-light-border) !important; }
+html[data-crew-theme="light"] .cz-card-chevron, html[data-crew-theme="light"] .cz-menu-section svg { color: #0369a1; }
+@media (max-width: 640px) {
+  :root { --cc-bottom-nav-space: 146px; --cc-safe-inline: 14px; }
+  .cz-app { padding-bottom: calc(156px + env(safe-area-inset-bottom)); }
+  .cz-brand-row { align-items: center; }
+  .cz-brand-lockup { min-width: 0; }
+  .cz-brand-lockup small, .cz-pills { display: none; }
+  .cz-kpi-row, .cz-money-row, .cz-info-duo, .cz-time-trio, .cz-flight-pills { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 9px; }
+  .cz-roster-actions { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 8px; }
+  .cz-roster-actions button { min-height: 44px; padding: 9px 7px; font-size: 12px; }
+  .cz-flight-card { border-radius: 24px; padding: 14px; }
+  .cz-flight-head { gap: 8px; }
+  .cz-airline { gap: 6px; }
+  .cz-airline strong { font-size: 13px; }
+  .cz-airline em { font-size: 12px; }
+  .cz-route { grid-template-columns: minmax(0,1fr) 58px minmax(0,1fr); }
+>>>>>>> theirs
   .cz-route strong { font-size: clamp(24px, 9vw, 38px); }
   .cz-time-trio div { padding: 10px; }
   .cz-time-trio strong { font-size: clamp(18px, 6vw, 26px); }
   .cz-kpi { padding: 12px; }
   .cz-kpi strong { font-size: clamp(22px, 8vw, 34px); }
+<<<<<<< ours
   .cz-roster-time {
     font-size: 12px;
     white-space: nowrap;
@@ -16241,4 +16314,11 @@ html[data-crew-theme="light"] .cz-smart-card p {
     flex-basis: 100% !important;
     min-width: 100% !important;
   }
+=======
+  .cz-roster-timeline::before { left: 25px; }
+  .cz-roster-timeline .cz-roster-card::before { left: 18px; }
+  .cz-roster-main { padding-left: 18px; }
+  .cz-roster-time { font-size: 12px; white-space: nowrap; }
+  .cz-menu-panel { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+>>>>>>> theirs
 }
