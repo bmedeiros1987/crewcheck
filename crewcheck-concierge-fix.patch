@@ -1,0 +1,291 @@
+cd ~/crewcheck
+cat > crewcheck-concierge-fix.patch <<'PATCH'
+From 9a767cdc8d0c30ae9311501b3132c46808b72096 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 11 Jul 2026 13:57:26 +0000
+Subject: [PATCH] Fix Telegram Concierge webhook and in-app assistant
+
+---
+ client/src/index.css                          |  10 ++
+ client/src/lib/telegramConciergeClient.ts     |  20 +++
+ client/src/pages/Home.tsx                     |  15 ++-
+ docs/19_V13_5_0_VISUAL_MOBILE_LIGHT_THEME.md  |   1 +
+ .../regression-v13-5-0-telegram-concierge.mjs |   6 +-
+ server.mjs                                    | 118 ++++++++++++++++++
+ 6 files changed, 165 insertions(+), 5 deletions(-)
+
+diff --git a/client/src/index.css b/client/src/index.css
+index 48a5755..51eaa30 100644
+--- a/client/src/index.css
++++ b/client/src/index.css
+@@ -14456,3 +14456,13 @@ html[data-crew-theme="light"] .cz-telegram-connect input { color:#071427 !import
+ html[data-crew-theme="light"] .cz-telegram-hero p,
+ html[data-crew-theme="light"] .cz-concierge-switches button b { color:#4b6078; }
+ @media (max-width:640px){ .cz-telegram-hero,.cz-concierge-switches{grid-template-columns:1fr;} .cz-telegram-hero article{padding:18px;} }
++.cz-concierge-chat label { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; margin:12px 0; }
++.cz-concierge-chat input { min-height:54px; border-radius:18px; border:1px solid rgba(137,163,255,.20); background:rgba(2,10,24,.36); color:#fff; padding:0 14px; font-weight:800; }
++.cz-concierge-chat label button { min-height:54px; border-radius:18px; border:0; padding:0 16px; color:#061021; font-weight:950; background:linear-gradient(100deg,#5de7ff,#a855f7 54%,#ff4fd8); }
++.cz-concierge-answer { margin-top:12px; border:1px solid rgba(46,230,184,.20); border-radius:22px; padding:16px; background:linear-gradient(180deg,rgba(46,230,184,.08),rgba(4,12,26,.74)); }
++.cz-concierge-answer strong { color:#2ee6b8; font-size:18px; }
++.cz-concierge-answer p { color:rgba(226,232,240,.82); margin:8px 0 0; line-height:1.45; }
++html[data-crew-theme="light"] .cz-concierge-chat input,
++html[data-crew-theme="light"] .cz-concierge-answer { background:rgba(255,255,255,.92) !important; color:#071427 !important; border-color:rgba(15,55,95,.14) !important; }
++html[data-crew-theme="light"] .cz-concierge-answer p { color:#4b6078; }
++@media (max-width:640px){ .cz-concierge-chat label{grid-template-columns:1fr;} .cz-concierge-chat label button{width:100%;} }
+diff --git a/client/src/lib/telegramConciergeClient.ts b/client/src/lib/telegramConciergeClient.ts
+index 1e9e6fc..9059008 100644
+--- a/client/src/lib/telegramConciergeClient.ts
++++ b/client/src/lib/telegramConciergeClient.ts
+@@ -19,6 +19,10 @@ export type TelegramConciergePreferences = {
+   overnightWakeup?: boolean;
+ };
+ 
++export type TelegramConciergeHealth = { ok?: boolean; configured?: boolean; bot?: unknown; webhook?: { url?: string; pending_update_count?: number; last_error_message?: string; last_error_date?: number } | null; publicUrl?: string; webhookUrl?: string; message?: string };
++
++export type TelegramConciergeAnswer = { ok: boolean; title: string; lines: string[]; intent?: string; message?: string };
++
+ export type TelegramConciergeStatus = {
+   ok?: boolean;
+   configured?: boolean;
+@@ -31,6 +35,7 @@ export type TelegramConciergeStatus = {
+   chat?: { username?: string | null; maskedId?: string | null; firstName?: string | null } | null;
+   preferences?: TelegramConciergePreferences;
+   syncedRoster?: { available?: boolean; updatedAt?: string | null; periodYear?: number | null; periodMonth?: number | null };
++  webhook?: { configured?: boolean; url?: string | null; pendingUpdates?: number | null; lastError?: string | null };
+ };
+ 
+ async function telegramJson<T>(url: string, init?: RequestInit): Promise<T> {
+@@ -70,6 +75,21 @@ export function sendTelegramConciergeTest(): Promise<{ ok: boolean; message?: st
+   return telegramJson('/api/telegram/test', { method: 'POST', body: '{}' });
+ }
+ 
++export function askTelegramConcierge(question: string): Promise<TelegramConciergeAnswer> {
++  return telegramJson<TelegramConciergeAnswer>('/api/telegram/concierge/ask', {
++    method: 'POST',
++    body: JSON.stringify({ question }),
++  });
++}
++
++export function getTelegramConciergeHealth(): Promise<TelegramConciergeHealth> {
++  return telegramJson<TelegramConciergeHealth>('/api/admin/telegram-health', { method: 'GET', cache: 'no-store' });
++}
++
++export function setupTelegramConciergeWebhook(): Promise<TelegramConciergeHealth> {
++  return telegramJson<TelegramConciergeHealth>('/api/admin/telegram-setup-webhook', { method: 'POST', body: '{}' });
++}
++
+ export function sendTelegramConciergeShare(title: string, content: string, kind = 'summary'): Promise<{ ok: boolean; message?: string }> {
+   return telegramJson('/api/telegram/share', {
+     method: 'POST',
+diff --git a/client/src/pages/Home.tsx b/client/src/pages/Home.tsx
+index 80589f8..9703900 100644
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -54,7 +54,7 @@ import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routine
+ import { sendRosterByEmail } from '@/lib/emailClient';
+ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, googleCalendarIntegrationDiagnostics } from '@/lib/googleCalendarSync';
+ import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
+-import { connectTelegramConcierge, getTelegramConciergeStatus, saveTelegramConciergePreferences, sendTelegramConciergeShare, sendTelegramConciergeTest, syncRosterWithTelegramConcierge, telegramStatusLabel, type TelegramConciergeStatus } from '@/lib/telegramConciergeClient';
++import { askTelegramConcierge, connectTelegramConcierge, getTelegramConciergeHealth, getTelegramConciergeStatus, saveTelegramConciergePreferences, sendTelegramConciergeShare, sendTelegramConciergeTest, setupTelegramConciergeWebhook, syncRosterWithTelegramConcierge, telegramStatusLabel, type TelegramConciergeAnswer, type TelegramConciergeHealth, type TelegramConciergeStatus } from '@/lib/telegramConciergeClient';
+ 
+ type ZeroView =
+   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
+@@ -513,7 +513,10 @@ function ExportToolsView({ actions }: { actions: QuickActions }) {
+ 
+ function TelegramConciergeView({ bundle, events }: { bundle: BundleState; events: ZeroLeg[] }) {
+   const [status, setStatus] = useState<TelegramConciergeStatus | null>(null);
++  const [health, setHealth] = useState<TelegramConciergeHealth | null>(null);
++  const [answer, setAnswer] = useState<TelegramConciergeAnswer | null>(null);
+   const [username, setUsername] = useState('');
++  const [question, setQuestion] = useState('qual minha próxima programação?');
+   const [busy, setBusy] = useState(false);
+   const prefs = status?.preferences || {};
+   const connected = Boolean(status?.connected);
+@@ -522,7 +525,11 @@ function TelegramConciergeView({ bundle, events }: { bundle: BundleState; events
+     try { setStatus(await getTelegramConciergeStatus()); }
+     catch (error) { setStatus({ ok: false, configured: false, connected: false, message: error instanceof Error ? error.message : 'Não foi possível consultar o Telegram.' }); }
+   };
+-  useEffect(() => { void refresh(); }, []);
++  const diagnose = async () => {
++    try { setHealth(await getTelegramConciergeHealth()); }
++    catch (error) { setHealth({ ok: false, message: error instanceof Error ? error.message : 'Diagnóstico restrito ao administrador.' }); }
++  };
++  useEffect(() => { void refresh(); void diagnose(); }, []);
+   async function run(label: string, task: () => Promise<any>) {
+     setBusy(true);
+     try {
+@@ -535,8 +542,10 @@ function TelegramConciergeView({ bundle, events }: { bundle: BundleState; events
+     finally { setBusy(false); }
+   }
+   const togglePref = (key: keyof NonNullable<TelegramConciergeStatus['preferences']>) => run('Preferência salva.', async () => saveTelegramConciergePreferences({ [key]: !Boolean((prefs as any)[key]) } as any));
++  const ask = () => run('Concierge respondeu.', async () => { const result = await askTelegramConcierge(question); setAnswer(result); return { ok: true, message: result.title }; });
+   const summary = `Escala ${activeRosterLabel}: ${events.filter(e => e.kind === 'flight').length} voo(s), ${events.length} evento(s), origem ${bundle.source}.`;
+-  return <><Brand back/><section className="cz-panel-head"><h1>Telegram e Concierge</h1><p>Alertas operacionais, resumo da escala, saída inteligente e assistente de bordo no Telegram, usando somente dados reais importados no CrewCheck.</p></section><section className="cz-telegram-hero"><article><Wifi/><small>Status do canal</small><h2>{telegramStatusLabel(status)}</h2><p>{connected ? 'O CrewCheck pode enviar alertas e responder consultas sobre a escala sincronizada.' : 'Conecte seu usuário e confirme no Telegram para liberar notificações e Concierge.'}</p>{status?.connectUrl && <a href={status.connectUrl} target="_blank" rel="noreferrer">Abrir Telegram para confirmar</a>}</article><article><Bell/><small>Escala no Concierge</small><h2>{status?.syncedRoster?.available ? 'Sincronizada' : 'Pendente'}</h2><p>{status?.syncedRoster?.updatedAt ? `Atualizada em ${new Date(status.syncedRoster.updatedAt).toLocaleString('pt-BR')}` : `Período atual: ${activeRosterLabel}`}</p></article></section><section className="cz-toolbox cz-telegram-connect"><h2>Conectar Telegram</h2><p>Informe seu usuário do Telegram. O CrewCheck não pede senha, MFA, SMS, cookies nem sessão.</p><label><span>@</span><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="seu_usuario" autoCapitalize="none" autoCorrect="off"/></label><div className="cz-tool-actions"><button disabled={busy} onClick={() => run('Canal Telegram criado. Confirme no Telegram.', () => connectTelegramConcierge(username))}>Conectar</button><button disabled={busy || !status?.connectUrl} onClick={() => status?.connectUrl && window.open(status.connectUrl, '_blank', 'noopener,noreferrer')}>Abrir Telegram</button><button disabled={busy || !connected} onClick={() => run('Teste enviado.', sendTelegramConciergeTest)}>Enviar teste</button></div></section><section className="cz-toolbox"><h2>Notificações</h2><div className="cz-concierge-switches"><button className={prefs.smartDeparture !== false ? 'on' : ''} onClick={() => togglePref('smartDeparture')}><Car/><span>Saída inteligente</span><b>{prefs.smartDeparture !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.roster !== false ? 'on' : ''} onClick={() => togglePref('roster')}><CalendarDays/><span>Escala e alterações</span><b>{prefs.roster !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.radar !== false ? 'on' : ''} onClick={() => togglePref('radar')}><Radar/><span>Radar e portão</span><b>{prefs.radar !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.irregularities !== false ? 'on' : ''} onClick={() => togglePref('irregularities')}><AlertTriangle/><span>Irregularidades</span><b>{prefs.irregularities !== false ? 'Ativo' : 'Inativo'}</b></button></div></section><section className="cz-toolbox"><h2>Concierge</h2><div className="cz-concierge-switches"><button className={prefs.concierge !== false ? 'on' : ''} onClick={() => togglePref('concierge')}><Wifi/><span>Assistente operacional</span><b>{prefs.concierge !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.conciergeVoice !== false ? 'on' : ''} onClick={() => togglePref('conciergeVoice')}><Bell/><span>Respostas por áudio</span><b>{prefs.conciergeVoice !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.dailySummary ? 'on' : ''} onClick={() => togglePref('dailySummary')}><FileText/><span>Resumo diário</span><b>{prefs.dailySummary ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.overnightWakeup !== false ? 'on' : ''} onClick={() => togglePref('overnightWakeup')}><Clock/><span>Despertador de pernoite</span><b>{prefs.overnightWakeup !== false ? 'Ativo' : 'Inativo'}</b></button></div><div className="cz-tool-actions"><button disabled={busy || !connected} onClick={() => run('Escala sincronizada com o Concierge.', () => syncRosterWithTelegramConcierge({ roster: bundle.roster, compliance: bundle.compliance, gym: currentGym(bundle), sourceFileName: bundle.source }))}>Sincronizar escala</button><button disabled={busy || !connected} onClick={() => run('Resumo enviado para o Telegram.', () => sendTelegramConciergeShare('CrewCheck · resumo da escala', summary, 'summary'))}>Enviar resumo</button></div></section></>;
++  const webhookOk = status?.webhook?.configured || Boolean(health?.webhook?.url && String(health.webhook.url).includes('/api/webhooks/telegram'));
++  return <><Brand back/><section className="cz-panel-head"><h1>Telegram e Concierge</h1><p>Alertas operacionais, resumo da escala, saída inteligente e assistente de bordo no Telegram, usando somente dados reais importados no CrewCheck.</p></section><section className="cz-telegram-hero"><article><Wifi/><small>Status do canal</small><h2>{telegramStatusLabel(status)}</h2><p>{connected ? 'O CrewCheck pode enviar alertas e responder consultas sobre a escala sincronizada.' : 'Conecte seu usuário e confirme no Telegram para liberar notificações e Concierge.'}</p>{status?.connectUrl && <a href={status.connectUrl} target="_blank" rel="noreferrer">Abrir Telegram para confirmar</a>}</article><article><Bell/><small>Webhook do bot</small><h2>{webhookOk ? 'Ativo' : 'Pendente'}</h2><p>{status?.webhook?.lastError || health?.webhook?.last_error_message || (webhookOk ? 'Telegram entrega mensagens ao Concierge.' : 'Se o bot não responde, faça o diagnóstico e ative o webhook.')}</p></article><article><CalendarDays/><small>Escala no Concierge</small><h2>{status?.syncedRoster?.available ? 'Sincronizada' : 'Pendente'}</h2><p>{status?.syncedRoster?.updatedAt ? `Atualizada em ${new Date(status.syncedRoster.updatedAt).toLocaleString('pt-BR')}` : `Período atual: ${activeRosterLabel}`}</p></article></section><section className="cz-toolbox cz-telegram-connect"><h2>Conectar Telegram</h2><p>Informe seu usuário do Telegram. O CrewCheck não pede senha, MFA, SMS, cookies nem sessão.</p><label><span>@</span><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="seu_usuario" autoCapitalize="none" autoCorrect="off"/></label><div className="cz-tool-actions"><button disabled={busy} onClick={() => run('Canal Telegram criado. Confirme no Telegram.', () => connectTelegramConcierge(username))}>Conectar</button><button disabled={busy || !status?.connectUrl} onClick={() => status?.connectUrl && window.open(status.connectUrl, '_blank', 'noopener,noreferrer')}>Abrir Telegram</button><button disabled={busy || !connected} onClick={() => run('Teste enviado.', sendTelegramConciergeTest)}>Enviar teste</button><button disabled={busy} onClick={() => run('Diagnóstico atualizado.', diagnose)}>Diagnosticar</button><button disabled={busy} onClick={() => run('Webhook ativado.', async () => { const result = await setupTelegramConciergeWebhook(); await diagnose(); await refresh(); return result; })}>Ativar webhook</button></div></section><section className="cz-toolbox cz-concierge-chat"><h2>Concierge no app</h2><p>Use para testar agora, mesmo antes do Telegram responder. Ele consulta a escala sincronizada no servidor e não inventa dado real ausente.</p><label><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Pergunte sobre próxima programação, portão, saída, METAR..."/><button disabled={busy || !question.trim()} onClick={ask}>Perguntar</button></label><div className="cz-tool-actions"><button onClick={() => setQuestion('qual minha próxima programação?')}>Próxima</button><button onClick={() => setQuestion('qual portão do meu voo?')}>Portão</button><button onClick={() => setQuestion('que horas devo sair?')}>Saída</button><button onClick={() => setQuestion('METAR de SBBR')}>METAR</button></div>{answer && <article className="cz-concierge-answer"><strong>{answer.title}</strong>{answer.lines.map((line, index) => <p key={`${answer.title}-${index}`}>{line}</p>)}</article>}</section><section className="cz-toolbox"><h2>Notificações</h2><div className="cz-concierge-switches"><button className={prefs.smartDeparture !== false ? 'on' : ''} onClick={() => togglePref('smartDeparture')}><Car/><span>Saída inteligente</span><b>{prefs.smartDeparture !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.roster !== false ? 'on' : ''} onClick={() => togglePref('roster')}><CalendarDays/><span>Escala e alterações</span><b>{prefs.roster !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.radar !== false ? 'on' : ''} onClick={() => togglePref('radar')}><Radar/><span>Radar e portão</span><b>{prefs.radar !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.irregularities !== false ? 'on' : ''} onClick={() => togglePref('irregularities')}><AlertTriangle/><span>Irregularidades</span><b>{prefs.irregularities !== false ? 'Ativo' : 'Inativo'}</b></button></div></section><section className="cz-toolbox"><h2>Concierge</h2><div className="cz-concierge-switches"><button className={prefs.concierge !== false ? 'on' : ''} onClick={() => togglePref('concierge')}><Wifi/><span>Assistente operacional</span><b>{prefs.concierge !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.conciergeVoice !== false ? 'on' : ''} onClick={() => togglePref('conciergeVoice')}><Bell/><span>Respostas por áudio</span><b>{prefs.conciergeVoice !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.dailySummary ? 'on' : ''} onClick={() => togglePref('dailySummary')}><FileText/><span>Resumo diário</span><b>{prefs.dailySummary ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.overnightWakeup !== false ? 'on' : ''} onClick={() => togglePref('overnightWakeup')}><Clock/><span>Despertador de pernoite</span><b>{prefs.overnightWakeup !== false ? 'Ativo' : 'Inativo'}</b></button></div><div className="cz-tool-actions"><button disabled={busy || !connected} onClick={() => run('Escala sincronizada com o Concierge.', () => syncRosterWithTelegramConcierge({ roster: bundle.roster, compliance: bundle.compliance, gym: currentGym(bundle), sourceFileName: bundle.source }))}>Sincronizar escala</button><button disabled={busy || !connected} onClick={() => run('Resumo enviado para o Telegram.', () => sendTelegramConciergeShare('CrewCheck · resumo da escala', summary, 'summary'))}>Enviar resumo</button></div></section></>;
+ }
+ 
+ function WakeupView({ event }: { event: ZeroLeg }) {
+diff --git a/docs/19_V13_5_0_VISUAL_MOBILE_LIGHT_THEME.md b/docs/19_V13_5_0_VISUAL_MOBILE_LIGHT_THEME.md
+index da4b2ba..154b59e 100644
+--- a/docs/19_V13_5_0_VISUAL_MOBILE_LIGHT_THEME.md
++++ b/docs/19_V13_5_0_VISUAL_MOBILE_LIGHT_THEME.md
+@@ -20,3 +20,4 @@ Import Guardian, Roster inline expansível, Gerenciador de Apresentação, Loung
+ ## Telegram e Concierge
+ - A tela **Telegram e Concierge** foi restaurada para conectar o canal Telegram, sincronizar a escala real com o Concierge, enviar resumo/teste e controlar categorias de notificação.
+ - A implementação usa os endpoints internos já existentes e não pede, salva ou manipula senha, MFA, SMS, cookies, token de sessão ou credenciais do iFlight.
++- Correção pós-subida: o Concierge agora também pode responder dentro do app pelo endpoint `/api/telegram/concierge/ask`, além do bot no Telegram, e a tela exibe diagnóstico/ativação de webhook para evitar bot conectado sem receber mensagens.
+diff --git a/scripts/regression-v13-5-0-telegram-concierge.mjs b/scripts/regression-v13-5-0-telegram-concierge.mjs
+index 1385699..977f376 100644
+--- a/scripts/regression-v13-5-0-telegram-concierge.mjs
++++ b/scripts/regression-v13-5-0-telegram-concierge.mjs
+@@ -8,7 +8,9 @@ assert(home.includes('TelegramConciergeView'), 'Tela TelegramConciergeView ausen
+ assert(home.includes('Telegram e Concierge'), 'Entrada Telegram e Concierge ausente');
+ assert(home.includes('syncRosterWithTelegramConcierge'), 'Sincronismo de escala com Concierge ausente');
+ assert(home.includes('sendTelegramConciergeTest'), 'Teste de Telegram ausente');
+-for (const endpoint of ['/api/telegram/status', '/api/telegram/connect', '/api/telegram/preferences', '/api/telegram/test', '/api/telegram/share', '/api/telegram/roster-sync']) assert(client.includes(endpoint), `Cliente sem ${endpoint}`);
++assert(home.includes('askTelegramConcierge'), 'Perguntas do Concierge no app ausentes');
++assert(home.includes('Ativar webhook'), 'Ação de webhook ausente');
++for (const endpoint of ['/api/telegram/status', '/api/telegram/connect', '/api/telegram/preferences', '/api/telegram/test', '/api/telegram/share', '/api/telegram/roster-sync', '/api/telegram/concierge/ask', '/api/admin/telegram-health', '/api/admin/telegram-setup-webhook']) assert(client.includes(endpoint), `Cliente sem ${endpoint}`);
+ assert(!client.includes('password') && !client.includes('cookie') && !client.includes('sessionToken'), 'Cliente não deve manipular credenciais sensíveis');
+-assert(css.includes('Telegram notifications + Concierge restore') && css.includes('.cz-telegram-hero') && css.includes('.cz-concierge-switches'), 'CSS premium do Telegram/Concierge ausente');
++assert(css.includes('Telegram notifications + Concierge restore') && css.includes('.cz-telegram-hero') && css.includes('.cz-concierge-switches') && css.includes('.cz-concierge-chat'), 'CSS premium do Telegram/Concierge ausente');
+ console.log('CrewCheck v13.5.0 Telegram notifications + Concierge regression OK');
+diff --git a/server.mjs b/server.mjs
+index 65100c2..bd8fdb1 100644
+--- a/server.mjs
++++ b/server.mjs
+@@ -20231,6 +20231,13 @@ async function handleApi(req, res, url) {
+    const status = telegramPublicStatusFromRow(row, bot, user);
+    const synced = row?.is_active ? await telegramConciergeLatestRosters(db, user, 1, row).catch(() => []) : [];
+    status.syncedRoster = synced[0] ? { available: true, updatedAt: synced[0].updated_at || synced[0].created_at || null, periodYear: synced[0].period_year || synced[0].roster?.year || null, periodMonth: synced[0].period_month || synced[0].roster?.month || null } : { available: false };
++   const webhook = telegramIsConfigured() ? await telegramApi('getWebhookInfo').catch(() => null) : null;
++   status.webhook = webhook ? {
++    configured: Boolean(String(webhook.url || '').includes('/api/webhooks/telegram')),
++    url: webhook.url || null,
++    pendingUpdates: Number(webhook.pending_update_count || 0),
++    lastError: webhook.last_error_message || null,
++   } : { configured: false, url: null, pendingUpdates: null, lastError: null };
+    sendJson(res, 200, status);
+   } catch (error) {
+    sendJson(res, 200, { ok: false, configured: telegramIsConfigured(), connected: false, message: sanitizePublicError(error?.message || String(error)) });
+@@ -20402,6 +20409,117 @@ async function handleApi(req, res, url) {
+   return true;
+  }
+ 
++ if (url.pathname === '/api/telegram/concierge/ask' && req.method === 'POST') {
++  const user = await requireAuth(req, res);
++  if (!user) return true;
++  const db = requireDatabase(res);
++  if (!db) return true;
++  try {
++   await ensureSchema();
++   const body = await readJsonBody(req, 128 * 1024).catch(() => ({}));
++   const question = String(body.question || body.text || body.message || '').replace(/\s+/g, ' ').trim().slice(0, 900);
++   if (!question) {
++    sendJson(res, 400, { ok: false, message: 'Digite uma pergunta para o Concierge.' });
++    return true;
++   }
++   const row = await ensureTelegramLinkForUser(db, user).catch(() => null);
++   const preferences = normalizeTelegramPreferences(row?.preferences_json || {});
++   if (preferences.concierge === false) {
++    sendJson(res, 200, { ok: true, intent: 'disabled', title: 'Concierge desativado', lines: ['O Concierge está desligado nas preferências.', 'Ative em Configurações > Telegram e Concierge.'] });
++    return true;
++   }
++   const clean = telegramConciergeNormalizeText(question);
++   const premium = telegramConciergeIsPremium(user);
++   const rosters = await telegramConciergeLatestRosters(db, user, 24, row).catch(() => []);
++   const answer = (title, lines = [], intent = 'concierge', extra = {}) => ({ ok: true, title, lines: (Array.isArray(lines) ? lines : [lines]).filter(Boolean).map((line) => String(line).slice(0, 360)).slice(0, 10), intent, ...extra });
++   if (telegramConciergeIsHelp(question)) {
++    sendJson(res, 200, answer('Concierge CrewCheck', [
++     'Pergunte: “qual minha próxima programação?”, “qual portão do LA3730?”, “que horas devo sair?”, “METAR de SBBR?” ou “diárias de amanhã?”.',
++     'Para notificações automáticas no Telegram, conecte o bot e confirme o webhook.',
++     'O Concierge usa apenas a escala sincronizada e fontes internas; não chuta dados reais ausentes.',
++    ], 'help'));
++    return true;
++   }
++   const aviationWeatherRequest = telegramConciergeParseAviationWeatherRequest(question);
++   if (aviationWeatherRequest) {
++    const payload = await telegramConciergeAviationWeatherLines(aviationWeatherRequest).catch((error) => ({ title: 'Meteorologia indisponível', lines: ['Não consegui consultar METAR/TAF agora.', sanitizePublicError(error?.message || String(error))] }));
++    sendJson(res, 200, answer(payload.title, payload.lines, 'aviation_weather'));
++    return true;
++   }
++   if (!rosters.length) {
++    sendJson(res, 200, answer('Escala não sincronizada', [
++     'Ainda não encontrei escala salva no servidor desta conta.',
++     'Toque em “Sincronizar escala” nesta tela ou envie o PDF original da escala para o bot no Telegram.',
++     'Sem escala sincronizada, o Concierge não inventa próxima programação, diárias, radar ou rotina.',
++    ], 'no_roster'));
++    return true;
++   }
++   if (telegramConciergeWantsUpcoming(question)) {
++    const items = telegramConciergeUpcomingDays(rosters, { limit: premium ? 5 : 2 });
++    sendJson(res, 200, answer(premium ? 'Próximas programações' : 'Próximas programações', telegramConciergeUpcomingLines(items, { free: !premium }), 'upcoming'));
++    return true;
++   }
++   if (telegramConciergeWantsRegulation(question) || /^\/(conformidade|regulamentacao|regulamentação|alertas|irregularidades)\b/i.test(question)) {
++    sendJson(res, 200, answer('Conformidade e regulamentação', telegramConciergeRegulationLines(rosters, { premium }), 'regulation'));
++    return true;
++   }
++   if (/^\/(portao|portão)|\b(portao|portão|terminal|gate|radar)\b/.test(clean)) {
++    const found = telegramConciergeFindFlight(rosters, question);
++    const radar = await telegramConciergeRadarLines(found, question);
++    sendJson(res, 200, answer(radar.title, radar.lines, 'gate'));
++    return true;
++   }
++   if (/^\/(saida|saída)|\b(sair|saida|saída|casa|transito|trânsito|rota|uber|99)\b/.test(clean)) {
++    const found = telegramConciergeFindFlight(rosters, question);
++    const leg = found?.leg || {};
++    const report = telegramConciergeFormatTime(leg.dutyReport || leg.reportTime || leg.presentationTime || found?.day?.startTime || '');
++    const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
++    const origin = leg.origin || leg.from || found?.day?.location || 'origem não informada';
++    const lines = [
++     found ? `Data da programação: ${telegramConciergeReadableDate(found.iso)}` : 'Não encontrei voo futuro na escala salva.',
++     found ? telegramConciergeLegLine(leg) : '',
++     report ? `Apresentação na escala: ${report}` : dep ? `Decolagem: ${dep}` : 'Horário de apresentação não localizado na escala.',
++     `Origem: ${origin}`,
++     'Para trânsito real, calcule a Saída Inteligente no app com localização ativada.',
++    ].filter(Boolean);
++    sendJson(res, 200, answer('Saída Inteligente', lines, 'departure'));
++    return true;
++   }
++   if (/^\/(diarias|diárias|diaria|diária)|\b(diaria|diária|diarias|diárias|pernoite|hotel|inativo)\b/.test(clean)) {
++    if (!premium) {
++     sendJson(res, 200, answer('Diárias é Premium', telegramConciergeFreeBlockedLines(), 'premium_blocked'));
++     return true;
++    }
++    const target = telegramConciergeDateFromText(question, rosters);
++    const found = telegramConciergeFindDay(rosters, target.iso);
++    const lines = found ? telegramConciergeMealLines(found.day, target.iso) : [`Não encontrei programação em ${target.label}.`, 'Importe ou reprocesse a escala para recalcular as diárias.'];
++    sendJson(res, 200, answer(`Diárias · ${target.label}`, lines, 'perdiem'));
++    return true;
++   }
++   if (/^\/(rotina)|\b(rotina|acordar|treinar|academia|dormir|estudar|comer)\b/.test(clean)) {
++    if (!premium) {
++     sendJson(res, 200, answer('Rotina é Premium', telegramConciergeFreeBlockedLines(), 'premium_blocked'));
++     return true;
++    }
++    sendJson(res, 200, answer('Rotina', telegramConciergeRoutineLines(rosters, question), 'routine'));
++    return true;
++   }
++   const asksNext = /^\/(proximo|próximo)/i.test(question) || /\b(proximo|próximo)\b/i.test(question);
++   let target = /^\/(amanha|amanhã)/i.test(question) ? { iso: telegramConciergeDatePlus(1), label: 'amanhã' } : telegramConciergeDateFromText(question, rosters);
++   let found = telegramConciergeFindDay(rosters, target.iso);
++   let title = `Programação · ${target.label}`;
++   if (asksNext && !/\b(hoje|amanha|amanhã|dia\s+\d{1,2}|\d{1,2}[\/\-.]\d{1,2})\b/i.test(question)) {
++    const next = telegramConciergeUpcomingDays(rosters, { limit: 1 })[0] || null;
++    if (next) { found = next; target = { iso: next.iso, label: 'próxima' }; title = 'Próxima programação'; }
++   }
++   const lines = found ? telegramConciergeDayLines(found.day, found.iso || target.iso) : [`Não encontrei programação para ${target.label}.`, 'A escala salva pode não conter essa data ou precisa ser reimportada.'];
++   sendJson(res, 200, answer(title, lines, 'schedule'));
++  } catch (error) {
++   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)), code: error.code || null });
++  }
++  return true;
++ }
++
+  const wakeupCallTestEndpointPaths = new Set(['/api/telegram/callmebot/test', '/api/telegram/wakeup/test', '/api/wakeup/test', '/api/wakeup/call/test', '/api/voip/test', '/api/voip/wakeup/test', '/api/voice/test', '/api/infobip/test', '/api/voice/infobip/test', '/api/wakeup/infobip/test']);
+  if (wakeupCallTestEndpointPaths.has(url.pathname) && req.method === 'POST') {
+   const user = await requireAuth(req, res);
+-- 
+2.43.0
