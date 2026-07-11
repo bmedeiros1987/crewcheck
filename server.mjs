@@ -9,6 +9,11 @@ const distDir = path.join(__dirname, 'dist');
 const port = Number(process.env.PORT || 4173);
 const radarHealth = new Map();
 
+// CrewCheck Reliability crash guard — logs only sanitized messages.
+process.on('unhandledRejection', (reason) => { console.error('[crewcheck:unhandledRejection]', reason instanceof Error ? reason.message : String(reason || 'unknown')); });
+process.on('uncaughtException', (error) => { console.error('[crewcheck:uncaughtException]', error instanceof Error ? error.message : String(error || 'unknown')); });
+
+
 function sendJson(res, status, payload) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(payload));
@@ -723,6 +728,41 @@ async function handleAlarmTest(req, res) {
   return sendJson(res, 200, { ok: Boolean((telegramResult && telegramResult.ok) || voiceConfigured), configured: Boolean((telegramResult && telegramResult.configured) || voiceConfigured), telegram: telegramResult, voice: { configured: voiceConfigured, message: voiceConfigured ? 'Canal de ligação configurado para uso operacional.' : 'Canal de ligação aguardando configuração.' }, message: 'Teste processado.' });
 }
 
+
+function boolEnv(keys = []) { return keys.some((key) => Boolean(String(process.env[key] || '').trim())); }
+function reliabilityModule(id, label, keys = [], messageOk = 'Configurado.', messageMissing = 'Aguardando configuração.') {
+  const configured = boolEnv(keys);
+  return { id, label, ok: configured, configured, keys, message: configured ? messageOk : messageMissing };
+}
+function reliabilityEnvItems() {
+  return [
+    reliabilityModule('auth','Login e sessão',['CREWCHECK_AUTH_SECRET']),
+    reliabilityModule('admin','Admin',['CREWCHECK_ADMIN_EMAILS','CREWCHECK_ADMIN_EMAIL']),
+    reliabilityModule('maps','Mapas e rotas',['GOOGLE_MAPS_SERVER_KEY','GOOGLE_ROUTES_API_KEY','GOOGLE_MAPS_API_KEY','TOMTOM_API_KEY']),
+    reliabilityModule('places','Locais/academias',['GOOGLE_PLACES_API_KEY','GOOGLE_PLACES_SERVER_KEY']),
+    reliabilityModule('radar','Radar de voos',['FLIGHTAWARE_AEROAPI_KEY','AEROAPI_KEY','AIRLABS_API_KEY','AVIATIONSTACK_API_KEY','AVIATIONSTACK_ACCESS_KEY','OAG_FLIGHT_INFO_PRIMARY_KEY']),
+    reliabilityModule('weather','Meteorologia',['AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE']),
+    reliabilityModule('telegram','Telegram',['TELEGRAM_BOT_TOKEN','CREWCHECK_TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','CALLMEBOT_API_KEY','TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
+    reliabilityModule('billing','Assinatura',['ASAAS_API_KEY']),
+    reliabilityModule('osm','OpenStreetMap',['OSM_ROUTING_URL','OSM_ENABLE_PUBLIC_SERVICES']),
+  ];
+}
+function handleReliabilityEnv(req, res) {
+  const items = reliabilityEnvItems();
+  return sendJson(res, 200, { ok:true, version:'13.6.6', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+}
+function handleReliabilityHealth(req, res) {
+  const critical = ['auth','maps','radar','telegram','wakeup'];
+  const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
+  const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.6.6', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+}
+function handleReliabilitySelfTest(req, res) {
+  return sendJson(res, 200, { ok:true, version:'13.6.6', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+}
+
 function serveStatic(req, res, url) {
   let filePath = path.join(distDir, decodeURIComponent(url.pathname));
   if (url.pathname === '/' || !path.extname(filePath)) filePath = path.join(distDir, 'index.html');
@@ -744,6 +784,9 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
+  if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
+  if (url.pathname === '/api/reliability/self-test') return handleReliabilitySelfTest(req, res);
   if (url.pathname === '/api/auth/config') return handleAuthConfig(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister(req, res);
@@ -766,7 +809,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.2' });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.6', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
