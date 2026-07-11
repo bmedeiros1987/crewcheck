@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+const css = fs.readFileSync('client/src/index.css', 'utf8');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+function assert(condition, message) { if (!condition) throw new Error(message); }
+assert(home.includes("const DEFAULT_VERSION = '13.5.0'"), 'DEFAULT_VERSION 13.5.0 ausente');
+assert(pkg.version === '13.5.0', 'package.json precisa estar em 13.5.0');
+assert(!home.includes('Import PDF'), 'Texto em inglês "Import PDF" não deve existir na Home');
+assert(home.includes('Importar PDF'), 'Texto "Importar PDF" ausente');
+assert(home.includes('Meu Carro'), 'Texto "Meu Carro" ausente');
+assert(home.includes('Mapa do mês'), 'Texto "Mapa do mês" ausente');
+assert(home.includes('Gerenciar apresentação'), 'Texto "Gerenciar apresentação" ausente');
+for (const token of ['max-width: 100%', 'min-width: 0', 'overflow-x: hidden', 'minmax(0, 1fr)']) assert(css.includes(token), `CSS sem ${token}`);
+assert(css.includes('scroll-padding-bottom') && css.includes('padding-bottom'), 'CSS sem proteção de bottom nav');
+assert(css.includes('--cc-light-page') && css.includes('--cc-light-surface') && css.includes('--cc-light-text'), 'Tema claro sem tokens próprios');
+assert(css.includes('--cc-bottom-nav-space') && css.includes('env(safe-area-inset-bottom)'), 'Bottom nav sem espaçamento seguro');
+assert(css.includes('--cc-ios-26-on') && css.includes('--cc-ios-26-off') && css.includes('translateX(28px)'), 'Toggle iOS 26 visual promise incompleto');
+assert(css.includes('visual promise match') && css.includes('.cz-auth[data-version="13.5.0"] .cz-login-card'), 'CSS não contém o shell premium das imagens');
+assert(css.includes('.cz-alert-stack article.danger') && css.includes('.cz-depart-hero strong'), 'CSS não cobre alertas e saída inteligente do visual prometido');
+console.log('CrewCheck v13.5.0 visual mobile + light theme regression OK');

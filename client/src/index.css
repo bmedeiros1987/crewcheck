@@ -14098,3 +14098,371 @@ html[data-crew-theme="light"] b { color: #071427; }
 html[data-crew-theme="light"] input { background: rgba(245,249,255,.92) !important; color: #071427 !important; border-color: rgba(25,70,130,.18) !important; }
 html[data-crew-theme="light"] .cz-bottom-nav { background: rgba(255,255,255,.84) !important; border-color: rgba(25,70,130,.14) !important; }
 html[data-crew-theme="light"] .cz-bottom-nav button.active { background: linear-gradient(135deg, rgba(42, 194, 255, .16), rgba(139, 92, 246, .14)) !important; }
+
+/* CrewCheck v13.5.0 — Visual Mobile + Light Theme Audit
+   Não altera regra de escala: apenas tokens, overflow, mobile polish e toggles. */
+:root {
+  --cc-bottom-nav-space: 132px;
+  --cc-safe-inline: clamp(14px, 4vw, 28px);
+  --cc-ios-on: linear-gradient(135deg, #24d3ee 0%, #3478ff 46%, #9d4edd 100%);
+  --cc-ios-off: linear-gradient(180deg, rgba(255,255,255,.16), rgba(148,163,184,.18));
+}
+html, body, #root, .cz-app {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  scroll-padding-bottom: var(--cc-bottom-nav-space);
+}
+body { padding-bottom: env(safe-area-inset-bottom); }
+.cz-app {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100dvh;
+  padding-bottom: calc(var(--cc-bottom-nav-space) + env(safe-area-inset-bottom));
+}
+.cz-app *, .cz-app *::before, .cz-app *::after { box-sizing: border-box; max-width: 100%; min-width: 0; }
+.cz-kpi-row, .cz-money-row, .cz-info-duo, .cz-time-trio, .cz-flight-pills, .cz-roster-actions, .cz-shortcuts, .cz-feature-grid, .cz-report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cz-kpi, .cz-flight-card, .cz-smart-card, .cz-roster-card, .cz-empty-real, .cz-toolbox, .cz-menu-panel, .cz-complete-days article { max-width: 100%; overflow: hidden; }
+.cz-brand-row, .cz-title, .cz-section-head, .cz-kpi-row, .cz-flight-card, .cz-smart-card, .cz-stack-list, .cz-roster-actions, .cz-money-row, .cz-panel-head, .cz-complete-days { margin-left: var(--cc-safe-inline); margin-right: var(--cc-safe-inline); }
+.cz-bottom-nav { bottom: calc(12px + env(safe-area-inset-bottom)); width: min(100% - 24px, 560px); left: 50%; transform: translateX(-50%); }
+.cz-flight-head, .cz-airline, .cz-route, .cz-roster-main, .cz-crew-line { min-width: 0; }
+.cz-airline strong, .cz-airline em, .cz-roster-copy h3, .cz-roster-copy p, .cz-route span, .cz-route strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-latam-mark { width: 24px; height: 24px; font-size: 12px; display: inline-grid; place-items: center; }
+.cz-date-chip { flex: 0 0 auto; transform: scale(.92); transform-origin: right center; }
+.cz-route-arc svg { width: 20px; height: 20px; }
+.cz-flight-pills { display: grid; gap: 8px; margin: 12px 0; }
+.cz-flight-pills span { display: grid; gap: 2px; padding: 9px 10px; border-radius: 999px; background: rgba(93,231,255,.10); border: 1px solid rgba(93,231,255,.20); color: var(--cz-text, #f8fbff); font-size: 12px; line-height: 1.15; overflow: hidden; }
+.cz-flight-pills b { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; opacity: .72; }
+.cz-roster-timeline { position: relative; }
+.cz-roster-timeline::before { content: ''; position: absolute; left: 31px; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: linear-gradient(180deg, rgba(93,231,255,.65), rgba(139,92,246,.42), rgba(255,79,216,.22)); }
+.cz-roster-timeline .cz-roster-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; }
+.cz-roster-timeline .cz-roster-card::before { content: ''; position: absolute; left: 24px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%); border-radius: 999px; background: var(--cc-ios-on); box-shadow: 0 0 0 5px rgba(3,10,24,.88), 0 0 24px rgba(93,231,255,.38); }
+.cz-card-chevron { width: 18px; height: 18px; color: rgba(226,236,255,.72); flex: 0 0 auto; }
+.cz-roster-card.stay .cz-roster-icon, .cz-roster-card:has(.cz-roster-icon svg[data-lucide="hotel"]) .cz-roster-icon { background: linear-gradient(135deg, rgba(245,158,11,.24), rgba(251,191,36,.12)); color: #fbbf24; }
+.cz-money-row button { border: 1px solid rgba(34,211,238,.24); border-radius: 22px; padding: 14px; min-height: 82px; background: linear-gradient(145deg, rgba(13,27,48,.84), rgba(8,18,34,.72)); color: #fff; display: grid; gap: 4px; text-align: left; }
+.cz-money-row button svg { color: #67e8f9; }
+.cz-money-row button span { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.cz-money-row button strong { font-size: clamp(22px, 7vw, 34px); line-height: 1; }
+.cz-setting > span:last-child { width: 54px; height: 32px; border-radius: 999px; padding: 3px; background: var(--cc-ios-off) !important; border: 1px solid rgba(255,255,255,.18); box-shadow: inset 0 1px 4px rgba(0,0,0,.20); transition: background .22s ease, border-color .22s ease, transform .12s ease; }
+.cz-setting > span:last-child::after { content: ''; display: block; width: 24px; height: 24px; border-radius: 999px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.22); transform: translateX(0); transition: transform .24s cubic-bezier(.2,.8,.2,1); }
+.cz-setting > span:last-child.on { background: var(--cc-ios-on) !important; border-color: rgba(93,231,255,.45); }
+.cz-setting > span:last-child.on::after { transform: translateX(22px); }
+.cz-setting:active > span:last-child { transform: scale(.96); }
+.cz-setting:focus-visible { outline: 3px solid rgba(93,231,255,.42); outline-offset: 3px; }
+.cz-setting[disabled] { opacity: .55; pointer-events: none; }
+html[data-crew-theme="light"] {
+  --cc-light-page: #f4f8ff;
+  --cc-light-surface: rgba(255,255,255,.94);
+  --cc-light-surface-strong: #ffffff;
+  --cc-light-text: #071427;
+  --cc-light-muted: #4b6078;
+  --cc-light-border: rgba(15,55,95,.14);
+  --cc-light-pill: rgba(3,105,161,.09);
+}
+html[data-crew-theme="light"] .cz-app { background: var(--cc-light-page) !important; color: var(--cc-light-text) !important; }
+html[data-crew-theme="light"] .cz-brand-row, html[data-crew-theme="light"] .cz-kpi, html[data-crew-theme="light"] .cz-flight-card, html[data-crew-theme="light"] .cz-smart-card, html[data-crew-theme="light"] .cz-roster-card, html[data-crew-theme="light"] .cz-money-row button, html[data-crew-theme="light"] .cz-menu-panel, html[data-crew-theme="light"] .cz-toolbox, html[data-crew-theme="light"] .cz-empty-real, html[data-crew-theme="light"] .cz-complete-days article { background: var(--cc-light-surface) !important; color: var(--cc-light-text) !important; border-color: var(--cc-light-border) !important; box-shadow: 0 18px 48px rgba(33,71,112,.14) !important; }
+html[data-crew-theme="light"] .cz-flight-pills span, html[data-crew-theme="light"] .cz-routine-strip span, html[data-crew-theme="light"] .cz-complete-days header span { background: var(--cc-light-pill) !important; color: var(--cc-light-text) !important; border-color: rgba(3,105,161,.14) !important; }
+html[data-crew-theme="light"] .cz-roster-actions button, html[data-crew-theme="light"] .cz-tool-actions button, html[data-crew-theme="light"] .cz-settings-actions button { background: linear-gradient(135deg, rgba(3,105,161,.12), rgba(124,58,237,.10)) !important; color: var(--cc-light-text) !important; border-color: rgba(3,105,161,.20) !important; }
+html[data-crew-theme="light"] p, html[data-crew-theme="light"] small, html[data-crew-theme="light"] span { color: var(--cc-light-muted); }
+html[data-crew-theme="light"] strong, html[data-crew-theme="light"] h1, html[data-crew-theme="light"] h2, html[data-crew-theme="light"] h3, html[data-crew-theme="light"] b { color: var(--cc-light-text); }
+html[data-crew-theme="light"] .cz-bottom-nav { background: rgba(255,255,255,.92) !important; color: var(--cc-light-text) !important; border-color: var(--cc-light-border) !important; }
+html[data-crew-theme="light"] .cz-card-chevron, html[data-crew-theme="light"] .cz-menu-section svg { color: #0369a1; }
+@media (max-width: 640px) {
+  :root { --cc-bottom-nav-space: 146px; --cc-safe-inline: 14px; }
+  .cz-app { padding-bottom: calc(156px + env(safe-area-inset-bottom)); }
+  .cz-brand-row { align-items: center; }
+  .cz-brand-lockup { min-width: 0; }
+  .cz-brand-lockup small, .cz-pills { display: none; }
+  .cz-kpi-row, .cz-money-row, .cz-info-duo, .cz-time-trio, .cz-flight-pills { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 9px; }
+  .cz-roster-actions { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 8px; }
+  .cz-roster-actions button { min-height: 44px; padding: 9px 7px; font-size: 12px; }
+  .cz-flight-card { border-radius: 24px; padding: 14px; }
+  .cz-flight-head { gap: 8px; }
+  .cz-airline { gap: 6px; }
+  .cz-airline strong { font-size: 13px; }
+  .cz-airline em { font-size: 12px; }
+  .cz-route { grid-template-columns: minmax(0,1fr) 58px minmax(0,1fr); }
+  .cz-route strong { font-size: clamp(24px, 9vw, 38px); }
+  .cz-time-trio div { padding: 10px; }
+  .cz-time-trio strong { font-size: clamp(18px, 6vw, 26px); }
+  .cz-kpi { padding: 12px; }
+  .cz-kpi strong { font-size: clamp(22px, 8vw, 34px); }
+  .cz-roster-timeline::before { left: 25px; }
+  .cz-roster-timeline .cz-roster-card::before { left: 18px; }
+  .cz-roster-main { padding-left: 18px; }
+  .cz-roster-time { font-size: 12px; white-space: nowrap; }
+  .cz-menu-panel { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+}
+
+/* CrewCheck v13.5.0 — visual promise match: cinematic premium shell from approved references. */
+:root {
+  --cc-vnext-bg: #020817;
+  --cc-vnext-panel: rgba(5, 14, 31, .82);
+  --cc-vnext-panel-strong: rgba(8, 18, 38, .92);
+  --cc-vnext-line: rgba(137, 163, 255, .22);
+  --cc-vnext-line-hot: rgba(184, 106, 255, .48);
+  --cc-vnext-text: #f9fbff;
+  --cc-vnext-muted: #aeb8c8;
+  --cc-vnext-purple: #9b5cff;
+  --cc-vnext-pink: #ff3d8b;
+  --cc-vnext-cyan: #22d3ee;
+  --cc-vnext-green: #2ee6b8;
+  --cc-vnext-warning: #f59e0b;
+  --cc-vnext-danger: #ff4d68;
+  --cc-vnext-glass: blur(22px) saturate(145%);
+  --cc-vnext-shadow: 0 24px 72px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .06);
+  --cc-ios-26-on: linear-gradient(135deg, #6d28d9 0%, #8b35ff 44%, #f43f8f 100%);
+  --cc-ios-26-off: linear-gradient(180deg, rgba(255,255,255,.16), rgba(91,103,126,.18));
+}
+.cz-app[data-version="13.5.0"], .cz-auth[data-version="13.5.0"] {
+  max-width: 760px;
+  background: radial-gradient(circle at 88% 8%, rgba(168,85,247,.30), transparent 28%), radial-gradient(circle at 10% 72%, rgba(34,211,238,.18), transparent 28%), linear-gradient(180deg, #020817 0%, #061326 48%, #020817 100%) !important;
+  color: var(--cc-vnext-text) !important;
+  letter-spacing: -.015em;
+}
+.cz-app[data-version="13.5.0"] .cz-wallpaper,
+.cz-auth[data-version="13.5.0"] .cz-wallpaper {
+  opacity: .98 !important;
+  background-image: linear-gradient(180deg, rgba(2,8,23,.08), rgba(2,8,23,.76)), url('/assets/brand/crewcheck-wallpaper-v1267.png') !important;
+  background-size: cover !important;
+  background-position: center top !important;
+  filter: saturate(1.12) contrast(1.08) !important;
+}
+.cz-app[data-version="13.5.0"]::before,
+.cz-auth[data-version="13.5.0"]::before {
+  background: linear-gradient(90deg, rgba(255,255,255,.034) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.027) 1px, transparent 1px), radial-gradient(circle at 85% 18%, rgba(168,85,247,.20), transparent 30%), radial-gradient(circle at 10% 78%, rgba(34,211,238,.16), transparent 26%) !important;
+  background-size: 76px 76px, 76px 76px, auto, auto !important;
+}
+.cz-app[data-version="13.5.0"] .cz-brand-row { align-items: center; margin-bottom: 30px; }
+.cz-app[data-version="13.5.0"] .cz-menu-btn {
+  width: 68px; height: 68px; border-radius: 22px;
+  background: linear-gradient(180deg, rgba(12, 22, 42, .78), rgba(7, 16, 32, .54)) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  box-shadow: var(--cc-vnext-shadow) !important;
+  backdrop-filter: var(--cc-vnext-glass);
+}
+.cz-app[data-version="13.5.0"] .cz-brand-lockup { justify-content: center; gap: 12px; }
+.cz-app[data-version="13.5.0"] .cz-logo,
+.cz-auth[data-version="13.5.0"] .cz-auth-brand > span {
+  background: linear-gradient(135deg, #d7b5ff 0%, #a56bff 45%, #ff4da1 100%) !important;
+  box-shadow: 0 0 34px rgba(236,72,153,.42), 0 0 26px rgba(139,92,246,.42), inset 0 1px 0 rgba(255,255,255,.44) !important;
+  color: #061021 !important;
+}
+.cz-app[data-version="13.5.0"] .cz-brand-lockup strong,
+.cz-auth[data-version="13.5.0"] .cz-auth-brand strong { color: #fff !important; text-shadow: 0 10px 34px rgba(255,255,255,.14); }
+.cz-app[data-version="13.5.0"] .cz-pills,
+.cz-auth[data-version="13.5.0"] .cz-auth-brand p {
+  background: rgba(2, 6, 23, .42) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.cz-auth[data-version="13.5.0"] {
+  justify-content: flex-start !important;
+  padding: clamp(44px, 8vh, 86px) 22px 34px !important;
+}
+.cz-auth[data-version="13.5.0"] .cz-auth-brand {
+  width: min(640px, 100%);
+  margin: 20px auto 30px !important;
+  display: grid !important;
+  grid-template-columns: 64px minmax(0,1fr);
+  grid-template-areas: "logo word" "logo pills";
+  justify-content: center;
+  gap: 8px 16px;
+  text-align: left;
+}
+.cz-auth[data-version="13.5.0"] .cz-auth-brand > span { grid-area: logo; width: 64px; height: 64px; border-radius: 22px; }
+.cz-auth[data-version="13.5.0"] .cz-auth-brand > div { grid-area: word; min-width: 0; }
+.cz-auth[data-version="13.5.0"] .cz-auth-brand p { grid-area: pills; justify-self: start; margin: 0 !important; }
+.cz-auth[data-version="13.5.0"] .cz-login-card {
+  width: min(650px, 100%);
+  border-radius: 34px !important;
+  padding: 28px !important;
+  background: linear-gradient(180deg, #fbfaf8 0%, #f3efeb 100%) !important;
+  color: #05070b !important;
+  border: 1px solid rgba(255,255,255,.82) !important;
+  box-shadow: 0 34px 95px rgba(0,0,0,.58), 0 0 0 1px rgba(255,255,255,.18) !important;
+}
+.cz-auth[data-version="13.5.0"] .cz-tabs { height: 76px; border-radius: 24px; background: #ebe6e2 !important; border: 1px solid #d7d0ca !important; padding: 6px !important; }
+.cz-auth[data-version="13.5.0"] .cz-tabs button { height: 62px; border-radius: 19px; color: #111827 !important; font-weight: 850; }
+.cz-auth[data-version="13.5.0"] .cz-tabs button.active { background: #fff !important; box-shadow: 0 18px 34px rgba(20,16,10,.09) !important; }
+.cz-auth[data-version="13.5.0"] .cz-login-card > small { display: block; color: #6d28d9 !important; font-size: 18px; font-weight: 900; margin-bottom: 10px; }
+.cz-auth[data-version="13.5.0"] .cz-login-card h1 { color: #05070b !important; font-size: clamp(34px, 6vw, 46px); line-height: 1.04; margin: 8px 0 16px; }
+.cz-auth[data-version="13.5.0"] .cz-login-card p { color: #2f3642 !important; font-size: 18px; line-height: 1.45; }
+.cz-auth[data-version="13.5.0"] .cz-login-card label { border-color: #ddd5cf !important; background: rgba(255,255,255,.42) !important; border-radius: 21px !important; color: #111827 !important; }
+.cz-auth[data-version="13.5.0"] .cz-login-card input { background: #fff !important; border-color: #ded8d2 !important; color: #111827 !important; font-weight: 760; }
+.cz-auth[data-version="13.5.0"] .cz-primary { background: linear-gradient(100deg, #5b21b6 0%, #9d35d4 48%, #ec4899 100%) !important; box-shadow: 0 20px 44px rgba(236,72,153,.30), 0 0 24px rgba(168,85,247,.22) !important; }
+.cz-auth[data-version="13.5.0"] .cz-secondary { background: #fff !important; color: #111827 !important; border-color: #bdb5ad !important; }
+.cz-auth[data-version="13.5.0"] .cz-auth-footer { width: min(520px, 92%); justify-content: center; background: rgba(2,6,23,.46) !important; border-color: rgba(168,85,247,.38) !important; box-shadow: 0 16px 42px rgba(0,0,0,.30); }
+.cz-app[data-version="13.5.0"] .cz-panel-head h1,
+.cz-app[data-version="13.5.0"] .cz-title small,
+.cz-app[data-version="13.5.0"] .cz-departure h1 { color: #fff !important; font-size: clamp(36px, 8vw, 48px); line-height: 1.02; text-shadow: 0 12px 40px rgba(0,0,0,.38); }
+.cz-app[data-version="13.5.0"] .cz-panel-head::after,
+.cz-app[data-version="13.5.0"] .cz-title i { content: ''; display: block; width: 44px; height: 5px; margin-top: 14px; border-radius: 999px; background: linear-gradient(90deg, #a855f7, #ec4899, #22d3ee); box-shadow: 0 0 18px rgba(168,85,247,.72); }
+.cz-app[data-version="13.5.0"] .cz-panel-head p { color: rgba(229,237,248,.76) !important; font-size: 18px; line-height: 1.55; }
+.cz-app[data-version="13.5.0"] .cz-flight-card,
+.cz-app[data-version="13.5.0"] .cz-smart-card,
+.cz-app[data-version="13.5.0"] .cz-roster-card,
+.cz-app[data-version="13.5.0"] .cz-map-card,
+.cz-app[data-version="13.5.0"] .cz-alert-detail,
+.cz-app[data-version="13.5.0"] .cz-settings .cz-profile,
+.cz-app[data-version="13.5.0"] .cz-setting,
+.cz-app[data-version="13.5.0"] .cz-kpi,
+.cz-app[data-version="13.5.0"] .cz-complete-days article {
+  background: linear-gradient(180deg, rgba(9, 22, 45, .82), rgba(4, 12, 26, .92)) !important;
+  border: 1px solid var(--cc-vnext-line) !important;
+  box-shadow: var(--cc-vnext-shadow) !important;
+  backdrop-filter: var(--cc-vnext-glass);
+}
+.cz-app[data-version="13.5.0"] .cz-flight-card { border-color: rgba(72,196,255,.38) !important; box-shadow: 0 0 0 1px rgba(34,211,238,.18), 0 0 34px rgba(34,211,238,.18), 0 30px 90px rgba(0,0,0,.38) !important; }
+.cz-app[data-version="13.5.0"] .cz-airline strong { color: #fff !important; }
+.cz-app[data-version="13.5.0"] .cz-airline em,
+.cz-app[data-version="13.5.0"] .cz-date-chip { background: rgba(4, 12, 26, .66); border: 1px solid rgba(255,255,255,.13); border-radius: 14px; padding: 8px 12px; }
+.cz-app[data-version="13.5.0"] .cz-route strong { color: #fff !important; text-shadow: 0 8px 30px rgba(255,255,255,.10); }
+.cz-app[data-version="13.5.0"] .cz-time-trio { background: rgba(2, 10, 24, .38) !important; border-color: rgba(255,255,255,.12) !important; }
+.cz-app[data-version="13.5.0"] .cz-info-duo div { background: rgba(2,10,24,.34) !important; border-color: rgba(255,255,255,.10) !important; }
+.cz-app[data-version="13.5.0"] .cz-info-duo svg,
+.cz-app[data-version="13.5.0"] .cz-setting > svg,
+.cz-app[data-version="13.5.0"] .cz-map-card li > svg,
+.cz-app[data-version="13.5.0"] .cz-alert-stack article > svg:first-child {
+  background: linear-gradient(145deg, rgba(168,85,247,.20), rgba(34,211,238,.08)) !important;
+  border: 1px solid rgba(168,85,247,.24);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 10px 24px rgba(0,0,0,.22);
+}
+.cz-app[data-version="13.5.0"] .cz-alert-stack { display: grid; gap: 14px; margin: 0 var(--cc-safe-inline) 18px; }
+.cz-app[data-version="13.5.0"] .cz-alert-stack article { display: grid; grid-template-columns: 88px minmax(0, 1fr) 26px; align-items: center; gap: 14px; border-radius: 28px; padding: 20px; background: linear-gradient(180deg, rgba(14,26,50,.82), rgba(5,15,31,.92)); box-shadow: var(--cc-vnext-shadow); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack article.danger { border: 1px solid rgba(255,77,104,.58); box-shadow: 0 0 0 1px rgba(255,77,104,.12), 0 24px 68px rgba(0,0,0,.38); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack article.warn { border: 1px solid rgba(245,158,11,.48); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack article > svg:first-child { width: 68px; height: 68px; padding: 18px; border-radius: 22px; color: var(--cc-vnext-warning); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack article.danger > svg:first-child { color: var(--cc-vnext-danger); background: rgba(255,77,104,.12) !important; border-color: rgba(255,77,104,.34); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack h2 { margin: 0 0 8px; color: #fff; font-size: 23px; line-height: 1.15; }
+.cz-app[data-version="13.5.0"] .cz-alert-stack p { margin: 8px 0 0; color: rgba(226,232,240,.76); line-height: 1.38; }
+.cz-app[data-version="13.5.0"] .cz-alert-stack span,
+.cz-app[data-version="13.5.0"] .cz-alert-stack b { display: inline-flex; margin: 0 8px 2px 0; padding: 5px 11px; border-radius: 999px; border: 1px solid currentColor; font-size: 13px; font-weight: 850; color: var(--cc-vnext-warning); background: rgba(245,158,11,.10); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack article.danger span { color: var(--cc-vnext-danger); background: rgba(255,77,104,.10); }
+.cz-app[data-version="13.5.0"] .cz-alert-stack b { color: var(--cc-vnext-green); background: rgba(46,230,184,.10); }
+.cz-app[data-version="13.5.0"] .cz-depart-hero { border-color: rgba(168,85,247,.48) !important; background: linear-gradient(145deg, rgba(18, 20, 54, .88), rgba(5, 16, 34, .94)) !important; box-shadow: 0 0 44px rgba(168,85,247,.18), var(--cc-vnext-shadow) !important; }
+.cz-app[data-version="13.5.0"] .cz-depart-hero strong { color: #fff !important; font-size: clamp(64px, 17vw, 88px); }
+.cz-app[data-version="13.5.0"] .cz-depart-hero em { background: rgba(36,225,165,.14) !important; border-color: rgba(36,225,165,.32) !important; color: #74f7c8 !important; }
+.cz-app[data-version="13.5.0"] .cz-depart-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cz-app[data-version="13.5.0"] .cz-depart-kpis div { background: linear-gradient(180deg, rgba(14,26,50,.78), rgba(5,15,31,.90)) !important; border: 1px solid rgba(134,174,255,.20) !important; box-shadow: var(--cc-vnext-shadow); }
+.cz-app[data-version="13.5.0"] .cz-map-canvas { height: 260px; background: linear-gradient(135deg, rgba(5,15,35,.96), rgba(3,9,20,.98)), repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 30px), repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 30px) !important; border-color: rgba(34,211,238,.22) !important; }
+.cz-app[data-version="13.5.0"] .cz-map-canvas i { border-bottom-color: #a855f7 !important; filter: drop-shadow(0 0 18px #a855f7) !important; }
+.cz-app[data-version="13.5.0"] .cz-map-canvas b { background: #22d3ee !important; box-shadow: 0 0 26px #22d3ee !important; }
+.cz-app[data-version="13.5.0"] .cz-bottom-nav { height: 92px; border-radius: 28px; background: rgba(5, 15, 31, .88) !important; border: 1px solid rgba(255,255,255,.14) !important; box-shadow: 0 -20px 60px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06) !important; backdrop-filter: blur(22px) saturate(150%); }
+.cz-app[data-version="13.5.0"] .cz-bottom-nav button.active { color: #d8b4fe !important; text-shadow: 0 0 16px rgba(168,85,247,.72); }
+.cz-app[data-version="13.5.0"] .cz-bottom-nav button.active svg { filter: drop-shadow(0 0 12px rgba(168,85,247,.84)); }
+.cz-app[data-version="13.5.0"] .cz-settings { gap: 18px; }
+.cz-app[data-version="13.5.0"] .cz-settings .cz-profile { grid-template-columns: 96px minmax(0,1fr) 24px; padding: 22px; border-color: rgba(137,163,255,.22) !important; }
+.cz-app[data-version="13.5.0"] .cz-profile > svg { width: 86px; height: 86px; padding: 22px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.28), transparent 30%), linear-gradient(135deg,#7c3aed,#22d3ee) !important; color: #061021 !important; box-shadow: 0 0 0 3px rgba(168,85,247,.46), 0 0 30px rgba(34,211,238,.24); }
+.cz-app[data-version="13.5.0"] .cz-profile h2 { color: #fff !important; font-size: 28px; line-height: 1.1; }
+.cz-app[data-version="13.5.0"] .cz-profile p { color: #d8b4fe !important; font-weight: 800; }
+.cz-app[data-version="13.5.0"] .cz-profile span,
+.cz-app[data-version="13.5.0"] .cz-profile b { background: rgba(2,6,23,.24); border-color: rgba(255,255,255,.16); }
+.cz-app[data-version="13.5.0"] .cz-settings h3 { margin: 4px 26px -2px; color: #c084fc !important; font-size: 14px; letter-spacing: .22em; }
+.cz-app[data-version="13.5.0"] .cz-setting { grid-template-columns: 62px minmax(0, 1fr) 68px; min-height: 86px; padding: 10px 14px; border-radius: 0; border-left: 1px solid rgba(137,163,255,.14) !important; border-right: 1px solid rgba(137,163,255,.14) !important; border-top-color: rgba(255,255,255,.06) !important; border-bottom-color: rgba(255,255,255,.06) !important; box-shadow: none !important; }
+.cz-app[data-version="13.5.0"] .cz-settings h3 + .cz-setting { border-top-left-radius: 24px; border-top-right-radius: 24px; }
+.cz-app[data-version="13.5.0"] .cz-setting:has(+ h3),
+.cz-app[data-version="13.5.0"] .cz-settings .cz-setting:last-of-type { border-bottom-left-radius: 24px; border-bottom-right-radius: 24px; margin-bottom: 8px; }
+.cz-app[data-version="13.5.0"] .cz-setting > svg { width: 54px; height: 54px; border-radius: 17px; padding: 15px; color: #d166ff !important; }
+.cz-app[data-version="13.5.0"] .cz-setting strong { color: #fff !important; font-size: 17px; line-height: 1.2; }
+.cz-app[data-version="13.5.0"] .cz-setting small { color: var(--cc-vnext-green) !important; font-weight: 780; }
+.cz-app[data-version="13.5.0"] .cz-field-setting input { color: rgba(230,238,250,.76) !important; }
+.cz-app[data-version="13.5.0"] .cz-setting > span:last-child {
+  justify-self: end;
+  width: 64px !important;
+  height: 36px !important;
+  padding: 3px !important;
+  border-radius: 999px !important;
+  background: var(--cc-ios-26-off) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.22), 0 8px 18px rgba(0,0,0,.16) !important;
+  position: relative !important;
+  transition: background .24s ease, box-shadow .24s ease, transform .12s ease !important;
+}
+.cz-app[data-version="13.5.0"] .cz-setting > span:last-child::after {
+  content: '' !important;
+  position: absolute !important;
+  left: 3px !important;
+  top: 3px !important;
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  box-shadow: 0 5px 14px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.86) !important;
+  transform: translateX(0) !important;
+  transition: transform .26s cubic-bezier(.2,.8,.2,1) !important;
+}
+.cz-app[data-version="13.5.0"] .cz-setting > span:last-child.on { background: var(--cc-ios-26-on) !important; border-color: rgba(216,180,254,.46) !important; box-shadow: 0 0 22px rgba(168,85,247,.38), inset 0 1px 0 rgba(255,255,255,.12) !important; }
+.cz-app[data-version="13.5.0"] .cz-setting > span:last-child.on::after { transform: translateX(28px) !important; }
+.cz-app[data-version="13.5.0"] .cz-setting:active > span:last-child { transform: scale(.96); }
+.cz-app[data-version="13.5.0"] .cz-setting:focus-visible { outline: 3px solid rgba(168,85,247,.44); outline-offset: 3px; }
+.cz-app[data-version="13.5.0"] .cz-settings-actions button:first-child { min-height: 64px; border-radius: 20px; background: linear-gradient(100deg,#6d28d9,#a855f7 48%,#f43f8f) !important; border: 0 !important; box-shadow: 0 18px 46px rgba(236,72,153,.26); }
+html[data-crew-theme="light"] .cz-app[data-version="13.5.0"], html[data-crew-theme="light"] .cz-auth[data-version="13.5.0"] { background: linear-gradient(180deg, #f5f8ff, #ffffff) !important; color: #071427 !important; }
+html[data-crew-theme="light"] .cz-auth[data-version="13.5.0"] .cz-login-card { background: linear-gradient(180deg,#fff,#f7f2ec) !important; }
+html[data-crew-theme="light"] .cz-app[data-version="13.5.0"] .cz-setting > span:last-child { background: linear-gradient(180deg, #e6ebf4, #d4dbe8) !important; border-color: rgba(15,55,95,.16) !important; }
+html[data-crew-theme="light"] .cz-app[data-version="13.5.0"] .cz-setting > span:last-child.on { background: var(--cc-ios-26-on) !important; }
+@media (max-width: 640px) {
+  .cz-auth[data-version="13.5.0"] { padding: 34px 20px 28px !important; }
+  .cz-auth[data-version="13.5.0"] .cz-auth-brand { grid-template-columns: 58px minmax(0,1fr); gap: 7px 14px; margin-top: 14px !important; }
+  .cz-auth[data-version="13.5.0"] .cz-auth-brand > span { width: 58px; height: 58px; }
+  .cz-auth[data-version="13.5.0"] .cz-auth-brand strong { font-size: 34px; }
+  .cz-auth[data-version="13.5.0"] .cz-auth-brand small { font-size: 9px; letter-spacing: .24em; }
+  .cz-auth[data-version="13.5.0"] .cz-login-card { padding: 22px !important; border-radius: 30px !important; }
+  .cz-auth[data-version="13.5.0"] .cz-login-card h1 { font-size: 34px; }
+  .cz-app[data-version="13.5.0"] .cz-brand-lockup { justify-content: center; }
+  .cz-app[data-version="13.5.0"] .cz-brand-lockup .cz-logo { width: 54px; height: 54px; }
+  .cz-app[data-version="13.5.0"] .cz-brand-lockup strong { font-size: 31px; }
+  .cz-app[data-version="13.5.0"] .cz-flight-card { padding: 18px; border-radius: 27px; }
+  .cz-app[data-version="13.5.0"] .cz-route { grid-template-columns: minmax(0,1fr) 72px minmax(0,1fr); }
+  .cz-app[data-version="13.5.0"] .cz-route strong { font-size: clamp(42px, 13vw, 58px); }
+  .cz-app[data-version="13.5.0"] .cz-time-trio strong { font-size: clamp(29px, 8vw, 42px); }
+  .cz-app[data-version="13.5.0"] .cz-alert-stack article { grid-template-columns: 76px minmax(0,1fr) 20px; padding: 18px; }
+  .cz-app[data-version="13.5.0"] .cz-alert-stack article > svg:first-child { width: 62px; height: 62px; }
+  .cz-app[data-version="13.5.0"] .cz-depart-kpis { gap: 9px; }
+  .cz-app[data-version="13.5.0"] .cz-depart-kpis div { padding: 12px; font-size: 13px; }
+  .cz-app[data-version="13.5.0"] .cz-depart-kpis strong { font-size: 20px; }
+  .cz-app[data-version="13.5.0"] .cz-settings .cz-profile { grid-template-columns: 86px minmax(0,1fr) 20px; }
+  .cz-app[data-version="13.5.0"] .cz-profile > svg { width: 76px; height: 76px; }
+  .cz-app[data-version="13.5.0"] .cz-setting { grid-template-columns: 56px minmax(0,1fr) 64px; }
+  .cz-app[data-version="13.5.0"] .cz-bottom-nav { width: calc(100% - 20px); height: 90px; }
+}
+
+/* CrewCheck v13.5.0 — Telegram notifications + Concierge restore */
+.cz-telegram-hero { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:0 var(--cc-safe-inline) 16px; }
+.cz-telegram-hero article { border:1px solid rgba(137,163,255,.22); border-radius:28px; padding:20px; background:linear-gradient(180deg,rgba(9,22,45,.84),rgba(4,12,26,.92)); box-shadow:var(--cc-vnext-shadow, 0 24px 72px rgba(0,0,0,.42)); backdrop-filter:var(--cc-vnext-glass, blur(22px) saturate(145%)); }
+.cz-telegram-hero svg { width:54px; height:54px; padding:14px; border-radius:18px; color:#d8b4fe; background:linear-gradient(145deg,rgba(168,85,247,.22),rgba(34,211,238,.10)); border:1px solid rgba(168,85,247,.28); }
+.cz-telegram-hero small { display:block; margin-top:14px; color:#c084fc; text-transform:uppercase; letter-spacing:.16em; font-weight:900; }
+.cz-telegram-hero h2 { margin:8px 0; color:#fff; font-size:clamp(22px,5vw,30px); line-height:1.12; }
+.cz-telegram-hero p { color:rgba(226,232,240,.76); line-height:1.48; }
+.cz-telegram-hero a { display:inline-flex; margin-top:8px; border-radius:999px; padding:10px 14px; color:#061021; background:linear-gradient(100deg,#5de7ff,#a855f7 54%,#ff4fd8); font-weight:900; text-decoration:none; }
+.cz-telegram-connect label { display:grid; grid-template-columns:42px minmax(0,1fr); align-items:center; gap:10px; min-height:58px; margin:12px 0; padding:8px 12px; border:1px solid rgba(255,255,255,.14); border-radius:20px; background:rgba(2,10,24,.32); }
+.cz-telegram-connect label span { color:#d8b4fe; font-size:22px; font-weight:900; }
+.cz-telegram-connect input { width:100%; border:0; outline:0; background:transparent; color:#fff; font-size:18px; font-weight:850; }
+.cz-concierge-switches { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; }
+.cz-concierge-switches button { min-height:86px; border-radius:22px; border:1px solid rgba(137,163,255,.20); background:linear-gradient(180deg,rgba(9,22,45,.72),rgba(4,12,26,.88)); color:#fff; display:grid; grid-template-columns:42px minmax(0,1fr); column-gap:10px; align-items:center; text-align:left; padding:12px; }
+.cz-concierge-switches button svg { grid-row:1/3; width:42px; height:42px; padding:10px; border-radius:15px; color:#a78bfa; background:rgba(168,85,247,.14); }
+.cz-concierge-switches button span { color:#f8fbff; font-weight:900; line-height:1.16; }
+.cz-concierge-switches button b { color:#94a3b8; font-size:12px; margin-top:4px; }
+.cz-concierge-switches button.on { border-color:rgba(46,230,184,.32); box-shadow:0 0 24px rgba(46,230,184,.10), inset 0 1px 0 rgba(255,255,255,.06); }
+.cz-concierge-switches button.on svg { color:#2ee6b8; background:rgba(46,230,184,.13); }
+.cz-concierge-switches button.on b { color:#2ee6b8; }
+.cz-concierge-entry { cursor:pointer; }
+html[data-crew-theme="light"] .cz-telegram-hero article,
+html[data-crew-theme="light"] .cz-concierge-switches button,
+html[data-crew-theme="light"] .cz-telegram-connect label { background:rgba(255,255,255,.92) !important; color:#071427 !important; border-color:rgba(15,55,95,.14) !important; }
+html[data-crew-theme="light"] .cz-telegram-hero h2,
+html[data-crew-theme="light"] .cz-concierge-switches button span,
+html[data-crew-theme="light"] .cz-telegram-connect input { color:#071427 !important; }
+html[data-crew-theme="light"] .cz-telegram-hero p,
+html[data-crew-theme="light"] .cz-concierge-switches button b { color:#4b6078; }
+@media (max-width:640px){ .cz-telegram-hero,.cz-concierge-switches{grid-template-columns:1fr;} .cz-telegram-hero article{padding:18px;} }
+.cz-concierge-chat label { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; margin:12px 0; }
+.cz-concierge-chat input { min-height:54px; border-radius:18px; border:1px solid rgba(137,163,255,.20); background:rgba(2,10,24,.36); color:#fff; padding:0 14px; font-weight:800; }
+.cz-concierge-chat label button { min-height:54px; border-radius:18px; border:0; padding:0 16px; color:#061021; font-weight:950; background:linear-gradient(100deg,#5de7ff,#a855f7 54%,#ff4fd8); }
+.cz-concierge-answer { margin-top:12px; border:1px solid rgba(46,230,184,.20); border-radius:22px; padding:16px; background:linear-gradient(180deg,rgba(46,230,184,.08),rgba(4,12,26,.74)); }
+.cz-concierge-answer strong { color:#2ee6b8; font-size:18px; }
+.cz-concierge-answer p { color:rgba(226,232,240,.82); margin:8px 0 0; line-height:1.45; }
+html[data-crew-theme="light"] .cz-concierge-chat input,
+html[data-crew-theme="light"] .cz-concierge-answer { background:rgba(255,255,255,.92) !important; color:#071427 !important; border-color:rgba(15,55,95,.14) !important; }
+html[data-crew-theme="light"] .cz-concierge-answer p { color:#4b6078; }
+@media (max-width:640px){ .cz-concierge-chat label{grid-template-columns:1fr;} .cz-concierge-chat label button{width:100%;} }

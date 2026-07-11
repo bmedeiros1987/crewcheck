@@ -20231,6 +20231,13 @@ async function handleApi(req, res, url) {
    const status = telegramPublicStatusFromRow(row, bot, user);
    const synced = row?.is_active ? await telegramConciergeLatestRosters(db, user, 1, row).catch(() => []) : [];
    status.syncedRoster = synced[0] ? { available: true, updatedAt: synced[0].updated_at || synced[0].created_at || null, periodYear: synced[0].period_year || synced[0].roster?.year || null, periodMonth: synced[0].period_month || synced[0].roster?.month || null } : { available: false };
+   const webhook = telegramIsConfigured() ? await telegramApi('getWebhookInfo').catch(() => null) : null;
+   status.webhook = webhook ? {
+    configured: Boolean(String(webhook.url || '').includes('/api/webhooks/telegram')),
+    url: webhook.url || null,
+    pendingUpdates: Number(webhook.pending_update_count || 0),
+    lastError: webhook.last_error_message || null,
+   } : { configured: false, url: null, pendingUpdates: null, lastError: null };
    sendJson(res, 200, status);
   } catch (error) {
    sendJson(res, 200, { ok: false, configured: telegramIsConfigured(), connected: false, message: sanitizePublicError(error?.message || String(error)) });
@@ -20398,6 +20405,117 @@ async function handleApi(req, res, url) {
    sendJson(res, 200, { ok: true, message: 'Mensagem de teste enviada.' });
   } catch (error) {
    sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)) });
+  }
+  return true;
+ }
+
+ if (url.pathname === '/api/telegram/concierge/ask' && req.method === 'POST') {
+  const user = await requireAuth(req, res);
+  if (!user) return true;
+  const db = requireDatabase(res);
+  if (!db) return true;
+  try {
+   await ensureSchema();
+   const body = await readJsonBody(req, 128 * 1024).catch(() => ({}));
+   const question = String(body.question || body.text || body.message || '').replace(/\s+/g, ' ').trim().slice(0, 900);
+   if (!question) {
+    sendJson(res, 400, { ok: false, message: 'Digite uma pergunta para o Concierge.' });
+    return true;
+   }
+   const row = await ensureTelegramLinkForUser(db, user).catch(() => null);
+   const preferences = normalizeTelegramPreferences(row?.preferences_json || {});
+   if (preferences.concierge === false) {
+    sendJson(res, 200, { ok: true, intent: 'disabled', title: 'Concierge desativado', lines: ['O Concierge está desligado nas preferências.', 'Ative em Configurações > Telegram e Concierge.'] });
+    return true;
+   }
+   const clean = telegramConciergeNormalizeText(question);
+   const premium = telegramConciergeIsPremium(user);
+   const rosters = await telegramConciergeLatestRosters(db, user, 24, row).catch(() => []);
+   const answer = (title, lines = [], intent = 'concierge', extra = {}) => ({ ok: true, title, lines: (Array.isArray(lines) ? lines : [lines]).filter(Boolean).map((line) => String(line).slice(0, 360)).slice(0, 10), intent, ...extra });
+   if (telegramConciergeIsHelp(question)) {
+    sendJson(res, 200, answer('Concierge CrewCheck', [
+     'Pergunte: “qual minha próxima programação?”, “qual portão do LA3730?”, “que horas devo sair?”, “METAR de SBBR?” ou “diárias de amanhã?”.',
+     'Para notificações automáticas no Telegram, conecte o bot e confirme o webhook.',
+     'O Concierge usa apenas a escala sincronizada e fontes internas; não chuta dados reais ausentes.',
+    ], 'help'));
+    return true;
+   }
+   const aviationWeatherRequest = telegramConciergeParseAviationWeatherRequest(question);
+   if (aviationWeatherRequest) {
+    const payload = await telegramConciergeAviationWeatherLines(aviationWeatherRequest).catch((error) => ({ title: 'Meteorologia indisponível', lines: ['Não consegui consultar METAR/TAF agora.', sanitizePublicError(error?.message || String(error))] }));
+    sendJson(res, 200, answer(payload.title, payload.lines, 'aviation_weather'));
+    return true;
+   }
+   if (!rosters.length) {
+    sendJson(res, 200, answer('Escala não sincronizada', [
+     'Ainda não encontrei escala salva no servidor desta conta.',
+     'Toque em “Sincronizar escala” nesta tela ou envie o PDF original da escala para o bot no Telegram.',
+     'Sem escala sincronizada, o Concierge não inventa próxima programação, diárias, radar ou rotina.',
+    ], 'no_roster'));
+    return true;
+   }
+   if (telegramConciergeWantsUpcoming(question)) {
+    const items = telegramConciergeUpcomingDays(rosters, { limit: premium ? 5 : 2 });
+    sendJson(res, 200, answer(premium ? 'Próximas programações' : 'Próximas programações', telegramConciergeUpcomingLines(items, { free: !premium }), 'upcoming'));
+    return true;
+   }
+   if (telegramConciergeWantsRegulation(question) || /^\/(conformidade|regulamentacao|regulamentação|alertas|irregularidades)\b/i.test(question)) {
+    sendJson(res, 200, answer('Conformidade e regulamentação', telegramConciergeRegulationLines(rosters, { premium }), 'regulation'));
+    return true;
+   }
+   if (/^\/(portao|portão)|\b(portao|portão|terminal|gate|radar)\b/.test(clean)) {
+    const found = telegramConciergeFindFlight(rosters, question);
+    const radar = await telegramConciergeRadarLines(found, question);
+    sendJson(res, 200, answer(radar.title, radar.lines, 'gate'));
+    return true;
+   }
+   if (/^\/(saida|saída)|\b(sair|saida|saída|casa|transito|trânsito|rota|uber|99)\b/.test(clean)) {
+    const found = telegramConciergeFindFlight(rosters, question);
+    const leg = found?.leg || {};
+    const report = telegramConciergeFormatTime(leg.dutyReport || leg.reportTime || leg.presentationTime || found?.day?.startTime || '');
+    const dep = telegramConciergeFormatTime(leg.departureTime || leg.departure || leg.dep || '');
+    const origin = leg.origin || leg.from || found?.day?.location || 'origem não informada';
+    const lines = [
+     found ? `Data da programação: ${telegramConciergeReadableDate(found.iso)}` : 'Não encontrei voo futuro na escala salva.',
+     found ? telegramConciergeLegLine(leg) : '',
+     report ? `Apresentação na escala: ${report}` : dep ? `Decolagem: ${dep}` : 'Horário de apresentação não localizado na escala.',
+     `Origem: ${origin}`,
+     'Para trânsito real, calcule a Saída Inteligente no app com localização ativada.',
+    ].filter(Boolean);
+    sendJson(res, 200, answer('Saída Inteligente', lines, 'departure'));
+    return true;
+   }
+   if (/^\/(diarias|diárias|diaria|diária)|\b(diaria|diária|diarias|diárias|pernoite|hotel|inativo)\b/.test(clean)) {
+    if (!premium) {
+     sendJson(res, 200, answer('Diárias é Premium', telegramConciergeFreeBlockedLines(), 'premium_blocked'));
+     return true;
+    }
+    const target = telegramConciergeDateFromText(question, rosters);
+    const found = telegramConciergeFindDay(rosters, target.iso);
+    const lines = found ? telegramConciergeMealLines(found.day, target.iso) : [`Não encontrei programação em ${target.label}.`, 'Importe ou reprocesse a escala para recalcular as diárias.'];
+    sendJson(res, 200, answer(`Diárias · ${target.label}`, lines, 'perdiem'));
+    return true;
+   }
+   if (/^\/(rotina)|\b(rotina|acordar|treinar|academia|dormir|estudar|comer)\b/.test(clean)) {
+    if (!premium) {
+     sendJson(res, 200, answer('Rotina é Premium', telegramConciergeFreeBlockedLines(), 'premium_blocked'));
+     return true;
+    }
+    sendJson(res, 200, answer('Rotina', telegramConciergeRoutineLines(rosters, question), 'routine'));
+    return true;
+   }
+   const asksNext = /^\/(proximo|próximo)/i.test(question) || /\b(proximo|próximo)\b/i.test(question);
+   let target = /^\/(amanha|amanhã)/i.test(question) ? { iso: telegramConciergeDatePlus(1), label: 'amanhã' } : telegramConciergeDateFromText(question, rosters);
+   let found = telegramConciergeFindDay(rosters, target.iso);
+   let title = `Programação · ${target.label}`;
+   if (asksNext && !/\b(hoje|amanha|amanhã|dia\s+\d{1,2}|\d{1,2}[\/\-.]\d{1,2})\b/i.test(question)) {
+    const next = telegramConciergeUpcomingDays(rosters, { limit: 1 })[0] || null;
+    if (next) { found = next; target = { iso: next.iso, label: 'próxima' }; title = 'Próxima programação'; }
+   }
+   const lines = found ? telegramConciergeDayLines(found.day, found.iso || target.iso) : [`Não encontrei programação para ${target.label}.`, 'A escala salva pode não conter essa data ou precisa ser reimportada.'];
+   sendJson(res, 200, answer(title, lines, 'schedule'));
+  } catch (error) {
+   sendJson(res, error.statusCode || 500, { ok: false, message: sanitizePublicError(error?.message || String(error)), code: error.code || null });
   }
   return true;
  }

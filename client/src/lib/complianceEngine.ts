@@ -1784,7 +1784,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
         : (isMultiMonthRoster ? `A escala visual pode estar com mês atual + subsequente anexado. O CrewCheck avaliou cada mês separadamente e não somou os meses para gerar este alerta.` : undefined),
       legalReference: actRules.flightLimits.legalReference,
       confidence: suspiciousTotal ? 'media' : 'alta',
-      classification: suspiciousTotal ? 'atencao' : 'irregularidade',
+      classification: suspiciousTotal ? 'atencao' : 'confirmada',
     });
   } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {

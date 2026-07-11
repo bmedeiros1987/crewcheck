@@ -54,10 +54,11 @@ import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routine
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, googleCalendarIntegrationDiagnostics } from '@/lib/googleCalendarSync';
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
+import { askTelegramConcierge, connectTelegramConcierge, getTelegramConciergeHealth, getTelegramConciergeStatus, saveTelegramConciergePreferences, sendTelegramConciergeShare, sendTelegramConciergeTest, setupTelegramConciergeWebhook, syncRosterWithTelegramConcierge, telegramStatusLabel, type TelegramConciergeAnswer, type TelegramConciergeHealth, type TelegramConciergeStatus } from '@/lib/telegramConciergeClient';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'concierge';
 
 type ZeroLeg = {
   id: string;
@@ -73,6 +74,14 @@ type ZeroLeg = {
   presentation: string;
   departure: string;
   arrival: string;
+  aircraft?: string;
+  registration?: string;
+  gate?: string;
+  terminal?: string;
+  status?: string;
+  hotel?: string;
+  crew?: string[];
+  routine?: string[];
   timeRange: string;
   placeholder?: boolean;
 };
@@ -93,7 +102,7 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '12.5.78';
+const DEFAULT_VERSION = '13.5.0';
 const CREWCHECK_UI_CORE_NOTE = 'ui-safe-functional-core: layout novo preservado; núcleo funcional importado sem voltar o sistema antigo';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
@@ -115,6 +124,13 @@ function city(code?: string) {
     BEL: 'Belém', MAO: 'Manaus', NAT: 'Natal', MCZ: 'Maceió', SLZ: 'São Luís', THE: 'Teresina', AJU: 'Aracaju', VIX: 'Vitória',
   };
   return map[String(code || '').toUpperCase()] || safe(code, 'Aeroporto');
+}
+function addMinutesToTime(value: string, minutes: number) {
+  const m = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  if (!m) return '—';
+  const d = new Date();
+  d.setHours(Number(m[1]), Number(m[2]) + minutes, 0, 0);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 function time(value?: string | null, fallback = '—') {
   const text = String(value || '').trim();
@@ -261,7 +277,22 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
           day, leg, kind: 'flight', date: d,
           title: `${flightNumber} · ${origin} → ${destination}`,
           subtitle: `Apres. ${presentation} · Chegada ${arrival}${anyLeg.isNextDay || (day as any).isNextDay ? ' +1' : ''} · ${city(origin)} → ${city(destination)}`,
-          origin, destination, flightNumber, presentation, departure, arrival, timeRange: `${departure} → ${arrival}`,
+          origin, destination, flightNumber, presentation, departure, arrival,
+          aircraft: safe(anyLeg.aircraft || anyLeg.aircraftType || anyLeg.equipment, '—'),
+          registration: safe(anyLeg.registration || anyLeg.tailNumber || anyLeg.matricula, '—'),
+          gate: safe(anyLeg.gate || (day as any).gate, 'A confirmar'),
+          terminal: safe(anyLeg.terminal || (day as any).terminal, 'Terminal a confirmar'),
+          status: safe(anyLeg.status || (day as any).status, 'Programado'),
+          hotel: safe((day as any).hotel || anyLeg.hotel, ''),
+          crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
+          routine: [
+            `Despertador ${addMinutesToTime(presentation, -90)}`,
+            anyLeg.hotel || (day as any).hotel ? `Hotel ${safe(anyLeg.hotel || (day as any).hotel)}` : '',
+            `Descanso após chegada ${arrival}`,
+            `Academia/restaurante/mercado/farmácia/lavanderia em ${city(destination)}`,
+          ].filter(Boolean),
+          timeRange: `${departure} → ${arrival}`,
+
         });
       });
       return;
@@ -281,7 +312,26 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     return String(a.departure || a.presentation).localeCompare(String(b.departure || b.presentation));
   });
 }
-function nextFlight(events: ZeroLeg[]) { return events.find((e) => e.kind === 'flight') || events[0] || placeholderLeg(); }
+
+function eventStartDateTime(event: ZeroLeg): Date {
+  const base = new Date(event.date);
+  const raw = event.presentation !== '—' ? event.presentation : event.departure;
+  const m = raw.match(/(\d{1,2}):(\d{2})/);
+  if (m) base.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  else base.setHours(0, 0, 0, 0);
+  return base;
+}
+function nextFlight(events: ZeroLeg[]) {
+  const now = new Date();
+  const real = events.filter((e) => !e.placeholder).sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  return real.find((e) => eventStartDateTime(e).getTime() >= now.getTime()) || real[0] || placeholderLeg();
+}
+function currentDayAnchor(events: ZeroLeg[]) {
+  const now = new Date();
+  const today = events.find((e) => e.date.getFullYear() === now.getFullYear() && e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate());
+  return today || nextFlight(events);
+}
+
 function isAdmin() {
   const u = getStoredUser();
   const role = String((u as any)?.role || storage.get('crewcheck_role')).toLowerCase();
@@ -297,10 +347,10 @@ function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
   </header>;
 }
 function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void }) {
-  const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Roster',CalendarDays],['alerts','Alerts',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
+  const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','concierge','radar','weather','perdiem','salary','reports'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -309,10 +359,15 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
   const d = event.date;
   return <article className={`cz-flight-card ${compact ? 'compact' : ''}`}>
-    <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={19}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
-    <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={25}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
+    <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
+    <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
+    <div className="cz-flight-pills"><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{event.arrival}</span></div>
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>Decolagem</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>Chegada</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo"><div><Lock size={25}/><span>Portão</span><strong>A confirmar</strong><small>Terminal 2</small></div><div><Plane size={25}/><span>Status</span><strong className="ok">Confirmado</strong><small>Operação Normal</small></div></div>}
+    {!compact && <div className="cz-info-duo"><div><Lock size={22}/><span>Portão</span><strong>{safe(event.gate, 'A confirmar')}</strong><small>{safe(event.terminal, 'A confirmar')}</small></div><div><Plane size={22}/><span>Status</span><strong className="ok">{safe(event.status, 'Programado')}</strong><small>Aeronave: {safe(event.aircraft, 'A confirmar')} · Matrícula: {safe(event.registration, 'A confirmar')}</small></div></div>}
+    {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
+    {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
+    {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
+    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
   </article>;
 }
 function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
@@ -327,8 +382,8 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','TomTom/hotel',Car],
-    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
-    ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
+    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF/Defesa Civil',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
+    ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['concierge','Telegram e Concierge','Alertas e assistente',Wifi], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
   const jump = (v: ZeroView) => { setView(v); close(); };
@@ -347,7 +402,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
         <button onClick={() => { actions.email(); close(); }}><Mail/><span><strong>E-mail</strong><small>Enviar relatório</small></span><ChevronRight/></button>
         <button onClick={() => { actions.copy(); close(); }}><Copy/><span><strong>Copiar resumo</strong><small>Área de transferência</small></span><ChevronRight/></button>
         <button onClick={() => { actions.save(); close(); }}><Save/><span><strong>Salvar histórico</strong><small>Banco/offline</small></span><ChevronRight/></button>
-        <button onClick={() => { actions.openActive(); close(); }}><RotateCcw/><span><strong>Abrir escala ativa</strong><small>Última sincronizada</small></span><ChevronRight/></button>
+        <button onClick={() => { actions.openActive(); close(); }}><RotateCcw/><span><strong>Abrir escala ativa</strong><small>Última sincronizada</small></span><ChevronRight/></button><button onClick={() => jump('departure')}><Car/><span><strong>Meu Carro</strong><small>Saída e estacionamento</small></span><ChevronRight/></button><button onClick={() => jump('calendar')}><Map/><span><strong>Mapa do mês</strong><small>Rotas visuais</small></span><ChevronRight/></button>
         <button className="danger" onClick={() => { actions.logout(); close(); }}><LogOut/><span><strong>Sair</strong><small>Encerrar sessão</small></span><ChevronRight/></button>
       </section>
     </aside>
@@ -358,14 +413,14 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const event = nextFlight(events);
   const loaded = !event.placeholder && events.length > 0;
   const alertCount = Number((compliance as any)?.alerts?.length || 0);
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={ShieldCheck} title="Status RBAC" value={loaded ? 'Analisado' : 'Aguardando'} detail={loaded ? 'Escala real' : 'Importe PDF'}/><KpiCard icon={CalendarDays} title="Eventos" value={String(loaded ? events.length : 0)} detail="Escala carregada" tone="blue"/><KpiCard icon={Bell} title="Alerts" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>Nenhuma escala real carregada</h2><p>Suba o PDF oficial de julho para reativar escala completa, detalhes, diárias, radar, rotina, hotéis, academias, trânsito e saída inteligente com dados reais.</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/><section className="cz-shortcuts cz-shortcuts-full"><button onClick={() => setView('features')}><Settings/><strong>Funcionalidades</strong><small>Central completa</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar</strong><small>Gate e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal/mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Ganhos previstos</small></button><button onClick={() => setView('reports')}><FileText/><strong>Relatórios</strong><small>Indicadores</small></button><button onClick={() => setView('routine')}><Dumbbell/><strong>Rotina</strong><small>Academias/hotéis</small></button><button onClick={onUpload}><Upload/><strong>Importar PDF</strong><small>Escala oficial</small></button></section></>;
+  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={ShieldCheck} title="Status RBAC" value={loaded ? 'Analisado' : 'Aguardando'} detail={loaded ? 'Escala real' : 'Importe PDF'}/><KpiCard icon={CalendarDays} title="Eventos" value={String(loaded ? events.length : 0)} detail="Escala carregada" tone="blue"/><KpiCard icon={Bell} title="Alerts" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>Nenhuma escala real carregada</h2><p>Suba o PDF oficial de julho para reativar escala completa, detalhes, diárias, radar, rotina, hotéis, academias, trânsito e saída inteligente com dados reais.</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/><section className="cz-shortcuts cz-shortcuts-full"><button onClick={() => setView('features')}><Settings/><strong>Funcionalidades</strong><small>Central completa</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar</strong><small>Gate e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal/mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Ganhos previstos</small></button><button onClick={() => setView('reports')}><FileText/><strong>Relatórios</strong><small>Indicadores</small></button><button onClick={() => setView('routine')}><Dumbbell/><strong>Rotina</strong><small>Academias/hotéis</small></button><button onClick={() => setView('departure')}><Car/><strong>Meu Carro</strong><small>Saída e estacionamento</small></button><button onClick={() => setView('calendar')}><Map/><strong>Mapa do mês</strong><small>Rotas visuais</small></button><button onClick={onUpload}><Upload/><strong>Importar PDF</strong><small>Escala oficial</small></button></section></>;
 }
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
   const days = Array.isArray(roster.days) ? [...roster.days].sort((a,b)=>parseDate(a).getTime()-parseDate(b).getTime()) : [];
-  const first = events[0] || placeholderLeg();
+  const first = currentDayAnchor(events);
   const [selected, setSelected] = useState<ZeroLeg | null>(null);
   const hasRoster = days.length > 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>Primeiro evento</b></section><section className="cz-money-row"><div><BriefcaseBusiness/><span>Eventos</span><strong>{events.length}</strong></div><div><DollarSign/><span>Dias</span><strong>{days.length}</strong></div></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div></div><p>{selected.subtitle}</p><footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button></footer></article></section>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(roster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{days.length}</strong></button><button onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{events.length}</strong></button></section><section className="cz-roster-actions"><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list cz-roster-timeline">{events.map(e => <article className={`cz-roster-card ${e.kind === 'stay' ? 'stay' : ''}`} key={e.id} onClick={() => setSelected(e)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{e.title}</h3><p>{e.subtitle}</p></div><ChevronDown className="cz-roster-chevron"/></div><strong className="cz-roster-time">{e.timeRange}</strong><ChevronRight className="cz-card-chevron"/></article>)}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day === day); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setSelected(dayEvents[0])}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{safe((day as any).type || (day as any).pairingCode, '—')}</span></header><p>{safe((day as any).pairingCode || (day as any).description || (day as any).rawText || (day as any).hotel, 'Dia publicado sem observação textual')}</p><small>Apresentação {time((day as any).dutyReport || (day as any).startTime)} · Término {time((day as any).dutyDebrief || (day as any).endTime)} · Voos {(day.legs || []).length}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}{selected && <section className="cz-detail-modal" role="dialog" aria-modal="true"><button className="cz-detail-backdrop" onClick={() => setSelected(null)} aria-label="Fechar detalhes"/><article><header><div><small>Detalhes da escala</small><h2>{selected.title}</h2><p>{dayTitle(selected.day)}</p></div><button onClick={() => setSelected(null)}><X/></button></header><div className="cz-detail-grid"><div><span>Apresentação</span><strong>{selected.presentation}</strong></div><div><span>Decolagem/Início</span><strong>{selected.departure}</strong></div><div><span>Chegada/Fim</span><strong>{selected.arrival}</strong></div><div><span>Trecho</span><strong>{selected.origin} → {selected.destination}</strong></div><div><span>Tipo</span><strong>{safe((selected.day as any).type, selected.kind)}</strong></div><div><span>Código</span><strong>{selected.flightNumber}</strong></div><div><span>Aeronave</span><strong>{safe(selected.aircraft, '—')}</strong></div><div><span>Matrícula</span><strong>{safe(selected.registration, '—')}</strong></div><div><span>Portão/Terminal</span><strong>{safe(selected.gate, '—')} · {safe(selected.terminal, '—')}</strong></div><div><span>Status</span><strong>{safe(selected.status, 'Programado')}</strong></div><div><span>Hotel</span><strong>{safe(selected.hotel, '—')}</strong></div></div><p>{selected.subtitle}</p>{Boolean(selected.crew?.length) && <p>Tripulação: {selected.crew?.join(', ')}</p>}<footer><button onClick={() => setView('departure')}><Car/> Saída inteligente</button><button onClick={() => setView('radar')}><Radar/> Radar</button><button onClick={() => setView('weather')}><CloudSun/> Meteorologia</button><button onClick={() => setView('departure')}><Car/> Meu Carro</button><button onClick={() => setView('settings')}><Clock/> Gerenciar apresentação</button></footer></article></section>}</>;
 }
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   const alerts = ((compliance as any)?.alerts || []);
@@ -405,19 +460,19 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     } catch { toast.error('Não consegui alterar o modo manutenção.'); }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
-  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="TomTom como API principal" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={Map} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="A cada 60 min"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
+  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="TomTom como API principal" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={Map} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="A cada 60 min"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><button className="cz-setting cz-concierge-entry" onClick={() => setView('concierge')}><Wifi/><div><strong>Telegram e Concierge</strong><small>Conectar bot, sincronizar escala e testar alertas</small></div><ChevronRight/></button><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
 }
 
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>TomTom / hotel / pós-pouso</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>TomTom / hotel / pós-pouso</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('concierge')}><Wifi/><strong>Telegram e Concierge</strong><small>Alertas e assistente</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
 function RadarView({ event }: { event: ZeroLeg }) {
   const [state, setState] = useState<any>(null);
   useEffect(() => { let alive = true; fetch(`/api/radar-health?airport=${encodeURIComponent(event.origin)}&type=departure`, { cache: 'no-store' }).then(r => r.json()).then(p => alive && setState(p)).catch(() => alive && setState({ ok: false, message: 'Radar em espera.' })); return () => { alive = false; }; }, [event.origin]);
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>Status operacional para {event.flightNumber} · {event.origin} → {event.destination}.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{event.flightNumber}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: A confirmar</strong><span>Status: Confirmado / monitorando</span></article><article><Plane/><h2>Fonte operacional</h2><p>Radar, portão, status e remoção de voos finalizados.</p><strong>{state?.ok ? 'Fonte ativa' : 'Fonte em espera'}</strong><span>{state?.message || state?.source || 'Radar pronto.'}</span></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>Status operacional para {event.flightNumber} · {event.origin} → {event.destination}.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{event.flightNumber}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {safe(event.gate, 'A confirmar')} · {safe(event.terminal, 'Terminal a confirmar')}</strong><span>Status: {safe(event.status, 'Monitorando')}</span></article><article><Plane/><h2>Fonte operacional</h2><p>Radar, portão, status e remoção de voos finalizados.</p><strong>{state?.ok ? 'Fonte ativa' : 'Fonte em espera'}</strong><span>{state?.message || state?.source || 'Radar pronto.'}</span></article></section></>;
 }
 function WeatherView({ event }: { event: ZeroLeg }) {
   const [weather, setWeather] = useState<any>(null);
@@ -454,6 +509,53 @@ function CalendarToolsView({ actions }: { actions: QuickActions }) {
 }
 function ExportToolsView({ actions }: { actions: QuickActions }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, WhatsApp, Telegram, copiar resumo, e-mail e arquivo de calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.email}>E-mail</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
+}
+
+function TelegramConciergeView({ bundle, events }: { bundle: BundleState; events: ZeroLeg[] }) {
+  const [status, setStatus] = useState<TelegramConciergeStatus | null>(null);
+  const [health, setHealth] = useState<TelegramConciergeHealth | null>(null);
+  const [answer, setAnswer] = useState<TelegramConciergeAnswer | null>(null);
+  const [username, setUsername] = useState('');
+  const [question, setQuestion] = useState('qual minha próxima programação?');
+  const [busy, setBusy] = useState(false);
+  const prefs = status?.preferences || {};
+  const connected = Boolean(status?.connected);
+  const activeRosterLabel = bundle.roster?.month && bundle.roster?.year ? `${pad2(bundle.roster.month)}/${bundle.roster.year}` : 'escala ativa';
+  const refresh = async () => {
+    try { setStatus(await getTelegramConciergeStatus()); }
+    catch (error) { setStatus({ ok: false, configured: false, connected: false, message: error instanceof Error ? error.message : 'Não foi possível consultar o Telegram.' }); }
+  };
+  const diagnose = async () => {
+    try { setHealth(await getTelegramConciergeHealth()); }
+    catch (error) { setHealth({ ok: false, message: error instanceof Error ? error.message : 'Diagnóstico restrito ao administrador.' }); }
+  };
+  useEffect(() => { void refresh(); void diagnose(); }, []);
+  async function run(label: string, task: () => Promise<any>) {
+    setBusy(true);
+    try {
+      const result = await task();
+      if (result?.status) setStatus(result.status);
+      else if (result?.configured !== undefined || result?.connected !== undefined) setStatus(result);
+      toast.success(result?.message || label);
+      if (!result?.status && result?.configured === undefined) await refresh();
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui concluir a ação agora.'); }
+    finally { setBusy(false); }
+  }
+  const togglePref = (key: keyof NonNullable<TelegramConciergeStatus['preferences']>) => run('Preferência salva.', async () => saveTelegramConciergePreferences({ [key]: !Boolean((prefs as any)[key]) } as any));
+  const ask = () => run('Concierge respondeu.', async () => { const result = await askTelegramConcierge(question); setAnswer(result); return { ok: true, message: result.title }; });
+  const summary = `Escala ${activeRosterLabel}: ${events.filter(e => e.kind === 'flight').length} voo(s), ${events.length} evento(s), origem ${bundle.source}.`;
+  const webhookOk = status?.webhook?.configured || Boolean(health?.webhook?.url && String(health.webhook.url).includes('/api/webhooks/telegram'));
+  return <><Brand back/><section className="cz-panel-head"><h1>Telegram e Concierge</h1><p>Alertas operacionais, resumo da escala, saída inteligente e assistente de bordo no Telegram, usando somente dados reais importados no CrewCheck.</p></section><section className="cz-telegram-hero"><article><Wifi/><small>Status do canal</small><h2>{telegramStatusLabel(status)}</h2><p>{connected ? 'O CrewCheck pode enviar alertas e responder consultas sobre a escala sincronizada.' : 'Conecte seu usuário e confirme no Telegram para liberar notificações e Concierge.'}</p>{status?.connectUrl && <a href={status.connectUrl} target="_blank" rel="noreferrer">Abrir Telegram para confirmar</a>}</article><article><Bell/><small>Webhook do bot</small><h2>{webhookOk ? 'Ativo' : 'Pendente'}</h2><p>{status?.webhook?.lastError || health?.webhook?.last_error_message || (webhookOk ? 'Telegram entrega mensagens ao Concierge.' : 'Se o bot não responde, faça o diagnóstico e ative o webhook.')}</p></article><article><CalendarDays/><small>Escala no Concierge</small><h2>{status?.syncedRoster?.available ? 'Sincronizada' : 'Pendente'}</h2><p>{status?.syncedRoster?.updatedAt ? `Atualizada em ${new Date(status.syncedRoster.updatedAt).toLocaleString('pt-BR')}` : `Período atual: ${activeRosterLabel}`}</p></article></section><section className="cz-toolbox cz-telegram-connect"><h2>Conectar Telegram</h2><p>Informe seu usuário do Telegram. O CrewCheck não pede senha, MFA, SMS, cookies nem sessão.</p><label><span>@</span><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="seu_usuario" autoCapitalize="none" autoCorrect="off"/></label><div className="cz-tool-actions"><button disabled={busy} onClick={() => run('Canal Telegram criado. Confirme no Telegram.', () => connectTelegramConcierge(username))}>Conectar</button><button disabled={busy || !status?.connectUrl} onClick={() => status?.connectUrl && window.open(status.connectUrl, '_blank', 'noopener,noreferrer')}>Abrir Telegram</button><button disabled={busy || !connected} onClick={() => run('Teste enviado.', sendTelegramConciergeTest)}>Enviar teste</button><button disabled={busy} onClick={() => run('Diagnóstico atualizado.', diagnose)}>Diagnosticar</button><button disabled={busy} onClick={() => run('Webhook ativado.', async () => { const result = await setupTelegramConciergeWebhook(); await diagnose(); await refresh(); return result; })}>Ativar webhook</button></div></section><section className="cz-toolbox cz-concierge-chat"><h2>Concierge no app</h2><p>Use para testar agora, mesmo antes do Telegram responder. Ele consulta a escala sincronizada no servidor e não inventa dado real ausente.</p><label><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Pergunte sobre próxima programação, portão, saída, METAR..."/><button disabled={busy || !question.trim()} onClick={ask}>Perguntar</button></label><div className="cz-tool-actions"><button onClick={() => setQuestion('qual minha próxima programação?')}>Próxima</button><button onClick={() => setQuestion('qual portão do meu voo?')}>Portão</button><button onClick={() => setQuestion('que horas devo sair?')}>Saída</button><button onClick={() => setQuestion('METAR de SBBR')}>METAR</button></div>{answer && <article className="cz-concierge-answer"><strong>{answer.title}</strong>{answer.lines.map((line, index) => <p key={`${answer.title}-${index}`}>{line}</p>)}</article>}</section><section className="cz-toolbox"><h2>Notificações</h2><div className="cz-concierge-switches"><button className={prefs.smartDeparture !== false ? 'on' : ''} onClick={() => togglePref('smartDeparture')}><Car/><span>Saída inteligente</span><b>{prefs.smartDeparture !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.roster !== false ? 'on' : ''} onClick={() => togglePref('roster')}><CalendarDays/><span>Escala e alterações</span><b>{prefs.roster !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.radar !== false ? 'on' : ''} onClick={() => togglePref('radar')}><Radar/><span>Radar e portão</span><b>{prefs.radar !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.irregularities !== false ? 'on' : ''} onClick={() => togglePref('irregularities')}><AlertTriangle/><span>Irregularidades</span><b>{prefs.irregularities !== false ? 'Ativo' : 'Inativo'}</b></button></div></section><section className="cz-toolbox"><h2>Concierge</h2><div className="cz-concierge-switches"><button className={prefs.concierge !== false ? 'on' : ''} onClick={() => togglePref('concierge')}><Wifi/><span>Assistente operacional</span><b>{prefs.concierge !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.conciergeVoice !== false ? 'on' : ''} onClick={() => togglePref('conciergeVoice')}><Bell/><span>Respostas por áudio</span><b>{prefs.conciergeVoice !== false ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.dailySummary ? 'on' : ''} onClick={() => togglePref('dailySummary')}><FileText/><span>Resumo diário</span><b>{prefs.dailySummary ? 'Ativo' : 'Inativo'}</b></button><button className={prefs.overnightWakeup !== false ? 'on' : ''} onClick={() => togglePref('overnightWakeup')}><Clock/><span>Despertador de pernoite</span><b>{prefs.overnightWakeup !== false ? 'Ativo' : 'Inativo'}</b></button></div><div className="cz-tool-actions"><button disabled={busy || !connected} onClick={() => run('Escala sincronizada com o Concierge.', () => syncRosterWithTelegramConcierge({ roster: bundle.roster, compliance: bundle.compliance, gym: currentGym(bundle), sourceFileName: bundle.source }))}>Sincronizar escala</button><button disabled={busy || !connected} onClick={() => run('Resumo enviado para o Telegram.', () => sendTelegramConciergeShare('CrewCheck · resumo da escala', summary, 'summary'))}>Enviar resumo</button></div></section></>;
+}
+
+function WakeupView({ event }: { event: ZeroLeg }) {
+  const wake = event.presentation !== '—' ? addMinutesToTime(event.presentation, -90) : 'Calcular';
+  const leave = event.presentation !== '—' ? addMinutesToTime(event.presentation, -55) : 'Calcular';
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Alarmes calculados com base na próxima apresentação real, hotel/local atual e margem operacional.</p></section><section className="cz-finance-grid"><KpiCard icon={Bell} title="Acordar" value={wake} detail="90 min antes"/><KpiCard icon={Car} title="Sair" value={leave} detail={`${event.hotel ? 'Hotel' : 'Origem'} → ${event.origin}`}/><KpiCard icon={Plane} title="Apresentação" value={event.presentation} detail={event.flightNumber}/></section></>;
+}
+function HotelsView({ events }: { events: ZeroLeg[] }) {
+  const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
+  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites e entorno operacional detectados na escala real.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>Academia · Restaurante · Mercado · Farmácia · Lavanderia · Descanso</small></div></div></article>) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
 }
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
@@ -495,6 +597,9 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'calendar') return 'calendar';
   if (value === 'exports') return 'exports';
   if (value === 'routine') return 'routine';
+  if (value === 'wakeup' || value === 'despertador') return 'wakeup';
+  if (value === 'hotels' || value === 'hoteis') return 'hotels';
+  if (value === 'concierge' || value === 'telegram') return 'concierge';
   if (value === 'database') return 'database';
   if (value === 'crew') return 'crew';
   return 'cockpit';
@@ -577,25 +682,28 @@ export default function Home() {
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
-    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
-    {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
-    {view === 'alerts' && <Alerts compliance={compliance}/>} 
-    {view === 'departure' && <Departure event={event}/>} 
-    {view === 'settings' && <SettingsView setView={setView} actions={actions}/>} 
-    {view === 'maintenance' && <MaintenancePreview/>} 
-    {view === 'import' && <ImportPanel onUpload={actions.upload}/>} 
-    {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>} 
-    {view === 'radar' && <RadarView event={event}/>} 
-    {view === 'weather' && <WeatherView event={event}/>} 
-    {view === 'perdiem' && <PerDiemView bundle={bundle}/>} 
-    {view === 'salary' && <SalaryView bundle={bundle}/>} 
-    {view === 'reports' && <ReportsView bundle={bundle}/>} 
-    {view === 'load' && <LoadView bundle={bundle}/>} 
-    {view === 'calendar' && <CalendarToolsView actions={actions}/>} 
-    {view === 'exports' && <ExportToolsView actions={actions}/>} 
-    {view === 'routine' && <RoutineView bundle={bundle}/>} 
-    {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>} 
-    {view === 'crew' && <CrewToolsView bundle={bundle}/>} 
+    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>}
+    {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>}
+    {view === 'alerts' && <Alerts compliance={compliance}/>}
+    {view === 'departure' && <Departure event={event}/>}
+    {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
+    {view === 'maintenance' && <MaintenancePreview/>}
+    {view === 'import' && <ImportPanel onUpload={actions.upload}/>}
+    {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>}
+    {view === 'radar' && <RadarView event={event}/>}
+    {view === 'weather' && <WeatherView event={event}/>}
+    {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
+    {view === 'salary' && <SalaryView bundle={bundle}/>}
+    {view === 'reports' && <ReportsView bundle={bundle}/>}
+    {view === 'load' && <LoadView bundle={bundle}/>}
+    {view === 'calendar' && <CalendarToolsView actions={actions}/>}
+    {view === 'exports' && <ExportToolsView actions={actions}/>}
+    {view === 'routine' && <RoutineView bundle={bundle}/>}
+    {view === 'wakeup' && <WakeupView event={event}/>}
+    {view === 'hotels' && <HotelsView events={events}/>}
+    {view === 'concierge' && <TelegramConciergeView bundle={bundle} events={events}/>}
+    {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
+    {view === 'crew' && <CrewToolsView bundle={bundle}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
   </main>;
 }

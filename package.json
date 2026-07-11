@@ -1,6 +1,6 @@
 {
   "name": "crewcheck-v12-5-78-functional-final-restore-realdata",
-  "version": "12.5.78",
+  "version": "13.5.0",
   "type": "module",
   "private": true,
   "description": "CrewCheck v12.5.78: mantém o layout novo e importa apenas o núcleo funcional da versão estável, sem restaurar o sistema antigo.",

@@ -2433,15 +2433,17 @@ function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boole
   const airportSet = new Set(['AAX','AEP','AFL','AJU','AMS','ARU','ASU','ATL','ATM','BCN','BEL','BOG','BOS','BPS','BRA','BSB','BVB','CAC','CAW','CCS','CDG','CFB','CGB','CGH','CKS','CLO','CMG','CNF','COR','CPT','CPV','CTG','CUN','CUR','CUZ','CWB','CXJ','DFW','DOH','DXB','EPA','ERM','EWR','EZE','FCO','FEC','FEN','FLL','FLN','FOR','FRA','GIG','GPB','GRU','GVR','GYE','GYN','HAV','IAH','IGU','IMP','IOS','IPN','IST','IZA','JDO','JFK','JIA','JJD','JJG','JNB','JOI','JPA','JPR','JTC','LAS','LAX','LAZ','LDB','LEC','LGW','LHR','LIM','LIS','LPB','MAB','MAD','MAO','MCO','MCP','MCZ','MDE','MDZ','MEA','MEX','MGF','MIA','MOC','MUC','MVD','MXP','NAT','NVT','OAL','OPO','OPS','ORD','ORY','PDP','PET','PFB','PIN','PMW','PNZ','POA','PPB','PTY','PUJ','PVH','QNS','RAO','RBR','REC','RIA','ROO','ROS','RVD','SCL','SDQ','SDU','SFO','SJK','SJO','SJP','SLZ','SSA','STM','TBT','TFF','THE','UDI','UIO','URG','VCP','VDC','VIX','VVI','XAP','ZRH']);
   const timeRegex = /^\d{1,2}:\d{2}(?:\(\+1\))?$/;
   const aircraftRegex = /^\(?(?:32S|31R|39R|328|319|320|321|32N|767|777|789|788|350|359)\)?$/i;
-  const isAimsTime = (value: string) => timeRegex.test(String(value || '').trim());
-  const cleanTime = (value: string) => normalizeSimpleTime(String(value || '').trim());
-  const nonAirportTokens = new Set(['LA','OP','PS','DH','PAX','EXTRA','PASSAGEIRO','APRES','APRESENTA','APRESENTACAO','APRESENTAÇÃO','REPORT','CHECKIN','CHECK-IN','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH','DH']);
-  const isAirport = (value: string) => {
-    const clean = String(value || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
-    if (!clean) return false;
-    if (airportSet.has(clean)) return true;
-    // "Aprendizado" tolerante: se a escala oficial trouxer um IATA que ainda não está no dicionário,
-    // aceita 3 letras como aeroporto desde que não seja sigla operacional conhecida.
+    type BestLegPick = { originIdx: number; destIdx: number; dep: string; depIdx: number; arrRaw: string; arrIdx: number; report: string | null; score: number };
+    let best: BestLegPick | null = null;
+    const bestLeg = best as BestLegPick;
+    const origin = upper[bestLeg.originIdx];
+    const destination = upper[bestLeg.destIdx];
+    const afterArrivalTimes = timeIndexes.filter((item) => item.idx > bestLeg.arrIdx).map((item) => cleanTime(item.token));
+    const arrClean = bestLeg.arrRaw.replace('(+1)', '');
+    const nextDay = /\(\+1\)/.test(bestLeg.arrRaw) || minutesOfDay(bestLeg.arrRaw) < minutesOfDay(bestLeg.dep);
+    const durationHours = diffHours(bestLeg.dep, bestLeg.arrRaw);
+      departureTime: bestLeg.dep,
+    return { leg, reportCandidate: bestLeg.report, debriefCandidate };
     return /^[A-Z]{3}$/.test(clean) && !nonAirportTokens.has(clean) && !isKnownRosterCode(clean) && !MONTH_MAP[clean.toLowerCase()];
   };
   const aircraftFrom = (tokens: string[]) => tokens.map((t) => String(t || '').trim().toUpperCase()).find((t) => aircraftRegex.test(t))?.replace(/[()]/g, '');
