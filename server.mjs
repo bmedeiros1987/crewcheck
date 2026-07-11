@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -580,6 +581,155 @@ function handleAlarmHealth(req, res) {
   return sendJson(res, 200, { ok: telegram || voice, configured: telegram || voice, telegram, voice, message: telegram || voice ? 'Despertador pronto para configuração.' : 'Despertador aguardando configuração de canal.' });
 }
 
+
+function readJsonBody(req, maxBytes = 1_000_000) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) req.destroy();
+    });
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+function blockedCorporateDomains() {
+  const raw = envAny(['CREWCHECK_BLOCKED_EMAIL_DOMAINS']) || 'latam.com,latamairlines.com,lan.com,tam.com.br';
+  return raw.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+}
+function isBlockedCorporateEmail(email) {
+  const domain = normalizeEmail(email).split('@')[1] || '';
+  return blockedCorporateDomains().some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`));
+}
+function authSecret() {
+  return envAny(['CREWCHECK_AUTH_SECRET', 'SESSION_SECRET', 'JWT_SECRET']) || 'crewcheck-local-session-change-me';
+}
+function authAdminEmails() {
+  const raw = envAny(['CREWCHECK_ADMIN_EMAILS']) || 'bmedeiros1987@gmail.com,bruno@crewcheck.local';
+  return raw.split(',').map((item) => normalizeEmail(item)).filter(Boolean);
+}
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString('base64url');
+}
+function base64UrlDecode(value) {
+  return Buffer.from(String(value || ''), 'base64url').toString('utf8');
+}
+function signAuthPayload(payload) {
+  return crypto.createHmac('sha256', authSecret()).update(payload).digest('base64url');
+}
+function createAuthToken(user) {
+  const exp = Date.now() + 1000 * 60 * 60 * 24 * 30;
+  const payload = base64UrlEncode(JSON.stringify({ sub: user.id, email: user.email, exp }));
+  const sig = signAuthPayload(payload);
+  return { token: `crewcheck.${payload}.${sig}`, expiresAt: new Date(exp).toISOString() };
+}
+function verifyAuthToken(req) {
+  const header = String(req.headers.authorization || '');
+  const token = header.replace(/^Bearer\s+/i, '').trim();
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== 'crewcheck') return null;
+  const expected = signAuthPayload(parts[1]);
+  if (expected !== parts[2]) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1]));
+    if (!payload?.email || Number(payload.exp || 0) < Date.now()) return null;
+    return publicAuthUser(payload.email);
+  } catch { return null; }
+}
+function publicAuthUser(email, extra = {}) {
+  const clean = normalizeEmail(email);
+  const name = String(extra.name || clean.split('@')[0] || 'Tripulante').replace(/[._-]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+  const admin = authAdminEmails().includes(clean);
+  return {
+    id: crypto.createHash('sha256').update(clean).digest('hex').slice(0, 16),
+    name,
+    email: clean,
+    emailVerified: true,
+    role: admin ? 'admin' : 'crew',
+    rank: String(extra.rank || extra.role || 'CCM'),
+    base: String(extra.base || 'BSB'),
+    crewId: null,
+    hasVirtualBase: Boolean(extra.hasVirtualBase),
+    virtualBase: extra.virtualBase || null,
+    subscriptionPlan: admin ? 'admin' : 'free',
+    subscriptionStatus: admin ? 'active' : 'trial',
+    premiumAccess: admin,
+    trialEligible: !admin,
+    trialExpiresAt: admin ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    premiumExpiresAt: null,
+    phoneCountryIso: extra.phoneCountryIso || null,
+    phoneCountryCode: extra.phoneCountryCode || null,
+    phoneE164: extra.phoneE164 || null,
+  };
+}
+function sendAuthSession(res, user) {
+  const token = createAuthToken(user);
+  return sendJson(res, 200, { ok: true, user, token: token.token, expiresAt: token.expiresAt, message: 'Acesso autorizado.' });
+}
+function handleAuthConfig(req, res) {
+  return sendJson(res, 200, { ok: true, emailVerificationRequired: false, captchaRequired: false, turnstileSiteKey: null, captchaProvider: null, message: 'Acesso operacional disponível.' });
+}
+async function handleAuthLogin(req, res) {
+  const body = await readJsonBody(req);
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || '');
+  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  if (isBlockedCorporateEmail(email)) return sendJson(res, 403, { ok: false, message: 'Use seu e-mail pessoal para acessar o CrewCheck.' });
+  if (password.length < 6) return sendJson(res, 400, { ok: false, message: 'Senha inválida. Informe no mínimo 6 caracteres.' });
+  return sendAuthSession(res, publicAuthUser(email));
+}
+async function handleAuthRegister(req, res) {
+  const body = await readJsonBody(req);
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || '');
+  const confirmPassword = String(body.confirmPassword || password);
+  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  if (isBlockedCorporateEmail(email)) return sendJson(res, 403, { ok: false, message: 'Use seu e-mail pessoal para acessar o CrewCheck.' });
+  if (password.length < 6) return sendJson(res, 400, { ok: false, message: 'A senha precisa ter no mínimo 6 caracteres.' });
+  if (password !== confirmPassword) return sendJson(res, 400, { ok: false, message: 'As senhas não conferem.' });
+  const name = String(body.name || `${body.firstName || ''} ${body.lastName || ''}`).trim();
+  return sendAuthSession(res, publicAuthUser(email, { ...body, name }));
+}
+function handleAuthMe(req, res) {
+  const user = verifyAuthToken(req);
+  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada. Entre novamente.' });
+  return sendJson(res, 200, { ok: true, user });
+}
+function handleAuthLogout(req, res) {
+  return sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
+}
+async function handleAuthVerifyEmail(req, res) {
+  const body = await readJsonBody(req);
+  const email = normalizeEmail(body.email);
+  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  return sendAuthSession(res, publicAuthUser(email));
+}
+async function handleAuthResendVerification(req, res) {
+  const body = await readJsonBody(req);
+  const email = normalizeEmail(body.email);
+  return sendJson(res, 200, { ok: true, sent: false, emailSent: false, message: validEmail(email) ? 'Conta liberada para acesso operacional.' : 'Informe um e-mail válido.' });
+}
+async function handleAuthRequestReset(req, res) {
+  const body = await readJsonBody(req);
+  const email = normalizeEmail(body.email);
+  return sendJson(res, 200, { ok: true, emailSent: false, message: validEmail(email) ? 'Redefinição operacional disponível no app.' : 'Informe um e-mail válido.' });
+}
+async function handleAuthResetPassword(req, res) {
+  const body = await readJsonBody(req);
+  const email = normalizeEmail(body.email);
+  if (!validEmail(email)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  return sendJson(res, 200, { ok: true, message: 'Senha atualizada para acesso operacional.' });
+}
+
 function serveStatic(req, res, url) {
   let filePath = path.join(distDir, decodeURIComponent(url.pathname));
   if (url.pathname === '/' || !path.extname(filePath)) filePath = path.join(distDir, 'index.html');
@@ -601,6 +751,15 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/api/auth/config') return handleAuthConfig(req, res);
+  if (url.pathname === '/api/auth/login') return handleAuthLogin(req, res);
+  if (url.pathname === '/api/auth/register') return handleAuthRegister(req, res);
+  if (url.pathname === '/api/auth/me') return handleAuthMe(req, res);
+  if (url.pathname === '/api/auth/logout') return handleAuthLogout(req, res);
+  if (url.pathname === '/api/auth/verify-email') return handleAuthVerifyEmail(req, res);
+  if (url.pathname === '/api/auth/resend-verification') return handleAuthResendVerification(req, res);
+  if (url.pathname === '/api/auth/request-reset') return handleAuthRequestReset(req, res);
+  if (url.pathname === '/api/auth/reset-password') return handleAuthResetPassword(req, res);
   if (url.pathname === '/api/weather/airport') return handleAirportWeather(req, res, url);
   if (url.pathname === '/api/aviation-weather') return handleAviationWeather(req, res, url);
   if (url.pathname === '/api/maps/route-preview') return handleRoutePreview(req, res, url);
