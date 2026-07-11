@@ -16242,3 +16242,302 @@ html[data-crew-theme="light"] .cz-smart-card p {
     min-width: 100% !important;
   }
 }
+
+/* CrewCheck — Premium mobile rescue
+   Corrige menu sem scroll, cards extrapolados, texto vertical e bottom nav cobrindo conteúdo.
+   Não altera parser AIMS/CrewRoster, motor canônico ou importação de PDF. */
+.cz-app {
+  overflow-x: clip !important;
+  padding-bottom: calc(168px + env(safe-area-inset-bottom)) !important;
+}
+
+.cz-menu-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+.cz-menu-panel {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-bottom: calc(180px + env(safe-area-inset-bottom)) !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(93,231,255,.62) rgba(2,8,23,.22);
+}
+
+.cz-menu-section > button,
+.cz-feature-grid button,
+.cz-shortcuts button,
+.cz-roster-card,
+.cz-toolbox,
+.cz-weather-grid article,
+.cz-detail-modal article,
+.cz-detail-grid > div,
+.cz-info-duo > div,
+.cz-flight-pills span,
+.cz-time-trio div {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  hyphens: none !important;
+}
+
+.cz-airline strong,
+.cz-airline em,
+.cz-roster-copy h3,
+.cz-roster-copy p,
+.cz-route strong,
+.cz-route span {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.cz-flight-card {
+  width: min(100% - 28px, 760px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding: clamp(16px, 4vw, 24px) !important;
+  overflow: hidden !important;
+}
+
+.cz-flight-head {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 10px !important;
+  align-items: start !important;
+}
+
+.cz-airline {
+  min-width: 0 !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+
+.cz-airline strong {
+  font-size: clamp(22px, 7vw, 34px) !important;
+  line-height: 1.05 !important;
+}
+
+.cz-route {
+  grid-template-columns: minmax(0,1fr) clamp(44px, 13vw, 72px) minmax(0,1fr) !important;
+  gap: 8px !important;
+}
+
+.cz-route strong {
+  font-size: clamp(38px, 12vw, 58px) !important;
+  line-height: .96 !important;
+}
+
+.cz-flight-pills {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.cz-flight-pills span {
+  border-radius: 22px !important;
+  padding: 11px 13px !important;
+  line-height: 1.18 !important;
+  white-space: normal !important;
+}
+
+.cz-flight-pills b,
+.cz-time-trio span,
+.cz-info-duo span,
+.cz-detail-grid span {
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  letter-spacing: .10em !important;
+  line-height: 1.22 !important;
+}
+
+.cz-time-trio {
+  grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+  overflow: hidden !important;
+}
+
+.cz-time-trio strong {
+  font-size: clamp(28px, 9vw, 44px) !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+.cz-info-duo {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cz-info-duo > div {
+  display: grid !important;
+  grid-template-columns: 54px minmax(0,1fr) !important;
+  align-items: center !important;
+  gap: 10px 14px !important;
+  padding: 16px !important;
+}
+
+.cz-info-duo svg {
+  grid-row: 1 / 4 !important;
+  width: 54px !important;
+  height: 54px !important;
+  padding: 14px !important;
+}
+
+.cz-info-duo strong {
+  font-size: clamp(24px, 7vw, 36px) !important;
+  line-height: 1.12 !important;
+  white-space: normal !important;
+}
+
+.cz-info-duo small {
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+}
+
+.cz-routine-strip {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  gap: 10px !important;
+}
+
+.cz-routine-strip span {
+  white-space: normal !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+}
+
+.cz-roster-actions {
+  width: min(100%, 760px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.cz-roster-actions button {
+  white-space: normal !important;
+  min-height: 58px !important;
+  padding: 12px !important;
+}
+
+.cz-detail-modal article {
+  width: min(100% - 24px, 760px) !important;
+  max-height: calc(100dvh - 32px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
+}
+
+.cz-detail-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cz-detail-grid > div {
+  min-height: 104px !important;
+  border-radius: 24px !important;
+  padding: 14px !important;
+}
+
+.cz-detail-grid strong {
+  font-size: clamp(22px, 6vw, 34px) !important;
+  line-height: 1.12 !important;
+  white-space: normal !important;
+}
+
+.cz-weather-grid {
+  width: min(100% - 28px, 760px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.cz-weather-grid article {
+  overflow: hidden !important;
+  white-space: normal !important;
+}
+
+.cz-weather-grid h2,
+.cz-weather-grid strong,
+.cz-weather-grid p,
+.cz-weather-grid small,
+.cz-empty-real p {
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.35 !important;
+}
+
+.cz-empty-real {
+  width: min(100% - 28px, 760px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.cz-bottom-nav {
+  z-index: 8000 !important;
+}
+
+@media (max-width: 640px) {
+  .cz-brand-row,
+  .cz-title,
+  .cz-section-head,
+  .cz-kpi-row,
+  .cz-stack-list,
+  .cz-panel-head,
+  .cz-complete-days,
+  .cz-money-row {
+    margin-left: 14px !important;
+    margin-right: 14px !important;
+  }
+
+  .cz-flight-pills,
+  .cz-info-duo,
+  .cz-weather-grid,
+  .cz-detail-grid,
+  .cz-routine-strip,
+  .cz-roster-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cz-time-trio {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    background: transparent !important;
+    border: 0 !important;
+  }
+
+  .cz-time-trio div {
+    border: 1px solid rgba(255,255,255,.12) !important;
+    border-radius: 24px !important;
+    background: rgba(2,10,24,.34) !important;
+  }
+
+  .cz-detail-grid > div,
+  .cz-info-duo > div {
+    min-height: auto !important;
+  }
+
+  .cz-menu-panel {
+    width: 100% !important;
+    border-left: 0 !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  .cz-bottom-nav {
+    width: calc(100% - 22px) !important;
+    height: 86px !important;
+    border-radius: 26px !important;
+  }
+}
