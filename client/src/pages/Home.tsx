@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.6.4';
-const CREWCHECK_UI_CORE_NOTE = 'v13.6.4: salário, diárias e ganhos por voo com métrica ACT configurável';
+const DEFAULT_VERSION = '13.6.5';
+const CREWCHECK_UI_CORE_NOTE = 'v13.6.5: concierge Telegram e despertador inteligente restaurados';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1449,7 +1449,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     } catch { toast.error('Não consegui alterar o modo manutenção.'); }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
-  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><FieldSetting icon={DollarSign} label="Métrica ACT por KM" storageKey="crewcheck_act_km_metric_brl" placeholder="R$/km"/><FieldSetting icon={DollarSign} label="Adicional chefe por setor" storageKey="crewcheck_act_chief_sector_brl" placeholder="R$"/><FieldSetting icon={BriefcaseBusiness} label="Valor refeição diária" storageKey="crewcheck_perdiem_meal_brl" placeholder="R$"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
+  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/><FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><FieldSetting icon={DollarSign} label="Métrica ACT por KM" storageKey="crewcheck_act_km_metric_brl" placeholder="R$/km"/><FieldSetting icon={DollarSign} label="Adicional chefe por setor" storageKey="crewcheck_act_chief_sector_brl" placeholder="R$"/><FieldSetting icon={BriefcaseBusiness} label="Valor refeição diária" storageKey="crewcheck_perdiem_meal_brl" placeholder="R$"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
 }
 
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
@@ -1588,51 +1588,100 @@ function CalendarToolsView({ actions, bundle, gym }: { actions: QuickActions; bu
 function ExportToolsView({ actions }: { actions: QuickActions }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, WhatsApp, Telegram, copiar resumo, e-mail e arquivo de calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.email}>E-mail</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
 }
-function WakeupView({ event }: { event: ZeroLeg }) {
-  const wake = event.presentation !== '—' ? addMinutesToTime(event.presentation, -90) : 'Calcular';
-  const leave = event.presentation !== '—' ? addMinutesToTime(event.presentation, -55) : 'Calcular';
-  const sleep = wake !== '—' && wake !== 'Calcular' ? addMinutesToTime(wake, -450) : 'Calcular';
-  const mode = storage.get('crewcheck_alarm_mode', 'Ligação + Telegram');
-  const setMode = (next: string) => { storage.set('crewcheck_alarm_mode', next); toast.success(`Despertador: ${next}`); window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' })); };
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Planejamento baseado na próxima apresentação real, sem armazenar credenciais ou dados sensíveis.</p></section><section className="cz-finance-grid"><KpiCard icon={Bell} title="Dormir" value={sleep} detail="7h30 antes de acordar"/><KpiCard icon={Bell} title="Acordar" value={wake} detail="90 min antes"/><KpiCard icon={Car} title="Sair" value={leave} detail={`${event.hotel ? 'Hotel' : 'Origem'} → ${event.origin}`}/></section><section className="cz-toolbox"><h2>Como notificar</h2><div className="cz-tool-actions cz-wakeup-options">{['Ligação + Telegram','Somente ligação','Somente Telegram','Ligação'].map((item) => <button className={mode === item ? 'active' : ''} key={item} onClick={() => setMode(item)}>{item}</button>)}</div><p>Confirmação de acordado, repetição escalonada e provedor VOIP ficam configuráveis por plano, sem expor nome de API ao usuário.</p></section><section className="cz-mini-status"><p><strong>Próxima programação:</strong> {event.title}</p><p><strong>Apresentação:</strong> {event.presentation} · <strong>Status:</strong> {safe(event.status, 'Programado')}</p></section></>;
-}
-function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
-  const [version, setVersion] = useState(0);
-  const rules = loadPresentationRules();
-  const overrides = loadPresentationOverrides();
-  const now = new Date();
-  const operationalEvents = events
-    .filter((event) => !event.placeholder && isOperationalEvent(event))
-    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
-  const upcoming = operationalEvents.filter((event) => eventEndDateTime(event).getTime() >= now.getTime()).slice(0, 18);
-  const visibleUpcoming = upcoming.length ? upcoming : operationalEvents.slice(0, 18);
-  const ruleList = Object.values(rules).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 12);
-  const refresh = () => setVersion((value) => value + 1);
 
-  function edit(event: ZeroLeg, learning = false) {
+function wakeupLeadMinutes(): number {
+  const value = Number(storage.get('crewcheck_wakeup_lead_minutes', '90'));
+  return Number.isFinite(value) && value >= 20 ? value : 90;
+}
+function wakeupChannel(): string {
+  return storage.get('crewcheck_wakeup_channel', 'telegram') || 'telegram';
+}
+function wakeupChannelLabel(channel: string): string {
+  const value = String(channel || '').toLowerCase();
+  if (value.includes('ambos') || value.includes('telegram+lig')) return 'Ligação + Telegram';
+  if (value.includes('liga')) return 'Somente ligação';
+  return 'Somente Telegram';
+}
+function wakeupDateForEvent(event: ZeroLeg): Date | null {
+  if (!event || event.placeholder) return null;
+  const base = eventStartDateTime(event);
+  const presentation = String(event.presentation || '').match(/(\d{1,2}):(\d{2})/);
+  const d = new Date(base);
+  if (presentation) d.setHours(Number(presentation[1]), Number(presentation[2]), 0, 0);
+  d.setMinutes(d.getMinutes() - wakeupLeadMinutes());
+  return d;
+}
+function wakeupDateLabel(date: Date | null): string {
+  if (!date) return 'Aguardando escala';
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+}
+async function postCrewCheckJson(url: string, payload: Record<string, unknown>): Promise<any> {
+  const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store' });
+  return response.json().catch(() => ({ ok: false, message: 'Resposta indisponível.' }));
+}
+
+function WakeupView({ event }: { event: ZeroLeg }) {
+  const [lead, setLead] = useState(() => String(wakeupLeadMinutes()));
+  const [channel, setChannel] = useState(() => wakeupChannel());
+  const [chatId, setChatId] = useState(() => storage.get('crewcheck_telegram_chat_id', ''));
+  const [phone, setPhone] = useState(() => storage.get('crewcheck_wakeup_phone', ''));
+  const [health, setHealth] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const planned = wakeupDateForEvent(event);
+  const hotel = safe(event.hotel, event.kind === 'stay' ? `Hotel em ${city(event.destination || event.origin)}` : 'Sem hotel informado');
+  const presentation = safe(event.presentation, 'A confirmar');
+
+  useEffect(() => {
+    fetch('/api/alarm/health', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then(setHealth)
+      .catch(() => setHealth({ ok: false, message: 'Despertador aguardando conexão.' }));
+  }, []);
+
+  function savePrefs() {
+    storage.set('crewcheck_wakeup_lead_minutes', lead);
+    storage.set('crewcheck_wakeup_channel', channel);
+    storage.set('crewcheck_telegram_chat_id', chatId);
+    storage.set('crewcheck_wakeup_phone', phone);
+    toast.success('Preferências do despertador salvas.');
+  }
+
+  async function testAlarm() {
+    savePrefs();
+    setBusy(true);
     try {
-      if (promptPresentation(event, learning)) {
-        toast.success(learning ? 'Padrão de apresentação salvo para este hotel/local.' : 'Apresentação manual salva para esta programação.');
-        refresh();
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui salvar a apresentação.');
+      const payload = await postCrewCheckJson('/api/alarm/test', { channel, chatId, phone, message: `Teste do Despertador Inteligente CrewCheck. Próxima programação: ${rosterEventTitle(event)} · apresentação ${presentation}.` });
+      if (payload?.ok) toast.success(payload.message || 'Teste enviado.');
+      else toast.message(payload?.message || 'Canal aguardando configuração.');
+      setHealth(payload);
+    } catch {
+      toast.error('Não consegui testar o despertador agora.');
+    } finally {
+      setBusy(false);
     }
   }
 
-  function clearEvent(event: ZeroLeg) {
-    clearPresentationOverride(event);
-    toast.success('Ajuste manual removido desta programação.');
-    refresh();
+  function activateLocalReminder() {
+    savePrefs();
+    if (!planned) { toast.info('Importe uma escala para ativar o lembrete.'); return; }
+    const delay = planned.getTime() - Date.now();
+    if (delay <= 0) { toast.message('O horário calculado já passou para esta programação.'); return; }
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+      window.setTimeout(() => notifyCrewCheck('Despertador CrewCheck', `Hora de se preparar para ${rosterEventTitle(event)}. Apresentação ${presentation}.`), Math.min(delay, 2147483647));
+      toast.success('Lembrete local ativado neste dispositivo.');
+    } catch {
+      toast.message('Preferência salva. Use Telegram/ligação quando o canal estiver configurado.');
+    }
   }
 
-  function clearRule(event: ZeroLeg) {
-    clearPresentationLearning(event);
-    toast.success('Aprendizado deste hotel/local removido.');
-    refresh();
+  function snoozeTelegram() {
+    const next = new Date(Date.now() + 10 * 60000);
+    toast.success(`Soneca local de 10 min ativada até ${wakeupDateLabel(next)}.`);
+    window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Gerenciador de Apresentação</h1><p>Aprende horários por hotel/local e permite ajuste manual quando a escala vier incompleta ou diferente do padrão.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Hotéis/locais" value={String(Object.keys(rules).length)} detail="padrões aprendidos"/><KpiCard icon={ToggleRight} title="Ajustes manuais" value={String(Object.keys(overrides).length)} detail="por programação"/><KpiCard icon={ShieldCheck} title="Fonte" value="Local" detail="sem credenciais ou sessão"/></section><section className="cz-toolbox"><h2>Próximas programações</h2><p>Toque em “Alterar” para corrigir apenas a programação. Use “Aprender hotel/local” para salvar como padrão para próximas escalas.</p></section><section className="cz-stack-list">{visibleUpcoming.length ? visibleUpcoming.map((event) => { const managed = managedPresentationForEvent(event); return <article className="cz-roster-card compact" key={`pm-${event.id}-${version}`}><div className="cz-roster-main"><span className="cz-roster-icon">{event.kind === 'flight' ? <Plane/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · Apresentação {managed.presentation || '—'} · {managed.source}</p><small>{presentationLearningLabel(event)} · {event.origin} → {event.destination}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => edit(event, false)}>Alterar</button><button onClick={() => edit(event, true)}>Aprender hotel/local</button><button onClick={() => clearEvent(event)}>Limpar ajuste</button><button onClick={() => clearRule(event)}>Limpar aprendizado</button></div></article>; }) : <article className="cz-empty-real"><Clock/><h2>Nenhuma programação operacional</h2><p>Importe uma escala real para gerenciar apresentações por hotel/local.</p></article>}</section><section className="cz-toolbox"><h2>Padrões aprendidos</h2>{ruleList.length ? ruleList.map((rule) => <p key={rule.key}><strong>{rule.label}</strong><span>{rule.presentation} · {Math.round(rule.confidence * 100)}% confiança · {rule.samples} amostra(s)</span></p>) : <p>Nenhum padrão aprendido ainda. O sistema aprende quando você salva uma apresentação como padrão do hotel/local.</p>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Preferências por canal, Telegram, ligação, soneca e limite operacional de até 2 ligações por pernoite.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={health?.message || 'Verificando configuração'}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Use Telegram como canal gratuito. Ligação depende do canal de voz configurado no ambiente. O sistema não salva senha nem credenciais.</p><div className="cz-form-grid"><label><span>Canal</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Somente Telegram</option><option value="ligacao">Somente ligação</option><option value="ambos">Ligação + Telegram</option></select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Cole seu chat ID"/></label><label><span>Telefone com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label></div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={testAlarm} disabled={busy}><Send/> Testar canal</button><button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div></section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando chat/token'} · {health?.voice ? 'Ligação configurada' : 'Ligação aguardando canal'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Máx. 2 ligações por pernoite</span><span>Soneca no Telegram</span><span>Sem credenciais salvas</span><span>Fallback local</span></div></article></section></>;
 }
 
 function HotelsView({ events }: { events: ZeroLeg[] }) {

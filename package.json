@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.6.4",
+  "version": "13.6.5",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.6.4 — salary per diem and flight earnings restore",
+  "description": "CrewCheck v13.6.5 — telegram concierge and smart wakeup restore",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -73,7 +73,8 @@
     "regression:v13.6.1:layout": "node scripts/regression-v13-6-1-mobile-layout-rescue.mjs",
     "regression:v13.6.2:emergency": "node scripts/regression-v13-6-2-production-emergency-restore.mjs",
     "regression:v13.6.3:auth": "node scripts/regression-v13-6-3-auth-session-restore.mjs",
-    "regression:v13.6.4:finance": "node scripts/regression-v13-6-4-finance-earnings-restore.mjs"
+    "regression:v13.6.4:finance": "node scripts/regression-v13-6-4-finance-earnings-restore.mjs",
+    "regression:v13.6.5:telegram-wakeup": "node scripts/regression-v13-6-5-telegram-wakeup-restore.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
