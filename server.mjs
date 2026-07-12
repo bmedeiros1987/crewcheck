@@ -751,22 +751,124 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.6.6', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.6.8', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.6.6', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.6.8', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.6.6', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.6.8', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
-function handleCrewCheckRepairPage(req, res) {
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><title>CrewCheck — Reparo Seguro</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px;background:#06101d;color:white;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}main{max-width:620px;width:100%;border:1px solid rgba(255,255,255,.16);border-radius:28px;padding:24px;background:linear-gradient(145deg,rgba(15,23,42,.96),rgba(8,47,73,.82));box-shadow:0 24px 80px rgba(0,0,0,.35)}h1{margin:0 0 10px;font-size:28px}p{color:#cbd5e1;line-height:1.55}button,a{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;border-radius:18px;border:0;margin-top:12px;font-weight:900;text-decoration:none}button{background:#22d3ee;color:#082f49}a{background:rgba(255,255,255,.1);color:white;border:1px solid rgba(255,255,255,.16)}small{display:block;margin-top:14px;color:#94a3b8}</style></head><body><main><h1>CrewCheck — Reparo Seguro</h1><p>Use esta página quando o app ficar preso na tela inicial. Ela remove cache operacional antigo, desativa service worker antigo e abre o app em modo Diagnóstico. Login, escala ativa e preferências principais são preservados sempre que o navegador permitir.</p><button onclick="repair()">Reparar e abrir modo seguro</button><a href="/?safe=1&v=13.6.7">Abrir somente em modo seguro</a><a href="/api/reliability/health">Ver saúde do sistema</a><small id="status">Nenhuma chave ou segredo é exibido nesta página.</small></main><script>async function repair(){const status=document.getElementById('status');status.textContent='Reparando cache local...';try{const keep=new Set(['crewcheck_auth_token','crewcheck_user','crewcheck_theme_mode','crewcheck_light_premium','crewcheck_language','crewcheck_latest_roster_bundle','crewcheck_last_roster','crewcheck_roster_sync_latest_v108134','crewcheck_roster_bundle_v1','crewcheck_telegram_chat_id','crewcheck_wakeup_phone','crewcheck_wakeup_channel','crewcheck_act_km_metric_brl','crewcheck_act_chief_sector_brl','crewcheck_act_instructor_sector_brl','crewcheck_act_night_hour_brl','crewcheck_salary_base_brl','crewcheck_perdiem_meal_brl','crewcheck_perdiem_breakfast_brl','crewcheck_virtual_base','crewcheck_manual_route_origin','crewcheck_last_geo','crewcheck_my_car_parking_position_v1','crewcheck_profile_avatar','crewcheck_profile_display_name','crewcheck_profile_company','crewcheck_profile_base','crewcheck_profile_rank','crewcheck_app_mode']);for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith('crewcheck_')&&!keep.has(k))localStorage.removeItem(k)}sessionStorage.clear();sessionStorage.setItem('crewcheck_force_view_once','diagnostics');localStorage.setItem('crewcheck_intro_seen_v1278','1');localStorage.setItem('crewcheck_external_repair_at',new Date().toISOString())}catch(e){}try{if('serviceWorker'in navigator){const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(r=>r.unregister()))}}catch(e){}try{if('caches'in window){const names=await caches.keys();await Promise.all(names.filter(n=>/crewcheck|workbox/i.test(n)).map(n=>caches.delete(n)))}}catch(e){}status.textContent='Reparo concluído. Abrindo modo seguro...';setTimeout(()=>{location.href='/?safe=1&v=13.6.7'},450)}</script></body></html>`;
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+
+function handleCrewCheckStaticShell(req, res) {
+  const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
+  <meta name="theme-color" content="#06101d"/>
+  <title>CrewCheck - Inicializacao Segura</title>
+  <style>
+    :root{color-scheme:dark}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#164e63 0,#06101d 46%,#020617 100%);color:#fff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;padding:22px}
+    main{width:100%;max-width:720px;border-radius:30px;border:1px solid rgba(255,255,255,.16);background:linear-gradient(145deg,rgba(15,23,42,.96),rgba(8,47,73,.86));box-shadow:0 26px 90px rgba(0,0,0,.42);padding:24px}
+    .badge{display:inline-flex;gap:8px;align-items:center;border-radius:999px;padding:8px 12px;background:rgba(34,211,238,.14);color:#67e8f9;font-weight:900;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+    h1{font-size:clamp(28px,7vw,44px);line-height:1.04;margin:18px 0 12px}
+    p{color:#cbd5e1;line-height:1.58;margin:10px 0}
+    .grid{display:grid;gap:12px;margin-top:18px}
+    button,a{width:100%;min-height:52px;border:0;border-radius:18px;display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;font-weight:950;font-size:15px}
+    button{background:linear-gradient(135deg,#22d3ee,#a78bfa);color:#051923}
+    a.primary{background:#fff;color:#06101d}
+    a.secondary{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.16)}
+    .status{margin-top:16px;padding:12px;border-radius:18px;background:rgba(2,6,23,.42);border:1px solid rgba(255,255,255,.1);color:#cbd5e1;font-size:13px;overflow-wrap:anywhere}
+    .mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}
+    .mini div{border-radius:16px;background:rgba(255,255,255,.07);padding:12px}
+    .mini strong{display:block;font-size:13px}
+    .mini small{display:block;color:#94a3b8;margin-top:4px}
+  </style>
+</head>
+<body>
+<main>
+  <span class="badge">CrewCheck 13.6.8 - Safe Shell</span>
+  <h1>Inicializacao segura</h1>
+  <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
+  <div class="mini">
+    <div><strong>Backend</strong><small id="apiState">verificando...</small></div>
+    <div><strong>Cache</strong><small>reparo local disponivel</small></div>
+    <div><strong>App</strong><small>abre em rota isolada /app</small></div>
+  </div>
+  <div class="grid">
+    <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
+    <a class="primary" href="/app?safe=1&v=13.6.8">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.6.8">Abrir app normal</a>
+    <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
+  </div>
+  <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
+</main>
+<script>
+(function(){
+  var status = document.getElementById('status');
+  var apiState = document.getElementById('apiState');
+  function log(msg){ status.textContent = msg; }
+  fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json()}).then(function(j){
+    apiState.textContent = j && j.version ? ('online - v' + j.version) : 'online';
+  }).catch(function(){ apiState.textContent='nao verificado'; });
+  window.repairAndOpen = async function(){
+    log('Reparando cache local e desativando service worker antigo...');
+    try {
+      var keep = new Set([
+        'crewcheck_auth_token','crewcheck_user','crewcheck_theme_mode','crewcheck_light_premium','crewcheck_language',
+        'crewcheck_latest_roster_bundle','crewcheck_last_roster','crewcheck_roster_sync_latest_v108134','crewcheck_roster_bundle_v1',
+        'crewcheck_telegram_chat_id','crewcheck_wakeup_phone','crewcheck_wakeup_channel',
+        'crewcheck_act_km_metric_brl','crewcheck_act_chief_sector_brl','crewcheck_act_instructor_sector_brl','crewcheck_act_night_hour_brl','crewcheck_salary_base_brl',
+        'crewcheck_perdiem_meal_brl','crewcheck_perdiem_breakfast_brl','crewcheck_virtual_base','crewcheck_manual_route_origin','crewcheck_last_geo','crewcheck_my_car_parking_position_v1',
+        'crewcheck_profile_avatar','crewcheck_profile_display_name','crewcheck_profile_company','crewcheck_profile_base','crewcheck_profile_rank','crewcheck_app_mode'
+      ]);
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('crewcheck_') === 0 && !keep.has(k)) localStorage.removeItem(k);
+      }
+      sessionStorage.clear();
+      sessionStorage.setItem('crewcheck_force_view_once','cockpit');
+      localStorage.setItem('crewcheck_intro_seen_v1278','1');
+      localStorage.setItem('crewcheck_static_shell_repair_at', new Date().toISOString());
+    } catch(e) {}
+    try {
+      if ('serviceWorker' in navigator) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(function(r){ return r.unregister(); }));
+      }
+    } catch(e) {}
+    try {
+      if ('caches' in window) {
+        var names = await caches.keys();
+        await Promise.all(names.filter(function(n){ return /crewcheck|workbox|vite/i.test(n); }).map(function(n){ return caches.delete(n); }));
+      }
+    } catch(e) {}
+    log('Reparo concluido. Abrindo app seguro...');
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.6.8&ts=' + Date.now(); }, 600);
+  }
+})();
+</script>
+</body>
+</html>`;
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'pragma': 'no-cache',
+    'expires': '0',
+    'surrogate-control': 'no-store',
+    'x-crewcheck-boot': 'static-shell-13.6.8'
+  });
   res.end(html);
 }
 
@@ -785,12 +887,14 @@ function serveStatic(req, res, url) {
     }
     const ext = path.extname(filePath).toLowerCase();
     const type = ext === '.js' ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.html' ? 'text/html; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : 'application/octet-stream';
-    res.writeHead(200, { 'content-type': type });
+    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store, no-cache, must-revalidate' });
     res.end(data);
   });
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+
   if (url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start') return handleCrewCheckRepairPage(req, res);
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
@@ -817,7 +921,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.7', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.6.8', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
