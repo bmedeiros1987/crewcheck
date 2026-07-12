@@ -17298,3 +17298,5 @@ button.cz-setting > span:last-child.on::before {
 
 /* CrewCheck v13.7.11 — ElevenLabs Exclusive TTS */
 .cz-mini-status,.cz-update-status,.cz-toolbox{overflow-wrap:anywhere;}
+/* CrewCheck v13.7.12 — ElevenLabs STT */
+.cz-mini-status,.cz-update-status,.cz-toolbox{overflow-wrap:anywhere;}
