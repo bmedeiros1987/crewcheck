@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.6';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.6: áudio do Telegram com transcrição operacional';
+const DEFAULT_VERSION = '13.7.7';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.7: ElevenLabs restaurado como TTS principal';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {

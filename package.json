@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.7.6",
+  "version": "13.7.7",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.7.6 — Telegram voice STT restore",
+  "description": "CrewCheck v13.7.7 — ElevenLabs TTS restore",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -84,7 +84,8 @@
     "regression:v13.7.3:actual-menu-scroll": "node scripts/regression-v13-7-3-actual-menu-scroll.mjs",
     "regression:v13.7.4:update-center": "node scripts/regression-v13-7-4-update-center.mjs",
     "regression:v13.7.5:layout-telegram": "node scripts/regression-v13-7-5-layout-telegram-link.mjs",
-    "regression:v13.7.6:telegram-voice-stt": "node scripts/regression-v13-7-6-telegram-voice-stt.mjs"
+    "regression:v13.7.6:telegram-voice-stt": "node scripts/regression-v13-7-6-telegram-voice-stt.mjs",
+    "regression:v13.7.7:elevenlabs-tts": "node scripts/regression-v13-7-7-elevenlabs-tts.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

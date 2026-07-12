@@ -776,7 +776,7 @@ async function handleAuthResetPassword1371(req, res) {
 }
 
 
-// CrewCheck v13.7.5 — Internal Update Center backend.
+// CrewCheck v13.7.7 — Internal Update Center backend.
 // Aceita apenas CSS runtime validado. Não executa JS e não grava segredos.
 const crewcheckRuntimePatchFile = path.join(__dirname, '.crewcheck-runtime-patch.json');
 
@@ -952,6 +952,137 @@ async function handleRuntimePatchClear(req, res) {
 }
 
 
+// CrewCheck v13.7.7 — ElevenLabs TTS Restore.
+// ElevenLabs volta a ser o TTS principal. STT continua separado.
+function elevenLabsApiKey() {
+  return envAny(['ELEVENLABS_API_KEY', 'CREWCHECK_ELEVENLABS_API_KEY', 'ELEVENLABS_TTS_API_KEY']);
+}
+function elevenLabsVoiceId() {
+  return envAny(['ELEVENLABS_VOICE_ID', 'CREWCHECK_ELEVENLABS_VOICE_ID', 'ELEVENLABS_DEFAULT_VOICE_ID']);
+}
+function elevenLabsModelId() {
+  return envAny(['ELEVENLABS_MODEL_ID', 'CREWCHECK_ELEVENLABS_MODEL_ID']) || 'eleven_multilingual_v2';
+}
+function elevenLabsOutputFormat() {
+  return envAny(['ELEVENLABS_OUTPUT_FORMAT', 'CREWCHECK_ELEVENLABS_OUTPUT_FORMAT']) || 'mp3_44100_128';
+}
+function elevenLabsTtsConfigured() {
+  return Boolean(elevenLabsApiKey() && elevenLabsVoiceId());
+}
+function cleanTtsText(value = '') {
+  return String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 1800);
+}
+async function generateElevenLabsSpeech(text, options = {}) {
+  const apiKey = elevenLabsApiKey();
+  const voiceId = String(options.voiceId || elevenLabsVoiceId() || '').trim();
+  const finalText = cleanTtsText(text);
+  if (!apiKey || !voiceId) {
+    return { ok: false, configured: false, message: 'ElevenLabs aguardando API key e voz.' };
+  }
+  if (!finalText) return { ok: false, configured: true, message: 'Texto vazio para gerar áudio.' };
+
+  const outputFormat = elevenLabsOutputFormat();
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`;
+  const body = {
+    text: finalText,
+    model_id: String(options.modelId || elevenLabsModelId()),
+    voice_settings: {
+      stability: Number(process.env.ELEVENLABS_STABILITY || process.env.CREWCHECK_ELEVENLABS_STABILITY || 0.48),
+      similarity_boost: Number(process.env.ELEVENLABS_SIMILARITY_BOOST || process.env.CREWCHECK_ELEVENLABS_SIMILARITY_BOOST || 0.78),
+      style: Number(process.env.ELEVENLABS_STYLE || process.env.CREWCHECK_ELEVENLABS_STYLE || 0.18),
+      use_speaker_boost: String(process.env.ELEVENLABS_SPEAKER_BOOST || process.env.CREWCHECK_ELEVENLABS_SPEAKER_BOOST || 'true').toLowerCase() !== 'false',
+    },
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        accept: 'audio/mpeg',
+        'content-type': 'application/json',
+        'xi-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      let message = 'ElevenLabs não gerou áudio agora.';
+      const raw = await response.text().catch(() => '');
+      try {
+        const parsed = JSON.parse(raw);
+        message = parsed?.detail?.message || parsed?.message || message;
+      } catch {}
+      return { ok: false, configured: true, status: response.status, message };
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) return { ok: false, configured: true, message: 'ElevenLabs retornou áudio vazio.' };
+    return { ok: true, configured: true, buffer, contentType: 'audio/mpeg', outputFormat, modelId: body.model_id, message: 'Áudio ElevenLabs gerado.' };
+  } catch {
+    return { ok: false, configured: true, message: 'Não consegui conectar ao ElevenLabs agora.' };
+  }
+}
+async function sendTelegramAudioBuffer(chatId, buffer, filename = 'crewcheck-audio.mp3', caption = '') {
+  const url = telegramApiUrl('sendAudio');
+  if (!url) return { ok: false, configured: false, message: 'Telegram aguardando configuração.' };
+  if (!chatId) return { ok: false, configured: true, message: 'Chat do Telegram não configurado.' };
+  try {
+    const form = new FormData();
+    form.append('chat_id', String(chatId));
+    if (caption) form.append('caption', String(caption).slice(0, 900));
+    form.append('audio', new Blob([buffer], { type: 'audio/mpeg' }), filename);
+    const response = await fetch(url, { method: 'POST', body: form });
+    const payload = await response.json().catch(() => ({}));
+    return { ok: Boolean(response.ok && payload.ok !== false), configured: true, status: response.status, data: payload, message: response.ok ? 'Áudio enviado.' : 'Áudio não entregue agora.' };
+  } catch {
+    return { ok: false, configured: true, message: 'Áudio não entregue agora.' };
+  }
+}
+async function sendTelegramTtsAudio(chatId, text, options = {}) {
+  const finalText = cleanTtsText(text);
+  if (!elevenLabsTtsConfigured()) return { ok: false, configured: false, message: 'ElevenLabs aguardando configuração.' };
+  const generated = await generateElevenLabsSpeech(finalText, options);
+  if (!generated.ok) return generated;
+  const sent = await sendTelegramAudioBuffer(chatId, generated.buffer, options.filename || 'crewcheck-elevenlabs.mp3', options.caption || 'CrewCheck Concierge');
+  return { ...sent, provider: 'elevenlabs', tts: { ok: generated.ok, outputFormat: generated.outputFormat, modelId: generated.modelId } };
+}
+async function handleTtsHealth(req, res) {
+  return sendJson(res, 200, {
+    ok: elevenLabsTtsConfigured(),
+    configured: elevenLabsTtsConfigured(),
+    provider: 'elevenlabs',
+    model: elevenLabsTtsConfigured() ? elevenLabsModelId() : '',
+    voiceConfigured: Boolean(elevenLabsVoiceId()),
+    keyConfigured: Boolean(elevenLabsApiKey()),
+    outputFormat: elevenLabsOutputFormat(),
+    message: elevenLabsTtsConfigured() ? 'ElevenLabs TTS configurado.' : 'ElevenLabs aguardando ELEVENLABS_API_KEY e ELEVENLABS_VOICE_ID.',
+  });
+}
+async function handleTtsSpeak(req, res) {
+  if (req.method !== 'POST') return handleTtsHealth(req, res);
+  const payload = await readJsonBody(req, 300000);
+  const text = cleanTtsText(payload.text || payload.message || '');
+  if (!text) return sendJson(res, 400, { ok: false, message: 'Texto vazio.' });
+  const result = await generateElevenLabsSpeech(text, {
+    voiceId: payload.voiceId,
+    modelId: payload.modelId,
+  });
+  if (!result.ok) return sendJson(res, result.configured === false ? 200 : 502, { ok: false, configured: result.configured, provider: 'elevenlabs', message: result.message });
+  return sendJson(res, 200, {
+    ok: true,
+    configured: true,
+    provider: 'elevenlabs',
+    contentType: result.contentType,
+    outputFormat: result.outputFormat,
+    audioBase64: result.buffer.toString('base64'),
+    message: 'Áudio gerado com ElevenLabs.',
+  });
+}
+
 function telegramToken() {
   return envAny(['TELEGRAM_BOT_TOKEN', 'CREWCHECK_TELEGRAM_BOT_TOKEN']);
 }
@@ -1014,7 +1145,7 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
-// CrewCheck v13.7.5 — Telegram Link backend.
+// CrewCheck v13.7.7 — Telegram Link backend.
 const crewcheckTelegramLinksFile = path.join(__dirname, '.crewcheck-telegram-links.json');
 
 function telegramBotUsername() {
@@ -1127,7 +1258,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   return true;
 }
 
-// CrewCheck v13.7.6 — Telegram Voice STT Restore.
+// CrewCheck v13.7.7 — Telegram Voice STT Restore.
 function crewcheckSttApiKey() {
   return envAny(['OPENAI_API_KEY', 'OPENAI_STT_API_KEY', 'CREWCHECK_OPENAI_API_KEY', 'CREWCHECK_STT_API_KEY']);
 }
@@ -1212,6 +1343,11 @@ async function handleTelegramVoiceMessage(message = {}) {
     }
     const transcript = String(result.text || '').trim();
     const reply = buildTelegramReply(transcript);
+    const audioReply = await sendTelegramTtsAudio(chatId, reply, { caption: 'CrewCheck Concierge · resposta em áudio' });
+    if (audioReply?.ok) {
+      await sendTelegramMessage(chatId, `Ouvi: “${transcript.slice(0, 700)}”\n\nResposta enviada em áudio pelo CrewCheck.`);
+      return true;
+    }
     await sendTelegramMessage(chatId, [`Ouvi: “${transcript.slice(0, 700)}”`, '', reply].join('\n'));
     return true;
   } catch {
@@ -1225,7 +1361,7 @@ function handleTelegramSttHealth(req, res) {
 
 function handleTelegramHealth(req, res) {
   const webhookUrl = publicUrl() ? `${publicUrl()}/api/telegram/webhook` : '';
-  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), message: telegramConfigured() ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
+  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), ttsProvider: 'elevenlabs', ttsConfigured: elevenLabsTtsConfigured(), message: telegramConfigured() ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
 }
 
 async function handleTelegramSend(req, res) {
@@ -1319,6 +1455,7 @@ function reliabilityEnvItems() {
     reliabilityModule('radar','Radar de voos',['FLIGHTAWARE_AEROAPI_KEY','AEROAPI_KEY','AIRLABS_API_KEY','AVIATIONSTACK_API_KEY','AVIATIONSTACK_ACCESS_KEY','OAG_FLIGHT_INFO_PRIMARY_KEY']),
     reliabilityModule('weather','Meteorologia',['AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE']),
     reliabilityModule('telegram','Telegram',['TELEGRAM_BOT_TOKEN','CREWCHECK_TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('tts-elevenlabs','Voz Premium ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_VOICE_ID','CREWCHECK_ELEVENLABS_VOICE_ID']),
     reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','CALLMEBOT_API_KEY','TELEGRAM_BOT_TOKEN']),
     reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
@@ -1328,16 +1465,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.6', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.7', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.6', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.7', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.6', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.7', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -1375,7 +1512,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.6 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.7 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -1385,8 +1522,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.6">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.6">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.7">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.7">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1432,7 +1569,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.6&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.7&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1444,7 +1581,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.6'
+    'x-crewcheck-boot': 'static-shell-13.7.7'
   });
   res.end(html);
 }
@@ -1470,7 +1607,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
@@ -1478,7 +1615,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.6', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.7', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1494,9 +1631,11 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/places/fitness') return handleFitness(req, res, url);
   if (url.pathname === '/api/osm/health') return handleOsmHealth(req, res, url);
   if (url.pathname === '/api/osm/route-preview') return handleOsmRoutePreview(req, res, url);
-  if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(req, res, url);
+    if (url.pathname === '/api/tts/health') return handleTtsHealth(req, res);
+  if (url.pathname === '/api/tts/speak') return handleTtsSpeak(req, res);
+if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(req, res, url);
   if (url.pathname === '/api/telegram/link/status') return handleTelegramLinkStatus(req, res, url);
-  if (url.pathname === '/api/telegram/stt-health') return handleTelegramSttHealth(req, res, url);
+  if (url.pathname === '/api/telegram/stt-health','/api/tts/health') return handleTelegramSttHealth(req, res, url);
   if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
   if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
@@ -1504,7 +1643,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.6', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.7', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
