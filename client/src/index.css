@@ -17278,3 +17278,10 @@ button.cz-setting > span:last-child.on::before {
 /* CrewCheck v13.7.6 — Telegram Voice STT visual hint */
 .cz-update-status .cz-routine-strip span,
 .cz-mini-status p { overflow-wrap: anywhere; }
+
+/* CrewCheck v13.7.7 — ElevenLabs TTS Status polish */
+.cz-mini-status,
+.cz-update-status,
+.cz-toolbox {
+  overflow-wrap: anywhere;
+}
