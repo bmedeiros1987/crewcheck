@@ -59,7 +59,7 @@ import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent,
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'diagnostics';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight';
 
 type ZeroLeg = {
   id: string;
@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.6.7';
-const CREWCHECK_UI_CORE_NOTE = 'v13.6.7: inicialização segura, reparo externo e proteção contra tela travada';
+const DEFAULT_VERSION = '13.6.8';
+const CREWCHECK_UI_CORE_NOTE = 'v13.6.8: frontend estável restaurado com shell seguro';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1041,7 +1041,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
-    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['diagnostics','Diagnóstico','Confiabilidade e saúde',ShieldCheck], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
+    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
   const jump = (v: ZeroView) => { setView(v); close(); };
   return <div className="cz-menu-overlay" role="dialog" aria-modal="true">
@@ -1455,7 +1455,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button><button onClick={() => setView('diagnostics')}><ShieldCheck/><strong>Diagnóstico</strong><small>Saúde do sistema</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
 
@@ -1725,43 +1725,6 @@ function CrewToolsView({ bundle }: { bundle: BundleState }) {
   const firstCrew = (bundle.roster.days || []).flatMap((d:any) => d.legs || []).flatMap((l:any) => l.crew || []).slice(0, 8);
   return <><Brand back/><section className="cz-panel-head"><h1>Crew e chefe de cabine</h1><p>Tripulação, adicional de chefe, instrutor e apoio operacional.</p></section><section className="cz-stack-list">{firstCrew.length ? firstCrew.map((c:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-copy"><h3>{c.name || c.employeeName || 'Tripulante'}</h3><p>{c.role || c.function || 'Crew'}</p></div><strong className="cz-roster-time">{i===0 ? 'Chefe efetivo' : 'Tripulante'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Regra preservada</h3><p>Quando houver lista de CCM, o primeiro CCM listado é considerado chefe efetivo do voo para fins de adicional.</p></div></article>}</section></>;
 }
-
-function DiagnosticsView({ bundle, events, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setView: (v: ZeroView) => void; actions: QuickActions }) {
-  const [health, setHealth] = useState<any>(null);
-  const [envStatus, setEnvStatus] = useState<any>(null);
-  const [selfTest, setSelfTest] = useState<any>(null);
-  const [logs, setLogs] = useState<string[]>(() => { try { return JSON.parse(storage.get('crewcheck_reliability_logs', '[]')).slice(-20); } catch { return []; } });
-  const [busy, setBusy] = useState(false);
-  async function refreshDiagnostics() {
-    setBusy(true);
-    try {
-      const [h,e,s] = await Promise.all([
-        fetch('/api/reliability/health', { cache:'no-store' }).then(r=>r.json()).catch(error=>({ ok:false, message:String(error?.message||error) })),
-        fetch('/api/reliability/env', { cache:'no-store' }).then(r=>r.json()).catch(error=>({ ok:false, message:String(error?.message||error) })),
-        fetch('/api/reliability/self-test', { cache:'no-store' }).then(r=>r.json()).catch(error=>({ ok:false, message:String(error?.message||error) })),
-      ]);
-      setHealth(h); setEnvStatus(e); setSelfTest(s);
-      const line = `${new Date().toLocaleString('pt-BR')} · diagnóstico: ${h?.ok ? 'OK' : 'atenção'} · endpoints ${s?.ok ? 'OK' : 'atenção'}`;
-      const next = [...logs, line].slice(-20); setLogs(next); storage.set('crewcheck_reliability_logs', JSON.stringify(next));
-      toast.success('Diagnóstico atualizado.');
-    } catch { toast.error('Não consegui atualizar o diagnóstico.'); }
-    finally { setBusy(false); }
-  }
-  useEffect(() => { refreshDiagnostics(); }, []);
-  function repairApp() {
-    const keep = ['crewcheck_auth_token','crewcheck_user','crewcheck_latest_roster_bundle','crewcheck_last_roster','crewcheck_roster_sync_latest_v108134','crewcheck_telegram_chat_id','crewcheck_wakeup_phone','crewcheck_wakeup_channel','crewcheck_act_km_metric_brl','crewcheck_act_chief_sector_brl','crewcheck_perdiem_meal_brl','crewcheck_virtual_base','crewcheck_theme_mode','crewcheck_light_premium'];
-    const saved: Record<string,string> = {};
-    keep.forEach(k => { try { const v = localStorage.getItem(k); if (v !== null) saved[k] = v; } catch {} });
-    try { sessionStorage.clear(); } catch {}
-    try { Object.keys(localStorage).filter(k => k.startsWith('crewcheck_')).forEach(k => localStorage.removeItem(k)); Object.entries(saved).forEach(([k,v]) => localStorage.setItem(k,v)); localStorage.setItem('crewcheck_cache_repaired_at', new Date().toISOString()); toast.success('Cache operacional reparado. Recarregando...'); setTimeout(() => window.location.reload(), 650); }
-    catch { toast.error('Não consegui reparar automaticamente.'); }
-  }
-  const loaded = events.some(e => !e.placeholder);
-  const modules = Array.isArray(health?.modules) ? health.modules : [];
-  const envItems = Array.isArray(envStatus?.items) ? envStatus.items : [];
-  return <><Brand back/><section className="cz-panel-head"><h1>Diagnóstico e Confiabilidade</h1><p>Verifica login, escala, endpoints, variáveis, integrações e cache sem mostrar segredos.</p></section><section className="cz-finance-grid"><KpiCard icon={ShieldCheck} title="Sistema" value={health?.ok ? 'OK' : 'Atenção'} detail={health?.message || 'verificando'}/><KpiCard icon={CalendarDays} title="Escala local" value={loaded ? 'Carregada' : 'Pendente'} detail={`${events.length} eventos no dispositivo`}/><KpiCard icon={Wifi} title="APIs" value={selfTest?.ok ? 'JSON OK' : 'Revisar'} detail={selfTest?.message || 'verificando'}/></section><section className="cz-diagnostics-grid"><article><h2>Módulos</h2>{modules.length ? modules.map((m:any)=><p key={m.id || m.name}><strong>{m.label || m.name}</strong><span className={m.ok ? 'ok' : 'warn'}>{m.ok ? 'OK' : 'Atenção'}</span><small>{m.message || (m.configured ? 'Configurado' : 'Aguardando configuração')}</small></p>) : <p>Diagnóstico aguardando resposta.</p>}</article><article><h2>Variáveis sem segredos</h2>{envItems.length ? envItems.map((m:any)=><p key={m.id || m.key}><strong>{m.label || m.id}</strong><span className={m.configured ? 'ok' : 'warn'}>{m.configured ? 'Config.' : 'Pendente'}</span><small>{m.keys?.join(' / ') || 'aliases avaliados'}</small></p>) : <p>Env aguardando resposta.</p>}</article><article><h2>Últimos logs locais</h2>{logs.length ? logs.slice(-8).reverse().map(line=><p key={line}><small>{line}</small></p>) : <p>Nenhuma falha local registrada.</p>}</article></section><section className="cz-toolbox"><h2>Ações de recuperação</h2><p>Use “Reparar app” quando o usuário ficar preso por cache antigo, tela quebrada ou dados locais inconsistentes. A conta, última escala e preferências principais são preservadas.</p><div className="cz-tool-actions"><button onClick={refreshDiagnostics} disabled={busy}><ShieldCheck/> Atualizar diagnóstico</button><button onClick={repairApp}><RotateCcw/> Reparar app/cache</button><button onClick={() => setView('import')}><Upload/> Reimportar escala</button><button onClick={actions.openActive}><Database/> Abrir escala ativa</button><button onClick={() => setView('settings')}><Settings/> Configurações</button></div></section></>;
-}
-
 function MaintenancePreview() { return <><Brand/><section className="cz-maintenance"><article><div className="cz-maint-illu"><Settings size={72}/><Plane size={64}/></div><h1>Site em manutenção</h1><p>Estamos realizando melhorias e atualizações no CrewCheck. Em breve o sistema estará disponível novamente.</p><span><ShieldCheck/> Modo ativado pelo administrador</span><div><Lock/> Apenas administradores podem acessar o painel durante a manutenção.</div><button>Acessar painel admin <ChevronRight/></button><button>Ver status</button><a>Voltar mais tarde</a></article><section><h2>Status da operação <b>Em andamento</b></h2><div><p><CalendarDays/>Escala em atualização</p><p><Bell/>Alertas em revisão</p><p><CloudSun/>Meteorologia sincronizando</p></div></section></section></> }
 function ImportPanel({ onUpload }: { onUpload: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala. Antes de salvar, o CrewCheck valida período, tripulante, base, dias, voos e próxima programação para evitar ativar o mês errado.</p><button onClick={onUpload}>Escolher PDF</button></section></>; }
 
@@ -1818,59 +1781,8 @@ async function parsePDFResilient(file: File): Promise<{ roster: CrewRoster; sour
 }
 
 function OpeningVideo({ onDone }: { onDone: () => void }) {
-  const [videoIssue, setVideoIssue] = useState(false);
   const finish = () => { storage.set('crewcheck_intro_seen_v1278', '1'); onDone(); };
-  useEffect(() => {
-    const timer = window.setTimeout(finish, 6500);
-    return () => window.clearTimeout(timer);
-  }, []);
-  return <section className="cz-opening-video"><video src="/assets/opening/crewcheck-opening.mp4" autoPlay muted playsInline preload="auto" onEnded={finish} onError={() => { setVideoIssue(true); window.setTimeout(finish, 900); }} onStalled={() => { setVideoIssue(true); window.setTimeout(finish, 1200); }}/><div><span><Plane/> CrewCheck</span><h1>Roster Intelligence</h1><p>Escala real, rotina, hotéis, academias, trânsito, radar, meteorologia e saída inteligente em um cockpit premium.</p>{videoIssue && <small>Inicialização segura ativada. Pulando abertura automaticamente.</small>}<button onClick={finish}>Entrar no app <ChevronRight/></button></div></section>;
-}
-
-
-function crewcheckRuntimeParams() {
-  try { return new URLSearchParams(window.location.search || ''); } catch { return new URLSearchParams(); }
-}
-function bootRescueKeysToKeep() {
-  return new Set([
-    'crewcheck_auth_token','crewcheck_user','crewcheck_theme_mode','crewcheck_light_premium','crewcheck_language',
-    'crewcheck_latest_roster_bundle','crewcheck_last_roster','crewcheck_roster_sync_latest_v108134','crewcheck_roster_bundle_v1',
-    'crewcheck_telegram_chat_id','crewcheck_wakeup_phone','crewcheck_wakeup_channel',
-    'crewcheck_act_km_metric_brl','crewcheck_act_chief_sector_brl','crewcheck_act_instructor_sector_brl','crewcheck_act_night_hour_brl','crewcheck_salary_base_brl','crewcheck_perdiem_meal_brl','crewcheck_perdiem_breakfast_brl',
-    'crewcheck_virtual_base','crewcheck_manual_route_origin','crewcheck_last_geo','crewcheck_my_car_parking_position_v1',
-    'crewcheck_profile_avatar','crewcheck_profile_display_name','crewcheck_profile_company','crewcheck_profile_base','crewcheck_profile_rank','crewcheck_app_mode'
-  ]);
-}
-function runtimeInitialView(): ZeroView {
-  try {
-    const params = crewcheckRuntimeParams();
-    const forced = params.get('view') || params.get('screen') || (params.has('safe') || params.has('repair') || params.has('diagnostics') ? 'diagnostics' : '');
-    if (forced) {
-      sessionStorage.setItem('crewcheck_force_view_once', forced);
-      storage.set('crewcheck_intro_seen_v1278', '1');
-      return normalizeInitialView(forced);
-    }
-    return normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view'));
-  } catch {
-    return 'cockpit';
-  }
-}
-async function clearCrewCheckRuntimeCaches() {
-  try { if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((reg) => reg.unregister())); } } catch {}
-  try { if ('caches' in window) { const names = await caches.keys(); await Promise.all(names.filter((name) => name.toLowerCase().includes('crewcheck') || name.toLowerCase().includes('workbox')).map((name) => caches.delete(name))); } } catch {}
-}
-function repairCrewCheckLocalRuntime() {
-  try {
-    const keep = bootRescueKeysToKeep();
-    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('crewcheck_') && !keep.has(key)) localStorage.removeItem(key);
-    }
-    sessionStorage.clear();
-    sessionStorage.setItem('crewcheck_force_view_once', 'diagnostics');
-    storage.set('crewcheck_intro_seen_v1278', '1');
-    storage.set('crewcheck_boot_rescue_repaired_at', new Date().toISOString());
-  } catch {}
+  return <section className="cz-opening-video"><video src="/assets/opening/crewcheck-opening.mp4" autoPlay muted playsInline onEnded={finish}/><div><span><Plane/> CrewCheck</span><h1>Roster Intelligence</h1><p>Escala real, rotina, hotéis, academias, trânsito, radar, meteorologia e saída inteligente em um cockpit premium.</p><button onClick={finish}>Entrar no app <ChevronRight/></button></div></section>;
 }
 
 function normalizeInitialView(value: string | null): ZeroView {
@@ -1896,7 +1808,6 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'map' || value === 'mapa') return 'map';
   if (value === 'mycar' || value === 'meucarro' || value === 'carro' || value === 'car') return 'mycar';
   if (value === 'iflight' || value === 'push-iflight') return 'iflight';
-  if (value === 'diagnostics' || value === 'diagnostico' || value === 'health') return 'diagnostics';
   if (value === 'database') return 'database';
   if (value === 'crew') return 'crew';
   return 'cockpit';
@@ -1905,7 +1816,7 @@ function normalizeInitialView(value: string | null): ZeroView {
 export default function Home() {
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ZeroView>(() => runtimeInitialView());
+  const [view, setView] = useState<ZeroView>(() => normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -1924,22 +1835,6 @@ export default function Home() {
     document.documentElement.classList.toggle('dark', effective === 'dark');
     document.documentElement.style.colorScheme = effective;
     storage.set('crewcheck_last_loaded_version', DEFAULT_VERSION);
-    const params = crewcheckRuntimeParams();
-    if (params.has('safe') || params.has('repair') || params.has('diagnostics')) {
-      storage.set('crewcheck_intro_seen_v1278', '1');
-      setShowIntro(false);
-      setView('diagnostics');
-    }
-    if (params.has('repair')) {
-      repairCrewCheckLocalRuntime();
-      void clearCrewCheckRuntimeCaches();
-      try { window.history.replaceState(null, '', '/?safe=1&v=13.6.7'); } catch {}
-      toast.success('Modo seguro ativado. Cache operacional reparado.');
-    }
-    const bootTimer = window.setTimeout(() => {
-      storage.set('crewcheck_boot_ok_v1367', '1');
-    }, 2500);
-
     const open = () => setDrawer(true);
     const setViewFromEvent = (event: Event) => { const next = (event as CustomEvent).detail; if (next) setView(normalizeInitialView(String(next))); };
     const syncTheme = () => {
@@ -1953,7 +1848,7 @@ export default function Home() {
     window.addEventListener('crewcheck:open-menu', open);
     window.addEventListener('crewcheck:set-view', setViewFromEvent as EventListener);
     window.addEventListener('crewcheck:theme-change', syncTheme);
-    return () => { window.clearTimeout(bootTimer); window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
+    return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
   }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
@@ -2034,7 +1929,6 @@ export default function Home() {
     {view === 'map' && <MonthlyMapView events={events}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    {view === 'diagnostics' && <DiagnosticsView bundle={bundle} events={events} setView={setView} actions={actions}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
   </main>;
 }

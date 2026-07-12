@@ -16588,3 +16588,5 @@ html[data-crew-theme="light"] .cz-diagnostics-grid article{background:#fff;borde
 .cz-opening-video button{touch-action:manipulation;position:relative;z-index:2}
 .cz-opening-video small{display:block;margin:10px 0;color:#bae6fd;font-weight:800}
 .cz-app[data-view="diagnostics"]{min-height:100dvh}
+
+/* CrewCheck v13.6.8 — Static Server Shell active. Root route is served outside React for boot reliability. */
