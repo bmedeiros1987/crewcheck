@@ -16830,3 +16830,141 @@ body.crewcheck-menu-open {
     border-radius: 0 !important;
   }
 }
+
+/* ============================================================
+   CrewCheck v13.7.4 — Menu Scroll Built-in + Runtime Support
+   Corrige o menu real atual: .cz-menu-overlay / .cz-menu-panel.
+   ============================================================ */
+
+html.crewcheck-menu-open,
+body.crewcheck-menu-open {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+.cz-menu-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: flex-end !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+}
+
+.cz-menu-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  touch-action: none !important;
+}
+
+.cz-menu-panel {
+  position: relative !important;
+  z-index: 1 !important;
+  width: min(96vw, 420px) !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  overscroll-behavior-x: none !important;
+  touch-action: pan-y !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
+  scrollbar-gutter: stable;
+}
+
+.cz-menu-panel header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 4 !important;
+  flex: 0 0 auto !important;
+  min-height: auto !important;
+}
+
+.cz-menu-panel header button {
+  touch-action: manipulation !important;
+}
+
+.cz-menu-section {
+  flex: 0 0 auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.cz-menu-section h3,
+.cz-menu-section button {
+  flex: 0 0 auto !important;
+}
+
+.cz-menu-section button {
+  min-height: 3.75rem !important;
+  touch-action: manipulation !important;
+}
+
+.cz-menu-section:last-child {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+@supports not (height: 100dvh) {
+  html.crewcheck-menu-open,
+  body.crewcheck-menu-open,
+  .cz-menu-overlay,
+  .cz-menu-panel {
+    height: 100vh !important;
+    max-height: 100vh !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .cz-menu-panel {
+    width: min(96vw, 390px) !important;
+    border-radius: 0 !important;
+  }
+}
+
+/* Central de Atualizações */
+.cz-update-upload {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.cz-update-textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  border-radius: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(126,200,255,.22);
+  background: rgba(4,14,29,.72);
+  color: #eaf7ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78rem;
+  line-height: 1.45;
+  outline: none;
+}
+
+[data-crew-theme="light"] .cz-update-textarea {
+  background: rgba(255,255,255,.96);
+  color: #092846;
+  border-color: rgba(196,214,230,.95);
+}
+
+.cz-update-status {
+  display: grid;
+  gap: .5rem;
+}

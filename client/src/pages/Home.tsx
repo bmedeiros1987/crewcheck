@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useLocation } from 'wouter';
+import JSZip from 'jszip';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -59,7 +60,7 @@ import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent,
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates';
 
 type ZeroLeg = {
   id: string;
@@ -105,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.3';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.3: scroll corrigido no menu real .cz-menu-panel';
+const DEFAULT_VERSION = '13.7.4';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.4: Central Admin de Atualizações com pacote ZIP e hotfix runtime';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1007,7 +1008,7 @@ function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: Z
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight','updates'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -1035,13 +1036,150 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
 }
 
 
+
+function UpdateCenterView() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [token, setToken] = useState(() => storage.get('crewcheck_update_token', ''));
+  const [title, setTitle] = useState('Hotfix visual CrewCheck');
+  const [version, setVersion] = useState('runtime');
+  const [notes, setNotes] = useState('');
+  const [css, setCss] = useState(DEFAULT_RUNTIME_MENU_SCROLL_CSS);
+  const [current, setCurrent] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function refreshCurrent() {
+    try {
+      const response = await fetch('/api/admin/runtime-patch/current', { cache: 'no-store', credentials: 'include' });
+      const payload = await response.json().catch(() => null);
+      setCurrent(payload);
+      if (payload?.css) injectCrewCheckRuntimePatch(String(payload.css));
+    } catch {
+      setCurrent({ ok: false, message: 'Não consegui consultar hotfix ativo.' });
+    }
+  }
+
+  useEffect(() => { refreshCurrent(); }, []);
+
+  async function loadUpdatePackage(file: File) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.zip')) {
+      const zip = await JSZip.loadAsync(file);
+      const manifestEntry = zip.file('manifest.json') || Object.values(zip.files).find((entry) => entry.name.toLowerCase().endsWith('manifest.json') && !entry.dir);
+      const cssEntry = zip.file('patch.css') || Object.values(zip.files).find((entry) => entry.name.toLowerCase().endsWith('.css') && !entry.dir);
+      const notesEntry = zip.file('release-notes.md') || Object.values(zip.files).find((entry) => entry.name.toLowerCase().endsWith('.md') && !entry.dir);
+      if (!cssEntry) throw new Error('Pacote sem patch.css ou arquivo .css.');
+      const cssText = await cssEntry.async('string');
+      setCss(cssText);
+      if (manifestEntry) {
+        const manifestText = await manifestEntry.async('string');
+        const manifest = JSON.parse(manifestText);
+        setTitle(String(manifest.title || manifest.name || 'Pacote CrewCheck'));
+        setVersion(String(manifest.version || manifest.packageVersion || 'runtime'));
+      }
+      if (notesEntry) setNotes(await notesEntry.async('string'));
+      toast.success('Pacote ZIP lido. Revise e aplique o hotfix.');
+      return;
+    }
+
+    const text = await file.text();
+    if (name.endsWith('.json')) {
+      const payload = JSON.parse(text);
+      setTitle(String(payload.title || 'Pacote CrewCheck'));
+      setVersion(String(payload.version || 'runtime'));
+      setNotes(String(payload.notes || ''));
+      setCss(String(payload.css || payload.patchCss || ''));
+      toast.success('Pacote JSON lido.');
+      return;
+    }
+
+    setCss(text);
+    setTitle(file.name.replace(/\.[^.]+$/, ''));
+    toast.success('Arquivo CSS/TXT carregado.');
+  }
+
+  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try { await loadUpdatePackage(file); }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui ler o pacote.'); }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  }
+
+  async function applyPatch() {
+    setBusy(true);
+    try {
+      storage.set('crewcheck_update_token', token);
+      const payload = await crewcheckUpdateFetch('/api/admin/runtime-patch', token, { title, version, notes, css });
+      injectCrewCheckRuntimePatch(css);
+      setCurrent(payload);
+      toast.success(payload.message || 'Hotfix visual aplicado.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui aplicar o hotfix.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearPatch() {
+    setBusy(true);
+    try {
+      storage.set('crewcheck_update_token', token);
+      const payload = await crewcheckUpdateFetch('/api/admin/runtime-patch/clear', token, {});
+      injectCrewCheckRuntimePatch('');
+      setCurrent(payload);
+      toast.success(payload.message || 'Hotfix removido.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui remover o hotfix.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <><Brand back/><section className="cz-panel-head"><h1>Atualizações internas</h1><p>Central Admin para hotfix visual, pacote ZIP seguro, rollback e correções rápidas sem novo deploy para ajustes de interface.</p></section>
+    <section className="cz-finance-grid">
+      <KpiCard icon={Upload} title="Pacote" value="ZIP/CSS" detail="manifest + patch.css"/>
+      <KpiCard icon={ShieldCheck} title="Segurança" value="CSS only" detail="sem JS e sem token"/>
+      <KpiCard icon={RotateCcw} title="Rollback" value="1 toque" detail="remove hotfix runtime"/>
+    </section>
+    <section className="cz-toolbox cz-update-upload">
+      <h2>Leitor de pacote CrewCheck</h2>
+      <p>Envie um .zip com manifest.json e patch.css, ou cole CSS diretamente. Para produção, configure CREWCHECK_ADMIN_UPDATE_TOKEN no Render e informe o token abaixo.</p>
+      <input ref={fileRef} hidden type="file" accept=".zip,.json,.css,.txt,.crewcheck-update" onChange={handleFile}/>
+      <div className="cz-form-grid">
+        <label><span>Token de atualização</span><input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="CREWCHECK_ADMIN_UPDATE_TOKEN"/></label>
+        <label><span>Título</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Hotfix visual CrewCheck"/></label>
+        <label><span>Versão do pacote</span><input value={version} onChange={(event) => setVersion(event.target.value)} placeholder="13.7.4-menu-scroll"/></label>
+      </div>
+      <label><span>Notas do pacote</span><textarea className="cz-update-textarea" style={{ minHeight: 96 }} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Notas de atualização"/></label>
+      <label><span>CSS runtime seguro</span><textarea className="cz-update-textarea" value={css} onChange={(event) => setCss(event.target.value)} placeholder="Cole o CSS do hotfix"/></label>
+      <div className="cz-tool-actions">
+        <button onClick={() => fileRef.current?.click()} disabled={busy}><Upload/> Enviar pacote ZIP/CSS</button>
+        <button onClick={applyPatch} disabled={busy || !css.trim()}><Save/> Aplicar hotfix visual</button>
+        <button onClick={refreshCurrent} disabled={busy}><RotateCcw/> Ver hotfix ativo</button>
+        <button className="danger" onClick={clearPatch} disabled={busy}><LogOut/> Remover hotfix</button>
+      </div>
+    </section>
+    <section className="cz-toolbox cz-update-status">
+      <h2>Status runtime</h2>
+      <p>{current?.message || 'Consulte o status atual para ver se há hotfix ativo.'}</p>
+      <div className="cz-routine-strip">
+        <span>{current?.configured ? 'Hotfix ativo' : 'Sem hotfix ativo'}</span>
+        <span>{current?.patch?.version || 'Sem versão runtime'}</span>
+        <span>{current?.patch?.cssLength ? `${current.patch.cssLength} caracteres` : 'CSS vazio'}</span>
+      </div>
+    </section>
+  </>;
+}
+
+
 function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; close: () => void; view: ZeroView; setView: (v: ZeroView) => void; actions: QuickActions }) {
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
-    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
+    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
   const jump = (v: ZeroView) => { setView(v); close(); };
   return <div className="cz-menu-overlay" role="dialog" aria-modal="true">
@@ -1809,9 +1947,121 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'mycar' || value === 'meucarro' || value === 'carro' || value === 'car') return 'mycar';
   if (value === 'iflight' || value === 'push-iflight') return 'iflight';
   if (value === 'database') return 'database';
+  if (value === 'updates' || value === 'atualizacoes' || value === 'atualizações') return 'updates';
   if (value === 'crew') return 'crew';
   return 'cockpit';
 }
+
+
+const CREWCHECK_RUNTIME_PATCH_STYLE_ID = 'crewcheck-runtime-patch-style';
+
+function injectCrewCheckRuntimePatch(css: string) {
+  try {
+    let style = document.getElementById(CREWCHECK_RUNTIME_PATCH_STYLE_ID) as HTMLStyleElement | null;
+    if (!css.trim()) {
+      style?.remove();
+      return;
+    }
+    if (!style) {
+      style = document.createElement('style');
+      style.id = CREWCHECK_RUNTIME_PATCH_STYLE_ID;
+      style.setAttribute('data-crewcheck-runtime-patch', 'true');
+      document.head.appendChild(style);
+    }
+    style.textContent = css;
+  } catch {}
+}
+
+async function loadCrewCheckRuntimePatch() {
+  try {
+    const response = await fetch('/api/admin/runtime-patch/current', { cache: 'no-store', credentials: 'include' });
+    const payload = await response.json().catch(() => null);
+    if (payload?.ok) injectCrewCheckRuntimePatch(String(payload.css || ''));
+  } catch {}
+}
+
+async function crewcheckUpdateFetch(path: string, token: string, payload: Record<string, unknown> = {}) {
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'content-type': 'application/json',
+      'x-crewcheck-update-token': token,
+    },
+    body: JSON.stringify({ ...payload, token }),
+  });
+  const data = await response.json().catch(() => ({ ok: false, message: 'Resposta inválida do servidor.' }));
+  if (!response.ok || !data?.ok) throw new Error(String(data?.message || `Erro HTTP ${response.status}`));
+  return data;
+}
+
+const DEFAULT_RUNTIME_MENU_SCROLL_CSS = `/* CrewCheck runtime hotfix — Menu scroll */
+html.crewcheck-menu-open,
+body.crewcheck-menu-open {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+.cz-menu-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: flex-end !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+}
+.cz-menu-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  touch-action: none !important;
+}
+.cz-menu-panel {
+  position: relative !important;
+  z-index: 1 !important;
+  width: min(96vw, 420px) !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  overscroll-behavior-x: none !important;
+  touch-action: pan-y !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+.cz-menu-panel header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 4 !important;
+  flex: 0 0 auto !important;
+}
+.cz-menu-section {
+  flex: 0 0 auto !important;
+  min-height: auto !important;
+  overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.cz-menu-section h3,
+.cz-menu-section button {
+  flex: 0 0 auto !important;
+}
+.cz-menu-section:last-child {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+`;
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -1864,6 +2114,21 @@ export default function Home() {
       } catch {}
     };
   }, [drawer]);
+
+  useEffect(() => {
+    try {
+      document.documentElement.classList.toggle('crewcheck-menu-open', drawer);
+      document.body.classList.toggle('crewcheck-menu-open', drawer);
+    } catch {}
+    return () => {
+      try {
+        document.documentElement.classList.remove('crewcheck-menu-open');
+        document.body.classList.remove('crewcheck-menu-open');
+      } catch {}
+    };
+  }, [drawer]);
+
+  useEffect(() => { loadCrewCheckRuntimePatch(); }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
     const file = inputEvent.target.files?.[0];
@@ -1924,6 +2189,7 @@ export default function Home() {
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
+    {view === 'updates' && <UpdateCenterView/>}
     {view === 'maintenance' && <MaintenancePreview/>}
     {view === 'import' && <ImportPanel onUpload={actions.upload}/>}
     {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>}
