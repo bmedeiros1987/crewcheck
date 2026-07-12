@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.9';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.9: áudio Telegram humanizado, sem mensagens técnicas';
+const DEFAULT_VERSION = '13.7.10';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.10: rota /app restaurada';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
