@@ -776,7 +776,7 @@ async function handleAuthResetPassword1371(req, res) {
 }
 
 
-// CrewCheck v13.7.8 — Internal Update Center backend.
+// CrewCheck v13.7.9 — Internal Update Center backend.
 // Aceita apenas CSS runtime validado. Não executa JS e não grava segredos.
 const crewcheckRuntimePatchFile = path.join(__dirname, '.crewcheck-runtime-patch.json');
 
@@ -952,7 +952,7 @@ async function handleRuntimePatchClear(req, res) {
 }
 
 
-// CrewCheck v13.7.8 — ElevenLabs env aliases.
+// CrewCheck v13.7.9 — ElevenLabs env aliases.
 // Lê também o padrão antigo ELEVENLABS_TTS_* já configurado no Render.
 const ELEVENLABS_KEY_ENV_KEYS = ['ELEVENLABS_API_KEY', 'CREWCHECK_ELEVENLABS_API_KEY', 'ELEVENLABS_TTS_API_KEY'];
 const ELEVENLABS_VOICE_ENV_KEYS = ['ELEVENLABS_VOICE_ID', 'ELEVENLABS_TTS_VOICE_ID', 'CREWCHECK_ELEVENLABS_VOICE_ID', 'CREWCHECK_ELEVENLABS_TTS_VOICE_ID', 'ELEVENLABS_DEFAULT_VOICE_ID', 'ELEVENLABS_VOICE', 'TTS_VOICE_ID'];
@@ -966,7 +966,7 @@ function envAnyWithSource(names = []) {
   return { name: '', value: '' };
 }
 function envSourceName(names = []) { return envAnyWithSource(names).name || ''; }
-// CrewCheck v13.7.8 — ElevenLabs TTS Restore.
+// CrewCheck v13.7.9 — ElevenLabs TTS Restore.
 // ElevenLabs volta a ser o TTS principal. STT continua separado.
 function elevenLabsApiKey() {
   return envAny(ELEVENLABS_KEY_ENV_KEYS);
@@ -1040,6 +1040,69 @@ async function generateElevenLabsSpeech(text, options = {}) {
     return { ok: false, configured: true, message: 'Não consegui conectar ao ElevenLabs agora.' };
   }
 }
+// CrewCheck v13.7.9 — Telegram Human Voice Reply.
+// Fluxo humano: não escreve “transcrevendo/conversão”; mostra ação de gravação e manda áudio limpo.
+function telegramHumanVoiceEnabled() {
+  return String(envAny(['TELEGRAM_CONCIERGE_HUMAN_VOICE_ENABLED', 'CREWCHECK_TELEGRAM_HUMAN_VOICE_ENABLED']) || 'true').toLowerCase() !== 'false';
+}
+function telegramHumanAudioCaption() {
+  const raw = envAny(['TELEGRAM_CONCIERGE_AUDIO_CAPTION', 'CREWCHECK_TELEGRAM_AUDIO_CAPTION']);
+  if (raw === undefined || raw === null) return '';
+  return String(raw).trim().slice(0, 180);
+}
+async function sendTelegramChatAction(chatId, action = 'record_voice') {
+  const url = telegramApiUrl('sendChatAction');
+  if (!url || !chatId) return { ok: false };
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: String(chatId), action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    return { ok: Boolean(response.ok && payload?.ok !== false), status: response.status };
+  } catch {
+    return { ok: false };
+  }
+}
+async function showHumanRecordingAction(chatId, cycles = 2) {
+  if (!telegramHumanVoiceEnabled() || !chatId) return;
+  const total = Math.max(1, Math.min(3, Number(cycles || 2)));
+  for (let i = 0; i < total; i += 1) {
+    await sendTelegramChatAction(chatId, 'record_voice');
+    if (i < total - 1) await new Promise((resolve) => setTimeout(resolve, 850));
+  }
+}
+function humanizeTelegramVoiceText(text = '') {
+  let value = cleanTtsText(text);
+  value = value
+    .replace(/^crewcheck\s+concierge[:\s-]*/i, '')
+    .replace(/^resposta[:\s-]*/i, '')
+    .replace(/\b(RBAC)\b/g, 'regra de jornada')
+    .replace(/\b(STT|TTS|API|endpoint|webhook|provider|payload)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!value) value = 'Boa, me manda de novo rapidinho que eu confiro pra você.';
+  return value;
+}
+function telegramShouldEchoTranscript() {
+  return String(envAny(['TELEGRAM_CONCIERGE_ECHO_TRANSCRIPT', 'CREWCHECK_TELEGRAM_ECHO_TRANSCRIPT']) || 'false').toLowerCase() === 'true';
+}
+async function sendHumanTelegramVoiceReply(chatId, replyText, transcript = '') {
+  const finalReply = humanizeTelegramVoiceText(replyText);
+  await showHumanRecordingAction(chatId, 2);
+  const audioReply = await sendTelegramTtsAudio(chatId, finalReply, {
+    caption: telegramHumanAudioCaption(),
+    filename: 'crewcheck.mp3',
+  });
+  if (audioReply?.ok) {
+    if (telegramShouldEchoTranscript() && transcript) {
+      await sendTelegramMessage(chatId, `Entendi: “${String(transcript).slice(0, 500)}”`);
+    }
+    return true;
+  }
+  return false;
+}
 async function sendTelegramAudioBuffer(chatId, buffer, filename = 'crewcheck-audio.mp3', caption = '') {
   const url = telegramApiUrl('sendAudio');
   if (!url) return { ok: false, configured: false, message: 'Telegram aguardando configuração.' };
@@ -1062,7 +1125,9 @@ async function sendTelegramTtsAudio(chatId, text, options = {}) {
   const generated = await generateElevenLabsSpeech(finalText, options);
   if (!generated.ok) return generated;
   const sent = await sendTelegramAudioBuffer(chatId, generated.buffer, options.filename || 'crewcheck-elevenlabs.mp3', options.caption || 'CrewCheck Concierge');
-  return { ...sent, provider: 'elevenlabs', tts: { ok: generated.ok, outputFormat: generated.outputFormat, modelId: generated.modelId } };
+  return { ...sent, provider: 'elevenlabs',
+    humanVoiceEnabled: telegramHumanVoiceEnabled(),
+    echoTranscript: telegramShouldEchoTranscript(), tts: { ok: generated.ok, outputFormat: generated.outputFormat, modelId: generated.modelId } };
 }
 async function handleTtsHealth(req, res) {
   return sendJson(res, 200, {
@@ -1164,7 +1229,7 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
-// CrewCheck v13.7.8 — Telegram Link backend.
+// CrewCheck v13.7.9 — Telegram Link backend.
 const crewcheckTelegramLinksFile = path.join(__dirname, '.crewcheck-telegram-links.json');
 
 function telegramBotUsername() {
@@ -1277,7 +1342,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   return true;
 }
 
-// CrewCheck v13.7.8 — Telegram Voice STT Restore.
+// CrewCheck v13.7.9 — Telegram Voice STT Restore.
 function crewcheckSttApiKey() {
   return envAny(['OPENAI_API_KEY', 'OPENAI_STT_API_KEY', 'CREWCHECK_OPENAI_API_KEY', 'CREWCHECK_STT_API_KEY']);
 }
@@ -1319,7 +1384,7 @@ async function telegramDownloadFile(filePath) {
 }
 async function transcribeTelegramAudioWithOpenAI(buffer, fileName, mimeType) {
   const key = crewcheckSttApiKey();
-  if (!key) return { ok: false, configured: false, message: 'Transcrição de áudio aguardando configuração.' };
+  if (!key) return { ok: false, configured: false, message: 'Ainda não consegui ouvir áudio por aqui. Me manda em texto rapidinho?' };
   const form = new FormData();
   const blob = new Blob([buffer], { type: mimeType || 'application/octet-stream' });
   form.append('file', blob, fileName || 'telegram-audio.ogg');
@@ -1330,28 +1395,28 @@ async function transcribeTelegramAudioWithOpenAI(buffer, fileName, mimeType) {
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form });
   const text = await response.text().catch(() => '');
   if (!response.ok) {
-    let message = 'Não consegui transcrever o áudio agora.';
+    let message = 'Não consegui ouvir esse áudio agora.';
     try { const parsed = JSON.parse(text); message = parsed?.error?.message || message; } catch {}
     return { ok: false, configured: true, status: response.status, message };
   }
   const transcript = text.trim().replace(/^"|"$/g, '').trim();
-  return { ok: Boolean(transcript), configured: true, text: transcript, message: transcript ? 'Áudio transcrito.' : 'Áudio recebido, mas a transcrição veio vazia.' };
+  return { ok: Boolean(transcript), configured: true, text: transcript, message: transcript ? 'Áudio transcrito.' : 'Não entendi bem esse áudio. Grava de novo rapidinho?' };
 }
 async function handleTelegramVoiceMessage(message = {}) {
   const chatId = message?.chat?.id;
   const fileId = telegramVoiceFileId(message);
   if (!chatId || !fileId) return false;
   if (!crewcheckSttConfigured()) {
-    await sendTelegramMessage(chatId, ['Recebi seu áudio, mas a transcrição ainda precisa de configuração no servidor.','','No Render, configure OPENAI_API_KEY e CREWCHECK_STT_MODEL.','Sugestão: CREWCHECK_STT_MODEL=gpt-4o-mini-transcribe','','Enquanto isso, envie por texto que eu respondo normalmente.'].join('\n'));
+    await sendTelegramMessage(chatId, ['Ainda não consegui ouvir áudio por aqui. Me manda em texto rapidinho?','','No Render, configure OPENAI_API_KEY e CREWCHECK_STT_MODEL.','Sugestão: CREWCHECK_STT_MODEL=gpt-4o-mini-transcribe','','Enquanto isso, envie por texto que eu respondo normalmente.'].join('\n'));
     return true;
   }
   const duration = telegramVoiceDuration(message);
-  if (duration && duration > 180) { await sendTelegramMessage(chatId, 'Recebi seu áudio, mas ele tem mais de 3 minutos. Envie um áudio mais curto para transcrição operacional.'); return true; }
-  await sendTelegramMessage(chatId, 'Áudio recebido. Estou transcrevendo e interpretando sua solicitação...');
+  if (duration && duration > 180) { await sendTelegramMessage(chatId, 'Esse áudio ficou grande pra mim. Me manda um mais curtinho?'); return true; }
+  await showHumanRecordingAction(chatId, 1);
   try {
     const info = await telegramGetFileInfo(fileId);
     if (!info.ok) { await sendTelegramMessage(chatId, info.message || 'Não consegui localizar o arquivo de áudio no Telegram.'); return true; }
-    if (Number(info.fileSize || 0) > 25 * 1024 * 1024) { await sendTelegramMessage(chatId, 'Áudio acima do limite de 25 MB. Envie um áudio mais curto.'); return true; }
+    if (Number(info.fileSize || 0) > 25 * 1024 * 1024) { await sendTelegramMessage(chatId, 'Esse áudio ficou pesado pra mim. Me manda um mais curtinho?'); return true; }
     const downloaded = await telegramDownloadFile(info.filePath);
     if (!downloaded.ok) { await sendTelegramMessage(chatId, downloaded.message || 'Não consegui baixar o áudio agora.'); return true; }
     const result = await transcribeTelegramAudioWithOpenAI(downloaded.buffer, telegramVoiceFileName(message, info.filePath), telegramVoiceMime(message));
@@ -1362,15 +1427,12 @@ async function handleTelegramVoiceMessage(message = {}) {
     }
     const transcript = String(result.text || '').trim();
     const reply = buildTelegramReply(transcript);
-    const audioReply = await sendTelegramTtsAudio(chatId, reply, { caption: 'CrewCheck Concierge · resposta em áudio' });
-    if (audioReply?.ok) {
-      await sendTelegramMessage(chatId, `Ouvi: “${transcript.slice(0, 700)}”\n\nResposta enviada em áudio pelo CrewCheck.`);
-      return true;
-    }
+    const humanAudioSent = await sendHumanTelegramVoiceReply(chatId, reply, transcript);
+    if (humanAudioSent) return true;
     await sendTelegramMessage(chatId, [`Ouvi: “${transcript.slice(0, 700)}”`, '', reply].join('\n'));
     return true;
   } catch {
-    await sendTelegramMessage(chatId, 'Recebi seu áudio, mas não consegui concluir a transcrição agora. Envie por texto ou tente novamente.');
+    await sendTelegramMessage(chatId, 'Não consegui ouvir esse áudio agora. Me manda em texto rapidinho ou tenta gravar de novo?');
     return true;
   }
 }
@@ -1484,16 +1546,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.8', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.9', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.8', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.9', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.8', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.9', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -1531,7 +1593,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.8 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.9 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -1541,8 +1603,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.8">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.8">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.9">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.9">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1588,7 +1650,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.8&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.9&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1600,7 +1662,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.8'
+    'x-crewcheck-boot': 'static-shell-13.7.9'
   });
   res.end(html);
 }
@@ -1626,7 +1688,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1378.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1378.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1379.html' || url.pathname === '/__crewcheck_boot_rescue_1378.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1379.html' || url.pathname === '/__crewcheck_boot_rescue_1378.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
@@ -1634,7 +1696,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.8', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.9', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1662,7 +1724,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.8', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.9', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
