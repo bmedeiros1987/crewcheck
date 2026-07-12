@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.6.9';
-const CREWCHECK_UI_CORE_NOTE = 'v13.6.9: rota /app corrigida e service worker antigo desativado';
+const DEFAULT_VERSION = '13.7.1';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.1: Auth API rebind e login sem timeout';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
