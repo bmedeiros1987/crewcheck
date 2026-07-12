@@ -17285,3 +17285,6 @@ button.cz-setting > span:last-child.on::before {
 .cz-toolbox {
   overflow-wrap: anywhere;
 }
+
+/* CrewCheck v13.7.8 — env alias status readability */
+.cz-mini-status, .cz-update-status, .cz-toolbox { overflow-wrap: anywhere; }
