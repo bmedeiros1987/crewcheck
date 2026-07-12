@@ -776,6 +776,182 @@ async function handleAuthResetPassword1371(req, res) {
 }
 
 
+// CrewCheck v13.7.4 — Internal Update Center backend.
+// Aceita apenas CSS runtime validado. Não executa JS e não grava segredos.
+const crewcheckRuntimePatchFile = path.join(__dirname, '.crewcheck-runtime-patch.json');
+
+function crewcheckRuntimePatchRead() {
+  try {
+    if (!fs.existsSync(crewcheckRuntimePatchFile)) return null;
+    const parsed = JSON.parse(fs.readFileSync(crewcheckRuntimePatchFile, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function crewcheckRuntimePatchPublic(patch) {
+  if (!patch) return null;
+  return {
+    id: patch.id || '',
+    title: patch.title || '',
+    version: patch.version || '',
+    notes: patch.notes || '',
+    appliedAt: patch.appliedAt || '',
+    type: patch.type || 'runtime-css',
+    cssLength: String(patch.css || '').length,
+  };
+}
+function crewcheckReadJsonRuntime(req, limit = 180000) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > limit) {
+        reject(new Error('Pacote muito grande para hotfix runtime.'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!raw.trim()) return resolve({});
+      try { resolve(JSON.parse(raw)); }
+      catch { reject(new Error('JSON inválido.')); }
+    });
+    req.on('error', reject);
+  });
+}
+function crewcheckSafeEqualRuntime(a = '', b = '') {
+  const av = Buffer.from(String(a));
+  const bv = Buffer.from(String(b));
+  if (av.length !== bv.length) return false;
+  try { return crypto.timingSafeEqual(av, bv); }
+  catch { return false; }
+}
+function crewcheckRuntimeAdminEmails() {
+  const raw = envAny(['CREWCHECK_ADMIN_EMAILS', 'CREWCHECK_ADMIN_EMAIL']) || 'bmedeiros1987@gmail.com';
+  return raw.split(',').map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+}
+function crewcheckRuntimeAuthorized(req, body = {}) {
+  const configuredToken = envAny(['CREWCHECK_ADMIN_UPDATE_TOKEN', 'CREWCHECK_UPDATE_TOKEN']);
+  const provided = String(
+    body.token ||
+    req.headers['x-crewcheck-update-token'] ||
+    req.headers['x-admin-update-token'] ||
+    ''
+  ).trim();
+
+  if (configuredToken) return crewcheckSafeEqualRuntime(provided, configuredToken);
+
+  try {
+    if (typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
+      const payload = cc1371Verify(cc1371RequestToken(req));
+      const email = String(payload?.email || '').toLowerCase();
+      if (payload?.admin || crewcheckRuntimeAdminEmails().includes(email)) return true;
+    }
+  } catch {}
+
+  return String(process.env.NODE_ENV || '').toLowerCase() !== 'production';
+}
+function crewcheckValidateRuntimeCss(css = '') {
+  const value = String(css || '');
+  if (!value.trim()) return { ok: false, message: 'CSS vazio.' };
+  if (value.length > 120000) return { ok: false, message: 'CSS acima do limite de segurança.' };
+
+  const lower = value.toLowerCase();
+  const blocked = [
+    '<script',
+    '</script',
+    '</style',
+    'javascript:',
+    'vbscript:',
+    'data:text/html',
+    'expression(',
+    '-moz-binding',
+    'behavior:',
+    'document.',
+    'window.',
+    'eval(',
+    'fetch(',
+    'xmlhttprequest',
+    'localstorage',
+    'sessionstorage',
+    '@import'
+  ];
+  const found = blocked.find((token) => lower.includes(token));
+  if (found) return { ok: false, message: `Conteúdo bloqueado no CSS: ${found}` };
+
+  const secretLike = /(ghp_[a-z0-9_]+|sk-proj-|xoxb-|telegram_bot_token|database_url|private_key|api[_-]?key\s*=)/i;
+  if (secretLike.test(value)) return { ok: false, message: 'O pacote parece conter segredo/token. Remova antes de aplicar.' };
+
+  return { ok: true };
+}
+async function handleRuntimePatchCurrent(req, res) {
+  const patch = crewcheckRuntimePatchRead();
+  return sendJson(res, 200, {
+    ok: true,
+    configured: Boolean(patch?.css),
+    patch: crewcheckRuntimePatchPublic(patch),
+    css: patch?.css || '',
+    message: patch?.css ? 'Hotfix visual runtime ativo.' : 'Nenhum hotfix visual runtime aplicado.',
+  });
+}
+async function handleRuntimePatchApply(req, res) {
+  let body = {};
+  try { body = await crewcheckReadJsonRuntime(req); }
+  catch (error) { return sendJson(res, 400, { ok: false, message: error instanceof Error ? error.message : 'JSON inválido.' }); }
+
+  if (!crewcheckRuntimeAuthorized(req, body)) {
+    return sendJson(res, 403, {
+      ok: false,
+      message: 'Acesso negado. Configure CREWCHECK_ADMIN_UPDATE_TOKEN no Render ou use sessão admin válida.',
+    });
+  }
+
+  const css = String(body.css || '');
+  const validation = crewcheckValidateRuntimeCss(css);
+  if (!validation.ok) return sendJson(res, 400, validation);
+
+  const patch = {
+    id: `runtime-${Date.now()}`,
+    type: 'runtime-css',
+    title: String(body.title || 'Hotfix visual CrewCheck').slice(0, 120),
+    version: String(body.version || 'runtime').slice(0, 80),
+    notes: String(body.notes || '').slice(0, 2000),
+    css,
+    appliedAt: new Date().toISOString(),
+  };
+
+  try {
+    fs.writeFileSync(crewcheckRuntimePatchFile, JSON.stringify(patch, null, 2), 'utf8');
+  } catch {
+    return sendJson(res, 500, { ok: false, message: 'Não consegui salvar o hotfix runtime neste ambiente.' });
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    configured: true,
+    patch: crewcheckRuntimePatchPublic(patch),
+    message: 'Hotfix visual aplicado. Reabra o app ou use Reparar cache.',
+  });
+}
+async function handleRuntimePatchClear(req, res) {
+  let body = {};
+  try { body = await crewcheckReadJsonRuntime(req); }
+  catch { body = {}; }
+
+  if (!crewcheckRuntimeAuthorized(req, body)) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso negado para remover hotfix.' });
+  }
+
+  try { if (fs.existsSync(crewcheckRuntimePatchFile)) fs.unlinkSync(crewcheckRuntimePatchFile); }
+  catch {
+    return sendJson(res, 500, { ok: false, message: 'Não consegui remover o hotfix runtime.' });
+  }
+
+  return sendJson(res, 200, { ok: true, configured: false, message: 'Hotfix runtime removido. Reabra o app.' });
+}
+
+
 function telegramToken() {
   return envAny(['TELEGRAM_BOT_TOKEN', 'CREWCHECK_TELEGRAM_BOT_TOKEN']);
 }
@@ -941,16 +1117,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.3', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.4', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.3', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.4', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.3', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.4', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -988,7 +1164,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.3 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.4 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -998,8 +1174,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.3">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.3">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.4">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.4">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1045,7 +1221,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.3&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.4&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1057,7 +1233,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.3'
+    'x-crewcheck-boot': 'static-shell-13.7.4'
   });
   res.end(html);
 }
@@ -1083,12 +1259,15 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
   if (url.pathname === '/api/reliability/self-test') return handleReliabilitySelfTest(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.3', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
+  if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
+  if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.4', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1111,7 +1290,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.3', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.4', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
