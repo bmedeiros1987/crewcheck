@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.1';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.1: Auth API rebind e login sem timeout';
+const DEFAULT_VERSION = '13.7.2';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.2: menu com scroll restaurado no Android/iPad/Web';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
