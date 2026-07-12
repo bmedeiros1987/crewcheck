@@ -1127,6 +1127,102 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   return true;
 }
 
+// CrewCheck v13.7.6 — Telegram Voice STT Restore.
+function crewcheckSttApiKey() {
+  return envAny(['OPENAI_API_KEY', 'OPENAI_STT_API_KEY', 'CREWCHECK_OPENAI_API_KEY', 'CREWCHECK_STT_API_KEY']);
+}
+function crewcheckSttModel() {
+  return envAny(['CREWCHECK_STT_MODEL', 'OPENAI_TRANSCRIPTION_MODEL', 'OPENAI_STT_MODEL']) || 'gpt-4o-mini-transcribe';
+}
+function crewcheckSttConfigured() { return Boolean(crewcheckSttApiKey()); }
+function telegramVoiceFileId(message = {}) {
+  return String(message?.voice?.file_id || message?.audio?.file_id || message?.document?.file_id || '').trim();
+}
+function telegramVoiceMime(message = {}) {
+  return String(message?.voice?.mime_type || message?.audio?.mime_type || message?.document?.mime_type || 'audio/ogg').trim();
+}
+function telegramVoiceDuration(message = {}) {
+  return Number(message?.voice?.duration || message?.audio?.duration || 0);
+}
+function telegramVoiceFileName(message = {}, filePath = '') {
+  const explicit = String(message?.audio?.file_name || message?.document?.file_name || '').trim();
+  if (explicit) return explicit.slice(0, 80);
+  const ext = String(filePath || '').split('.').pop() || '';
+  if (/^(oga|ogg|opus)$/i.test(ext)) return 'telegram-voice.ogg';
+  if (/^(mp3|m4a|wav|webm|mp4|mpeg|mpga)$/i.test(ext)) return `telegram-audio.${ext.toLowerCase()}`;
+  return 'telegram-voice.ogg';
+}
+async function telegramGetFileInfo(fileId) {
+  const token = telegramToken();
+  if (!token) return { ok: false, message: 'Telegram aguardando token do bot.' };
+  const response = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`, { headers: { accept: 'application/json' } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false || !payload?.result?.file_path) return { ok: false, status: response.status, message: 'Não consegui baixar o áudio do Telegram.' };
+  return { ok: true, filePath: payload.result.file_path, fileSize: payload.result.file_size || 0 };
+}
+async function telegramDownloadFile(filePath) {
+  const token = telegramToken();
+  const response = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+  if (!response.ok) return { ok: false, status: response.status, message: 'Arquivo de áudio indisponível no Telegram.' };
+  const arrayBuffer = await response.arrayBuffer();
+  return { ok: true, buffer: Buffer.from(arrayBuffer) };
+}
+async function transcribeTelegramAudioWithOpenAI(buffer, fileName, mimeType) {
+  const key = crewcheckSttApiKey();
+  if (!key) return { ok: false, configured: false, message: 'Transcrição de áudio aguardando configuração.' };
+  const form = new FormData();
+  const blob = new Blob([buffer], { type: mimeType || 'application/octet-stream' });
+  form.append('file', blob, fileName || 'telegram-audio.ogg');
+  form.append('model', crewcheckSttModel());
+  form.append('response_format', 'text');
+  form.append('language', 'pt');
+  form.append('prompt', 'CrewCheck, escala, voo, reserva, sobreaviso, pernoite, METAR, TAF, portão, radar, BSB, GRU, CGH, CNF, GIG, SDU, CWB, POA, REC, FOR, SLZ, SSA.');
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form });
+  const text = await response.text().catch(() => '');
+  if (!response.ok) {
+    let message = 'Não consegui transcrever o áudio agora.';
+    try { const parsed = JSON.parse(text); message = parsed?.error?.message || message; } catch {}
+    return { ok: false, configured: true, status: response.status, message };
+  }
+  const transcript = text.trim().replace(/^"|"$/g, '').trim();
+  return { ok: Boolean(transcript), configured: true, text: transcript, message: transcript ? 'Áudio transcrito.' : 'Áudio recebido, mas a transcrição veio vazia.' };
+}
+async function handleTelegramVoiceMessage(message = {}) {
+  const chatId = message?.chat?.id;
+  const fileId = telegramVoiceFileId(message);
+  if (!chatId || !fileId) return false;
+  if (!crewcheckSttConfigured()) {
+    await sendTelegramMessage(chatId, ['Recebi seu áudio, mas a transcrição ainda precisa de configuração no servidor.','','No Render, configure OPENAI_API_KEY e CREWCHECK_STT_MODEL.','Sugestão: CREWCHECK_STT_MODEL=gpt-4o-mini-transcribe','','Enquanto isso, envie por texto que eu respondo normalmente.'].join('\n'));
+    return true;
+  }
+  const duration = telegramVoiceDuration(message);
+  if (duration && duration > 180) { await sendTelegramMessage(chatId, 'Recebi seu áudio, mas ele tem mais de 3 minutos. Envie um áudio mais curto para transcrição operacional.'); return true; }
+  await sendTelegramMessage(chatId, 'Áudio recebido. Estou transcrevendo e interpretando sua solicitação...');
+  try {
+    const info = await telegramGetFileInfo(fileId);
+    if (!info.ok) { await sendTelegramMessage(chatId, info.message || 'Não consegui localizar o arquivo de áudio no Telegram.'); return true; }
+    if (Number(info.fileSize || 0) > 25 * 1024 * 1024) { await sendTelegramMessage(chatId, 'Áudio acima do limite de 25 MB. Envie um áudio mais curto.'); return true; }
+    const downloaded = await telegramDownloadFile(info.filePath);
+    if (!downloaded.ok) { await sendTelegramMessage(chatId, downloaded.message || 'Não consegui baixar o áudio agora.'); return true; }
+    const result = await transcribeTelegramAudioWithOpenAI(downloaded.buffer, telegramVoiceFileName(message, info.filePath), telegramVoiceMime(message));
+    if (!result.ok) {
+      const hint = /format|file|unsupported|invalid/i.test(result.message || '') ? '\n\nDica: se for áudio de voz do Telegram em OGG/Opus e o provedor recusar, envie como áudio MP3/WAV ou use texto até ativarmos conversão automática.' : '';
+      await sendTelegramMessage(chatId, `${result.message || 'Transcrição indisponível agora.'}${hint}`);
+      return true;
+    }
+    const transcript = String(result.text || '').trim();
+    const reply = buildTelegramReply(transcript);
+    await sendTelegramMessage(chatId, [`Ouvi: “${transcript.slice(0, 700)}”`, '', reply].join('\n'));
+    return true;
+  } catch {
+    await sendTelegramMessage(chatId, 'Recebi seu áudio, mas não consegui concluir a transcrição agora. Envie por texto ou tente novamente.');
+    return true;
+  }
+}
+function handleTelegramSttHealth(req, res) {
+  return sendJson(res, 200, { ok: crewcheckSttConfigured(), configured: crewcheckSttConfigured(), model: crewcheckSttConfigured() ? crewcheckSttModel() : '', telegramConfigured: telegramConfigured(), message: crewcheckSttConfigured() ? 'Transcrição de áudio configurada.' : 'Transcrição aguardando OPENAI_API_KEY.' });
+}
+
 function handleTelegramHealth(req, res) {
   const webhookUrl = publicUrl() ? `${publicUrl()}/api/telegram/webhook` : '';
   return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), message: telegramConfigured() ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
@@ -1169,7 +1265,7 @@ async function handleTelegramWebhook(req, res) {
   const text = String(message?.text || message?.caption || '').trim();
   if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });
   if (chatId && text) await sendTelegramMessage(chatId, buildTelegramReply(text));
-  else if (chatId && (message?.voice || message?.audio)) await sendTelegramMessage(chatId, 'Recebi seu áudio. A transcrição ainda não está configurada neste ambiente; envie por texto que eu respondo por texto.');
+  else if (chatId && (message?.voice || message?.audio || message?.document?.mime_type?.startsWith?.('audio/'))) await handleTelegramVoiceMessage(message);
   return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
 }
 
@@ -1223,6 +1319,7 @@ function reliabilityEnvItems() {
     reliabilityModule('radar','Radar de voos',['FLIGHTAWARE_AEROAPI_KEY','AEROAPI_KEY','AIRLABS_API_KEY','AVIATIONSTACK_API_KEY','AVIATIONSTACK_ACCESS_KEY','OAG_FLIGHT_INFO_PRIMARY_KEY']),
     reliabilityModule('weather','Meteorologia',['AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE']),
     reliabilityModule('telegram','Telegram',['TELEGRAM_BOT_TOKEN','CREWCHECK_TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','CALLMEBOT_API_KEY','TELEGRAM_BOT_TOKEN']),
     reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
     reliabilityModule('billing','Assinatura',['ASAAS_API_KEY']),
@@ -1231,16 +1328,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.5', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.6', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.5', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.6', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.5', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.6', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -1278,7 +1375,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.5 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.6 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -1288,8 +1385,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.5">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.5">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.6">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.6">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1335,7 +1432,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.5&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.6&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1347,7 +1444,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.5'
+    'x-crewcheck-boot': 'static-shell-13.7.6'
   });
   res.end(html);
 }
@@ -1373,7 +1470,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
@@ -1381,7 +1478,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.5', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.6', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1399,6 +1496,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/osm/route-preview') return handleOsmRoutePreview(req, res, url);
   if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(req, res, url);
   if (url.pathname === '/api/telegram/link/status') return handleTelegramLinkStatus(req, res, url);
+  if (url.pathname === '/api/telegram/stt-health') return handleTelegramSttHealth(req, res, url);
   if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
   if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
@@ -1406,7 +1504,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.5', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.6', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });

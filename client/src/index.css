@@ -17274,3 +17274,7 @@ button.cz-setting > span:last-child.on::before {
   .cz-setting { grid-template-columns: 3rem minmax(0,1fr) auto !important; }
   .cz-bottom-nav button span { font-size: .70rem !important; }
 }
+
+/* CrewCheck v13.7.6 — Telegram Voice STT visual hint */
+.cz-update-status .cz-routine-strip span,
+.cz-mini-status p { overflow-wrap: anywhere; }
