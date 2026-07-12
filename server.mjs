@@ -776,7 +776,7 @@ async function handleAuthResetPassword1371(req, res) {
 }
 
 
-// CrewCheck v13.7.4 — Internal Update Center backend.
+// CrewCheck v13.7.5 — Internal Update Center backend.
 // Aceita apenas CSS runtime validado. Não executa JS e não grava segredos.
 const crewcheckRuntimePatchFile = path.join(__dirname, '.crewcheck-runtime-patch.json');
 
@@ -1014,15 +1014,128 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
+// CrewCheck v13.7.5 — Telegram Link backend.
+const crewcheckTelegramLinksFile = path.join(__dirname, '.crewcheck-telegram-links.json');
+
+function telegramBotUsername() {
+  return envAny(['TELEGRAM_BOT_USERNAME', 'CREWCHECK_TELEGRAM_BOT_USERNAME']).replace(/^@/, '');
+}
+function telegramLinksRead() {
+  try {
+    if (!fs.existsSync(crewcheckTelegramLinksFile)) return { pending: {}, linked: {} };
+    const parsed = JSON.parse(fs.readFileSync(crewcheckTelegramLinksFile, 'utf8'));
+    return {
+      pending: parsed && typeof parsed.pending === 'object' ? parsed.pending : {},
+      linked: parsed && typeof parsed.linked === 'object' ? parsed.linked : {},
+    };
+  } catch {
+    return { pending: {}, linked: {} };
+  }
+}
+function telegramLinksWrite(data) {
+  try { fs.writeFileSync(crewcheckTelegramLinksFile, JSON.stringify(data, null, 2), 'utf8'); return true; }
+  catch { return false; }
+}
+function telegramLinkCode() {
+  return 'cc_' + crypto.randomBytes(9).toString('base64url');
+}
+function telegramRequestUser(req, body = {}) {
+  let email = String(body.email || '').trim().toLowerCase();
+  let name = String(body.name || '').trim();
+  try {
+    if (!email && typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
+      const payload = cc1371Verify(cc1371RequestToken(req));
+      email = String(payload?.email || '').trim().toLowerCase();
+      name = name || String(payload?.name || '').trim();
+    }
+  } catch {}
+  if (!email) email = 'local@crewcheck.local';
+  if (!name) name = email.includes('@') ? email.split('@')[0] : 'Tripulante CrewCheck';
+  return { email, name };
+}
+function telegramLinkedChatIdForEmail(email = '') {
+  const key = String(email || '').trim().toLowerCase();
+  if (!key) return '';
+  const data = telegramLinksRead();
+  return String(data.linked?.[key]?.chatId || '');
+}
+async function handleTelegramLinkStart(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, configured: telegramConfigured(), botUsername: telegramBotUsername(), message: 'Vínculo Telegram pronto.' });
+  const body = await readJsonBody(req, 300000);
+  const user = telegramRequestUser(req, body);
+  const code = telegramLinkCode();
+  const data = telegramLinksRead();
+  data.pending[code] = { code, email: user.email, name: user.name, createdAt: new Date().toISOString() };
+  telegramLinksWrite(data);
+  const username = telegramBotUsername();
+  const link = username ? `https://t.me/${username}?start=${encodeURIComponent(code)}` : '';
+  return sendJson(res, 200, {
+    ok: Boolean(link),
+    configured: telegramConfigured(),
+    code,
+    link,
+    botUsername: username,
+    command: `/start ${code}`,
+    message: link ? 'Abra o Telegram e toque em Start para vincular notificações.' : 'Configure TELEGRAM_BOT_USERNAME no Render para gerar link automático. Use o comando exibido no bot.',
+  });
+}
+async function handleTelegramLinkStatus(req, res, url) {
+  const code = String(url.searchParams.get('code') || '').trim();
+  const email = String(url.searchParams.get('email') || '').trim().toLowerCase();
+  const data = telegramLinksRead();
+  let linked = null;
+  if (code) linked = Object.values(data.linked || {}).find((item) => item && item.code === code) || null;
+  if (!linked && email) linked = data.linked?.[email] || null;
+  return sendJson(res, 200, {
+    ok: Boolean(linked?.chatId),
+    linked: Boolean(linked?.chatId),
+    chatId: linked?.chatId ? String(linked.chatId) : '',
+    linkedAt: linked?.linkedAt || '',
+    message: linked?.chatId ? 'Telegram vinculado para notificações.' : 'Telegram ainda não vinculado. Abra o bot e toque em Start.',
+  });
+}
+async function telegramTryBindFromWebhook(message = {}, text = '') {
+  const match = String(text || '').trim().match(/^\/start(?:@\S+)?\s+(cc_[A-Za-z0-9_-]+)/i);
+  if (!match) return false;
+  const code = match[1];
+  const chatId = message?.chat?.id;
+  if (!chatId) return false;
+  const data = telegramLinksRead();
+  const pending = data.pending?.[code];
+  if (!pending) {
+    await sendTelegramMessage(chatId, 'Código de vínculo não localizado ou expirado. Gere um novo vínculo no CrewCheck.');
+    return true;
+  }
+  const email = String(pending.email || '').trim().toLowerCase();
+  data.linked[email] = {
+    email,
+    name: pending.name || '',
+    code,
+    chatId: String(chatId),
+    username: message?.from?.username || message?.chat?.username || '',
+    linkedAt: new Date().toISOString(),
+  };
+  delete data.pending[code];
+  telegramLinksWrite(data);
+  await sendTelegramMessage(chatId, [
+    'Telegram vinculado ao CrewCheck.',
+    '',
+    'Você já pode receber notificações operacionais, radar, meteorologia e despertador inteligente quando habilitados no app.',
+    '',
+    'Para testar, volte ao CrewCheck e use Despertador > Testar canal.'
+  ].join('\n'));
+  return true;
+}
+
 function handleTelegramHealth(req, res) {
   const webhookUrl = publicUrl() ? `${publicUrl()}/api/telegram/webhook` : '';
-  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), message: telegramConfigured() ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
+  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), message: telegramConfigured() ? 'Concierge configurado.' : 'Concierge aguardando configuração.' });
 }
 
 async function handleTelegramSend(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Envio do concierge pronto.' });
   const payload = await readJsonBody(req);
-  const chatId = String(payload.chatId || payload.chat_id || telegramDefaultChatId() || '').trim();
+  const chatId = String(payload.chatId || payload.chat_id || telegramLinkedChatIdForEmail(payload.email) || telegramDefaultChatId() || '').trim();
   const text = String(payload.text || payload.message || '').trim();
   if (!text) return sendJson(res, 400, { ok: false, message: 'Mensagem vazia.' });
   const result = await sendTelegramMessage(chatId, text);
@@ -1054,6 +1167,7 @@ async function handleTelegramWebhook(req, res) {
   const message = update?.message || update?.edited_message || {};
   const chatId = message?.chat?.id;
   const text = String(message?.text || message?.caption || '').trim();
+  if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });
   if (chatId && text) await sendTelegramMessage(chatId, buildTelegramReply(text));
   else if (chatId && (message?.voice || message?.audio)) await sendTelegramMessage(chatId, 'Recebi seu áudio. A transcrição ainda não está configurada neste ambiente; envie por texto que eu respondo por texto.');
   return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
@@ -1086,7 +1200,7 @@ async function handleAlarmTest(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Teste do despertador pronto.' });
   const payload = await readJsonBody(req);
   const channel = String(payload.channel || 'telegram').toLowerCase();
-  const chatId = String(payload.chatId || telegramDefaultChatId() || '').trim();
+  const chatId = String(payload.chatId || telegramLinkedChatIdForEmail(payload.email) || telegramDefaultChatId() || '').trim();
   const text = String(payload.message || 'Teste do Despertador Inteligente CrewCheck.').trim();
   let telegramResult = null;
   if (channel.includes('telegram') || channel.includes('ambos')) telegramResult = await sendTelegramMessage(chatId, text);
@@ -1117,16 +1231,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.4', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.5', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.4', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.5', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.4', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.5', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -1164,7 +1278,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.4 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.5 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -1174,8 +1288,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.4">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.4">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.5">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.5">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1221,7 +1335,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.4&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.5&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1233,7 +1347,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.4'
+    'x-crewcheck-boot': 'static-shell-13.7.5'
   });
   res.end(html);
 }
@@ -1259,7 +1373,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
@@ -1267,7 +1381,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.4', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.5', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1283,6 +1397,8 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/places/fitness') return handleFitness(req, res, url);
   if (url.pathname === '/api/osm/health') return handleOsmHealth(req, res, url);
   if (url.pathname === '/api/osm/route-preview') return handleOsmRoutePreview(req, res, url);
+  if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(req, res, url);
+  if (url.pathname === '/api/telegram/link/status') return handleTelegramLinkStatus(req, res, url);
   if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
   if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
@@ -1290,7 +1406,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.4', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.5', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
