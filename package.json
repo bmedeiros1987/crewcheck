@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.7.4",
+  "version": "13.7.5",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.7.4 — internal update center",
+  "description": "CrewCheck v13.7.5 — layout polish and Telegram link",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -82,7 +82,8 @@
     "regression:v13.7.1:auth": "node scripts/regression-v13-7-1-auth-minimal-rebind.mjs",
     "regression:v13.7.2:menu-scroll": "node scripts/regression-v13-7-2-menu-scroll.mjs",
     "regression:v13.7.3:actual-menu-scroll": "node scripts/regression-v13-7-3-actual-menu-scroll.mjs",
-    "regression:v13.7.4:update-center": "node scripts/regression-v13-7-4-update-center.mjs"
+    "regression:v13.7.4:update-center": "node scripts/regression-v13-7-4-update-center.mjs",
+    "regression:v13.7.5:layout-telegram": "node scripts/regression-v13-7-5-layout-telegram-link.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

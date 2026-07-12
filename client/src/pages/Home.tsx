@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.4';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.4: Central Admin de Atualizações com pacote ZIP e hotfix runtime';
+const DEFAULT_VERSION = '13.7.5';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.5: layout mobile polido e vínculo Telegram para notificações';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -997,6 +997,36 @@ function isAdmin() {
   return role.includes('admin') || ADMIN_EMAILS.includes(email);
 }
 
+
+async function openTelegramBinding() {
+  const user = getStoredUser();
+  const email = String(user?.email || '').trim();
+  const name = String(user?.name || user?.email || 'Tripulante CrewCheck').trim();
+  try {
+    const response = await fetch('/api/telegram/link/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, name }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!payload || payload.ok === false) {
+      const command = payload?.command ? ` Comando: ${payload.command}` : '';
+      toast.message((payload?.message || 'Vínculo Telegram aguardando configuração.') + command);
+      return;
+    }
+    if (payload.code) storage.set('crewcheck_telegram_link_code', String(payload.code));
+    if (payload.link) {
+      window.open(String(payload.link), '_blank', 'noopener,noreferrer');
+      toast.success('Telegram aberto. Toque em Start no bot para concluir o vínculo.');
+      return;
+    }
+    toast.message(payload.message || 'Use o comando gerado no bot do CrewCheck.');
+  } catch {
+    toast.error('Não consegui iniciar o vínculo Telegram agora.');
+  }
+}
+
 function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
   return <header className="cz-brand-row">
@@ -1186,6 +1216,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
     <button className="cz-menu-backdrop" onClick={close} aria-label="Fechar menu" />
     <aside className="cz-menu-panel" data-crew-menu-panel="true" onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
       <header><div><span className="cz-logo"><Plane size={24}/></span><strong>Menu CrewCheck</strong><small>Todos os sistemas funcionais · Versão {DEFAULT_VERSION}</small></div><button onClick={close}><X/></button></header>
+      <div className="cz-menu-scroll" data-crew-menu-scroll="true">
       <section className="cz-menu-section"><h3>Navegação</h3>{nav.map(([v, label, desc, Icon]) => <button key={v} className={view === v ? 'active' : ''} onClick={() => jump(v)}><Icon/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight/></button>)}</section>
       <section className="cz-menu-section"><h3>Ações rápidas</h3>
         <button onClick={() => { actions.upload(); close(); }}><Upload/><span><strong>Importar escala PDF</strong><small>AIMS/CrewRoster</small></span><ChevronRight/></button>
@@ -1193,13 +1224,14 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
         <button onClick={() => { actions.ics(); close(); }}><CalendarDays/><span><strong>Baixar ICS</strong><small>Arquivo calendário</small></span><ChevronRight/></button>
         <button onClick={() => { actions.google(); close(); }}><CalendarDays/><span><strong>Google Calendar</strong><small>Sincronizar agenda</small></span><ChevronRight/></button>
         <button onClick={() => { actions.whatsapp(); close(); }}><Send/><span><strong>WhatsApp</strong><small>Compartilhar resumo</small></span><ChevronRight/></button>
-        <button onClick={() => { actions.telegram(); close(); }}><Send/><span><strong>Telegram</strong><small>Compartilhar resumo</small></span><ChevronRight/></button>
+        <button onClick={() => { actions.telegram(); close(); }}><Send/><span><strong>Vincular Telegram</strong><small>Notificações e despertador</small></span><ChevronRight/></button>
         <button onClick={() => { actions.email(); close(); }}><Mail/><span><strong>E-mail</strong><small>Enviar relatório</small></span><ChevronRight/></button>
         <button onClick={() => { actions.copy(); close(); }}><Copy/><span><strong>Copiar resumo</strong><small>Área de transferência</small></span><ChevronRight/></button>
         <button onClick={() => { actions.save(); close(); }}><Save/><span><strong>Salvar histórico</strong><small>Banco/offline</small></span><ChevronRight/></button>
         <button onClick={() => { actions.openActive(); close(); }}><RotateCcw/><span><strong>Abrir escala ativa</strong><small>Última sincronizada</small></span><ChevronRight/></button>
         <button className="danger" onClick={() => { actions.logout(); close(); }}><LogOut/><span><strong>Sair</strong><small>Encerrar sessão</small></span><ChevronRight/></button>
       </section>
+      </div>
     </aside>
   </div>;
 }
@@ -1788,7 +1820,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
     savePrefs();
     setBusy(true);
     try {
-      const payload = await postCrewCheckJson('/api/alarm/test', { channel, chatId, phone, message: `Teste do Despertador Inteligente CrewCheck. Próxima programação: ${rosterEventTitle(event)} · apresentação ${presentation}.` });
+      const payload = await postCrewCheckJson('/api/alarm/test', { channel, chatId, phone, email: getStoredUser()?.email, message: `Teste do Despertador Inteligente CrewCheck. Próxima programação: ${rosterEventTitle(event)} · apresentação ${presentation}.` });
       if (payload?.ok) toast.success(payload.message || 'Teste enviado.');
       else toast.message(payload?.message || 'Canal aguardando configuração.');
       setHealth(payload);
@@ -2166,7 +2198,7 @@ export default function Home() {
     pdf: () => { try { const pdf = exportReport(bundle.roster, compliance, gym); pdf.download(); toast.success(`PDF gerado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF agora.'); } },
     ics: () => { try { const ics = generateICalendar(bundle.roster, gym); downloadCalendarFile(ics, `crewcheck-${bundle.roster.year}-${String(bundle.roster.month).padStart(2,'0')}.ics`); toast.success('Arquivo ICS gerado.'); } catch { toast.error('Não consegui gerar o ICS.'); } },
     whatsapp: () => { try { copyCurrentSummarySilently(); shareToWhatsApp(bundle.roster, compliance); toast.success('Resumo enviado para o WhatsApp.'); } catch { toast.error('Não consegui abrir WhatsApp.'); } },
-    telegram: () => { try { copyCurrentSummarySilently(); shareToTelegram(bundle.roster, compliance); toast.success('Resumo enviado para o Telegram. Se abrir no navegador, use Compartilhar/Abrir no app.'); } catch { toast.error('Não consegui abrir Telegram.'); } },
+    telegram: () => { openTelegramBinding(); },
     copy: () => { copyToClipboard(bundle.roster, compliance).then(ok => ok ? toast.success('Resumo copiado.') : toast.error('Não consegui copiar.')); },
     email: () => { const to = window.prompt('Enviar relatório para qual e-mail?') || ''; if (!to.trim()) return; sendRosterByEmail({ to, roster: bundle.roster, compliance, gym }).then(()=>toast.success('E-mail enviado/solicitado.')).catch(()=>{ const subject = encodeURIComponent('Relatório CrewCheck'); const body = encodeURIComponent('Segue resumo CrewCheck. O PDF pode ser gerado no botão Exportar PDF.'); window.location.href = `mailto:${to}?subject=${subject}&body=${body}`; toast.message('Abrindo app de e-mail como fallback.'); }); },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
