@@ -776,7 +776,7 @@ async function handleAuthResetPassword1371(req, res) {
 }
 
 
-// CrewCheck v13.7.7 — Internal Update Center backend.
+// CrewCheck v13.7.8 — Internal Update Center backend.
 // Aceita apenas CSS runtime validado. Não executa JS e não grava segredos.
 const crewcheckRuntimePatchFile = path.join(__dirname, '.crewcheck-runtime-patch.json');
 
@@ -952,19 +952,33 @@ async function handleRuntimePatchClear(req, res) {
 }
 
 
-// CrewCheck v13.7.7 — ElevenLabs TTS Restore.
+// CrewCheck v13.7.8 — ElevenLabs env aliases.
+// Lê também o padrão antigo ELEVENLABS_TTS_* já configurado no Render.
+const ELEVENLABS_KEY_ENV_KEYS = ['ELEVENLABS_API_KEY', 'CREWCHECK_ELEVENLABS_API_KEY', 'ELEVENLABS_TTS_API_KEY'];
+const ELEVENLABS_VOICE_ENV_KEYS = ['ELEVENLABS_VOICE_ID', 'ELEVENLABS_TTS_VOICE_ID', 'CREWCHECK_ELEVENLABS_VOICE_ID', 'CREWCHECK_ELEVENLABS_TTS_VOICE_ID', 'ELEVENLABS_DEFAULT_VOICE_ID', 'ELEVENLABS_VOICE', 'TTS_VOICE_ID'];
+const ELEVENLABS_MODEL_ENV_KEYS = ['ELEVENLABS_MODEL_ID', 'ELEVENLABS_TTS_MODEL', 'CREWCHECK_ELEVENLABS_MODEL_ID', 'CREWCHECK_ELEVENLABS_TTS_MODEL', 'ELEVENLABS_DEFAULT_MODEL_ID'];
+const ELEVENLABS_OUTPUT_ENV_KEYS = ['ELEVENLABS_OUTPUT_FORMAT', 'ELEVENLABS_TTS_OUTPUT_FORMAT', 'CREWCHECK_ELEVENLABS_OUTPUT_FORMAT', 'CREWCHECK_ELEVENLABS_TTS_OUTPUT_FORMAT'];
+function envAnyWithSource(names = []) {
+  for (const name of names) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return { name, value };
+  }
+  return { name: '', value: '' };
+}
+function envSourceName(names = []) { return envAnyWithSource(names).name || ''; }
+// CrewCheck v13.7.8 — ElevenLabs TTS Restore.
 // ElevenLabs volta a ser o TTS principal. STT continua separado.
 function elevenLabsApiKey() {
-  return envAny(['ELEVENLABS_API_KEY', 'CREWCHECK_ELEVENLABS_API_KEY', 'ELEVENLABS_TTS_API_KEY']);
+  return envAny(ELEVENLABS_KEY_ENV_KEYS);
 }
 function elevenLabsVoiceId() {
-  return envAny(['ELEVENLABS_VOICE_ID', 'CREWCHECK_ELEVENLABS_VOICE_ID', 'ELEVENLABS_DEFAULT_VOICE_ID']);
+  return envAny(ELEVENLABS_VOICE_ENV_KEYS);
 }
 function elevenLabsModelId() {
-  return envAny(['ELEVENLABS_MODEL_ID', 'CREWCHECK_ELEVENLABS_MODEL_ID']) || 'eleven_multilingual_v2';
+  return envAny(ELEVENLABS_MODEL_ENV_KEYS) || 'eleven_multilingual_v2';
 }
 function elevenLabsOutputFormat() {
-  return envAny(['ELEVENLABS_OUTPUT_FORMAT', 'CREWCHECK_ELEVENLABS_OUTPUT_FORMAT']) || 'mp3_44100_128';
+  return envAny(ELEVENLABS_OUTPUT_ENV_KEYS) || 'mp3_44100_128';
 }
 function elevenLabsTtsConfigured() {
   return Boolean(elevenLabsApiKey() && elevenLabsVoiceId());
@@ -993,10 +1007,10 @@ async function generateElevenLabsSpeech(text, options = {}) {
     text: finalText,
     model_id: String(options.modelId || elevenLabsModelId()),
     voice_settings: {
-      stability: Number(process.env.ELEVENLABS_STABILITY || process.env.CREWCHECK_ELEVENLABS_STABILITY || 0.48),
-      similarity_boost: Number(process.env.ELEVENLABS_SIMILARITY_BOOST || process.env.CREWCHECK_ELEVENLABS_SIMILARITY_BOOST || 0.78),
-      style: Number(process.env.ELEVENLABS_STYLE || process.env.CREWCHECK_ELEVENLABS_STYLE || 0.18),
-      use_speaker_boost: String(process.env.ELEVENLABS_SPEAKER_BOOST || process.env.CREWCHECK_ELEVENLABS_SPEAKER_BOOST || 'true').toLowerCase() !== 'false',
+      stability: Number(envAny(['ELEVENLABS_STABILITY','ELEVENLABS_TTS_STABILITY','CREWCHECK_ELEVENLABS_STABILITY','CREWCHECK_ELEVENLABS_TTS_STABILITY']) || 0.48),
+      similarity_boost: Number(envAny(['ELEVENLABS_SIMILARITY_BOOST','ELEVENLABS_TTS_SIMILARITY_BOOST','CREWCHECK_ELEVENLABS_SIMILARITY_BOOST','CREWCHECK_ELEVENLABS_TTS_SIMILARITY_BOOST']) || 0.78),
+      style: Number(envAny(['ELEVENLABS_STYLE','ELEVENLABS_TTS_STYLE','CREWCHECK_ELEVENLABS_STYLE','CREWCHECK_ELEVENLABS_TTS_STYLE']) || 0.18),
+      use_speaker_boost: String(envAny(['ELEVENLABS_SPEAKER_BOOST','ELEVENLABS_TTS_SPEAKER_BOOST','CREWCHECK_ELEVENLABS_SPEAKER_BOOST','CREWCHECK_ELEVENLABS_TTS_SPEAKER_BOOST']) || 'true').toLowerCase() !== 'false',
     },
   };
 
@@ -1059,7 +1073,12 @@ async function handleTtsHealth(req, res) {
     voiceConfigured: Boolean(elevenLabsVoiceId()),
     keyConfigured: Boolean(elevenLabsApiKey()),
     outputFormat: elevenLabsOutputFormat(),
-    message: elevenLabsTtsConfigured() ? 'ElevenLabs TTS configurado.' : 'ElevenLabs aguardando ELEVENLABS_API_KEY e ELEVENLABS_VOICE_ID.',
+    activeKeyEnv: envSourceName(ELEVENLABS_KEY_ENV_KEYS),
+    activeVoiceEnv: envSourceName(ELEVENLABS_VOICE_ENV_KEYS),
+    activeModelEnv: envSourceName(ELEVENLABS_MODEL_ENV_KEYS),
+    activeOutputEnv: envSourceName(ELEVENLABS_OUTPUT_ENV_KEYS),
+    acceptedVoiceEnvKeys: ELEVENLABS_VOICE_ENV_KEYS,
+    message: elevenLabsTtsConfigured() ? 'ElevenLabs TTS configurado.' : 'ElevenLabs aguardando chave e voz. Também aceito ELEVENLABS_TTS_VOICE_ID.',
   });
 }
 async function handleTtsSpeak(req, res) {
@@ -1145,7 +1164,7 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
-// CrewCheck v13.7.7 — Telegram Link backend.
+// CrewCheck v13.7.8 — Telegram Link backend.
 const crewcheckTelegramLinksFile = path.join(__dirname, '.crewcheck-telegram-links.json');
 
 function telegramBotUsername() {
@@ -1258,7 +1277,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   return true;
 }
 
-// CrewCheck v13.7.7 — Telegram Voice STT Restore.
+// CrewCheck v13.7.8 — Telegram Voice STT Restore.
 function crewcheckSttApiKey() {
   return envAny(['OPENAI_API_KEY', 'OPENAI_STT_API_KEY', 'CREWCHECK_OPENAI_API_KEY', 'CREWCHECK_STT_API_KEY']);
 }
@@ -1455,7 +1474,7 @@ function reliabilityEnvItems() {
     reliabilityModule('radar','Radar de voos',['FLIGHTAWARE_AEROAPI_KEY','AEROAPI_KEY','AIRLABS_API_KEY','AVIATIONSTACK_API_KEY','AVIATIONSTACK_ACCESS_KEY','OAG_FLIGHT_INFO_PRIMARY_KEY']),
     reliabilityModule('weather','Meteorologia',['AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE']),
     reliabilityModule('telegram','Telegram',['TELEGRAM_BOT_TOKEN','CREWCHECK_TELEGRAM_BOT_TOKEN']),
-    reliabilityModule('tts-elevenlabs','Voz Premium ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_VOICE_ID','CREWCHECK_ELEVENLABS_VOICE_ID']),
+    reliabilityModule('tts-elevenlabs','Voz Premium ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY','ELEVENLABS_VOICE_ID','ELEVENLABS_TTS_VOICE_ID','CREWCHECK_ELEVENLABS_VOICE_ID','CREWCHECK_ELEVENLABS_TTS_VOICE_ID','ELEVENLABS_DEFAULT_VOICE_ID']),
     reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','CALLMEBOT_API_KEY','TELEGRAM_BOT_TOKEN']),
     reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
@@ -1465,16 +1484,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.7', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.8', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.7', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.8', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.7', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.8', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -1512,7 +1531,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.7 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.8 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -1522,8 +1541,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.7">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.7">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.8">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.8">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1569,7 +1588,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.7&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.8&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1581,7 +1600,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.7'
+    'x-crewcheck-boot': 'static-shell-13.7.8'
   });
   res.end(html);
 }
@@ -1607,7 +1626,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/crewcheck-repair' || url.pathname === '/repair' || url.pathname === '/safe-start' || url.pathname === '/emergency' || url.pathname === '/__crewcheck_boot_rescue_1378.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1378.html' || url.pathname === '/__crewcheck_boot_rescue_1377.html' || url.pathname === '/__crewcheck_boot_rescue_1376.html' || url.pathname === '/__crewcheck_boot_rescue_1375.html' || url.pathname === '/__crewcheck_boot_rescue_1374.html' || url.pathname === '/__crewcheck_boot_rescue_1373.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1372.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1371.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1369.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html' || url.pathname === '/__crewcheck_boot_rescue_1368.html') return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
   if (url.pathname === '/api/reliability/env') return handleReliabilityEnv(req, res);
@@ -1615,7 +1634,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.7', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.8', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1643,7 +1662,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.7', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.8', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });

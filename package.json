@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.7.7",
+  "version": "13.7.8",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.7.7 — ElevenLabs TTS restore",
+  "description": "CrewCheck v13.7.8 — ElevenLabs env aliases",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -85,7 +85,8 @@
     "regression:v13.7.4:update-center": "node scripts/regression-v13-7-4-update-center.mjs",
     "regression:v13.7.5:layout-telegram": "node scripts/regression-v13-7-5-layout-telegram-link.mjs",
     "regression:v13.7.6:telegram-voice-stt": "node scripts/regression-v13-7-6-telegram-voice-stt.mjs",
-    "regression:v13.7.7:elevenlabs-tts": "node scripts/regression-v13-7-7-elevenlabs-tts.mjs"
+    "regression:v13.7.7:elevenlabs-tts": "node scripts/regression-v13-7-7-elevenlabs-tts.mjs",
+    "regression:v13.7.8:elevenlabs-env": "node scripts/regression-v13-7-8-elevenlabs-env-aliases.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
