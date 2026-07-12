@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.7.1",
+  "version": "13.7.2",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.6.9 — app route fix and stale service worker off",
+  "description": "CrewCheck v13.7.2 — menu scroll rescue",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -79,7 +79,8 @@
     "regression:v13.6.7:boot": "node scripts/regression-v13-6-7-boot-rescue.mjs",
     "regression:v13.6.8:static-shell": "node scripts/regression-v13-6-8-static-shell.mjs",
     "regression:v13.6.9:app-route": "node scripts/regression-v13-6-9-app-route-fix.mjs",
-    "regression:v13.7.1:auth": "node scripts/regression-v13-7-1-auth-minimal-rebind.mjs"
+    "regression:v13.7.1:auth": "node scripts/regression-v13-7-1-auth-minimal-rebind.mjs",
+    "regression:v13.7.2:menu-scroll": "node scripts/regression-v13-7-2-menu-scroll.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

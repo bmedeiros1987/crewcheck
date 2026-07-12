@@ -16592,3 +16592,125 @@ html[data-crew-theme="light"] .cz-diagnostics-grid article{background:#fff;borde
 /* CrewCheck v13.6.8 — Static Server Shell active. Root route is served outside React for boot reliability. */
 
 /* CrewCheck v13.6.9 — /app route fix and stale service worker disabled. */
+
+/* ============================================================
+   CrewCheck v13.7.2 — Menu Scroll Rescue
+   Corrige menu/drawer/side menu sem scroll no Android, iPad e Web.
+   ============================================================ */
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+.cc-shell,
+.android-premium-shell {
+  min-height: 100svh;
+}
+
+.cc-main,
+.android-premium-main {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Sidebar desktop: conteúdo completo sempre rolável */
+.cc-sidebar {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  scrollbar-gutter: stable;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.cc-sidebar > *,
+.cc-sidebar nav,
+.cc-sidebar [role="navigation"],
+.cc-sidebar .cc-sidebar-section,
+.cc-sidebar .cc-sidebar-nav-item {
+  flex-shrink: 0;
+}
+
+/* Drawer mobile: permite rolar até os últimos itens do menu */
+.cc-drawer {
+  top: 0 !important;
+  bottom: 0 !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.cc-drawer > *,
+.cc-drawer .cc-drawer-profile,
+.cc-drawer .cc-drawer-section,
+.cc-drawer .cc-drawer-item {
+  flex-shrink: 0;
+}
+
+/* Fallback para menus/drawers renderizados por componentes genéricos */
+[role="dialog"].cc-drawer,
+[role="dialog"][data-crew-menu],
+[data-crew-menu],
+[data-crew-drawer],
+.crewcheck-menu,
+.crewcheck-drawer,
+.mobile-menu,
+.mobile-drawer,
+.side-menu,
+.side-drawer {
+  max-height: 100dvh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  touch-action: pan-y !important;
+}
+
+/* Evita que o conteúdo principal capture o gesto quando drawer estiver aberto */
+.cc-drawer-overlay {
+  touch-action: none !important;
+}
+
+@media (max-width: 767px) {
+  .cc-shell,
+  .android-premium-shell {
+    min-height: 100dvh;
+  }
+
+  .cc-main,
+  .android-premium-main {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .cc-page {
+    min-height: 0;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain;
+  }
+
+  .cc-drawer {
+    width: min(92vw, 360px) !important;
+  }
+}
+
+@supports not (height: 100dvh) {
+  .cc-sidebar,
+  .cc-drawer {
+    height: 100vh !important;
+    max-height: 100vh !important;
+  }
+}
