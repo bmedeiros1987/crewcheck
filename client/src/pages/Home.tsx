@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.2: menu com scroll restaurado no Android/iPad/Web';
+const DEFAULT_VERSION = '13.7.3';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.3: scroll corrigido no menu real .cz-menu-panel';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1046,7 +1046,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   const jump = (v: ZeroView) => { setView(v); close(); };
   return <div className="cz-menu-overlay" role="dialog" aria-modal="true">
     <button className="cz-menu-backdrop" onClick={close} aria-label="Fechar menu" />
-    <aside className="cz-menu-panel">
+    <aside className="cz-menu-panel" data-crew-menu-panel="true" onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
       <header><div><span className="cz-logo"><Plane size={24}/></span><strong>Menu CrewCheck</strong><small>Todos os sistemas funcionais · Versão {DEFAULT_VERSION}</small></div><button onClick={close}><X/></button></header>
       <section className="cz-menu-section"><h3>Navegação</h3>{nav.map(([v, label, desc, Icon]) => <button key={v} className={view === v ? 'active' : ''} onClick={() => jump(v)}><Icon/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight/></button>)}</section>
       <section className="cz-menu-section"><h3>Ações rápidas</h3>
@@ -1850,6 +1850,20 @@ export default function Home() {
     window.addEventListener('crewcheck:theme-change', syncTheme);
     return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
   }, []);
+
+
+  useEffect(() => {
+    try {
+      document.documentElement.classList.toggle('crewcheck-menu-open', drawer);
+      document.body.classList.toggle('crewcheck-menu-open', drawer);
+    } catch {}
+    return () => {
+      try {
+        document.documentElement.classList.remove('crewcheck-menu-open');
+        document.body.classList.remove('crewcheck-menu-open');
+      } catch {}
+    };
+  }, [drawer]);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
     const file = inputEvent.target.files?.[0];
