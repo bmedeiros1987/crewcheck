@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.10';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.10: rota /app restaurada';
+const DEFAULT_VERSION = '13.7.11';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.11: ElevenLabs fixado como voz principal';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
