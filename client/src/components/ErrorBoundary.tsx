@@ -56,11 +56,12 @@ async function resetAndGoHome() {
       if (key && key.startsWith('crewcheck_') && !keepKeys.has(key)) localStorage.removeItem(key);
     }
     sessionStorage.clear();
+      sessionStorage.setItem('crewcheck_force_view_once', 'diagnostics');
   } catch {
     // Mantém os dados se o storage estiver bloqueado.
   }
   await clearCrewCheckCaches();
-  window.location.href = '/';
+  window.location.href = '/?safe=1&v=13.6.7';
 }
 
 class ErrorBoundary extends Component<Props, State> {

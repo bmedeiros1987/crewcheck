@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.6.6",
+  "version": "13.6.7",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.6.6 — reliability core diagnostics and safe mode",
+  "description": "CrewCheck v13.6.7 — boot rescue safe start and repair page",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -75,7 +75,8 @@
     "regression:v13.6.3:auth": "node scripts/regression-v13-6-3-auth-session-restore.mjs",
     "regression:v13.6.4:finance": "node scripts/regression-v13-6-4-finance-earnings-restore.mjs",
     "regression:v13.6.5:telegram-wakeup": "node scripts/regression-v13-6-5-telegram-wakeup-restore.mjs",
-    "regression:v13.6.6:reliability": "node scripts/regression-v13-6-6-reliability-core.mjs"
+    "regression:v13.6.6:reliability": "node scripts/regression-v13-6-6-reliability-core.mjs",
+    "regression:v13.6.7:boot": "node scripts/regression-v13-6-7-boot-rescue.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

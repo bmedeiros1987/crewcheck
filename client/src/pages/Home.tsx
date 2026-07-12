@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.6.6';
-const CREWCHECK_UI_CORE_NOTE = 'v13.6.6: núcleo de confiabilidade, diagnóstico e modo seguro';
+const DEFAULT_VERSION = '13.6.7';
+const CREWCHECK_UI_CORE_NOTE = 'v13.6.7: inicialização segura, reparo externo e proteção contra tela travada';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1818,8 +1818,59 @@ async function parsePDFResilient(file: File): Promise<{ roster: CrewRoster; sour
 }
 
 function OpeningVideo({ onDone }: { onDone: () => void }) {
+  const [videoIssue, setVideoIssue] = useState(false);
   const finish = () => { storage.set('crewcheck_intro_seen_v1278', '1'); onDone(); };
-  return <section className="cz-opening-video"><video src="/assets/opening/crewcheck-opening.mp4" autoPlay muted playsInline onEnded={finish}/><div><span><Plane/> CrewCheck</span><h1>Roster Intelligence</h1><p>Escala real, rotina, hotéis, academias, trânsito, radar, meteorologia e saída inteligente em um cockpit premium.</p><button onClick={finish}>Entrar no app <ChevronRight/></button></div></section>;
+  useEffect(() => {
+    const timer = window.setTimeout(finish, 6500);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return <section className="cz-opening-video"><video src="/assets/opening/crewcheck-opening.mp4" autoPlay muted playsInline preload="auto" onEnded={finish} onError={() => { setVideoIssue(true); window.setTimeout(finish, 900); }} onStalled={() => { setVideoIssue(true); window.setTimeout(finish, 1200); }}/><div><span><Plane/> CrewCheck</span><h1>Roster Intelligence</h1><p>Escala real, rotina, hotéis, academias, trânsito, radar, meteorologia e saída inteligente em um cockpit premium.</p>{videoIssue && <small>Inicialização segura ativada. Pulando abertura automaticamente.</small>}<button onClick={finish}>Entrar no app <ChevronRight/></button></div></section>;
+}
+
+
+function crewcheckRuntimeParams() {
+  try { return new URLSearchParams(window.location.search || ''); } catch { return new URLSearchParams(); }
+}
+function bootRescueKeysToKeep() {
+  return new Set([
+    'crewcheck_auth_token','crewcheck_user','crewcheck_theme_mode','crewcheck_light_premium','crewcheck_language',
+    'crewcheck_latest_roster_bundle','crewcheck_last_roster','crewcheck_roster_sync_latest_v108134','crewcheck_roster_bundle_v1',
+    'crewcheck_telegram_chat_id','crewcheck_wakeup_phone','crewcheck_wakeup_channel',
+    'crewcheck_act_km_metric_brl','crewcheck_act_chief_sector_brl','crewcheck_act_instructor_sector_brl','crewcheck_act_night_hour_brl','crewcheck_salary_base_brl','crewcheck_perdiem_meal_brl','crewcheck_perdiem_breakfast_brl',
+    'crewcheck_virtual_base','crewcheck_manual_route_origin','crewcheck_last_geo','crewcheck_my_car_parking_position_v1',
+    'crewcheck_profile_avatar','crewcheck_profile_display_name','crewcheck_profile_company','crewcheck_profile_base','crewcheck_profile_rank','crewcheck_app_mode'
+  ]);
+}
+function runtimeInitialView(): ZeroView {
+  try {
+    const params = crewcheckRuntimeParams();
+    const forced = params.get('view') || params.get('screen') || (params.has('safe') || params.has('repair') || params.has('diagnostics') ? 'diagnostics' : '');
+    if (forced) {
+      sessionStorage.setItem('crewcheck_force_view_once', forced);
+      storage.set('crewcheck_intro_seen_v1278', '1');
+      return normalizeInitialView(forced);
+    }
+    return normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view'));
+  } catch {
+    return 'cockpit';
+  }
+}
+async function clearCrewCheckRuntimeCaches() {
+  try { if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((reg) => reg.unregister())); } } catch {}
+  try { if ('caches' in window) { const names = await caches.keys(); await Promise.all(names.filter((name) => name.toLowerCase().includes('crewcheck') || name.toLowerCase().includes('workbox')).map((name) => caches.delete(name))); } } catch {}
+}
+function repairCrewCheckLocalRuntime() {
+  try {
+    const keep = bootRescueKeysToKeep();
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('crewcheck_') && !keep.has(key)) localStorage.removeItem(key);
+    }
+    sessionStorage.clear();
+    sessionStorage.setItem('crewcheck_force_view_once', 'diagnostics');
+    storage.set('crewcheck_intro_seen_v1278', '1');
+    storage.set('crewcheck_boot_rescue_repaired_at', new Date().toISOString());
+  } catch {}
 }
 
 function normalizeInitialView(value: string | null): ZeroView {
@@ -1854,7 +1905,7 @@ function normalizeInitialView(value: string | null): ZeroView {
 export default function Home() {
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ZeroView>(() => normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const [view, setView] = useState<ZeroView>(() => runtimeInitialView());
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -1873,6 +1924,22 @@ export default function Home() {
     document.documentElement.classList.toggle('dark', effective === 'dark');
     document.documentElement.style.colorScheme = effective;
     storage.set('crewcheck_last_loaded_version', DEFAULT_VERSION);
+    const params = crewcheckRuntimeParams();
+    if (params.has('safe') || params.has('repair') || params.has('diagnostics')) {
+      storage.set('crewcheck_intro_seen_v1278', '1');
+      setShowIntro(false);
+      setView('diagnostics');
+    }
+    if (params.has('repair')) {
+      repairCrewCheckLocalRuntime();
+      void clearCrewCheckRuntimeCaches();
+      try { window.history.replaceState(null, '', '/?safe=1&v=13.6.7'); } catch {}
+      toast.success('Modo seguro ativado. Cache operacional reparado.');
+    }
+    const bootTimer = window.setTimeout(() => {
+      storage.set('crewcheck_boot_ok_v1367', '1');
+    }, 2500);
+
     const open = () => setDrawer(true);
     const setViewFromEvent = (event: Event) => { const next = (event as CustomEvent).detail; if (next) setView(normalizeInitialView(String(next))); };
     const syncTheme = () => {
@@ -1886,7 +1953,7 @@ export default function Home() {
     window.addEventListener('crewcheck:open-menu', open);
     window.addEventListener('crewcheck:set-view', setViewFromEvent as EventListener);
     window.addEventListener('crewcheck:theme-change', syncTheme);
-    return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
+    return () => { window.clearTimeout(bootTimer); window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
   }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
