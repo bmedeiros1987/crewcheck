@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.5';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.5: layout mobile polido e vínculo Telegram para notificações';
+const DEFAULT_VERSION = '13.7.6';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.6: áudio do Telegram com transcrição operacional';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
