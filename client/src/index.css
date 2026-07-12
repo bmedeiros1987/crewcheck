@@ -16590,3 +16590,5 @@ html[data-crew-theme="light"] .cz-diagnostics-grid article{background:#fff;borde
 .cz-app[data-view="diagnostics"]{min-height:100dvh}
 
 /* CrewCheck v13.6.8 — Static Server Shell active. Root route is served outside React for boot reliability. */
+
+/* CrewCheck v13.6.9 — /app route fix and stale service worker disabled. */

@@ -105,8 +105,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.6.8';
-const CREWCHECK_UI_CORE_NOTE = 'v13.6.8: frontend estável restaurado com shell seguro';
+const DEFAULT_VERSION = '13.6.9';
+const CREWCHECK_UI_CORE_NOTE = 'v13.6.9: rota /app corrigida e service worker antigo desativado';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {

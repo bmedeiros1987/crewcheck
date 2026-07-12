@@ -97,6 +97,8 @@ function Router() {
     <Switch>
       <Route path="/login" component={AuthPage} />
       <Route path="/">{() => <Protected><Home /></Protected>}</Route>
+      <Route path="/app">{() => <Protected><Home /></Protected>}</Route>
+      <Route path="/home">{() => <Protected><Home /></Protected>}</Route>
       <Route path="/results">{() => <Protected><Results /></Protected>}</Route>
       <Route path="/result">{() => <Protected><Results /></Protected>}</Route>
       <Route path="/watch">{() => <Protected><WatchPage device="samsung" /></Protected>}</Route>
@@ -132,12 +134,16 @@ export default function App() {
     applySavedTheme();
 
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '13.5.3');
+      window.localStorage.setItem('crewcheck_last_loaded_version', '13.6.9');
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=13.5.3').then((registration) => {
-          registration.update().catch(() => undefined);
-          navigator.serviceWorker.controller?.postMessage('CLEAR_CREWCHECK_CACHE');
-        }).catch(() => undefined);
+        navigator.serviceWorker.getRegistrations()
+          .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+          .catch(() => undefined);
+      }
+      if ('caches' in window) {
+        caches.keys()
+          .then((names) => Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name)).map((name) => caches.delete(name))))
+          .catch(() => undefined);
       }
     } catch {
       // Navegador sem storage/service worker; segue normalmente.

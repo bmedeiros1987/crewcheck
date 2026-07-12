@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.6.8",
+  "version": "13.6.9",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.6.8 — frontend stable rollback and static server shell",
+  "description": "CrewCheck v13.6.9 — app route fix and stale service worker off",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -77,7 +77,8 @@
     "regression:v13.6.5:telegram-wakeup": "node scripts/regression-v13-6-5-telegram-wakeup-restore.mjs",
     "regression:v13.6.6:reliability": "node scripts/regression-v13-6-6-reliability-core.mjs",
     "regression:v13.6.7:boot": "node scripts/regression-v13-6-7-boot-rescue.mjs",
-    "regression:v13.6.8:static-shell": "node scripts/regression-v13-6-8-static-shell.mjs"
+    "regression:v13.6.8:static-shell": "node scripts/regression-v13-6-8-static-shell.mjs",
+    "regression:v13.6.9:app-route": "node scripts/regression-v13-6-9-app-route-fix.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
