@@ -110,7 +110,7 @@
     "lucide-react": "^0.453.0",
     "mysql2": "^3.11.5",
     "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "2.16.105",
+    "pdfjs-dist": "6.1.200",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",
     "react": "18.2.0",
@@ -125,9 +125,9 @@
     "@capacitor/cli": "^7.4.3",
     "@capacitor/ios": "^7.4.3",
     "@types/node": "^24.7.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "18.2.79",
     "@types/react-dom": "18.2.25",
-    "@types/qrcode": "^1.5.6",
     "typescript": "5.6.3"
   },
   "engines": {
