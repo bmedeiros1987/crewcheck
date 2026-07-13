@@ -93,17 +93,7 @@ jobs:
           grep -Fq "jar verified." "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           keytool -printcert -jarfile "$source_aab" >/dev/null
-          unzip -Z1 "$source_aab" | grep -Eq '^META-INF/[^/]+\\.(RSA|DSA|EC)
-          sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: CrewCheck-13.8.0-signed-aab
-          path: |
-            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab
-            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab.sha256
-          if-no-files-found: error
-          retention-days: 14
-
+          unzip -Z1 "$source_aab" | grep -Eq '^META-INF/[^/]+\.(RSA|DSA|EC)$'
           cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
           sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
       - uses: actions/upload-artifact@v4
