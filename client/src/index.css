@@ -17395,3 +17395,127 @@ body *{font-family:var(--cc1414-font)!important}
 [data-crew-theme="dark"] .cz-menu-section button small{color:var(--cc1414-dark-muted)!important}
 [data-crew-theme="light"] .cz-menu-section button{background:rgba(255,255,255,.96)!important;color:var(--cc1414-light-text)!important}
 @media(max-width:520px){.cz-app{padding-left:clamp(18px,5vw,26px)!important;padding-right:clamp(18px,5vw,26px)!important}.cz-kpi-row{gap:12px!important}.cz-kpi{min-height:128px!important;padding:15px!important}.cz-roster-main{grid-template-columns:56px minmax(0,1fr) 26px!important;gap:12px!important}.cz-menu-panel{width:100vw!important;max-width:100vw!important}}
+
+
+/* CrewCheck v13.7.15 — Visual, cards, identidade e legibilidade */
+:root{
+  --cc1515-max:1120px;
+  --cc1515-dark-bg:#050d18;
+  --cc1515-dark-surface:#0d2036;
+  --cc1515-dark-surface-2:#112a46;
+  --cc1515-dark-title:#ffffff;
+  --cc1515-dark-text:#e3edf7;
+  --cc1515-dark-muted:#b8c9da;
+  --cc1515-dark-line:rgba(137,201,255,.24);
+  --cc1515-light-bg:#edf4f9;
+  --cc1515-light-surface:#ffffff;
+  --cc1515-light-surface-2:#f3f8fc;
+  --cc1515-light-title:#071829;
+  --cc1515-light-text:#20384f;
+  --cc1515-light-muted:#506b82;
+  --cc1515-light-line:#c8d8e5;
+  --cc1515-cyan:#22d3ee;
+  --cc1515-blue:#2f7df4;
+}
+html,body,#root{background:var(--cc1515-dark-bg)!important;color:var(--cc1515-dark-text)!important}
+html[data-crew-theme="light"],html[data-crew-theme="light"] body,html[data-crew-theme="light"] #root{background:var(--cc1515-light-bg)!important;color:var(--cc1515-light-text)!important}
+.cz-app{font-size:16px!important;line-height:1.45!important;padding-top:calc(18px + env(safe-area-inset-top,0px))!important}
+.cz-brand-row{position:static!important;inset:auto!important;transform:none!important;z-index:auto!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.cz-brand-row:before{content:none!important;display:none!important}
+.cz-title,.cz-panel-head,.cz-section-head,.cz-kpi-row,.cz-money-row,.cz-shortcuts,.cz-stack-list,.cz-timeline,.cz-day-group,.cz-import,.cz-maintenance,.cz-toolbox,.cz-finance-grid,.cz-finance-table,.cz-roster-card,.cz-flight-card,.cz-smart-card,.cz-google-route-card,.cz-inline-detail,.cz-weather-inline,.cz-month-map-card,.cz-radar-screen,.cz-departure,.cz-settings,.cz-alert-stack,.cz-alert-detail,.cz-complete-days,.cz-car-grid{
+  width:min(100%,var(--cc1515-max))!important;
+  max-width:var(--cc1515-max)!important;
+  margin-left:auto!important;
+  margin-right:auto!important;
+}
+.cz-panel-head p,.cz-section-head p,.cz-title p{font-size:clamp(.98rem,1.5vw,1.08rem)!important;line-height:1.55!important}
+.cz-kpi,.cz-money-row>div,.cz-flight-card,.cz-smart-card,.cz-roster-card,.cz-toolbox,.cz-google-route-card,.cz-month-map-card,.cz-radar-screen>article,.cz-map-card,.cz-empty-real,.cz-alert-stack>article,.cz-alert-detail,.cz-complete-days article,.cz-car-card,.cz-profile,.cz-inline-detail{
+  border:1px solid var(--cc1515-dark-line)!important;
+  background:linear-gradient(155deg,var(--cc1515-dark-surface-2),var(--cc1515-dark-surface))!important;
+  color:var(--cc1515-dark-text)!important;
+  box-shadow:0 18px 48px rgba(0,0,0,.27)!important;
+}
+[data-crew-theme="light"] .cz-kpi,[data-crew-theme="light"] .cz-money-row>div,[data-crew-theme="light"] .cz-flight-card,[data-crew-theme="light"] .cz-smart-card,[data-crew-theme="light"] .cz-roster-card,[data-crew-theme="light"] .cz-toolbox,[data-crew-theme="light"] .cz-google-route-card,[data-crew-theme="light"] .cz-month-map-card,[data-crew-theme="light"] .cz-radar-screen>article,[data-crew-theme="light"] .cz-map-card,[data-crew-theme="light"] .cz-empty-real,[data-crew-theme="light"] .cz-alert-stack>article,[data-crew-theme="light"] .cz-alert-detail,[data-crew-theme="light"] .cz-complete-days article,[data-crew-theme="light"] .cz-car-card,[data-crew-theme="light"] .cz-profile,[data-crew-theme="light"] .cz-inline-detail{
+  border-color:var(--cc1515-light-line)!important;
+  background:var(--cc1515-light-surface)!important;
+  color:var(--cc1515-light-text)!important;
+  box-shadow:0 16px 38px rgba(22,54,78,.10)!important;
+}
+[data-crew-theme="dark"] :is(.cz-kpi,.cz-money-row,.cz-flight-card,.cz-smart-card,.cz-roster-card,.cz-toolbox,.cz-google-route-card,.cz-month-map-card,.cz-radar-screen,.cz-map-card,.cz-empty-real,.cz-alert-stack,.cz-alert-detail,.cz-complete-days,.cz-car-card,.cz-profile,.cz-inline-detail) :is(h1,h2,h3,strong,b),
+[data-crew-theme="dark"] :is(.cz-panel-head,.cz-title,.cz-section-head) :is(h1,h2,h3,strong){color:var(--cc1515-dark-title)!important;opacity:1!important}
+[data-crew-theme="dark"] :is(.cz-kpi,.cz-money-row,.cz-flight-card,.cz-smart-card,.cz-roster-card,.cz-toolbox,.cz-google-route-card,.cz-month-map-card,.cz-radar-screen,.cz-map-card,.cz-empty-real,.cz-alert-stack,.cz-alert-detail,.cz-complete-days,.cz-car-card,.cz-profile,.cz-inline-detail) :is(p,small,span,em,label),
+[data-crew-theme="dark"] :is(.cz-panel-head,.cz-title,.cz-section-head) p{color:var(--cc1515-dark-text)!important;opacity:.98!important}
+[data-crew-theme="light"] :is(.cz-kpi,.cz-money-row,.cz-flight-card,.cz-smart-card,.cz-roster-card,.cz-toolbox,.cz-google-route-card,.cz-month-map-card,.cz-radar-screen,.cz-map-card,.cz-empty-real,.cz-alert-stack,.cz-alert-detail,.cz-complete-days,.cz-car-card,.cz-profile,.cz-inline-detail) :is(h1,h2,h3,strong,b),
+[data-crew-theme="light"] :is(.cz-panel-head,.cz-title,.cz-section-head) :is(h1,h2,h3,strong){color:var(--cc1515-light-title)!important;opacity:1!important;text-shadow:none!important}
+[data-crew-theme="light"] :is(.cz-kpi,.cz-money-row,.cz-flight-card,.cz-smart-card,.cz-roster-card,.cz-toolbox,.cz-google-route-card,.cz-month-map-card,.cz-radar-screen,.cz-map-card,.cz-empty-real,.cz-alert-stack,.cz-alert-detail,.cz-complete-days,.cz-car-card,.cz-profile,.cz-inline-detail) :is(p,small,span,em,label),
+[data-crew-theme="light"] :is(.cz-panel-head,.cz-title,.cz-section-head) p{color:var(--cc1515-light-text)!important;opacity:1!important}
+.cz-flight-pills span,.cz-detail-grid>div,.cz-route-kpis>div,.cz-time-trio>div,.cz-info-duo>div,.cz-routine-strip>span,.cz-destination-strip>span,.cz-roster-linked-chips>span{
+  writing-mode:horizontal-tb!important;
+  text-orientation:mixed!important;
+  word-break:normal!important;
+  overflow-wrap:anywhere!important;
+}
+[data-crew-theme="dark"] :is(.cz-flight-pills span,.cz-detail-grid>div,.cz-route-kpis>div,.cz-time-trio>div,.cz-info-duo>div,.cz-roster-linked-chips>span){
+  background:rgba(2,10,22,.48)!important;border-color:rgba(137,201,255,.19)!important;color:var(--cc1515-dark-text)!important
+}
+[data-crew-theme="light"] :is(.cz-flight-pills span,.cz-detail-grid>div,.cz-route-kpis>div,.cz-time-trio>div,.cz-info-duo>div,.cz-roster-linked-chips>span){
+  background:var(--cc1515-light-surface-2)!important;border-color:var(--cc1515-light-line)!important;color:var(--cc1515-light-text)!important
+}
+.cz-inline-detail[style]{background:linear-gradient(155deg,var(--cc1515-dark-surface-2),var(--cc1515-dark-surface))!important;border-color:var(--cc1515-dark-line)!important}
+[data-crew-theme="light"] .cz-inline-detail[style]{background:var(--cc1515-light-surface)!important;border-color:var(--cc1515-light-line)!important}
+.cz-airline{display:flex!important;align-items:center!important;gap:12px!important;min-width:0!important}
+.cz-airline>span:last-child{display:flex!important;align-items:baseline!important;gap:8px!important;flex-wrap:wrap!important}
+.cz-airline-logo{width:48px!important;height:48px!important;min-width:48px!important;display:grid!important;place-items:center!important;border-radius:14px!important;overflow:hidden!important;background:#fff!important;border:1px solid rgba(255,255,255,.85)!important;box-shadow:0 8px 20px rgba(0,0,0,.18)!important}
+.cz-airline-logo img,.cc1267-airline-logo{width:100%!important;height:100%!important;object-fit:contain!important;background:#fff!important;padding:4px!important}
+.cz-radar-airline{display:flex!important;align-items:center!important;gap:12px!important;justify-content:center!important;margin-bottom:10px!important}
+.cz-flight-head{align-items:center!important;gap:16px!important}
+.cz-info-duo{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))!important}
+.cz-info-duo>div:only-child{grid-column:1/-1!important}
+.cz-month-map-card{border-radius:30px!important;overflow:hidden!important;padding:clamp(16px,3vw,26px)!important}
+.cz-month-map-card>header{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:18px!important;flex-wrap:wrap!important}
+.cz-month-map-actions{display:flex!important;gap:10px!important;flex-wrap:wrap!important}
+.cz-month-map-actions button,.cz-tool-actions button,.cz-roster-actions button,.cz-google-route-card button{
+  min-height:46px!important;border-radius:14px!important;font-weight:850!important;padding:.72rem 1rem!important
+}
+.cz-google-map-preview{min-height:clamp(280px,46vw,560px)!important;border-radius:22px!important;overflow:hidden!important}
+.cz-google-map-preview iframe,.cz-google-map-preview img{width:100%!important;height:100%!important;min-height:inherit!important;object-fit:cover!important}
+.cz-radar-screen{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))!important;gap:16px!important}
+.cz-radar-screen>article{min-height:250px!important;border-radius:26px!important}
+.cz-menu-header{position:static!important;top:auto!important;min-height:auto!important;display:grid!important;grid-template-columns:minmax(0,1fr) 56px!important;gap:12px!important;padding:14px!important;border-radius:24px!important}
+.cz-menu-identity{display:grid!important;grid-template-columns:52px 52px minmax(0,1fr)!important;grid-template-areas:"logo avatar name"!important;gap:12px!important;align-items:center!important;min-width:0!important}
+.cz-menu-identity>.cz-logo{grid-area:logo!important;width:52px!important;height:52px!important}
+.cz-menu-identity>strong{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important}
+.cz-menu-avatar-edit{grid-area:avatar!important;width:52px!important;height:52px!important;min-width:52px!important;border-radius:18px!important;cursor:pointer!important}
+.cz-menu-user-name{grid-area:name!important;min-width:0!important;min-height:52px!important;padding:0 14px!important;border:0!important;background:transparent!important;text-align:left!important;font-size:clamp(1rem,3vw,1.2rem)!important;font-weight:900!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+[data-crew-theme="dark"] .cz-menu-user-name{color:var(--cc1515-dark-title)!important}
+[data-crew-theme="light"] .cz-menu-user-name{color:var(--cc1515-light-title)!important}
+.cz-menu-close{width:56px!important;min-height:56px!important;border-radius:18px!important}
+[data-crew-theme="dark"] .cz-menu-panel{background:var(--cc1515-dark-bg)!important}
+[data-crew-theme="light"] .cz-menu-panel{background:var(--cc1515-light-bg)!important}
+[data-crew-theme="dark"] .cz-menu-section button{background:var(--cc1515-dark-surface)!important;border-color:var(--cc1515-dark-line)!important;color:var(--cc1515-dark-text)!important}
+[data-crew-theme="light"] .cz-menu-section button{background:var(--cc1515-light-surface)!important;border-color:var(--cc1515-light-line)!important;color:var(--cc1515-light-text)!important}
+[data-crew-theme="dark"] .cz-bottom-nav{background:rgba(9,25,43,.96)!important;border-color:var(--cc1515-dark-line)!important}
+[data-crew-theme="dark"] .cz-bottom-nav button{color:var(--cc1515-dark-text)!important}
+[data-crew-theme="light"] .cz-bottom-nav{background:rgba(255,255,255,.96)!important;border-color:var(--cc1515-light-line)!important}
+[data-crew-theme="light"] .cz-bottom-nav button{color:var(--cc1515-light-title)!important}
+.cz-bottom-nav button em{min-width:22px!important;height:22px!important;display:grid!important;place-items:center!important;border-radius:999px!important;background:#ef4444!important;color:#fff!important;font-size:.72rem!important;font-style:normal!important;font-weight:900!important}
+[data-crew-theme="dark"] :is(input,select,textarea){background:#07172a!important;color:#fff!important;border-color:var(--cc1515-dark-line)!important}
+[data-crew-theme="light"] :is(input,select,textarea){background:#fff!important;color:var(--cc1515-light-title)!important;border-color:var(--cc1515-light-line)!important}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--cc1515-cyan)!important;outline-offset:3px!important}
+@media(min-width:820px){
+  .cz-kpi-row{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+  .cz-shortcuts,.cz-shortcuts-full{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .cz-roster-linked-chips,.cz-detail-grid,.cz-route-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .cz-money-row{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+}
+@media(max-width:600px){
+  .cz-menu-panel{padding-left:14px!important;padding-right:14px!important}
+  .cz-menu-header{grid-template-columns:minmax(0,1fr) 50px!important}
+  .cz-menu-identity{grid-template-columns:46px 46px minmax(0,1fr)!important;gap:9px!important}
+  .cz-menu-identity>.cz-logo,.cz-menu-avatar-edit{width:46px!important;height:46px!important;min-width:46px!important}
+  .cz-menu-close{width:50px!important;min-height:50px!important}
+  .cz-month-map-actions{display:grid!important;grid-template-columns:1fr!important;width:100%!important}
+  .cz-month-map-actions button{width:100%!important}
+  .cz-flight-head{align-items:flex-start!important}
+  .cz-airline-logo{width:42px!important;height:42px!important;min-width:42px!important}
+}
