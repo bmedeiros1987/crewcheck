@@ -25,6 +25,7 @@ assert(home.includes("<MapIcon/> Mapa do mês</button><button onClick={() => set
 assert(home.includes('Compartilhar PDF') && home.includes('Enviar por e-mail'), 'Mapa do mês não está compartilhável');
 assert(home.includes("testAlarm('telegram-call')") && home.includes('Teste de ligação do admin'), 'testes de ligação não foram restaurados');
 assert(home.includes("return authFetch<any>(url"), 'teste do despertador não está autenticado');
+assert(home.includes('function PresentationManagerView') && home.includes('Aprender hotel/local'), 'Gerenciador de Apresentação antigo não foi restaurado');
 assert(!home.includes('mailto:'), 'envio por e-mail ainda usa aplicativo externo');
 assert(email.includes('contentBase64') && email.includes("mimeType: 'application/pdf'"), 'cliente não envia PDF anexado');
 assert(server.includes("url.pathname === '/api/email/share'") && server.includes('api.mailersend.com/v1/email'), 'backend de e-mail interno ausente');
