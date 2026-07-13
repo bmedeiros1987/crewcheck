@@ -7,6 +7,22 @@ type PdfAttachment = {
   blob: Blob;
 };
 
+function actionableAlerts(compliance: ComplianceResult): any[] {
+  const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  const seen = new Set<string>();
+  return source.filter((alert: any) => {
+    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false) return false;
+    const severity = String(alert.severity || '').toLowerCase();
+    const title = String(alert.title || '').trim();
+    const description = String(alert.description || '').trim();
+    if (!['error', 'warning'].includes(severity) || (!title && !description)) return false;
+    const signature = `${severity}|${title}|${description}|${String(alert.legalReference || '')}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,12 +50,13 @@ export async function sendRosterByEmail(args: {
   if (args.attachment.blob.size > 20 * 1024 * 1024) throw new Error('O PDF ultrapassa 20 MB. Reduza o relatório antes de enviar.');
 
   const subject = `CrewCheck · ${args.roster.crewName} · ${String(args.roster.month).padStart(2, '0')}/${args.roster.year}`;
-  const critical = args.compliance.alerts.filter((alert) => alert.severity === 'error').length;
-  const warnings = args.compliance.alerts.filter((alert) => alert.severity === 'warning').length;
+  const currentAlerts = actionableAlerts(args.compliance);
+  const critical = currentAlerts.filter((alert) => alert.severity === 'error').length;
+  const warnings = currentAlerts.filter((alert) => alert.severity === 'warning').length;
   const bestGym = args.gym.slice(0, 5).map((item) => `${item.date}: ${item.suggestedDuration} (${item.reason})`).join('\n');
 
   const message = [
-    'Relatório CrewCheck Premium',
+    'Relatório CrewCheck',
     '',
     `Tripulante: ${args.roster.crewName}`,
     `Base: ${args.roster.base}`,
@@ -55,7 +72,7 @@ export async function sendRosterByEmail(args: {
     bestGym ? `Melhores janelas de academia:\n${bestGym}` : 'Sem recomendação de academia disponível.',
     '',
     'O relatório completo está anexado em PDF.',
-    'Este e-mail foi enviado pelo CrewCheck Premium.',
+    'Este e-mail foi enviado de forma segura pelo CrewCheck.',
   ].join('\n');
 
   const contentBase64 = await blobToBase64(args.attachment.blob);
@@ -76,13 +93,14 @@ export async function sendRosterByEmail(args: {
 }
 
 function buildHtml(args: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }, message: string): string {
-  const critical = args.compliance.alerts.filter((a) => a.severity === 'error');
-  const warnings = args.compliance.alerts.filter((a) => a.severity === 'warning');
+  const currentAlerts = actionableAlerts(args.compliance);
+  const critical = currentAlerts.filter((a) => a.severity === 'error');
+  const warnings = currentAlerts.filter((a) => a.severity === 'warning');
   return `
   <div style="font-family:Inter,Arial,sans-serif;background:#eef5f8;padding:24px;color:#092846">
     <div style="max-width:720px;margin:0 auto;background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(9,40,70,.12)">
       <div style="background:#092846;color:white;padding:24px">
-        <div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#9ee7ff">CrewCheck Premium</div>
+        <div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#9ee7ff">CrewCheck</div>
         <h1 style="margin:8px 0 0;font-size:24px">Relatório de escala</h1>
         <p style="margin:8px 0 0;color:#cdefff">${escapeHtml(args.roster.crewName)} · ${String(args.roster.month).padStart(2, '0')}/${args.roster.year}</p>
       </div>

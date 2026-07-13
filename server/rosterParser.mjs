@@ -1,6 +1,8 @@
 // Parser de escala consolidado do CrewCheck.
 // Mantém compatibilidade com PDFs AIMS e Crew Roster Report sem depender do navegador.
 
+import { fileURLToPath } from 'node:url';
+
 const AIRPORTS = new Set(['AAX','AEP','AFL','AJU','AMS','ARU','ASU','ATL','ATM','BCN','BEL','BOG','BOS','BPS','BRA','BSB','BVB','CAC','CAW','CCS','CDG','CFB','CGB','CGH','CKS','CLO','CMG','CNF','COR','CPT','CPV','CTG','CUN','CUR','CUZ','CWB','CXJ','DFW','DOH','DXB','EPA','ERM','EWR','EZE','FCO','FEC','FEN','FLL','FLN','FOR','FRA','GIG','GPB','GRU','GVR','GYE','GYN','HAV','IAH','IGU','IMP','IOS','IPN','IST','IZA','JDO','JFK','JIA','JJD','JJG','JNB','JOI','JPA','JPR','JTC','LAS','LAX','LAZ','LDB','LEC','LGW','LHR','LIM','LIS','LPB','MAB','MAD','MAO','MCO','MCP','MCZ','MDE','MDZ','MEA','MEX','MGF','MIA','MOC','MUC','MVD','MXP','NAT','NVT','OAL','OPO','OPS','ORD','ORY','PDP','PET','PFB','PIN','PMW','PNZ','POA','PPB','PTY','PUJ','PVH','QNS','RAO','RBR','REC','RIA','ROO','ROS','RVD','SCL','SDQ','SDU','SFO','SJK','SJO','SJP','SLZ','SSA','STM','TBT','TFF','THE','UDI','UIO','URG','VCP','VDC','VIX','VVI','XAP','ZRH']);
 const MONTHS = { jan:1, feb:2, fev:2, mar:3, apr:4, abr:4, may:5, mai:5, ma:5, jun:6, jul:7, aug:8, ago:8, sep:9, set:9, oct:10, out:10, nov:11, dec:12, dez:12 };
 
@@ -32,9 +34,21 @@ async function parsePdfOnServer({ filename, dataBase64 }) {
  if (!dataBase64 || typeof dataBase64 !== 'string') throw new Error('PDF não recebido pelo servidor.');
  const bytes = decodeBase64PdfPayload(dataBase64);
  if (!bytes.length) throw new Error('PDF vazio.');
- const pdfjsImport = await import('pdfjs-dist/legacy/build/pdf.js');
+ const pdfjsModuleUrl = import.meta.resolve('pdfjs-dist/legacy/build/pdf.mjs');
+ const pdfjsAssetRoot = new URL('../../', pdfjsModuleUrl);
+ const pdfjsAssetPath = fileURLToPath(pdfjsAssetRoot);
+ const pdfjsImport = await import(pdfjsModuleUrl);
  const pdfjs = pdfjsImport.default || pdfjsImport;
- const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true, isEvalSupported: false, disableFontFace: true }).promise;
+ const pdf = await pdfjs.getDocument({
+  data: new Uint8Array(bytes),
+  disableWorker: true,
+  isEvalSupported: false,
+  disableFontFace: true,
+  cMapUrl: `${pdfjsAssetPath}cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${pdfjsAssetPath}standard_fonts/`,
+  wasmUrl: `${pdfjsAssetPath}wasm/`,
+ }).promise;
  const pages = [];
  const allItems = [];
  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {

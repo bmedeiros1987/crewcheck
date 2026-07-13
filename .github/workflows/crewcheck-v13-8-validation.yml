@@ -1,0 +1,117 @@
+name: CrewCheck 13.8 validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - agent/crewcheck-v13-8-platform
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewcheck-13-8-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-and-server:
+    name: Web, TypeScript and server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run check
+      - run: npm run build
+      - run: npm run regression:v13.8.0:platform
+      - run: node test-server.mjs
+
+  android:
+    name: Android signed release bundle
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      KEYSTORE_SOURCE: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY || secrets.CREWCHECK_STORE_FILE || vars.CREWCHECK_KEYSTORE_BASE64 || vars.ANDROID_KEYSTORE_BASE64 || vars.KEYSTORE_BASE64 }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+      CREWCHECK_STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD || vars.CREWCHECK_STORE_PASSWORD }}
+      CREWCHECK_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS || vars.CREWCHECK_KEY_ALIAS }}
+      CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD || vars.CREWCHECK_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Prepare protected upload keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${KEYSTORE_SOURCE:-}" ]] || missing+=("keystore base64")
+          [[ -n "${CREWCHECK_STORE_PASSWORD:-}" ]] || missing+=("store password")
+          [[ -n "${CREWCHECK_KEY_ALIAS:-}" ]] || missing+=("key alias")
+          [[ -n "${CREWCHECK_KEY_PASSWORD:-}" ]] || missing+=("key password")
+          if (( ${#missing[@]} )); then
+            printf '::error::Configuração de assinatura ausente: %s\n' "$(IFS=', '; echo "${missing[*]}")"
+            exit 1
+          fi
+          encoded="${KEYSTORE_SOURCE#base64:}"
+          if ! printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"; then
+            echo "::error::O keystore configurado não está em Base64 válido."
+            exit 1
+          fi
+          chmod 600 "$CREWCHECK_STORE_FILE"
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$CREWCHECK_STORE_PASSWORD" -alias "$CREWCHECK_KEY_ALIAS" >/dev/null
+      - name: Compile APK and signed AAB
+        working-directory: android-wrapper
+        run: gradle --no-daemon :app:assembleDebug :app:bundleRelease
+      - name: Verify AAB signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_aab="android-wrapper/app/build/outputs/bundle/release/app-release.aab"
+          test -s "$source_aab"
+          set +e
+          jarsigner -verify -strict -certs "$source_aab" > "$RUNNER_TEMP/jarsigner-verification.txt" 2>&1
+          verify_status=$?
+          set -e
+          if [[ "$verify_status" -ne 0 && "$verify_status" -ne 4 ]]; then
+            cat "$RUNNER_TEMP/jarsigner-verification.txt"
+            echo "::error::A assinatura do AAB é inválida ou o certificado não está válido."
+            exit "$verify_status"
+          fi
+          if ! grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"; then
+            cat "$RUNNER_TEMP/jarsigner-verification.txt"
+            echo "::error::O jarsigner não confirmou a assinatura do AAB."
+            exit 1
+          fi
+          if grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"; then
+            cat "$RUNNER_TEMP/jarsigner-verification.txt"
+            echo "::error::O AAB foi gerado sem assinatura."
+            exit 1
+          fi
+          unzip -t "$source_aab" >/dev/null
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum CrewCheck-13.8.0-production.aab > CrewCheck-13.8.0-production.aab.sha256
+          )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-13.8.0-signed-aab
+          path: |
+            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab
+            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab.sha256
+          if-no-files-found: error
+          retention-days: 14

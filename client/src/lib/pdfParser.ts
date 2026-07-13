@@ -1,13 +1,13 @@
 import { isAimsFormat, parseAimsRoster } from './aimsParser';
 import { getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.js?url';
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { normalizeRosterDays } from './canonicalRoster';
 
 let pdfjsModulePromise: Promise<any> | null = null;
 
 async function loadPdfJs(): Promise<any> {
   if (!pdfjsModulePromise) {
-    pdfjsModulePromise = import('pdfjs-dist/legacy/build/pdf').then((module: any) => {
+    pdfjsModulePromise = import('pdfjs-dist/legacy/build/pdf.mjs').then((module: any) => {
       const pdfjs = module.default || module;
       // Required on mobile Chrome/Safari: without an explicit workerSrc PDF.js
       // can throw "No GlobalWorkerOptions.workerSrc specified". We still keep

@@ -3,7 +3,7 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
-const UPDATED_AT = '03 de junho de 2026';
+const UPDATED_AT = '13 de julho de 2026';
 
 const pages = {
   statistics: {
@@ -57,6 +57,8 @@ const privacySections: Section[] = [
       'Dados extraídos da escala: nome do tripulante quando presente no PDF, BP/matrícula quando presente, base, função, mês/ano, voos, treinamentos, reservas, sobreavisos, folgas, repousos, pernoites, alertas e estatísticas da escala.',
       'Dados de uso local: preferências de interface, configurações do Google Calendar, fila offline de escalas e histórico local necessário para deduplicação e funcionamento offline.',
       'Dados opcionais de integração: quando o usuário conecta o Google Calendar, o app solicita autorização para listar calendários graváveis e criar, atualizar ou remover eventos gerados pelo CrewCheck no calendário escolhido.',
+      'Dados opcionais de comunidade: ID CrewCheck, visitantes autorizados, permissões de abas, mensagens do chat, hotel/pernoite, número de quarto criptografado, presença temporária em academia e localização enviada voluntariamente em um pedido de ajuda.',
+      'Dados de assinatura: plano, provedor, estado da assinatura, período de acesso, identificador técnico e hash do comprovante. O CrewCheck não armazena número de cartão nem credenciais da Google Play.',
     ],
   },
   {
@@ -65,6 +67,7 @@ const privacySections: Section[] = [
       'Usamos os dados para autenticar o usuário, ler e organizar a escala enviada, gerar alertas, montar histórico, evitar duplicidade, exportar relatórios e sincronizar eventos com o calendário escolhido pelo usuário.',
       'O PDF da escala é processado para extrair informações operacionais. Quando o modo servidor está ativo, o arquivo pode ser enviado temporariamente ao servidor apenas para leitura e interpretação, sem finalidade de venda, publicidade comportamental ou compartilhamento comercial.',
       'O Google Calendar é usado somente quando o usuário conecta a conta e escolhe um calendário. A sincronização utiliza identificadores técnicos para atualizar ou substituir eventos da escala sem duplicar.',
+      'Compartilhamentos por link, QR, visitante, comparação e chat só são habilitados por ação do usuário. O titular escolhe permissões, prazo e pode revogar o acesso.',
     ],
   },
   {
@@ -73,6 +76,7 @@ const privacySections: Section[] = [
       'Não vendemos dados pessoais. Não compartilhamos dados com anunciantes. O CrewCheck não utiliza os dados da escala para publicidade comportamental.',
       'Podemos usar provedores de infraestrutura, banco de dados, hospedagem, e-mail transacional e serviços do Google quando o usuário ativa a integração. Esses provedores tratam dados apenas na medida necessária para operar o serviço.',
       'Podemos divulgar dados se houver obrigação legal, ordem de autoridade competente ou necessidade de proteção contra fraude, abuso ou risco de segurança.',
+      'Google Play e Asaas tratam dados necessários para cobrança conforme a plataforma escolhida. MailerSend e Telegram recebem somente os dados necessários quando o usuário ativa convite, envio, concierge ou alerta.',
     ],
   },
   {
@@ -80,6 +84,7 @@ const privacySections: Section[] = [
     body: [
       'Adotamos medidas razoáveis de segurança, incluindo autenticação por token, senha armazenada com hash, conexão HTTPS e separação entre dados de usuário e histórico de escala.',
       'Alguns dados podem ser armazenados localmente no navegador ou no dispositivo para permitir funcionamento offline. Dados salvos no banco são vinculados ao usuário autenticado e usados para histórico, estatísticas e recuperação das escalas.',
+      'O número do quarto é protegido no banco com criptografia autenticada e não aparece na busca de colegas do mesmo hotel. Links públicos usam token aleatório, expiração e revogação.',
       'Nenhum sistema é totalmente imune a riscos. O usuário deve proteger sua senha, dispositivo e conta Google.',
     ],
   },
@@ -88,6 +93,7 @@ const privacySections: Section[] = [
     body: [
       'Mantemos dados enquanto forem necessários para operar o CrewCheck, cumprir obrigações legais, preservar segurança ou permitir histórico solicitado pelo usuário.',
       'O usuário pode apagar escalas salvas quando a funcionalidade estiver disponível na tela de histórico ou solicitar exclusão/correção dos dados pelo contato abaixo.',
+      'A exclusão dentro do aplicativo remove perfil, escalas, hotéis, visitantes, compartilhamentos, conexões, chat, uso e preferências salvas no banco. Cancelar uma assinatura Google Play é uma ação separada na Play Store.',
     ],
   },
   {
@@ -116,8 +122,9 @@ const deletionSections: Section[] = [
   {
     title: '1. O que será excluído',
     body: [
-      'Quando a exclusão for confirmada, o CrewCheck excluirá ou anonimizará a conta do usuário, sessões de login, escalas salvas, histórico, estatísticas, fila de sincronização vinculada ao usuário e preferências associadas à conta.',
+      'Quando a exclusão for confirmada, o CrewCheck excluirá o perfil e os dados vinculados no banco, incluindo escalas, histórico, hotéis, visitantes, compartilhamentos, conexões, chat, uso e preferências da conta.',
       'Dados que existirem apenas no dispositivo do usuário, como cache offline do navegador ou do aplicativo, podem ser apagados pelo próprio usuário limpando os dados do app/navegador após a exclusão.',
+      'A exclusão da conta não cancela automaticamente uma assinatura feita pela Google Play. O cancelamento deve ser concluído na área de assinaturas da Play Store.',
     ],
   },
   {
@@ -227,15 +234,19 @@ export default function InfoPage({ page }: { page: PageKey }) {
                 <div className="mt-4 flex flex-wrap gap-3">
                   <a href="mailto:suporte@crewcheck.app?subject=Exclus%C3%A3o%20de%20conta%20CrewCheck&body=Solicito%20a%20exclus%C3%A3o%20da%20minha%20conta%20CrewCheck%20e%20dos%20dados%20associados.%0A%0AE-mail%20cadastrado%3A%20%0ANome%3A%20%0A" className="inline-flex rounded-2xl bg-rose-100 px-5 py-3 text-sm font-black text-rose-950 hover:bg-white">Solicitar exclusão por e-mail</a>
                   <button type="button" onClick={async () => {
-                    const token = window.localStorage.getItem('crewcheck_auth_token');
-                    if (!token) { window.location.href = '/login'; return; }
                     const ok = window.confirm('Tem certeza que deseja excluir sua conta CrewCheck e os dados associados? Esta ação não poderá ser desfeita.');
                     if (!ok) return;
-                    const response = await fetch('/api/account', { method: 'DELETE', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}' });
-                    if (!response.ok) { alert('Não foi possível excluir automaticamente. Use a solicitação por e-mail desta página.'); return; }
+                    const confirmation = window.prompt('Para confirmar, digite EXCLUIR') || '';
+                    if (confirmation.trim().toUpperCase() !== 'EXCLUIR') return;
+                    const token = window.localStorage.getItem('crewcheck_auth_token') || '';
+                    const response = await fetch('/api/platform/account/delete', { method: 'POST', credentials: 'include', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify({ confirmation }) });
+                    const payload = await response.json().catch(() => null);
+                    if (response.status === 401) { window.location.href = '/login'; return; }
+                    if (!response.ok) { alert(payload?.message || 'Não foi possível excluir automaticamente. Use a solicitação por e-mail desta página.'); return; }
                     window.localStorage.removeItem('crewcheck_auth_token');
                     window.localStorage.removeItem('crewcheck_auth_user');
-                    alert('Conta e dados solicitados/removidos com sucesso.');
+                    if (payload?.manageGooglePlayUrl && window.confirm('Os dados foram excluídos. Abrir a Play Store para cancelar a assinatura separadamente?')) window.open(payload.manageGooglePlayUrl, '_blank', 'noopener,noreferrer');
+                    alert(payload?.message || 'Conta e dados removidos com sucesso.');
                     window.location.href = '/login';
                   }} className="inline-flex rounded-2xl border border-rose-200/30 bg-rose-500/20 px-5 py-3 text-sm font-black text-rose-50 hover:bg-rose-500/30">Excluir agora no app</button>
                 </div>
