@@ -30,10 +30,10 @@ jobs:
       - run: npm run regression:v13.8.0:platform
       - run: node test-server.mjs
 
-  android-debug:
-    name: Android debug compile
+  android:
+    name: Android debug and release bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -43,6 +43,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Compile Android debug
+      - name: Compile APK and unsigned AAB
         working-directory: android-wrapper
-        run: gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug :app:bundleRelease
