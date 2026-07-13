@@ -57,10 +57,12 @@ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSe
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
+import PlatformCenter from '@/components/platform/PlatformCenter';
+import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community';
 
 type ZeroLeg = {
   id: string;
@@ -109,8 +111,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.16';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.16: Concierge Telegram, radar e operações conectadas';
+const DEFAULT_VERSION = '13.8.0';
+const CREWCHECK_UI_CORE_NOTE = 'v13.8.0: assinaturas, conformidade, escala e comunidade segura';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -382,7 +384,7 @@ function operationalAuditScore(bundle: BundleState) {
     events: events.filter((event) => !event.placeholder).length,
     flights: events.filter((event) => event.kind === 'flight' && !event.placeholder).length,
     stays: events.filter((event) => event.kind === 'stay' || event.hotel).length,
-    alerts: Number(compliance?.alerts?.length || 0) + Number(compliance?.warnings?.length || 0),
+    alerts: actionableComplianceAlerts(compliance).length,
     perdiem: finance.perdiem.monthly,
     salary: finance.salary.gross,
     routine: currentGym(bundle).length,
@@ -717,6 +719,22 @@ function neutralCompliance(roster: CrewRoster): ComplianceResult {
   } as any;
 }
 
+function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {
+  const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  const seen = new Set<string>();
+  return source.filter((alert: any) => {
+    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false) return false;
+    const title = String(alert.title || '').trim();
+    const description = String(alert.description || '').trim();
+    const severity = String(alert.severity || '').toLowerCase();
+    if ((!title && !description) || !['error', 'warning'].includes(severity)) return false;
+    const signature = `${severity}|${title}|${description}|${String(alert.legalReference || '')}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function analyzeSafe(roster: CrewRoster): ComplianceResult {
   try {
     if (!Array.isArray(roster.days) || !roster.days.length) return neutralCompliance(roster);
@@ -737,7 +755,8 @@ function loadRoster(): BundleState {
       const payload = JSON.parse(raw);
       const roster = payload?.roster ? payload.roster as CrewRoster : payload as CrewRoster;
       if (Array.isArray(roster.days) && roster.days.length) {
-        const compliance = payload?.compliance || analyzeSafe(roster);
+        // Recalcula sempre: versões antigas podiam manter contadores de alerta obsoletos.
+        const compliance = analyzeSafe(roster);
         const source = payload?.sourceFileName || payload?.source || sessionStorage.getItem('crewcheck_source_file') || 'Escala ativa';
         return { roster, compliance, source };
       }
@@ -752,7 +771,7 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
     sessionStorage.setItem('crewcheck_roster', JSON.stringify(roster));
     sessionStorage.setItem('crewcheck_compliance', JSON.stringify(compliance));
     sessionStorage.setItem('crewcheck_source_file', source);
-    localStorage.setItem('crewcheck_latest_roster_bundle', JSON.stringify({ roster, compliance, sourceFileName: source, updatedAt: new Date().toISOString(), source: 'crewcheck-v1278-ui-safe-functional-core' }));
+    localStorage.setItem('crewcheck_latest_roster_bundle', JSON.stringify({ roster, compliance, sourceFileName: source, updatedAt: new Date().toISOString(), source: 'crewcheck-v13.8.0-canonical' }));
     localStorage.setItem('crewcheck_last_roster', JSON.stringify(roster));
     window.dispatchEvent(new CustomEvent('crewcheck:roster-updated', { detail: { roster, compliance, source } }));
   } catch {}
@@ -1117,11 +1136,11 @@ function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
   return <header className="cz-brand-row">
     <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
-    <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div><div className="cz-pills"><span>Premium</span><b>Beta</b></div></div>
+    <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
-  const alerts = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  const alerts = actionableComplianceAlerts(compliance);
   return alerts.map((alert: any) => [alert?.severity, alert?.title, alert?.description, alert?.legalReference].map((item) => String(item || '').trim()).join('::')).sort().join('||');
 }
 
@@ -1144,7 +1163,7 @@ function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates'].includes(view));
+    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community'].includes(view));
     return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
@@ -1193,7 +1212,7 @@ async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarS
   const flight = String(event.flightNumber || '').trim();
   if (event.kind !== 'flight' || event.placeholder || !/\d/.test(flight)) return { ok: false, message: 'Radar disponível apenas para voo publicado.' };
   const identity = telegramConciergeIdentity();
-  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name });
+  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });
   const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
   const payload = await response.json().catch(() => ({ ok: false, message: 'Radar indisponível.' }));
   return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
@@ -1413,7 +1432,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   }
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
-    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
+    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Academias','Wellhub e Smart Fit',Dumbbell], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
@@ -1458,7 +1477,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
 function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
-  const alertCount = Number((compliance as any)?.alerts?.length || 0);
+  const alertCount = actionableComplianceAlerts(compliance).length;
   const counters = loaded && events[0]?.day ? {
     days: new Set(events.map((e) => e.day.date)).size,
     flights: events.filter((e) => e.kind === 'flight').length,
@@ -1614,10 +1633,12 @@ function weatherStoredReport(airport: string, kind: 'metar' | 'taf'): string {
   const code = String(airport || '').toUpperCase();
   const icao = airportIcao(code);
   const key = `crewcheck_${kind}_${code}`;
+  const stored = storage.get(key, '').trim();
+  if (stored && !/TAF tendência operacional/i.test(stored)) return stored;
   const fallback = kind === 'metar'
-    ? `${icao} METAR aguardando atualização oficial · vento/visibilidade/teto monitorados`
-    : `${icao} TAF tendência operacional: avaliar vento, chuva, teto e visibilidade`;
-  return storage.get(key, fallback);
+    ? `${icao} METAR indisponível · aguardando atualização da fonte oficial`
+    : `${icao} TAF indisponível · aguardando atualização da fonte oficial`;
+  return fallback;
 }
 function weatherLooksWorse(report: string): boolean {
   const value = String(report || '').toUpperCase();
@@ -1750,8 +1771,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
 }
 
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
-  const alerts = ((compliance as any)?.alerts || []);
-  const list = alerts.slice(0, 12);
+  const list = actionableComplianceAlerts(compliance).slice(0, 12);
   return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b></div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>Carregue a escala real para que o motor regulatório refaça a análise completa.</p></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ensinar falso positivo</button><button>Ver base regulatória</button></footer></article></>;
 }
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
@@ -1827,11 +1847,50 @@ function IFlightPushView({ actions }: { actions: QuickActions }) {
 }
 
 
+function dutyHoursForRosterDay(day: RosterDay): number {
+  const minutes = (value: unknown) => { const match = String(value || '').match(/(\d{1,2}):(\d{2})/); return match ? Number(match[1]) * 60 + Number(match[2]) : null; };
+  const start = minutes((day as any).dutyReport || (day as any).presentation || (day as any).startTime || (day as any).legs?.[0]?.departureTime);
+  const end = minutes((day as any).dutyDebrief || (day as any).endTime || (day as any).legs?.at?.(-1)?.arrivalTime);
+  if (start === null || end === null) return Number((day as any).dutyHours || 0) || 0;
+  let total = end - start;
+  if (total < 0) total += 24 * 60;
+  return Math.round(total / 6) / 10;
+}
+
+function rosterDayIso(day: RosterDay): string {
+  const raw = String((day as any).date || '');
+  const br = raw.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (br) return `${br[3].length === 2 ? `20${br[3]}` : br[3]}-${pad2(Number(br[2]))}-${pad2(Number(br[1]))}`;
+  return raw.slice(0, 10);
+}
+
+function HourLimitBar({ title, used, limit, detail }: { title: string; used: number; limit: number; detail: string }) {
+  const ratio = limit > 0 ? used / limit : 0;
+  const tone = ratio >= 1 ? 'danger' : ratio >= .85 ? 'warn' : 'ok';
+  return <article className={`cz-hour-limit ${tone}`}><header><span><strong>{title}</strong><small>{detail}</small></span><b>{used.toFixed(1).replace('.', ',')} h / {limit.toFixed(1).replace('.', ',')} h</b></header><div><i style={{ width: `${Math.min(100, Math.max(2, ratio * 100))}%` }}/></div><footer>{ratio >= 1 ? 'Limite de referência alcançado; revise a análise regulatória.' : `${Math.max(0, limit - used).toFixed(1).replace('.', ',')} h de margem na referência configurada.`}</footer></article>;
+}
+
 function LoadView({ bundle }: { bundle: BundleState }) {
+  const [limitRevision, setLimitRevision] = useState(0);
+  void limitRevision;
   const compliance = currentCompliance(bundle) as any;
-  const days = Array.isArray(bundle.roster.days) ? bundle.roster.days.length : 0;
-  const flights = buildLegs(bundle.roster).filter(e => e.kind === 'flight').length;
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga de trabalho</h1><p>Jornada, carga, descanso, intensidade, academia/hotel e limites regulatórios. Este menu não abre mais a Saída Inteligente.</p></section><section className="cz-report-grid"><article><h2>Dias publicados</h2><strong>{days}</strong><p>Baseado somente na escala real importada.</p></article><article><h2>Voos</h2><strong>{flights}</strong><p>Trechos operacionais detectados.</p></article><article><h2>Score RBAC</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article></section><section className="cz-toolbox"><h2>Sistemas conectados</h2><p>Rotina, academias, hotéis, trânsito real, saída inteligente, radar de voos, meteorologia, diárias, salário e relatórios usam a mesma escala ativa.</p></section></>;
+  const days = Array.isArray(bundle.roster.days) ? bundle.roster.days : [];
+  const rows = days.map((day) => ({ day, date: rosterDayIso(day), hours: dutyHoursForRosterDay(day), sectors: Array.isArray((day as any).legs) ? (day as any).legs.length : 0 })).filter((row) => row.date);
+  const dailyLimit = readNumberSetting('crewcheck_limit_daily_hours', 11);
+  const weeklyLimit = readNumberSetting('crewcheck_limit_weekly_hours', 44);
+  const monthlyLimit = readNumberSetting('crewcheck_limit_monthly_hours', 176);
+  const heaviest = [...rows].sort((a, b) => (b.hours + b.sectors * .35) - (a.hours + a.sectors * .35)).slice(0, 6);
+  const peakDay = heaviest[0] || { hours: 0, date: '—', sectors: 0 };
+  let peakWeek = { hours: 0, from: '—', to: '—' };
+  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
+  const monthlyHours = rows.reduce((sum, row) => sum + row.hours, 0);
+  function configure() {
+    const daily = prompt('Referência diária de jornada (horas)', String(dailyLimit)); if (daily !== null) storage.set('crewcheck_limit_daily_hours', daily.replace(',', '.'));
+    const weekly = prompt('Referência semanal de jornada (horas)', String(weeklyLimit)); if (weekly !== null) storage.set('crewcheck_limit_weekly_hours', weekly.replace(',', '.'));
+    const monthly = prompt('Referência mensal de jornada (horas)', String(monthlyLimit)); if (monthly !== null) storage.set('crewcheck_limit_monthly_hours', monthly.replace(',', '.'));
+    setLimitRevision((value) => value + 1);
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada diária mais alta" used={peakDay.hours} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={peakWeek.hours} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.date}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {
@@ -1843,9 +1902,40 @@ function FieldSetting({ icon: Icon, label, storageKey, placeholder }: { icon: an
   const [value, setValue] = useState(() => storage.get(storageKey, ''));
   return <label className="cz-setting cz-field-setting"><Icon/><div><strong>{label}</strong><input value={value} onChange={(event) => { setValue(event.target.value); storage.set(storageKey, event.target.value); }} placeholder={placeholder}/></div><ChevronRight/></label>;
 }
+
+function PlatformPreferences() {
+  const deviceLocale = (() => { const value = String(navigator.language || 'pt-BR'); return value.startsWith('en') ? 'en-US' : value.startsWith('es') ? 'es-ES' : 'pt-BR'; })() as CrewCheckLocale;
+  const deviceTimezone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo'; } catch { return 'America/Sao_Paulo'; } })();
+  const [profile, setProfile] = useState<PlatformProfile | null>(null);
+  const [locale, setLocale] = useState<CrewCheckLocale>(() => (storage.get('crewcheck_language', deviceLocale) as CrewCheckLocale));
+  const [timezone, setTimezone] = useState(() => storage.get('crewcheck_timezone', 'America/Sao_Paulo'));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { getPlatformProfile().then((result) => { setProfile(result.profile); setLocale(result.profile.locale || deviceLocale); setTimezone(result.profile.timezone || 'America/Sao_Paulo'); }).catch(() => undefined); }, []);
+  async function save() {
+    setBusy(true);
+    try {
+      const result = await savePlatformProfile({ locale, timezone });
+      setProfile(result.profile);
+      storage.set('crewcheck_language', locale);
+      storage.set('crewcheck_timezone', timezone);
+      document.documentElement.lang = locale;
+      window.dispatchEvent(new CustomEvent('crewcheck:locale-change', { detail: { locale, timezone } }));
+      toast.success('Idioma e fuso horário salvos na conta.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui salvar idioma e fuso.'); }
+    finally { setBusy(false); }
+  }
+  return <section className="cz-toolbox"><h2>Idioma e fuso horário</h2><p>O primeiro acesso segue o idioma do dispositivo. O padrão operacional é Brasília (UTC−3) e todo texto compatível é tratado em UTF-8.</p><div className="cz-form-grid"><label><span>Idioma</span><select value={locale} onChange={(event) => setLocale(event.target.value as CrewCheckLocale)}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (United States)</option><option value="es-ES">Español</option></select></label><label><span>Fuso do sistema</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="America/Sao_Paulo">Brasília · UTC−3</option><option value={deviceTimezone}>Dispositivo · {deviceTimezone}</option><option value="UTC">UTC</option><option value="America/Manaus">Manaus · UTC−4</option><option value="America/Rio_Branco">Rio Branco · UTC−5</option><option value="America/Noronha">Fernando de Noronha · UTC−2</option><option value="Europe/Lisbon">Lisboa</option><option value="Europe/Madrid">Madri</option><option value="America/New_York">Nova York</option></select></label></div><div className="cz-tool-actions"><button onClick={() => { setLocale(deviceLocale); setTimezone(deviceTimezone); }}><Globe2/> Usar padrão do dispositivo</button><button onClick={save} disabled={busy}><Save/> {busy ? 'Salvando...' : 'Salvar na conta'}</button></div><div className="cz-routine-strip"><span>Conta {profile?.publicId || 'sincronizando'}</span><span>UTF-8</span><span>{locale}</span><span>{timezone}</span></div></section>;
+}
 function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; actions: QuickActions }) {
   const admin = isAdmin();
   const user = getStoredUser();
+  const [planLabel, setPlanLabel] = useState('Verificando assinatura…');
+  useEffect(() => {
+    getPlatformBilling().then((billing) => {
+      const labels: Record<string, string> = { free: 'Plano gratuito', premium_monthly: 'Premium mensal', premium_annual: 'Premium anual', premium_unlimited: 'Premium Unlimited' };
+      setPlanLabel(labels[billing.plan] || 'Plano gratuito');
+    }).catch(() => setPlanLabel('Status da assinatura indisponível'));
+  }, []);
   async function enableMaintenance(enabled: boolean) {
     try {
       const response = await fetch('/api/admin/maintenance', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled, title: 'Site em manutenção', message: 'Estamos realizando melhorias e atualizações no CrewCheck.' }) });
@@ -1855,13 +1945,25 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     } catch { toast.error('Não consegui alterar o modo manutenção.'); }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
-  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{user?.name || 'Bruno Saraiva'}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>Premium</span><b>Beta</b><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/><FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><FieldSetting icon={DollarSign} label="Métrica ACT por KM" storageKey="crewcheck_act_km_metric_brl" placeholder="R$/km"/><FieldSetting icon={DollarSign} label="Adicional chefe por setor" storageKey="crewcheck_act_chief_sector_brl" placeholder="R$"/><FieldSetting icon={BriefcaseBusiness} label="Valor refeição diária" storageKey="crewcheck_perdiem_meal_brl" placeholder="R$"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
+  async function deleteAccount() {
+    if (!confirm('Excluir permanentemente sua conta, escalas, visitantes, hotéis, chat e histórico? Esta ação não pode ser desfeita.')) return;
+    const confirmation = prompt('Para confirmar, digite EXCLUIR') || '';
+    if (confirmation.trim().toUpperCase() !== 'EXCLUIR') { toast.message('Exclusão cancelada.'); return; }
+    try {
+      const result = await deleteCrewCheckAccount(confirmation);
+      if (result.manageGooglePlayUrl && confirm('Os dados foram excluídos. Deseja abrir a Play Store para cancelar a assinatura Google Play separadamente?')) window.open(result.manageGooglePlayUrl, '_blank', 'noopener,noreferrer');
+      try { Object.keys(localStorage).filter((key) => key.startsWith('crewcheck_') || key.startsWith('crewcheck:')).forEach((key) => localStorage.removeItem(key)); } catch {}
+      window.location.assign('/login');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui excluir a conta.'); }
+  }
+  const profileName = String(user?.name || user?.email?.split('@')[0] || storage.get('crewcheck_profile_display_name', '') || 'Tripulante CrewCheck');
+  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><PlatformPreferences/><section className="cz-settings-actions"><button onClick={() => setView('plans')}><ShieldCheck/> Assinaturas e limites</button><button onClick={() => setView('community')}><UserRound/> Pessoas, visitantes e chat</button></section><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/><FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><FieldSetting icon={DollarSign} label="Métrica ACT por KM" storageKey="crewcheck_act_km_metric_brl" placeholder="R$/km"/><FieldSetting icon={DollarSign} label="Adicional chefe por setor" storageKey="crewcheck_act_chief_sector_brl" placeholder="R$"/><FieldSetting icon={BriefcaseBusiness} label="Valor refeição diária" storageKey="crewcheck_perdiem_meal_brl" placeholder="R$"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button><button className="danger" onClick={deleteAccount}><AlertTriangle/> Excluir minha conta</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
 }
 
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{(compliance as any)?.alerts?.length || 0} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {(compliance as any)?.alerts?.length || 0} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
 
@@ -1933,24 +2035,125 @@ function currentWeekBounds() {
   return { start, end };
 }
 
-type ActCompensationConfig = { kmMetric: number; chiefPerSector: number; instructorPerSector: number; nightHourMetric: number; basePay: number; configured: boolean; source: string };
+type ActCompensationConfig = { kmMetric: number; chiefPerSector: number; instructorPerSector: number; nightHourMetric: number; basePay: number; fixedAdditions: number; inssDeduction: number; irrfDeduction: number; otherDeductions: number; fgtsRate: number; configured: boolean; source: string };
 type FlightEarningRow = { id: string; date: string; flight: string; route: string; km: number; metric: number; production: number; chief: number; instructor: number; night: number; total: number; chiefEligible: boolean; source: string };
 function readNumberSetting(key: string, fallback = 0): number { const raw = storage.get(key, String(fallback)).replace(',', '.'); const value = Number(raw); return Number.isFinite(value) ? value : fallback; }
-function loadActCompensationConfig(): ActCompensationConfig { const kmMetric = readNumberSetting('crewcheck_act_km_metric_brl', 0); const chiefPerSector = readNumberSetting('crewcheck_act_chief_sector_brl', 0); const instructorPerSector = readNumberSetting('crewcheck_act_instructor_sector_brl', 0); const nightHourMetric = readNumberSetting('crewcheck_act_night_hour_brl', 0); const basePay = readNumberSetting('crewcheck_salary_base_brl', 0); const configured = kmMetric > 0 || chiefPerSector > 0 || instructorPerSector > 0 || nightHourMetric > 0 || basePay > 0; return { kmMetric, chiefPerSector, instructorPerSector, nightHourMetric, basePay, configured, source: configured ? 'Métrica ACT configurada no app' : 'Configure métrica ACT/Admin' }; }
+function loadActCompensationConfig(): ActCompensationConfig { const kmMetric = readNumberSetting('crewcheck_act_km_metric_brl', 0); const chiefPerSector = readNumberSetting('crewcheck_act_chief_sector_brl', 0); const instructorPerSector = readNumberSetting('crewcheck_act_instructor_sector_brl', 0); const nightHourMetric = readNumberSetting('crewcheck_act_night_hour_brl', 0); const basePay = readNumberSetting('crewcheck_salary_base_brl', 0); const fixedAdditions = readNumberSetting('crewcheck_salary_fixed_additions_brl', 0); const inssDeduction = readNumberSetting('crewcheck_salary_inss_brl', 0); const irrfDeduction = readNumberSetting('crewcheck_salary_irrf_brl', 0); const otherDeductions = readNumberSetting('crewcheck_salary_other_deductions_brl', 0); const fgtsRate = Math.min(100, Math.max(0, readNumberSetting('crewcheck_salary_fgts_rate', 0))); const configured = kmMetric > 0 || chiefPerSector > 0 || instructorPerSector > 0 || nightHourMetric > 0 || basePay > 0 || fixedAdditions > 0; return { kmMetric, chiefPerSector, instructorPerSector, nightHourMetric, basePay, fixedAdditions, inssDeduction, irrfDeduction, otherDeductions, fgtsRate, configured, source: configured ? 'Parâmetros informados pelo usuário' : 'Configure valores do ACT/holerite' }; }
 function normalizeCrewNameForFinance(value: unknown): string { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function currentUserNameTokens(roster: CrewRoster): string[] { const raw = normalizeCrewNameForFinance(getStoredUser()?.name || roster.crewName || ''); return raw.split(' ').filter((part) => part.length >= 3); }
 function firstCrewListed(event: ZeroLeg): string { const crew = Array.isArray(event.crew) ? event.crew : []; return normalizeCrewNameForFinance(crew[0] || ''); }
 function userIsFirstCcm(event: ZeroLeg, roster: CrewRoster): boolean { const first = firstCrewListed(event); if (!first) return false; const tokens = currentUserNameTokens(roster); if (!tokens.length) return false; return tokens.some((token) => first.includes(token)); }
 function flightDistanceKmFromEvent(event: ZeroLeg): number { const from = airportPoint(event.origin); const to = airportPoint(event.destination); if (!from || !to) return 0; return Math.round(routeDistanceKm(from, to)); }
 function perDiemConfig() { const mealRate = readNumberSetting('crewcheck_perdiem_meal_brl', 0); const breakfastRate = readNumberSetting('crewcheck_perdiem_breakfast_brl', mealRate > 0 ? mealRate * 0.25 : 0); const configured = mealRate > 0 || breakfastRate > 0; return { mealRate, breakfastRate, configured }; }
-function calculatePerDiem(events: ZeroLeg[]) { const cfg = perDiemConfig(); const mealRate = cfg.mealRate; const breakfastRate = cfg.breakfastRate || mealRate * 0.25; const rows: Array<{ date: string; label: string; value: number; source: string }> = []; const seen = new Set<string>(); const add = (event: ZeroLeg, label: string, value: number, source: string) => { const key = `${dateChip(event.date)}-${label}-${event.id}`; if (seen.has(key)) return; seen.add(key); rows.push({ date: dateChip(event.date), label, value: cfg.configured ? value : 0, source: cfg.configured ? source : `${source} · configure valores ACT/Admin` }); }; events.filter(isOperationalEvent).forEach((event) => { const start = eventStartDateTime(event); const end = new Date(eventEndDateTime(event).getTime() + 30 * 60 * 1000); const code = `${event.flightNumber} ${(event.day as any)?.type || ''} ${(event.day as any)?.pairingCode || ''}`.toUpperCase(); const isReserve = /\b(RES|RESERVA|RSV)\b/.test(code); if (event.kind === 'stay' || event.hotel) { add(event, 'Almoço pernoite', mealRate, 'Pernoite/hotel'); add(event, 'Jantar pernoite', mealRate, 'Pernoite/hotel'); return; } if (overlapsWindow(start, end, 5, 8)) add(event, 'Café', breakfastRate, '05:00–08:00 · 25%'); if (overlapsWindow(start, end, 11, 13)) add(event, isReserve ? 'Diária reserva · almoço' : 'Almoço', mealRate, '11:00–13:00'); if (overlapsWindow(start, end, 19, 20)) add(event, isReserve ? 'Diária reserva · jantar' : 'Jantar', mealRate, '19:00–20:00'); if (overlapsWindow(start, end, 0, 1)) add(event, 'Ceia', mealRate, '00:00–01:00'); if (isReserve && !rows.some((row) => row.date === dateChip(event.date) && row.label.includes('reserva'))) add(event, 'Diária reserva', mealRate, 'Reserva operacional'); }); const { start, end } = currentWeekBounds(); const monthly = rows.reduce((sum, row) => sum + row.value, 0); const weekly = rows.filter((row) => { const [d, m] = row.date.split('/').map(Number); const date = new Date(new Date().getFullYear(), m - 1, d, 12, 0, 0); return date >= start && date < end; }).reduce((sum, row) => sum + row.value, 0); return { rows, monthly, weekly, mealRate, breakfastRate, configured: cfg.configured }; }
-function calculateSalary(events: ZeroLeg[], roster: CrewRoster) { const cfg = loadActCompensationConfig(); const flightEvents = events.filter((e) => e.kind === 'flight' && !e.placeholder); const instructor = storage.get('crewcheck_instructor', '0') !== '0'; const rows: FlightEarningRow[] = flightEvents.map((event) => { const km = flightDistanceKmFromEvent(event); const production = cfg.kmMetric > 0 ? km * cfg.kmMetric : 0; const chiefEligible = userIsFirstCcm(event, roster); const chief = chiefEligible ? cfg.chiefPerSector : 0; const instructorPay = instructor ? cfg.instructorPerSector : 0; const nightHours = (() => { const start = eventStartDateTime(event); const end = eventEndDateTime(event); let cursor = new Date(start); let night = 0; while (cursor < end) { const next = new Date(Math.min(cursor.getTime() + 30 * 60 * 1000, end.getTime())); const h = cursor.getHours(); if (h >= 22 || h < 5) night += (next.getTime() - cursor.getTime()) / 36e5; cursor = next; } return night; })(); const night = cfg.nightHourMetric > 0 ? nightHours * cfg.nightHourMetric : 0; return { id: event.id, date: dateChip(event.date), flight: safe(event.flightNumber, 'Voo'), route: `${safe(event.origin, '—')} → ${safe(event.destination, '—')}`, km, metric: cfg.kmMetric, production, chief, instructor: instructorPay, night, total: production + chief + instructorPay + night, chiefEligible, source: cfg.configured ? 'KM x métrica ACT configurável' : 'Configure métrica ACT/Admin' }; }); const sectors = flightEvents.length; const kmTotal = rows.reduce((sum, row) => sum + row.km, 0); const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0); const chiefSectors = rows.filter((row) => row.chiefEligible).length; const nightHours = flightEvents.reduce((sum, event) => { const start = eventStartDateTime(event); const end = eventEndDateTime(event); let cursor = new Date(start); let night = 0; while (cursor < end) { const next = new Date(Math.min(cursor.getTime() + 30 * 60 * 1000, end.getTime())); const h = cursor.getHours(); if (h >= 22 || h < 5) night += (next.getTime() - cursor.getTime()) / 36e5; cursor = next; } return sum + night; }, 0); const production = rows.reduce((sum, row) => sum + row.production, 0); const chief = rows.reduce((sum, row) => sum + row.chief, 0); const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0); const night = rows.reduce((sum, row) => sum + row.night, 0); const gross = cfg.basePay + production + chief + instructorPay + night; const inss = gross > 0 ? Math.min(gross * 0.11, 908.85) : 0; const irrfRaw = gross > 4664.68 ? gross * 0.275 - 896 : gross > 2826.65 ? gross * 0.15 - 354.8 : gross > 2259.2 ? gross * 0.075 - 169.44 : 0; const irrf = Math.max(0, irrfRaw); const fgts = gross * 0.08; const net = Math.max(0, gross - inss - irrf); return { rows, sectors, kmTotal, blockHours, chiefSectors, nightHours, production, chief, instructorPay, night, gross, inss, irrf, fgts, net, config: cfg, configured: cfg.configured }; }
+function calculatePerDiem(events: ZeroLeg[]) {
+  const cfg = perDiemConfig();
+  const mealRate = cfg.mealRate;
+  const breakfastRate = cfg.breakfastRate || mealRate * 0.25;
+  const rows: Array<{ date: string; iso: string; label: string; value: number; source: string }> = [];
+  const seen = new Set<string>();
+  const add = (event: ZeroLeg, slot: string, label: string, value: number, source: string) => {
+    const iso = rosterDayIso(event.day) || `${event.date.getFullYear()}-${pad2(event.date.getMonth() + 1)}-${pad2(event.date.getDate())}`;
+    const key = `${iso}-${slot}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ date: dateChip(event.date), iso, label, value: cfg.configured ? value : 0, source: cfg.configured ? source : `${source} · configure valores ACT/Admin` });
+  };
+  events.filter(isOperationalEvent).forEach((event) => {
+    const start = eventStartDateTime(event);
+    const end = new Date(eventEndDateTime(event).getTime() + 30 * 60 * 1000);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return;
+    const code = `${event.flightNumber} ${(event.day as any)?.type || ''} ${(event.day as any)?.pairingCode || ''}`.toUpperCase();
+    const isReserve = /\b(RES|RESERVA|RSV)\b/.test(code);
+    const source = event.kind === 'stay' || event.hotel ? 'Pernoite/hotel na janela' : isReserve ? 'Reserva operacional na janela' : 'Jornada na janela';
+    if (overlapsWindow(start, end, 5, 8)) add(event, 'breakfast', 'Café', breakfastRate, `${source} · 05:00–08:00`);
+    if (overlapsWindow(start, end, 11, 13)) add(event, 'lunch', isReserve ? 'Diária reserva · almoço' : 'Almoço', mealRate, `${source} · 11:00–13:00`);
+    if (overlapsWindow(start, end, 19, 20)) add(event, 'dinner', isReserve ? 'Diária reserva · jantar' : 'Jantar', mealRate, `${source} · 19:00–20:00`);
+    if (overlapsWindow(start, end, 0, 1)) add(event, 'supper', 'Ceia', mealRate, `${source} · 00:00–01:00`);
+    const iso = rosterDayIso(event.day) || `${event.date.getFullYear()}-${pad2(event.date.getMonth() + 1)}-${pad2(event.date.getDate())}`;
+    if (isReserve && !rows.some((row) => row.iso === iso && /reserva/i.test(row.label))) add(event, 'reserve', 'Diária reserva', mealRate, 'Reserva operacional sem outra janela detectada');
+  });
+  const { start, end } = currentWeekBounds();
+  const monthly = rows.reduce((sum, row) => sum + row.value, 0);
+  const weekly = rows.filter((row) => { const date = new Date(`${row.iso}T12:00:00`); return date >= start && date < end; }).reduce((sum, row) => sum + row.value, 0);
+  return { rows, monthly, weekly, mealRate, breakfastRate, configured: cfg.configured };
+}
+function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
+  const cfg = loadActCompensationConfig();
+  const flightEvents = events.filter((event) => event.kind === 'flight' && !event.placeholder);
+  const instructor = storage.get('crewcheck_instructor', '0') !== '0';
+  const nightHoursFor = (event: ZeroLeg) => {
+    const start = eventStartDateTime(event);
+    const end = eventEndDateTime(event);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
+    let cursor = new Date(start); let night = 0;
+    while (cursor < end) {
+      const next = new Date(Math.min(cursor.getTime() + 30 * 60 * 1000, end.getTime()));
+      const hour = cursor.getHours();
+      if (hour >= 22 || hour < 5) night += (next.getTime() - cursor.getTime()) / 36e5;
+      cursor = next;
+    }
+    return night;
+  };
+  const rows: FlightEarningRow[] = flightEvents.map((event) => {
+    const km = flightDistanceKmFromEvent(event);
+    const production = cfg.kmMetric > 0 ? km * cfg.kmMetric : 0;
+    const chiefEligible = userIsFirstCcm(event, roster);
+    const chief = chiefEligible ? cfg.chiefPerSector : 0;
+    const instructorPay = instructor ? cfg.instructorPerSector : 0;
+    const night = cfg.nightHourMetric > 0 ? nightHoursFor(event) * cfg.nightHourMetric : 0;
+    return { id: event.id, date: dateChip(event.date), flight: safe(event.flightNumber, 'Voo'), route: `${safe(event.origin, '—')} → ${safe(event.destination, '—')}`, km, metric: cfg.kmMetric, production, chief, instructor: instructorPay, night, total: production + chief + instructorPay + night, chiefEligible, source: cfg.configured ? 'Escala x parâmetros informados' : 'Configure valores do ACT/holerite' };
+  });
+  const sectors = flightEvents.length;
+  const kmTotal = rows.reduce((sum, row) => sum + row.km, 0);
+  const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
+  const chiefSectors = rows.filter((row) => row.chiefEligible).length;
+  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursFor(event), 0);
+  const production = rows.reduce((sum, row) => sum + row.production, 0);
+  const chief = rows.reduce((sum, row) => sum + row.chief, 0);
+  const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0);
+  const night = rows.reduce((sum, row) => sum + row.night, 0);
+  const gross = cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + night;
+  const inss = Math.max(0, cfg.inssDeduction);
+  const irrf = Math.max(0, cfg.irrfDeduction);
+  const otherDeductions = Math.max(0, cfg.otherDeductions);
+  const fgts = gross * cfg.fgtsRate / 100;
+  const net = Math.max(0, gross - inss - irrf - otherDeductions);
+  return { rows, sectors, kmTotal, blockHours, chiefSectors, nightHours, production, chief, instructorPay, night, gross, inss, irrf, otherDeductions, fgts, net, config: cfg, configured: cfg.configured };
+}
 function PerDiemView({ bundle }: { bundle: BundleState }) { const events = buildLegs(bundle.roster); const [rev, setRev] = useState(0); const forecast = useMemo(() => calculatePerDiem(events), [bundle.roster, rev]); function configure() { const meal = prompt('Valor da refeição diária ACT em R$ (almoço/jantar/ceia)', storage.get('crewcheck_perdiem_meal_brl', '')); if (meal !== null) storage.set('crewcheck_perdiem_meal_brl', meal.replace(',', '.')); const breakfast = prompt('Valor do café em R$ (25% da refeição, se aplicável)', storage.get('crewcheck_perdiem_breakfast_brl', '')); if (breakfast !== null) storage.set('crewcheck_perdiem_breakfast_brl', breakfast.replace(',', '.')); setRev((value) => value + 1); toast.success('Parâmetros de diárias atualizados.'); } return <><Brand back/><section className="cz-panel-head"><h1>Diárias</h1><p>Previsão por janelas LT: café 05–08, almoço 11–13, jantar 19–20 e ceia 00–01. Valores configuráveis por ACT/Admin.</p></section><section className="cz-finance-grid"><KpiCard icon={BriefcaseBusiness} title="Previsão mensal" value={moneyBRL(forecast.monthly)} detail={`${forecast.rows.length} itens previstos`}/><KpiCard icon={CalendarDays} title="Semana atual" value={moneyBRL(forecast.weekly)} detail="fechamento operacional"/><KpiCard icon={Plane} title="Refeição ACT" value={forecast.configured ? moneyBRL(forecast.mealRate) : 'Configurar'} detail={`Café ${forecast.configured ? moneyBRL(forecast.breakfastRate) : '25%'}`}/></section><section className="cz-toolbox"><h2>Parâmetros ACT/Admin</h2><p>{forecast.configured ? 'Valores configurados localmente para estimativa. Não substitui holerite.' : 'Configure os valores ACT para exibir previsão financeira realista.'}</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar diárias</button></div></section><section className="cz-finance-table"><h2>Itens previstos</h2>{forecast.rows.length ? forecast.rows.slice(0, 30).map((row, i) => <div className="cz-finance-row" key={`${row.date}-${row.label}-${i}`}><span>{row.date}</span><strong>{row.label}</strong><small>{row.source}</small><b>{moneyBRL(row.value)}</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem diárias detectadas</h2><p>Carregue uma escala com voos, reservas ou pernoites para calcular automaticamente.</p></article>}</section></>; }
-function SalaryView({ bundle }: { bundle: BundleState }) { const events = buildLegs(bundle.roster); const compliance = currentCompliance(bundle); const [rev, setRev] = useState(0); const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster, rev]); function configureAct() { const metric = prompt('Métrica ACT por KM voado (R$ por KM)', storage.get('crewcheck_act_km_metric_brl', '')); if (metric !== null) storage.set('crewcheck_act_km_metric_brl', metric.replace(',', '.')); const chief = prompt('Adicional chefe por setor (R$)', storage.get('crewcheck_act_chief_sector_brl', '')); if (chief !== null) storage.set('crewcheck_act_chief_sector_brl', chief.replace(',', '.')); const instructor = prompt('Adicional instrutor por setor (R$)', storage.get('crewcheck_act_instructor_sector_brl', '')); if (instructor !== null) storage.set('crewcheck_act_instructor_sector_brl', instructor.replace(',', '.')); const night = prompt('Valor hora noturna estimada (R$)', storage.get('crewcheck_act_night_hour_brl', '')); if (night !== null) storage.set('crewcheck_act_night_hour_brl', night.replace(',', '.')); setRev((value) => value + 1); toast.success('Métrica ACT atualizada.'); } return <><Brand back/><section className="cz-panel-head"><h1>Salário</h1><p>Estimativa por voo com KM voado x métrica ACT configurável, adicional chefe apenas quando você é o primeiro CCM listado e adicionais configuráveis.</p></section><section className="cz-finance-grid"><KpiCard icon={DollarSign} title="Bruto estimado" value={moneyBRL(salary.gross)} detail={salary.configured ? `${salary.kmTotal} km · ${salary.sectors} setores` : 'configure métrica ACT'}/><KpiCard icon={Plane} title="Ganho por voo" value={salary.config.kmMetric ? `${moneyBRL(salary.config.kmMetric)}/km` : 'Configurar'} detail="KM x métrica ACT"/><KpiCard icon={UserRound} title="Chefe/Instrutor" value={moneyBRL(salary.chief + salary.instructorPay)} detail={`${salary.chiefSectors} setor(es) chefe`}/></section><section className="cz-toolbox"><h2>Parâmetros ACT/Admin</h2><p>{salary.configured ? 'Estimativa calculada com os parâmetros configurados no app.' : 'Sem métrica ACT configurada. O CrewCheck não inventa valores: configure R$/km e adicionais para exibir previsão realista.'}</p><div className="cz-tool-actions"><button onClick={configureAct}><Settings/> Configurar métrica ACT</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'crew' }))}><UserRound/> Ver regra de chefe</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' }))}><BriefcaseBusiness/> Ver diárias</button></div></section><section className="cz-finance-table"><h2>Ganhos por voo</h2>{salary.rows.length ? salary.rows.slice(0, 40).map((row) => <div className="cz-finance-row" key={row.id}><span>{row.date}</span><strong>{row.flight} · {row.route}</strong><small>{row.km ? `${row.km} km x ${moneyBRL(row.metric)}/km` : 'KM indisponível'} · {row.chiefEligible ? 'chefe efetivo' : 'sem adicional chefe'} · {row.source}</small><b>{moneyBRL(row.total)}</b></div>) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para estimar ganhos por voo.</p></article>}</section><section className="cz-finance-table"><h2>Composição</h2><div className="cz-finance-row"><span>Produtividade</span><strong>{salary.kmTotal} km</strong><small>KM x métrica ACT</small><b>{moneyBRL(salary.production)}</b></div><div className="cz-finance-row"><span>Chefe</span><strong>1º CCM</strong><small>somente quando você é o primeiro CCM listado</small><b>{moneyBRL(salary.chief)}</b></div><div className="cz-finance-row"><span>Instrutor</span><strong>Perfil</strong><small>{storage.get('crewcheck_instructor','0') !== '0' ? 'ativo' : 'inativo'}</small><b>{moneyBRL(salary.instructorPay)}</b></div><div className="cz-finance-row"><span>Noturno</span><strong>{salary.nightHours.toFixed(1)} h</strong><small>estimado por janela 22–05</small><b>{moneyBRL(salary.night)}</b></div><div className="cz-finance-row muted"><span>INSS</span><strong>estimado</strong><small>não substitui holerite</small><b>-{moneyBRL(salary.inss)}</b></div><div className="cz-finance-row muted"><span>IRRF</span><strong>estimado</strong><small>faixas simplificadas</small><b>-{moneyBRL(salary.irrf)}</b></div><div className="cz-finance-row"><span>FGTS</span><strong>informativo</strong><small>8% estimado</small><b>{moneyBRL(salary.fgts)}</b></div></section><section className="cz-toolbox"><h2>Alertas de impacto</h2><p>{String((compliance as any).alerts?.length || 0)} alerta(s) regulatório(s) podem impactar análise operacional. Valores são estimativos.</p></section></>; }
+function SalaryView({ bundle }: { bundle: BundleState }) { const events = buildLegs(bundle.roster); const compliance = currentCompliance(bundle); const [rev, setRev] = useState(0); const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster, rev]); function configureAct() { const metric = prompt('Métrica ACT por KM voado (R$ por KM)', storage.get('crewcheck_act_km_metric_brl', '')); if (metric !== null) storage.set('crewcheck_act_km_metric_brl', metric.replace(',', '.')); const chief = prompt('Adicional chefe por setor (R$)', storage.get('crewcheck_act_chief_sector_brl', '')); if (chief !== null) storage.set('crewcheck_act_chief_sector_brl', chief.replace(',', '.')); const instructor = prompt('Adicional instrutor por setor (R$)', storage.get('crewcheck_act_instructor_sector_brl', '')); if (instructor !== null) storage.set('crewcheck_act_instructor_sector_brl', instructor.replace(',', '.')); const night = prompt('Valor hora noturna estimada (R$)', storage.get('crewcheck_act_night_hour_brl', '')); if (night !== null) storage.set('crewcheck_act_night_hour_brl', night.replace(',', '.')); setRev((value) => value + 1); toast.success('Métrica ACT atualizada.'); } return <><Brand back/><section className="cz-panel-head"><h1>Salário</h1><p>Estimativa por voo com KM voado x métrica ACT configurável, adicional chefe apenas quando você é o primeiro CCM listado e adicionais configuráveis.</p></section><section className="cz-finance-grid"><KpiCard icon={DollarSign} title="Bruto estimado" value={moneyBRL(salary.gross)} detail={salary.configured ? `${salary.kmTotal} km · ${salary.sectors} setores` : 'configure métrica ACT'}/><KpiCard icon={Plane} title="Ganho por voo" value={salary.config.kmMetric ? `${moneyBRL(salary.config.kmMetric)}/km` : 'Configurar'} detail="KM x métrica ACT"/><KpiCard icon={UserRound} title="Chefe/Instrutor" value={moneyBRL(salary.chief + salary.instructorPay)} detail={`${salary.chiefSectors} setor(es) chefe`}/></section><section className="cz-toolbox"><h2>Parâmetros ACT/Admin</h2><p>{salary.configured ? 'Estimativa calculada com os parâmetros configurados no app.' : 'Sem métrica ACT configurada. O CrewCheck não inventa valores: configure R$/km e adicionais para exibir previsão realista.'}</p><div className="cz-tool-actions"><button onClick={configureAct}><Settings/> Configurar métrica ACT</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'crew' }))}><UserRound/> Ver regra de chefe</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' }))}><BriefcaseBusiness/> Ver diárias</button></div></section><section className="cz-finance-table"><h2>Ganhos por voo</h2>{salary.rows.length ? salary.rows.slice(0, 40).map((row) => <div className="cz-finance-row" key={row.id}><span>{row.date}</span><strong>{row.flight} · {row.route}</strong><small>{row.km ? `${row.km} km x ${moneyBRL(row.metric)}/km` : 'KM indisponível'} · {row.chiefEligible ? 'chefe efetivo' : 'sem adicional chefe'} · {row.source}</small><b>{moneyBRL(row.total)}</b></div>) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para estimar ganhos por voo.</p></article>}</section><section className="cz-finance-table"><h2>Composição</h2><div className="cz-finance-row"><span>Produtividade</span><strong>{salary.kmTotal} km</strong><small>KM x métrica ACT</small><b>{moneyBRL(salary.production)}</b></div><div className="cz-finance-row"><span>Chefe</span><strong>1º CCM</strong><small>somente quando você é o primeiro CCM listado</small><b>{moneyBRL(salary.chief)}</b></div><div className="cz-finance-row"><span>Instrutor</span><strong>Perfil</strong><small>{storage.get('crewcheck_instructor','0') !== '0' ? 'ativo' : 'inativo'}</small><b>{moneyBRL(salary.instructorPay)}</b></div><div className="cz-finance-row"><span>Noturno</span><strong>{salary.nightHours.toFixed(1)} h</strong><small>estimado por janela 22–05</small><b>{moneyBRL(salary.night)}</b></div><div className="cz-finance-row muted"><span>INSS</span><strong>estimado</strong><small>não substitui holerite</small><b>-{moneyBRL(salary.inss)}</b></div><div className="cz-finance-row muted"><span>IRRF</span><strong>estimado</strong><small>faixas simplificadas</small><b>-{moneyBRL(salary.irrf)}</b></div><div className="cz-finance-row"><span>FGTS</span><strong>informativo</strong><small>8% estimado</small><b>{moneyBRL(salary.fgts)}</b></div></section><section className="cz-toolbox"><h2>Alertas de impacto</h2><p>{String(actionableComplianceAlerts(compliance).length)} alerta(s) regulatório(s) podem impactar análise operacional. Valores são estimativos.</p></section></>; }
+
+function SalaryReliableView({ bundle }: { bundle: BundleState }) {
+  const events = buildLegs(bundle.roster);
+  const compliance = currentCompliance(bundle);
+  const [revision, setRevision] = useState(0);
+  const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster, revision]);
+  function askValue(key: string, label: string) {
+    const value = prompt(label, storage.get(key, ''));
+    if (value !== null) storage.set(key, value.replace(',', '.'));
+  }
+  function configure() {
+    askValue('crewcheck_salary_base_brl', 'Salário-base bruto informado no holerite (R$)');
+    askValue('crewcheck_salary_fixed_additions_brl', 'Outros adicionais fixos do mês (R$)');
+    askValue('crewcheck_act_km_metric_brl', 'Métrica ACT por KM voado (R$/km)');
+    askValue('crewcheck_act_chief_sector_brl', 'Adicional de chefe por setor (R$)');
+    askValue('crewcheck_act_instructor_sector_brl', 'Adicional de instrutor por setor (R$)');
+    askValue('crewcheck_act_night_hour_brl', 'Valor de hora noturna usado na sua previsão (R$/h)');
+    askValue('crewcheck_salary_inss_brl', 'INSS do último holerite ou previsão informada (R$)');
+    askValue('crewcheck_salary_irrf_brl', 'IRRF do último holerite ou previsão informada (R$)');
+    askValue('crewcheck_salary_other_deductions_brl', 'Outros descontos previstos (R$)');
+    askValue('crewcheck_salary_fgts_rate', 'Alíquota de FGTS apenas informativa (%) — deixe 0 para não calcular');
+    setRevision((value) => value + 1);
+    toast.success('Parâmetros financeiros atualizados.');
+  }
+  const variable = salary.production + salary.chief + salary.instructorPay + salary.night;
+  const deductions = salary.inss + salary.irrf + salary.otherDeductions;
+  return <><Brand back/><section className="cz-panel-head"><h1>Salário</h1><p>Previsão auditável: dados da escala multiplicados somente por valores informados por você. O CrewCheck não aplica tabela fiscal presumida.</p></section><section className="cz-finance-grid"><KpiCard icon={DollarSign} title="Bruto previsto" value={salary.configured ? moneyBRL(salary.gross) : 'Configurar'} detail={`${salary.kmTotal} km · ${salary.sectors} setores`}/><KpiCard icon={DollarSign} title="Líquido previsto" value={salary.configured ? moneyBRL(salary.net) : 'Configurar'} detail={`${moneyBRL(deductions)} em descontos informados`}/><KpiCard icon={Plane} title="Parcela variável" value={moneyBRL(variable)} detail="produtividade + adicionais detectados"/></section><section className="cz-toolbox"><h2>Parâmetros do ACT e holerite</h2><p>{salary.configured ? salary.config.source : 'Informe salário-base, métricas e descontos. Campos sem informação ficam zerados, sem valores inventados.'}</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar salário e descontos</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'crew' }))}><UserRound/> Ver regra de chefe</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' }))}><BriefcaseBusiness/> Ver diárias</button></div></section><section className="cz-finance-table"><h2>Ganhos variáveis por voo</h2>{salary.rows.length ? salary.rows.slice(0, 40).map((row) => <div className="cz-finance-row" key={row.id}><span>{row.date}</span><strong>{row.flight} · {row.route}</strong><small>{row.km ? `${row.km} km x ${moneyBRL(row.metric)}/km` : 'distância indisponível'} · {row.chiefEligible ? '1º CCM identificado' : 'sem adicional de chefe'} · {row.source}</small><b>{moneyBRL(row.total)}</b></div>) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para relacionar os setores aos parâmetros informados.</p></article>}</section><section className="cz-finance-table"><h2>Composição rastreável</h2><div className="cz-finance-row"><span>Salário-base</span><strong>Informado</strong><small>valor salvo por você</small><b>{moneyBRL(salary.config.basePay)}</b></div><div className="cz-finance-row"><span>Adicionais fixos</span><strong>Informados</strong><small>valor salvo por você</small><b>{moneyBRL(salary.config.fixedAdditions)}</b></div><div className="cz-finance-row"><span>Produtividade</span><strong>{salary.kmTotal} km</strong><small>distância geodésica x métrica informada</small><b>{moneyBRL(salary.production)}</b></div><div className="cz-finance-row"><span>Chefe / instrutor</span><strong>{salary.chiefSectors} setor(es)</strong><small>regra de 1º CCM e perfil de instrutor</small><b>{moneyBRL(salary.chief + salary.instructorPay)}</b></div><div className="cz-finance-row"><span>Noturno</span><strong>{salary.nightHours.toFixed(1)} h</strong><small>janela operacional 22–05 x valor informado</small><b>{moneyBRL(salary.night)}</b></div><div className="cz-finance-row muted"><span>INSS</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.inss)}</b></div><div className="cz-finance-row muted"><span>IRRF</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.irrf)}</b></div><div className="cz-finance-row muted"><span>Outros descontos</span><strong>Informados</strong><small>benefícios, consignados ou ajustes</small><b>-{moneyBRL(salary.otherDeductions)}</b></div>{salary.config.fgtsRate > 0 && <div className="cz-finance-row"><span>FGTS</span><strong>{salary.config.fgtsRate}% informados</strong><small>informativo; não descontado do líquido</small><b>{moneyBRL(salary.fgts)}</b></div>}</section><section className="cz-toolbox"><h2>Confiabilidade</h2><p>{actionableComplianceAlerts(compliance).length} alerta(s) operacional(is) válido(s). A previsão financeira não substitui ACT, espelho de voo, holerite, contabilidade ou folha da empresa.</p></section></>;
+}
 
 function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{(compliance as any).alerts?.length || 0}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
 }
 function CalendarToolsView({ actions, bundle, gym }: { actions: QuickActions; bundle: BundleState; gym: any[] }) {
   const [calendars, setCalendars] = useState<GoogleCalendarOption[]>([]);
@@ -2043,9 +2246,11 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   const presentation = safe(event.presentation, 'A confirmar');
 
   useEffect(() => {
-    fetch('/api/alarm/health', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then(setHealth)
+    Promise.all([
+      fetch('/api/alarm/health', { cache: 'no-store' }).then((r) => r.json()),
+      getPlatformBilling().catch(() => null),
+    ])
+      .then(([alarm, billing]) => setHealth({ ...(alarm || {}), usage: billing?.usage || null }))
       .catch(() => setHealth({ ok: false, message: 'Despertador aguardando conexão.' }));
   }, []);
 
@@ -2070,7 +2275,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
       });
       if (payload?.ok) toast.success(payload.message || 'Teste enviado.');
       else toast.message(payload?.message || 'Canal aguardando configuração.');
-      setHealth((current: any) => ({ ...(current || {}), ...(payload?.health || {}), lastTest: payload }));
+      setHealth((current: any) => ({ ...(current || {}), ...(payload?.health || {}), usage: payload?.usage || current?.usage || null, lastTest: payload }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui testar o despertador agora.');
     } finally {
@@ -2098,7 +2303,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
     window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagem e ligação via Telegram para todos os usuários; teste de ligação telefônica protegido para o administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={health?.message || 'Verificando configuração'}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar a mensagem e a ligação via Telegram. A ligação telefônica de teste usa as credenciais seguras do servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Teste de ligação do admin'}</button>}<button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div></section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? 'Ligação admin configurada' : 'Ligação admin aguardando canal'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>Ligação Telegram gratuita</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={health?.message || 'Verificando configuração'}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais do servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Teste de ligação do admin'}</button>}<button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div></section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? 'Ligação admin configurada' : 'Ligação admin aguardando canal'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
 }
 
 function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
@@ -2131,7 +2336,29 @@ function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
 
 function HotelsView({ events }: { events: ZeroLeg[] }) {
   const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
-  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites, descanso, entorno operacional e academias próximas ao hotel.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); return <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => openFitnessSearch(loc, 'academia Smart Fit Wellhub')}><Dumbbell/> Academias próximas</button><button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`restaurante mercado farmácia lavanderia perto de ${loc}`)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Entorno</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div><div className="cz-routine-strip"><span>Descanso</span><span>Wake-up</span><span>Academia</span><span>Restaurante</span><span>Mercado</span><span>Farmácia</span><span>Lavanderia</span></div></article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
+  const [saved, setSaved] = useState<any[]>([]);
+  const [companions, setCompanions] = useState<Record<string, any[]>>({});
+  const refresh = () => listPlatformStays().then((payload) => setSaved(payload.stays || [])).catch(() => undefined);
+  useEffect(() => { refresh(); }, []);
+  function savedFor(event: ZeroLeg) { const date = rosterDayIso(event.day); const name = safe(event.hotel, `Hotel em ${city(event.destination)}`); return saved.find((item) => String(item.stayDate || '').slice(0, 10) === date && String(item.hotelName || '').toLocaleLowerCase() === name.toLocaleLowerCase()) || saved.find((item) => String(item.stayDate || '').slice(0, 10) === date); }
+  async function edit(event: ZeroLeg) {
+    const current = savedFor(event);
+    const hotelName = prompt('Hotel do pernoite', current?.hotelName || safe(event.hotel, `Hotel em ${city(event.destination)}`)); if (hotelName === null || !hotelName.trim()) return;
+    const room = prompt('Número do quarto (criptografado e privado)', current?.room || ''); if (room === null) return;
+    const presentationTime = prompt('Horário de apresentação/saída no hotel', current?.presentationTime || safe(event.presentation, '')); if (presentationTime === null) return;
+    const leadText = prompt('Quantos minutos este hotel costuma anteceder a apresentação? (aprender padrão)', String(current?.leadMinutes || 90)); if (leadText === null) return;
+    const shareSameHotel = confirm('Deseja aparecer, sem número do quarto, para colegas no mesmo hotel e data?');
+    const shareWithVisitors = confirm('Deseja compartilhar este hotel com visitantes que tenham permissão?');
+    try {
+      await updatePlatformStay({ id: current?.id, stayDate: rosterDayIso(event.day), hotelName, airport: event.destination || event.origin, room, presentationTime, leadMinutes: Number(leadText), learnRule: true, shareSameHotel, shareWithVisitors });
+      await refresh(); toast.success('Card de pernoite salvo no banco e aprendizado atualizado.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui salvar o pernoite.'); }
+  }
+  async function loadCompanions(event: ZeroLeg) {
+    const current = savedFor(event); if (!current?.hotelKey) return toast.info('Salve primeiro este pernoite para consultar colegas.');
+    try { const payload = await findHotelCompanions(current.hotelKey, String(current.stayDate).slice(0, 10)); setCompanions((state) => ({ ...state, [event.id]: payload.companions || [] })); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui consultar colegas.'); }
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis e pernoites</h1><p>Tabela da escala, quarto privado, apresentação aprendida por hotel e presença opcional de colegas.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); const current = savedFor(e); const people = companions[e.id] || []; return <article className="cz-roster-card cz-hotel-stay-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{current?.hotelName || safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-detail-grid"><div><span>Quarto</span><strong>{current?.room || 'Privado · não informado'}</strong></div><div><span>Apresentação no hotel</span><strong>{current?.presentationTime || safe(e.presentation, 'A confirmar')}</strong></div><div><span>Antecedência aprendida</span><strong>{current?.leadMinutes ? `${current.leadMinutes} min` : 'Ainda não aprendida'}</strong></div><div><span>Compartilhamento</span><strong>{current?.shareSameHotel ? 'Colegas no mesmo hotel' : 'Somente você'} · {current?.shareWithVisitors ? 'visitantes autorizados' : 'visitantes sem acesso'}</strong></div></div><div className="cz-tool-actions"><button onClick={() => edit(e)}><Save/> Editar pernoite</button><button onClick={() => loadCompanions(e)}><UserRound/> Quem está neste hotel</button><button onClick={() => openFitnessSearch(loc, 'academia Wellhub parceira aberta agora')}><Dumbbell/> Academias próximas</button><button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`restaurante mercado farmácia lavanderia perto de ${loc}`)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Entorno</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div>{people.length > 0 && <div className="cz-routine-strip">{people.map((person) => <span key={person.publicId}>{person.displayName} · {person.publicId}</span>)}</div>}{companions[e.id] && !people.length && <p className="cz-mini-status">Nenhum colega optou por compartilhar presença neste hotel e data.</p>}</article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
 }
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
@@ -2149,8 +2376,11 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   const target = stays[0] || events.find((e) => !e.placeholder) || placeholderLeg();
   const location = hotelSearchLocation(target);
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
+  const [crowding, setCrowding] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'ambos'));
+  const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'wellhub'));
+  const [onlyOpen, setOnlyOpen] = useState(() => storage.get('crewcheck:gym-only-open', '1') !== '0');
+  const partnerChains = ['Selfit', 'Panobianco', 'Bluefit', 'Corpo e Saúde', 'Pratique', 'Fórmula', 'Bodytech', 'Fábrica de Monstros', 'Ultra'];
   function choosePlan(value: string) {
     setPlan(value);
     storage.set('crewcheck:gym-provider-plan', value);
@@ -2158,9 +2388,10 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   async function search() {
     setLoading(true);
     try {
-      const query = plan === 'wellhub' ? 'academia Wellhub Gympass fitness' : plan === 'smartfit' ? 'Smart Fit academia' : 'academia Smart Fit Wellhub fitness';
+      const query = plan === 'wellhub' ? `${partnerChains.join(' ')} academia parceira Wellhub` : plan === 'smartfit' ? 'Smart Fit academia' : `${partnerChains.join(' ')} Smart Fit academia`;
       const found = await fetchNearbyFitnessPlaces(location, query);
       setPlaces(found);
+      listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
       if (!found.length) toast.message('Não encontrei lista interna agora. Abrindo busca no Google Maps continua disponível.');
     } finally {
       setLoading(false);
@@ -2168,7 +2399,14 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   }
   useEffect(() => { search(); }, [location, plan]);
   const planLabel = plan === 'wellhub' ? 'Wellhub' : plan === 'smartfit' ? 'Smart Fit' : 'Wellhub + Smart Fit';
-  return <><Brand back/><section className="cz-panel-head"><h1>Academias</h1><p>Recomendações próximas ao hotel ou cidade do pernoite, filtradas pelo seu plano e pela situação da próxima jornada.</p></section><section className="cz-toolbox"><h2>Plano e local</h2><p>{planLabel} · {location}</p><div className="cz-tool-actions"><button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Wellhub + Smart Fit</button><button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button><button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button></div><div className="cz-tool-actions"><button onClick={search} disabled={loading}><Dumbbell/> Atualizar recomendações</button><button onClick={() => openFitnessSearch(location, planLabel + ' academia')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><ShieldCheck/> Rotina sugerida</button></div></section><section className="cz-stack-list">{places.length ? places.map((place, index) => <article className="cz-roster-card" key={`${place.name}-${index}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.openNow === true ? 'Aberta agora · ' : place.openNow === false ? 'Fechada agora · ' : ''}{place.rating ? `Avaliação ${place.rating}` : 'Confira disponibilidade'} · confirme o convênio no app do plano</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + location)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir</button></div></article>) : <article className="cz-empty-real"><Dumbbell/><h2>Busca pronta</h2><p>Configure a chave de mapas/locais no ambiente para listar academias dentro do app. Enquanto isso, use “Abrir no Google Maps”.</p></article>}</section></>;
+  const visiblePlaces = places.filter((place) => !onlyOpen || place.openNow !== false).sort((a, b) => { const partner = (place: NearbyPlace) => partnerChains.some((chain) => String(place.name || '').toLocaleLowerCase().includes(chain.toLocaleLowerCase())) ? 1 : 0; return partner(b) - partner(a) || Number(b.openNow === true) - Number(a.openNow === true) || Number(b.rating || 0) - Number(a.rating || 0); });
+  async function checkIn(place: NearbyPlace) {
+    const chain = partnerChains.find((item) => String(place.name || '').toLocaleLowerCase().includes(item.toLocaleLowerCase())) || '';
+    const sharePresence = confirm('Deseja compartilhar temporariamente com colegas que você está nesta academia?');
+    try { const payload = await gymCheckIn({ gymName: place.name, chainName: chain, location, sharePresence, durationMinutes: 90 }); setCrowding(payload.gyms || []); toast.success(sharePresence ? 'Check-in compartilhado por até 90 minutos.' : 'Check-in privado registrado por até 90 minutos.'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui registrar o check-in.'); }
+  }
+  function crowdFor(place: NearbyPlace) { return crowding.find((item) => String(item.gymName || '').toLocaleLowerCase() === String(place.name || '').toLocaleLowerCase()); }
+  return <><Brand back/><section className="cz-panel-head"><h1>Academias e Wellhub</h1><p>Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia. Confirme elegibilidade no aplicativo Wellhub antes de sair.</p></section><section className="cz-toolbox"><h2>Convênio, redes e local</h2><p>{planLabel} · {location}</p><div className="cz-routine-strip">{partnerChains.map((chain) => <span key={chain}>{chain}</span>)}</div><div className="cz-tool-actions"><button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Wellhub + Smart Fit</button><button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button><button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button><button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertas' : 'Mostrar fechadas'}</button></div><div className="cz-tool-actions"><button onClick={search} disabled={loading}><Dumbbell/> Atualizar recomendações</button><button onClick={() => openFitnessSearch(location, planLabel + ' academia aberta agora')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><ShieldCheck/> Rotina sugerida</button></div></section><section className="cz-stack-list">{visiblePlaces.length ? visiblePlaces.map((place, index) => { const chain = partnerChains.find((item) => String(place.name || '').toLocaleLowerCase().includes(item.toLocaleLowerCase())); const crowd = crowdFor(place); return <article className="cz-roster-card" key={`${place.name}-${index}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.openNow === true ? 'Aberta agora · ' : place.openNow === false ? 'Fechada agora · ' : 'Horário a confirmar · '}{place.rating ? `Avaliação ${place.rating}` : 'Confira disponibilidade'} · {chain ? `rede parceira pesquisada: ${chain}` : 'confirme parceria no app Wellhub'} · {crowd?.crowdLabel || 'sem relatos de lotação'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + location)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir</button><button onClick={() => checkIn(place)}><UserRound/> Estou nesta academia</button></div></article>; }) : <article className="cz-empty-real"><Dumbbell/><h2>{onlyOpen && places.length ? 'Nenhuma academia aberta na busca atual' : 'Busca pronta'}</h2><p>{onlyOpen && places.length ? 'Desative “Somente abertas” para ver todas as opções.' : 'Configure a busca de locais no ambiente para listar academias dentro do app. Enquanto isso, use “Abrir no Google Maps”.'}</p></article>}</section><section className="cz-toolbox"><h2>Lotação colaborativa</h2><p>A estimativa usa somente check-ins voluntários que expiram automaticamente. Não é dado oficial da academia nem do Wellhub e nunca deve ser apresentada como lotação exata.</p></section></>;
 }
 
 function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleState; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
@@ -2384,6 +2622,8 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'iflight' || value === 'push-iflight') return 'iflight';
   if (value === 'database') return 'database';
   if (value === 'updates' || value === 'atualizacoes' || value === 'atualizações') return 'updates';
+  if (value === 'plans' || value === 'assinaturas' || value === 'subscription') return 'plans';
+  if (value === 'community' || value === 'pessoas' || value === 'visitantes' || value === 'chat') return 'community';
   if (value === 'crew') return 'crew';
   return 'cockpit';
 }
@@ -2502,7 +2742,7 @@ body.crewcheck-menu-open {
 export default function Home() {
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ZeroView>(() => normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -2574,6 +2814,7 @@ export default function Home() {
       storage.set('crewcheck_last_pdf_import_source', parsed.source);
       setBundle({ roster, compliance: newCompliance, source: file.name });
       syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
+      syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
       sessionStorage.setItem('crewcheck_force_view_once', 'roster');
       setView('roster');
       toast.success(`${decision.toastText || 'Escala real importada e detalhes liberados.'}${parsed.source === 'server-fallback' ? ' Leitura alternativa concluída.' : ''}`);
@@ -2598,7 +2839,7 @@ export default function Home() {
     email: async () => { const to = window.prompt('Enviar relatório com PDF para qual e-mail?') || ''; if (!to.trim()) return; try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await sendRosterByEmail({ to: to.trim(), roster: bundle.roster, compliance, gym, attachment: { fileName: pdf.fileName, blob: pdf.blob } }); toast.success(result.message || `Relatório e PDF enviados para ${to.trim()}.`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui enviar o relatório pelo CrewCheck.'); } },
     sharePdf: async () => { try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); toast.success(result === 'shared' ? 'PDF compartilhado.' : 'PDF salvo para compartilhar.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
-    save: () => { saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any).then(()=>toast.success('Escala salva no histórico.')).catch(()=>toast.error('Não consegui salvar no histórico agora.')); },
+    save: () => { Promise.allSettled([saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any), syncPlatformRoster(bundle.roster, compliance, bundle.source)]).then((results) => results.some((result) => result.status === 'fulfilled') ? toast.success('Escala salva e sincronização atualizada.') : toast.error('Não consegui salvar no histórico agora.')); },
     openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
     logout: () => { logout().finally(() => { window.location.href = '/login'; }); },
     replayIntro: () => { storage.set('crewcheck_intro_seen_v1278', '0'); setShowIntro(true); },
@@ -2621,11 +2862,13 @@ export default function Home() {
     {view === 'maintenance' && <MaintenancePreview/>}
     {view === 'import' && <ImportPanel onUpload={actions.upload} onConcierge={() => setView('concierge')}/>}
     {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>}
+    {view === 'plans' && <PlatformCenter mode="plans" onBack={() => setView('cockpit')}/>} 
+    {view === 'community' && <PlatformCenter mode="community" rosterKey={`${Number(bundle.roster.year || 0)}-${String(Number(bundle.roster.month || 0)).padStart(2, '0')}`} onBack={() => setView('cockpit')} onEmailPdf={actions.email}/>} 
     {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
     {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
-    {view === 'salary' && <SalaryView bundle={bundle}/>}
+    {view === 'salary' && <SalaryReliableView bundle={bundle}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
     {view === 'load' && <LoadView bundle={bundle}/>}
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
@@ -2638,6 +2881,6 @@ export default function Home() {
     {view === 'map' && <MonthlyMapView events={events} actions={actions}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={Number((compliance as any)?.alerts?.length || 0)} alertSignature={complianceAlertSignature(compliance)}/>
+    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(compliance).length} alertSignature={complianceAlertSignature(compliance)}/>
   </main>;
 }
