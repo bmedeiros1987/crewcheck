@@ -963,7 +963,7 @@ function asaasEventStatus(eventName) {
   if (['PAYMENT_OVERDUE'].includes(event)) return 'past_due';
   if (['PAYMENT_REFUNDED', 'PAYMENT_REFUND_IN_PROGRESS'].includes(event)) return 'refunded';
   if (['PAYMENT_DELETED', 'SUBSCRIPTION_DELETED', 'SUBSCRIPTION_INACTIVATED'].includes(event)) return 'canceled';
-  return 'pending';
+  return null;
 }
 
 async function handleAsaasWebhook(req, res) {
@@ -988,6 +988,7 @@ async function handleAsaasWebhook(req, res) {
     return sendJson(res, 503, { ok: false, message: 'Assinatura ainda não conciliada; tente novamente.' });
   }
   const status = asaasEventStatus(eventName);
+  if (!status) return sendJson(res, 200, { ok: true, ignored: true, message: 'Evento informativo registrado sem alterar a assinatura.' });
   const due = parseDateOnly(body.payment?.confirmedDate || body.payment?.clientPaymentDate || body.payment?.paymentDate || body.payment?.dueDate || body.dateCreated);
   const periodEnd = due ? new Date(`${due}T12:00:00.000Z`) : new Date();
   periodEnd.setUTCDate(periodEnd.getUTCDate() + (subscription.plan === 'premium_annual' ? 366 : 31));
