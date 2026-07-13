@@ -27,6 +27,7 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
       - run: npm run build
       - run: npm run regression:v13.8.0:platform
@@ -94,7 +95,7 @@ jobs:
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           keytool -printcert -jarfile "$source_aab" >/dev/null
           unzip -Z1 "$source_aab" > "$RUNNER_TEMP/aab-entries.txt"
-          if ! grep -Eq '^META-INF/[^/]+\\.(RSA|DSA|EC)$' "$RUNNER_TEMP/aab-entries.txt"; then
+          if ! grep -Eq '^META-INF/[^/]+\.(RSA|DSA|EC)$' "$RUNNER_TEMP/aab-entries.txt"; then
             echo "::error::O AAB não contém o bloco criptográfico da assinatura."
             exit 1
           fi
