@@ -2160,6 +2160,7 @@ async function handleTelegramLinkStatus(req, res, url) {
   if (!linked && email) linked = data.linked?.[email] || null;
   if (!linked && code) linked = await conciergeDbGet(`link-code:${code}`);
   if (!linked && email) linked = await telegramLinkedRecordForEmail(email);
+  if (linked && email && conciergeSafeKey(linked.email) !== conciergeSafeKey(email)) linked = null;
   const snapshot = linked?.email ? await conciergeLoadSnapshot({ email: linked.email, chatId: linked.chatId }) : (email ? await conciergeLoadSnapshot({ email }) : null);
   return sendJson(res, 200, {
     ok: Boolean(linked?.chatId),
@@ -2369,8 +2370,12 @@ function handleTelegramHealth(req, res) {
 async function handleTelegramSend(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Envio do concierge pronto.' });
   const payload = await readJsonBody(req);
-  const linkedChatId = payload.email ? await telegramLinkedChatIdForEmailAsync(payload.email) : '';
-  const chatId = String(payload.chatId || payload.chat_id || linkedChatId || telegramDefaultChatId() || '').trim();
+  const user = telegramRequestUser(req, payload);
+  if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para enviar pelo Concierge.' });
+  const linkedChatId = await telegramLinkedChatIdForEmailAsync(user.email);
+  const admin = Boolean(typeof cc1371IsAdmin === 'function' && cc1371IsAdmin(user.email));
+  const requestedChatId = admin ? String(payload.chatId || payload.chat_id || '') : '';
+  const chatId = String(requestedChatId || linkedChatId || (admin ? telegramDefaultChatId() : '') || '').trim();
   const text = String(payload.text || payload.message || '').trim();
   if (!text) return sendJson(res, 400, { ok: false, message: 'Mensagem vazia.' });
   const result = await sendTelegramMessage(chatId, text);
