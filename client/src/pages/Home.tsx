@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.12';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.12: áudio Telegram usa ElevenLabs STT';
+const DEFAULT_VERSION = '13.7.13';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.13: layout premium, cards largos e menu com perfil';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1204,6 +1204,26 @@ function UpdateCenterView() {
 
 
 function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; close: () => void; view: ZeroView; setView: (v: ZeroView) => void; actions: QuickActions }) {
+  const storedUser = getStoredUser();
+  const [profileName] = useState(() => storage.get('crewcheck_profile_display_name', String(storedUser?.name || storedUser?.email || 'Tripulante CrewCheck')));
+  const [profileAvatar, setProfileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
+  const initials = profileName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'CC';
+  function openProfile() { setView('settings'); close(); }
+  function handleProfileAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Escolha uma imagem para o perfil.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = String(reader.result || '');
+      if (!data) return;
+      storage.set('crewcheck_profile_avatar', data);
+      setProfileAvatar(data);
+      toast.success('Foto do perfil atualizada.');
+    };
+    reader.onerror = () => toast.error('Não consegui ler a foto.');
+    reader.readAsDataURL(file);
+  }
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
@@ -1215,7 +1235,21 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   return <div className="cz-menu-overlay" role="dialog" aria-modal="true">
     <button className="cz-menu-backdrop" onClick={close} aria-label="Fechar menu" />
     <aside className="cz-menu-panel" data-crew-menu-panel="true" onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
-      <header><div><span className="cz-logo"><Plane size={24}/></span><strong>Menu CrewCheck</strong><small>Todos os sistemas funcionais · Versão {DEFAULT_VERSION}</small></div><button onClick={close}><X/></button></header>
+      <header className="cz-menu-header">
+        <div className="cz-menu-head-main">
+          <span className="cz-logo"><Plane size={24}/></span>
+          <strong>Menu CrewCheck</strong>
+          <button className="cz-menu-user" onClick={openProfile} type="button" aria-label="Abrir perfil">
+            <span className="cz-menu-avatar">{profileAvatar ? <img src={profileAvatar} alt="" /> : initials}</span>
+            <span><b>{profileName}</b><small>Perfil · versão {DEFAULT_VERSION}</small></span>
+          </button>
+          <label className="cz-menu-photo-pill">
+            Foto
+            <input hidden type="file" accept="image/*" onChange={handleProfileAvatar}/>
+          </label>
+        </div>
+        <button className="cz-menu-close" onClick={close} aria-label="Fechar menu"><X/></button>
+      </header>
       <div className="cz-menu-scroll" data-crew-menu-scroll="true">
       <section className="cz-menu-section"><h3>Navegação</h3>{nav.map(([v, label, desc, Icon]) => <button key={v} className={view === v ? 'active' : ''} onClick={() => jump(v)}><Icon/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight/></button>)}</section>
       <section className="cz-menu-section"><h3>Ações rápidas</h3>

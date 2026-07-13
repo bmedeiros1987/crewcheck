@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.7.12",
+  "version": "13.7.13",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.7.12 — ElevenLabs STT provider",
+  "description": "CrewCheck v13.7.13 — Premium UI Layout Guard",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -90,7 +90,8 @@
     "regression:v13.7.9:telegram-human-voice": "node scripts/regression-v13-7-9-telegram-human-voice.mjs",
     "regression:v13.7.10:app-route-guard": "node scripts/regression-v13-7-10-app-route-guard.mjs",
     "regression:v13.7.11:elevenlabs-exclusive": "node scripts/regression-v13-7-11-elevenlabs-exclusive-tts.mjs",
-    "regression:v13.7.12:elevenlabs-stt": "node scripts/regression-v13-7-12-elevenlabs-stt-provider.mjs"
+    "regression:v13.7.12:elevenlabs-stt": "node scripts/regression-v13-7-12-elevenlabs-stt-provider.mjs",
+    "regression:v13.7.13:premium-ui": "node scripts/regression-v13-7-13-premium-ui-layout-guard.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
