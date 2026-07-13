@@ -338,7 +338,8 @@ async function handleRadar(req, res, url) {
   const destination = String(url.searchParams.get('destination') || '').trim();
   if (!ctx.raw) return sendJson(res, 200, { ok: false, configured: false, message: 'Voo não identificado na escala.', quality: 0 });
   const payload = await runRadarRace(ctx, origin, destination);
-  const email = conciergeSafeKey(url.searchParams.get('email') || '');
+  const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '' });
+  const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
   let exportedToConcierge = false;
   if (email) {
     const profile = { email, name: String(url.searchParams.get('name') || '') };
@@ -1964,6 +1965,7 @@ async function handleParsePdfApi(req, res) {
 async function handleTelegramRosterSync(req, res, url) {
   const body = req.method === 'POST' ? await readJsonBody(req, 6_000_000) : { email: String(url?.searchParams?.get('email') || ''), name: String(url?.searchParams?.get('name') || '') };
   const user = telegramRequestUser(req, body);
+  if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para sincronizar a escala com o Concierge.' });
   const chatId = await telegramLinkedChatIdForEmailAsync(user.email);
   const profile = { ...user, chatId, linked: Boolean(chatId) };
   if (req.method === 'DELETE') {
@@ -1986,6 +1988,7 @@ async function handleTelegramConciergeAsk(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, commands: ['/hoje','/amanha','/proximo','/escala','/radar','/saida','/metar','/hoteis','/academias','/rotina','/diarias','/conformidade'], message: 'Concierge pronto.' });
   const body = await readJsonBody(req, 1_000_000);
   const user = telegramRequestUser(req, body);
+  if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para consultar o Concierge no app.' });
   const chatId = await telegramLinkedChatIdForEmailAsync(user.email);
   const profile = { ...user, chatId, linked: Boolean(chatId) };
   let snapshot = await conciergeLoadSnapshot(profile);
@@ -2073,16 +2076,24 @@ function telegramLinkCode() {
 function telegramRequestUser(req, body = {}) {
   let email = String(body.email || '').trim().toLowerCase();
   let name = String(body.name || '').trim();
+  let authenticated = false;
   try {
-    if (!email && typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
+    if (typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
       const payload = cc1371Verify(cc1371RequestToken(req));
-      email = String(payload?.email || '').trim().toLowerCase();
-      name = name || String(payload?.name || '').trim();
+      const tokenEmail = String(payload?.email || '').trim().toLowerCase();
+      if (tokenEmail) {
+        email = tokenEmail;
+        name = String(payload?.name || '').trim() || name;
+        authenticated = true;
+      }
     }
   } catch {}
   if (!email) email = 'local@crewcheck.local';
   if (!name) name = email.includes('@') ? email.split('@')[0] : 'Tripulante CrewCheck';
-  return { email, name };
+  return { email, name, authenticated };
+}
+function telegramAppRequestAllowed(user = {}) {
+  return !cc1371AuthRequired() || Boolean(user.authenticated);
 }
 function telegramLinkedChatIdForEmail(email = '') {
   const key = String(email || '').trim().toLowerCase();
@@ -2119,6 +2130,7 @@ async function handleTelegramLinkStart(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, configured: telegramConfigured(), botUsername: telegramBotUsername(), message: 'Vínculo Telegram pronto.' });
   const body = await readJsonBody(req, 300000);
   const user = telegramRequestUser(req, body);
+  if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para vincular o Telegram.' });
   const code = telegramLinkCode();
   const data = telegramLinksRead();
   data.pending[code] = { code, email: user.email, name: user.name, createdAt: new Date().toISOString() };
@@ -2138,7 +2150,10 @@ async function handleTelegramLinkStart(req, res) {
 }
 async function handleTelegramLinkStatus(req, res, url) {
   const code = String(url.searchParams.get('code') || '').trim();
-  const email = String(url.searchParams.get('email') || '').trim().toLowerCase();
+  const requestedEmail = String(url.searchParams.get('email') || '').trim().toLowerCase();
+  const user = telegramRequestUser(req, { email: requestedEmail });
+  if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, linked: false, message: 'Faça login para consultar o vínculo Telegram.' });
+  const email = user.email;
   const data = telegramLinksRead();
   let linked = null;
   if (code) linked = Object.values(data.linked || {}).find((item) => item && item.code === code) || null;
