@@ -103,7 +103,10 @@ jobs:
           fi
           unzip -t "$source_aab" >/dev/null
           cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
-          sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum CrewCheck-13.8.0-production.aab > CrewCheck-13.8.0-production.aab.sha256
+          )
       - uses: actions/upload-artifact@v4
         with:
           name: CrewCheck-13.8.0-signed-aab
