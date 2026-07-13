@@ -23,7 +23,7 @@ interface DashboardProps {
   complianceScore?: number;
 }
 
-const APP_VERSION = '13.7.15';
+const APP_VERSION = '13.7.16';
 
 function clean(value?: string | null, fallback = '—') { const v = String(value || '').trim(); return v && !/^[-—]+$/.test(v) ? v : fallback; }
 function time(value?: string | null, fallback = '—') { const m = String(value || '').match(/\b\d{1,2}:\d{2}\b/); return m ? m[0].padStart(5, '0') : fallback; }
