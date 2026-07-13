@@ -728,7 +728,7 @@ async function asaasRequest(path, init = {}) {
   const base = env('ASAAS_API_BASE_URL', 'https://api.asaas.com/v3').replace(/\/+$/, '');
   const response = await fetch(`${base}${path}`, { ...init, headers: { access_token: apiKey, 'content-type': 'application/json', accept: 'application/json', ...(init.headers || {}) } });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw Object.assign(new Error('O provedor de cobrança não aceitou a solicitação.'), { status: 502, detail: payload });
+  if (!response.ok) throw Object.assign(new Error('O provedor de cobrança não aceitou a solicitação.'), { status: 502, providerStatus: response.status, detail: payload });
   return payload;
 }
 
@@ -1106,6 +1106,21 @@ async function handleRosterSync(req, res) {
   const id = crypto.randomUUID();
   const compliance = body.compliance && typeof body.compliance === 'object' ? body.compliance : {};
   const gym = Array.isArray(body.gym) ? body.gym.slice(0, 370) : [];
+  const rosterStaysByKey = new Map();
+  for (const day of roster.days) {
+    const hotelName = normalizeText(day.hotel || day.hotelName, 180);
+    const stayDate = parseDateOnly(day.date);
+    if (!hotelName || !stayDate) continue;
+    const hKey = hotelKey(hotelName);
+    rosterStaysByKey.set(`${stayDate}|${hKey}`, {
+      stayDate,
+      hotelKey: hKey,
+      hotelName,
+      airport: normalizeText(day.destination || day.airport, 8).toUpperCase(),
+      presentationTime: normalizeText(day.hotelPresentation || day.presentation || day.dutyReport, 10),
+    });
+  }
+  const rosterStays = [...rosterStaysByKey.values()];
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
@@ -1116,14 +1131,16 @@ async function handleRosterSync(req, res) {
       ON CONFLICT(owner_email,roster_key) DO UPDATE SET roster=EXCLUDED.roster,compliance=EXCLUDED.compliance,gym=EXCLUDED.gym,
         source_name=EXCLUDED.source_name,fingerprint=EXCLUDED.fingerprint,active=TRUE,updated_at=NOW()
       RETURNING id,roster_key,updated_at`, [id, context.identity.email, key, JSON.stringify(roster), JSON.stringify(compliance), JSON.stringify(gym), normalizeText(body.sourceName || body.sourceFileName, 180), rosterFingerprint(roster)]);
-    for (const day of roster.days) {
-      const hotelName = normalizeText(day.hotel || day.hotelName, 180);
-      const stayDate = parseDateOnly(day.date);
-      if (!hotelName || !stayDate) continue;
-      const hKey = hotelKey(hotelName);
-      const rule = await client.query('SELECT lead_minutes FROM crewcheck_platform_hotel_rules WHERE owner_email=$1 AND hotel_key=$2', [context.identity.email, hKey]);
+    await client.query(`DELETE FROM crewcheck_platform_stays AS existing
+      WHERE existing.owner_email=$1 AND existing.roster_key=$2
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_to_recordset($3::jsonb) AS expected(stay_date DATE, hotel_key TEXT)
+          WHERE expected.stay_date=existing.stay_date AND expected.hotel_key=existing.hotel_key
+        )`, [context.identity.email, key, JSON.stringify(rosterStays.map((stay) => ({ stay_date: stay.stayDate, hotel_key: stay.hotelKey })))]);
+    for (const stay of rosterStays) {
+      const rule = await client.query('SELECT lead_minutes FROM crewcheck_platform_hotel_rules WHERE owner_email=$1 AND hotel_key=$2', [context.identity.email, stay.hotelKey]);
       await client.query(`INSERT INTO crewcheck_platform_stays(id,owner_email,roster_key,stay_date,hotel_key,hotel_name,airport,presentation_time,lead_minutes)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_email,stay_date,hotel_key) DO UPDATE SET roster_key=EXCLUDED.roster_key,hotel_name=EXCLUDED.hotel_name,airport=EXCLUDED.airport,presentation_time=COALESCE(EXCLUDED.presentation_time,crewcheck_platform_stays.presentation_time),lead_minutes=COALESCE(crewcheck_platform_stays.lead_minutes,EXCLUDED.lead_minutes),updated_at=NOW()`, [crypto.randomUUID(), context.identity.email, key, stayDate, hKey, hotelName, normalizeText(day.destination || day.airport, 8).toUpperCase(), normalizeText(day.hotelPresentation || day.presentation || day.dutyReport, 10), rule.rows[0]?.lead_minutes || null]);
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_email,stay_date,hotel_key) DO UPDATE SET roster_key=EXCLUDED.roster_key,hotel_name=EXCLUDED.hotel_name,airport=EXCLUDED.airport,presentation_time=COALESCE(EXCLUDED.presentation_time,crewcheck_platform_stays.presentation_time),lead_minutes=COALESCE(crewcheck_platform_stays.lead_minutes,EXCLUDED.lead_minutes),updated_at=NOW()`, [crypto.randomUUID(), context.identity.email, key, stay.stayDate, stay.hotelKey, stay.hotelName, stay.airport, stay.presentationTime, rule.rows[0]?.lead_minutes || null]);
     }
     const full = await client.query('SELECT * FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1', [context.identity.email, key]);
     await client.query('COMMIT');
@@ -1772,7 +1789,28 @@ async function handleAccountDeletion(req, res) {
   const subscription = subscriptionResult.rows[0] || null;
   let externalCancellation = null;
   if (subscription?.provider === 'asaas' && subscription.provider_ref) {
-    externalCancellation = await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.provider_ref)}`, { method: 'DELETE' }).then(() => true).catch(() => false);
+    const alreadyInactive = ['canceled', 'expired', 'refunded'].includes(subscription.status);
+    if (alreadyInactive) {
+      externalCancellation = true;
+    } else {
+      try {
+        await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.provider_ref)}`, { method: 'DELETE' });
+        externalCancellation = true;
+      } catch (error) {
+        if (error?.providerStatus === 404) {
+          externalCancellation = true;
+        } else {
+          console.error('[CrewCheck] Falha ao cancelar a assinatura Asaas antes da exclusão:', error?.message || error);
+          return sendJson(res, error?.status === 503 ? 503 : 502, {
+            ok: false,
+            deleted: false,
+            retryable: true,
+            code: 'ASAAS_CANCELLATION_REQUIRED',
+            message: 'Não foi possível confirmar o cancelamento da cobrança no Asaas. Nenhum dado foi excluído; tente novamente em alguns minutos.',
+          });
+        }
+      }
+    }
   }
   const client = await context.db.connect();
   try {
