@@ -44,7 +44,7 @@ assert.match(android, /acknowledgePurchase/);
 assert.match(android, /setObfuscatedAccountId/);
 assert.match(androidMain, /isCrewCheckWebUrl/);
 assert.match(androidMain, /MIXED_CONTENT_NEVER_ALLOW/);
-assert.match(androidMain, /BuildConfig\.DEBUG/);
+assert.match(androidMain, /ApplicationInfo\.FLAG_DEBUGGABLE/);
 assert.match(app, /VisitorAccessPage/);
 assert.match(app, /SharedRosterPage/);
 assert.match(visitor, /emergency/);
