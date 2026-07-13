@@ -586,6 +586,91 @@ function readJsonBody(req, limit = 1_000_000) {
   });
 }
 
+// CrewCheck v13.7.15 — envio interno de relatório com PDF.
+const crewcheckEmailRateLimit = new Map();
+function crewcheckRateLimit(map, key, windowMs) {
+  const now = Date.now();
+  const last = Number(map.get(key) || 0);
+  if (last && now - last < windowMs) return Math.ceil((windowMs - (now - last)) / 1000);
+  map.set(key, now);
+  if (map.size > 1000) {
+    for (const [entry, timestamp] of map.entries()) if (now - Number(timestamp || 0) > windowMs * 4) map.delete(entry);
+  }
+  return 0;
+}
+function mailerSendConfigured() {
+  return Boolean(envAny(['MAILERSEND_API_KEY']) && envAny(['MAILERSEND_FROM', 'EMAIL_FROM']));
+}
+function handleEmailHealth(req, res) {
+  const configured = mailerSendConfigured();
+  return sendJson(res, 200, {
+    ok: configured,
+    configured,
+    provider: configured ? 'mailersend' : '',
+    attachments: configured,
+    maxAttachmentMb: 20,
+    message: configured ? 'E-mail interno com anexo PDF configurado.' : 'Envio de e-mail aguardando MAILERSEND_API_KEY e MAILERSEND_FROM.',
+  });
+}
+async function handleEmailShare(req, res) {
+  if (req.method !== 'POST') return handleEmailHealth(req, res);
+  const identity = cc1371Verify(cc1371RequestToken(req));
+  if (cc1371AuthRequired() && !identity) return sendJson(res, 401, { ok: false, message: 'Faça login para enviar o relatório.' });
+  if (!mailerSendConfigured()) return sendJson(res, 503, { ok: false, configured: false, message: 'O envio interno de e-mail ainda não está configurado.' });
+
+  const senderKey = String(identity?.email || req.socket?.remoteAddress || 'anonymous').toLowerCase();
+  const retryAfterSeconds = crewcheckRateLimit(crewcheckEmailRateLimit, senderKey, 45_000);
+  if (retryAfterSeconds) return sendJson(res, 429, { ok: false, retryAfterSeconds, message: `Aguarde ${retryAfterSeconds}s antes de enviar outro e-mail.` });
+
+  const body = await readJsonBody(req, 30_000_000);
+  const to = String(body.to || '').trim().toLowerCase();
+  const subject = String(body.subject || 'Relatório CrewCheck').trim().slice(0, 180);
+  const message = String(body.message || '').trim().slice(0, 100_000);
+  const html = String(body.html || '').trim().slice(0, 500_000);
+  const attachment = body.attachment && typeof body.attachment === 'object' ? body.attachment : {};
+  const fileName = String(attachment.fileName || 'CrewCheck.pdf').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 140);
+  const mimeType = String(attachment.mimeType || '').toLowerCase();
+  const contentBase64 = String(attachment.contentBase64 || '').replace(/\s+/g, '');
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail de destino válido.' });
+  if (!message && !html) return sendJson(res, 400, { ok: false, message: 'O relatório está vazio.' });
+  if (mimeType !== 'application/pdf' || !contentBase64) return sendJson(res, 400, { ok: false, message: 'Gere o PDF antes de enviar o e-mail.' });
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(contentBase64)) return sendJson(res, 400, { ok: false, message: 'O anexo PDF está inválido.' });
+  const decodedSize = Buffer.from(contentBase64, 'base64').length;
+  if (!decodedSize || decodedSize > 20 * 1024 * 1024) return sendJson(res, 413, { ok: false, message: 'O PDF precisa ter até 20 MB.' });
+
+  const apiKey = envAny(['MAILERSEND_API_KEY']);
+  const fromEmail = envAny(['MAILERSEND_FROM', 'EMAIL_FROM']);
+  const fromName = envAny(['EMAIL_FROM_NAME', 'MAILERSEND_FROM_NAME']) || 'CrewCheck';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch('https://api.mailersend.com/v1/email', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        from: { email: fromEmail, name: fromName },
+        to: [{ email: to }],
+        subject,
+        text: message || 'Relatório CrewCheck em anexo.',
+        html: html || undefined,
+        attachments: [{ filename: fileName, content: contentBase64, disposition: 'attachment' }],
+      }),
+    });
+    const raw = await response.text().catch(() => '');
+    let providerPayload = {};
+    try { providerPayload = raw ? JSON.parse(raw) : {}; } catch {}
+    if (!response.ok) return sendJson(res, 502, { ok: false, configured: true, provider: 'mailersend', status: response.status, message: 'O provedor não aceitou o e-mail agora. Tente novamente em instantes.' });
+    const messageId = String(response.headers.get('x-message-id') || providerPayload?.message_id || '');
+    return sendJson(res, 200, { ok: true, configured: true, provider: 'mailersend', messageId, attachment: { fileName, sizeBytes: decodedSize }, message: `Relatório e PDF enviados para ${to}.` });
+  } catch {
+    return sendJson(res, 502, { ok: false, configured: true, provider: 'mailersend', message: 'O envio de e-mail não respondeu a tempo. Tente novamente.' });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // CrewCheck v13.7.1 — Auth API Minimal Rebind.
 // Corrige /api/auth/config pendurado e evita Failed to fetch.
 function cc1371Email(value = '') {
@@ -776,7 +861,7 @@ async function handleAuthResetPassword1371(req, res) {
 }
 
 
-// CrewCheck v13.7.14 — Internal Update Center backend.
+// CrewCheck v13.7.15 — Internal Update Center backend.
 // Aceita apenas CSS runtime validado. Não executa JS e não grava segredos.
 const crewcheckRuntimePatchFile = path.join(__dirname, '.crewcheck-runtime-patch.json');
 
@@ -952,7 +1037,7 @@ async function handleRuntimePatchClear(req, res) {
 }
 
 
-// CrewCheck v13.7.14 — ElevenLabs env aliases.
+// CrewCheck v13.7.15 — ElevenLabs env aliases.
 // Lê também o padrão antigo ELEVENLABS_TTS_* já configurado no Render.
 const ELEVENLABS_KEY_ENV_KEYS = ['ELEVENLABS_API_KEY', 'CREWCHECK_ELEVENLABS_API_KEY', 'ELEVENLABS_TTS_API_KEY'];
 const ELEVENLABS_VOICE_ENV_KEYS = ['ELEVENLABS_VOICE_ID', 'ELEVENLABS_TTS_VOICE_ID', 'CREWCHECK_ELEVENLABS_VOICE_ID', 'CREWCHECK_ELEVENLABS_TTS_VOICE_ID', 'ELEVENLABS_DEFAULT_VOICE_ID', 'ELEVENLABS_VOICE', 'TTS_VOICE_ID'];
@@ -966,7 +1051,7 @@ function envAnyWithSource(names = []) {
   return { name: '', value: '' };
 }
 function envSourceName(names = []) { return envAnyWithSource(names).name || ''; }
-// CrewCheck v13.7.14 — ElevenLabs TTS Restore.
+// CrewCheck v13.7.15 — ElevenLabs TTS Restore.
 // ElevenLabs volta a ser o TTS principal. STT continua separado.
 function elevenLabsApiKey() {
   return envAny(ELEVENLABS_KEY_ENV_KEYS);
@@ -1040,7 +1125,7 @@ async function generateElevenLabsSpeech(text, options = {}) {
     return { ok: false, configured: true, message: 'Não consegui conectar ao ElevenLabs agora.' };
   }
 }
-// CrewCheck v13.7.14 — Telegram Human Voice Reply.
+// CrewCheck v13.7.15 — Telegram Human Voice Reply.
 // Fluxo humano: não escreve “transcrevendo/conversão”; mostra ação de gravação e manda áudio limpo.
 function telegramHumanVoiceEnabled() {
   return String(envAny(['TELEGRAM_CONCIERGE_HUMAN_VOICE_ENABLED', 'CREWCHECK_TELEGRAM_HUMAN_VOICE_ENABLED']) || 'true').toLowerCase() !== 'false';
@@ -1119,7 +1204,7 @@ async function sendTelegramAudioBuffer(chatId, buffer, filename = 'crewcheck-aud
     return { ok: false, configured: true, message: 'Áudio não entregue agora.' };
   }
 }
-// CrewCheck v13.7.14 — TTS provider policy.
+// CrewCheck v13.7.15 — TTS provider policy.
 // ElevenLabs é o provedor efetivo de voz. Google/legacy só é permitido se for explicitamente liberado.
 const LEGACY_GOOGLE_TTS_ENV_KEYS = [
   'CREWCHECK_INFOBIP_USE_GOOGLE_TTS_AUDIO',
@@ -1208,7 +1293,7 @@ async function handleTtsHealth(req, res) {
 function handleTtsProviderHealth(req, res) {
   return sendJson(res, 200, {
     ok: effectiveTtsProvider() === 'elevenlabs',
-    version: '13.7.14',
+    version: '13.7.15',
     ...ttsPolicySnapshot(),
     message: effectiveTtsProvider() === 'elevenlabs'
       ? 'ElevenLabs é o provedor efetivo de voz.'
@@ -1298,7 +1383,7 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
-// CrewCheck v13.7.14 — Telegram Link backend.
+// CrewCheck v13.7.15 — Telegram Link backend.
 const crewcheckTelegramLinksFile = path.join(__dirname, '.crewcheck-telegram-links.json');
 
 function telegramBotUsername() {
@@ -1342,6 +1427,12 @@ function telegramLinkedChatIdForEmail(email = '') {
   if (!key) return '';
   const data = telegramLinksRead();
   return String(data.linked?.[key]?.chatId || '');
+}
+function telegramLinkedUsernameForEmail(email = '') {
+  const key = String(email || '').trim().toLowerCase();
+  if (!key) return '';
+  const data = telegramLinksRead();
+  return String(data.linked?.[key]?.username || '').trim().replace(/^@/, '');
 }
 async function handleTelegramLinkStart(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, configured: telegramConfigured(), botUsername: telegramBotUsername(), message: 'Vínculo Telegram pronto.' });
@@ -1411,7 +1502,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   return true;
 }
 
-// CrewCheck v13.7.14 — Telegram Voice STT Restore.
+// CrewCheck v13.7.15 — Telegram Voice STT Restore.
 function crewcheckSttApiKey() {
   return envAny(['OPENAI_API_KEY', 'OPENAI_STT_API_KEY', 'CREWCHECK_OPENAI_API_KEY', 'CREWCHECK_STT_API_KEY']);
 }
@@ -1471,7 +1562,7 @@ async function transcribeTelegramAudioWithOpenAI(buffer, fileName, mimeType) {
   const transcript = text.trim().replace(/^"|"$/g, '').trim();
   return { ok: Boolean(transcript), configured: true, text: transcript, message: transcript ? 'Áudio transcrito.' : 'Não entendi bem esse áudio. Grava de novo rapidinho?' };
 }
-// CrewCheck v13.7.14 — ElevenLabs STT Provider.
+// CrewCheck v13.7.15 — ElevenLabs STT Provider.
 // Evita dependência de cota OpenAI para áudio do Telegram.
 function sttProviderPreference() {
   const raw = envAny(['CREWCHECK_STT_PROVIDER','TELEGRAM_CONCIERGE_STT_PROVIDER','STT_PROVIDER','SPEECH_TO_TEXT_PROVIDER']);
@@ -1604,39 +1695,168 @@ async function handleTelegramWebhook(req, res) {
   return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
 }
 
-function alarmChannelConfigured(channel = '') {
+const crewcheckAlarmTestRateLimit = new Map();
+
+function telegramCallProviderEnabled() {
+  return String(process.env.CALLMEBOT_TELEGRAM_CALL_ENABLED || 'true').toLowerCase() !== 'false';
+}
+function callMeBotPhoneConfigured() {
+  return Boolean(envAny(['CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
+}
+function infobipPhoneConfigured() {
+  return Boolean(envAny(['INFOBIP_API_KEY']) && envAny(['INFOBIP_BASE_URL']) && envAny(['INFOBIP_FROM', 'INFOBIP_CALLER_ID']));
+}
+function phoneCallConfigured() {
+  return callMeBotPhoneConfigured() || infobipPhoneConfigured();
+}
+function cleanVoiceCallText(value = '') {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+async function fetchVoiceProvider(url, options = {}, timeoutMs = 15_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text().catch(() => '');
+    const accepted = response.ok && !/(error|not authorized|unauthori[sz]ed|invalid|missing)/i.test(text);
+    return { ok: accepted, configured: true, status: response.status, providerMessage: text.slice(0, 240) };
+  } catch {
+    return { ok: false, configured: true, message: 'O provedor de ligação não respondeu agora.' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function sendTelegramVoiceCall(username, text) {
+  const user = String(username || '').trim().replace(/^@/, '');
+  if (!telegramCallProviderEnabled()) return { ok: false, configured: false, provider: 'callmebot-telegram', message: 'Ligação via Telegram desativada no servidor.' };
+  if (!user) return { ok: false, configured: true, provider: 'callmebot-telegram', message: 'Vincule um Telegram com nome de usuário para receber a ligação.' };
+  const url = new URL('https://api.callmebot.com/start.php');
+  url.searchParams.set('user', `@${user}`);
+  url.searchParams.set('text', cleanVoiceCallText(text) || 'Teste de ligação CrewCheck.');
+  url.searchParams.set('lang', envAny(['CALLMEBOT_TELEGRAM_LANG']) || 'pt-BR-Standard-A');
+  url.searchParams.set('rpt', '1');
+  url.searchParams.set('cc', 'missed');
+  url.searchParams.set('timeout', '45');
+  const result = await fetchVoiceProvider(url.toString(), {}, 18_000);
+  return { ...result, provider: 'callmebot-telegram', message: result.ok ? `Ligação via Telegram iniciada para @${user}.` : result.message || 'A ligação via Telegram não foi aceita. Autorize o CallMeBot e tente novamente.' };
+}
+async function sendCallMeBotPhoneCall(phone, text) {
+  const apiKey = envAny(['CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']);
+  const destination = String(phone || envAny(['CALLMEBOT_PHONE', 'CREWCHECK_ADMIN_PHONE']) || '').trim().replace(/[^+\d]/g, '');
+  if (!apiKey) return { ok: false, configured: false, provider: 'callmebot-phone', message: 'Ligação telefônica aguardando chave do CallMeBot.' };
+  if (!destination) return { ok: false, configured: true, provider: 'callmebot-phone', message: 'Informe o telefone do administrador com DDI.' };
+  const url = new URL('https://api.callmebot.com/call.php');
+  url.searchParams.set('phone', destination);
+  url.searchParams.set('text', cleanVoiceCallText(text) || 'Teste de ligação CrewCheck.');
+  url.searchParams.set('apikey', apiKey);
+  const result = await fetchVoiceProvider(url.toString(), {}, 18_000);
+  return { ...result, provider: 'callmebot-phone', message: result.ok ? 'Ligação telefônica de teste iniciada.' : result.message || 'A ligação telefônica não foi aceita agora.' };
+}
+async function sendInfobipPhoneCall(phone, text) {
+  const apiKey = envAny(['INFOBIP_API_KEY']);
+  const baseUrl = envAny(['INFOBIP_BASE_URL']).replace(/\/+$/, '');
+  const from = envAny(['INFOBIP_FROM', 'INFOBIP_CALLER_ID']);
+  const destination = String(phone || envAny(['CREWCHECK_ADMIN_PHONE']) || '').trim().replace(/[^+\d]/g, '');
+  if (!apiKey || !baseUrl || !from) return { ok: false, configured: false, provider: 'infobip', message: 'Infobip aguardando API key, base URL e identificador de origem.' };
+  if (!destination) return { ok: false, configured: true, provider: 'infobip', message: 'Informe o telefone do administrador com DDI.' };
+  const result = await fetchVoiceProvider(`${baseUrl}/tts/3/advanced`, {
+    method: 'POST',
+    headers: { authorization: `App ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ messages: [{ from, destinations: [{ to: destination }], text: cleanVoiceCallText(text), language: 'pt-BR' }] }),
+  }, 18_000);
+  return { ...result, provider: 'infobip', message: result.ok ? 'Ligação telefônica de teste iniciada.' : result.message || 'A Infobip não aceitou a ligação agora.' };
+}
+async function sendAdminPhoneCall(phone, text) {
+  const preferred = String(envAny(['CREWCHECK_WAKEUP_CALL_PROVIDER']) || '').toLowerCase();
+  if (preferred.includes('infobip') && infobipPhoneConfigured()) {
+    const primary = await sendInfobipPhoneCall(phone, text);
+    if (primary.ok || !callMeBotPhoneConfigured()) return primary;
+  }
+  if (callMeBotPhoneConfigured()) return sendCallMeBotPhoneCall(phone, text);
+  if (infobipPhoneConfigured()) return sendInfobipPhoneCall(phone, text);
+  return { ok: false, configured: false, provider: '', message: 'Nenhum provedor de ligação telefônica está configurado.' };
+}
+function alarmRequestIdentity(req) {
+  const token = cc1371Verify(cc1371RequestToken(req));
+  const email = String(token?.email || '').trim().toLowerCase();
+  return { token, email, admin: Boolean(token?.admin || cc1371IsAdmin(email)) };
+}
+function alarmChannelConfigured(channel = '', email = '') {
   const value = String(channel || '').toLowerCase();
   const telegram = telegramConfigured();
-  const voice = Boolean(envAny(['INFOBIP_API_KEY', 'INFOBIP_BASE_URL', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
-  if (value.includes('telegram') && value.includes('liga')) return telegram || voice;
+  const telegramCall = telegramCallProviderEnabled() && Boolean(telegramLinkedUsernameForEmail(email));
+  const phone = phoneCallConfigured();
+  if (value === 'telegram-call') return telegramCall;
+  if (value.includes('telegram') && value.includes('liga')) return telegram || phone;
   if (value.includes('telegram')) return telegram;
-  if (value.includes('liga') || value.includes('voz')) return voice;
-  return telegram || voice;
+  if (value.includes('liga') || value.includes('voz')) return phone;
+  return telegram || telegramCall || phone;
 }
-
 function handleAlarmHealth(req, res) {
+  const identity = alarmRequestIdentity(req);
   const telegram = telegramConfigured();
-  const voice = Boolean(envAny(['INFOBIP_API_KEY', 'INFOBIP_BASE_URL', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
-  return sendJson(res, 200, { ok: telegram || voice, configured: telegram || voice, telegram, voice, channels: { telegram, call: voice, both: telegram || voice }, message: telegram || voice ? 'Despertador pronto para configuração.' : 'Despertador aguardando configuração de canal.' });
+  const username = telegramLinkedUsernameForEmail(identity.email);
+  const telegramCall = telegramCallProviderEnabled() && Boolean(username);
+  const phoneCall = phoneCallConfigured();
+  return sendJson(res, 200, {
+    ok: telegram || telegramCall || phoneCall,
+    configured: telegram || phoneCall,
+    telegram,
+    telegramCall,
+    telegramCallAvailable: telegramCallProviderEnabled(),
+    phoneCall,
+    voice: telegramCall || phoneCall,
+    channels: { telegram, telegramCall, phoneCall, both: telegram || phoneCall },
+    message: telegram || telegramCall || phoneCall ? 'Despertador pronto para teste e configuração.' : 'Despertador aguardando configuração de canal.',
+  });
 }
-
 async function handleAlarmPreview(req, res, url) {
+  const identity = alarmRequestIdentity(req);
   const presentation = String(url.searchParams.get('presentation') || '').trim();
   const lead = Number(url.searchParams.get('lead') || 90);
   const channel = String(url.searchParams.get('channel') || 'telegram').trim();
-  return sendJson(res, 200, { ok: true, configured: alarmChannelConfigured(channel), presentation, leadMinutes: Number.isFinite(lead) ? lead : 90, channel, maxCallsPerLayover: 2, snoozeTelegram: telegramConfigured(), message: 'Prévia do despertador calculada no dispositivo. Confirme o horário no app antes de ativar.' });
+  return sendJson(res, 200, { ok: true, configured: alarmChannelConfigured(channel, identity.email), presentation, leadMinutes: Number.isFinite(lead) ? lead : 90, channel, maxCallsPerLayover: 2, snoozeTelegram: telegramConfigured(), telegramCallAvailable: telegramCallProviderEnabled(), message: 'Prévia calculada. Confirme o horário no app antes de ativar.' });
 }
-
 async function handleAlarmTest(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Teste do despertador pronto.' });
-  const payload = await readJsonBody(req);
+  const identity = alarmRequestIdentity(req);
+  if (cc1371AuthRequired() && !identity.token) return sendJson(res, 401, { ok: false, message: 'Faça login para testar o despertador.' });
+
+  const payload = await readJsonBody(req, 300_000);
+  const testType = String(payload.testType || 'selected').toLowerCase();
   const channel = String(payload.channel || 'telegram').toLowerCase();
-  const chatId = String(payload.chatId || telegramLinkedChatIdForEmail(payload.email) || telegramDefaultChatId() || '').trim();
-  const text = String(payload.message || 'Teste do Despertador Inteligente CrewCheck.').trim();
-  let telegramResult = null;
-  if (channel.includes('telegram') || channel.includes('ambos')) telegramResult = await sendTelegramMessage(chatId, text);
-  const voiceConfigured = Boolean(envAny(['INFOBIP_API_KEY', 'INFOBIP_BASE_URL', 'CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
-  return sendJson(res, 200, { ok: Boolean((telegramResult && telegramResult.ok) || voiceConfigured), configured: Boolean((telegramResult && telegramResult.configured) || voiceConfigured), telegram: telegramResult, voice: { configured: voiceConfigured, message: voiceConfigured ? 'Canal de ligação configurado para uso operacional.' : 'Canal de ligação aguardando configuração.' }, message: 'Teste processado.' });
+  const rateKey = `${identity.email || req.socket?.remoteAddress || 'anonymous'}:${testType}`;
+  const retryAfterSeconds = crewcheckRateLimit(crewcheckAlarmTestRateLimit, rateKey, 35_000);
+  if (retryAfterSeconds) return sendJson(res, 429, { ok: false, retryAfterSeconds, message: `Aguarde ${retryAfterSeconds}s antes de repetir este teste.` });
+
+  const text = cleanVoiceCallText(payload.message || 'Teste do Despertador Inteligente CrewCheck.');
+  const wantsTelegramMessage = testType === 'telegram-message' || (testType === 'selected' && channel !== 'telegram-call' && (channel.includes('telegram') || channel.includes('ambos')));
+  const wantsTelegramCall = testType === 'telegram-call' || (testType === 'selected' && channel === 'telegram-call');
+  const wantsPhoneCall = testType === 'phone-call' || (testType === 'selected' && (channel.includes('liga') || channel.includes('ambos')));
+
+  if (wantsPhoneCall && !identity.admin) return sendJson(res, 403, { ok: false, message: 'O teste de ligação telefônica é exclusivo do administrador. A ligação via Telegram continua disponível para todos.' });
+
+  const results = [];
+  if (wantsTelegramMessage) {
+    const chatId = String(payload.chatId || telegramLinkedChatIdForEmail(identity.email) || telegramDefaultChatId() || '').trim();
+    results.push({ channel: 'telegram-message', ...(await sendTelegramMessage(chatId, text)) });
+  }
+  if (wantsTelegramCall) {
+    const username = telegramLinkedUsernameForEmail(identity.email) || (identity.admin ? envAny(['CALLMEBOT_TELEGRAM_CALL_USER']) : '');
+    results.push({ channel: 'telegram-call', ...(await sendTelegramVoiceCall(username, text)) });
+  }
+  if (wantsPhoneCall) results.push({ channel: 'phone-call', ...(await sendAdminPhoneCall(payload.phone, text)) });
+  if (!results.length) return sendJson(res, 400, { ok: false, message: 'Escolha um canal de teste válido.' });
+
+  const ok = results.some((result) => result.ok);
+  const message = ok ? String(results.find((result) => result.ok)?.message || 'Teste enviado.') : String(results[0]?.message || 'O teste não pôde ser concluído.');
+  return sendJson(res, ok ? 200 : 502, {
+    ok,
+    configured: results.some((result) => result.configured),
+    results,
+    health: { telegram: telegramConfigured(), telegramCall: telegramCallProviderEnabled() && Boolean(telegramLinkedUsernameForEmail(identity.email)), phoneCall: phoneCallConfigured() },
+    message,
+  });
 }
 
 
@@ -1654,10 +1874,11 @@ function reliabilityEnvItems() {
     reliabilityModule('radar','Radar de voos',['FLIGHTAWARE_AEROAPI_KEY','AEROAPI_KEY','AIRLABS_API_KEY','AVIATIONSTACK_API_KEY','AVIATIONSTACK_ACCESS_KEY','OAG_FLIGHT_INFO_PRIMARY_KEY']),
     reliabilityModule('weather','Meteorologia',['AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE']),
     reliabilityModule('telegram','Telegram',['TELEGRAM_BOT_TOKEN','CREWCHECK_TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('email','E-mail interno com PDF',['MAILERSEND_API_KEY','MAILERSEND_FROM']),
     reliabilityModule('tts-elevenlabs','Voz Premium ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY','ELEVENLABS_VOICE_ID','ELEVENLABS_TTS_VOICE_ID','CREWCHECK_ELEVENLABS_VOICE_ID','CREWCHECK_ELEVENLABS_TTS_VOICE_ID','ELEVENLABS_DEFAULT_VOICE_ID']),
     reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('telegram-stt-elevenlabs','Áudio Telegram ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY']),
-    reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','CALLMEBOT_API_KEY','TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER','TELEGRAM_BOT_TOKEN']),
     reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
     reliabilityModule('billing','Assinatura',['ASAAS_API_KEY']),
     reliabilityModule('osm','OpenStreetMap',['OSM_ROUTING_URL','OSM_ENABLE_PUBLIC_SERVICES']),
@@ -1665,16 +1886,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.14', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.15', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.14', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.15', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.14', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.7.15', expectedRoutes:['/api/auth/config','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -1712,7 +1933,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.14 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.7.15 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -1722,8 +1943,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.14">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.14">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.7.15">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.7.15">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -1769,7 +1990,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.14&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.15&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -1781,7 +2002,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.14'
+    'x-crewcheck-boot': 'static-shell-13.7.15'
   });
   res.end(html);
 }
@@ -1815,7 +2036,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.14', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.15', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -1829,6 +2050,8 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/aviation-weather') return handleAviationWeather(req, res, url);
   if (url.pathname === '/api/maps/route-preview') return handleRoutePreview(req, res, url);
   if (url.pathname === '/api/places/fitness') return handleFitness(req, res, url);
+  if (url.pathname === '/api/email/health') return handleEmailHealth(req, res);
+  if (url.pathname === '/api/email/share') return handleEmailShare(req, res);
   if (url.pathname === '/api/osm/health') return handleOsmHealth(req, res, url);
   if (url.pathname === '/api/osm/route-preview') return handleOsmRoutePreview(req, res, url);
     if (url.pathname === '/api/tts/provider-health') return handleTtsProviderHealth(req, res);
@@ -1844,7 +2067,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.14', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.15', reliability: true });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
