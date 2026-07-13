@@ -22,6 +22,8 @@ check(serverSource.includes("url.pathname === '/api/telegram/concierge/ask'"), '
 check(serverSource.includes('handleTelegramPdfRoster(message)'), 'Webhook não processa PDF.');
 check(serverSource.includes('handleTelegramLocation(message)'), 'Webhook não processa localização.');
 check(serverSource.includes('conciergeApplyRadar'), 'Radar não exporta dados ao snapshot.');
+check(serverSource.includes('telegramAppRequestAllowed'), 'Proteção de identidade do Concierge ausente.');
+check(serverSource.includes('crewcheck_telegram_state'), 'Persistência PostgreSQL do Concierge ausente.');
 check(parserSource.includes('parseServerAims') && parserSource.includes('parseServerRosterReport'), 'Compatibilidade AIMS/CrewRoster ausente.');
 check(homeSource.includes("'concierge'"), 'Tela Concierge não registrada.');
 check(homeSource.includes('Enviar ou importar pelo Telegram'), 'Importação por Telegram não exposta.');
@@ -36,7 +38,7 @@ const year = tomorrow.getFullYear();
 const port = 45_000 + Math.floor(Math.random() * 1_000);
 const child = spawn(process.execPath, ['server.mjs'], {
   cwd: root,
-  env: { ...process.env, PORT: String(port), NODE_ENV: 'test' },
+  env: { ...process.env, PORT: String(port), NODE_ENV: 'test', CREWCHECK_AUTH_REQUIRED: 'false' },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
 
