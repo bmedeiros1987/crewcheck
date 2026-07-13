@@ -93,7 +93,11 @@ jobs:
           grep -Fq "jar verified." "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           keytool -printcert -jarfile "$source_aab" >/dev/null
-          unzip -Z1 "$source_aab" | grep -Eq '^META-INF/[^/]+\.(RSA|DSA|EC)$'
+          unzip -Z1 "$source_aab" > "$RUNNER_TEMP/aab-entries.txt"
+          if ! grep -Eq '^META-INF/[^/]+\\.(RSA|DSA|EC)$' "$RUNNER_TEMP/aab-entries.txt"; then
+            echo "::error::O AAB não contém o bloco criptográfico da assinatura."
+            exit 1
+          fi
           cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
           sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
       - uses: actions/upload-artifact@v4
