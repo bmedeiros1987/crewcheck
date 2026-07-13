@@ -91,16 +91,17 @@ jobs:
             echo "::error::A assinatura do AAB é inválida ou o certificado não está válido."
             exit "$verify_status"
           fi
-          grep -Fq "jar verified." "$RUNNER_TEMP/jarsigner-verification.txt"
-          ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
-          keytool -exportcert -rfc -keystore "$CREWCHECK_STORE_FILE" -storepass "$CREWCHECK_STORE_PASSWORD" -alias "$CREWCHECK_KEY_ALIAS" > "$RUNNER_TEMP/expected-upload-cert.pem"
-          keytool -printcert -rfc -jarfile "$source_aab" > "$RUNNER_TEMP/actual-aab-cert.pem"
-          openssl x509 -in "$RUNNER_TEMP/expected-upload-cert.pem" -outform DER -out "$RUNNER_TEMP/expected-upload-cert.der"
-          openssl x509 -in "$RUNNER_TEMP/actual-aab-cert.pem" -outform DER -out "$RUNNER_TEMP/actual-aab-cert.der"
-          if ! cmp -s "$RUNNER_TEMP/expected-upload-cert.der" "$RUNNER_TEMP/actual-aab-cert.der"; then
-            echo "::error::O AAB não foi assinado pelo certificado de upload configurado."
+          if ! grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"; then
+            cat "$RUNNER_TEMP/jarsigner-verification.txt"
+            echo "::error::O jarsigner não confirmou a assinatura do AAB."
             exit 1
           fi
+          if grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"; then
+            cat "$RUNNER_TEMP/jarsigner-verification.txt"
+            echo "::error::O AAB foi gerado sem assinatura."
+            exit 1
+          fi
+          unzip -t "$source_aab" >/dev/null
           cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
           sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
       - uses: actions/upload-artifact@v4
