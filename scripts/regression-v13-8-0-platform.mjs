@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const [home, platform, server, client, android, androidMain, androidGradle, app, visitor, shared, email] = await Promise.all([
+const [home, platform, server, client, android, androidMain, androidGradle, app, visitor, shared, email, rosterParser, packageJson] = await Promise.all([
   read('client/src/pages/Home.tsx'),
   read('server/platform.mjs'),
   read('server.mjs'),
@@ -14,6 +14,8 @@ const [home, platform, server, client, android, androidMain, androidGradle, app,
   read('client/src/pages/VisitorAccessPage.tsx'),
   read('client/src/pages/SharedRosterPage.tsx'),
   read('client/src/lib/emailClient.ts'),
+  read('server/rosterParser.mjs'),
+  read('package.json'),
 ]);
 
 assert.match(platform, /crewcheck_premium_monthly/);
@@ -33,7 +35,7 @@ assert.match(platform, /PLATFORM_METHOD_POLICIES/);
 assert.match(platform, /obfuscatedExternalAccountId/);
 assert.match(platform, /handleBillingCancel/);
 assert.match(platform, /Evento informativo registrado sem alterar a assinatura/);
-assert.doesNotMatch(platform, /function asaasEventStatus[\\s\\S]*?return 'pending';[\\s\\S]*?\\n\\}/);
+assert.doesNotMatch(platform, /function asaasEventStatus[\s\S]*?return 'pending';[\s\S]*?\n\}/);
 assert.match(platform, /handleVisitorUpdate/);
 assert.match(platform, /handleVisitorChat/);
 assert.match(platform, /handleOwnerVisitorChat/);
@@ -69,5 +71,22 @@ assert.doesNotMatch(home, /cz-pills.*Premium.*Beta/);
 assert.match(email, /actionableAlerts/);
 assert.doesNotMatch(email, /CrewCheck Premium/);
 assert.match(server, /handlePlatformVisitorTelegram/);
+assert.match(rosterParser, /pdfjs-dist\/legacy\/build\/pdf\.mjs/);
+assert.match(rosterParser, /isEvalSupported:\s*false/);
+assert.match(packageJson, /"pdfjs-dist":\s*"6\.1\.200"/);
+
+const [{ jsPDF }, { parsePdfOnServer }, pdfjs] = await Promise.all([
+  import('jspdf'),
+  import('../server/rosterParser.mjs'),
+  import('pdfjs-dist/legacy/build/pdf.mjs'),
+]);
+assert.equal(pdfjs.version, '6.1.200');
+const smokePdf = new jsPDF();
+smokePdf.text('CrewCheck PDF security smoke test 07/2026', 20, 20);
+const parsedPdf = await parsePdfOnServer({
+  filename: 'crewcheck-security-smoke.pdf',
+  dataBase64: Buffer.from(smokePdf.output('arraybuffer')).toString('base64'),
+});
+assert.equal(typeof parsedPdf, 'object');
 
 console.log('CrewCheck v13.8.0 platform regression OK');
