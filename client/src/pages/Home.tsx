@@ -1040,15 +1040,13 @@ function isAdmin() {
 
 
 async function openTelegramBinding() {
-  const user = getStoredUser();
-  const email = String(user?.email || '').trim();
-  const name = String(user?.name || user?.email || 'Tripulante CrewCheck').trim();
+  const identity = telegramConciergeIdentity();
   try {
     const response = await fetch('/api/telegram/link/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, name }),
+      body: JSON.stringify(identity),
     });
     const payload = await response.json().catch(() => null);
     if (!payload || payload.ok === false) {
@@ -1070,9 +1068,15 @@ async function openTelegramBinding() {
 
 function telegramConciergeIdentity() {
   const user = getStoredUser();
+  let conciergeKey = storage.get('crewcheck_telegram_access_key', '');
+  if (!conciergeKey) {
+    conciergeKey = `${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}-${globalThis.crypto?.randomUUID?.() || Math.random()}`;
+    storage.set('crewcheck_telegram_access_key', conciergeKey);
+  }
   return {
     email: String(user?.email || '').trim(),
     name: String(user?.name || user?.email || 'Tripulante CrewCheck').trim(),
+    conciergeKey,
   };
 }
 async function syncRosterWithTelegramConcierge(roster: CrewRoster, source = 'CrewCheck app') {
