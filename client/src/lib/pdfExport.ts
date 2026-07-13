@@ -370,7 +370,7 @@ export function exportReport(
   const safeName = String(roster.crewName || 'Tripulante').split(' ')[0].replace(/[^A-Za-z0-9_-]/g, '') || 'Tripulante';
   const fileName = `CrewCheck_${MONTHS[roster.month - 1]}_${roster.year}_${safeName}.pdf`;
   const blob = doc.output('blob');
-  const url = triggerBlobDownload(blob, fileName);
+  const url = URL.createObjectURL(blob);
   rememberLastPdfExport(fileName, blob);
   return {
     fileName,
