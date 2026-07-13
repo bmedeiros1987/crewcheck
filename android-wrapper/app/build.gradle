@@ -16,8 +16,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 26
         targetSdk 35
-        versionCode 132000
-        versionName '13.2.0'
+        versionCode 138000
+        versionName '13.8.0'
     }
 
     def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
@@ -63,4 +63,9 @@ android {
             debuggable true
         }
     }
+}
+
+dependencies {
+    def billing_version = "9.1.0"
+    implementation "com.android.billingclient:billing:$billing_version"
 }
