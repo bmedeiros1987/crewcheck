@@ -519,13 +519,26 @@ function sanitizeRoster(roster) {
   return clone;
 }
 
+const SHARED_COWORKER_FIELDS = new Set([
+  'crew', 'crewlist', 'crewmembers', 'ccmlead', 'captain', 'firstofficer',
+  'pilots', 'cabincrew', 'cockpitcrew', 'colleagues',
+]);
+
+function stripSharedCoworkerFields(value) {
+  if (Array.isArray(value)) return value.map(stripSharedCoworkerFields);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !SHARED_COWORKER_FIELDS.has(key.toLowerCase()))
+    .map(([key, nested]) => [key, stripSharedCoworkerFields(nested)]));
+}
+
 function rosterForPermissions(roster, permissions = {}) {
   if (!roster) return null;
   const allowed = allowedPermissions(permissions);
   if (!allowed.roster) return {
     year: roster.year, month: roster.month, base: roster.base, days: [],
   };
-  const copy = sanitizeRoster(roster);
+  const copy = stripSharedCoworkerFields(sanitizeRoster(roster));
   copy.days = copy.days.map((day) => {
     const next = { ...day };
     if (!allowed.hotels) {
@@ -1479,7 +1492,8 @@ async function handleSharePublic(req, res, token) {
   if (!owner.rows[0] || !(await subscriptionStatus(db, owner.rows[0])).premiumAccess) return sendJson(res, 410, { ok: false, code: 'SHARE_PAUSED', message: 'Este compartilhamento não está mais disponível.' });
   const roster = await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND ($2::text IS NULL OR roster_key=$2) ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email, share.roster_key]);
   const payload = roster.rows[0]?.roster || null;
-  const staysResult = permissions.hotels ? await db.query('SELECT stay_date,hotel_name,airport,room_cipher,presentation_time,lead_minutes FROM crewcheck_platform_stays WHERE owner_email=$1 AND share_with_visitors=TRUE ORDER BY stay_date LIMIT 90', [share.owner_email]) : { rows: [] };
+  const selectedRosterKey = roster.rows[0]?.roster_key || null;
+  const staysResult = permissions.hotels && selectedRosterKey ? await db.query('SELECT stay_date,hotel_name,airport,room_cipher,presentation_time,lead_minutes FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2 AND share_with_visitors=TRUE ORDER BY stay_date LIMIT 90', [share.owner_email, selectedRosterKey]) : { rows: [] };
   const stays = staysResult.rows.map((stay) => ({
     stayDate: stay.stay_date, hotelName: stay.hotel_name, airport: stay.airport,
     room: permissions.room ? decryptPrivate(stay.room_cipher) : null,
