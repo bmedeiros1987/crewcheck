@@ -32,6 +32,8 @@ assert.match(platform, /retiredTokenHash/);
 assert.match(platform, /PLATFORM_METHOD_POLICIES/);
 assert.match(platform, /obfuscatedExternalAccountId/);
 assert.match(platform, /handleBillingCancel/);
+assert.match(platform, /Evento informativo registrado sem alterar a assinatura/);
+assert.doesNotMatch(platform, /function asaasEventStatus[\\s\\S]*?return 'pending';[\\s\\S]*?\\n\\}/);
 assert.match(platform, /handleVisitorUpdate/);
 assert.match(platform, /handleVisitorChat/);
 assert.match(platform, /handleOwnerVisitorChat/);
