@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
+import { handlePlatformRoute, consumePlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
@@ -1308,7 +1309,7 @@ async function handleTtsHealth(req, res) {
 function handleTtsProviderHealth(req, res) {
   return sendJson(res, 200, {
     ok: effectiveTtsProvider() === 'elevenlabs',
-    version: '13.7.16',
+    version: '13.8.0',
     ...ttsPolicySnapshot(),
     message: effectiveTtsProvider() === 'elevenlabs'
       ? 'ElevenLabs é o provedor efetivo de voz.'
@@ -1888,10 +1889,11 @@ async function conciergeGymsReply(snapshot) {
   const hotel = (snapshot?.roster?.days || []).find((day) => day?.hotel)?.hotel || '';
   const airport = next?.legs?.[0]?.origin || snapshot?.roster?.base || '';
   const plan = String(snapshot?.preferences?.gymPlan || 'ambos');
-  const query = plan === 'smartfit' ? 'Smart Fit academia' : plan === 'wellhub' ? 'academia Wellhub Gympass' : 'Smart Fit Wellhub academia fitness';
+  const partnerChains = 'Selfit Panobianco Bluefit Corpo e Saúde Pratique Fórmula Bodytech Fábrica de Monstros Ultra';
+  const query = plan === 'smartfit' ? 'Smart Fit academia aberta agora' : plan === 'wellhub' ? `${partnerChains} academia parceira aberta agora` : `Smart Fit ${partnerChains} academia aberta agora`;
   const places = await conciergeSearchPlaces(query, hotel || `${airport} ${WEATHER_AIRPORT_POINTS[airport]?.city || ''}`, location, 5);
   if (!places.length) return 'Não encontrei academias dentro do sistema agora. Envie sua localização e confira se a busca de locais está configurada; o app ainda oferece “Abrir no Google Maps”.';
-  return [`Academias próximas · plano ${plan === 'ambos' ? 'Wellhub + Smart Fit' : plan}:`, '', conciergePlaceLines(places), '', 'Confirme elegibilidade e horário no app do seu plano antes de sair.'].join('\n');
+  return [`Academias próximas · busca ${plan === 'ambos' ? 'Wellhub + Smart Fit' : plan}:`, '', conciergePlaceLines(places), '', 'Wellhub é um benefício corporativo, não uma academia. Confirme parceria, elegibilidade, lotação e horário nos canais oficiais antes de sair.'].join('\n');
 }
 function conciergeRoutineReply(snapshot) {
   const next = conciergeNextProgram(snapshot?.roster);
@@ -2152,12 +2154,14 @@ async function handleTelegramLinkStart(req, res) {
   const user = telegramRequestUser(req, body);
   if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para vincular o Telegram.' });
   const existingLink = await telegramLinkedRecordForEmail(user.email);
-  if (existingLink && !conciergeAccessMatches(user, existingLink)) return sendJson(res, 403, { ok: false, message: 'Este Telegram já está protegido por outro dispositivo. Entre com a conta vinculada para refazer o vínculo.' });
   const existingSnapshot = await conciergeLoadSnapshot(user);
-  if (existingSnapshot && !conciergeAccessMatches(user, existingSnapshot)) return sendJson(res, 403, { ok: false, message: 'A escala do Concierge já está protegida por outro dispositivo.' });
+  const legacyChatId = String(existingLink?.chatId || existingSnapshot?.chatId || '');
+  const legacyMigration = Boolean(user.accessKeyHash && legacyChatId && (!existingLink?.accessKeyHash || !existingSnapshot?.accessKeyHash));
+  if (existingLink && !conciergeAccessMatches(user, existingLink) && !legacyMigration) return sendJson(res, 403, { ok: false, message: 'Este Telegram já está protegido por outro dispositivo. Entre com a conta vinculada para refazer o vínculo.' });
+  if (existingSnapshot && !conciergeAccessMatches(user, existingSnapshot) && !legacyMigration) return sendJson(res, 403, { ok: false, message: 'A escala do Concierge já está protegida. Refaça o vínculo no Telegram antigo ou entre com uma sessão autenticada.' });
   const code = telegramLinkCode();
   const data = telegramLinksRead();
-  data.pending[code] = { code, email: user.email, name: user.name, accessKeyHash: user.accessKeyHash || existingLink?.accessKeyHash || '', createdAt: new Date().toISOString() };
+  data.pending[code] = { code, email: user.email, name: user.name, accessKeyHash: user.accessKeyHash || existingLink?.accessKeyHash || '', legacyMigration, existingChatId: legacyMigration ? legacyChatId : '', createdAt: new Date().toISOString() };
   telegramLinksWrite(data);
   await conciergeDbPut(`pending:${code}`, data.pending[code]);
   const username = telegramBotUsername();
@@ -2208,6 +2212,10 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   const pending = data.pending?.[code] || await conciergeDbGet(`pending:${code}`);
   if (!pending) {
     await sendTelegramMessage(chatId, 'Código de vínculo não localizado ou expirado. Gere um novo vínculo no CrewCheck.');
+    return true;
+  }
+  if (pending.legacyMigration && String(pending.existingChatId || '') !== String(chatId)) {
+    await sendTelegramMessage(chatId, 'A migração deste vínculo precisa ser confirmada no Telegram que já estava conectado ao CrewCheck.');
     return true;
   }
   const email = String(pending.email || '').trim().toLowerCase();
@@ -2436,6 +2444,7 @@ async function handleTelegramWebhook(req, res) {
   const message = update?.message || update?.edited_message || {};
   const chatId = message?.chat?.id;
   const text = String(message?.text || message?.caption || '').trim();
+  if (chatId && text && await handlePlatformVisitorTelegram(message, text, sendTelegramMessage)) return sendJson(res, 200, { ok: true, visitor: true, message: 'Comando de visitante processado.' });
   if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });
   if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
   else if (chatId && message?.location) await handleTelegramLocation(message);
@@ -2591,6 +2600,8 @@ async function handleAlarmTest(req, res) {
 
   if (wantsPhoneCall && !identity.admin) return sendJson(res, 403, { ok: false, message: 'O teste de ligação telefônica é exclusivo do administrador. A ligação via Telegram continua disponível para todos.' });
 
+  let usage = null;
+
   const results = [];
   if (wantsTelegramMessage) {
     const linkedChatId = await telegramLinkedChatIdForEmailAsync(identity.email);
@@ -2600,6 +2611,11 @@ async function handleAlarmTest(req, res) {
   if (wantsTelegramCall) {
     const linkedUsername = await telegramLinkedUsernameForEmailAsync(identity.email);
     const username = linkedUsername || (identity.admin ? envAny(['CALLMEBOT_TELEGRAM_CALL_USER']) : '');
+    if (!username) return sendJson(res, 400, { ok: false, message: 'Vincule um Telegram com nome de usuário antes de testar a ligação. Nenhuma ligação foi descontada.' });
+    if (!identity.admin) {
+      usage = await consumePlatformUsage(req, 'wakeup_call', 1);
+      if (!usage.allowed) return sendJson(res, Number(usage.status || 429), { ok: false, usage, message: usage.message || 'Limite mensal de ligações atingido.' });
+    }
     results.push({ channel: 'telegram-call', ...(await sendTelegramVoiceCall(username, text)) });
   }
   if (wantsPhoneCall) results.push({ channel: 'phone-call', ...(await sendAdminPhoneCall(payload.phone, text)) });
@@ -2611,6 +2627,7 @@ async function handleAlarmTest(req, res) {
     ok,
     configured: results.some((result) => result.configured),
     results,
+    usage,
     health: { telegram: telegramConfigured(), telegramCall: telegramCallProviderEnabled() && Boolean(await telegramLinkedUsernameForEmailAsync(identity.email)), phoneCall: phoneCallConfigured() },
     message,
   });
@@ -2620,6 +2637,10 @@ async function handleAlarmTest(req, res) {
 function boolEnv(keys = []) { return keys.some((key) => Boolean(String(process.env[key] || '').trim())); }
 function reliabilityModule(id, label, keys = [], messageOk = 'Configurado.', messageMissing = 'Aguardando configuração.') {
   const configured = boolEnv(keys);
+  return { id, label, ok: configured, configured, keys, message: configured ? messageOk : messageMissing };
+}
+function reliabilityModuleAll(id, label, keys = [], messageOk = 'Configurado.', messageMissing = 'Aguardando configuração completa.') {
+  const configured = keys.length > 0 && keys.every((key) => Boolean(String(process.env[key] || '').trim()));
   return { id, label, ok: configured, configured, keys, message: configured ? messageOk : messageMissing };
 }
 function reliabilityEnvItems() {
@@ -2637,22 +2658,24 @@ function reliabilityEnvItems() {
     reliabilityModule('telegram-stt-elevenlabs','Áudio Telegram ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY']),
     reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER','TELEGRAM_BOT_TOKEN']),
     reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
-    reliabilityModule('billing','Assinatura',['ASAAS_API_KEY']),
+    reliabilityModuleAll('billing-web','Assinatura web Asaas',['ASAAS_API_KEY','ASAAS_WEBHOOK_TOKEN']),
+    reliabilityModuleAll('billing-google-play','Assinatura Google Play',['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON','GOOGLE_PLAY_PACKAGE_NAME','GOOGLE_PLAY_RTDN_AUDIENCE','GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL']),
+    reliabilityModule('privacy-key','Criptografia de quarto',['CREWCHECK_DATA_ENCRYPTION_KEY','CREWCHECK_AUTH_SECRET']),
     reliabilityModule('osm','OpenStreetMap',['OSM_ROUTING_URL','OSM_ENABLE_PUBLIC_SERVICES']),
   ];
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.7.16', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.8.0', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.7.16', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.8.0', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.7.16', expectedRoutes:['/api/auth/config','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.8.0', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -2690,7 +2713,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.7.16 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.8.0 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -2700,8 +2723,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.7.16">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.7.16">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.8.0">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.8.0">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -2747,7 +2770,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.7.16&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.8.0&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -2759,7 +2782,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.7.16'
+    'x-crewcheck-boot': 'static-shell-13.8.0'
   });
   res.end(html);
 }
@@ -2793,7 +2816,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.7.16', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.8.0', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -2803,6 +2826,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/auth/resend-verification') return handleAuthResendVerification1371(req, res);
   if (url.pathname === '/api/auth/request-reset') return handleAuthRequestReset1371(req, res);
   if (url.pathname === '/api/auth/reset-password') return handleAuthResetPassword1371(req, res);
+  if (await handlePlatformRoute(req, res, url)) return;
   if (url.pathname === '/api/weather/airport') return handleAirportWeather(req, res, url);
   if (url.pathname === '/api/aviation-weather') return handleAviationWeather(req, res, url);
   if (url.pathname === '/api/parse-pdf') return handleParsePdfApi(req, res, url);
@@ -2827,7 +2851,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.7.16', reliability: true });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.8.0', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
