@@ -9,6 +9,8 @@ import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
 import InfoPage from "./pages/InfoPage";
 import WatchPage from "./pages/WatchPage";
+import VisitorAccessPage from "./pages/VisitorAccessPage";
+import SharedRosterPage from "./pages/SharedRosterPage";
 import { getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 
@@ -96,6 +98,8 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={AuthPage} />
+      <Route path="/visitor" component={VisitorAccessPage} />
+      <Route path="/share/:token">{(params) => <SharedRosterPage token={params.token} />}</Route>
       <Route path="/">{() => <Protected><Home /></Protected>}</Route>
       <Route path="/app">{() => <Protected><Home /></Protected>}</Route>
       <Route path="/home">{() => <Protected><Home /></Protected>}</Route>
@@ -134,7 +138,7 @@ export default function App() {
     applySavedTheme();
 
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '13.6.9');
+      window.localStorage.setItem('crewcheck_last_loaded_version', '13.8.0');
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations()
           .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
@@ -198,7 +202,7 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !currentPath.startsWith('/privacy') && !currentPath.startsWith('/terms') && !currentPath.startsWith('/delete-account'));
+  const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !currentPath.startsWith('/privacy') && !currentPath.startsWith('/terms') && !currentPath.startsWith('/delete-account') && !currentPath.startsWith('/visitor') && !currentPath.startsWith('/share/'));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
   if (maintenanceBlocks) return (
