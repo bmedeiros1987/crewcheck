@@ -60,7 +60,7 @@ import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent,
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge';
 
 type ZeroLeg = {
   id: string;
@@ -109,8 +109,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.15';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.15: auditoria visual, tema consistente e alertas lidos';
+const DEFAULT_VERSION = '13.7.16';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.16: Concierge Telegram, radar e operações conectadas';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -190,10 +190,10 @@ function buildGoogleMapsSearchUrl(lat: number, lng: number): string {
 function buildGoogleMapsWalkingDirectionsUrl(originLat: number, originLng: number, destLat: number, destLng: number): string {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(coordsLabel(originLat, originLng))}&destination=${encodeURIComponent(coordsLabel(destLat, destLng))}&travelmode=walking`;
 }
-function buildGoogleMapsDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' = 'driving'): string {
+function buildGoogleMapsDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' | 'transit' = 'driving'): string {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${travelmode}`;
 }
-function buildGoogleMapsEmbedDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' = 'driving'): string {
+function buildGoogleMapsEmbedDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' | 'transit' = 'driving'): string {
   const key = mapsBrowserKey();
   if (!key || !origin || !destination) return '';
   return `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(key)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${travelmode}`;
@@ -343,6 +343,7 @@ type NearbyPlace = {
   address?: string;
   rating?: number;
   mapsUrl?: string;
+  openNow?: boolean;
 };
 
 function todayRosterKey(now = new Date()) {
@@ -357,9 +358,9 @@ async function fetchRoutePreviewInfo(origin: string, destination: string): Promi
   } catch {}
   return null;
 }
-async function fetchNearbyFitnessPlaces(location: string): Promise<NearbyPlace[]> {
+async function fetchNearbyFitnessPlaces(location: string, query = 'academia Smart Fit Wellhub fitness'): Promise<NearbyPlace[]> {
   try {
-    const params = new URLSearchParams({ location, query: 'academia Smart Fit Wellhub fitness' });
+    const params = new URLSearchParams({ location, query });
     const response = await fetch(`/api/places/fitness?${params.toString()}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => null) as { places?: NearbyPlace[] } | null;
     return Array.isArray(payload?.places) ? payload!.places!.slice(0, 8) : [];
@@ -990,16 +991,17 @@ function RouteVisual({ event, compact = false }: { event: ZeroLeg; compact?: boo
 }
 
 
-function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
+function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: ZeroLeg; mode?: string; onRoute?: (route: RoutePreviewInfo | null) => void }) {
   const [origin, setOrigin] = useState(() => eventRouteOrigin(event));
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const destination = eventRouteDestination(event);
-  const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, 'driving');
+  const mapsMode = mode === 'transit' ? 'transit' : 'driving';
+  const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, mapsMode);
   useEffect(() => {
     let alive = true;
-    fetchRoutePreviewInfo(origin, destination).then((info) => { if (alive) setRoute(info); });
+    fetchRoutePreviewInfo(origin, destination).then((info) => { if (alive) { setRoute(info); onRoute?.(info); } });
     return () => { alive = false; };
-  }, [origin, destination]);
+  }, [origin, destination, mode]);
   async function refreshLocation() {
     try {
       const position = await getCurrentGeoPosition();
@@ -1010,11 +1012,11 @@ function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
       toast.error(error instanceof Error ? error.message : 'Não consegui atualizar sua localização.');
     }
   }
-  const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, 'driving');
+  const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, mapsMode);
   const staticRouteUrl = buildGoogleStaticRouteMapUrl(origin, destination, route);
   const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';
   return <article className="cz-google-route-card">
-    <header><div><b>Rota inteligente</b><span>Prévia do mapa · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
+    <header><div><b>Rota inteligente</b><span>Prévia do mapa · {mode === 'transit' ? 'transporte público' : mode === 'motorcycle' ? 'moto' : mode === 'uber' ? 'Uber/táxi' : 'carro'} · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
     <div className="cz-route-kpis">
       <div><small>Origem</small><strong>{origin === 'Minha localização' ? 'Minha localização' : origin}</strong></div>
       <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
@@ -1064,6 +1066,47 @@ async function openTelegramBinding() {
   } catch {
     toast.error('Não consegui iniciar o vínculo Telegram agora.');
   }
+}
+
+function telegramConciergeIdentity() {
+  const user = getStoredUser();
+  return {
+    email: String(user?.email || '').trim(),
+    name: String(user?.name || user?.email || 'Tripulante CrewCheck').trim(),
+  };
+}
+async function syncRosterWithTelegramConcierge(roster: CrewRoster, source = 'CrewCheck app') {
+  if (!Array.isArray(roster?.days) || !roster.days.length) throw new Error('Importe uma escala antes de sincronizar.');
+  const response = await fetch('/api/telegram/roster-sync', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ ...telegramConciergeIdentity(), roster, source }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'Não consegui sincronizar a escala com o Concierge.');
+  return payload;
+}
+async function fetchTelegramConciergeRoster() {
+  const identity = telegramConciergeIdentity();
+  const params = new URLSearchParams(identity);
+  const response = await fetch(`/api/telegram/roster?${params.toString()}`, { credentials: 'include', cache: 'no-store' });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.message || 'Não consegui consultar a escala do Telegram.');
+  return payload;
+}
+async function askTelegramConcierge(text: string) {
+  const response = await fetch('/api/telegram/concierge/ask', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ ...telegramConciergeIdentity(), text }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'O Concierge não respondeu agora.');
+  return payload;
 }
 
 function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
@@ -1145,7 +1188,8 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
 async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
   const flight = String(event.flightNumber || '').trim();
   if (event.kind !== 'flight' || event.placeholder || !/\d/.test(flight)) return { ok: false, message: 'Radar disponível apenas para voo publicado.' };
-  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0' });
+  const identity = telegramConciergeIdentity();
+  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name });
   const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
   const payload = await response.json().catch(() => ({ ok: false, message: 'Radar indisponível.' }));
   return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
@@ -1366,7 +1410,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Jornada/carga/limites',BriefcaseBusiness], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
-    ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
+    ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Academias','Wellhub e Smart Fit',Dumbbell], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
@@ -1395,7 +1439,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
         <button onClick={() => { actions.ics(); close(); }}><CalendarDays/><span><strong>Baixar ICS</strong><small>Arquivo calendário</small></span><ChevronRight/></button>
         <button onClick={() => { actions.google(); close(); }}><CalendarDays/><span><strong>Google Calendar</strong><small>Sincronizar agenda</small></span><ChevronRight/></button>
         <button onClick={() => { actions.whatsapp(); close(); }}><Send/><span><strong>WhatsApp</strong><small>Compartilhar resumo</small></span><ChevronRight/></button>
-        <button onClick={() => { actions.telegram(); close(); }}><Send/><span><strong>Vincular Telegram</strong><small>Notificações e despertador</small></span><ChevronRight/></button>
+        <button onClick={() => jump('concierge')}><Send/><span><strong>Abrir Concierge Telegram</strong><small>Enviar PDF, consultar e vincular</small></span><ChevronRight/></button>
         <button onClick={() => { actions.email(); close(); }}><Mail/><span><strong>E-mail</strong><small>Enviar relatório</small></span><ChevronRight/></button>
         <button onClick={() => { actions.copy(); close(); }}><Copy/><span><strong>Copiar resumo</strong><small>Área de transferência</small></span><ChevronRight/></button>
         <button onClick={() => { actions.save(); close(); }}><Save/><span><strong>Salvar histórico</strong><small>Banco/offline</small></span><ChevronRight/></button>
@@ -1706,9 +1750,25 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   const list = alerts.slice(0, 12);
   return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b></div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>Carregue a escala real para que o motor regulatório refaça a análise completa.</p></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ensinar falso positivo</button><button>Ver base regulatória</button></footer></article></>;
 }
+function routeDurationMinutes(route: RoutePreviewInfo | null): number {
+  const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();
+  const hours = Number(text.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(',', '.') || 0);
+  const minutes = Number(text.match(/(\d+)\s*min/)?.[1] || 0);
+  return Math.round(hours * 60 + minutes);
+}
 function Departure({ event }: { event: ZeroLeg }) {
+  const [mode, setMode] = useState(() => storage.get('crewcheck_departure_mode', 'driving'));
+  const [margin, setMargin] = useState(() => Number(storage.get('crewcheck_departure_margin', '25')) || 25);
+  const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, mapa e trânsito.</p></article></>;
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Google Maps</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><GoogleMapsRoutePreview event={event}/></section></>;
+  const travelMinutes = routeDurationMinutes(route);
+  const presentationDate = eventStartDateTime(event);
+  const leaveDate = travelMinutes ? new Date(presentationDate.getTime() - (travelMinutes + margin) * 60000) : null;
+  const leaveLabel = leaveDate ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(leaveDate) : 'Calcular';
+  const modeLabel = mode === 'transit' ? 'Transporte público' : mode === 'motorcycle' ? 'Moto' : mode === 'uber' ? 'Uber/táxi' : 'Carro';
+  function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); }
+  function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{leaveLabel}</strong><em>AUTOMÁTICO</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>{modeLabel} · apresentação {event.presentation} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Status<strong>{route?.trafficAware ? 'Trânsito ativo' : 'Monitorando'}</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>A recomendação é recalculada sem alterar o horário oficial de apresentação.</p><div className="cz-tool-actions"><button className={mode === 'driving' ? 'active' : ''} onClick={() => chooseMode('driving')}><Car/> Carro</button><button className={mode === 'uber' ? 'active' : ''} onClick={() => chooseMode('uber')}><Car/> Uber/táxi</button><button className={mode === 'motorcycle' ? 'active' : ''} onClick={() => chooseMode('motorcycle')}><Car/> Moto</button><button className={mode === 'transit' ? 'active' : ''} onClick={() => chooseMode('transit')}><MapIcon/> Transporte público</button></div><div className="cz-tool-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute}/></section></>;
 }
 
 function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
@@ -2072,7 +2132,12 @@ function HotelsView({ events }: { events: ZeroLeg[] }) {
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
   try { suggestions = buildRoutineSuggestions(analyzeDayLoads(bundle.roster).days, defaultRoutineActivities()).slice(0, 8); } catch {}
-  return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga de escala.</p></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina pronta</h3><p>Carregue uma escala para receber recomendações completas.</p></div></article>}</section></>;
+  const events = buildLegs(bundle.roster).filter((event) => !event.placeholder);
+  const next = chronologicalNextRosterLeg(events);
+  const hoursUntil = next ? Math.max(0, (eventStartDateTime(next).getTime() - Date.now()) / 36e5) : 0;
+  const intensity = !next ? 'Aguardando' : hoursUntil <= 12 ? 'Recuperação' : hoursUntil <= 24 ? 'Leve' : 'Moderada';
+  const nextDuty = next ? durationHours(next) : 0;
+  return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'gyms' }))}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
 }
 
 function GymsView({ events }: { events: ZeroLeg[] }) {
@@ -2081,18 +2146,142 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   const location = hotelSearchLocation(target);
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
+  const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'ambos'));
+  function choosePlan(value: string) {
+    setPlan(value);
+    storage.set('crewcheck:gym-provider-plan', value);
+  }
   async function search() {
     setLoading(true);
     try {
-      const found = await fetchNearbyFitnessPlaces(location);
+      const query = plan === 'wellhub' ? 'academia Wellhub Gympass fitness' : plan === 'smartfit' ? 'Smart Fit academia' : 'academia Smart Fit Wellhub fitness';
+      const found = await fetchNearbyFitnessPlaces(location, query);
       setPlaces(found);
       if (!found.length) toast.message('Não encontrei lista interna agora. Abrindo busca no Google Maps continua disponível.');
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => { search(); }, [location]);
-  return <><Brand back/><section className="cz-panel-head"><h1>Academias</h1><p>Recomendações próximas ao hotel ou cidade do pernoite: Smart Fit, Wellhub e academias locais.</p></section><section className="cz-toolbox"><h2>Local de busca</h2><p>{location}</p><div className="cz-tool-actions"><button onClick={search} disabled={loading}><Dumbbell/> Atualizar recomendações</button><button onClick={() => openFitnessSearch(location, 'Smart Fit Wellhub academia')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><ShieldCheck/> Rotina sugerida</button></div></section><section className="cz-stack-list">{places.length ? places.map((place, index) => <article className="cz-roster-card" key={`${place.name}-${index}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.rating ? `Avaliação ${place.rating}` : 'Ver disponibilidade e convênio no app da academia/Wellhub'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + location)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir</button></div></article>) : <article className="cz-empty-real"><Dumbbell/><h2>Busca pronta</h2><p>Configure a chave de mapas/locais no ambiente para listar academias dentro do app. Enquanto isso, use “Abrir no Google Maps”.</p></article>}</section></>;
+  useEffect(() => { search(); }, [location, plan]);
+  const planLabel = plan === 'wellhub' ? 'Wellhub' : plan === 'smartfit' ? 'Smart Fit' : 'Wellhub + Smart Fit';
+  return <><Brand back/><section className="cz-panel-head"><h1>Academias</h1><p>Recomendações próximas ao hotel ou cidade do pernoite, filtradas pelo seu plano e pela situação da próxima jornada.</p></section><section className="cz-toolbox"><h2>Plano e local</h2><p>{planLabel} · {location}</p><div className="cz-tool-actions"><button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Wellhub + Smart Fit</button><button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button><button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button></div><div className="cz-tool-actions"><button onClick={search} disabled={loading}><Dumbbell/> Atualizar recomendações</button><button onClick={() => openFitnessSearch(location, planLabel + ' academia')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><ShieldCheck/> Rotina sugerida</button></div></section><section className="cz-stack-list">{places.length ? places.map((place, index) => <article className="cz-roster-card" key={`${place.name}-${index}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.openNow === true ? 'Aberta agora · ' : place.openNow === false ? 'Fechada agora · ' : ''}{place.rating ? `Avaliação ${place.rating}` : 'Confira disponibilidade'} · confirme o convênio no app do plano</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + location)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir</button></div></article>) : <article className="cz-empty-real"><Dumbbell/><h2>Busca pronta</h2><p>Configure a chave de mapas/locais no ambiente para listar academias dentro do app. Enquanto isso, use “Abrir no Google Maps”.</p></article>}</section></>;
+}
+
+function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleState; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
+  const [status, setStatus] = useState<any>(null);
+  const [question, setQuestion] = useState('/proximo');
+  const [answer, setAnswer] = useState('');
+  const [busy, setBusy] = useState('');
+  const hasLocalRoster = Array.isArray(bundle.roster?.days) && bundle.roster.days.length > 0;
+  const commands = [
+    ['/proximo', 'Próxima programação'],
+    ['/hoje', 'Programação de hoje'],
+    ['/radar', 'Radar do próximo voo'],
+    ['/saida', 'Saída Inteligente'],
+    ['/metar', 'METAR da origem'],
+    ['/hoteis', 'Hotéis e pernoites'],
+    ['/academias', 'Academias próximas'],
+    ['/rotina', 'Rotina sugerida'],
+  ];
+
+  async function refresh() {
+    try {
+      const identity = telegramConciergeIdentity();
+      const params = new URLSearchParams(identity);
+      const [linkResponse, rosterPayload] = await Promise.all([
+        fetch(`/api/telegram/link/status?${params.toString()}`, { credentials: 'include', cache: 'no-store' }).then((response) => response.json()),
+        fetchTelegramConciergeRoster(),
+      ]);
+      setStatus({ ...(linkResponse || {}), roster: rosterPayload?.snapshot || null, hasRoster: Boolean(rosterPayload?.snapshot?.roster || linkResponse?.hasRoster), rosterMessage: rosterPayload?.message || '' });
+    } catch {
+      setStatus({ ok: false, linked: false, message: 'Concierge aguardando conexão.' });
+    }
+  }
+  useEffect(() => { refresh(); }, []);
+
+  async function syncCurrent() {
+    setBusy('sync');
+    try {
+      const payload = await syncRosterWithTelegramConcierge(bundle.roster, bundle.source);
+      toast.success(payload.message || 'Escala sincronizada com o Concierge.');
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui sincronizar a escala.');
+    } finally {
+      setBusy('');
+    }
+  }
+  async function importFromTelegram() {
+    setBusy('import');
+    try {
+      const payload = await fetchTelegramConciergeRoster();
+      const roster = payload?.snapshot?.roster as CrewRoster | undefined;
+      if (!roster?.days?.length) throw new Error('Nenhuma escala recebida pelo Telegram. Envie o PDF ao bot primeiro.');
+      const source = String(payload?.snapshot?.fileName || 'Escala recebida no Telegram');
+      const decision = confirmRosterImport(roster, source);
+      if (!decision.ok) return;
+      const compliance = saveRoster(roster, source);
+      setBundle({ roster, compliance, source });
+      setView('roster');
+      toast.success('Escala do Telegram importada e ativada no app.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui importar a escala do Telegram.');
+    } finally {
+      setBusy('');
+    }
+  }
+  async function ask(value = question) {
+    const text = value.trim();
+    if (!text) return;
+    setQuestion(text);
+    setBusy('ask');
+    try {
+      const payload = await askTelegramConcierge(text);
+      setAnswer(String(payload.reply || 'Sem resposta.'));
+      setStatus((current: any) => ({ ...(current || {}), linked: payload.linked, hasRoster: payload.hasRoster }));
+    } catch (error) {
+      setAnswer(error instanceof Error ? error.message : 'O Concierge não respondeu agora.');
+    } finally {
+      setBusy('');
+    }
+  }
+  async function linkTelegram() {
+    setBusy('link');
+    try {
+      await openTelegramBinding();
+      window.setTimeout(() => refresh(), 2500);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return <><Brand back/><section className="cz-panel-head"><h1>Concierge Telegram</h1><p>Envie sua escala em PDF ao bot, use os comandos antigos e consulte radar, portão, saída, meteorologia, hotéis, academias e rotina por texto ou voz.</p></section>
+    <section className="cz-finance-grid">
+      <KpiCard icon={Send} title="Telegram" value={status?.linked ? 'Vinculado' : 'Vincular'} detail={status?.message || 'Verificando bot'}/>
+      <KpiCard icon={FileText} title="Escala no bot" value={status?.hasRoster ? 'Sincronizada' : 'Aguardando'} detail={status?.roster?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(status.roster.updatedAt)) : 'Envie PDF ou sincronize'}/>
+      <KpiCard icon={Wifi} title="Comandos" value="Restaurados" detail="texto, voz e localização"/>
+    </section>
+    <section className="cz-toolbox">
+      <h2>Enviar a escala pelo Telegram</h2>
+      <p>1. Vincule o bot. 2. Abra a conversa e envie o PDF oficial como documento. 3. O Concierge valida a escala e responde com o resumo e a próxima programação. Depois você pode importar essa mesma escala no app.</p>
+      <div className="cz-tool-actions">
+        <button onClick={linkTelegram} disabled={Boolean(busy)}><Send/> {status?.linked ? 'Abrir ou refazer vínculo' : 'Vincular e abrir Telegram'}</button>
+        <button onClick={syncCurrent} disabled={Boolean(busy) || !hasLocalRoster}><RotateCcw/> {busy === 'sync' ? 'Sincronizando...' : 'Sincronizar escala atual'}</button>
+        <button onClick={importFromTelegram} disabled={Boolean(busy)}><Upload/> {busy === 'import' ? 'Importando...' : 'Importar escala recebida'}</button>
+        <button onClick={refresh} disabled={Boolean(busy)}><Radar/> Atualizar status</button>
+      </div>
+      {!hasLocalRoster && <p className="cz-mini-status">Você ainda pode enviar o PDF diretamente ao bot. Para sincronizar do app, importe uma escala primeiro.</p>}
+    </section>
+    <section className="cz-toolbox">
+      <h2>Prévia dos comandos</h2>
+      <p>Teste aqui a mesma resposta operacional que o bot usa. No Telegram, também funciona com perguntas naturais e mensagem de voz.</p>
+      <div className="cz-tool-actions">{commands.map(([command, label]) => <button key={command} onClick={() => ask(command)} disabled={Boolean(busy)}><Send/> {label}</button>)}</div>
+      <label><span>Pergunte ao Concierge</span><textarea className="cz-update-textarea" style={{ minHeight: 90 }} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex.: qual o portão do LA3730?"/></label>
+      <div className="cz-tool-actions"><button onClick={() => ask()} disabled={Boolean(busy) || !question.trim()}><Send/> {busy === 'ask' ? 'Consultando...' : 'Consultar'}</button></div>
+      {answer && <article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Wifi/></span><div className="cz-roster-copy"><h3>Resposta do Concierge</h3><p style={{ whiteSpace: 'pre-wrap' }}>{answer}</p></div></div></article>}
+    </section>
+    <section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>Privacidade operacional</h3><p>O texto bruto do PDF não fica no snapshot do Concierge. Senhas, MFA, cookies e credenciais do iFlight não são solicitados nem armazenados.</p></div></div><div className="cz-routine-strip"><span>PDF AIMS</span><span>Crew Roster</span><span>Texto → texto</span><span>Áudio → áudio</span><span>Localização sob demanda</span></div></article></section>
+  </>;
 }
 
 function DatabaseView({ setBundle, setView }: { setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
@@ -2107,7 +2296,7 @@ function CrewToolsView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Crew e chefe de cabine</h1><p>Tripulação, adicional de chefe, instrutor e apoio operacional.</p></section><section className="cz-stack-list">{firstCrew.length ? firstCrew.map((c:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-copy"><h3>{c.name || c.employeeName || 'Tripulante'}</h3><p>{c.role || c.function || 'Crew'}</p></div><strong className="cz-roster-time">{i===0 ? 'Chefe efetivo' : 'Tripulante'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Regra preservada</h3><p>Quando houver lista de CCM, o primeiro CCM listado é considerado chefe efetivo do voo para fins de adicional.</p></div></article>}</section></>;
 }
 function MaintenancePreview() { return <><Brand/><section className="cz-maintenance"><article><div className="cz-maint-illu"><Settings size={72}/><Plane size={64}/></div><h1>Site em manutenção</h1><p>Estamos realizando melhorias e atualizações no CrewCheck. Em breve o sistema estará disponível novamente.</p><span><ShieldCheck/> Modo ativado pelo administrador</span><div><Lock/> Apenas administradores podem acessar o painel durante a manutenção.</div><button>Acessar painel admin <ChevronRight/></button><button>Ver status</button><a>Voltar mais tarde</a></article><section><h2>Status da operação <b>Em andamento</b></h2><div><p><CalendarDays/>Escala em atualização</p><p><Bell/>Alertas em revisão</p><p><CloudSun/>Meteorologia sincronizando</p></div></section></section></> }
-function ImportPanel({ onUpload }: { onUpload: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala. Antes de salvar, o CrewCheck valida período, tripulante, base, dias, voos e próxima programação para evitar ativar o mês errado.</p><button onClick={onUpload}>Escolher PDF</button></section></>; }
+function ImportPanel({ onUpload, onConcierge }: { onUpload: () => void; onConcierge: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala. Antes de salvar, o CrewCheck valida período, tripulante, base, dias, voos e próxima programação para evitar ativar o mês errado.</p><button onClick={onUpload}>Escolher PDF no dispositivo</button><button onClick={onConcierge}><Send/> Enviar ou importar pelo Telegram</button></section></>; }
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -2380,6 +2569,7 @@ export default function Home() {
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
       storage.set('crewcheck_last_pdf_import_source', parsed.source);
       setBundle({ roster, compliance: newCompliance, source: file.name });
+      syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
       sessionStorage.setItem('crewcheck_force_view_once', 'roster');
       setView('roster');
       toast.success(`${decision.toastText || 'Escala real importada e detalhes liberados.'}${parsed.source === 'server-fallback' ? ' Leitura alternativa concluída.' : ''}`);
@@ -2425,8 +2615,9 @@ export default function Home() {
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
     {view === 'updates' && <UpdateCenterView/>}
     {view === 'maintenance' && <MaintenancePreview/>}
-    {view === 'import' && <ImportPanel onUpload={actions.upload}/>}
+    {view === 'import' && <ImportPanel onUpload={actions.upload} onConcierge={() => setView('concierge')}/>}
     {view === 'features' && <FeatureHub bundle={bundle} events={events} setBundle={setBundle} setView={setView} actions={actions}/>}
+    {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
     {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
