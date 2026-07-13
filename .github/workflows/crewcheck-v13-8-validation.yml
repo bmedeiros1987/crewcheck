@@ -81,7 +81,29 @@ jobs:
           set -euo pipefail
           source_aab="android-wrapper/app/build/outputs/bundle/release/app-release.aab"
           test -s "$source_aab"
-          jarsigner -verify -strict -certs "$source_aab" >/dev/null
+          set +e
+          jarsigner -verify -strict -certs "$source_aab" > "$RUNNER_TEMP/jarsigner-verification.txt" 2>&1
+          verify_status=$?
+          set -e
+          if [[ "$verify_status" -ne 0 && "$verify_status" -ne 4 ]]; then
+            cat "$RUNNER_TEMP/jarsigner-verification.txt"
+            echo "::error::A assinatura do AAB é inválida ou o certificado não está válido."
+            exit "$verify_status"
+          fi
+          grep -Fq "jar verified." "$RUNNER_TEMP/jarsigner-verification.txt"
+          ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
+          keytool -printcert -jarfile "$source_aab" >/dev/null
+          unzip -Z1 "$source_aab" | grep -Eq '^META-INF/[^/]+\\.(RSA|DSA|EC)
+          sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-13.8.0-signed-aab
+          path: |
+            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab
+            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab.sha256
+          if-no-files-found: error
+          retention-days: 14
+
           cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
           sha256sum "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab" > "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab.sha256"
       - uses: actions/upload-artifact@v4
