@@ -88,6 +88,7 @@ public class MainActivity extends Activity {
     private GeolocationPermissions.Callback pendingGeolocationCallback;
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
+    private CrewCheckBillingBridge billingBridge;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -143,23 +144,25 @@ public class MainActivity extends Activity {
         configureWebView(webView, false);
         webView.addJavascriptInterface(new CrewCheckIFlightBridge(), "AndroidCrewCheckIFlight");
         webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");
+        billingBridge = new CrewCheckBillingBridge(this, webView);
+        webView.addJavascriptInterface(billingBridge, "AndroidCrewCheckBilling");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (request != null && request.getUrl() != null) {
                     String target = request.getUrl().toString();
-                    if (isExternalSupportUrl(target)) {
-                        openExternalUrl(target);
-                        return true;
-                    }
+                    if (isCrewCheckWebUrl(target)) return false;
+                    openExternalUrl(target);
+                    return true;
                 }
-                return false;
+                return true;
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
             }
@@ -234,6 +237,10 @@ public class MainActivity extends Activity {
 
     private void handleGeolocationPermissionRequest(String origin, GeolocationPermissions.Callback callback) {
         if (callback == null) return;
+        if (!isCrewCheckWebUrl(origin)) {
+            callback.invoke(origin, false, false);
+            return;
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             callback.invoke(origin, true, false);
             return;
@@ -559,10 +566,31 @@ public class MainActivity extends Activity {
                 || lower.contains("api.whatsapp.com/");
     }
 
+    private boolean isCrewCheckWebUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url == null ? "" : url.trim());
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            if (BuildConfig.DEBUG && ("localhost".equals(host) || "10.0.2.2".equals(host)) && "http".equals(scheme)) return true;
+            if (!"https".equals(scheme)) return false;
+            return "crewcheck.online".equals(host)
+                    || "www.crewcheck.online".equals(host)
+                    || "crewcheck.onrender.com".equals(host);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private void openExternalUrl(String url) {
         if (url == null || url.trim().isEmpty()) return;
         try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            Uri uri = Uri.parse(url.trim());
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            if (!("https".equals(scheme) || "http".equals(scheme) || "mailto".equals(scheme) || "tel".equals(scheme) || "whatsapp".equals(scheme))) {
+                Toast.makeText(this, "Link externo bloqueado por segurança.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
         } catch (ActivityNotFoundException ex) {
@@ -604,7 +632,7 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {}
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            settings.setMixedContentMode(portalMode ? WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE : WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
@@ -612,7 +640,7 @@ public class MainActivity extends Activity {
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            cookieManager.setAcceptThirdPartyCookies(target, true);
+            cookieManager.setAcceptThirdPartyCookies(target, portalMode);
         }
     }
 
@@ -2260,6 +2288,10 @@ try{
     @Override
     protected void onDestroy() {
         closePortalOnly();
+        if (billingBridge != null) {
+            billingBridge.destroy();
+            billingBridge = null;
+        }
         if (webView != null) {
             webView.destroy();
             webView = null;
