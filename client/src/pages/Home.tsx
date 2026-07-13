@@ -106,8 +106,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.13';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.13: layout premium, cards largos e menu com perfil';
+const DEFAULT_VERSION = '13.7.14';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.14: auditoria visual, tema consistente e alertas lidos';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1034,11 +1034,11 @@ function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
     <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div><div className="cz-pills"><span>Premium</span><b>Beta</b></div></div>
   </header>;
 }
-function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void }) {
+function BottomNav({ view, setView, openMenu, alertCount = 0 }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void; alertCount?: number }) {
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight','updates'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight','updates'].includes(view))) ? 'active' : ''} onClick={() => { if (v === 'alerts') { try { localStorage.setItem('crewcheck_alerts_seen_count', String(alertCount || 0)); } catch {} } isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -2042,7 +2042,7 @@ async function loadCrewCheckRuntimePatch() {
   try {
     const response = await fetch('/api/admin/runtime-patch/current', { cache: 'no-store', credentials: 'include' });
     const payload = await response.json().catch(() => null);
-    if (payload?.ok) injectCrewCheckRuntimePatch(String(payload.css || ''));
+    if (payload?.ok) { const runtimeCss = String(payload.css || ''); const runtimeVersion = String(payload?.patch?.version || payload?.version || ''); const legacyRuntime = /CrewCheck runtime hotfix|MOBILE_FIT|Menu scroll|v13\\.7\\.(?:[0-9]|1[0-3])\\b/i.test(runtimeCss + ' ' + runtimeVersion); if (legacyRuntime) { injectCrewCheckRuntimePatch(''); return; } injectCrewCheckRuntimePatch(runtimeCss); }
   } catch {}
 }
 
@@ -2275,6 +2275,6 @@ export default function Home() {
     {view === 'map' && <MonthlyMapView events={events}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
+    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={Number((compliance as any)?.alerts?.length || 0)}/>
   </main>;
 }
