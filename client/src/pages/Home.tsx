@@ -47,10 +47,10 @@ import {
 } from 'lucide-react';
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
-import { getStoredUser, logout } from '@/lib/authClient';
+import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
-import { shareToWhatsApp, shareToTelegram, copyToClipboard } from '@/lib/sharing';
+import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
 import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routinePlanner';
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, saveGoogleCalendarSettings, listGoogleCalendars, googleCalendarIntegrationDiagnostics, type GoogleCalendarOption, type GoogleCalendarSettings } from '@/lib/googleCalendarSync';
@@ -81,6 +81,8 @@ type ZeroLeg = {
   gate?: string;
   terminal?: string;
   status?: string;
+  airlineCode?: string;
+  airlineName?: string;
   hotel?: string;
   crew?: string[];
   routine?: string[];
@@ -99,6 +101,7 @@ type QuickActions = {
   telegram: () => void;
   copy: () => void;
   email: () => void;
+  sharePdf: () => void;
   google: () => void;
   save: () => void;
   openActive: () => void;
@@ -106,8 +109,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.7.13';
-const CREWCHECK_UI_CORE_NOTE = 'v13.7.13: layout premium, cards largos e menu com perfil';
+const DEFAULT_VERSION = '13.7.15';
+const CREWCHECK_UI_CORE_NOTE = 'v13.7.15: auditoria visual, tema consistente e alertas lidos';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -122,6 +125,35 @@ const storage = {
 function pad2(n: number) { return String(n).padStart(2, '0'); }
 function safe(value: unknown, fallback = '—') { const text = String(value ?? '').trim(); return text || fallback; }
 function city(code?: string) { return airportCity(code); }
+
+const AIRLINE_NAMES: Record<string, string> = {
+  LA: 'LATAM', JJ: 'LATAM Brasil', G3: 'GOL', AD: 'Azul', '2Z': 'VOEPASS',
+  AA: 'American Airlines', DL: 'Delta', UA: 'United', AC: 'Air Canada',
+  TP: 'TAP Air Portugal', AV: 'Avianca', CM: 'Copa Airlines', AR: 'Aerolíneas Argentinas',
+  H2: 'SKY Airline', JA: 'JetSMART', FO: 'Flybondi', UX: 'Air Europa',
+  IB: 'Iberia', BA: 'British Airways', AF: 'Air France', KL: 'KLM',
+  LH: 'Lufthansa', LX: 'SWISS', EK: 'Emirates', QR: 'Qatar Airways',
+};
+function normalizedAirlineCode(...values: unknown[]): string {
+  for (const rawValue of values) {
+    const raw = String(rawValue || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!raw) continue;
+    if (/^(LAN|LATAM)/.test(raw)) return 'LA';
+    if (/^(TAM)/.test(raw)) return 'JJ';
+    const explicit = raw.match(/^([A-Z0-9]{2})(?=\d|$)/)?.[1];
+    if (explicit) return explicit;
+    if (/^[A-Z0-9]{2}$/.test(raw)) return raw;
+  }
+  return '';
+}
+function airlineNameFor(code?: string, explicit?: unknown): string {
+  const given = String(explicit || '').trim();
+  return given || AIRLINE_NAMES[String(code || '').toUpperCase()] || 'Companhia aérea';
+}
+function airlineLogoUrl(code?: string): string {
+  const normalized = String(code || '').trim().toUpperCase();
+  return normalized ? `https://images.kiwi.com/airlines/64/${encodeURIComponent(normalized)}.png` : '';
+}
 function addMinutesToTime(value: string, minutes: number) {
   const m = String(value || '').match(/(\d{1,2}):(\d{2})/);
   if (!m) return '—';
@@ -488,16 +520,19 @@ function savePresentationOverride(event: ZeroLeg, presentation: string, saveAsLe
     };
     writeJsonRecord(PRESENTATION_RULES_KEY, rules);
   }
+  window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationOverride(event: ZeroLeg) {
   const overrides = loadPresentationOverrides();
   delete overrides[presentationOverrideKey(event)];
   writeJsonRecord(PRESENTATION_OVERRIDES_KEY, overrides);
+  window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationLearning(event: ZeroLeg) {
   const rules = loadPresentationRules();
   delete rules[presentationLearningKey(event)];
   writeJsonRecord(PRESENTATION_RULES_KEY, rules);
+  window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function applyPresentationManagement(event: ZeroLeg): ZeroLeg {
   const managed = managedPresentationForEvent(event);
@@ -736,6 +771,8 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
 
     if (event.kind === 'flight' && leg) {
       const anyLeg = leg as any;
+      const airlineCode = normalizedAirlineCode(anyLeg.airlineCode, anyLeg.carrierCode, anyLeg.marketingCarrier, anyLeg.operatingCarrier, event.flightNumber);
+      const airlineName = airlineNameFor(airlineCode, anyLeg.airlineName || anyLeg.carrierName || anyLeg.operatorName);
       const suffix = event.isNextDay ? ' +1' : '';
       const workType = safe(anyLeg.workType || (leg as any).workType, 'OP');
       const title = `${event.flightNumber} ${workType}`;
@@ -762,6 +799,8 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         gate: safe(anyLeg.gate || (day as any).gate, 'A confirmar'),
         terminal: safe(anyLeg.terminal || (day as any).terminal, 'A confirmar'),
         status: safe(anyLeg.status || (day as any).status, 'Programado'),
+        airlineCode,
+        airlineName,
         hotel: safe((day as any).hotel || anyLeg.hotel, ''),
         crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
         routine: [
@@ -975,7 +1014,7 @@ function GoogleMapsRoutePreview({ event }: { event: ZeroLeg }) {
   const staticRouteUrl = buildGoogleStaticRouteMapUrl(origin, destination, route);
   const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';
   return <article className="cz-google-route-card">
-    <header><div><b>Prévia da rota</b><span>Ponto A → Ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
+    <header><div><b>Rota inteligente</b><span>Prévia do mapa · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
     <div className="cz-route-kpis">
       <div><small>Origem</small><strong>{origin === 'Minha localização' ? 'Minha localização' : origin}</strong></div>
       <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
@@ -1034,28 +1073,128 @@ function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
     <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div><div className="cz-pills"><span>Premium</span><b>Beta</b></div></div>
   </header>;
 }
-function BottomNav({ view, setView, openMenu }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void }) {
+function complianceAlertSignature(compliance: ComplianceResult | null): string {
+  const alerts = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  return alerts.map((alert: any) => [alert?.severity, alert?.title, alert?.description, alert?.legalReference].map((item) => String(item || '').trim()).join('::')).sort().join('||');
+}
+
+function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '' }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void; alertCount?: number; alertSignature?: string }) {
+  const currentSignature = alertCount > 0 ? (alertSignature || `count:${alertCount}`) : '';
+  const [seenSignature, setSeenSignature] = useState(() => storage.get('crewcheck_alerts_seen_signature', ''));
+  useEffect(() => {
+    if (alertCount === 0) {
+      storage.set('crewcheck_alerts_seen_signature', '');
+      storage.set('crewcheck_alerts_seen_count', '0');
+      setSeenSignature('');
+    }
+  }, [alertCount]);
+  const visibleAlertCount = currentSignature && currentSignature !== seenSignature ? alertCount : 0;
+  const markAlertsRead = () => {
+    storage.set('crewcheck_alerts_seen_signature', currentSignature);
+    storage.set('crewcheck_alerts_seen_count', String(alertCount));
+    setSeenSignature(currentSignature);
+  };
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
-  return <nav className="cz-bottom-nav">{items.map(([v, label, Icon]) => {
+  return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    return <button key={v} className={(view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','car','mycar','iflight','updates'].includes(view))) ? 'active' : ''} onClick={() => isMenu ? openMenu() : setView(v)}><Icon size={23}/><span>{label}</span>{v==='alerts' && <em>3</em>}</button>;
+    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates'].includes(view));
+    return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong>{value}</strong><p>{detail}</p></div></article>;
 }
+type RadarSnapshot = {
+  ok?: boolean;
+  flight?: string;
+  gate?: string;
+  terminal?: string;
+  status?: string;
+  departure?: string;
+  arrival?: string;
+  aircraft?: string;
+  registration?: string;
+  quality?: number;
+  latencyMs?: number;
+  alternatives?: number;
+  message?: string;
+  updatedAt?: number;
+};
+const RADAR_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const RADAR_CARD_REFRESH_MS = 5 * 60 * 1000;
+function radarSnapshotKey(event: ZeroLeg): string {
+  return ['crewcheck_radar_v2', event.id, event.flightNumber, event.origin, event.destination].map((part) => String(part || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '_')).join(':');
+}
+function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
+  if (event.kind !== 'flight' || event.placeholder) return null;
+  try {
+    const parsed = JSON.parse(storage.get(radarSnapshotKey(event), 'null')) as RadarSnapshot | null;
+    if (!parsed || !parsed.updatedAt || Date.now() - parsed.updatedAt > RADAR_CARD_CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
+  const snapshot = { ...payload, updatedAt: Date.now() };
+  const key = radarSnapshotKey(event);
+  storage.set(key, JSON.stringify(snapshot));
+  window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
+  return snapshot;
+}
+async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
+  const flight = String(event.flightNumber || '').trim();
+  if (event.kind !== 'flight' || event.placeholder || !/\d/.test(flight)) return { ok: false, message: 'Radar disponível apenas para voo publicado.' };
+  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0' });
+  const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
+  const payload = await response.json().catch(() => ({ ok: false, message: 'Radar indisponível.' }));
+  return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
+}
+function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
+  const [snapshot, setSnapshot] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
+  useEffect(() => {
+    let alive = true;
+    const key = radarSnapshotKey(event);
+    const cached = readRadarSnapshot(event);
+    setSnapshot(cached);
+    const onRadar = (incoming: Event) => {
+      const detail = (incoming as CustomEvent).detail;
+      if (detail?.key === key && alive) setSnapshot(detail.snapshot || null);
+    };
+    window.addEventListener('crewcheck:radar-updated', onRadar as EventListener);
+    const needsRefresh = event.kind === 'flight' && !event.placeholder && (!cached?.updatedAt || Date.now() - cached.updatedAt > RADAR_CARD_REFRESH_MS);
+    if (needsRefresh) fetchRadarSnapshot(event, false).then((next) => { if (alive) setSnapshot(next); }).catch(() => undefined);
+    return () => { alive = false; window.removeEventListener('crewcheck:radar-updated', onRadar as EventListener); };
+  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+  return snapshot;
+}
+function AirlineLogo({ code, name }: { code?: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [code]);
+  const url = airlineLogoUrl(code);
+  return <span className="cz-airline-logo" title={name}>{url && !failed ? <img src={url} alt={`Logo ${name}`} loading="lazy" onError={() => setFailed(true)}/> : <Plane size={24} aria-label={name}/>}</span>;
+}
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
   const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
-  return <article className={`cz-flight-card ${compact ? 'compact' : ''}`}>
-    <div className="cz-flight-head"><div className="cz-airline"><span className="cz-latam-mark">▰</span><strong>LATAM</strong><em>{event.flightNumber}</em></div><div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
+  const radar = useRadarSnapshot(event);
+  const airlineCode = event.airlineCode || normalizedAirlineCode(event.flightNumber);
+  const airlineName = airlineNameFor(airlineCode, event.airlineName);
+  const gate = safe(radar?.gate || event.gate, 'A confirmar');
+  const terminal = safe(radar?.terminal || event.terminal, 'A confirmar');
+  const status = safe(radar?.status || event.status, 'Programado');
+  const aircraft = safe(radar?.aircraft || event.aircraft, 'A confirmar');
+  const registration = safe(radar?.registration || event.registration, 'A confirmar');
+  const isFlight = event.kind === 'flight';
+  return <article className={`cz-flight-card ${compact ? 'compact' : ''} ${isFlight ? 'is-flight' : 'is-activity'}`}>
+    <div className="cz-flight-head">{isFlight ? <div className="cz-airline"><AirlineLogo code={airlineCode} name={airlineName}/><span><strong>{airlineName}</strong><em>{event.flightNumber}</em></span></div> : <div className="cz-airline cz-activity-brand"><span className="cz-airline-logo"><BriefcaseBusiness size={24}/></span><span><strong>{rosterEventTitle(event)}</strong><em>{safe(rosterCode(event.day), 'ATIVIDADE')}</em></span></div>}<div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
-    <div className="cz-flight-pills"><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{event.arrival}</span></div>
-    <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>Decolagem</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>Chegada</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo"><div><Lock size={25}/><span>Portão</span><strong>{safe(event.gate, 'A confirmar')}</strong><small>{safe(event.terminal, 'A confirmar')}</small></div><div><Plane size={25}/><span>Status</span><strong className="ok">{safe(event.status, 'Programado')}</strong><small>Aeronave: {safe(event.aircraft, 'A confirmar')} · Matrícula: {safe(event.registration, 'A confirmar')}</small></div></div>}
+    {isFlight ? <div className="cz-flight-pills"><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{radar?.updatedAt ? 'Radar sincronizado' : event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
+    <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>{isFlight ? 'Decolagem' : 'Início'}</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>{isFlight ? 'Chegada' : 'Fim'}</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
+    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{terminal}{radar?.updatedAt ? ' · Radar' : ''}</small></div>}<div><Plane size={25}/><span>Status</span><strong className="ok">{status}</strong><small>{isFlight ? `Aeronave: ${aircraft} · Matrícula: ${registration}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
-    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><MapIcon/> Mapa</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
+    {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button>{isFlight && <button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button>}<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><MapIcon/> Mapa do mês</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
   </article>;
 }
 function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
@@ -1236,17 +1375,14 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
     <button className="cz-menu-backdrop" onClick={close} aria-label="Fechar menu" />
     <aside className="cz-menu-panel" data-crew-menu-panel="true" onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
       <header className="cz-menu-header">
-        <div className="cz-menu-head-main">
-          <span className="cz-logo"><Plane size={24}/></span>
-          <strong>Menu CrewCheck</strong>
-          <button className="cz-menu-user" onClick={openProfile} type="button" aria-label="Abrir perfil">
-            <span className="cz-menu-avatar">{profileAvatar ? <img src={profileAvatar} alt="" /> : initials}</span>
-            <span><b>{profileName}</b><small>Perfil · versão {DEFAULT_VERSION}</small></span>
-          </button>
-          <label className="cz-menu-photo-pill">
-            Foto
+        <div className="cz-menu-identity">
+          <span className="cz-logo" title="CrewCheck"><Plane size={24}/></span>
+          <strong>CrewCheck</strong>
+          <label className="cz-menu-avatar cz-menu-avatar-edit" title="Alterar foto do perfil">
+            {profileAvatar ? <img src={profileAvatar} alt={`Foto de ${profileName}`} /> : initials}
             <input hidden type="file" accept="image/*" onChange={handleProfileAvatar}/>
           </label>
+          <button className="cz-menu-user-name" onClick={openProfile} type="button">{profileName}</button>
         </div>
         <button className="cz-menu-close" onClick={close} aria-label="Fechar menu"><X/></button>
       </header>
@@ -1255,6 +1391,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
       <section className="cz-menu-section"><h3>Ações rápidas</h3>
         <button onClick={() => { actions.upload(); close(); }}><Upload/><span><strong>Importar escala PDF</strong><small>AIMS/CrewRoster</small></span><ChevronRight/></button>
         <button onClick={() => { actions.pdf(); close(); }}><FileText/><span><strong>Exportar PDF</strong><small>Relatório completo</small></span><ChevronRight/></button>
+        <button onClick={() => { actions.sharePdf(); close(); }}><Share2/><span><strong>Compartilhar PDF</strong><small>Anexo pelo sistema ou menu nativo</small></span><ChevronRight/></button>
         <button onClick={() => { actions.ics(); close(); }}><CalendarDays/><span><strong>Baixar ICS</strong><small>Arquivo calendário</small></span><ChevronRight/></button>
         <button onClick={() => { actions.google(); close(); }}><CalendarDays/><span><strong>Google Calendar</strong><small>Sincronizar agenda</small></span><ChevronRight/></button>
         <button onClick={() => { actions.whatsapp(); close(); }}><Send/><span><strong>WhatsApp</strong><small>Compartilhar resumo</small></span><ChevronRight/></button>
@@ -1378,6 +1515,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
   const route = isFlight ? `${event.origin} → ${event.destination}` : `${base} · ${city(base)}`;
   const date = programDateLabel(event);
   const source = inlinePresentationSource(event);
+  const radar = useRadarSnapshot(event);
   const detailStyle = {
     margin: '-8px 0 18px 0',
     border: '1px solid rgba(126, 200, 255, .22)',
@@ -1400,7 +1538,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <div><span>Status</span><strong>{safe(event.status, 'Programado')}</strong></div>
       <div><span>Aeronave</span><strong>{safe(event.aircraft, 'A confirmar')}</strong></div>
       <div><span>Matrícula</span><strong>{safe(event.registration, 'A confirmar')}</strong></div>
-      <div><span>Portão/Terminal</span><strong>{safe(event.gate, 'A confirmar')} · {safe(event.terminal, 'A confirmar')}</strong></div>
+      <div><span>Portão/Terminal</span><strong>{safe(radar?.gate || event.gate, 'A confirmar')} · {safe(radar?.terminal || event.terminal, 'A confirmar')}</strong></div>
       <div><span>Hotel</span><strong>{safe(event.hotel, '—')}</strong></div>
     </div>
     <RosterInlineWeatherBlock event={event}/>
@@ -1411,7 +1549,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <button onClick={() => setView('departure')}><Car/> Saída</button>
       <button onClick={() => setView('radar')}><Radar/> Radar</button>
       <button onClick={() => setView('weather')}><CloudSun/> Meteo</button>
-      <button onClick={() => setView('map')}><MapIcon/> Mapa</button>
+      <button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button>
       <button onClick={() => setView('perdiem')}><BriefcaseBusiness/> Diárias</button>
       <button onClick={() => setView('salary')}><DollarSign/> Salário</button>
     </div>
@@ -1560,7 +1698,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{moneyBRL(finance.perdiem.monthly)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
@@ -1569,18 +1707,18 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b></div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>Carregue a escala real para que o motor regulatório refaça a análise completa.</p></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ensinar falso positivo</button><button>Ver base regulatória</button></footer></article></>;
 }
 function Departure({ event }: { event: ZeroLeg }) {
-  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, rota visual e pós-pouso até o hotel.</p></article></>;
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Google Maps</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><GoogleMapsRoutePreview event={event}/><article className="cz-map-card"><header><b>Rota inteligente</b><span>visual</span></header><RouteVisual event={event}/><ul><li><Radar/><span><strong>Prévia real de deslocamento</strong><small>O mapa mostra ponto A → ponto B quando a configuração de mapas estiver ativa.</small></span></li><li><Plane/><span><strong>Trânsito pelo Maps</strong><small>O Google Maps exibe trânsito ao abrir a rota.</small></span></li><li><Car/><span><strong>Pós-pouso</strong><small>Use a mesma lógica para aeroporto → hotel quando aplicável.</small></span></li></ul><footer><button onClick={() => openMapRoute(event)}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></footer></article></section></>;
+  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, mapa e trânsito.</p></article></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>Próxima programação · apresentação {event.presentation}</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Trânsito<strong>Google Maps</strong></div><div><ShieldCheck/>Status<strong>Monitorando</strong></div></div><GoogleMapsRoutePreview event={event}/></section></>;
 }
 
-function MonthlyMapView({ events }: { events: ZeroLeg[] }) {
+function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
   const data = monthlyRouteData(events);
   const destinations = monthlyMapDestinations(events);
   const currentMonth = events.find((event) => !event.placeholder)?.date || new Date();
   const query = monthlyMapQuery(destinations);
   const embedUrl = buildGoogleMapsEmbedSearchUrl(query);
   const staticMapUrl = buildGoogleStaticMonthlyMapUrl(destinations);
-  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>Destinos da escala vigente · {new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {destinations.length} cidade(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card cz-google-month-card"><header><div><strong>Destinos da escala vigente</strong><span>Cidades do mês marcadas a partir da escala importada.</span></div><button onClick={() => openMonthlyGoogleMap(destinations)}><MapIcon/> Abrir no Google Maps</button></header><div className="cz-google-map-preview cz-world-map">{staticMapUrl ? <img className="cz-static-map-img" src={staticMapUrl} alt="Mapa estático dos destinos do mês" loading="lazy"/> : embedUrl ? <iframe title="Mapa do mês pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><Globe2/><strong>Mapa estático aguardando configuração.</strong><span>Use Abrir no Google Maps para visualizar os destinos da escala vigente.</span></div>}</div><div className="cz-destination-strip">{destinations.slice(0, 18).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!destinations.length && <article className="cz-empty-real"><MapIcon/><h2>Sem destinos mapeáveis</h2><p>Importe a escala oficial para exibir as cidades do mês.</p></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Mapa do mês</h1><p>Disponível dentro de Escala · {new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(currentMonth)} · {destinations.length} cidade(s) · {data.totalKm.toLocaleString('pt-BR')} km estimados</p></section><section className="cz-month-map-card cz-google-month-card"><header><div><strong>Destinos da escala vigente</strong><span>Cidades do mês marcadas a partir da escala importada.</span></div><div className="cz-month-map-actions"><button onClick={() => openMonthlyGoogleMap(destinations)}><MapIcon/> Abrir mapa</button><button onClick={actions.sharePdf}><Share2/> Compartilhar PDF</button><button onClick={actions.email}><Mail/> Enviar por e-mail</button></div></header><div className="cz-google-map-preview cz-world-map">{staticMapUrl ? <img className="cz-static-map-img" src={staticMapUrl} alt="Mapa estático dos destinos do mês" loading="lazy"/> : embedUrl ? <iframe title="Mapa do mês pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><Globe2/><strong>Mapa aguardando configuração.</strong><span>Use Abrir mapa para visualizar os destinos da escala vigente.</span></div>}</div><div className="cz-destination-strip">{destinations.slice(0, 18).map((point) => <span key={point.code}><b>{point.code}</b>{city(point.code)} · {point.count}</span>)}</div>{!destinations.length && <article className="cz-empty-real"><MapIcon/><h2>Sem destinos mapeáveis</h2><p>Importe a escala oficial para exibir e compartilhar as cidades do mês.</p></article>}</section></>;
 }
 
 function CarView({ event }: { event: ZeroLeg }) {
@@ -1664,15 +1802,15 @@ function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: B
 
 
 function RadarView({ event }: { event: ZeroLeg }) {
-  const [state, setState] = useState<any>(null);
+  const [state, setState] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
   const [loading, setLoading] = useState(false);
   const flight = safe(event.flightNumber, '');
+  const airlineCode = event.airlineCode || normalizedAirlineCode(flight);
+  const airlineName = airlineNameFor(airlineCode, event.airlineName);
   async function refresh(force = false) {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ flight, origin: safe(event.origin, ''), destination: safe(event.destination, ''), force: force ? '1' : '0' });
-      const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
-      const payload = await response.json().catch(() => null);
+      const payload = await fetchRadarSnapshot(event, force);
       setState(payload || { ok: false, message: 'Radar indisponível.' });
     } catch {
       setState({ ok: false, message: 'Radar operacional aguardando fonte disponível.' });
@@ -1680,7 +1818,11 @@ function RadarView({ event }: { event: ZeroLeg }) {
       setLoading(false);
     }
   }
-  useEffect(() => { refresh(false); }, [flight, event.origin, event.destination]);
+  useEffect(() => {
+    const cached = readRadarSnapshot(event);
+    setState(cached);
+    refresh(false);
+  }, [event.id, flight, event.origin, event.destination]);
   const status = state?.status || event.status || 'Monitorando';
   const gate = state?.gate || event.gate || 'A confirmar';
   const terminal = state?.terminal || event.terminal || 'A confirmar';
@@ -1688,7 +1830,7 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const arr = state?.arrival || event.arrival;
   const quality = state?.quality ? `${state.quality}%` : 'Aguardando';
   const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · fonte disponível mais rápida e precisa.</p></section><section className="cz-radar-screen"><article><Radar/><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar agora</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section></>;
 }
 
 function WeatherView({ event }: { event: ZeroLeg }) {
@@ -1790,7 +1932,7 @@ function CalendarToolsView({ actions, bundle, gym }: { actions: QuickActions; bu
   return <><Brand back/><section className="cz-panel-head"><h1>Calendário</h1><p>Escolha o calendário de destino, sincronize a escala e mantenha ICS como fallback.</p></section><section className="cz-toolbox"><h2>Calendário de destino</h2><p>{settings.selectedCalendarName || settings.selectedCalendarId || 'Calendário principal'}</p><div className="cz-tool-actions"><button onClick={loadCalendars} disabled={busy}><CalendarDays/> Carregar calendários</button><button onClick={syncSelected} disabled={busy}><CalendarDays/> Sincronizar selecionado</button><button onClick={actions.ics}>Baixar ICS</button></div>{calendars.length > 0 && <select className="cz-calendar-select" value={settings.selectedCalendarId} onChange={(event) => selectCalendar(event.target.value)}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' · principal' : ''}</option>)}</select>}</section><section className="cz-diagnostics">{googleCalendarIntegrationDiagnostics().map((d: any) => <p key={d.label}><strong>{d.label}</strong><span>{d.value}</span></p>)}</section></>;
 }
 function ExportToolsView({ actions }: { actions: QuickActions }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, WhatsApp, Telegram, copiar resumo, e-mail e arquivo de calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.email}>E-mail</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, compartilhamento nativo, e-mail interno com anexo, WhatsApp, Telegram e calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>Baixar PDF</button><button onClick={actions.sharePdf}>Compartilhar PDF</button><button onClick={actions.email}>E-mail com PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
 }
 
 function wakeupLeadMinutes(): number {
@@ -1802,9 +1944,10 @@ function wakeupChannel(): string {
 }
 function wakeupChannelLabel(channel: string): string {
   const value = String(channel || '').toLowerCase();
-  if (value.includes('ambos') || value.includes('telegram+lig')) return 'Ligação + Telegram';
-  if (value.includes('liga')) return 'Somente ligação';
-  return 'Somente Telegram';
+  if (value === 'telegram-call') return 'Ligação via Telegram';
+  if (value.includes('ambos') || value.includes('telegram+lig')) return 'Ligação telefônica + Telegram';
+  if (value.includes('liga')) return 'Somente ligação telefônica';
+  return 'Mensagem no Telegram';
 }
 function wakeupDateForEvent(event: ZeroLeg): Date | null {
   if (!event || event.placeholder) return null;
@@ -1820,8 +1963,7 @@ function wakeupDateLabel(date: Date | null): string {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 async function postCrewCheckJson(url: string, payload: Record<string, unknown>): Promise<any> {
-  const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store' });
-  return response.json().catch(() => ({ ok: false, message: 'Resposta indisponível.' }));
+  return authFetch<any>(url, { method: 'POST', body: JSON.stringify(payload), cache: 'no-store' });
 }
 
 function WakeupView({ event }: { event: ZeroLeg }) {
@@ -1830,7 +1972,8 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   const [chatId, setChatId] = useState(() => storage.get('crewcheck_telegram_chat_id', ''));
   const [phone, setPhone] = useState(() => storage.get('crewcheck_wakeup_phone', ''));
   const [health, setHealth] = useState<any>(null);
-  const [busy, setBusy] = useState(false);
+  const [activeTest, setActiveTest] = useState('');
+  const admin = isAdmin();
   const planned = wakeupDateForEvent(event);
   const hotel = safe(event.hotel, event.kind === 'stay' ? `Hotel em ${city(event.destination || event.origin)}` : 'Sem hotel informado');
   const presentation = safe(event.presentation, 'A confirmar');
@@ -1846,22 +1989,28 @@ function WakeupView({ event }: { event: ZeroLeg }) {
     storage.set('crewcheck_wakeup_lead_minutes', lead);
     storage.set('crewcheck_wakeup_channel', channel);
     storage.set('crewcheck_telegram_chat_id', chatId);
-    storage.set('crewcheck_wakeup_phone', phone);
+    if (admin) storage.set('crewcheck_wakeup_phone', phone);
     toast.success('Preferências do despertador salvas.');
   }
 
-  async function testAlarm() {
+  async function testAlarm(testType: 'telegram-message' | 'telegram-call' | 'phone-call') {
     savePrefs();
-    setBusy(true);
+    setActiveTest(testType);
     try {
-      const payload = await postCrewCheckJson('/api/alarm/test', { channel, chatId, phone, email: getStoredUser()?.email, message: `Teste do Despertador Inteligente CrewCheck. Próxima programação: ${rosterEventTitle(event)} · apresentação ${presentation}.` });
+      const payload = await postCrewCheckJson('/api/alarm/test', {
+        testType,
+        channel,
+        chatId,
+        phone: admin ? phone : '',
+        message: `Teste do Despertador Inteligente CrewCheck. Próxima programação: ${rosterEventTitle(event)} · apresentação ${presentation}.`,
+      });
       if (payload?.ok) toast.success(payload.message || 'Teste enviado.');
       else toast.message(payload?.message || 'Canal aguardando configuração.');
-      setHealth(payload);
-    } catch {
-      toast.error('Não consegui testar o despertador agora.');
+      setHealth((current: any) => ({ ...(current || {}), ...(payload?.health || {}), lastTest: payload }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui testar o despertador agora.');
     } finally {
-      setBusy(false);
+      setActiveTest('');
     }
   }
 
@@ -1885,7 +2034,35 @@ function WakeupView({ event }: { event: ZeroLeg }) {
     window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Preferências por canal, Telegram, ligação, soneca e limite operacional de até 2 ligações por pernoite.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={health?.message || 'Verificando configuração'}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Use Telegram como canal gratuito. Ligação depende do canal de voz configurado no ambiente. O sistema não salva senha nem credenciais.</p><div className="cz-form-grid"><label><span>Canal</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Somente Telegram</option><option value="ligacao">Somente ligação</option><option value="ambos">Ligação + Telegram</option></select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Cole seu chat ID"/></label><label><span>Telefone com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label></div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={testAlarm} disabled={busy}><Send/> Testar canal</button><button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div></section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando chat/token'} · {health?.voice ? 'Ligação configurada' : 'Ligação aguardando canal'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Máx. 2 ligações por pernoite</span><span>Soneca no Telegram</span><span>Sem credenciais salvas</span><span>Fallback local</span></div></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagem e ligação via Telegram para todos os usuários; teste de ligação telefônica protegido para o administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={health?.message || 'Verificando configuração'}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar a mensagem e a ligação via Telegram. A ligação telefônica de teste usa as credenciais seguras do servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Teste de ligação do admin'}</button>}<button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div></section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? 'Ligação admin configurada' : 'Ligação admin aguardando canal'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>Ligação Telegram gratuita</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
+}
+
+function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
+  const [revision, setRevision] = useState(0);
+  const candidates = events.filter((event) => !event.placeholder && event.presentation && event.presentation !== '—' && event.presentation !== 'Conexão/Solo').slice(0, 40);
+  const rules = useMemo(() => Object.values(loadPresentationRules()), [revision]);
+  const overrides = useMemo(() => loadPresentationOverrides(), [revision]);
+  const refresh = () => setRevision((value) => value + 1);
+  function edit(event: ZeroLeg, learn: boolean) {
+    try {
+      if (!promptPresentation(event, learn)) return;
+      refresh();
+      toast.success(learn ? 'Horário aprendido para este hotel/local.' : 'Apresentação alterada nesta programação.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui alterar a apresentação.');
+    }
+  }
+  function resetOverride(event: ZeroLeg) {
+    clearPresentationOverride(event);
+    refresh();
+    toast.success('Ajuste desta programação removido.');
+  }
+  function resetLearning(event: ZeroLeg) {
+    clearPresentationLearning(event);
+    refresh();
+    toast.success('Aprendizado deste hotel/local removido.');
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>Gerenciador de Apresentação</h1><p>Ajuste um evento ou ensine um horário recorrente por hotel/local. A escala publicada continua preservada e pode ser restaurada a qualquer momento.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Programações" value={String(candidates.length)} detail="Com apresentação"/><KpiCard icon={Save} title="Ajustes manuais" value={String(Object.keys(overrides).length)} detail="Somente eventos escolhidos"/><KpiCard icon={Building2} title="Locais aprendidos" value={String(rules.length)} detail="Hotel ou base"/></section><section className="cz-toolbox"><h2>Aprendizado ativo</h2><p>{rules.length ? rules.map((rule) => `${rule.label}: ${rule.presentation} (${Math.round(rule.confidence * 100)}%)`).join(' · ') : 'Nenhum padrão aprendido. Use “Aprender hotel/local” em uma programação.'}</p></section><section className="cz-stack-list">{candidates.length ? candidates.map((event) => { const managed = managedPresentationForEvent(event); const learned = loadPresentationRules()[presentationLearningKey(event)]; const overridden = loadPresentationOverrides()[presentationOverrideKey(event)]; return <article className="cz-roster-card" key={`presentation-${event.id}-${revision}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Clock/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · {event.origin} → {event.destination}</p><small>{presentationLearningLabel(event)} · fonte: {managed.source}</small></div><strong className="cz-roster-time">{managed.presentation}</strong></div><div className="cz-tool-actions"><button onClick={() => edit(event, false)}><Clock/> Alterar esta programação</button><button onClick={() => edit(event, true)}><Building2/> Aprender hotel/local</button>{overridden && <button onClick={() => resetOverride(event)}><RotateCcw/> Restaurar escala publicada</button>}{learned && <button onClick={() => resetLearning(event)}><X/> Esquecer hotel/local</button>}</div></article>; }) : <article className="cz-empty-real"><Clock/><h2>Sem apresentações ajustáveis</h2><p>Importe uma escala com programações futuras para gerenciar horários.</p></article>}</section></>;
 }
 
 function HotelsView({ events }: { events: ZeroLeg[] }) {
@@ -2042,7 +2219,7 @@ async function loadCrewCheckRuntimePatch() {
   try {
     const response = await fetch('/api/admin/runtime-patch/current', { cache: 'no-store', credentials: 'include' });
     const payload = await response.json().catch(() => null);
-    if (payload?.ok) injectCrewCheckRuntimePatch(String(payload.css || ''));
+    if (payload?.ok) { const runtimeCss = String(payload.css || ''); const runtimeVersion = String(payload?.patch?.version || payload?.version || ''); const legacyRuntime = /CrewCheck runtime hotfix|MOBILE_FIT|Menu scroll|v13\\.7\\.(?:[0-9]|1[0-3])\\b/i.test(runtimeCss + ' ' + runtimeVersion); if (legacyRuntime) { injectCrewCheckRuntimePatch(''); return; } injectCrewCheckRuntimePatch(runtimeCss); }
   } catch {}
 }
 
@@ -2137,7 +2314,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
-  const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster]);
+  const [presentationRevision, setPresentationRevision] = useState(0);
+  const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
   const event = nextFlight(events);
   const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
@@ -2153,6 +2331,7 @@ export default function Home() {
     storage.set('crewcheck_last_loaded_version', DEFAULT_VERSION);
     const open = () => setDrawer(true);
     const setViewFromEvent = (event: Event) => { const next = (event as CustomEvent).detail; if (next) setView(normalizeInitialView(String(next))); };
+    const refreshPresentation = () => setPresentationRevision((value) => value + 1);
     const syncTheme = () => {
       const next = storage.get('crewcheck_theme_mode', 'dark') === 'light' || storage.get('crewcheck_light_premium', '0') === '1' ? 'light' : 'dark';
       document.documentElement.dataset.crewTheme = next;
@@ -2164,22 +2343,10 @@ export default function Home() {
     window.addEventListener('crewcheck:open-menu', open);
     window.addEventListener('crewcheck:set-view', setViewFromEvent as EventListener);
     window.addEventListener('crewcheck:theme-change', syncTheme);
-    return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
+    window.addEventListener('crewcheck:presentation-updated', refreshPresentation);
+    return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); window.removeEventListener('crewcheck:presentation-updated', refreshPresentation); };
   }, []);
 
-
-  useEffect(() => {
-    try {
-      document.documentElement.classList.toggle('crewcheck-menu-open', drawer);
-      document.body.classList.toggle('crewcheck-menu-open', drawer);
-    } catch {}
-    return () => {
-      try {
-        document.documentElement.classList.remove('crewcheck-menu-open');
-        document.body.classList.remove('crewcheck-menu-open');
-      } catch {}
-    };
-  }, [drawer]);
 
   useEffect(() => {
     try {
@@ -2234,7 +2401,8 @@ export default function Home() {
     whatsapp: () => { try { copyCurrentSummarySilently(); shareToWhatsApp(bundle.roster, compliance); toast.success('Resumo enviado para o WhatsApp.'); } catch { toast.error('Não consegui abrir WhatsApp.'); } },
     telegram: () => { openTelegramBinding(); },
     copy: () => { copyToClipboard(bundle.roster, compliance).then(ok => ok ? toast.success('Resumo copiado.') : toast.error('Não consegui copiar.')); },
-    email: () => { const to = window.prompt('Enviar relatório para qual e-mail?') || ''; if (!to.trim()) return; sendRosterByEmail({ to, roster: bundle.roster, compliance, gym }).then(()=>toast.success('E-mail enviado/solicitado.')).catch(()=>{ const subject = encodeURIComponent('Relatório CrewCheck'); const body = encodeURIComponent('Segue resumo CrewCheck. O PDF pode ser gerado no botão Exportar PDF.'); window.location.href = `mailto:${to}?subject=${subject}&body=${body}`; toast.message('Abrindo app de e-mail como fallback.'); }); },
+    email: async () => { const to = window.prompt('Enviar relatório com PDF para qual e-mail?') || ''; if (!to.trim()) return; try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await sendRosterByEmail({ to: to.trim(), roster: bundle.roster, compliance, gym, attachment: { fileName: pdf.fileName, blob: pdf.blob } }); toast.success(result.message || `Relatório e PDF enviados para ${to.trim()}.`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui enviar o relatório pelo CrewCheck.'); } },
+    sharePdf: async () => { try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); toast.success(result === 'shared' ? 'PDF compartilhado.' : 'PDF salvo para compartilhar.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
     save: () => { saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any).then(()=>toast.success('Escala salva no histórico.')).catch(()=>toast.error('Não consegui salvar no histórico agora.')); },
     openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
@@ -2272,9 +2440,9 @@ export default function Home() {
     {view === 'hotels' && <HotelsView events={events}/>}
     {view === 'gyms' && <GymsView events={events}/>}
     {view === 'presentation' && <PresentationManagerView events={events}/>}
-    {view === 'map' && <MonthlyMapView events={events}/>}
+    {view === 'map' && <MonthlyMapView events={events} actions={actions}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)}/>
+    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={Number((compliance as any)?.alerts?.length || 0)} alertSignature={complianceAlertSignature(compliance)}/>
   </main>;
 }

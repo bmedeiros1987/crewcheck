@@ -2,16 +2,41 @@ import { authFetch } from './authClient';
 import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 
+type PdfAttachment = {
+  fileName: string;
+  blob: Blob;
+};
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || '');
+      const comma = value.indexOf(',');
+      if (comma < 0) return reject(new Error('Não consegui preparar o PDF para envio.'));
+      resolve(value.slice(comma + 1));
+    };
+    reader.onerror = () => reject(new Error('Não consegui ler o PDF para envio.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export async function sendRosterByEmail(args: {
   to: string;
   roster: CrewRoster;
   compliance: ComplianceResult;
   gym: GymRecommendation[];
-}): Promise<{ ok: boolean; provider?: string }> {
+  attachment: PdfAttachment;
+}): Promise<{ ok: boolean; provider?: string; message?: string; messageId?: string }> {
+  const recipient = String(args.to || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) throw new Error('Informe um e-mail válido.');
+  if (!args.attachment?.blob || args.attachment.blob.type && args.attachment.blob.type !== 'application/pdf') throw new Error('O anexo precisa ser um PDF.');
+  if (args.attachment.blob.size > 20 * 1024 * 1024) throw new Error('O PDF ultrapassa 20 MB. Reduza o relatório antes de enviar.');
+
   const subject = `CrewCheck · ${args.roster.crewName} · ${String(args.roster.month).padStart(2, '0')}/${args.roster.year}`;
-  const critical = args.compliance.alerts.filter((a) => a.severity === 'error').length;
-  const warnings = args.compliance.alerts.filter((a) => a.severity === 'warning').length;
-  const bestGym = args.gym.slice(0, 5).map((g) => `${g.date}: ${g.suggestedDuration} (${g.reason})`).join('\n');
+  const critical = args.compliance.alerts.filter((alert) => alert.severity === 'error').length;
+  const warnings = args.compliance.alerts.filter((alert) => alert.severity === 'warning').length;
+  const bestGym = args.gym.slice(0, 5).map((item) => `${item.date}: ${item.suggestedDuration} (${item.reason})`).join('\n');
 
   const message = [
     'Relatório CrewCheck Premium',
@@ -29,16 +54,23 @@ export async function sendRosterByEmail(args: {
     '',
     bestGym ? `Melhores janelas de academia:\n${bestGym}` : 'Sem recomendação de academia disponível.',
     '',
-    'Este e-mail foi gerado automaticamente pelo CrewCheck Premium.',
+    'O relatório completo está anexado em PDF.',
+    'Este e-mail foi enviado pelo CrewCheck Premium.',
   ].join('\n');
 
-  return authFetch<{ ok: boolean; provider?: string }>('/api/email/share', {
+  const contentBase64 = await blobToBase64(args.attachment.blob);
+  return authFetch<{ ok: boolean; provider?: string; message?: string; messageId?: string }>('/api/email/share', {
     method: 'POST',
     body: JSON.stringify({
-      to: args.to,
+      to: recipient,
       subject,
       message,
       html: buildHtml(args, message),
+      attachment: {
+        fileName: String(args.attachment.fileName || 'CrewCheck.pdf').replace(/[^A-Za-z0-9._-]+/g, '_'),
+        mimeType: 'application/pdf',
+        contentBase64,
+      },
     }),
   });
 }
