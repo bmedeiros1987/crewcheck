@@ -1,9 +1,9 @@
 {
   "name": "crewcheck-v13-2-0-pr1-hotfix",
-  "version": "13.7.14",
+  "version": "13.7.15",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.7.14 — UI audit theme alerts",
+  "description": "CrewCheck v13.7.15 — visual premium e restauração operacional",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -92,7 +92,8 @@
     "regression:v13.7.11:elevenlabs-exclusive": "node scripts/regression-v13-7-11-elevenlabs-exclusive-tts.mjs",
     "regression:v13.7.12:elevenlabs-stt": "node scripts/regression-v13-7-12-elevenlabs-stt-provider.mjs",
     "regression:v13.7.13:premium-ui": "node scripts/regression-v13-7-13-premium-ui-layout-guard.mjs",
-    "regression:v13.7.14:ui-audit": "node scripts/regression-v13-7-14-ui-audit-theme-alerts.mjs"
+    "regression:v13.7.14:ui-audit": "node scripts/regression-v13-7-14-ui-audit-theme-alerts.mjs",
+    "regression:v13.7.15:full-restore": "node scripts/regression-v13-7-15-full-restore.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
