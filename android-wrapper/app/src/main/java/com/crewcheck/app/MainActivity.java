@@ -28,6 +28,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -571,7 +572,8 @@ public class MainActivity extends Activity {
             Uri uri = Uri.parse(url == null ? "" : url.trim());
             String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
             String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
-            if (BuildConfig.DEBUG && ("localhost".equals(host) || "10.0.2.2".equals(host)) && "http".equals(scheme)) return true;
+            boolean debugBuild = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+            if (debugBuild && ("localhost".equals(host) || "10.0.2.2".equals(host)) && "http".equals(scheme)) return true;
             if (!"https".equals(scheme)) return false;
             return "crewcheck.online".equals(host)
                     || "www.crewcheck.online".equals(host)
