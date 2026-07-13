@@ -1,0 +1,40 @@
+import { spawn } from 'node:child_process';
+
+const port = 43157;
+const child = spawn(process.execPath, ['server.mjs'], {
+  cwd: new URL('.', import.meta.url),
+  env: { ...process.env, PORT: String(port), NODE_ENV: 'test', CREWCHECK_AUTH_REQUIRED: 'false' },
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+
+const started = new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Servidor não iniciou.')), 5000);
+  child.stdout.on('data', (chunk) => {
+    if (String(chunk).includes('listening')) {
+      clearTimeout(timer);
+      resolve();
+    }
+  });
+  child.stderr.on('data', (chunk) => reject(new Error(String(chunk))));
+  child.on('exit', (code) => reject(new Error(`Servidor encerrou com ${code}.`)));
+});
+
+try {
+  await started;
+  const paths = ['/api/health', '/api/platform/catalog', '/api/reliability/self-test', '/api/email/health', '/api/alarm/health', '/api/radar-health'];
+  for (const path of paths) {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`);
+    const payload = await response.json();
+    if (!response.ok || typeof payload !== 'object') throw new Error(`${path} inválido`);
+    if (path === '/api/health' && payload.version !== '13.8.0') throw new Error('Versão incorreta');
+    if (path === '/api/platform/catalog') {
+      if (payload.encoding !== 'UTF-8' || payload.defaultTimezone !== 'America/Sao_Paulo') throw new Error('Preferências de plataforma incorretas');
+      if (!Array.isArray(payload.plans) || payload.plans.length !== 4) throw new Error('Catálogo de assinaturas incompleto');
+      const premium = payload.plans.find((plan) => plan.id === 'premium_monthly');
+      if (premium?.callLimit !== 20 || premium?.googlePlayProductId !== 'crewcheck_premium_monthly') throw new Error('Plano Premium incorreto');
+    }
+  }
+  console.log('CrewCheck server routes smoke test OK');
+} finally {
+  child.kill('SIGTERM');
+}
