@@ -520,16 +520,19 @@ function savePresentationOverride(event: ZeroLeg, presentation: string, saveAsLe
     };
     writeJsonRecord(PRESENTATION_RULES_KEY, rules);
   }
+  window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationOverride(event: ZeroLeg) {
   const overrides = loadPresentationOverrides();
   delete overrides[presentationOverrideKey(event)];
   writeJsonRecord(PRESENTATION_OVERRIDES_KEY, overrides);
+  window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationLearning(event: ZeroLeg) {
   const rules = loadPresentationRules();
   delete rules[presentationLearningKey(event)];
   writeJsonRecord(PRESENTATION_RULES_KEY, rules);
+  window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function applyPresentationManagement(event: ZeroLeg): ZeroLeg {
   const managed = managedPresentationForEvent(event);
@@ -2034,6 +2037,34 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagem e ligação via Telegram para todos os usuários; teste de ligação telefônica protegido para o administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={health?.message || 'Verificando configuração'}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar a mensagem e a ligação via Telegram. A ligação telefônica de teste usa as credenciais seguras do servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Teste de ligação do admin'}</button>}<button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div></section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? 'Ligação admin configurada' : 'Ligação admin aguardando canal'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>Ligação Telegram gratuita</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
 }
 
+function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
+  const [revision, setRevision] = useState(0);
+  const candidates = events.filter((event) => !event.placeholder && event.presentation && event.presentation !== '—' && event.presentation !== 'Conexão/Solo').slice(0, 40);
+  const rules = useMemo(() => Object.values(loadPresentationRules()), [revision]);
+  const overrides = useMemo(() => loadPresentationOverrides(), [revision]);
+  const refresh = () => setRevision((value) => value + 1);
+  function edit(event: ZeroLeg, learn: boolean) {
+    try {
+      if (!promptPresentation(event, learn)) return;
+      refresh();
+      toast.success(learn ? 'Horário aprendido para este hotel/local.' : 'Apresentação alterada nesta programação.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui alterar a apresentação.');
+    }
+  }
+  function resetOverride(event: ZeroLeg) {
+    clearPresentationOverride(event);
+    refresh();
+    toast.success('Ajuste desta programação removido.');
+  }
+  function resetLearning(event: ZeroLeg) {
+    clearPresentationLearning(event);
+    refresh();
+    toast.success('Aprendizado deste hotel/local removido.');
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>Gerenciador de Apresentação</h1><p>Ajuste um evento ou ensine um horário recorrente por hotel/local. A escala publicada continua preservada e pode ser restaurada a qualquer momento.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Programações" value={String(candidates.length)} detail="Com apresentação"/><KpiCard icon={Save} title="Ajustes manuais" value={String(Object.keys(overrides).length)} detail="Somente eventos escolhidos"/><KpiCard icon={Building2} title="Locais aprendidos" value={String(rules.length)} detail="Hotel ou base"/></section><section className="cz-toolbox"><h2>Aprendizado ativo</h2><p>{rules.length ? rules.map((rule) => `${rule.label}: ${rule.presentation} (${Math.round(rule.confidence * 100)}%)`).join(' · ') : 'Nenhum padrão aprendido. Use “Aprender hotel/local” em uma programação.'}</p></section><section className="cz-stack-list">{candidates.length ? candidates.map((event) => { const managed = managedPresentationForEvent(event); const learned = loadPresentationRules()[presentationLearningKey(event)]; const overridden = loadPresentationOverrides()[presentationOverrideKey(event)]; return <article className="cz-roster-card" key={`presentation-${event.id}-${revision}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Clock/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · {event.origin} → {event.destination}</p><small>{presentationLearningLabel(event)} · fonte: {managed.source}</small></div><strong className="cz-roster-time">{managed.presentation}</strong></div><div className="cz-tool-actions"><button onClick={() => edit(event, false)}><Clock/> Alterar esta programação</button><button onClick={() => edit(event, true)}><Building2/> Aprender hotel/local</button>{overridden && <button onClick={() => resetOverride(event)}><RotateCcw/> Restaurar escala publicada</button>}{learned && <button onClick={() => resetLearning(event)}><X/> Esquecer hotel/local</button>}</div></article>; }) : <article className="cz-empty-real"><Clock/><h2>Sem apresentações ajustáveis</h2><p>Importe uma escala com programações futuras para gerenciar horários.</p></article>}</section></>;
+}
+
 function HotelsView({ events }: { events: ZeroLeg[] }) {
   const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
   return <><Brand back/><section className="cz-panel-head"><h1>Hotéis</h1><p>Pernoites, descanso, entorno operacional e academias próximas ao hotel.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); return <article className="cz-roster-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => openFitnessSearch(loc, 'academia Smart Fit Wellhub')}><Dumbbell/> Academias próximas</button><button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`restaurante mercado farmácia lavanderia perto de ${loc}`)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Entorno</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div><div className="cz-routine-strip"><span>Descanso</span><span>Wake-up</span><span>Academia</span><span>Restaurante</span><span>Mercado</span><span>Farmácia</span><span>Lavanderia</span></div></article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
@@ -2283,7 +2314,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
-  const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster]);
+  const [presentationRevision, setPresentationRevision] = useState(0);
+  const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
   const event = nextFlight(events);
   const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
@@ -2299,6 +2331,7 @@ export default function Home() {
     storage.set('crewcheck_last_loaded_version', DEFAULT_VERSION);
     const open = () => setDrawer(true);
     const setViewFromEvent = (event: Event) => { const next = (event as CustomEvent).detail; if (next) setView(normalizeInitialView(String(next))); };
+    const refreshPresentation = () => setPresentationRevision((value) => value + 1);
     const syncTheme = () => {
       const next = storage.get('crewcheck_theme_mode', 'dark') === 'light' || storage.get('crewcheck_light_premium', '0') === '1' ? 'light' : 'dark';
       document.documentElement.dataset.crewTheme = next;
@@ -2310,7 +2343,8 @@ export default function Home() {
     window.addEventListener('crewcheck:open-menu', open);
     window.addEventListener('crewcheck:set-view', setViewFromEvent as EventListener);
     window.addEventListener('crewcheck:theme-change', syncTheme);
-    return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); };
+    window.addEventListener('crewcheck:presentation-updated', refreshPresentation);
+    return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); window.removeEventListener('crewcheck:presentation-updated', refreshPresentation); };
   }, []);
 
 
