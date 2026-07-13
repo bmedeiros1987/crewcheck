@@ -338,13 +338,13 @@ async function handleRadar(req, res, url) {
   const destination = String(url.searchParams.get('destination') || '').trim();
   if (!ctx.raw) return sendJson(res, 200, { ok: false, configured: false, message: 'Voo não identificado na escala.', quality: 0 });
   const payload = await runRadarRace(ctx, origin, destination);
-  const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '' });
+  const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '', conciergeKey: url.searchParams.get('conciergeKey') || '' });
   const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
   let exportedToConcierge = false;
   if (email) {
-    const profile = { email, name: String(url.searchParams.get('name') || '') };
+    const profile = { email, name: radarUser.name || String(url.searchParams.get('name') || ''), authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
     const snapshot = await conciergeLoadSnapshot(profile);
-    const info = snapshot?.roster ? conciergeFindFlight(snapshot.roster, ctx.raw) : null;
+    const info = snapshot?.roster && conciergeAccessMatches(profile, snapshot) ? conciergeFindFlight(snapshot.roster, ctx.raw) : null;
     if (info) {
       conciergeApplyRadar(snapshot, info, payload);
       await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'app-radar', lastRadar: { ...payload, updatedAt: new Date().toISOString() } });
@@ -1487,11 +1487,21 @@ function telegramRostersWrite(data) {
 function conciergeSafeKey(value = '') {
   return String(value || '').trim().toLowerCase().slice(0, 240);
 }
+function conciergeAccessHash(value = '') {
+  const raw = String(value || '').trim();
+  return raw.length >= 24 ? crypto.createHash('sha256').update(raw).digest('hex') : '';
+}
+function conciergeAccessMatches(user = {}, record = null) {
+  if (user.authenticated) return true;
+  const expected = String(record?.accessKeyHash || '');
+  const received = String(user.accessKeyHash || '');
+  return Boolean(expected && received && expected.length === received.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received)));
+}
 function telegramProfileForChat(message = {}) {
   const chatId = String(message?.chat?.id || '');
   const links = telegramLinksRead();
   const linked = Object.values(links.linked || {}).find((item) => String(item?.chatId || '') === chatId);
-  if (linked) return { email: conciergeSafeKey(linked.email), name: linked.name || message?.from?.first_name || 'Tripulante', chatId, linked: true };
+  if (linked) return { email: conciergeSafeKey(linked.email), name: linked.name || message?.from?.first_name || 'Tripulante', chatId, linked: true, accessKeyHash: linked.accessKeyHash || '' };
   return {
     email: chatId ? `telegram:${chatId}` : '',
     name: message?.from?.first_name || message?.chat?.first_name || 'Tripulante',
@@ -1507,7 +1517,7 @@ async function telegramProfileForChatAsync(message = {}) {
   const data = telegramLinksRead();
   data.linked[conciergeSafeKey(persisted.email)] = persisted;
   telegramLinksWrite(data);
-  return { email: conciergeSafeKey(persisted.email), name: persisted.name || cached.name, chatId: cached.chatId, linked: true };
+  return { email: conciergeSafeKey(persisted.email), name: persisted.name || cached.name, chatId: cached.chatId, linked: true, accessKeyHash: persisted.accessKeyHash || '' };
 }
 function conciergeSnapshotForProfile(profile = {}) {
   const key = conciergeSafeKey(profile.email || (profile.chatId ? `telegram:${profile.chatId}` : ''));
@@ -1546,6 +1556,7 @@ function conciergeSaveSnapshot(profile = {}, roster = null, metadata = {}) {
     email: profile.email || previous.email || '',
     name: profile.name || previous.name || '',
     chatId: String(profile.chatId || previous.chatId || ''),
+    accessKeyHash: profile.accessKeyHash || previous.accessKeyHash || '',
     roster: nextRoster,
     diagnostics: nextRoster ? conciergeRosterDiagnostics(nextRoster) : previous.diagnostics || null,
     preferences: { ...(previous.preferences || {}), ...(metadata.preferences || {}) },
@@ -1587,6 +1598,7 @@ async function conciergeMergeChatSnapshot(profile = {}) {
     email: profile.email,
     name: profile.name || current.name || transient.name,
     chatId: String(profile.chatId || current.chatId || transient.chatId || ''),
+    accessKeyHash: profile.accessKeyHash || current.accessKeyHash || transient.accessKeyHash || '',
     roster: current.roster || transient.roster,
     preferences: { ...(transient.preferences || {}), ...(current.preferences || {}) },
     updatedAt: new Date().toISOString(),
@@ -1963,11 +1975,15 @@ async function handleParsePdfApi(req, res) {
   }
 }
 async function handleTelegramRosterSync(req, res, url) {
-  const body = req.method === 'POST' ? await readJsonBody(req, 6_000_000) : { email: String(url?.searchParams?.get('email') || ''), name: String(url?.searchParams?.get('name') || '') };
+  const body = req.method === 'POST' ? await readJsonBody(req, 6_000_000) : { email: String(url?.searchParams?.get('email') || ''), name: String(url?.searchParams?.get('name') || ''), conciergeKey: String(url?.searchParams?.get('conciergeKey') || '') };
   const user = telegramRequestUser(req, body);
   if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para sincronizar a escala com o Concierge.' });
-  const chatId = await telegramLinkedChatIdForEmailAsync(user.email);
+  const linkedRecord = await telegramLinkedRecordForEmail(user.email);
+  if (linkedRecord && !conciergeAccessMatches(user, linkedRecord)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a usar o Telegram vinculado.' });
+  const chatId = String(linkedRecord?.chatId || '');
   const profile = { ...user, chatId, linked: Boolean(chatId) };
+  const existingSnapshot = await conciergeLoadSnapshot(profile);
+  if (existingSnapshot && !conciergeAccessMatches(user, existingSnapshot)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a acessar a escala do Concierge.' });
   if (req.method === 'DELETE') {
     const data = telegramRostersRead();
     delete data.snapshots[conciergeSafeKey(user.email)];
@@ -1976,7 +1992,7 @@ async function handleTelegramRosterSync(req, res, url) {
     return sendJson(res, 200, { ok: true, message: 'Escala removida do Concierge.' });
   }
   if (req.method !== 'POST') {
-    const snapshot = await conciergeLoadSnapshot(profile);
+    const snapshot = existingSnapshot;
     return sendJson(res, 200, { ok: Boolean(snapshot?.roster), linked: profile.linked, snapshot: snapshot || null, message: snapshot?.roster ? 'Escala do Concierge disponível.' : 'Nenhuma escala sincronizada com o Concierge.' });
   }
   const roster = body.roster;
@@ -1989,9 +2005,12 @@ async function handleTelegramConciergeAsk(req, res) {
   const body = await readJsonBody(req, 1_000_000);
   const user = telegramRequestUser(req, body);
   if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para consultar o Concierge no app.' });
-  const chatId = await telegramLinkedChatIdForEmailAsync(user.email);
+  const linkedRecord = await telegramLinkedRecordForEmail(user.email);
+  if (linkedRecord && !conciergeAccessMatches(user, linkedRecord)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a usar o Telegram vinculado.' });
+  const chatId = String(linkedRecord?.chatId || '');
   const profile = { ...user, chatId, linked: Boolean(chatId) };
   let snapshot = await conciergeLoadSnapshot(profile);
+  if (snapshot && !conciergeAccessMatches(user, snapshot)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a consultar esta escala.' });
   if (body.location && typeof body.location === 'object') snapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: body.location } });
   const reply = await buildTelegramConciergeReply(String(body.text || body.message || ''), profile, snapshot);
   return sendJson(res, 200, { ok: true, reply, linked: profile.linked, hasRoster: Boolean(snapshot?.roster), updatedAt: snapshot?.updatedAt || '', message: 'Resposta operacional gerada.' });
@@ -2076,6 +2095,7 @@ function telegramLinkCode() {
 function telegramRequestUser(req, body = {}) {
   let email = String(body.email || '').trim().toLowerCase();
   let name = String(body.name || '').trim();
+  const accessKeyHash = conciergeAccessHash(body.conciergeKey || body.accessKey || req?.headers?.['x-crewcheck-concierge-key'] || '');
   let authenticated = false;
   try {
     if (typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
@@ -2090,10 +2110,10 @@ function telegramRequestUser(req, body = {}) {
   } catch {}
   if (!email) email = 'local@crewcheck.local';
   if (!name) name = email.includes('@') ? email.split('@')[0] : 'Tripulante CrewCheck';
-  return { email, name, authenticated };
+  return { email, name, authenticated, accessKeyHash };
 }
 function telegramAppRequestAllowed(user = {}) {
-  return !cc1371AuthRequired() || Boolean(user.authenticated);
+  return Boolean(user.authenticated || (!cc1371AuthRequired() && user.accessKeyHash));
 }
 function telegramLinkedChatIdForEmail(email = '') {
   const key = String(email || '').trim().toLowerCase();
@@ -2131,9 +2151,13 @@ async function handleTelegramLinkStart(req, res) {
   const body = await readJsonBody(req, 300000);
   const user = telegramRequestUser(req, body);
   if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para vincular o Telegram.' });
+  const existingLink = await telegramLinkedRecordForEmail(user.email);
+  if (existingLink && !conciergeAccessMatches(user, existingLink)) return sendJson(res, 403, { ok: false, message: 'Este Telegram já está protegido por outro dispositivo. Entre com a conta vinculada para refazer o vínculo.' });
+  const existingSnapshot = await conciergeLoadSnapshot(user);
+  if (existingSnapshot && !conciergeAccessMatches(user, existingSnapshot)) return sendJson(res, 403, { ok: false, message: 'A escala do Concierge já está protegida por outro dispositivo.' });
   const code = telegramLinkCode();
   const data = telegramLinksRead();
-  data.pending[code] = { code, email: user.email, name: user.name, createdAt: new Date().toISOString() };
+  data.pending[code] = { code, email: user.email, name: user.name, accessKeyHash: user.accessKeyHash || existingLink?.accessKeyHash || '', createdAt: new Date().toISOString() };
   telegramLinksWrite(data);
   await conciergeDbPut(`pending:${code}`, data.pending[code]);
   const username = telegramBotUsername();
@@ -2151,7 +2175,7 @@ async function handleTelegramLinkStart(req, res) {
 async function handleTelegramLinkStatus(req, res, url) {
   const code = String(url.searchParams.get('code') || '').trim();
   const requestedEmail = String(url.searchParams.get('email') || '').trim().toLowerCase();
-  const user = telegramRequestUser(req, { email: requestedEmail });
+  const user = telegramRequestUser(req, { email: requestedEmail, conciergeKey: String(url.searchParams.get('conciergeKey') || '') });
   if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, linked: false, message: 'Faça login para consultar o vínculo Telegram.' });
   const email = user.email;
   const data = telegramLinksRead();
@@ -2161,7 +2185,9 @@ async function handleTelegramLinkStatus(req, res, url) {
   if (!linked && code) linked = await conciergeDbGet(`link-code:${code}`);
   if (!linked && email) linked = await telegramLinkedRecordForEmail(email);
   if (linked && email && conciergeSafeKey(linked.email) !== conciergeSafeKey(email)) linked = null;
-  const snapshot = linked?.email ? await conciergeLoadSnapshot({ email: linked.email, chatId: linked.chatId }) : (email ? await conciergeLoadSnapshot({ email }) : null);
+  if (linked && !conciergeAccessMatches(user, linked)) return sendJson(res, 403, { ok: false, linked: false, message: 'Este dispositivo não está autorizado a consultar este vínculo.' });
+  const snapshot = linked?.email ? await conciergeLoadSnapshot({ ...user, email: linked.email, chatId: linked.chatId }) : (email ? await conciergeLoadSnapshot(user) : null);
+  if (snapshot && !conciergeAccessMatches(user, snapshot)) return sendJson(res, 403, { ok: false, linked: false, message: 'Este dispositivo não está autorizado a consultar a escala vinculada.' });
   return sendJson(res, 200, {
     ok: Boolean(linked?.chatId),
     linked: Boolean(linked?.chatId),
@@ -2191,6 +2217,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
     code,
     chatId: String(chatId),
     username: message?.from?.username || message?.chat?.username || '',
+    accessKeyHash: pending.accessKeyHash || '',
     linkedAt: new Date().toISOString(),
   };
   delete data.pending[code];
@@ -2201,7 +2228,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
     conciergeDbPut(`link-code:${code}`, data.linked[email]),
     conciergeDbDelete(`pending:${code}`),
   ]);
-  await conciergeMergeChatSnapshot({ email, name: pending.name || '', chatId: String(chatId) });
+  await conciergeMergeChatSnapshot({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' });
   await sendTelegramMessage(chatId, [
     'Telegram vinculado ao CrewCheck.',
     '',
@@ -2372,7 +2399,9 @@ async function handleTelegramSend(req, res) {
   const payload = await readJsonBody(req);
   const user = telegramRequestUser(req, payload);
   if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para enviar pelo Concierge.' });
-  const linkedChatId = await telegramLinkedChatIdForEmailAsync(user.email);
+  const linkedRecord = await telegramLinkedRecordForEmail(user.email);
+  if (linkedRecord && !conciergeAccessMatches(user, linkedRecord)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a enviar para o Telegram vinculado.' });
+  const linkedChatId = String(linkedRecord?.chatId || '');
   const admin = Boolean(typeof cc1371IsAdmin === 'function' && cc1371IsAdmin(user.email));
   const requestedChatId = admin ? String(payload.chatId || payload.chat_id || '') : '';
   const chatId = String(requestedChatId || linkedChatId || (admin ? telegramDefaultChatId() : '') || '').trim();

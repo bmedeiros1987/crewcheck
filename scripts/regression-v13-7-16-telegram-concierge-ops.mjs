@@ -58,7 +58,9 @@ async function waitForServer() {
 
 try {
   await waitForServer();
-  const identity = { email: 'regression-concierge@crewcheck.local', name: 'Regressão' };
+  const identity = { email: 'regression-concierge@crewcheck.local', name: 'Regressão', conciergeKey: 'regression-private-device-key-13716' };
+  const unauthorizedResponse = await fetch(`http://127.0.0.1:${port}/api/telegram/roster?email=${encodeURIComponent(identity.email)}`);
+  check(unauthorizedResponse.status === 401, 'Consulta sem chave privada deveria ser bloqueada.');
   const roster = {
     crewName: 'Regressão CrewCheck',
     base: 'BSB',
