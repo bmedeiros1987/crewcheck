@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const [home, platform, server, client, android, androidMain, app, visitor, shared, email] = await Promise.all([
+const [home, platform, server, client, android, androidMain, androidGradle, app, visitor, shared, email] = await Promise.all([
   read('client/src/pages/Home.tsx'),
   read('server/platform.mjs'),
   read('server.mjs'),
   read('client/src/lib/platformClient.ts'),
   read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckBillingBridge.java'),
   read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'),
+  read('android-wrapper/app/build.gradle'),
   read('client/src/App.tsx'),
   read('client/src/pages/VisitorAccessPage.tsx'),
   read('client/src/pages/SharedRosterPage.tsx'),
@@ -45,6 +46,7 @@ assert.match(android, /setObfuscatedAccountId/);
 assert.match(androidMain, /isCrewCheckWebUrl/);
 assert.match(androidMain, /MIXED_CONTENT_NEVER_ALLOW/);
 assert.match(androidMain, /ApplicationInfo\.FLAG_DEBUGGABLE/);
+assert.match(androidGradle, /kotlin-bom:1\.8\.22/);
 assert.match(app, /VisitorAccessPage/);
 assert.match(app, /SharedRosterPage/);
 assert.match(visitor, /emergency/);
