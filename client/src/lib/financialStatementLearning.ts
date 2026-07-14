@@ -146,3 +146,30 @@ export function mergeConfirmedRates(current: LearnedRate[], incoming: LearnedRat
 export function rateAt(rates: LearnedRate[], key: string, date: string): LearnedRate | null {
   return rates.filter((entry) => entry.confirmed && entry.key === key && entry.effectiveFrom <= date && (!entry.effectiveTo || entry.effectiveTo >= date)).at(-1) || null;
 }
+
+
+export const FINANCIAL_RATES_STORAGE_KEY = 'crewcheck_financial_learned_rates_v1';
+
+export function readConfirmedFinancialRates(): LearnedRate[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const parsed = JSON.parse(localStorage.getItem(FINANCIAL_RATES_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry?.confirmed === true) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveConfirmedFinancialRates(rates: LearnedRate[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(FINANCIAL_RATES_STORAGE_KEY, JSON.stringify(rates.filter((entry) => entry?.confirmed === true)));
+  } catch {
+    // O modo privado pode bloquear o armazenamento; a importação continua somente na sessão.
+  }
+}
+
+export function confirmedRateValueAt(key: string, date: string): number | null {
+  const found = rateAt(readConfirmedFinancialRates(), key, date);
+  return found && Number.isFinite(Number(found.value)) ? Number(found.value) : null;
+}
