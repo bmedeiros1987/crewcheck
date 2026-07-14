@@ -18193,8 +18193,6 @@ body.crewcheck-menu-open .cz-bottom-nav {
   .cz-menu-identity>.cz-logo,.cz-menu-avatar-profile,.cz-menu-avatar-edit{width:46px!important;height:46px!important;min-width:46px!important}
   .finance-learning-table-wrap table{min-width:560px!important}
 }
-+
-
 /* CrewCheck v13.8.6 — serviços internos, estacionamento e acabamento premium */
 :root{
   --cc1386-cyan:#22d3ee;
@@ -18442,4 +18440,3 @@ body.crewcheck-menu-open .cz-bottom-nav {
   .cz-parking-form label.wide{grid-column:auto!important}
   .cz-place-map,.cz-parking-map{height:330px!important}
 }
-
