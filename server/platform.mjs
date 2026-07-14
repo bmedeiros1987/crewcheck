@@ -479,6 +479,29 @@ export async function consumePlatformUsage(reqOrIdentity, kind = 'wakeup_call', 
   return { allowed: true, used, limit, remaining: Math.max(0, limit - used), monthKey };
 }
 
+
+export async function refundPlatformUsage(reqOrIdentity, kind = 'wakeup_call', amount = 1) {
+  const identity = reqOrIdentity?.headers ? mainIdentity(reqOrIdentity) : reqOrIdentity;
+  if (!identity?.email || identity.admin || amount <= 0) return { refunded: false, used: 0 };
+  const db = await pool();
+  if (!db) return { refunded: false, used: null };
+  const profile = await ensureProfile(db, identity);
+  const monthKey = currentMonthKey(profile.timezone);
+  const result = await db.query(`
+    UPDATE crewcheck_platform_usage
+    SET used=GREATEST(0, used - $4), updated_at=NOW()
+    WHERE email=$1 AND month_key=$2 AND usage_kind=$3
+    RETURNING used,limit_value`, [identity.email, monthKey, kind, amount]);
+  const row = result.rows[0];
+  return {
+    refunded: Boolean(row),
+    used: row ? Number(row.used || 0) : 0,
+    limit: row ? Number(row.limit_value || 0) : null,
+    remaining: row ? Math.max(0, Number(row.limit_value || 0) - Number(row.used || 0)) : null,
+    monthKey,
+  };
+}
+
 function encryptionKey() {
   return crypto.createHash('sha256').update(env('CREWCHECK_DATA_ENCRYPTION_KEY', authSecret())).digest();
 }
@@ -1342,7 +1365,7 @@ async function handleVisitorData(req, res) {
   const rosterResult = permissions.roster || permissions.map || permissions.hotels || permissions.presentation || permissions.radar ? await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [identity.ownerEmail]) : { rows: [] };
   const rosterRow = rosterResult.rows[0] || null;
   const roster = rosterForPermissions(rosterRow?.roster || null, permissions);
-  const staysResult = permissions.hotels ? await db.query('SELECT id,stay_date,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_with_visitors FROM crewcheck_platform_stays WHERE owner_email=$1 AND share_with_visitors=TRUE ORDER BY stay_date LIMIT 90', [identity.ownerEmail]) : { rows: [] };
+  const staysResult = permissions.hotels && rosterRow?.roster_key ? await db.query('SELECT id,stay_date,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_with_visitors FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2 AND share_with_visitors=TRUE ORDER BY stay_date LIMIT 90', [identity.ownerEmail, rosterRow.roster_key]) : { rows: [] };
   const stays = staysResult.rows.map((row) => ({ id: row.id, stayDate: row.stay_date, hotelName: row.hotel_name, airport: row.airport, room: permissions.room ? decryptPrivate(row.room_cipher) : null, presentationTime: permissions.presentation ? row.presentation_time : null, leadMinutes: permissions.presentation ? row.lead_minutes : null }));
   return sendJson(res, 200, { ok: true, visitor: { displayName: visitor.display_name, permissions }, owner: owner.rows[0] || null, roster, stays, privacy: 'O titular pode alterar ou revogar este acesso a qualquer momento.' });
 }
