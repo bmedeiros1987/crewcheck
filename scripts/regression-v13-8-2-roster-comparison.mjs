@@ -94,5 +94,7 @@ assert.match(home, /Não é marcada como realizada sem espelho de voo/);
 assert.match(home, /opensComparison \? 'compare' : 'roster'/);
 assert.match(styles, /\.cz-compare-change\.lost-rest/);
 assert.match(styles, /\.cz-compare-tabs/);
+assert.match(styles, /\.cz-compare-days-off p\.lost/);
+assert.doesNotMatch(styles, /\.cz-compare-days-off p:first-child/);
 
 console.log('CrewCheck v13.8.2 roster comparison regression OK');
