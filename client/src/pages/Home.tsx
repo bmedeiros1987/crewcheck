@@ -3539,8 +3539,8 @@ export default function Home() {
     {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
-    {view === 'perdiem' && <><FinancialStatementImporter mode=\"per_diem\"/><PerDiemView bundle={bundle}/></>}
-    {view === 'salary' && <><FinancialStatementImporter mode=\"payroll\"/><SalaryReliableView bundle={bundle}/></>}
+    {view === 'perdiem' && <><FinancialStatementImporter mode="per_diem"/><PerDiemView bundle={bundle}/></>}
+    {view === 'salary' && <><FinancialStatementImporter mode="payroll"/><SalaryReliableView bundle={bundle}/></>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
     {view === 'load' && <LoadView bundle={bundle}/>}
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
