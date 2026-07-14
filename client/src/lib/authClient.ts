@@ -100,6 +100,17 @@ export class AuthClientError extends Error {
   }
 }
 
+function publicApiErrorMessage(payload: any, status: number): string {
+  const code = String(payload?.code || '').toUpperCase();
+  if (code === 'DATABASE_REQUIRED' || code === 'DATABASE_MIGRATION_REQUIRED') {
+    return 'A sincronização em nuvem está temporariamente indisponível. Seus dados continuam protegidos neste dispositivo e a operação poderá ser tentada novamente.';
+  }
+  if (code === 'AUTH_REQUIRED' || status === 401) return 'Sua sessão expirou. Entre novamente para continuar.';
+  if (code === 'PREMIUM_REQUIRED' || status === 402) return String(payload?.message || 'Este recurso requer uma assinatura Premium.');
+  if (status >= 500) return String(payload?.message || 'O CrewCheck não conseguiu concluir esta operação agora. Tente novamente em alguns instantes.');
+  return String(payload?.message || ('Erro HTTP ' + status));
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const response = await fetch(url, {
@@ -113,7 +124,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     if (response.status === 401) clearSession();
-    throw new AuthClientError([payload?.message, payload?.detail && !String(payload?.message || '').includes(String(payload.detail)) ? `Detalhe: ${payload.detail}` : '', payload?.code ? `Código: ${payload.code}` : ''].filter(Boolean).join(' | ') || `Erro HTTP ${response.status}`, response.status, payload?.code, payload);
+    throw new AuthClientError(publicApiErrorMessage(payload, response.status), response.status, payload?.code, payload);
   }
   return payload as T;
 }
