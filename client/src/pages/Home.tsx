@@ -115,8 +115,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.8.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.8.2: comparação entre escala planejada e escala atual';
+const DEFAULT_VERSION = '13.8.4';
+const CREWCHECK_UI_CORE_NOTE = 'v13.8.4: menu iPad e assinaturas resilientes';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
