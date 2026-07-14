@@ -17637,7 +17637,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   border-left: 4px solid #2fbf82;
   background: rgba(47, 191, 130, .09);
 }
-.cz-compare-days-off p:first-child {
+.cz-compare-days-off p.lost {
   border-left-color: #f16464;
   background: rgba(241, 100, 100, .1);
 }
