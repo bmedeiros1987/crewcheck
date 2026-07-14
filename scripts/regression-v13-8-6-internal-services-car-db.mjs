@@ -63,8 +63,8 @@ for (const selector of ['.cz-brand-row', '.cz-place-category-tabs', '.cz-place-d
   assert.ok(css.includes(selector), 'Estilo premium ausente: ' + selector);
 }
 assert.ok(css.includes('CrewCheck v13.8.6'));
+assert.ok(home.includes('Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia'));
 assert.ok(css.includes('--cc1386-violet'));
 assert.ok(css.includes('border-radius:34px'));
 
 console.log('CrewCheck v13.8.6 internal services, car, departure and database regression OK');
-
