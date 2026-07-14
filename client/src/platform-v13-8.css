@@ -98,3 +98,79 @@
 @media(max-width:520px){
   .cp-center{width:min(100% - 20px,1180px);padding-top:10px}.cp-page-head{padding:14px;border-radius:20px}.cp-page-head>button{width:44px;height:44px;min-width:44px}.cp-tabs{grid-template-columns:1fr}.cp-tabs button{justify-content:flex-start;padding-left:14px}.cp-permissions{grid-template-columns:1fr}.cp-inline-form{flex-direction:column}.cp-inline-form button{width:100%}.cp-summary{grid-template-columns:1fr 1fr 1fr}.cp-compare{font-size:.76rem}.cp-compare>header,.cp-compare>div{grid-template-columns:78px 1fr 1fr;padding:8px 6px}.cp-current-plan,.cp-box,.cp-plan{padding:15px;border-radius:20px}
 }
+
+
+/* CrewCheck v13.8.5 — acabamento premium das telas de plataforma */
+.cp-center{
+  padding-bottom:calc(170px + env(safe-area-inset-bottom,0px))!important;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif!important;
+}
+.cp-page-head,.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan{
+  border-radius:30px!important;
+  overflow:hidden!important;
+}
+.cp-plans{gap:18px!important}
+.cp-plan{display:flex!important;min-height:100%!important;flex-direction:column!important;padding:24px!important}
+.cp-plan ul{flex:1 1 auto!important}
+.cp-primary{
+  width:100%!important;
+  min-height:52px!important;
+  margin-top:auto!important;
+  padding:.85rem 1.1rem!important;
+  border:1px solid rgba(255,255,255,.34)!important;
+  border-radius:18px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:9px!important;
+  background:linear-gradient(135deg,#2dd4ef,#4f8df7 55%,#8b5cf6)!important;
+  color:#041728!important;
+  font-size:.96rem!important;
+  font-weight:950!important;
+  text-decoration:none!important;
+  box-shadow:0 14px 34px rgba(60,142,239,.30)!important;
+}
+.cp-primary:not(:disabled):active{transform:translateY(1px) scale(.99)!important}
+.cp-empty button,.cp-box button,.cp-current-plan button,.cp-id-card button,.cp-share-result button,.cp-fallback button,.cp-tabs button,.cp-list button{
+  min-height:46px!important;
+  border-radius:16px!important;
+  text-decoration:none!important;
+  box-shadow:0 9px 22px rgba(0,0,0,.11)!important;
+}
+.cp-empty.cp-error>strong{max-width:900px!important;line-height:1.5!important}
+.cp-current-plan{border-radius:28px!important}
+.cp-plan-limit{border-radius:20px!important}
+.cp-tabs{border-radius:22px!important}
+.cp-tabs button{box-shadow:none!important}
+.cp-center :is(h1,h2,h3,p,strong,small,span,li,b){
+  min-width:0!important;
+  max-width:100%!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+}
+[data-crew-theme="dark"] :is(.cp-page-head,.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan){
+  background:linear-gradient(150deg,rgba(15,39,63,.98),rgba(5,18,34,.99))!important;
+  border-color:rgba(137,199,241,.20)!important;
+  color:#eaf7ff!important;
+  box-shadow:0 22px 60px rgba(0,0,0,.30)!important;
+}
+[data-crew-theme="dark"] :is(.cp-page-head,.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan) :is(h1,h2,h3,strong,b){color:#f8fbff!important}
+[data-crew-theme="dark"] :is(.cp-page-head,.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan) :is(p,small,span,li){color:#bdd2e3!important}
+[data-crew-theme="light"] .cp-page-head{
+  background:linear-gradient(135deg,#ffffff 0%,#edf8ff 55%,#f3efff 100%)!important;
+  border-color:#ccdeea!important;
+  box-shadow:0 18px 48px rgba(28,72,104,.12)!important;
+}
+[data-crew-theme="light"] :is(.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan){
+  background:linear-gradient(155deg,#fff,#f8fbff)!important;
+  border-color:#d2e0e9!important;
+  color:#0a2941!important;
+  box-shadow:0 18px 48px rgba(28,72,104,.11)!important;
+}
+[data-crew-theme="light"] :is(.cp-page-head,.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan) :is(h1,h2,h3,strong,b){color:#071f34!important}
+[data-crew-theme="light"] :is(.cp-page-head,.cp-empty,.cp-box,.cp-current-plan,.cp-id-card,.cp-disclosures,.cp-privacy,.cp-share-result,.cp-fallback,.cp-plan) :is(p,small,span,li){color:#48657a!important}
+[data-crew-theme="light"] .cp-primary{color:#041728!important}
+@media(max-width:780px){
+  .cp-center{padding-bottom:calc(155px + env(safe-area-inset-bottom,0px))!important}
+  .cp-plan{padding:20px!important}
+}

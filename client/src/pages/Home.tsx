@@ -60,6 +60,7 @@ import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
+import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
@@ -115,8 +116,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.8.4';
-const CREWCHECK_UI_CORE_NOTE = 'v13.8.4: menu iPad e assinaturas resilientes';
+const DEFAULT_VERSION = '13.8.5';
+const CREWCHECK_UI_CORE_NOTE = 'v13.8.5: auditoria premium, finanças e banco resiliente';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -350,6 +351,9 @@ type NearbyPlace = {
   rating?: number;
   mapsUrl?: string;
   openNow?: boolean;
+  latitude?: number;
+  longitude?: number;
+  distanceMeters?: number;
 };
 
 function todayRosterKey(now = new Date()) {
@@ -910,7 +914,42 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     };
   });
 
-  return legs.map(applyPresentationManagement).sort((a, b) => (a.canonical ? new Date(a.canonical.startDateTime).getTime() : a.date.getTime()) - (b.canonical ? new Date(b.canonical.startDateTime).getTime() : b.date.getTime()));
+  const projected = legs.map(applyPresentationManagement)
+    .sort((a, b) => (a.canonical ? new Date(a.canonical.startDateTime).getTime() : a.date.getTime()) - (b.canonical ? new Date(b.canonical.startDateTime).getTime() : b.date.getTime()));
+  return dedupeProjectedLegs(projected);
+}
+
+function projectedFlightQuality(event: ZeroLeg): number {
+  const hours = durationHours(event);
+  const plausibleDuration = hours > 0 && hours <= 16 ? 120 - hours : 0;
+  const hasTimes = /^\d{2}:\d{2}$/.test(event.departure) && /^\d{2}:\d{2}$/.test(event.arrival) ? 10 : 0;
+  const hasRoute = event.origin && event.destination && event.origin !== event.destination ? 10 : 0;
+  return plausibleDuration + hasTimes + hasRoute;
+}
+
+function dedupeProjectedLegs(events: ZeroLeg[]): ZeroLeg[] {
+  const output: ZeroLeg[] = [];
+  const flightIndex = new Map<string, number>();
+  for (const event of events) {
+    if (event.kind !== 'flight') {
+      output.push(event);
+      continue;
+    }
+    const key = [
+      dateChip(event.date),
+      String(event.flightNumber || '').replace(/\s+/g, '').toUpperCase(),
+      String(event.origin || '').toUpperCase(),
+      String(event.destination || '').toUpperCase(),
+    ].join('|');
+    const existingIndex = flightIndex.get(key);
+    if (existingIndex === undefined) {
+      flightIndex.set(key, output.length);
+      output.push(event);
+      continue;
+    }
+    if (projectedFlightQuality(event) > projectedFlightQuality(output[existingIndex])) output[existingIndex] = event;
+  }
+  return output;
 }
 
 function eventStartDateTime(event: ZeroLeg): Date {
@@ -998,7 +1037,10 @@ const AIRPORT_MAP_POINTS: Record<string, AirportMapPoint> = {
   SLZ:{code:'SLZ',lat:-2.5854,lon:-44.2341}, NAT:{code:'NAT',lat:-5.7681,lon:-35.3761}, MCZ:{code:'MCZ',lat:-9.5108,lon:-35.7917}, AJU:{code:'AJU',lat:-10.9840,lon:-37.0703},
   PMW:{code:'PMW',lat:-10.2915,lon:-48.3569}, THE:{code:'THE',lat:-5.0599,lon:-42.8235}, VIX:{code:'VIX',lat:-20.2581,lon:-40.2864}, GYN:{code:'GYN',lat:-16.6320,lon:-49.2207},
   CGB:{code:'CGB',lat:-15.6529,lon:-56.1167}, CGR:{code:'CGR',lat:-20.4687,lon:-54.6725}, BVB:{code:'BVB',lat:2.8463,lon:-60.6901}, MCP:{code:'MCP',lat:0.0507,lon:-51.0722},
-  RBR:{code:'RBR',lat:-9.8689,lon:-67.8981}, PVH:{code:'PVH',lat:-8.7093,lon:-63.9023}, IOS:{code:'IOS',lat:-14.8159,lon:-39.0332}, JPA:{code:'JPA',lat:-7.1458,lon:-34.9486},
+  RBR:{code:'RBR',lat:-9.8689,lon:-67.8981}, PVH:{code:'PVH',lat:-8.7093,lon:-63.9023}, IOS:{code:'IOS',lat:-14.8159,lon:-39.0332}, JPA:{code:'JPA',lat:-7.1458,lon:-34.9486}, RAO:{code:'RAO',lat:-21.1364,lon:-47.7767}, CXJ:{code:'CXJ',lat:-29.1971,lon:-51.1875},
+  IGU:{code:'IGU',lat:-25.6003,lon:-54.4852}, NVT:{code:'NVT',lat:-26.8799,lon:-48.6514}, JOI:{code:'JOI',lat:-26.2245,lon:-48.7974}, LDB:{code:'LDB',lat:-23.3336,lon:-51.1301},
+  MGF:{code:'MGF',lat:-23.4794,lon:-52.0122}, UDI:{code:'UDI',lat:-18.8836,lon:-48.2253}, SJP:{code:'SJP',lat:-20.8166,lon:-49.4065}, PNZ:{code:'PNZ',lat:-9.3624,lon:-40.5691},
+  STM:{code:'STM',lat:-2.4247,lon:-54.7858}, IMP:{code:'IMP',lat:-5.5313,lon:-47.4600}, BPS:{code:'BPS',lat:-16.4386,lon:-39.0809}, AQA:{code:'AQA',lat:-21.8120,lon:-48.1320}, BAU:{code:'BAU',lat:-22.3450,lon:-49.0538},
 };
 function airportPoint(code?: string | null): AirportMapPoint | null {
   const key = String(code || '').trim().toUpperCase();
@@ -1498,14 +1540,15 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
     <button className="cz-menu-backdrop" onClick={close} aria-label="Fechar menu" />
     <aside className="cz-menu-panel" data-crew-menu-panel="true" onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
       <header className="cz-menu-header">
-        <div className="cz-menu-identity">
+        <div className="cz-menu-identity" aria-label="CrewCheck">
           <span className="cz-logo" title="CrewCheck"><Plane size={24}/></span>
-          <strong>CrewCheck</strong>
-          <label className="cz-menu-avatar cz-menu-avatar-edit" title="Alterar foto do perfil">
-            {profileAvatar ? <img src={profileAvatar} alt={`Foto de ${profileName}`} /> : initials}
+          <button className="cz-menu-avatar cz-menu-avatar-profile" onClick={openProfile} type="button" aria-label="Abrir configurações do perfil">
+            {profileAvatar ? <img src={profileAvatar} alt="" /> : initials}
+          </button>
+          <label className="cz-menu-avatar-edit" title="Alterar foto do perfil" aria-label="Alterar foto do perfil">
+            <Upload size={18}/>
             <input hidden type="file" accept="image/*" onChange={handleProfileAvatar}/>
           </label>
-          <button className="cz-menu-user-name" onClick={openProfile} type="button">{profileName}</button>
         </div>
         <button className="cz-menu-close" onClick={close} aria-label="Fechar menu"><X/></button>
       </header>
@@ -2151,6 +2194,70 @@ function PlatformPreferences() {
   }
   return <section className="cz-toolbox"><h2>Idioma e fuso horário</h2><p>O primeiro acesso segue o idioma do dispositivo. O padrão operacional é Brasília (UTC−3) e todo texto compatível é tratado em UTF-8.</p><div className="cz-form-grid"><label><span>Idioma</span><select value={locale} onChange={(event) => setLocale(event.target.value as CrewCheckLocale)}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (United States)</option><option value="es-ES">Español</option></select></label><label><span>Fuso do sistema</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="America/Sao_Paulo">Brasília · UTC−3</option><option value={deviceTimezone}>Dispositivo · {deviceTimezone}</option><option value="UTC">UTC</option><option value="America/Manaus">Manaus · UTC−4</option><option value="America/Rio_Branco">Rio Branco · UTC−5</option><option value="America/Noronha">Fernando de Noronha · UTC−2</option><option value="Europe/Lisbon">Lisboa</option><option value="Europe/Madrid">Madri</option><option value="America/New_York">Nova York</option></select></label></div><div className="cz-tool-actions"><button onClick={() => { setLocale(deviceLocale); setTimezone(deviceTimezone); }}><Globe2/> Usar padrão do dispositivo</button><button onClick={save} disabled={busy}><Save/> {busy ? 'Salvando...' : 'Salvar na conta'}</button></div><div className="cz-routine-strip"><span>Conta {profile?.publicId || 'sincronizando'}</span><span>UTF-8</span><span>{locale}</span><span>{timezone}</span></div></section>;
 }
+function DatabaseConnectionCard({ admin }: { admin: boolean }) {
+  const [status, setStatus] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  async function refresh() {
+    setBusy(true);
+    try {
+      setStatus(await getDatabaseStatus());
+    } catch {
+      setStatus({ ok: false, connected: false, message: 'Sincronização em nuvem indisponível. O histórico local continua ativo neste dispositivo.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+  useEffect(() => { refresh(); }, []);
+  const connected = Boolean(status?.ok && status?.connected);
+  return <section className={'cz-toolbox cz-database-status ' + (connected ? 'connected' : 'offline')}>
+    <header><span><Database/></span><div><h2>{connected ? 'Banco conectado' : 'Modo local protegido'}</h2><p>{connected ? 'Sincronização segura disponível para os módulos internos.' : status?.message || 'Seus dados permanecem neste dispositivo e serão sincronizados quando a conexão voltar.'}</p></div></header>
+    <div className="cz-routine-strip">
+      <span>{connected ? 'PostgreSQL ativo' : 'Histórico local ativo'}</span>
+      <span>{connected ? 'Sincronização liberada' : 'Fila de sincronização'}</span>
+      {admin && <span>{connected ? String(status?.database || 'Banco principal') : 'Verifique DATABASE_URL'}</span>}
+    </div>
+    <div className="cz-tool-actions"><button onClick={refresh} disabled={busy}><RotateCcw/> {busy ? 'Verificando…' : 'Verificar conexão'}</button></div>
+  </section>;
+}
+
+function AdminFinancialCalibration() {
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const listener = () => { setRevision((value) => value + 1); toast.success('Calibração confirmada e aplicada às próximas previsões.'); };
+    window.addEventListener('crewcheck:finance-calibrated', listener);
+    return () => window.removeEventListener('crewcheck:finance-calibrated', listener);
+  }, []);
+  return <section className="cz-admin-calibration" data-revision={revision}>
+    <section className="cz-toolbox cz-admin-calibration-intro">
+      <div><Lock/><span><small>Somente administrador</small><h2>Calibração financeira</h2></span></div>
+      <p>Importe demonstrativos ou ajuste os valores efetivos. PDFs são processados no dispositivo e só as tarifas confirmadas ficam salvas.</p>
+    </section>
+    <div className="cz-admin-calibration-grid">
+      <FinancialStatementImporter mode="payroll"/>
+      <FinancialStatementImporter mode="per_diem"/>
+    </div>
+    <section className="cz-toolbox">
+      <h2>Ajuste manual do cálculo</h2>
+      <p>Os valores manuais têm prioridade sobre o demonstrativo confirmado e sobre a tabela-base do ACT.</p>
+      <div className="cz-admin-field-grid">
+        <FieldSetting icon={DollarSign} label="KM diurno" storageKey="crewcheck_act_day_km_metric_brl" placeholder="R$/km"/>
+        <FieldSetting icon={Moon} label="KM noturno" storageKey="crewcheck_act_night_km_metric_brl" placeholder="R$/km"/>
+        <FieldSetting icon={Clock} label="Hora de reserva" storageKey="crewcheck_act_reserve_hour_brl" placeholder="R$/h"/>
+        <FieldSetting icon={Bell} label="Hora de sobreaviso" storageKey="crewcheck_act_standby_hour_brl" placeholder="R$/h"/>
+        <FieldSetting icon={BriefcaseBusiness} label="Refeição nacional" storageKey="crewcheck_perdiem_rate_domestic" placeholder="R$"/>
+        <FieldSetting icon={DollarSign} label="Salário-base" storageKey="crewcheck_salary_base_brl" placeholder="R$"/>
+        <FieldSetting icon={UserRound} label="Adicional chefe/setor" storageKey="crewcheck_act_chief_sector_brl" placeholder="R$"/>
+        <FieldSetting icon={GraduationCap} label="Adicional instrutor/setor" storageKey="crewcheck_act_instructor_sector_brl" placeholder="R$"/>
+      </div>
+    </section>
+    <section className="cz-toolbox">
+      <h2>Pesquisa interna de academias</h2>
+      <p>Esta lista orienta a busca e não aparece para os demais usuários.</p>
+      <FieldSetting icon={Dumbbell} label="Redes priorizadas" storageKey="crewcheck:gym-partner-chains" placeholder="Selfit, Bluefit, Bodytech…"/>
+    </section>
+  </section>;
+}
+
 function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; actions: QuickActions }) {
   const admin = isAdmin();
   const user = getStoredUser();
@@ -2159,7 +2266,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     getPlatformBilling().then((billing) => {
       const labels: Record<string, string> = { free: 'Plano gratuito', premium_monthly: 'Premium mensal', premium_annual: 'Premium anual', premium_unlimited: 'Premium Unlimited' };
       setPlanLabel(labels[billing.plan] || 'Plano gratuito');
-    }).catch(() => setPlanLabel('Status da assinatura indisponível'));
+    }).catch(() => setPlanLabel('Conta em modo local'));
   }, []);
   async function enableMaintenance(enabled: boolean) {
     try {
@@ -2167,7 +2274,9 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
       if (!response.ok) throw new Error('Falhou');
       toast.success(enabled ? 'Modo manutenção ativado.' : 'Modo manutenção desativado.');
       window.dispatchEvent(new CustomEvent('crewcheck:maintenance-updated'));
-    } catch { toast.error('Não consegui alterar o modo manutenção.'); }
+    } catch {
+      toast.error('Não consegui alterar o modo manutenção.');
+    }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
   async function deleteAccount() {
@@ -2179,10 +2288,55 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
       if (result.manageGooglePlayUrl && confirm('Os dados foram excluídos. Deseja abrir a Play Store para cancelar a assinatura Google Play separadamente?')) window.open(result.manageGooglePlayUrl, '_blank', 'noopener,noreferrer');
       try { Object.keys(localStorage).filter((key) => key.startsWith('crewcheck_') || key.startsWith('crewcheck:')).forEach((key) => localStorage.removeItem(key)); } catch {}
       window.location.assign('/login');
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui excluir a conta.'); }
+    } catch {
+      toast.error('Não foi possível concluir a exclusão agora. Nenhum dado foi removido.');
+    }
   }
   const profileName = String(user?.name || user?.email?.split('@')[0] || storage.get('crewcheck_profile_display_name', '') || 'Tripulante CrewCheck');
-  return <><Brand back/><section className="cz-settings"><article className="cz-profile"><UserRound/><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article><PlatformPreferences/><section className="cz-settings-actions"><button onClick={() => setView('plans')}><ShieldCheck/> Assinaturas e limites</button><button onClick={() => setView('community')}><UserRound/> Pessoas, visitantes e chat</button></section><h3>Operacional</h3><ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/><ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/><ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/><ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/><ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/><ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/><ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/><ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/><h3>Perfil</h3><FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/><FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/><FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/><FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/><FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/><FieldSetting icon={DollarSign} label="Métrica ACT por KM" storageKey="crewcheck_act_km_metric_brl" placeholder="R$/km"/><FieldSetting icon={DollarSign} label="Adicional chefe por setor" storageKey="crewcheck_act_chief_sector_brl" placeholder="R$"/><FieldSetting icon={BriefcaseBusiness} label="Valor refeição diária" storageKey="crewcheck_perdiem_meal_brl" placeholder="R$"/><ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/><h3>Notificações e concierge</h3><ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/><ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/><ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/><section className="cz-settings-actions"><button onClick={saveProfile}><Save/> Salvar perfil</button><button onClick={() => setView('features')}><Settings/> Central funcional</button><button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button><button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button><button onClick={actions.logout}><LogOut/> Sair</button><button className="danger" onClick={deleteAccount}><AlertTriangle/> Excluir minha conta</button>{admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}{admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}{admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}</section></section></>;
+  return <><Brand back/><section className="cz-settings">
+    <article className="cz-profile"><UserRound/><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article>
+    <DatabaseConnectionCard admin={admin}/>
+    <PlatformPreferences/>
+    <section className="cz-settings-actions"><button onClick={() => setView('plans')}><ShieldCheck/> Assinaturas e limites</button><button onClick={() => setView('community')}><UserRound/> Pessoas, visitantes e chat</button></section>
+
+    <h3>Operacional</h3>
+    <ToggleSetting icon={Radar} label="Mapa visual para rotas" storageKey="crewcheck_tomtom_primary"/>
+    <ToggleSetting icon={MapIcon} label="Atualizar localização em rota" storageKey="crewcheck_live_location"/>
+    <ToggleSetting icon={Plane} label="Pausar ao chegar no aeroporto" storageKey="crewcheck_pause_at_airport"/>
+    <ToggleSetting icon={Building2} label="Após pouso calcular tempo até hotel" storageKey="crewcheck_after_landing_hotel"/>
+    <ToggleSetting icon={CloudSun} label="Atualização de meteorologia" storageKey="crewcheck_weather_hourly" detail="Novo METAR/SPECI"/>
+    <ToggleSetting icon={CloudSun} label="Alertar piora até o pouso" storageKey="crewcheck_weather_landing_alerts" detail="Somente novo METAR ou SPECI"/>
+    <ToggleSetting icon={Upload} label="Push iFlight assistido" storageKey="crewcheck_iflight_push_enabled" detail="sem salvar credenciais"/>
+    <ToggleSetting icon={Dumbbell} label="Autocheck-in em academia" storageKey="crewcheck:gym-auto-checkin" defaultOn={false} detail="Compartilha presença por 90 min somente ao entrar no raio configurado"/>
+    <ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/>
+
+    <h3>Perfil</h3>
+    <FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/>
+    <FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/>
+    <FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/>
+    <FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/>
+    <FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/>
+    <ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/>
+
+    <h3>Notificações e concierge</h3>
+    <ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/>
+    <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
+    <ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/>
+
+    {admin && <><h3>Administração</h3><AdminFinancialCalibration/></>}
+
+    <section className="cz-settings-actions">
+      <button className="primary" onClick={saveProfile}><Save/> Salvar perfil</button>
+      <button onClick={() => setView('features')}><Settings/> Central funcional</button>
+      <button onClick={actions.replayIntro}><PlayCircle/> Reexibir introdução</button>
+      <button onClick={actions.openActive}><RotateCcw/> Abrir escala ativa</button>
+      <button onClick={actions.logout}><LogOut/> Sair</button>
+      <button className="danger" onClick={deleteAccount}><AlertTriangle/> Excluir minha conta</button>
+      {admin && <button onClick={() => setView('maintenance')}><Lock/> Prévia manutenção</button>}
+      {admin && <button onClick={() => enableMaintenance(true)}><Lock/> Ativar manutenção</button>}
+      {admin && <button onClick={() => enableMaintenance(false)}><ShieldCheck/> Desativar manutenção</button>}
+    </section>
+  </section></>;
 }
 
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
@@ -2297,6 +2451,10 @@ type FlightEarningRow = {
   night: number;
   total: number;
   chiefEligible: boolean;
+  dayRateApplied: number;
+  nightRateApplied: number;
+  payRule: string;
+  extraFlight: boolean;
   source: string;
 };
 type PerDiemRow = {
@@ -2337,20 +2495,35 @@ function loadAirportPerDiemOverrides(): AirportPerDiemOverrides {
     return {};
   }
 }
+function rosterFinancialDate(roster: CrewRoster): string {
+  const year = Number(roster.year);
+  const month = Number(roster.month);
+  if (Number.isInteger(year) && year >= 2000 && Number.isInteger(month) && month >= 1 && month <= 12) {
+    return year + '-' + String(month).padStart(2, '0') + '-01';
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
 function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const act = resolveActFinancialRules(roster);
+  const effectiveDate = rosterFinancialDate(roster);
   const legacyMetric = readOptionalNumberSetting('crewcheck_act_km_metric_brl');
   const dayOverride = readOptionalNumberSetting('crewcheck_act_day_km_metric_brl');
   const nightOverride = readOptionalNumberSetting('crewcheck_act_night_km_metric_brl');
   const reserveOverride = readOptionalNumberSetting('crewcheck_act_reserve_hour_brl');
   const standbyOverride = readOptionalNumberSetting('crewcheck_act_standby_hour_brl');
-  const dayKmMetric = dayOverride ?? legacyMetric ?? act.salary.dayKm;
-  const nightKmMetric = nightOverride ?? act.salary.nightKm;
-  const reserveHourMetric = reserveOverride ?? act.salary.reserveHour;
-  const standbyHourMetric = standbyOverride ?? act.salary.standbyHour;
+  const learnedDay = confirmedRateValueAt('salary.dayKm', effectiveDate);
+  const learnedNight = confirmedRateValueAt('salary.nightKm', effectiveDate);
+  const learnedReserve = confirmedRateValueAt('salary.reserveHour', effectiveDate);
+  const learnedStandby = confirmedRateValueAt('salary.standbyHour', effectiveDate);
+  const learnedBase = confirmedRateValueAt('salary.base', effectiveDate);
+  const dayKmMetric = dayOverride ?? legacyMetric ?? learnedDay ?? act.salary.dayKm;
+  const nightKmMetric = nightOverride ?? learnedNight ?? act.salary.nightKm;
+  const reserveHourMetric = reserveOverride ?? learnedReserve ?? act.salary.reserveHour;
+  const standbyHourMetric = standbyOverride ?? learnedStandby ?? act.salary.standbyHour;
   const chiefPerSector = readNumberSetting('crewcheck_act_chief_sector_brl', 0);
   const instructorPerSector = readNumberSetting('crewcheck_act_instructor_sector_brl', 0);
-  const basePay = readNumberSetting('crewcheck_salary_base_brl', 0);
+  const basePay = readOptionalNumberSetting('crewcheck_salary_base_brl') ?? learnedBase ?? 0;
   const fixedAdditions = readNumberSetting('crewcheck_salary_fixed_additions_brl', 0);
   const inssDeduction = readNumberSetting('crewcheck_salary_inss_brl', 0);
   const irrfDeduction = readNumberSetting('crewcheck_salary_irrf_brl', 0);
@@ -2359,8 +2532,8 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const configured = dayKmMetric > 0 || nightKmMetric > 0 || reserveHourMetric > 0
     || standbyHourMetric > 0 || chiefPerSector > 0 || instructorPerSector > 0
     || basePay > 0 || fixedAdditions > 0;
-  const hasOverride = [dayOverride, nightOverride, reserveOverride, standbyOverride, legacyMetric]
-    .some((value) => value !== null);
+  const hasOverride = [dayOverride, nightOverride, reserveOverride, standbyOverride, legacyMetric].some((value) => value !== null);
+  const hasLearned = [learnedDay, learnedNight, learnedReserve, learnedStandby, learnedBase].some((value) => value !== null);
   return {
     kmMetric: dayKmMetric,
     dayKmMetric,
@@ -2378,8 +2551,8 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     fgtsRate,
     configured,
     source: act.profileLabel + ' · ' + act.legalReference
-      + (hasOverride ? ' · valores ajustados pelo usuário/Admin' : ' · tabela ACT vigente')
-      + ' · rateio diurno/noturno de planejamento pela janela 22:00-05:00; confirme no espelho de voo',
+      + (hasOverride ? ' · calibração manual do Admin' : hasLearned ? ' · demonstrativo confirmado pelo Admin' : ' · tabela ACT vigente')
+      + ' · cada KM é classificado uma única vez pela janela local 22:00–05:00',
     requiresManualFunction: act.requiresManualFunction,
   };
 }
@@ -2410,9 +2583,15 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
 }
 function perDiemConfig(roster: CrewRoster) {
   const act = resolveActFinancialRules(roster);
+  const effectiveDate = rosterFinancialDate(roster);
+  const learnedMeal = confirmedRateValueAt('per_diem.lunch', effectiveDate)
+    ?? confirmedRateValueAt('per_diem.dinner', effectiveDate)
+    ?? confirmedRateValueAt('per_diem.supper', effectiveDate);
+  const learnedBreakfast = confirmedRateValueAt('per_diem.breakfast', effectiveDate);
   const rates = Object.fromEntries(act.perDiem.map((rule) => {
     const override = readOptionalNumberSetting('crewcheck_perdiem_rate_' + rule.key);
-    return [rule.key, { ...rule, mainMeal: override ?? rule.mainMeal }];
+    const calibrated = rule.key === 'domestic' ? learnedMeal : null;
+    return [rule.key, { ...rule, mainMeal: override ?? calibrated ?? rule.mainMeal }];
   })) as Record<PerDiemRateKey, { key: PerDiemRateKey; label: string; currency: PerDiemCurrency; mainMeal: number }>;
   const exchangeRates: Record<PerDiemCurrency, number> = {
     BRL: 1,
@@ -2425,8 +2604,9 @@ function perDiemConfig(roster: CrewRoster) {
     rates,
     exchangeRates,
     breakfastPercent: act.breakfastPercent,
+    learnedBreakfast,
     airportOverrides: loadAirportPerDiemOverrides(),
-    source: act.profileLabel + ' · ' + act.legalReference,
+    source: act.profileLabel + ' · ' + act.legalReference + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : ''),
   };
 }
 function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
@@ -2448,7 +2628,9 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
     const rate = cfg.rates[classification.rateKey];
-    const value = slot === 'breakfast' ? rate.mainMeal * cfg.breakfastPercent : rate.mainMeal;
+    const value = slot === 'breakfast' && rate.currency === 'BRL' && cfg.learnedBreakfast !== null
+      ? cfg.learnedBreakfast
+      : slot === 'breakfast' ? rate.mainMeal * cfg.breakfastPercent : rate.mainMeal;
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       date: dateChip(event.date),
@@ -2523,33 +2705,61 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     configured: true,
   };
 }
+function nightHoursInsideWindow(start: Date, end: Date): number {
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
+  const anchor = new Date(start);
+  anchor.setDate(anchor.getDate() - 1);
+  anchor.setHours(22, 0, 0, 0);
+  let total = 0;
+  while (anchor < end) {
+    const windowEnd = new Date(anchor);
+    windowEnd.setDate(windowEnd.getDate() + 1);
+    windowEnd.setHours(5, 0, 0, 0);
+    const overlapStart = Math.max(start.getTime(), anchor.getTime());
+    const overlapEnd = Math.min(end.getTime(), windowEnd.getTime());
+    if (overlapEnd > overlapStart) total += (overlapEnd - overlapStart) / 36e5;
+    anchor.setDate(anchor.getDate() + 1);
+  }
+  return total;
+}
+
+function financialEventCode(event: ZeroLeg): string {
+  return [
+    event.flightNumber,
+    event.title,
+    flightWorkType(event),
+    (event.day as any)?.type,
+    (event.day as any)?.pairingCode,
+    (event.day as any)?.rawText,
+  ].join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+
+function financialFlightRule(event: ZeroLeg): { extra: boolean; reason: string } {
+  const code = financialEventCode(event);
+  const extra = flightWorkType(event) === 'PS' || /\b(DFS|EXTRA|EXTRAORDINARIO|EXTRAORDINARIA)\b/.test(code);
+  const reserveActivation = /\b(ASB|RES|RESERVA|RSV|HSB|HSBE|SOBREAVISO)\b/.test(code)
+    && /\b(ACION|ACIONADO|CHAMAD|VOO)\b/.test(code);
+  if (extra) return { extra: true, reason: 'tarifa extra/DFS' };
+  if (reserveActivation) return { extra: true, reason: 'tarifa de voo acionado' };
+  return { extra: false, reason: 'tarifa regular' };
+}
+
 function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const cfg = loadActCompensationConfig(roster);
-  const flightEvents = events.filter((event) => event.kind === 'flight' && !event.placeholder);
+  const flightEvents = dedupeProjectedLegs(events.filter((event) => event.kind === 'flight' && !event.placeholder));
   const instructor = storage.get('crewcheck_instructor', '0') !== '0';
-  const nightHoursFor = (event: ZeroLeg) => {
-    const start = eventStartDateTime(event);
-    const end = eventEndDateTime(event);
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
-    let cursor = new Date(start);
-    let night = 0;
-    while (cursor < end) {
-      const next = new Date(Math.min(cursor.getTime() + 30 * 60 * 1000, end.getTime()));
-      const hour = cursor.getHours();
-      if (hour >= 22 || hour < 5) night += (next.getTime() - cursor.getTime()) / 36e5;
-      cursor = next;
-    }
-    return night;
-  };
   const rows: FlightEarningRow[] = flightEvents.map((event) => {
-    const km = flightDistanceKmFromEvent(event);
+    const km = event.origin && event.destination && event.origin !== event.destination ? flightDistanceKmFromEvent(event) : 0;
     const block = Math.max(0, durationHours(event));
-    const nightHours = nightHoursFor(event);
+    const nightHours = nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event));
     const nightFraction = block > 0 ? Math.min(1, nightHours / block) : 0;
-    const nightKm = Math.round(km * nightFraction);
+    const nightKm = Math.min(km, Math.max(0, Math.round(km * nightFraction)));
     const dayKm = Math.max(0, km - nightKm);
-    const dayProduction = dayKm * cfg.dayKmMetric;
-    const nightProduction = nightKm * cfg.nightKmMetric;
+    const payRule = financialFlightRule(event);
+    const dayRateApplied = payRule.extra ? cfg.nightKmMetric : cfg.dayKmMetric;
+    const nightRateApplied = cfg.nightKmMetric;
+    const dayProduction = dayKm * dayRateApplied;
+    const nightProduction = nightKm * nightRateApplied;
     const production = dayProduction + nightProduction;
     const chiefEligible = userIsFirstCcm(event, roster);
     const chief = chiefEligible ? cfg.chiefPerSector : 0;
@@ -2573,16 +2783,16 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
       night: nightProduction,
       total: production + chief + instructorPay,
       chiefEligible,
+      dayRateApplied,
+      nightRateApplied,
+      payRule: payRule.reason,
+      extraFlight: payRule.extra,
       source: cfg.source,
     };
   });
   const activityEvents = events.filter((event) => event.kind !== 'flight' && !event.placeholder);
-  const reserveEvents = activityEvents.filter((event) => /\b(ASB|RES|RESERVA|RSV)\b/i.test(
-    event.flightNumber + ' ' + event.title + ' ' + ((event.day as any)?.type || '') + ' ' + ((event.day as any)?.pairingCode || '')
-  ));
-  const standbyEvents = activityEvents.filter((event) => /\b(HSB|HSBE|SOBREAVISO)\b/i.test(
-    event.flightNumber + ' ' + event.title + ' ' + ((event.day as any)?.type || '') + ' ' + ((event.day as any)?.pairingCode || '')
-  ));
+  const reserveEvents = activityEvents.filter((event) => /\b(ASB|RES|RESERVA|RSV)\b/i.test(financialEventCode(event)));
+  const standbyEvents = activityEvents.filter((event) => /\b(HSB|HSBE|SOBREAVISO)\b/i.test(financialEventCode(event)));
   const reserveHours = reserveEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const standbyHours = standbyEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const reserve = reserveHours * cfg.reserveHourMetric;
@@ -2593,7 +2803,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const nightKmTotal = rows.reduce((sum, row) => sum + row.nightKm, 0);
   const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const chiefSectors = rows.filter((row) => row.chiefEligible).length;
-  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursFor(event), 0);
+  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event)), 0);
   const dayProduction = rows.reduce((sum, row) => sum + row.dayProduction, 0);
   const nightProduction = rows.reduce((sum, row) => sum + row.nightProduction, 0);
   const production = dayProduction + nightProduction;
@@ -2636,85 +2846,38 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
 }
 function PerDiemView({ bundle }: { bundle: BundleState }) {
   const events = buildLegs(bundle.roster);
-  const [rev, setRev] = useState(0);
-  const forecast = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, rev]);
-
-  function configureActValues() {
-    forecast.usedRateKeys.forEach((key) => {
-      const rule = forecast.config.rates[key];
-      const value = prompt(
-        'Valor ACT por refeição - ' + rule.label + ' (' + rule.currency + ')',
-        String(rule.mainMeal).replace('.', ',')
-      );
-      if (value !== null) storage.set('crewcheck_perdiem_rate_' + key, value.replace(',', '.'));
-    });
-    setRev((value) => value + 1);
-    toast.success('Valores de diárias atualizados por categoria.');
-  }
+  const [revision, setRevision] = useState(0);
+  const forecast = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
 
   function configureExchange() {
-    const currencies = (Object.keys(forecast.totalsByCurrency) as PerDiemCurrency[])
-      .filter((currency) => currency !== 'BRL');
+    const currencies = (Object.keys(forecast.totalsByCurrency) as PerDiemCurrency[]).filter((currency) => currency !== 'BRL');
     currencies.forEach((currency) => {
       const key = 'crewcheck_fx_' + currency.toLowerCase() + '_brl';
       const value = prompt('Cotação informada: 1 ' + currency + ' em BRL', storage.get(key, ''));
       if (value !== null) storage.set(key, value.replace(',', '.'));
     });
-    setRev((value) => value + 1);
-    toast.success('Câmbio informado para a previsão.');
-  }
-
-  function classifyPendingAirports() {
-    const labels: Array<[string, PerDiemRateKey]> = [
-      ['NACIONAL', 'domestic'],
-      ['AMERICA DO NORTE', 'north_america'],
-      ['MEXICO', 'mexico'],
-      ['AMERICA DO SUL/CARIBE', 'south_america_caribbean'],
-      ['ARGENTINA', 'argentina'],
-      ['CHILE', 'chile'],
-      ['INGLATERRA', 'england'],
-      ['EUROPA', 'europe'],
-      ['AFRICA', 'africa'],
-      ['OUTROS', 'other_international'],
-    ];
-    const overrides = loadAirportPerDiemOverrides();
-    forecast.pendingAirports.forEach((airport) => {
-      const answer = prompt(
-        airport + ': informe Nacional, América do Norte, México, América do Sul/Caribe, Argentina, Chile, Inglaterra, Europa, África ou Outros',
-        ''
-      );
-      if (!answer) return;
-      const normalized = answer.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
-      const selected = labels.find(([label]) => normalized === label);
-      if (selected) overrides[airport] = selected[1];
-    });
-    storage.set('crewcheck_perdiem_airport_rules_json', JSON.stringify(overrides));
-    setRev((value) => value + 1);
-    toast.success('Classificação de aeroportos atualizada.');
+    setRevision((value) => value + 1);
+    toast.success('Câmbio atualizado para esta previsão.');
   }
 
   return <><Brand back/>
-    <section className="cz-panel-head">
+    <section className="cz-panel-head cz-panel-head-compact">
       <h1>Diárias</h1>
-      <p>Auditoria por janelas locais, categoria do ACT e moeda original. A conversão para real só aparece quando você informa o câmbio.</p>
+      <p>Valores previstos por janela e moeda.</p>
     </section>
     <section className="cz-finance-grid">
       <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={String(forecast.currencyCount)} detail={forecast.currencySummary || 'Sem itens previstos'}/>
-      <KpiCard icon={CalendarDays} title="Convertido previsto" value={forecast.pendingCurrencies.length ? 'Câmbio pendente' : moneyBRL(forecast.monthly)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Sem misturar moedas'}/>
-      <KpiCard icon={Plane} title="Semana atual" value={moneyBRL(forecast.weekly)} detail="Somente valores com câmbio disponível"/>
+      <KpiCard icon={CalendarDays} title="Convertido previsto" value={forecast.pendingCurrencies.length ? 'Câmbio pendente' : moneyBRL(forecast.monthly)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Conversão conferível'}/>
+      <KpiCard icon={Plane} title="Semana atual" value={moneyBRL(forecast.weekly)} detail="Somente valores convertidos"/>
     </section>
-    <section className="cz-toolbox">
-      <h2>Parâmetros ACT/Admin</h2>
-      <p>{forecast.config.source}. Café calculado em 25% da refeição principal. Nenhuma moeda estrangeira é somada diretamente ao BRL.</p>
-      <div className="cz-tool-actions">
-        <button onClick={configureActValues}><Settings/> Ajustar valores ACT</button>
-        <button onClick={configureExchange}><DollarSign/> Informar câmbio</button>
-        {forecast.pendingAirports.length > 0 && <button onClick={classifyPendingAirports}><MapIcon/> Classificar aeroportos</button>}
-      </div>
-    </section>
-    {forecast.pendingAirports.length > 0 && <section className="cz-toolbox">
-      <h2>Aeroportos pendentes</h2>
-      <p>{forecast.pendingAirports.join(' · ')}. Esses itens ficaram fora do total até a classificação, evitando presumir país ou moeda.</p>
+    {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
+      <h2>Câmbio necessário</h2>
+      <p>Informe a cotação para converter {forecast.pendingCurrencies.join(', ')} sem somar moedas diferentes.</p>
+      <div className="cz-tool-actions"><button onClick={configureExchange}><DollarSign/> Informar câmbio</button></div>
+    </section>}
+    {forecast.pendingAirports.length > 0 && <section className="cz-toolbox cz-finance-attention">
+      <h2>Classificação pendente</h2>
+      <p>{forecast.pendingAirports.join(' · ')}. O valor permanece fora do total até a calibração administrativa.</p>
     </section>}
     <section className="cz-finance-table">
       <h2>Itens previstos</h2>
@@ -2725,96 +2888,63 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
           <small>{row.source}{row.convertedBRL === null ? ' · câmbio pendente' : ''}</small>
           <b>{moneyCurrency(row.value, row.currency)}</b>
         </div>
-      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem diárias confirmadas</h2><p>Carregue uma escala com voos, reservas ou pernoites e classifique aeroportos pendentes.</p></article>}
+      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem diárias confirmadas</h2><p>Carregue uma escala com voos, reservas ou pernoites.</p></article>}
     </section>
   </>;
 }
-function SalaryView({ bundle }: { bundle: BundleState }) { const events = buildLegs(bundle.roster); const compliance = currentCompliance(bundle); const [rev, setRev] = useState(0); const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster, rev]); function configureAct() { const metric = prompt('Métrica ACT por KM voado (R$ por KM)', storage.get('crewcheck_act_km_metric_brl', '')); if (metric !== null) storage.set('crewcheck_act_km_metric_brl', metric.replace(',', '.')); const chief = prompt('Adicional chefe por setor (R$)', storage.get('crewcheck_act_chief_sector_brl', '')); if (chief !== null) storage.set('crewcheck_act_chief_sector_brl', chief.replace(',', '.')); const instructor = prompt('Adicional instrutor por setor (R$)', storage.get('crewcheck_act_instructor_sector_brl', '')); if (instructor !== null) storage.set('crewcheck_act_instructor_sector_brl', instructor.replace(',', '.')); const night = prompt('Valor hora noturna estimada (R$)', storage.get('crewcheck_act_night_hour_brl', '')); if (night !== null) storage.set('crewcheck_act_night_hour_brl', night.replace(',', '.')); setRev((value) => value + 1); toast.success('Métrica ACT atualizada.'); } return <><Brand back/><section className="cz-panel-head"><h1>Salário</h1><p>Estimativa por voo com KM voado x métrica ACT configurável, adicional chefe apenas quando você é o primeiro CCM listado e adicionais configuráveis.</p></section><section className="cz-finance-grid"><KpiCard icon={DollarSign} title="Bruto estimado" value={moneyBRL(salary.gross)} detail={salary.configured ? `${salary.kmTotal} km · ${salary.sectors} setores` : 'configure métrica ACT'}/><KpiCard icon={Plane} title="Ganho por voo" value={salary.config.kmMetric ? `${moneyBRL(salary.config.kmMetric)}/km` : 'Configurar'} detail="KM x métrica ACT"/><KpiCard icon={UserRound} title="Chefe/Instrutor" value={moneyBRL(salary.chief + salary.instructorPay)} detail={`${salary.chiefSectors} setor(es) chefe`}/></section><section className="cz-toolbox"><h2>Parâmetros ACT/Admin</h2><p>{salary.configured ? 'Estimativa calculada com os parâmetros configurados no app.' : 'Sem métrica ACT configurada. O CrewCheck não inventa valores: configure R$/km e adicionais para exibir previsão realista.'}</p><div className="cz-tool-actions"><button onClick={configureAct}><Settings/> Configurar métrica ACT</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'crew' }))}><UserRound/> Ver regra de chefe</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' }))}><BriefcaseBusiness/> Ver diárias</button></div></section><section className="cz-finance-table"><h2>Ganhos por voo</h2>{salary.rows.length ? salary.rows.slice(0, 40).map((row) => <div className="cz-finance-row" key={row.id}><span>{row.date}</span><strong>{row.flight} · {row.route}</strong><small>{row.km ? `${row.km} km x ${moneyBRL(row.metric)}/km` : 'KM indisponível'} · {row.chiefEligible ? 'chefe efetivo' : 'sem adicional chefe'} · {row.source}</small><b>{moneyBRL(row.total)}</b></div>) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para estimar ganhos por voo.</p></article>}</section><section className="cz-finance-table"><h2>Composição</h2><div className="cz-finance-row"><span>Produtividade</span><strong>{salary.kmTotal} km</strong><small>KM x métrica ACT</small><b>{moneyBRL(salary.production)}</b></div><div className="cz-finance-row"><span>Chefe</span><strong>1º CCM</strong><small>somente quando você é o primeiro CCM listado</small><b>{moneyBRL(salary.chief)}</b></div><div className="cz-finance-row"><span>Instrutor</span><strong>Perfil</strong><small>{storage.get('crewcheck_instructor','0') !== '0' ? 'ativo' : 'inativo'}</small><b>{moneyBRL(salary.instructorPay)}</b></div><div className="cz-finance-row"><span>Noturno</span><strong>{salary.nightHours.toFixed(1)} h</strong><small>estimado por janela 22–05</small><b>{moneyBRL(salary.night)}</b></div><div className="cz-finance-row muted"><span>INSS</span><strong>estimado</strong><small>não substitui holerite</small><b>-{moneyBRL(salary.inss)}</b></div><div className="cz-finance-row muted"><span>IRRF</span><strong>estimado</strong><small>faixas simplificadas</small><b>-{moneyBRL(salary.irrf)}</b></div><div className="cz-finance-row"><span>FGTS</span><strong>informativo</strong><small>8% estimado</small><b>{moneyBRL(salary.fgts)}</b></div></section><section className="cz-toolbox"><h2>Alertas de impacto</h2><p>{String(actionableComplianceAlerts(compliance).length)} alerta(s) regulatório(s) podem impactar análise operacional. Valores são estimativos.</p></section></>; }
 
 function SalaryReliableView({ bundle }: { bundle: BundleState }) {
   const events = buildLegs(bundle.roster);
   const compliance = currentCompliance(bundle);
-  const [revision, setRevision] = useState(0);
-  const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster, revision]);
-
-  function askValue(key: string, label: string, current: number) {
-    const value = prompt(label, String(current).replace('.', ','));
-    if (value !== null) storage.set(key, value.replace(',', '.'));
-  }
-
-  function configure() {
-    askValue('crewcheck_salary_base_brl', 'Salário-base bruto informado no holerite (R$)', salary.config.basePay);
-    askValue('crewcheck_salary_fixed_additions_brl', 'Adicionais fixos mensais informados (R$)', salary.config.fixedAdditions);
-    askValue('crewcheck_act_day_km_metric_brl', 'Valor do KM diurno previsto no ACT (R$/km)', salary.config.dayKmMetric);
-    askValue('crewcheck_act_night_km_metric_brl', 'Valor do KM noturno previsto no ACT (R$/km)', salary.config.nightKmMetric);
-    askValue('crewcheck_act_reserve_hour_brl', 'Valor da hora de reserva previsto no ACT (R$/h)', salary.config.reserveHourMetric);
-    askValue('crewcheck_act_standby_hour_brl', 'Valor da hora de sobreaviso previsto no ACT (R$/h)', salary.config.standbyHourMetric);
-    askValue('crewcheck_act_chief_sector_brl', 'Adicional de chefe por setor (R$)', salary.config.chiefPerSector);
-    askValue('crewcheck_act_instructor_sector_brl', 'Adicional de instrutor por setor (R$)', salary.config.instructorPerSector);
-    askValue('crewcheck_salary_inss_brl', 'INSS do último holerite ou previsão informada (R$)', salary.config.inssDeduction);
-    askValue('crewcheck_salary_irrf_brl', 'IRRF do último holerite ou previsão informada (R$)', salary.config.irrfDeduction);
-    askValue('crewcheck_salary_other_deductions_brl', 'Outros descontos previstos (R$)', salary.config.otherDeductions);
-    askValue('crewcheck_salary_fgts_rate', 'Alíquota de FGTS apenas informativa (%)', salary.config.fgtsRate);
-    setRevision((value) => value + 1);
-    toast.success('Parâmetros financeiros atualizados.');
-  }
-
+  const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster]);
   const variable = salary.production + salary.chief + salary.instructorPay + salary.reserve + salary.standby;
   const deductions = salary.inss + salary.irrf + salary.otherDeductions;
+
   return <><Brand back/>
-    <section className="cz-panel-head">
+    <section className="cz-panel-head cz-panel-head-compact">
       <h1>Salário</h1>
-      <p>Previsão auditável por função: KM diurno/noturno, reserva e sobreaviso usam o ACT vigente ou os valores ajustados por você.</p>
+      <p>Previsão auditável por voo e função.</p>
     </section>
     <section className="cz-finance-grid">
-      <KpiCard icon={DollarSign} title="Bruto previsto" value={salary.configured ? moneyBRL(salary.gross) : 'Configurar função'} detail={salary.kmTotal + ' km · ' + salary.sectors + ' setores'}/>
-      <KpiCard icon={DollarSign} title="Líquido previsto" value={salary.configured ? moneyBRL(salary.net) : 'Configurar'} detail={moneyBRL(deductions) + ' em descontos informados'}/>
+      <KpiCard icon={DollarSign} title="Bruto previsto" value={salary.configured ? moneyBRL(salary.gross) : 'Calibração pendente'} detail={salary.kmTotal + ' km · ' + salary.sectors + ' setores'}/>
+      <KpiCard icon={DollarSign} title="Líquido previsto" value={salary.configured ? moneyBRL(salary.net) : 'Calibração pendente'} detail={moneyBRL(deductions) + ' em descontos informados'}/>
       <KpiCard icon={Plane} title="Parcela variável" value={moneyBRL(variable)} detail="voos + reserva + sobreaviso + adicionais"/>
     </section>
-    <section className="cz-toolbox">
-      <h2>Parâmetros do ACT e holerite</h2>
-      <p>{salary.config.requiresManualFunction
-        ? 'A função de piloto não foi identificada com segurança. Selecione Comandante/Copiloto e aeronave antes de usar a previsão.'
-        : salary.config.source}</p>
-      <div className="cz-tool-actions">
-        <button onClick={configure}><Settings/> Configurar valores e descontos</button>
-        <button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'crew' }))}><UserRound/> Ver função e chefe</button>
-        <button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' }))}><BriefcaseBusiness/> Ver diárias</button>
-      </div>
-    </section>
+    {salary.config.requiresManualFunction && <section className="cz-toolbox cz-finance-attention"><h2>Função pendente</h2><p>Confirme Comandante/Copiloto e aeronave nas configurações administrativas antes de usar a previsão.</p></section>}
     <section className="cz-finance-table">
       <h2>Ganhos variáveis por voo</h2>
       {salary.rows.length ? salary.rows.slice(0, 40).map((row) =>
         <div className={'cz-finance-row ' + (row.workType === 'PS' ? 'work-ps' : row.workType === 'OP' ? 'work-op' : '')} key={row.id}>
           <span>{row.date}</span>
           <strong>{row.flight} · {workTypeLabel(row.workType)} · {row.route}</strong>
-          <small>{row.dayKm + ' km diurno x ' + moneyBRL(salary.config.dayKmMetric)
-            + '/km · ' + row.nightKm + ' km noturno x ' + moneyBRL(salary.config.nightKmMetric)
-            + '/km · ' + (row.chiefEligible ? '1º CCM identificado' : 'sem adicional de chefe')}</small>
+          <small>{row.dayKm + ' km diurno × ' + moneyBRL(row.dayRateApplied)
+            + '/km · ' + row.nightKm + ' km noturno × ' + moneyBRL(row.nightRateApplied)
+            + '/km · ' + row.payRule
+            + ' · ' + (row.chiefEligible ? '1º CCM identificado' : 'sem adicional de chefe')}</small>
           <b>{moneyBRL(row.total)}</b>
         </div>
-      ) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para relacionar os setores aos parâmetros do ACT.</p></article>}
+      ) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para relacionar os setores aos valores vigentes.</p></article>}
     </section>
     <section className="cz-finance-table">
       <h2>Composição rastreável</h2>
-      <div className="cz-finance-row"><span>Salário-base</span><strong>Informado</strong><small>valor salvo por você</small><b>{moneyBRL(salary.config.basePay)}</b></div>
-      <div className="cz-finance-row"><span>Adicionais fixos</span><strong>Informados</strong><small>valor salvo por você</small><b>{moneyBRL(salary.config.fixedAdditions)}</b></div>
-      <div className="cz-finance-row"><span>Produtividade diurna</span><strong>{salary.dayKmTotal} km</strong><small>KM diurno x regra efetiva</small><b>{moneyBRL(salary.dayProduction)}</b></div>
-      <div className="cz-finance-row"><span>Produtividade noturna</span><strong>{salary.nightKmTotal} km</strong><small>KM noturno x regra efetiva</small><b>{moneyBRL(salary.nightProduction)}</b></div>
-      <div className="cz-finance-row"><span>Reserva</span><strong>{salary.reserveHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.reserveHourMetric)}/h</small><b>{moneyBRL(salary.reserve)}</b></div>
-      <div className="cz-finance-row"><span>Sobreaviso</span><strong>{salary.standbyHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.standbyHourMetric)}/h</small><b>{moneyBRL(salary.standby)}</b></div>
-      <div className="cz-finance-row"><span>Chefe / instrutor</span><strong>{salary.chiefSectors} setor(es)</strong><small>regra de 1º CCM e perfil de instrutor</small><b>{moneyBRL(salary.chief + salary.instructorPay)}</b></div>
+      <div className="cz-finance-row"><span>Salário-base</span><strong>Calibrado</strong><small>valor confirmado pelo administrador</small><b>{moneyBRL(salary.config.basePay)}</b></div>
+      <div className="cz-finance-row"><span>Adicionais fixos</span><strong>Calibrados</strong><small>valor vigente</small><b>{moneyBRL(salary.config.fixedAdditions)}</b></div>
+      <div className="cz-finance-row"><span>Produtividade diurna</span><strong>{salary.dayKmTotal} km</strong><small>cada KM classificado uma única vez</small><b>{moneyBRL(salary.dayProduction)}</b></div>
+      <div className="cz-finance-row"><span>Produtividade noturna</span><strong>{salary.nightKmTotal} km</strong><small>janela local 22:00–05:00</small><b>{moneyBRL(salary.nightProduction)}</b></div>
+      <div className="cz-finance-row"><span>Reserva</span><strong>{salary.reserveHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.reserveHourMetric)}/h · sem dobra</small><b>{moneyBRL(salary.reserve)}</b></div>
+      <div className="cz-finance-row"><span>Sobreaviso</span><strong>{salary.standbyHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.standbyHourMetric)}/h · sem dobra</small><b>{moneyBRL(salary.standby)}</b></div>
+      <div className="cz-finance-row"><span>Chefe / instrutor</span><strong>{salary.chiefSectors} setor(es)</strong><small>atividade em solo não recebe dobra de KM</small><b>{moneyBRL(salary.chief + salary.instructorPay)}</b></div>
       <div className="cz-finance-row muted"><span>INSS</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.inss)}</b></div>
       <div className="cz-finance-row muted"><span>IRRF</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.irrf)}</b></div>
       <div className="cz-finance-row muted"><span>Outros descontos</span><strong>Informados</strong><small>benefícios, consignados ou ajustes</small><b>-{moneyBRL(salary.otherDeductions)}</b></div>
-      {salary.config.fgtsRate > 0 && <div className="cz-finance-row"><span>FGTS</span><strong>{salary.config.fgtsRate}% informados</strong><small>informativo; não descontado do líquido</small><b>{moneyBRL(salary.fgts)}</b></div>}
+      {salary.config.fgtsRate > 0 && <div className="cz-finance-row"><span>FGTS</span><strong>{salary.config.fgtsRate}%</strong><small>informativo; não descontado do líquido</small><b>{moneyBRL(salary.fgts)}</b></div>}
     </section>
-    <section className="cz-toolbox">
-      <h2>Confiabilidade</h2>
-      <p>{actionableComplianceAlerts(compliance).length} alerta(s) operacional(is) válido(s). Solo não entra na jornada; moedas não são misturadas; a previsão deve ser conferida com espelho de voo e holerite.</p>
+    <section className="cz-toolbox cz-finance-reliability">
+      <ShieldCheck/><div><h2>Conferência</h2><p>{actionableComplianceAlerts(compliance).length} alerta(s) operacional(is). Reserva e sobreaviso permanecem em valor simples. Voo extra/DFS ou acionado usa a tarifa superior uma única vez, sem redobrar o trecho noturno.</p></div>
     </section>
   </>;
 }
+
 function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
   return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
@@ -3035,42 +3165,162 @@ function RoutineView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'gyms' }))}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
 }
 
+const DEFAULT_GYM_PARTNER_CHAINS = ['Selfit', 'Panobianco', 'Bluefit', 'Corpo e Saúde', 'Pratique', 'Fórmula', 'Bodytech', 'Fábrica de Monstros', 'Ultra'];
+
+function configuredGymPartnerChains(): string[] {
+  const custom = storage.get('crewcheck:gym-partner-chains', '').split(/[,;\n]/).map((item) => item.trim()).filter(Boolean);
+  return custom.length ? custom.slice(0, 30) : DEFAULT_GYM_PARTNER_CHAINS;
+}
+
+function coordinateDistanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const radians = (value: number) => value * Math.PI / 180;
+  const earth = 6_371_000;
+  const dLat = radians(b.lat - a.lat);
+  const dLon = radians(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a.lat)) * Math.cos(radians(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * earth * Math.asin(Math.sqrt(h));
+}
+
 function GymsView({ events }: { events: ZeroLeg[] }) {
-  const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
-  const target = stays[0] || events.find((e) => !e.placeholder) || placeholderLeg();
-  const location = hotelSearchLocation(target);
+  const now = Date.now();
+  const stays = events.filter((event) => event.kind === 'stay' || event.hotel)
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  const currentStay = stays.find((event) => eventStartDateTime(event).getTime() <= now && eventEndDateTime(event).getTime() + 8 * 36e5 >= now);
+  const upcomingStay = stays.find((event) => eventStartDateTime(event).getTime() > now);
+  const target = currentStay || upcomingStay || null;
+  const layoverLocation = target ? hotelSearchLocation(target) : '';
+  const [coordinates, setCoordinates] = useState<{ lat: number; lon: number } | null>(() => {
+    const match = storage.get('crewcheck_last_geo', '').match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
+    return match ? { lat: Number(match[1]), lon: Number(match[2]) } : null;
+  });
+  const [locationMode, setLocationMode] = useState<'layover' | 'current'>(() => target ? 'layover' : 'current');
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [crowding, setCrowding] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'wellhub'));
   const [onlyOpen, setOnlyOpen] = useState(() => storage.get('crewcheck:gym-only-open', '1') !== '0');
-  const partnerChains = ['Selfit', 'Panobianco', 'Bluefit', 'Corpo e Saúde', 'Pratique', 'Fórmula', 'Bodytech', 'Fábrica de Monstros', 'Ultra'];
+  const partnerChains = configuredGymPartnerChains();
+  const autoCheckIn = storage.get('crewcheck:gym-auto-checkin', '0') !== '0';
+  const coordinateLabel = coordinates ? coordinates.lat.toFixed(4) + ',' + coordinates.lon.toFixed(4) : '';
+  const location = locationMode === 'current' ? coordinateLabel || layoverLocation || 'localização atual' : layoverLocation || coordinateLabel || 'localização atual';
+
   function choosePlan(value: string) {
     setPlan(value);
     storage.set('crewcheck:gym-provider-plan', value);
   }
+
+  function requestCurrentLocation() {
+    if (!navigator.geolocation) {
+      toast.error('Geolocalização não disponível neste dispositivo.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition((position) => {
+      const next = { lat: position.coords.latitude, lon: position.coords.longitude };
+      setCoordinates(next);
+      storage.set('crewcheck_last_geo', next.lat + ',' + next.lon);
+      setLocationMode('current');
+      toast.success('Busca ajustada à localização atual.');
+    }, () => toast.error('Autorize a localização para procurar academias próximas.'), { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 });
+  }
+
   async function search() {
+    if (!location) return;
     setLoading(true);
     try {
-      const query = plan === 'wellhub' ? `${partnerChains.join(' ')} academia parceira Wellhub` : plan === 'smartfit' ? 'Smart Fit academia' : `${partnerChains.join(' ')} Smart Fit academia`;
+      const query = plan === 'wellhub'
+        ? partnerChains.join(' ') + ' academia parceira Wellhub'
+        : plan === 'smartfit' ? 'Smart Fit academia'
+        : partnerChains.join(' ') + ' Smart Fit academia';
       const found = await fetchNearbyFitnessPlaces(location, query);
       setPlaces(found);
       listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
-      if (!found.length) toast.message('Não encontrei lista interna agora. Abrindo busca no Google Maps continua disponível.');
+      if (!found.length) toast.message('A busca interna não retornou opções agora. O Google Maps continua disponível.');
     } finally {
       setLoading(false);
     }
   }
+
   useEffect(() => { search(); }, [location, plan]);
+
+  useEffect(() => {
+    if ((!autoCheckIn && locationMode !== 'current') || !navigator.geolocation) return;
+    const watch = navigator.geolocation.watchPosition((position) => {
+      const next = { lat: position.coords.latitude, lon: position.coords.longitude };
+      setCoordinates(next);
+      storage.set('crewcheck_last_geo', next.lat + ',' + next.lon);
+    }, () => undefined, { enableHighAccuracy: true, maximumAge: 30_000, timeout: 15_000 });
+    return () => navigator.geolocation.clearWatch(watch);
+  }, [autoCheckIn, locationMode]);
+
+  useEffect(() => {
+    if (!autoCheckIn || !coordinates || !places.length) return;
+    const nearby = places
+      .filter((place) => Number.isFinite(Number(place.latitude)) && Number.isFinite(Number(place.longitude)))
+      .map((place) => ({ place, distance: coordinateDistanceMeters(coordinates, { lat: Number(place.latitude), lon: Number(place.longitude) }) }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (!nearby || nearby.distance > 140) return;
+    const cooldownKey = 'crewcheck:gym-auto-checkin:' + nearby.place.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const last = Number(storage.get(cooldownKey, '0')) || 0;
+    if (Date.now() - last < 6 * 36e5) return;
+    const chain = partnerChains.find((item) => nearby.place.name.toLocaleLowerCase().includes(item.toLocaleLowerCase())) || '';
+    storage.set(cooldownKey, String(Date.now()));
+    gymCheckIn({ gymName: nearby.place.name, chainName: chain, location: coordinateLabel, sharePresence: true, durationMinutes: 90 })
+      .then((payload) => {
+        setCrowding(payload.gyms || []);
+        toast.success('Autocheck-in realizado. Sua presença ficará visível por até 90 minutos.');
+      })
+      .catch(() => storage.set(cooldownKey, '0'));
+  }, [autoCheckIn, coordinates, places]);
+
   const planLabel = plan === 'wellhub' ? 'Wellhub' : plan === 'smartfit' ? 'Smart Fit' : 'Wellhub + Smart Fit';
-  const visiblePlaces = places.filter((place) => !onlyOpen || place.openNow !== false).sort((a, b) => { const partner = (place: NearbyPlace) => partnerChains.some((chain) => String(place.name || '').toLocaleLowerCase().includes(chain.toLocaleLowerCase())) ? 1 : 0; return partner(b) - partner(a) || Number(b.openNow === true) - Number(a.openNow === true) || Number(b.rating || 0) - Number(a.rating || 0); });
+  const visiblePlaces = places
+    .filter((place) => !onlyOpen || place.openNow !== false)
+    .sort((a, b) => Number(a.distanceMeters || Infinity) - Number(b.distanceMeters || Infinity)
+      || Number(b.openNow === true) - Number(a.openNow === true)
+      || Number(b.rating || 0) - Number(a.rating || 0));
+
   async function checkIn(place: NearbyPlace) {
-    const chain = partnerChains.find((item) => String(place.name || '').toLocaleLowerCase().includes(item.toLocaleLowerCase())) || '';
-    const sharePresence = confirm('Deseja compartilhar temporariamente com colegas que você está nesta academia?');
-    try { const payload = await gymCheckIn({ gymName: place.name, chainName: chain, location, sharePresence, durationMinutes: 90 }); setCrowding(payload.gyms || []); toast.success(sharePresence ? 'Check-in compartilhado por até 90 minutos.' : 'Check-in privado registrado por até 90 minutos.'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui registrar o check-in.'); }
+    const chain = partnerChains.find((item) => place.name.toLocaleLowerCase().includes(item.toLocaleLowerCase())) || '';
+    const sharePresence = confirm('Compartilhar temporariamente com colegas que você está nesta academia?');
+    try {
+      const payload = await gymCheckIn({ gymName: place.name, chainName: chain, location, sharePresence, durationMinutes: 90 });
+      setCrowding(payload.gyms || []);
+      toast.success(sharePresence ? 'Check-in compartilhado por até 90 minutos.' : 'Check-in privado registrado por até 90 minutos.');
+    } catch {
+      toast.error('O check-in não pôde ser sincronizado agora.');
+    }
   }
-  function crowdFor(place: NearbyPlace) { return crowding.find((item) => String(item.gymName || '').toLocaleLowerCase() === String(place.name || '').toLocaleLowerCase()); }
-  return <><Brand back/><section className="cz-panel-head"><h1>Academias e Wellhub</h1><p>Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia. Confirme elegibilidade no aplicativo Wellhub antes de sair.</p></section><section className="cz-toolbox"><h2>Convênio, redes e local</h2><p>{planLabel} · {location}</p><div className="cz-routine-strip">{partnerChains.map((chain) => <span key={chain}>{chain}</span>)}</div><div className="cz-tool-actions"><button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Wellhub + Smart Fit</button><button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button><button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button><button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertas' : 'Mostrar fechadas'}</button></div><div className="cz-tool-actions"><button onClick={search} disabled={loading}><Dumbbell/> Atualizar recomendações</button><button onClick={() => openFitnessSearch(location, planLabel + ' academia aberta agora')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><ShieldCheck/> Rotina sugerida</button></div></section><section className="cz-stack-list">{visiblePlaces.length ? visiblePlaces.map((place, index) => { const chain = partnerChains.find((item) => String(place.name || '').toLocaleLowerCase().includes(item.toLocaleLowerCase())); const crowd = crowdFor(place); return <article className="cz-roster-card" key={`${place.name}-${index}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.openNow === true ? 'Aberta agora · ' : place.openNow === false ? 'Fechada agora · ' : 'Horário a confirmar · '}{place.rating ? `Avaliação ${place.rating}` : 'Confira disponibilidade'} · {chain ? `rede parceira pesquisada: ${chain}` : 'confirme parceria no app Wellhub'} · {crowd?.crowdLabel || 'sem relatos de lotação'}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + location)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir</button><button onClick={() => checkIn(place)}><UserRound/> Estou nesta academia</button></div></article>; }) : <article className="cz-empty-real"><Dumbbell/><h2>{onlyOpen && places.length ? 'Nenhuma academia aberta na busca atual' : 'Busca pronta'}</h2><p>{onlyOpen && places.length ? 'Desative “Somente abertas” para ver todas as opções.' : 'Configure a busca de locais no ambiente para listar academias dentro do app. Enquanto isso, use “Abrir no Google Maps”.'}</p></article>}</section><section className="cz-toolbox"><h2>Lotação colaborativa</h2><p>A estimativa usa somente check-ins voluntários que expiram automaticamente. Não é dado oficial da academia nem do Wellhub e nunca deve ser apresentada como lotação exata.</p></section></>;
+
+  function crowdFor(place: NearbyPlace) {
+    return crowding.find((item) => String(item.gymName || '').toLocaleLowerCase() === place.name.toLocaleLowerCase());
+  }
+
+  return <><Brand back/>
+    <section className="cz-panel-head cz-panel-head-compact"><h1>Academias</h1><p>Busca pelo pernoite ou pela sua localização atual.</p></section>
+    <section className="cz-toolbox cz-gym-search">
+      <header><div><Dumbbell/><span><small>Origem da busca</small><h2>{locationMode === 'layover' ? 'Pernoite' : 'Localização atual'}</h2></span></div><strong>{locationMode === 'layover' ? layoverLocation || 'Sem pernoite identificado' : coordinates ? 'GPS atualizado' : 'GPS pendente'}</strong></header>
+      <p className="cz-gym-provider-note">Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia. Confirme a elegibilidade no aplicativo Wellhub antes de sair.</p>
+      <div className="cz-location-selector">
+        <button className={locationMode === 'layover' ? 'active' : ''} disabled={!layoverLocation} onClick={() => setLocationMode('layover')}><Hotel/> Usar pernoite</button>
+        <button className={locationMode === 'current' ? 'active' : ''} onClick={requestCurrentLocation}><MapIcon/> Usar localização atual</button>
+      </div>
+      <div className="cz-tool-actions">
+        <button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Wellhub + Smart Fit</button>
+        <button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button>
+        <button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button>
+        <button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertas' : 'Mostrar fechadas'}</button>
+      </div>
+      <div className="cz-tool-actions"><button onClick={search} disabled={loading}><RotateCcw/> {loading ? 'Atualizando…' : 'Atualizar busca'}</button><button onClick={() => openFitnessSearch(location, planLabel + ' academia aberta agora')}><MapIcon/> Abrir no Google Maps</button></div>
+      {autoCheckIn && <div className="cz-auto-checkin-note"><ShieldCheck/><span><strong>Autocheck-in ativo</strong><small>Ao entrar num raio de 140 m, a presença é compartilhada por 90 minutos. Você pode desligar em Configurações.</small></span></div>}
+    </section>
+    <section className="cz-stack-list">{visiblePlaces.length ? visiblePlaces.map((place, index) => {
+      const crowd = crowdFor(place);
+      return <article className="cz-roster-card cz-gym-card" key={place.name + '-' + index}>
+        <div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.openNow === true ? 'Aberta agora' : place.openNow === false ? 'Fechada agora' : 'Horário a confirmar'}{place.distanceMeters ? ' · ' + (place.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : ''}{place.rating ? ' · avaliação ' + place.rating : ''} · {crowd?.crowdLabel || 'sem presença compartilhada'}</small></div><ChevronRight className="cz-roster-chevron"/></div>
+        <div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name + ' ' + location), '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir rota</button><button onClick={() => checkIn(place)}><UserRound/> Fazer check-in</button></div>
+      </article>;
+    }) : <article className="cz-empty-real"><Dumbbell/><h2>{onlyOpen && places.length ? 'Nenhuma academia aberta' : 'Nenhuma academia encontrada'}</h2><p>Ajuste a origem da busca ou abra o Google Maps.</p></article>}</section>
+  </>;
 }
 
 function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleState; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
@@ -3193,10 +3443,40 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
 function DatabaseView({ setBundle, setView }: { setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
   const [items, setItems] = useState<any[]>([]);
   const [status, setStatus] = useState<any>(null);
-  useEffect(() => { listSavedRosters(24).then(setItems).catch(() => setItems([])); getDatabaseStatus().then(setStatus).catch(() => setStatus({ message: 'Offline/local' })); }, []);
-  async function open(item:any) { try { const data = item?.id ? await openSavedRoster(item.id) : await openActiveRoster(); if (data?.roster) { const c = data.compliance || analyzeSafe(data.roster); setBundle({ roster: data.roster, compliance: c, source: item?.sourceFileName || 'Histórico' }); saveRoster(data.roster, item?.sourceFileName || 'Histórico'); setView('cockpit'); toast.success('Escala aberta.'); } } catch { toast.error('Não consegui abrir o histórico.'); } }
-  return <><Brand back/><section className="cz-panel-head"><h1>Histórico e sincronização</h1><p>{status?.message || 'Banco de escalas, offline-first e retomada da escala ativa.'}</p></section><section className="cz-stack-list">{items.length ? items.map((it:any) => <article className="cz-roster-card" key={it.id}><div className="cz-roster-copy"><h3>{it.sourceFileName || `Escala ${it.month}/${it.year}`}</h3><p>{it.createdAt || 'Histórico CrewCheck'}</p></div><button onClick={() => open(it)}>Abrir</button></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Nenhum histórico listado</h3><p>Salve a escala na Central funcional para sincronizar.</p></div></article>}</section></>;
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    Promise.all([
+      listSavedRosters(24).catch(() => []),
+      getDatabaseStatus().catch(() => ({ ok: false, connected: false, message: 'Histórico local ativo' })),
+    ]).then(([saved, database]) => {
+      setItems(saved);
+      setStatus(database);
+    }).finally(() => setLoading(false));
+  }, []);
+  async function open(item: any) {
+    try {
+      const data = item?.id ? await openSavedRoster(item.id) : await openActiveRoster();
+      if (data?.roster) {
+        const compliance = data.compliance || analyzeSafe(data.roster);
+        setBundle({ roster: data.roster, compliance, source: item?.sourceFileName || 'Histórico' });
+        saveRoster(data.roster, item?.sourceFileName || 'Histórico');
+        setView('cockpit');
+        toast.success('Escala aberta.');
+      }
+    } catch {
+      toast.error('Não consegui abrir este histórico.');
+    }
+  }
+  return <><Brand back/>
+    <section className="cz-panel-head cz-panel-head-compact"><h1>Histórico e sincronização</h1><p>{status?.connected ? 'Banco conectado' : 'Modo local protegido'}</p></section>
+    <section className="cz-stack-list">
+      {loading ? <article className="cz-empty-real cz-history-empty"><RotateCcw/><h2>Carregando histórico</h2><p>Verificando dados locais e sincronizados.</p></article>
+        : items.length ? items.map((item: any) => <article className="cz-roster-card" key={item.id}><div className="cz-roster-copy"><h3>{item.sourceFileName || 'Escala ' + item.month + '/' + item.year}</h3><p>{item.createdAt || 'Histórico CrewCheck'}{item.isActive ? ' · ativa' : ''}</p></div><button onClick={() => open(item)}>Abrir</button></article>)
+        : <article className="cz-empty-real cz-history-empty"><Database/><h2>Nenhum histórico salvo</h2><p>Importe uma escala ou salve a escala ativa. A cópia local continuará disponível mesmo quando o banco estiver fora do ar.</p></article>}
+    </section>
+  </>;
 }
+
 function CrewToolsView({ bundle }: { bundle: BundleState }) {
   const firstCrew = (bundle.roster.days || []).flatMap((d:any) => d.legs || []).flatMap((l:any) => l.crew || []).slice(0, 8);
   return <><Brand back/><section className="cz-panel-head"><h1>Crew e chefe de cabine</h1><p>Tripulação, adicional de chefe, instrutor e apoio operacional.</p></section><section className="cz-stack-list">{firstCrew.length ? firstCrew.map((c:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-copy"><h3>{c.name || c.employeeName || 'Tripulante'}</h3><p>{c.role || c.function || 'Crew'}</p></div><strong className="cz-roster-time">{i===0 ? 'Chefe efetivo' : 'Tripulante'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Regra preservada</h3><p>Quando houver lista de CCM, o primeiro CCM listado é considerado chefe efetivo do voo para fins de adicional.</p></div></article>}</section></>;
@@ -3510,7 +3790,7 @@ export default function Home() {
     email: async () => { const to = window.prompt('Enviar relatório com PDF para qual e-mail?') || ''; if (!to.trim()) return; try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await sendRosterByEmail({ to: to.trim(), roster: bundle.roster, compliance, gym, attachment: { fileName: pdf.fileName, blob: pdf.blob } }); toast.success(result.message || `Relatório e PDF enviados para ${to.trim()}.`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui enviar o relatório pelo CrewCheck.'); } },
     sharePdf: async () => { try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); toast.success(result === 'shared' ? 'PDF compartilhado.' : 'PDF salvo para compartilhar.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
-    save: () => { Promise.allSettled([saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any), syncPlatformRoster(bundle.roster, compliance, bundle.source)]).then((results) => results.some((result) => result.status === 'fulfilled') ? toast.success('Escala salva e sincronização atualizada.') : toast.error('Não consegui salvar no histórico agora.')); },
+    save: () => { saveRoster(bundle.roster, bundle.source); Promise.allSettled([saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any), syncPlatformRoster(bundle.roster, compliance, bundle.source)]).then((results) => results.some((result) => result.status === 'fulfilled') ? toast.success('Escala salva e sincronização atualizada.') : toast.success('Escala salva neste dispositivo; a nuvem será tentada novamente.')); },
     openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
     logout: () => { logout().finally(() => { window.location.href = '/login'; }); },
     replayIntro: () => { storage.set('crewcheck_intro_seen_v1278', '0'); setShowIntro(true); },
@@ -3539,8 +3819,8 @@ export default function Home() {
     {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
-    {view === 'perdiem' && <><FinancialStatementImporter mode="per_diem"/><PerDiemView bundle={bundle}/></>}
-    {view === 'salary' && <><FinancialStatementImporter mode="payroll"/><SalaryReliableView bundle={bundle}/></>}
+    {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
+    {view === 'salary' && <SalaryReliableView bundle={bundle}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
     {view === 'load' && <LoadView bundle={bundle}/>}
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}

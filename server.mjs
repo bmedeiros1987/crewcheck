@@ -423,36 +423,56 @@ async function handleRoutePreview(req, res, url) {
     sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
   }
 }
+function coordinateDistanceMeters(a, b) {
+  const radians = (value) => Number(value) * Math.PI / 180;
+  const earth = 6_371_000;
+  const dLat = radians(b.latitude - a.latitude);
+  const dLon = radians(b.longitude - a.longitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * earth * Math.asin(Math.sqrt(h)));
+}
+
 async function handleFitness(req, res, url) {
   const key = mapsServerKey();
   const location = url.searchParams.get('location') || '';
   const query = url.searchParams.get('query') || 'academia Smart Fit Wellhub fitness';
   if (!key) return sendJson(res, 200, { ok: false, configured: false, places: [], message: 'Busca interna de academias aguardando configuração.' });
+  const coordinateMatch = location.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  const center = coordinateMatch ? { latitude: Number(coordinateMatch[1]), longitude: Number(coordinateMatch[2]) } : null;
   try {
     const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'X-Goog-Api-Key': key,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.googleMapsUri,places.currentOpeningHours.openNow',
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.googleMapsUri,places.currentOpeningHours.openNow,places.location',
       },
       body: JSON.stringify({
-        textQuery: `${query} perto de ${location}`.trim(),
+        textQuery: center ? query : (query + ' perto de ' + location).trim(),
         languageCode: 'pt-BR',
         regionCode: 'BR',
         maxResultCount: 8,
+        ...(center ? { locationBias: { circle: { center, radius: 12_000 } } } : {}),
       }),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) return sendJson(res, 200, { ok: false, configured: true, places: [], message: 'Busca de academias indisponível agora.' });
-    const places = (payload?.places || []).map((place) => ({
-      name: place.displayName?.text || 'Academia',
-      address: place.formattedAddress || '',
-      rating: place.rating || undefined,
-      mapsUrl: place.googleMapsUri || '',
-      openNow: place.currentOpeningHours?.openNow,
-    }));
-    sendJson(res, 200, { ok: true, configured: true, places });
+    const places = (payload?.places || []).map((place) => {
+      const point = place.location && Number.isFinite(Number(place.location.latitude)) && Number.isFinite(Number(place.location.longitude))
+        ? { latitude: Number(place.location.latitude), longitude: Number(place.location.longitude) }
+        : null;
+      return {
+        name: place.displayName?.text || 'Academia',
+        address: place.formattedAddress || '',
+        rating: place.rating || undefined,
+        mapsUrl: place.googleMapsUri || '',
+        openNow: place.currentOpeningHours?.openNow,
+        latitude: point?.latitude,
+        longitude: point?.longitude,
+        distanceMeters: center && point ? coordinateDistanceMeters(center, point) : undefined,
+      };
+    }).sort((left, right) => Number(left.distanceMeters || Infinity) - Number(right.distanceMeters || Infinity));
+    sendJson(res, 200, { ok: true, configured: true, origin: center ? 'current_location' : 'layover', places });
   } catch {
     sendJson(res, 200, { ok: false, configured: true, places: [], message: 'Busca de academias indisponível agora.' });
   }
@@ -1309,7 +1329,7 @@ async function handleTtsHealth(req, res) {
 function handleTtsProviderHealth(req, res) {
   return sendJson(res, 200, {
     ok: effectiveTtsProvider() === 'elevenlabs',
-    version: '13.8.0',
+    version: '13.8.5',
     ...ttsPolicySnapshot(),
     message: effectiveTtsProvider() === 'elevenlabs'
       ? 'ElevenLabs é o provedor efetivo de voz.'
@@ -1418,7 +1438,7 @@ const conciergeKeyboard = {
 };
 
 async function conciergeDbPool() {
-  const connectionString = envAny(['DATABASE_URL']);
+  const connectionString = envAny(['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL']);
   if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) return null;
   if (!conciergeDbPoolPromise) {
     conciergeDbPoolPromise = (async () => {
@@ -1428,7 +1448,12 @@ async function conciergeDbPool() {
         if (!Pool) return null;
         const sslDisabled = /localhost|127\.0\.0\.1/.test(connectionString) || String(process.env.PGSSLMODE || '').toLowerCase() === 'disable';
         const pool = new Pool({ connectionString, max: 3, connectionTimeoutMillis: 3500, idleTimeoutMillis: 20_000, ssl: sslDisabled ? false : { rejectUnauthorized: false } });
-        await pool.query('CREATE TABLE IF NOT EXISTS crewcheck_telegram_state (state_key TEXT PRIMARY KEY, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+        await pool.query('SELECT 1');
+        const schema = await pool.query("SELECT to_regclass('public.crewcheck_telegram_state') relation");
+        if (!schema.rows[0]?.relation) {
+          if (String(process.env.CREWCHECK_DB_AUTO_MIGRATE || 'true').toLowerCase() === 'false') return null;
+          await pool.query('CREATE TABLE IF NOT EXISTS crewcheck_telegram_state (state_key TEXT PRIMARY KEY, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+        }
         return pool;
       } catch {
         return null;
@@ -2657,7 +2682,7 @@ function reliabilityEnvItems() {
     reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('telegram-stt-elevenlabs','Áudio Telegram ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY']),
     reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER','TELEGRAM_BOT_TOKEN']),
-    reliabilityModule('database','Banco de dados',['DATABASE_URL','SUPABASE_URL']),
+    reliabilityModule('database','Banco de dados',['DATABASE_URL','CREWCHECK_DATABASE_URL','POSTGRES_URL','POSTGRES_URL_NON_POOLING','SUPABASE_DB_URL']),
     reliabilityModuleAll('billing-web','Assinatura web Asaas',['ASAAS_API_KEY','ASAAS_WEBHOOK_TOKEN']),
     reliabilityModuleAll('billing-google-play','Assinatura Google Play',['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON','GOOGLE_PLAY_PACKAGE_NAME','GOOGLE_PLAY_RTDN_AUDIENCE','GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL']),
     reliabilityModule('privacy-key','Criptografia de quarto',['CREWCHECK_DATA_ENCRYPTION_KEY','CREWCHECK_AUTH_SECRET']),
@@ -2666,16 +2691,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.8.0', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.8.5', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.8.0', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.8.5', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.8.0', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.8.5', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -2713,7 +2738,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.8.0 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.8.5 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -2723,8 +2748,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.8.0">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.8.0">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.8.5">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.8.5">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -2770,7 +2795,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.8.0&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.8.5&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -2782,7 +2807,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.8.0'
+    'x-crewcheck-boot': 'static-shell-13.8.5'
   });
   res.end(html);
 }
@@ -2816,7 +2841,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.8.0', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.8.5', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -2851,7 +2876,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.8.0', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.8.5', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });

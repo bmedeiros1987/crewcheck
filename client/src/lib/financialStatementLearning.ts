@@ -26,7 +26,9 @@ export interface StatementLearningResult {
 }
 
 const money = (raw: string) => Number(raw.replace(/\./g, '').replace(',', '.'));
-const decimal = (raw: string) => Number(raw.replace(/\./g, '').replace(',', '.'));
+const decimal = (raw: string) => raw.includes(',')
+  ? Number(raw.replace(/\./g, '').replace(',', '.'))
+  : Number(raw.replace(/\s+/g, ''));
 const isoDate = (raw: string) => {
   const m = raw.match(/(\d{2})[/.\-](\d{2})[/.\-](\d{4})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
@@ -106,14 +108,16 @@ export function learnPayrollStatement(text: string, sourceDocument: string): Sta
     const m = text.match(pattern);
     if (!m) continue;
     const value = unit === 'km' ? decimal(m[2]) : money(m[1]);
-    rates.push(rate(key, label, value, unit, effectiveFrom, sourceDocument, fp));
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push(rate(key, label, value, unit, effectiveFrom, sourceDocument, fp));
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
     [/([\d.,]+)\s+Horas Sobre Aviso - CMS\s+([\d.]+,\d{2})/i, 'salary.standbyHour', 'Hora de sobreaviso'],
   ] as const) {
     const m = text.match(pattern);
-    if (m) rates.push(rate(key, label, money(m[2]) / decimal(m[1]), 'hour', effectiveFrom, sourceDocument, fp, 'medium'));
+    const quantity = m ? decimal(m[1]) : 0;
+    const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
+    if (Number.isFinite(hourlyValue)) rates.push(rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'medium'));
   }
   const totals = text.match(/TOTAIS\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
   const net = text.match(/L[ií]quido\s*\n?\s*(?:[\d.]+,\d{2}\s+)?([\d.]+,\d{2})/i);
@@ -145,4 +149,31 @@ export function mergeConfirmedRates(current: LearnedRate[], incoming: LearnedRat
 
 export function rateAt(rates: LearnedRate[], key: string, date: string): LearnedRate | null {
   return rates.filter((entry) => entry.confirmed && entry.key === key && entry.effectiveFrom <= date && (!entry.effectiveTo || entry.effectiveTo >= date)).at(-1) || null;
+}
+
+
+export const FINANCIAL_RATES_STORAGE_KEY = 'crewcheck_financial_learned_rates_v1';
+
+export function readConfirmedFinancialRates(): LearnedRate[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const parsed = JSON.parse(localStorage.getItem(FINANCIAL_RATES_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry?.confirmed === true) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveConfirmedFinancialRates(rates: LearnedRate[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(FINANCIAL_RATES_STORAGE_KEY, JSON.stringify(rates.filter((entry) => entry?.confirmed === true)));
+  } catch {
+    // O modo privado pode bloquear o armazenamento; a importação continua somente na sessão.
+  }
+}
+
+export function confirmedRateValueAt(key: string, date: string): number | null {
+  const found = rateAt(readConfirmedFinancialRates(), key, date);
+  return found && Number.isFinite(Number(found.value)) ? Number(found.value) : null;
 }

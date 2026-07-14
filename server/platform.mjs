@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-const APP_VERSION = '13.8.0';
+const APP_VERSION = '13.8.5';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const SUPPORTED_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES']);
 const PLAN_IDS = new Set(['free', 'premium_monthly', 'premium_annual', 'premium_unlimited']);
@@ -8,7 +8,7 @@ const GOOGLE_PLAY_PRODUCTS = new Map([
   ['crewcheck_premium_monthly', 'premium_monthly'],
   ['crewcheck_premium_annual', 'premium_annual'],
 ]);
-const state = { poolPromise: null, googleToken: null, googleTokenExpiresAt: 0 };
+const state = { poolPromise: null, databaseFailure: null, googleToken: null, googleTokenExpiresAt: 0 };
 
 const PLAN_CATALOG = [
   {
@@ -215,8 +215,43 @@ function visitorIdentity(req) {
   return token;
 }
 
+function databaseConnectionString() {
+  for (const name of ['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL']) {
+    const value = env(name);
+    if (/^postgres(?:ql)?:\/\//i.test(value)) return value;
+  }
+  return '';
+}
+
+const PLATFORM_REQUIRED_TABLES = [
+  'crewcheck_platform_profiles',
+  'crewcheck_platform_subscriptions',
+  'crewcheck_platform_usage',
+  'crewcheck_platform_rosters',
+  'crewcheck_platform_hotel_rules',
+  'crewcheck_platform_stays',
+  'crewcheck_platform_shares',
+  'crewcheck_platform_visitors',
+  'crewcheck_platform_connections',
+  'crewcheck_platform_chat_threads',
+  'crewcheck_platform_chat_messages',
+  'crewcheck_platform_gym_checkins',
+  'crewcheck_platform_webhook_events',
+  'crewcheck_platform_emergencies',
+  'crewcheck_telegram_state',
+  'crewcheck_platform_auth_attempts',
+];
+
+async function platformSchemaReady(db) {
+  const result = await db.query(
+    "SELECT table_name, to_regclass('public.' || table_name) relation FROM unnest($1::text[]) AS table_name",
+    [PLATFORM_REQUIRED_TABLES]
+  );
+  return result.rows.length === PLATFORM_REQUIRED_TABLES.length && result.rows.every((row) => Boolean(row.relation));
+}
+
 async function pool() {
-  const connectionString = env('DATABASE_URL');
+  const connectionString = databaseConnectionString();
   if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) return null;
   if (!state.poolPromise) {
     state.poolPromise = (async () => {
@@ -225,6 +260,14 @@ async function pool() {
       if (!Pool) return null;
       const local = /localhost|127\.0\.0\.1/.test(connectionString) || env('PGSSLMODE').toLowerCase() === 'disable';
       const db = new Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, ssl: local ? false : { rejectUnauthorized: false } });
+      await db.query('SELECT 1');
+      if (await platformSchemaReady(db)) {
+        state.databaseFailure = null;
+        return db;
+      }
+      if (env('CREWCHECK_DB_AUTO_MIGRATE', 'true').toLowerCase() === 'false') {
+        throw Object.assign(new Error('A migration do banco ainda não foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+      }
       await db.query(`
         CREATE TABLE IF NOT EXISTS crewcheck_platform_profiles (
           email TEXT PRIMARY KEY, public_id TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL,
@@ -325,9 +368,12 @@ async function pool() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
       `);
+      state.databaseFailure = null;
       return db;
-    })().catch(() => {
+    })().catch((error) => {
       state.poolPromise = null;
+      state.databaseFailure = { code: String(error?.code || 'DATABASE_UNAVAILABLE'), message: String(error?.message || 'Falha de conexão').slice(0, 180) };
+      console.error('[crewcheck:database]', state.databaseFailure.code, state.databaseFailure.message);
       return null;
     });
   }

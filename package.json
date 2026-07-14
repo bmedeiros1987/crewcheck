@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-8-4-ipad-database-rescue",
-  "version": "13.8.4",
+  "name": "crewcheck-v13-8-5-premium-audit",
+  "version": "13.8.5",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.8.4 — menu iPad sem corte e assinaturas em modo seguro sem banco",
+  "description": "CrewCheck v13.8.5 — auditoria premium, finanças calibradas, academias por localização e banco resiliente",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -99,7 +99,8 @@
     "regression:v13.8.1:audit": "node scripts/regression-v13-8-1-audit-financial.mjs",
     "regression:v13.8.2:compare": "node scripts/regression-v13-8-2-roster-comparison.mjs",
     "regression:v13.8.3:finance-learning": "node scripts/regression-v13-8-3-financial-learning.mjs",
-    "regression:v13.8.4:ipad-db": "node scripts/regression-v13-8-4-ipad-database.mjs"
+    "regression:v13.8.4:ipad-db": "node scripts/regression-v13-8-4-ipad-database.mjs",
+    "regression:v13.8.5:audit": "node scripts/regression-v13-8-5-premium-audit.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

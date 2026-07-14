@@ -51,10 +51,10 @@ export interface PerDiemClassification {
 
 export type AirportPerDiemOverrides = Record<string, PerDiemRateKey>;
 
-export const ACT_FINANCIAL_RULES_VERSION = 'ACT-LATAM-2025-2027.1';
+export const ACT_FINANCIAL_RULES_VERSION = 'ACT-LATAM-2025-2027.2026-06';
 
 export const ACT_PER_DIEM_RATES: PerDiemActRate[] = [
-  { key: 'domestic', label: 'Nacional', currency: 'BRL', mainMeal: 105.04 },
+  { key: 'domestic', label: 'Nacional', currency: 'BRL', mainMeal: 109.44 },
   { key: 'north_america', label: 'América do Norte', currency: 'USD', mainMeal: 25.70 },
   { key: 'mexico', label: 'México', currency: 'USD', mainMeal: 23.00 },
   { key: 'south_america_caribbean', label: 'América do Sul e Caribe', currency: 'USD', mainMeal: 21.00 },
@@ -67,11 +67,11 @@ export const ACT_PER_DIEM_RATES: PerDiemActRate[] = [
 ];
 
 const CABIN_RATES: SalaryActRates = {
-  dayKm: 0.057349,
-  nightKm: 0.114698,
-  reserveHour: 48.75,
-  standbyHour: 16.25,
-  excessHour: 48.75,
+  dayKm: 0.058547,
+  nightKm: 0.117094,
+  reserveHour: 49.765,
+  standbyHour: 16.587398,
+  excessHour: 49.765,
 };
 
 const PILOT_RATES: Record<string, SalaryActRates> = {
