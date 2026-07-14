@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
-import { handlePlatformRoute, consumePlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
@@ -2616,7 +2616,12 @@ async function handleAlarmTest(req, res) {
       usage = await consumePlatformUsage(req, 'wakeup_call', 1);
       if (!usage.allowed) return sendJson(res, Number(usage.status || 429), { ok: false, usage, message: usage.message || 'Limite mensal de ligações atingido.' });
     }
-    results.push({ channel: 'telegram-call', ...(await sendTelegramVoiceCall(username, text)) });
+    const telegramCallResult = await sendTelegramVoiceCall(username, text);
+    if (!telegramCallResult.ok && usage?.allowed && !usage.admin) {
+      const refund = await refundPlatformUsage(req, 'wakeup_call', 1);
+      usage = { ...usage, ...refund, refunded: Boolean(refund.refunded) };
+    }
+    results.push({ channel: 'telegram-call', ...telegramCallResult });
   }
   if (wantsPhoneCall) results.push({ channel: 'phone-call', ...(await sendAdminPhoneCall(payload.phone, text)) });
   if (!results.length) return sendJson(res, 400, { ok: false, message: 'Escolha um canal de teste válido.' });
