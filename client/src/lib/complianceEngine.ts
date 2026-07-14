@@ -34,6 +34,9 @@ export interface Metrics {
   reserveCount: number;
   averageTurnaround: number;
   maxConsecutiveNights: number;
+  totalGroundHours: number;
+  maxGroundIntervalMinutes: number;
+  groundLimitExceedances: number;
 }
 
 export interface DayLoadAnalysis {
@@ -102,7 +105,7 @@ export interface GymRecommendation {
   loadScore: number;
 }
 
-const COMPLIANCE_ENGINE_VERSION = '12.5.17';
+const COMPLIANCE_ENGINE_VERSION = '13.8.1';
 const SHOW_TECHNICAL_CODE_ALERTS = false;
 
 const LIMITS = {
@@ -760,19 +763,43 @@ function pushAlert(alerts: ComplianceAlert[], alert: Omit<ComplianceAlert, 'id'>
   alerts.push({ id: `alert_${alerts.length + 1}`, ...alert });
 }
 
-function getGroundIntervals(day: RosterDay): Array<{ minutes: number; previousArrival: string; nextDeparture: string; period: 'diurno' | 'noturno' }> {
+type GroundInterval = {
+  minutes: number;
+  previousArrival: string;
+  nextDeparture: string;
+  period: 'diurno' | 'noturno';
+  location: string;
+  previousFlight: string;
+  nextFlight: string;
+};
+
+function getGroundIntervals(day: RosterDay): GroundInterval[] {
   const legs = day.legs || [];
-  const intervals: Array<{ minutes: number; previousArrival: string; nextDeparture: string; period: 'diurno' | 'noturno' }> = [];
+  const intervals: GroundInterval[] = [];
   for (let i = 0; i < legs.length - 1; i++) {
     const previous = legs[i];
     const next = legs[i + 1];
+    const location = String(previous.destination || '').toUpperCase();
+    const nextOrigin = String(next.origin || '').toUpperCase();
+    // O limite do ACT vale entre etapas conectadas da mesma jornada. Pernas em
+    // aeroportos diferentes ou esperas incompatíveis com uma conexão ficam fora.
+    if (location && nextOrigin && location !== nextOrigin) continue;
     const previousArrival = minutesOfDay(previous.arrivalTime);
     const nextDeparture = minutesOfDay(next.departureTime);
     if (previousArrival === null || nextDeparture === null) continue;
     let minutes = nextDeparture - previousArrival;
-    if (minutes < 0 || previous.isNextDay) minutes += 24 * 60;
+    if (minutes < 0) minutes += 24 * 60;
+    if (minutes <= 0 || minutes > 12 * 60) continue;
     const period: 'diurno' | 'noturno' = previousArrival >= 5 * 60 && previousArrival <= 21 * 60 + 59 ? 'diurno' : 'noturno';
-    intervals.push({ minutes, previousArrival: previous.arrivalTime, nextDeparture: next.departureTime, period });
+    intervals.push({
+      minutes,
+      previousArrival: previous.arrivalTime,
+      nextDeparture: next.departureTime,
+      period,
+      location: location || nextOrigin || 'aeroporto não identificado',
+      previousFlight: previous.flightNumber || 'etapa anterior',
+      nextFlight: next.flightNumber || 'etapa seguinte',
+    });
   }
   return intervals;
 }
@@ -1422,7 +1449,6 @@ function isNoisyAutomaticAttention(alert: ComplianceAlert): boolean {
 
 function sanitizeComplianceAlertsForProduction(alerts: ComplianceAlert[]): ComplianceAlert[] {
   const hiddenPatterns = [
-    /tempo em solo entre etapas/i,
     /siglas não classificadas/i,
     /jornada semanal acima/i,
     /limite mensal de horas de trabalho/i,
@@ -1525,6 +1551,9 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     reserveCount: 0,
     averageTurnaround: 0,
     maxConsecutiveNights: 0,
+    totalGroundHours: 0,
+    maxGroundIntervalMinutes: 0,
+    groundLimitExceedances: 0,
   };
 
   let restTotal = 0;
@@ -1535,11 +1564,36 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     const dutyHours = getDutyHours(day);
     const flightHours = getFlightHours(day);
     const hasMadrugada = hasMadrugadaDuty(day);
+    const groundIntervals = getGroundIntervals(day);
 
     addOperationalContextAlerts(alerts, day);
 
     metrics.totalFlightHours += flightHours;
     metrics.totalDutyHours += getRegulatoryWorkHoursForTotals(day);
+    metrics.totalGroundHours += groundIntervals.reduce((sum, interval) => sum + interval.minutes, 0) / 60;
+
+    groundIntervals.forEach((interval) => {
+      metrics.maxGroundIntervalMinutes = Math.max(metrics.maxGroundIntervalMinutes, interval.minutes);
+      const limitMinutes = interval.period === 'diurno'
+        ? actRules.groundBetweenLegs.maxDayMinutes
+        : actRules.groundBetweenLegs.maxNightMinutes;
+      if (interval.minutes <= limitMinutes) return;
+      metrics.groundLimitExceedances += 1;
+      pushAlert(alerts, {
+        severity: 'error',
+        title: 'Tempo em solo entre etapas acima do limite ACT',
+        description: day.date + ': ' + interval.minutes + ' min em ' + interval.location
+          + ' entre ' + interval.previousFlight + ' e ' + interval.nextFlight
+          + '; limite ' + interval.period + ': ' + limitMinutes + ' min.',
+        details: 'O tempo em solo é exibido e auditado em métrica própria. Ele não foi somado à jornada regulatória do CrewCheck.',
+        legalReference: actRules.groundBetweenLegs.legalReference,
+        date: day.date,
+        confidence: 'alta',
+        classification: 'confirmada',
+        evidence: interval.previousArrival + ' até ' + interval.nextDeparture
+          + ' · conexão em ' + interval.location + ' · período ' + interval.period + '.',
+      });
+    });
 
     if (isFormalDayOff(day)) {
       metrics.totalDaysOff += 1;
@@ -1891,6 +1945,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       ...metrics,
       totalFlightHours: round1(metrics.totalFlightHours),
       totalDutyHours: round1(metrics.totalDutyHours),
+      totalGroundHours: round1(metrics.totalGroundHours),
       averageTurnaround: round1(metrics.averageTurnaround),
     },
     overallStatus,
