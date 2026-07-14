@@ -17573,3 +17573,243 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 [data-crew-theme="light"] .cz-finance-row.work-ps {
   box-shadow: 0 14px 34px rgba(229, 154, 32, .14) !important;
 }
+
+/* CrewCheck v13.8.2 - planned versus current roster comparison */
+.cz-compare-source,
+.cz-compare-days-off,
+.cz-compare-tabs,
+.cz-compare-list {
+  width: min(100%, var(--cc1414-max, 1180px));
+  max-width: var(--cc1414-max, 1180px);
+  margin-left: auto;
+  margin-right: auto;
+}
+.cz-compare-source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px 0;
+  border-top: 1px solid rgba(255, 255, 255, .14);
+  border-bottom: 1px solid rgba(255, 255, 255, .14);
+}
+.cz-compare-source > svg {
+  width: 28px;
+  height: 28px;
+  margin: auto;
+  color: #55a7ff;
+}
+.cz-compare-source > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.cz-compare-source > div:last-child { text-align: right; }
+.cz-compare-source span {
+  color: #55a7ff;
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.cz-compare-source strong {
+  color: #f5f8fc;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.cz-compare-source small {
+  color: #aeb8c7;
+  line-height: 1.45;
+}
+.cz-compare-days-off {
+  display: grid;
+  gap: 8px;
+  margin: 18px auto;
+}
+.cz-compare-days-off p {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 4px solid #2fbf82;
+  background: rgba(47, 191, 130, .09);
+}
+.cz-compare-days-off p:first-child {
+  border-left-color: #f16464;
+  background: rgba(241, 100, 100, .1);
+}
+.cz-compare-days-off svg { flex: 0 0 22px; }
+.cz-compare-days-off span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: #dbe2ec;
+}
+.cz-compare-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 18px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  background: rgba(8, 12, 17, .76);
+}
+.cz-compare-tabs button {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #aeb8c7;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.cz-compare-tabs button.active {
+  background: #e8eef6;
+  color: #10151c;
+}
+.cz-compare-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.cz-compare-change {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #303844;
+  border-left: 5px solid #55a7ff;
+  border-radius: 8px;
+  background: #141a22;
+}
+.cz-compare-change.added { border-left-color: #2fbf82; }
+.cz-compare-change.removed { border-left-color: #f16464; }
+.cz-compare-change.lost-rest { border-left-color: #f0a62f; }
+.cz-compare-change header {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+}
+.cz-compare-change header span {
+  color: #aeb8c7;
+  font-size: .8rem;
+  font-weight: 800;
+}
+.cz-compare-change header strong {
+  min-width: 0;
+  color: #f5f8fc;
+  overflow-wrap: anywhere;
+}
+.cz-compare-change header em {
+  padding: 5px 7px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  color: #80bbff;
+  font-size: .7rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.cz-compare-change.added header em { color: #58d99e; }
+.cz-compare-change.removed header em { color: #ff8b8b; }
+.cz-compare-change.lost-rest header em { color: #ffc666; }
+.cz-compare-change > p {
+  margin: 0;
+  padding: 0 14px 14px;
+  color: #c4cdd9;
+  line-height: 1.5;
+}
+.cz-compare-change > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #303844;
+}
+.cz-compare-change > div span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  color: #bdc7d4;
+  font-size: .84rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.cz-compare-change > div span + span { border-left: 1px solid #303844; }
+.cz-compare-change > div b {
+  color: #f5f8fc;
+  font-size: .74rem;
+  text-transform: uppercase;
+}
+.cz-compare-change > small {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-top: 1px solid rgba(240, 166, 47, .28);
+  background: rgba(240, 166, 47, .08);
+  color: #ffc666;
+  font-weight: 800;
+}
+.cz-compare-change > small svg { width: 17px; height: 17px; }
+.cz-compare-warning { border-left: 5px solid #f0a62f !important; }
+.cz-compare-financial .cz-finance-row b { overflow-wrap: anywhere !important; }
+
+[data-crew-theme="light"] .cz-compare-source {
+  border-color: #d2d9e3;
+}
+[data-crew-theme="light"] .cz-compare-source strong,
+[data-crew-theme="light"] .cz-compare-days-off span,
+[data-crew-theme="light"] .cz-compare-change header strong,
+[data-crew-theme="light"] .cz-compare-change > div b {
+  color: #10151c;
+}
+[data-crew-theme="light"] .cz-compare-source small,
+[data-crew-theme="light"] .cz-compare-change > p,
+[data-crew-theme="light"] .cz-compare-change > div span {
+  color: #4e5968;
+}
+[data-crew-theme="light"] .cz-compare-tabs {
+  border-color: #cfd6df;
+  background: #edf1f6;
+}
+[data-crew-theme="light"] .cz-compare-tabs button { color: #4e5968; }
+[data-crew-theme="light"] .cz-compare-tabs button.active {
+  background: #151b23;
+  color: #fff;
+}
+[data-crew-theme="light"] .cz-compare-change {
+  border-color: #d4dae3;
+  background: #fff;
+  box-shadow: 0 7px 18px rgba(21, 27, 35, .07);
+}
+[data-crew-theme="light"] .cz-compare-change > div,
+[data-crew-theme="light"] .cz-compare-change > div span + span {
+  border-color: #dfe4eb;
+}
+
+@media (max-width: 620px) {
+  .cz-compare-source {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .cz-compare-source > svg { transform: rotate(90deg); }
+  .cz-compare-source > div:last-child { text-align: left; }
+  .cz-compare-tabs { grid-template-columns: 1fr; }
+  .cz-compare-change header { grid-template-columns: 52px minmax(0, 1fr); }
+  .cz-compare-change header em { grid-column: 1 / -1; justify-self: start; }
+  .cz-compare-change > div { grid-template-columns: 1fr; }
+  .cz-compare-change > div span + span {
+    border-top: 1px solid #303844;
+    border-left: 0;
+  }
+}
