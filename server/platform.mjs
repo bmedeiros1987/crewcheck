@@ -272,6 +272,14 @@ async function platformSchemaReport(db) {
   };
 }
 
+// Compatibilidade com diagnósticos e integrações anteriores à separação entre
+// tabelas essenciais e opcionais. O resultado representa somente o núcleo que
+// precisa estar disponível para autenticação, perfil e assinatura funcionarem.
+async function platformSchemaReady(db) {
+  const report = await platformSchemaReport(db);
+  return report.coreReady;
+}
+
 async function platformTableReady(db, tableName) {
   if (![...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES].includes(tableName)) return false;
   if (state.schemaReport?.available?.includes(tableName)) return true;
