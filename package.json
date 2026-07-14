@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-8-0-platform",
-  "version": "13.8.0",
+  "name": "crewcheck-v13-8-1-audit",
+  "version": "13.8.1",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.8.0 — assinaturas, conformidade, escala e comunidade segura",
+  "description": "CrewCheck v13.8.1 — auditoria ACT de escalas, tempo em solo e valores por moeda",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -95,7 +95,8 @@
     "regression:v13.7.14:ui-audit": "node scripts/regression-v13-7-14-ui-audit-theme-alerts.mjs",
     "regression:v13.7.15:full-restore": "node scripts/regression-v13-7-15-full-restore.mjs",
     "regression:v13.7.16:concierge": "node scripts/regression-v13-7-16-telegram-concierge-ops.mjs",
-    "regression:v13.8.0:platform": "node scripts/regression-v13-8-0-platform.mjs"
+    "regression:v13.8.0:platform": "node scripts/regression-v13-8-0-platform.mjs",
+    "regression:v13.8.1:audit": "node scripts/regression-v13-8-1-audit-financial.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

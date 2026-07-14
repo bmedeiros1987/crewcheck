@@ -17519,3 +17519,57 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   .cz-flight-head{align-items:flex-start!important}
   .cz-airline-logo{width:42px!important;height:42px!important;min-width:42px!important}
 }
+
+
+/* CrewCheck v13.8.1 - ACT audit, ground-time metrics and OP/PS states */
+.cz-flight-card.work-op,
+.cz-roster-card.work-op,
+.cz-finance-row.work-op {
+  border-left: 5px solid #18a874 !important;
+}
+.cz-flight-card.work-ps,
+.cz-roster-card.work-ps,
+.cz-finance-row.work-ps {
+  border-left: 5px solid #e59a20 !important;
+}
+.cz-flight-card.work-op .cz-work-type-badge {
+  background: color-mix(in srgb, #18a874 20%, transparent) !important;
+  border-color: color-mix(in srgb, #18a874 58%, transparent) !important;
+}
+.cz-flight-card.work-ps .cz-work-type-badge {
+  background: color-mix(in srgb, #e59a20 22%, transparent) !important;
+  border-color: color-mix(in srgb, #e59a20 62%, transparent) !important;
+}
+.cz-work-type-badge {
+  min-height: 58px;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center;
+}
+.cz-finance-row.work-op strong::before,
+.cz-finance-row.work-ps strong::before {
+  display: inline-block;
+  min-width: 36px;
+  margin-right: 8px;
+  font-size: .72rem;
+  font-weight: 950;
+  line-height: 1.2;
+}
+.cz-finance-row.work-op strong::before {
+  content: "OP";
+  color: #18a874;
+}
+.cz-finance-row.work-ps strong::before {
+  content: "PS";
+  color: #e59a20;
+}
+[data-crew-theme="light"] .cz-flight-card.work-op,
+[data-crew-theme="light"] .cz-roster-card.work-op,
+[data-crew-theme="light"] .cz-finance-row.work-op {
+  box-shadow: 0 14px 34px rgba(24, 168, 116, .12) !important;
+}
+[data-crew-theme="light"] .cz-flight-card.work-ps,
+[data-crew-theme="light"] .cz-roster-card.work-ps,
+[data-crew-theme="light"] .cz-finance-row.work-ps {
+  box-shadow: 0 14px 34px rgba(229, 154, 32, .14) !important;
+}
