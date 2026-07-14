@@ -1,4 +1,8 @@
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+
+const packageMetadata = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
+const expectedVersion = String(packageMetadata.version || '');
 
 const port = 43157;
 const child = spawn(process.execPath, ['server.mjs'], {
@@ -26,7 +30,7 @@ try {
     const response = await fetch(`http://127.0.0.1:${port}${path}`);
     const payload = await response.json();
     if (!response.ok || typeof payload !== 'object') throw new Error(`${path} inválido`);
-    if (path === '/api/health' && payload.version !== '13.8.0') throw new Error('Versão incorreta');
+    if (path === '/api/health' && payload.version !== expectedVersion) throw new Error(`Versão incorreta: esperado ${expectedVersion}, recebido ${payload.version}`);
     if (path === '/api/platform/catalog') {
       if (payload.encoding !== 'UTF-8' || payload.defaultTimezone !== 'America/Sao_Paulo') throw new Error('Preferências de plataforma incorretas');
       if (!Array.isArray(payload.plans) || payload.plans.length !== 4) throw new Error('Catálogo de assinaturas incompleto');
