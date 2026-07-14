@@ -1,4 +1,4 @@
-name: CrewCheck 13.8 validation
+name: CrewCheck 13.8.5 validation
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-13-8-${{ github.ref }}
+  group: crewcheck-13-8-5-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,6 +31,7 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npm run regression:v13.8.0:platform
+      - run: npm run regression:v13.8.5:audit
       - run: node test-server.mjs
 
   android:
@@ -102,16 +103,16 @@ jobs:
             exit 1
           fi
           unzip -t "$source_aab" >/dev/null
-          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.0-production.aab"
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.8.5-production.aab"
           (
             cd "$RUNNER_TEMP"
-            sha256sum CrewCheck-13.8.0-production.aab > CrewCheck-13.8.0-production.aab.sha256
+            sha256sum CrewCheck-13.8.5-production.aab > CrewCheck-13.8.5-production.aab.sha256
           )
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-13.8.0-signed-aab
+          name: CrewCheck-13.8.5-signed-aab
           path: |
-            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab
-            ${{ runner.temp }}/CrewCheck-13.8.0-production.aab.sha256
+            ${{ runner.temp }}/CrewCheck-13.8.5-production.aab
+            ${{ runner.temp }}/CrewCheck-13.8.5-production.aab.sha256
           if-no-files-found: error
           retention-days: 14
