@@ -45,6 +45,12 @@ import {
   PlayCircle,
   Dumbbell,
   Hotel,
+  Hospital,
+  Pill,
+  WashingMachine,
+  Navigation,
+  Trash2,
+  LocateFixed,
 } from 'lucide-react';
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
@@ -63,7 +69,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import PlatformCenter from '@/components/platform/PlatformCenter';
-import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
+import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
@@ -116,8 +122,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.8.5';
-const CREWCHECK_UI_CORE_NOTE = 'v13.8.5: auditoria premium, finanças e banco resiliente';
+const DEFAULT_VERSION = '13.8.6';
+const CREWCHECK_UI_CORE_NOTE = 'v13.8.6: serviços internos, Meu Carro e banco modular';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -175,7 +181,12 @@ type ParkingPosition = {
   lng: number;
   accuracy?: number;
   label?: string;
+  level?: string;
+  spot?: string;
+  reference?: string;
+  notes?: string;
   savedAt: string;
+  localOnly?: boolean;
 };
 
 const CAR_PARKING_STORAGE_KEY = 'crewcheck_my_car_parking_position_v1';
@@ -197,18 +208,24 @@ function buildGoogleMapsSearchUrl(lat: number, lng: number): string {
 function buildGoogleMapsWalkingDirectionsUrl(originLat: number, originLng: number, destLat: number, destLng: number): string {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(coordsLabel(originLat, originLng))}&destination=${encodeURIComponent(coordsLabel(destLat, destLng))}&travelmode=walking`;
 }
+function buildGoogleMapsWalkingDestinationUrl(destLat: number, destLng: number): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(coordsLabel(destLat, destLng))}&travelmode=walking`;
+}
 function buildGoogleMapsDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' | 'transit' = 'driving'): string {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=${travelmode}`;
 }
 function buildGoogleMapsEmbedDirectionsUrl(origin: string, destination: string, travelmode: 'driving' | 'walking' | 'transit' = 'driving'): string {
   const key = mapsBrowserKey();
-  if (!key || !origin || !destination) return '';
-  return `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(key)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${travelmode}`;
+  if (!origin || !destination) return '';
+  if (key) return `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(key)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${travelmode}`;
+  const dirFlag = travelmode === 'walking' ? 'w' : travelmode === 'transit' ? 'r' : 'd';
+  return `https://www.google.com/maps?output=embed&saddr=${encodeURIComponent(origin)}&daddr=${encodeURIComponent(destination)}&dirflg=${dirFlag}`;
 }
 function buildGoogleMapsEmbedSearchUrl(query: string): string {
   const key = mapsBrowserKey();
-  if (!key || !query) return '';
-  return `https://www.google.com/maps/embed/v1/search?key=${encodeURIComponent(key)}&q=${encodeURIComponent(query)}`;
+  if (!query) return '';
+  if (key) return `https://www.google.com/maps/embed/v1/search?key=${encodeURIComponent(key)}&q=${encodeURIComponent(query)}`;
+  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
 }
 function getCurrentGeoPosition(): Promise<{ lat: number; lng: number; accuracy?: number }> {
   return new Promise((resolve, reject) => {
@@ -347,6 +364,7 @@ type RoutePreviewInfo = {
 
 type NearbyPlace = {
   name: string;
+  category?: PlaceCategory;
   address?: string;
   rating?: number;
   mapsUrl?: string;
@@ -354,26 +372,39 @@ type NearbyPlace = {
   latitude?: number;
   longitude?: number;
   distanceMeters?: number;
+  phone?: string;
+  website?: string;
+  openingHours?: string[];
+};
+
+type PlaceCategory = 'gym' | 'hospital' | 'pharmacy' | 'laundry';
+
+const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; plural: string; query: string }> = {
+  gym: { label: 'Academia', plural: 'Academias', query: 'academia fitness' },
+  hospital: { label: 'Hospital', plural: 'Hospitais', query: 'hospital pronto atendimento emergência' },
+  pharmacy: { label: 'Farmácia', plural: 'Farmácias', query: 'farmácia drogaria' },
+  laundry: { label: 'Lavanderia', plural: 'Lavanderias', query: 'lavanderia' },
 };
 
 function todayRosterKey(now = new Date()) {
   return dateChip(now);
 }
-async function fetchRoutePreviewInfo(origin: string, destination: string): Promise<RoutePreviewInfo | null> {
+async function fetchRoutePreviewInfo(origin: string, destination: string, mode: 'driving' | 'transit' = 'driving'): Promise<RoutePreviewInfo | null> {
   try {
-    const params = new URLSearchParams({ origin, destination, mode: 'driving' });
+    const params = new URLSearchParams({ origin, destination, mode });
     const response = await fetch(`/api/maps/route-preview?${params.toString()}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => null);
     if (payload && typeof payload === 'object') return payload as RoutePreviewInfo;
   } catch {}
   return null;
 }
-async function fetchNearbyFitnessPlaces(location: string, query = 'academia Smart Fit Wellhub fitness'): Promise<NearbyPlace[]> {
+async function fetchNearbyPlaces(location: string, category: PlaceCategory, query = ''): Promise<NearbyPlace[]> {
   try {
-    const params = new URLSearchParams({ location, query });
-    const response = await fetch(`/api/places/fitness?${params.toString()}`, { cache: 'no-store' });
+    const params = new URLSearchParams({ location, category });
+    if (query) params.set('query', query);
+    const response = await fetch(`/api/places/search?${params.toString()}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => null) as { places?: NearbyPlace[] } | null;
-    return Array.isArray(payload?.places) ? payload!.places!.slice(0, 8) : [];
+    return Array.isArray(payload?.places) ? payload!.places!.slice(0, 12) : [];
   } catch {
     return [];
   }
@@ -381,8 +412,14 @@ async function fetchNearbyFitnessPlaces(location: string, query = 'academia Smar
 function hotelSearchLocation(event: ZeroLeg): string {
   return event.hotel || `${city(event.destination || event.origin)} ${event.destination || event.origin}`;
 }
-function openFitnessSearch(location: string, term = 'academia Smart Fit Wellhub') {
-  window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${term} perto de ${location}`)}`, '_blank', 'noopener,noreferrer');
+function openNearbyPlaces(category: PlaceCategory, location = '') {
+  storage.set('crewcheck:places-category', category);
+  if (location) storage.set('crewcheck:places-location', location);
+  window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'gyms' }));
+}
+function openPlacesInGoogleMaps(category: PlaceCategory, location: string) {
+  const meta = PLACE_CATEGORY_META[category];
+  window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${meta.query} perto de ${location}`)}`, '_blank', 'noopener,noreferrer');
 }
 function operationalAuditScore(bundle: BundleState) {
   const events = buildLegs(bundle.roster);
@@ -1115,7 +1152,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: Z
   const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, mapsMode);
   useEffect(() => {
     let alive = true;
-    fetchRoutePreviewInfo(origin, destination).then((info) => { if (alive) { setRoute(info); onRoute?.(info); } });
+    fetchRoutePreviewInfo(origin, destination, mapsMode).then((info) => { if (alive) { setRoute(info); onRoute?.(info); } });
     return () => { alive = false; };
   }, [origin, destination, mode]);
   async function refreshLocation() {
@@ -1531,7 +1568,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
-    ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Academias','Wellhub e Smart Fit',Dumbbell], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
+    ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Locais próximos','Academias, saúde e serviços',MapIcon], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
   ];
@@ -2036,19 +2073,27 @@ function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const minutes = Number(text.match(/(\d+)\s*min/)?.[1] || 0);
   return Math.round(hours * 60 + minutes);
 }
+function eventClockDate(event: ZeroLeg, clock: string): Date {
+  const base = eventStartDateTime(event);
+  const match = String(clock || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return base;
+  const target = new Date(base);
+  target.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  return target;
+}
 function Departure({ event }: { event: ZeroLeg }) {
   const [mode, setMode] = useState(() => storage.get('crewcheck_departure_mode', 'driving'));
   const [margin, setMargin] = useState(() => Number(storage.get('crewcheck_departure_margin', '25')) || 25);
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, mapa e trânsito.</p></article></>;
   const travelMinutes = routeDurationMinutes(route);
-  const presentationDate = eventStartDateTime(event);
+  const presentationDate = eventClockDate(event, event.presentation);
   const leaveDate = travelMinutes ? new Date(presentationDate.getTime() - (travelMinutes + margin) * 60000) : null;
   const leaveLabel = leaveDate ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(leaveDate) : 'Calcular';
   const modeLabel = mode === 'transit' ? 'Transporte público' : mode === 'motorcycle' ? 'Moto' : mode === 'uber' ? 'Uber/táxi' : 'Carro';
   function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); }
   function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA RECOMENDADA</span><strong>{leaveLabel}</strong><em>AUTOMÁTICO</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>{modeLabel} · apresentação {event.presentation} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Clock/>Chegar<strong>{event.presentation}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Status<strong>{route?.trafficAware ? 'Trânsito ativo' : 'Monitorando'}</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>A recomendação é recalculada sem alterar o horário oficial de apresentação.</p><div className="cz-tool-actions"><button className={mode === 'driving' ? 'active' : ''} onClick={() => chooseMode('driving')}><Car/> Carro</button><button className={mode === 'uber' ? 'active' : ''} onClick={() => chooseMode('uber')}><Car/> Uber/táxi</button><button className={mode === 'motorcycle' ? 'active' : ''} onClick={() => chooseMode('motorcycle')}><Car/> Moto</button><button className={mode === 'transit' ? 'active' : ''} onClick={() => chooseMode('transit')}><MapIcon/> Transporte público</button></div><div className="cz-tool-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute}/></section></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA PREVISTA</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>O horário em destaque é a saída prevista. A apresentação oficial de {event.presentation} é usada somente como limite operacional do cálculo.</p><div className="cz-tool-actions"><button className={mode === 'driving' ? 'active' : ''} onClick={() => chooseMode('driving')}><Car/> Carro</button><button className={mode === 'uber' ? 'active' : ''} onClick={() => chooseMode('uber')}><Car/> Uber/táxi</button><button className={mode === 'motorcycle' ? 'active' : ''} onClick={() => chooseMode('motorcycle')}><Car/> Moto</button><button className={mode === 'transit' ? 'active' : ''} onClick={() => chooseMode('transit')}><MapIcon/> Transporte público</button></div><div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute}/></section></>;
 }
 
 function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
@@ -2064,38 +2109,81 @@ function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: Quick
 function CarView({ event }: { event: ZeroLeg }) {
   const [parking, setParking] = useState<ParkingPosition | null>(() => loadCarParkingPosition());
   const [busy, setBusy] = useState(false);
+  const [routeOrigin, setRouteOrigin] = useState(() => storage.get('crewcheck_last_geo', ''));
+  const [details, setDetails] = useState(() => ({
+    level: loadCarParkingPosition()?.level || '',
+    spot: loadCarParkingPosition()?.spot || '',
+    reference: loadCarParkingPosition()?.reference || loadCarParkingPosition()?.label || '',
+    notes: loadCarParkingPosition()?.notes || '',
+  }));
+
+  useEffect(() => {
+    getParkingPosition().then((payload: any) => {
+      const cloud = payload?.position;
+      if (!cloud || !Number.isFinite(Number(cloud.lat)) || !Number.isFinite(Number(cloud.lng))) return;
+      const restored: ParkingPosition = { ...cloud, lat: Number(cloud.lat), lng: Number(cloud.lng), savedAt: cloud.savedAt || new Date().toISOString(), localOnly: Boolean(payload.localOnly) };
+      saveCarParkingPosition(restored);
+      setParking(restored);
+      setDetails({ level: restored.level || '', spot: restored.spot || '', reference: restored.reference || restored.label || '', notes: restored.notes || '' });
+    }).catch(() => undefined);
+  }, []);
+
   async function markCar() {
     setBusy(true);
     try {
       const position = await getCurrentGeoPosition();
-      const label = window.prompt('Referência opcional: nível, setor, vaga ou ponto de referência') || '';
-      const saved: ParkingPosition = { lat: position.lat, lng: position.lng, accuracy: position.accuracy, label: label.trim(), savedAt: new Date().toISOString() };
-      saveCarParkingPosition(saved);
-      setParking(saved);
-      toast.success('Carro marcado agora.');
+      const saved: ParkingPosition = { lat: position.lat, lng: position.lng, accuracy: position.accuracy, level: details.level.trim(), spot: details.spot.trim(), reference: details.reference.trim(), notes: details.notes.trim(), label: details.reference.trim(), savedAt: new Date().toISOString(), localOnly: true };
+      setRouteOrigin(coordsLabel(position.lat, position.lng));
+      const synced = await saveParkingPosition(saved).catch(() => ({ localOnly: true }));
+      const next = { ...saved, localOnly: Boolean((synced as any)?.localOnly) };
+      saveCarParkingPosition(next);
+      setParking(next);
+      toast.success(next.localOnly ? 'Carro marcado neste dispositivo. A nuvem sincronizará quando voltar.' : 'Carro marcado e sincronizado.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui marcar a posição.');
     } finally {
       setBusy(false);
     }
   }
-  async function routeToCar() {
+  async function updateWalkingOrigin() {
     if (!parking) { toast.info('Marque primeiro a posição atual do carro.'); return; }
     try {
       const current = await getCurrentGeoPosition();
-      window.open(buildGoogleMapsWalkingDirectionsUrl(current.lat, current.lng, parking.lat, parking.lng), '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      window.open(buildGoogleMapsSearchUrl(parking.lat, parking.lng), '_blank', 'noopener,noreferrer');
-      toast.message('Abrindo a marcação do carro no Google Maps.');
+      setRouteOrigin(coordsLabel(current.lat, current.lng));
+      toast.success('Rota a pé atualizada dentro do CrewCheck.');
+    } catch {
+      toast.message('Usando a última localização disponível para a rota.');
     }
   }
-  function resetCar() {
+  async function resetCar() {
     clearCarParkingPosition();
     setParking(null);
+    await deleteParkingPosition().catch(() => undefined);
     toast.success('Posição do carro resetada. Você pode marcar uma nova.');
   }
+  function parkingShareText() {
+    if (!parking) return '';
+    const detail = [parking.level && `nível ${parking.level}`, parking.spot && `vaga ${parking.spot}`, parking.reference, parking.notes].filter(Boolean).join(' · ');
+    return `Meu carro está marcado aqui${detail ? ` (${detail})` : ''}: ${buildGoogleMapsSearchUrl(parking.lat, parking.lng)}`;
+  }
+  async function shareParkingNative() {
+    const text = parkingShareText();
+    if (!text) return;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Localização do meu carro', text }); return; } catch {}
+    }
+    try { await navigator.clipboard.writeText(text); toast.success('Localização copiada para compartilhar.'); } catch { toast.error('Não consegui abrir o compartilhamento.'); }
+  }
+  function shareParkingWhatsApp() { const text = parkingShareText(); if (text) window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }
+  function shareParkingTelegram() { const text = parkingShareText(); if (text) window.open(`https://t.me/share/url?url=${encodeURIComponent(buildGoogleMapsSearchUrl(parking!.lat, parking!.lng))}&text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }
   const savedDate = parking ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(parking.savedAt)) : '';
-  return <><Brand back/><section className="cz-panel-head"><h1>Meu Carro</h1><p>Marque onde estacionou e depois volte até o carro pelo Google Maps. Sem rastreamento em segundo plano.</p></section><section className="cz-car-grid cz-parking-grid"><article className="cz-car-card cz-parking-hero"><Car/><h2>{parking ? 'Carro marcado' : 'Nenhuma posição marcada'}</h2><p>{parking ? `Marcado em ${savedDate}` : 'Toque em marcar quando estacionar. A posição fica salva apenas neste dispositivo.'}</p>{parking ? <div className="cz-parking-data"><span><b>Precisão</b>{parking.accuracy ? `~${Math.round(parking.accuracy)} m` : 'A confirmar'}</span><span><b>Referência</b>{safe(parking.label, 'Sem observação')}</span><span><b>Coordenadas</b>{coordsLabel(parking.lat, parking.lng)}</span></div> : <div className="cz-map-fallback"><Car/><strong>Pronto para marcar</strong><span>Use a localização atual quando estacionar no aeroporto, hotel ou shopping.</span></div>}<div className="cz-tool-actions"><button onClick={markCar} disabled={busy}><Radar/> {parking ? 'Atualizar posição do carro' : 'Marcar posição atual do carro'}</button>{parking && <button onClick={() => window.open(buildGoogleMapsSearchUrl(parking.lat, parking.lng), '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>}{parking && <button onClick={routeToCar}><Car/> Traçar rota até o carro</button>}{parking && <button onClick={resetCar}><RotateCcw/> Resetar posição</button>}</div></article><article className="cz-car-card"><ShieldCheck/><h2>Privacidade</h2><p>A marcação é local-first, usada somente para você voltar ao ponto salvo. O CrewCheck não rastreia seu deslocamento em background.</p><small>Permissão de localização é solicitada apenas ao marcar ou traçar rota.</small></article><article className="cz-car-card"><Plane/><h2>Operação</h2><p>{event.placeholder ? 'Aguardando escala real para integrar aeroporto/hotel.' : `Próxima origem: ${event.origin} · ${city(event.origin)}`}</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></div></article></section></>;
+  const destination = parking ? coordsLabel(parking.lat, parking.lng) : '';
+  const mapUrl = parking ? (routeOrigin ? buildGoogleMapsEmbedDirectionsUrl(routeOrigin, destination, 'walking') : buildGoogleMapsEmbedSearchUrl(destination)) : '';
+  return <><Brand back/><section className="cz-panel-head"><h1>Meu carro</h1><p>Marque a vaga, guarde os detalhes e volte a pé pelo mapa interno do CrewCheck.</p></section><section className="cz-car-grid cz-parking-grid">
+    <article className="cz-car-card cz-parking-editor"><header><span className="cz-card-icon"><Car/></span><div><small>MARCAÇÃO DE ESTACIONAMENTO</small><h2>{parking ? 'Carro marcado' : 'Onde você estacionou?'}</h2><p>{parking ? `Marcado em ${savedDate}${parking.localOnly ? ' · salvo localmente' : ' · sincronizado'}` : 'Preencha os detalhes e use sua localização atual.'}</p></div></header><div className="cz-parking-form"><label><span>Nível / piso</span><input value={details.level} onChange={(e) => setDetails({ ...details, level: e.target.value })} placeholder="Ex.: G2"/></label><label><span>Vaga</span><input value={details.spot} onChange={(e) => setDetails({ ...details, spot: e.target.value })} placeholder="Ex.: B-214"/></label><label className="wide"><span>Ponto de referência</span><input value={details.reference} onChange={(e) => setDetails({ ...details, reference: e.target.value })} placeholder="Ex.: próximo ao elevador azul"/></label><label className="wide"><span>Observações</span><textarea value={details.notes} onChange={(e) => setDetails({ ...details, notes: e.target.value })} placeholder="Setor, entrada, foto mental ou outra indicação" rows={3}/></label></div><div className="cz-tool-actions cz-parking-primary-actions"><button className="primary" onClick={markCar} disabled={busy}><LocateFixed/> {busy ? 'Obtendo localização…' : parking ? 'Atualizar marcação' : 'Marcar localização do carro'}</button>{parking && <button className="danger" onClick={resetCar}><Trash2/> Apagar marcação</button>}</div></article>
+    {parking && <article className="cz-car-card cz-parking-map-card"><header><div><Navigation/><span><small>ROTA A PÉ</small><h2>Voltar ao carro</h2></span></div><strong>{parking.accuracy ? `Precisão ~${Math.round(parking.accuracy)} m` : 'Ponto salvo'}</strong></header><div className="cz-google-map-preview cz-parking-map">{mapUrl ? <iframe title="Rota a pé até o carro" loading="lazy" src={mapUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa interno</strong><span>Atualize sua localização para traçar a rota a pé.</span></div>}</div><div className="cz-parking-data"><span><b>Nível</b>{safe(parking.level, 'Não informado')}</span><span><b>Vaga</b>{safe(parking.spot, 'Não informada')}</span><span><b>Referência</b>{safe(parking.reference || parking.label, 'Sem referência')}</span><span><b>Coordenadas</b>{destination}</span></div><div className="cz-tool-actions"><button className="primary" onClick={updateWalkingOrigin}><Navigation/> Atualizar rota a pé</button><button onClick={() => window.open(buildGoogleMapsWalkingDestinationUrl(parking.lat, parking.lng), '_blank', 'noopener,noreferrer')}><MapIcon/> Google Maps</button></div></article>}
+    {parking && <article className="cz-car-card cz-parking-share"><Share2/><h2>Compartilhar marcação</h2><p>Envie a localização com vaga e referência para quem você escolher.</p><div className="cz-tool-actions"><button onClick={shareParkingWhatsApp}><Share2/> WhatsApp</button><button onClick={shareParkingTelegram}><Send/> Telegram</button><button onClick={shareParkingNative}><Share2/> Outros apps</button></div></article>}
+    <article className="cz-car-card"><ShieldCheck/><h2>Privacidade</h2><p>A marcação é local-first e o CrewCheck não rastreia você em segundo plano. A sincronização usa somente o ponto salvo e os detalhes informados.</p><small>A permissão de localização é solicitada apenas ao marcar ou atualizar a rota.</small></article><article className="cz-car-card"><Plane/><h2>Operação</h2><p>{event.placeholder ? 'Aguardando escala real para integrar aeroporto/hotel.' : `Próxima origem: ${event.origin} · ${city(event.origin)}`}</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></div></article></section></>;
 }
 
 function IFlightPushView({ actions }: { actions: QuickActions }) {
@@ -2208,13 +2296,14 @@ function DatabaseConnectionCard({ admin }: { admin: boolean }) {
     }
   }
   useEffect(() => { refresh(); }, []);
-  const connected = Boolean(status?.ok && status?.connected);
+  const connected = Boolean(status?.connected);
+  const degraded = Boolean(status?.degraded || status?.localOnly);
   return <section className={'cz-toolbox cz-database-status ' + (connected ? 'connected' : 'offline')}>
-    <header><span><Database/></span><div><h2>{connected ? 'Banco conectado' : 'Modo local protegido'}</h2><p>{connected ? 'Sincronização segura disponível para os módulos internos.' : status?.message || 'Seus dados permanecem neste dispositivo e serão sincronizados quando a conexão voltar.'}</p></div></header>
+    <header><span><Database/></span><div><h2>{connected ? degraded ? 'Banco conectado · modo resiliente' : 'Banco conectado' : 'Modo local protegido'}</h2><p>{status?.message || (connected ? 'Sincronização segura disponível para os módulos internos.' : 'Seus dados permanecem neste dispositivo e serão sincronizados quando a conexão voltar.')}</p></div></header>
     <div className="cz-routine-strip">
       <span>{connected ? 'PostgreSQL ativo' : 'Histórico local ativo'}</span>
-      <span>{connected ? 'Sincronização liberada' : 'Fila de sincronização'}</span>
-      {admin && <span>{connected ? String(status?.database || 'Banco principal') : 'Verifique DATABASE_URL'}</span>}
+      <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Fila de sincronização'}</span>
+      {admin && <span>{connected ? status?.migrationRequired ? `${status?.missingOptionalCount || 0} módulo(s) aguardando migration` : String(status?.database || 'Banco principal') : 'Verifique conexão e migration'}</span>}
     </div>
     <div className="cz-tool-actions"><button onClick={refresh} disabled={busy}><RotateCcw/> {busy ? 'Verificando…' : 'Verificar conexão'}</button></div>
   </section>;
@@ -2342,7 +2431,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('compare')}><GitCompareArrows/><strong>Planejado x atual</strong><small>Mudanças, folgas e valores</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Operação, finanças, serviços próximos, mapas e histórico em uma experiência integrada. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('compare')}><GitCompareArrows/><strong>Planejado x atual</strong><small>Mudanças, folgas e valores</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Navigation/><strong>Saída Inteligente</strong><small>Horário previsto e trânsito</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Vaga, mapa e compartilhamento</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><MapIcon/><strong>Locais próximos</strong><small>Academias, saúde e serviços</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Rotina:</strong> {gym.length}</p></section></>;
 }
 
 
@@ -3152,7 +3241,7 @@ function HotelsView({ events }: { events: ZeroLeg[] }) {
     const current = savedFor(event); if (!current?.hotelKey) return toast.info('Salve primeiro este pernoite para consultar colegas.');
     try { const payload = await findHotelCompanions(current.hotelKey, String(current.stayDate).slice(0, 10)); setCompanions((state) => ({ ...state, [event.id]: payload.companions || [] })); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui consultar colegas.'); }
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis e pernoites</h1><p>Tabela da escala, quarto privado, apresentação aprendida por hotel e presença opcional de colegas.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); const current = savedFor(e); const people = companions[e.id] || []; return <article className="cz-roster-card cz-hotel-stay-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{current?.hotelName || safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-detail-grid"><div><span>Quarto</span><strong>{current?.room || 'Privado · não informado'}</strong></div><div><span>Apresentação no hotel</span><strong>{current?.presentationTime || safe(e.presentation, 'A confirmar')}</strong></div><div><span>Antecedência aprendida</span><strong>{current?.leadMinutes ? `${current.leadMinutes} min` : 'Ainda não aprendida'}</strong></div><div><span>Compartilhamento</span><strong>{current?.shareSameHotel ? 'Colegas no mesmo hotel' : 'Somente você'} · {current?.shareWithVisitors ? 'visitantes autorizados' : 'visitantes sem acesso'}</strong></div></div><div className="cz-tool-actions"><button onClick={() => edit(e)}><Save/> Editar pernoite</button><button onClick={() => loadCompanions(e)}><UserRound/> Quem está neste hotel</button><button onClick={() => openFitnessSearch(loc, 'academia Wellhub parceira aberta agora')}><Dumbbell/> Academias próximas</button><button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`restaurante mercado farmácia lavanderia perto de ${loc}`)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Entorno</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div>{people.length > 0 && <div className="cz-routine-strip">{people.map((person) => <span key={person.publicId}>{person.displayName} · {person.publicId}</span>)}</div>}{companions[e.id] && !people.length && <p className="cz-mini-status">Nenhum colega optou por compartilhar presença neste hotel e data.</p>}</article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis e pernoites</h1><p>Tabela da escala, quarto privado, apresentação aprendida por hotel e presença opcional de colegas.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); const current = savedFor(e); const people = companions[e.id] || []; return <article className="cz-roster-card cz-hotel-stay-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{current?.hotelName || safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-detail-grid"><div><span>Quarto</span><strong>{current?.room || 'Privado · não informado'}</strong></div><div><span>Apresentação no hotel</span><strong>{current?.presentationTime || safe(e.presentation, 'A confirmar')}</strong></div><div><span>Antecedência aprendida</span><strong>{current?.leadMinutes ? `${current.leadMinutes} min` : 'Ainda não aprendida'}</strong></div><div><span>Compartilhamento</span><strong>{current?.shareSameHotel ? 'Colegas no mesmo hotel' : 'Somente você'} · {current?.shareWithVisitors ? 'visitantes autorizados' : 'visitantes sem acesso'}</strong></div></div><div className="cz-tool-actions"><button onClick={() => edit(e)}><Save/> Editar pernoite</button><button onClick={() => loadCompanions(e)}><UserRound/> Quem está neste hotel</button><button onClick={() => openNearbyPlaces('gym', loc)}><Dumbbell/> Academias próximas</button><button onClick={() => openNearbyPlaces('pharmacy', loc)}><Hospital/> Saúde e serviços</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div>{people.length > 0 && <div className="cz-routine-strip">{people.map((person) => <span key={person.publicId}>{person.displayName} · {person.publicId}</span>)}</div>}{companions[e.id] && !people.length && <p className="cz-mini-status">Nenhum colega optou por compartilhar presença neste hotel e data.</p>}</article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
 }
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
@@ -3162,7 +3251,7 @@ function RoutineView({ bundle }: { bundle: BundleState }) {
   const hoursUntil = next ? Math.max(0, (eventStartDateTime(next).getTime() - Date.now()) / 36e5) : 0;
   const intensity = !next ? 'Aguardando' : hoursUntil <= 12 ? 'Recuperação' : hoursUntil <= 24 ? 'Leve' : 'Moderada';
   const nextDuty = next ? durationHours(next) : 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'gyms' }))}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => openNearbyPlaces('gym', next ? hotelSearchLocation(next) : '')}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
 }
 
 const DEFAULT_GYM_PARTNER_CHAINS = ['Selfit', 'Panobianco', 'Bluefit', 'Corpo e Saúde', 'Pratique', 'Fórmula', 'Bodytech', 'Fábrica de Monstros', 'Ultra'];
@@ -3189,71 +3278,89 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   const upcomingStay = stays.find((event) => eventStartDateTime(event).getTime() > now);
   const target = currentStay || upcomingStay || null;
   const layoverLocation = target ? hotelSearchLocation(target) : '';
+  const storedCategory = storage.get('crewcheck:places-category', 'gym') as PlaceCategory;
+  const initialCategory: PlaceCategory = storedCategory in PLACE_CATEGORY_META ? storedCategory : 'gym';
+  const storedLocation = storage.get('crewcheck:places-location', '');
+  const [category, setCategory] = useState<PlaceCategory>(initialCategory);
   const [coordinates, setCoordinates] = useState<{ lat: number; lon: number } | null>(() => {
     const match = storage.get('crewcheck_last_geo', '').match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
     return match ? { lat: Number(match[1]), lon: Number(match[2]) } : null;
   });
-  const [locationMode, setLocationMode] = useState<'layover' | 'current'>(() => target ? 'layover' : 'current');
+  const [locationMode, setLocationMode] = useState<'layover' | 'current'>(() => (storedLocation || target) ? 'layover' : 'current');
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
+  const [selected, setSelected] = useState<NearbyPlace | null>(null);
   const [crowding, setCrowding] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'wellhub'));
   const [onlyOpen, setOnlyOpen] = useState(() => storage.get('crewcheck:gym-only-open', '1') !== '0');
   const partnerChains = configuredGymPartnerChains();
   const autoCheckIn = storage.get('crewcheck:gym-auto-checkin', '0') !== '0';
-  const coordinateLabel = coordinates ? coordinates.lat.toFixed(4) + ',' + coordinates.lon.toFixed(4) : '';
-  const location = locationMode === 'current' ? coordinateLabel || layoverLocation || 'localização atual' : layoverLocation || coordinateLabel || 'localização atual';
+  const coordinateLabel = coordinates ? coordinates.lat.toFixed(6) + ',' + coordinates.lon.toFixed(6) : '';
+  const resolvedLayoverLocation = storedLocation || layoverLocation;
+  const location = locationMode === 'current' ? coordinateLabel || resolvedLayoverLocation || 'localização atual' : resolvedLayoverLocation || coordinateLabel || 'localização atual';
+  const categoryMeta = PLACE_CATEGORY_META[category];
 
+  function chooseCategory(value: PlaceCategory) {
+    setCategory(value);
+    storage.set('crewcheck:places-category', value);
+    setSelected(null);
+    setPlaces([]);
+  }
   function choosePlan(value: string) {
     setPlan(value);
     storage.set('crewcheck:gym-provider-plan', value);
   }
-
-  function requestCurrentLocation() {
-    if (!navigator.geolocation) {
-      toast.error('Geolocalização não disponível neste dispositivo.');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition((position) => {
-      const next = { lat: position.coords.latitude, lon: position.coords.longitude };
+  async function requestCurrentLocation() {
+    try {
+      const position = await getCurrentGeoPosition();
+      const next = { lat: position.lat, lon: position.lng };
       setCoordinates(next);
-      storage.set('crewcheck_last_geo', next.lat + ',' + next.lon);
       setLocationMode('current');
-      toast.success('Busca ajustada à localização atual.');
-    }, () => toast.error('Autorize a localização para procurar academias próximas.'), { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 });
+      storage.set('crewcheck:places-location', '');
+      toast.success('Busca ajustada à sua localização atual.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Autorize a localização para procurar serviços próximos.');
+    }
   }
-
   async function search() {
-    if (!location) return;
+    if (!location || (locationMode === 'current' && !coordinates)) return;
     setLoading(true);
     try {
-      const query = plan === 'wellhub'
-        ? partnerChains.join(' ') + ' academia parceira Wellhub'
-        : plan === 'smartfit' ? 'Smart Fit academia'
-        : partnerChains.join(' ') + ' Smart Fit academia';
-      const found = await fetchNearbyFitnessPlaces(location, query);
+      const gymQuery = category === 'gym'
+        ? plan === 'wellhub'
+          ? partnerChains.join(' ') + ' academia parceira Wellhub'
+          : plan === 'smartfit' ? 'Smart Fit academia'
+          : partnerChains.join(' ') + ' Smart Fit academia'
+        : '';
+      const found = await fetchNearbyPlaces(location, category, gymQuery);
       setPlaces(found);
-      listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
-      if (!found.length) toast.message('A busca interna não retornou opções agora. O Google Maps continua disponível.');
+      setSelected((current) => current && found.some((place) => place.name === current.name) ? current : found[0] || null);
+      if (category === 'gym') listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
+      if (!found.length) toast.message(`A busca interna de ${categoryMeta.plural.toLocaleLowerCase()} não retornou opções agora.`);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { search(); }, [location, plan]);
+  useEffect(() => { search(); }, [location, category, plan]);
 
   useEffect(() => {
-    if ((!autoCheckIn && locationMode !== 'current') || !navigator.geolocation) return;
+    if (locationMode !== 'current' || coordinates) return;
+    getCurrentGeoPosition().then((position) => setCoordinates({ lat: position.lat, lon: position.lng })).catch(() => undefined);
+  }, [locationMode, coordinates]);
+
+  useEffect(() => {
+    if (!autoCheckIn || category !== 'gym' || !navigator.geolocation) return;
     const watch = navigator.geolocation.watchPosition((position) => {
       const next = { lat: position.coords.latitude, lon: position.coords.longitude };
       setCoordinates(next);
       storage.set('crewcheck_last_geo', next.lat + ',' + next.lon);
     }, () => undefined, { enableHighAccuracy: true, maximumAge: 30_000, timeout: 15_000 });
     return () => navigator.geolocation.clearWatch(watch);
-  }, [autoCheckIn, locationMode]);
+  }, [autoCheckIn, category]);
 
   useEffect(() => {
-    if (!autoCheckIn || !coordinates || !places.length) return;
+    if (!autoCheckIn || category !== 'gym' || !coordinates || !places.length) return;
     const nearby = places
       .filter((place) => Number.isFinite(Number(place.latitude)) && Number.isFinite(Number(place.longitude)))
       .map((place) => ({ place, distance: coordinateDistanceMeters(coordinates, { lat: Number(place.latitude), lon: Number(place.longitude) }) }))
@@ -3267,12 +3374,11 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     gymCheckIn({ gymName: nearby.place.name, chainName: chain, location: coordinateLabel, sharePresence: true, durationMinutes: 90 })
       .then((payload) => {
         setCrowding(payload.gyms || []);
-        toast.success('Autocheck-in realizado. Sua presença ficará visível por até 90 minutos.');
+        toast.success(payload.localOnly ? 'Presença salva localmente. Ela só será compartilhada após sincronizar.' : 'Autocheck-in realizado por até 90 minutos.');
       })
       .catch(() => storage.set(cooldownKey, '0'));
-  }, [autoCheckIn, coordinates, places]);
+  }, [autoCheckIn, category, coordinates, places]);
 
-  const planLabel = plan === 'wellhub' ? 'Wellhub' : plan === 'smartfit' ? 'Smart Fit' : 'Wellhub + Smart Fit';
   const visiblePlaces = places
     .filter((place) => !onlyOpen || place.openNow !== false)
     .sort((a, b) => Number(a.distanceMeters || Infinity) - Number(b.distanceMeters || Infinity)
@@ -3282,47 +3388,60 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   async function checkIn(place: NearbyPlace) {
     const chain = partnerChains.find((item) => place.name.toLocaleLowerCase().includes(item.toLocaleLowerCase())) || '';
     const sharePresence = confirm('Compartilhar temporariamente com colegas que você está nesta academia?');
-    try {
-      const payload = await gymCheckIn({ gymName: place.name, chainName: chain, location, sharePresence, durationMinutes: 90 });
-      setCrowding(payload.gyms || []);
+    const payload = await gymCheckIn({ gymName: place.name, chainName: chain, location, sharePresence, durationMinutes: 90 });
+    setCrowding(payload.gyms || []);
+    if (payload.localOnly) {
+      toast.success('Check-in salvo neste dispositivo; a presença ainda não foi compartilhada.');
+    } else {
       toast.success(sharePresence ? 'Check-in compartilhado por até 90 minutos.' : 'Check-in privado registrado por até 90 minutos.');
-    } catch {
-      toast.error('O check-in não pôde ser sincronizado agora.');
     }
   }
-
   function crowdFor(place: NearbyPlace) {
     return crowding.find((item) => String(item.gymName || '').toLocaleLowerCase() === place.name.toLocaleLowerCase());
   }
+  function categoryIcon(value: PlaceCategory) {
+    if (value === 'hospital') return Hospital;
+    if (value === 'pharmacy') return Pill;
+    if (value === 'laundry') return WashingMachine;
+    return Dumbbell;
+  }
+  const SelectedIcon = categoryIcon(category);
+  const selectedDestination = selected
+    ? Number.isFinite(Number(selected.latitude)) && Number.isFinite(Number(selected.longitude))
+      ? coordsLabel(Number(selected.latitude), Number(selected.longitude))
+      : [selected.name, selected.address].filter(Boolean).join(' ')
+    : '';
+  const internalMapUrl = selected ? buildGoogleMapsEmbedDirectionsUrl(location, selectedDestination, 'walking') : '';
 
   return <><Brand back/>
-    <section className="cz-panel-head cz-panel-head-compact"><h1>Academias</h1><p>Busca pelo pernoite ou pela sua localização atual.</p></section>
-    <section className="cz-toolbox cz-gym-search">
-      <header><div><Dumbbell/><span><small>Origem da busca</small><h2>{locationMode === 'layover' ? 'Pernoite' : 'Localização atual'}</h2></span></div><strong>{locationMode === 'layover' ? layoverLocation || 'Sem pernoite identificado' : coordinates ? 'GPS atualizado' : 'GPS pendente'}</strong></header>
-      <p className="cz-gym-provider-note">Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia. Confirme a elegibilidade no aplicativo Wellhub antes de sair.</p>
+    <section className="cz-panel-head cz-panel-head-compact"><h1>Locais próximos</h1><p>Pesquise, compare e trace a rota dentro do CrewCheck. O Google Maps é opcional.</p></section>
+    <section className="cz-toolbox cz-places-search">
+      <div className="cz-place-category-tabs">{(Object.keys(PLACE_CATEGORY_META) as PlaceCategory[]).map((value) => {
+        const Icon = categoryIcon(value);
+        return <button key={value} className={category === value ? 'active' : ''} onClick={() => chooseCategory(value)}><Icon/><span>{PLACE_CATEGORY_META[value].plural}</span></button>;
+      })}</div>
+      <header><div><SelectedIcon/><span><small>ORIGEM DA BUSCA</small><h2>{locationMode === 'layover' ? 'Pernoite / hotel' : 'Localização atual'}</h2></span></div><strong>{locationMode === 'layover' ? resolvedLayoverLocation || 'Sem pernoite identificado' : coordinates ? 'GPS atualizado' : 'GPS pendente'}</strong></header>
       <div className="cz-location-selector">
-        <button className={locationMode === 'layover' ? 'active' : ''} disabled={!layoverLocation} onClick={() => setLocationMode('layover')}><Hotel/> Usar pernoite</button>
-        <button className={locationMode === 'current' ? 'active' : ''} onClick={requestCurrentLocation}><MapIcon/> Usar localização atual</button>
+        <button className={locationMode === 'layover' ? 'active' : ''} disabled={!resolvedLayoverLocation} onClick={() => setLocationMode('layover')}><Hotel/> Usar pernoite</button>
+        <button className={locationMode === 'current' ? 'active' : ''} onClick={requestCurrentLocation}><LocateFixed/> Usar localização atual</button>
       </div>
-      <div className="cz-tool-actions">
-        <button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Wellhub + Smart Fit</button>
-        <button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button>
-        <button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button>
-        <button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertas' : 'Mostrar fechadas'}</button>
-      </div>
-      <div className="cz-tool-actions"><button onClick={search} disabled={loading}><RotateCcw/> {loading ? 'Atualizando…' : 'Atualizar busca'}</button><button onClick={() => openFitnessSearch(location, planLabel + ' academia aberta agora')}><MapIcon/> Abrir no Google Maps</button></div>
-      {autoCheckIn && <div className="cz-auto-checkin-note"><ShieldCheck/><span><strong>Autocheck-in ativo</strong><small>Ao entrar num raio de 140 m, a presença é compartilhada por 90 minutos. Você pode desligar em Configurações.</small></span></div>}
+      {category === 'gym' && <><p className="cz-gym-provider-note">A busca mostra estabelecimentos no CrewCheck. Wellhub é um benefício corporativo; confirme a elegibilidade no canal da empresa antes de sair.</p><div className="cz-tool-actions cz-provider-actions"><button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Todas</button><button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button><button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button></div></>}
+      <div className="cz-tool-actions"><button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertos' : 'Incluir fechados'}</button><button className="primary" onClick={search} disabled={loading}><RotateCcw/> {loading ? 'Atualizando…' : 'Atualizar busca interna'}</button><button onClick={() => openPlacesInGoogleMaps(category, location)}><MapIcon/> Google Maps</button></div>
+      {autoCheckIn && category === 'gym' && <div className="cz-auto-checkin-note"><ShieldCheck/><span><strong>Autocheck-in ativo</strong><small>O GPS contínuo só é usado enquanto esta opção estiver habilitada. Você pode desligá-la em Configurações.</small></span></div>}
     </section>
-    <section className="cz-stack-list">{visiblePlaces.length ? visiblePlaces.map((place, index) => {
-      const crowd = crowdFor(place);
-      return <article className="cz-roster-card cz-gym-card" key={place.name + '-' + index}>
-        <div className="cz-roster-main"><span className="cz-roster-icon"><Dumbbell/></span><div className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço pelo Maps')}</p><small>{place.openNow === true ? 'Aberta agora' : place.openNow === false ? 'Fechada agora' : 'Horário a confirmar'}{place.distanceMeters ? ' · ' + (place.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : ''}{place.rating ? ' · avaliação ' + place.rating : ''} · {crowd?.crowdLabel || 'sem presença compartilhada'}</small></div><ChevronRight className="cz-roster-chevron"/></div>
-        <div className="cz-tool-actions"><button onClick={() => window.open(place.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name + ' ' + location), '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir rota</button><button onClick={() => checkIn(place)}><UserRound/> Fazer check-in</button></div>
+
+    {selected && <section className="cz-place-detail-card"><header><span className="cz-card-icon"><SelectedIcon/></span><div><small>{categoryMeta.label.toLocaleUpperCase()}</small><h2>{selected.name}</h2><p>{safe(selected.address, 'Endereço a confirmar')}</p></div><button aria-label="Fechar mapa" onClick={() => setSelected(null)}><X/></button></header><div className="cz-google-map-preview cz-place-map">{internalMapUrl ? <iframe title={`Rota a pé até ${selected.name}`} loading="lazy" src={internalMapUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa interno indisponível</strong><span>Atualize a busca para recalcular a rota.</span></div>}</div><div className="cz-place-facts"><span><b>Status</b>{selected.openNow === true ? 'Aberto agora' : selected.openNow === false ? 'Fechado agora' : 'Horário a confirmar'}</span><span><b>Distância</b>{selected.distanceMeters ? (selected.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : 'A calcular'}</span><span><b>Avaliação</b>{selected.rating ? selected.rating.toFixed(1) : 'Sem nota'}</span>{selected.phone && <a href={`tel:${selected.phone}`}><Phone/> {selected.phone}</a>}</div>{selected.openingHours?.length ? <div className="cz-opening-hours">{selected.openingHours.slice(0, 3).map((line) => <span key={line}>{line}</span>)}</div> : null}<div className="cz-tool-actions"><button className="primary" onClick={requestCurrentLocation}><Navigation/> Atualizar rota a pé</button><button onClick={() => window.open(selected.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedDestination)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{category === 'gym' && <button onClick={() => checkIn(selected)}><UserRound/> Fazer check-in</button>}</div></section>}
+
+    <section className="cz-stack-list cz-places-results">{visiblePlaces.length ? visiblePlaces.map((place, index) => {
+      const Icon = categoryIcon(category);
+      const crowd = category === 'gym' ? crowdFor(place) : null;
+      return <article className={`cz-roster-card cz-place-result-card ${selected?.name === place.name ? 'selected' : ''}`} key={place.name + '-' + index}>
+        <button className="cz-place-select" onClick={() => setSelected(place)}><span className="cz-roster-icon"><Icon/></span><span className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço a confirmar')}</p><small>{place.openNow === true ? 'Aberto agora' : place.openNow === false ? 'Fechado agora' : 'Horário a confirmar'}{place.distanceMeters ? ' · ' + (place.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : ''}{place.rating ? ' · avaliação ' + place.rating : ''}{crowd ? ' · ' + crowd.crowdLabel : ''}</small></span><ChevronRight/></button>
+        <div className="cz-tool-actions"><button className="primary" onClick={() => setSelected(place)}><MapIcon/> Ver no app</button>{category === 'gym' && <button onClick={() => checkIn(place)}><UserRound/> Check-in</button>}</div>
       </article>;
-    }) : <article className="cz-empty-real"><Dumbbell/><h2>{onlyOpen && places.length ? 'Nenhuma academia aberta' : 'Nenhuma academia encontrada'}</h2><p>Ajuste a origem da busca ou abra o Google Maps.</p></article>}</section>
+    }) : <article className="cz-empty-real"><SelectedIcon/><h2>{onlyOpen && places.length ? `Nenhum ${categoryMeta.label.toLocaleLowerCase()} aberto` : `Nenhum resultado em ${categoryMeta.plural.toLocaleLowerCase()}`}</h2><p>Atualize a localização, use o pernoite ou altere a categoria.</p><button onClick={search}>Tentar novamente</button></article>}</section>
   </>;
 }
-
 function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleState; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
   const [status, setStatus] = useState<any>(null);
   const [question, setQuestion] = useState('/proximo');
@@ -3482,7 +3601,7 @@ function CrewToolsView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Crew e chefe de cabine</h1><p>Tripulação, adicional de chefe, instrutor e apoio operacional.</p></section><section className="cz-stack-list">{firstCrew.length ? firstCrew.map((c:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-copy"><h3>{c.name || c.employeeName || 'Tripulante'}</h3><p>{c.role || c.function || 'Crew'}</p></div><strong className="cz-roster-time">{i===0 ? 'Chefe efetivo' : 'Tripulante'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Regra preservada</h3><p>Quando houver lista de CCM, o primeiro CCM listado é considerado chefe efetivo do voo para fins de adicional.</p></div></article>}</section></>;
 }
 function MaintenancePreview() { return <><Brand/><section className="cz-maintenance"><article><div className="cz-maint-illu"><Settings size={72}/><Plane size={64}/></div><h1>Site em manutenção</h1><p>Estamos realizando melhorias e atualizações no CrewCheck. Em breve o sistema estará disponível novamente.</p><span><ShieldCheck/> Modo ativado pelo administrador</span><div><Lock/> Apenas administradores podem acessar o painel durante a manutenção.</div><button>Acessar painel admin <ChevronRight/></button><button>Ver status</button><a>Voltar mais tarde</a></article><section><h2>Status da operação <b>Em andamento</b></h2><div><p><CalendarDays/>Escala em atualização</p><p><Bell/>Alertas em revisão</p><p><CloudSun/>Meteorologia sincronizando</p></div></section></section></> }
-function ImportPanel({ onUpload, onConcierge }: { onUpload: () => void; onConcierge: () => void }) { return <><Brand/><section className="cz-import"><Upload size={56}/><h1>Importar escala oficial</h1><p>Envie o PDF da escala. Antes de salvar, o CrewCheck valida período, tripulante, base, dias, voos e próxima programação para evitar ativar o mês errado.</p><button onClick={onUpload}>Escolher PDF no dispositivo</button><button onClick={onConcierge}><Send/> Enviar ou importar pelo Telegram</button></section></>; }
+function ImportPanel({ onUpload, onConcierge }: { onUpload: () => void; onConcierge: () => void }) { return <><Brand/><section className="cz-import"><div className="cz-import-icon"><Upload/></div><div className="cz-import-copy"><small>IMPORTAÇÃO SEGURA</small><h1>Importar escala oficial</h1><p>Envie o PDF da escala. O CrewCheck valida período, tripulante, base, dias, voos e próxima programação antes de ativar o mês.</p></div><div className="cz-import-actions"><button className="primary" onClick={onUpload}><FileText/> Escolher PDF no dispositivo</button><button onClick={onConcierge}><Send/> Importar pelo Telegram</button></div><span className="cz-import-privacy"><ShieldCheck/> O processamento protege credenciais e mantém a escala disponível no modo local.</span></section></>; }
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
