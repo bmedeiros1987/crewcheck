@@ -40,6 +40,7 @@ import {
   Phone,
   Globe2,
   GraduationCap,
+  GitCompareArrows,
   ToggleRight,
   PlayCircle,
   Dumbbell,
@@ -58,12 +59,13 @@ import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
+import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare';
 
 type ZeroLeg = {
   id: string;
@@ -112,8 +114,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.8.0';
-const CREWCHECK_UI_CORE_NOTE = 'v13.8.0: assinaturas, conformidade, escala e comunidade segura';
+const DEFAULT_VERSION = '13.8.2';
+const CREWCHECK_UI_CORE_NOTE = 'v13.8.2: comparação entre escala planejada e escala atual';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -778,6 +780,57 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
   } catch {}
   return compliance;
 }
+
+type PlannedRosterSnapshot = {
+  roster: CrewRoster;
+  source: string;
+  capturedAt: string;
+  fingerprint: string;
+};
+
+const PLANNED_ROSTER_STORAGE_KEY = 'crewcheck_planned_roster_snapshot_v1';
+
+function loadPlannedRoster(): PlannedRosterSnapshot | null {
+  try {
+    const parsed = JSON.parse(storage.get(PLANNED_ROSTER_STORAGE_KEY, 'null')) as PlannedRosterSnapshot | null;
+    if (!parsed?.roster || !Array.isArray(parsed.roster.days) || !parsed.roster.days.length) return null;
+    return {
+      ...parsed,
+      source: String(parsed.source || 'Escala planejada'),
+      capturedAt: String(parsed.capturedAt || new Date().toISOString()),
+      fingerprint: String(parsed.fingerprint || rosterFingerprint(parsed.roster)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePlannedRoster(roster: CrewRoster, source: string): PlannedRosterSnapshot {
+  const snapshot: PlannedRosterSnapshot = {
+    roster,
+    source: source || 'Escala planejada',
+    capturedAt: new Date().toISOString(),
+    fingerprint: rosterFingerprint(roster),
+  };
+  storage.set(PLANNED_ROSTER_STORAGE_KEY, JSON.stringify(snapshot));
+  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated', { detail: snapshot }));
+  return snapshot;
+}
+
+function clearPlannedRoster(): void {
+  try { localStorage.removeItem(PLANNED_ROSTER_STORAGE_KEY); } catch {}
+  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated'));
+}
+
+function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster): PlannedRosterSnapshot | null {
+  const currentHasDays = Array.isArray(current.roster.days) && current.roster.days.length > 0;
+  if (!currentHasDays || !sameRosterPeriod(current.roster, incoming)) return loadPlannedRoster();
+  if (rosterFingerprint(current.roster) === rosterFingerprint(incoming)) return loadPlannedRoster();
+  const existing = loadPlannedRoster();
+  if (existing && sameRosterPeriod(existing.roster, incoming)) return existing;
+  return savePlannedRoster(current.roster, current.source);
+}
+
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
@@ -1434,7 +1487,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   }
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
-    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
+    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Academias','Wellhub e Smart Fit',Dumbbell], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
@@ -1783,7 +1836,150 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary || 'Sem previsão'}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary || 'Sem previsão'}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+}
+
+function comparisonEventSummary(event: ComparableRosterEvent | null): string {
+  if (!event) return 'Não consta';
+  const time = event.departure || event.arrival
+    ? (event.departure || '—') + ' → ' + (event.arrival || '—')
+    : 'sem horário publicado';
+  if (event.kind === 'flight') {
+    return (event.flightNumber || 'Voo') + ' · ' + (event.workType || 'função pendente') + ' · '
+      + (event.origin || '—') + ' → ' + (event.destination || '—') + ' · ' + time;
+  }
+  return (event.pairingCode || event.dayType || 'Atividade') + ' · ' + time;
+}
+
+function comparisonChangeLabel(change: RosterChange): string {
+  if (change.kind === 'added') return 'Adicionado';
+  if (change.kind === 'removed') return 'Retirado';
+  if (change.restImpact === 'lost') return 'Folga retirada';
+  if (change.restImpact === 'gained') return 'Folga adicionada';
+  return 'Alterado';
+}
+
+function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload: () => void }) {
+  const [planned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const [filter, setFilter] = useState<'all' | 'financial' | 'days_off'>('all');
+  const hasCurrent = Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0;
+  const comparison = useMemo(
+    () => planned && hasCurrent ? compareRosters(planned.roster, bundle.roster) : null,
+    [planned, bundle.roster, hasCurrent]
+  );
+  const financial = useMemo(() => {
+    if (!planned || !comparison?.summary.periodMatches) return null;
+    const before = financeSnapshot(planned.roster);
+    const after = financeSnapshot(bundle.roster);
+    const beforeVariable = before.salary.production + before.salary.reserve + before.salary.standby
+      + before.salary.chief + before.salary.instructorPay;
+    const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
+      + after.salary.chief + after.salary.instructorPay;
+    const currencies = Array.from(new Set([
+      ...Object.keys(before.perdiem.totalsByCurrency),
+      ...Object.keys(after.perdiem.totalsByCurrency),
+    ])) as PerDiemCurrency[];
+    const perDiemDelta = currencies
+      .map((currency) => ({
+        currency,
+        value: Number(after.perdiem.totalsByCurrency[currency] || 0)
+          - Number(before.perdiem.totalsByCurrency[currency] || 0),
+      }))
+      .filter((item) => Math.abs(item.value) >= 0.005);
+    return {
+      variableDelta: afterVariable - beforeVariable,
+      perDiemDelta,
+      salaryReady: !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction,
+    };
+  }, [planned, bundle.roster, comparison?.summary.periodMatches]);
+
+  function markCurrentAsPlanned() {
+    if (!hasCurrent) return;
+    const snapshot = savePlannedRoster(bundle.roster, bundle.source);
+    setPlanned(snapshot);
+    toast.success('Escala atual marcada como planejada. Importe a próxima versão para comparar.');
+  }
+
+  function resetPlanned() {
+    if (!window.confirm('Remover a referência planejada deste dispositivo? A escala atual continuará ativa.')) return;
+    clearPlannedRoster();
+    setPlanned(null);
+    toast.success('Referência planejada removida.');
+  }
+
+  if (!hasCurrent) {
+    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Compare versões da mesma escala sem misturar períodos.</p></section><article className="cz-empty-real"><GitCompareArrows/><h2>Importe a primeira escala</h2><p>Ela poderá ser marcada como planejada antes da próxima publicação.</p><button onClick={onUpload}>Importar PDF</button></article></>;
+  }
+
+  if (!planned) {
+    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
+  }
+
+  const filteredChanges = (comparison?.changes || []).filter((change) => {
+    if (filter === 'financial') return change.affectsPay;
+    if (filter === 'days_off') return change.restImpact !== 'none';
+    return true;
+  });
+  const capturedDate = new Date(planned.capturedAt);
+  const capturedAt = Number.isFinite(capturedDate.getTime())
+    ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(capturedDate)
+    : 'data não informada';
+  const perDiemDeltaText = financial?.perDiemDelta.length
+    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency)).join(' · ')
+    : 'Sem diferença';
+
+  return <><Brand back/>
+    <section className="cz-panel-head">
+      <h1>Planejado x atual</h1>
+      <p>Referência {comparison?.plannedPeriod || '—'} comparada com a escala ativa {comparison?.currentPeriod || '—'}.</p>
+    </section>
+    {!comparison?.summary.periodMatches && <section className="cz-toolbox cz-compare-warning">
+      <h2>Períodos diferentes</h2>
+      <p>A referência é {comparison?.plannedPeriod}; a escala ativa é {comparison?.currentPeriod}. O CrewCheck não cruza meses diferentes para evitar alertas e valores incorretos.</p>
+      <div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Usar a atual como planejada</button><button onClick={onUpload}><Upload/> Importar outra versão</button><button onClick={resetPlanned}><RotateCcw/> Remover referência</button></div>
+    </section>}
+    {comparison?.summary.periodMatches && <>
+      <section className="cz-compare-source">
+        <div><span>Planejada</span><strong>{planned.source}</strong><small>Guardada em {capturedAt}</small></div>
+        <GitCompareArrows/>
+        <div><span>Atual importada</span><strong>{bundle.source}</strong><small>Não é marcada como realizada sem espelho de voo.</small></div>
+      </section>
+      <section className="cz-finance-grid cz-compare-kpis">
+        <KpiCard icon={CalendarDays} title="Dias alterados" value={String(comparison.summary.changedDays)} detail={comparison.summary.unchanged ? 'Nenhuma diferença' : 'no período comparado'}/>
+        <KpiCard icon={Plane} title="Incluídos / retirados" value={comparison.summary.addedEvents + ' / ' + comparison.summary.removedEvents} detail={comparison.summary.changedEvents + ' evento(s) alterado(s)'}/>
+        <KpiCard icon={Clock} title="Horários" value={String(comparison.summary.timeChanges)} detail={comparison.summary.routeChanges + ' mudança(s) de rota'}/>
+        <KpiCard icon={DollarSign} title="Revisar valores" value={String(comparison.summary.financialReviewCount)} detail={comparison.summary.workTypeChanges + ' mudança(s) OP/PS'}/>
+      </section>
+      {(comparison.summary.lostDaysOff.length > 0 || comparison.summary.gainedDaysOff.length > 0) && <section className="cz-compare-days-off">
+        {comparison.summary.lostDaysOff.length > 0 && <p className="lost"><AlertTriangle/><span><strong>Folgas retiradas</strong>{comparison.summary.lostDaysOff.join(' · ')}</span></p>}
+        {comparison.summary.gainedDaysOff.length > 0 && <p className="gained"><ShieldCheck/><span><strong>Folgas adicionadas</strong>{comparison.summary.gainedDaysOff.join(' · ')}</span></p>}
+      </section>}
+      <section className="cz-finance-table cz-compare-financial">
+        <h2>Possível impacto financeiro</h2>
+        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Função pendente'}</b></div>
+        <div className="cz-finance-row"><span>Diárias</span><strong>Diferença por moeda</strong><small>Sem somar moedas diferentes e sem presumir câmbio</small><b>{perDiemDeltaText}</b></div>
+      </section>
+      <div className="cz-compare-tabs" role="tablist" aria-label="Filtrar alterações">
+        <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>Todas</button>
+        <button className={filter === 'financial' ? 'active' : ''} onClick={() => setFilter('financial')}>Revisar valores</button>
+        <button className={filter === 'days_off' ? 'active' : ''} onClick={() => setFilter('days_off')}>Folgas</button>
+      </div>
+      <section className="cz-compare-list">
+        {filteredChanges.map((change) => <article className={'cz-compare-change ' + change.kind + (change.restImpact === 'lost' ? ' lost-rest' : '')} key={change.id}>
+          <header><span>{change.dateLabel}</span><strong>{change.title}</strong><em>{comparisonChangeLabel(change)}</em></header>
+          <p>{change.descriptions.join(' · ')}</p>
+          <div><span><b>Planejado</b>{comparisonEventSummary(change.planned)}</span><span><b>Atual</b>{comparisonEventSummary(change.current)}</span></div>
+          {change.affectsPay && <small><DollarSign/> Conferir salário, produtividade ou diária</small>}
+        </article>)}
+        {!filteredChanges.length && <article className="cz-empty-real"><ShieldCheck/><h2>{comparison.summary.unchanged ? 'Escalas idênticas' : 'Nada neste filtro'}</h2><p>{comparison.summary.unchanged ? 'Nenhuma mudança foi encontrada entre a referência planejada e a escala atual.' : 'As diferenças existem, mas não pertencem ao filtro selecionado.'}</p></article>}
+      </section>
+      <section className="cz-toolbox">
+        <h2>Ações</h2>
+        <p>A comparação usa os PDFs importados. Para transformar a coluna atual em “realizada”, será necessário confrontá-la com o espelho de voo.</p>
+        <div className="cz-tool-actions"><button onClick={onUpload}><Upload/> Importar nova versão</button><button onClick={markCurrentAsPlanned}><Save/> Tornar atual a planejada</button><button onClick={resetPlanned}><RotateCcw/> Remover referência</button></div>
+      </section>
+    </>}
+  </>;
 }
 
 function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
@@ -1991,7 +2187,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Academia:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Todos os motores antigos religados no novo layout: parser, RBAC/ACT, diárias, salário, radar, meteorologia, exportação, calendário e histórico. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('compare')}><GitCompareArrows/><strong>Planejado x atual</strong><small>Mudanças, folgas e valores</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Car/><strong>Saída Inteligente</strong><small>Rota / hotel / pós-pouso</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento e rota</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><Dumbbell/><strong>Academias</strong><small>Smart Fit / Wellhub / entorno</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Estacionamento</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Academia:</strong> {gym.length}</p></section></>;
 }
 
 
@@ -3066,6 +3262,7 @@ function OpeningVideo({ onDone }: { onDone: () => void }) {
 
 function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'roster' || value === 'results' || value === 'result') return 'roster';
+  if (value === 'compare' || value === 'comparar' || value === 'planned-vs-current') return 'compare';
   if (value === 'alerts' || value === 'irregularities') return 'alerts';
   if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';
   if (value === 'settings') return 'settings';
@@ -3275,6 +3472,11 @@ export default function Home() {
         toast.message(decision.toastText || 'Importação cancelada.');
         return;
       }
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);
+      const importComparison = plannedSnapshot && sameRosterPeriod(plannedSnapshot.roster, roster)
+        ? compareRosters(plannedSnapshot.roster, roster)
+        : null;
+      const opensComparison = Boolean(importComparison && !importComparison.summary.unchanged);
       const newCompliance = saveRoster(roster, file.name);
       storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
@@ -3282,9 +3484,10 @@ export default function Home() {
       setBundle({ roster, compliance: newCompliance, source: file.name });
       syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
       syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
-      sessionStorage.setItem('crewcheck_force_view_once', 'roster');
-      setView('roster');
+      sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');
+      setView(opensComparison ? 'compare' : 'roster');
       toast.success(`${decision.toastText || 'Escala real importada e detalhes liberados.'}${parsed.source === 'server-fallback' ? ' Leitura alternativa concluída.' : ''}`);
+      if (opensComparison) toast.info(`${importComparison?.summary.changedDays || 0} dia(s) com mudanças em relação à escala planejada.`);
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
@@ -3318,8 +3521,9 @@ export default function Home() {
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
-    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>}
-    {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>}
+    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
+    {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
+    {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'alerts' && <Alerts compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
