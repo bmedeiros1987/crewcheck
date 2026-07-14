@@ -113,14 +113,25 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
 
   async function load() {
     setError('');
+    setBusy('');
+    let catalogResult: PlatformCatalog | null = null;
     try {
-      const [catalogResult, profileResult, billingResult] = await Promise.all([getPlatformCatalog(), getPlatformProfile(), getPlatformBilling()]);
+      catalogResult = await getPlatformCatalog();
       setCatalog(catalogResult);
+      if (hasGooglePlayBillingBridge()) queryGooglePlayProducts(catalogResult.plans.map((plan) => plan.googlePlayProductId || '').filter(Boolean));
+    } catch {
+      setError('Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.');
+      return;
+    }
+    try {
+      const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getPlatformBilling()]);
       setProfile(profileResult.profile);
       setBilling({ ...profileResult.billing, ...billingResult });
-      if (hasGooglePlayBillingBridge()) queryGooglePlayProducts(catalogResult.plans.map((plan) => plan.googlePlayProductId || '').filter(Boolean));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não consegui carregar a assinatura.');
+    } catch {
+      setProfile({ publicId: '—', displayName: 'Tripulante CrewCheck' } as PlatformProfile);
+      setBilling({ plan: 'free', status: 'unavailable', usage: { used: 0, limit: 0, remaining: 0, monthKey: '' } } as PlatformBilling);
+      setBusy('database');
+      setError('A conexão segura com o banco está temporariamente indisponível. Você pode consultar os planos, mas contratar, restaurar ou alterar a assinatura ficará pausado até a conexão voltar.');
     }
   }
 
@@ -213,7 +224,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   const usedWidth = usage?.limit ? Math.min(100, Math.round((usage.used / usage.limit) * 100)) : 0;
   return <section className="cp-center">
     <PageHead onBack={onBack} title="Assinaturas" subtitle="Planos claros, compra adequada à plataforma e limite mensal de custos externos."/>
-    {error ? <ErrorCard message={error} retry={load}/> : !catalog || !profile || !billing ? <LoadingCard/> : <>
+    {error && <ErrorCard message={error} retry={load}/>} {!catalog || !profile || !billing ? <LoadingCard/> : <>
       <article className="cp-current-plan">
         <div><span><Crown/></span><div><small>Plano atual · {platformLabel()}</small><h2>{billingLabel(billing.status)}</h2><p>ID do usuário: <b>{profile.publicId}</b></p></div></div>
         <div className="cp-usage"><header><span>Ligações do despertador</span><strong>{usage?.used || 0} de {usage?.limit || 0} usadas</strong></header><div><i style={{ width: `${usedWidth}%` }}/></div><small>{usage?.remaining || 0} disponíveis em {usage?.monthKey || 'este mês'}</small></div>
