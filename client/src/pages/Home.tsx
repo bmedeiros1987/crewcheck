@@ -58,7 +58,7 @@ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSe
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
-import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
+import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';\nimport FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
@@ -3538,8 +3538,8 @@ export default function Home() {
     {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
-    {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
-    {view === 'salary' && <SalaryReliableView bundle={bundle}/>}
+    {view === 'perdiem' && <><FinancialStatementImporter mode=\"per_diem\"/><PerDiemView bundle={bundle}/></>}
+    {view === 'salary' && <><FinancialStatementImporter mode=\"payroll\"/><SalaryReliableView bundle={bundle}/></>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
     {view === 'load' && <LoadView bundle={bundle}/>}
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
