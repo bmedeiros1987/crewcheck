@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-const APP_VERSION = '13.8.5';
+const APP_VERSION = '13.8.6';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const SUPPORTED_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES']);
 const PLAN_IDS = new Set(['free', 'premium_monthly', 'premium_annual', 'premium_unlimited']);
@@ -8,7 +8,7 @@ const GOOGLE_PLAY_PRODUCTS = new Map([
   ['crewcheck_premium_monthly', 'premium_monthly'],
   ['crewcheck_premium_annual', 'premium_annual'],
 ]);
-const state = { poolPromise: null, databaseFailure: null, googleToken: null, googleTokenExpiresAt: 0 };
+const state = { poolPromise: null, databaseFailure: null, schemaReport: null, googleToken: null, googleTokenExpiresAt: 0 };
 
 const PLAN_CATALOG = [
   {
@@ -223,10 +223,13 @@ function databaseConnectionString() {
   return '';
 }
 
-const PLATFORM_REQUIRED_TABLES = [
+const PLATFORM_CORE_TABLES = [
   'crewcheck_platform_profiles',
   'crewcheck_platform_subscriptions',
   'crewcheck_platform_usage',
+];
+
+const PLATFORM_OPTIONAL_TABLES = [
   'crewcheck_platform_rosters',
   'crewcheck_platform_hotel_rules',
   'crewcheck_platform_stays',
@@ -240,16 +243,51 @@ const PLATFORM_REQUIRED_TABLES = [
   'crewcheck_platform_emergencies',
   'crewcheck_telegram_state',
   'crewcheck_platform_auth_attempts',
+  'crewcheck_platform_addresses',
+  'crewcheck_platform_user_hotels',
+  'crewcheck_platform_gym_preferences',
+  'crewcheck_platform_routine_preferences',
+  'crewcheck_platform_parking_positions',
+  'crewcheck_platform_finance_configs',
+  'crewcheck_platform_flight_follows',
+  'crewcheck_platform_swap_analyses',
+  'crewcheck_platform_schedule_comparisons',
 ];
 
-async function platformSchemaReady(db) {
+async function platformSchemaReport(db) {
+  const tables = [...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES];
   const result = await db.query(
     "SELECT table_name, to_regclass('public.' || table_name) relation FROM unnest($1::text[]) AS table_name",
-    [PLATFORM_REQUIRED_TABLES]
+    [tables]
   );
-  return result.rows.length === PLATFORM_REQUIRED_TABLES.length && result.rows.every((row) => Boolean(row.relation));
+  const ready = new Set(result.rows.filter((row) => Boolean(row.relation)).map((row) => row.table_name));
+  const missingCore = PLATFORM_CORE_TABLES.filter((table) => !ready.has(table));
+  const missingOptional = PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table));
+  return {
+    coreReady: missingCore.length === 0,
+    optionalReady: missingOptional.length === 0,
+    missingCore,
+    missingOptional,
+    available: [...ready],
+  };
 }
 
+// Compatibilidade com diagnósticos e integrações anteriores à separação entre
+// tabelas essenciais e opcionais. O resultado representa somente o núcleo que
+// precisa estar disponível para autenticação, perfil e assinatura funcionarem.
+async function platformSchemaReady(db) {
+  const report = await platformSchemaReport(db);
+  return report.coreReady;
+}
+
+async function platformTableReady(db, tableName) {
+  if (![...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES].includes(tableName)) return false;
+  if (state.schemaReport?.available?.includes(tableName)) return true;
+  const result = await db.query("SELECT to_regclass('public.' || $1) relation", [tableName]);
+  const ready = Boolean(result.rows[0]?.relation);
+  if (ready && state.schemaReport) state.schemaReport.available = [...new Set([...(state.schemaReport.available || []), tableName])];
+  return ready;
+}
 async function pool() {
   const connectionString = databaseConnectionString();
   if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) return null;
@@ -261,11 +299,14 @@ async function pool() {
       const local = /localhost|127\.0\.0\.1/.test(connectionString) || env('PGSSLMODE').toLowerCase() === 'disable';
       const db = new Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, ssl: local ? false : { rejectUnauthorized: false } });
       await db.query('SELECT 1');
-      if (await platformSchemaReady(db)) {
+      const report = await platformSchemaReport(db);
+      state.schemaReport = report;
+      const autoMigrate = env('CREWCHECK_DB_AUTO_MIGRATE', 'true').toLowerCase() !== 'false';
+      if (report.coreReady && (report.optionalReady || !autoMigrate)) {
         state.databaseFailure = null;
         return db;
       }
-      if (env('CREWCHECK_DB_AUTO_MIGRATE', 'true').toLowerCase() === 'false') {
+      if (!report.coreReady && !autoMigrate) {
         throw Object.assign(new Error('A migration do banco ainda não foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
       }
       await db.query(`
@@ -367,7 +408,19 @@ async function pool() {
           window_started TIMESTAMPTZ NOT NULL DEFAULT NOW(), blocked_until TIMESTAMPTZ,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS crewcheck_platform_parking_positions (
+          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL,
+          latitude DOUBLE PRECISION NOT NULL, longitude DOUBLE PRECISION NOT NULL,
+          level_label TEXT, spot_label TEXT, notes TEXT, photo_url TEXT,
+          active BOOLEAN NOT NULL DEFAULT TRUE, parked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), cleared_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS crewcheck_platform_parking_active_idx
+          ON crewcheck_platform_parking_positions(owner_email, active, parked_at DESC);
       `);
+      state.schemaReport = await platformSchemaReport(db);
+      if (!state.schemaReport.coreReady) {
+        throw Object.assign(new Error('O núcleo do banco ainda não está pronto.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+      }
       state.databaseFailure = null;
       return db;
     })().catch((error) => {
@@ -786,11 +839,32 @@ async function requireMain(req, res, body = {}) {
   }
   const db = await pool();
   if (!db) {
-    sendJson(res, 503, { ok: false, code: 'DATABASE_REQUIRED', message: 'O banco principal está indisponível. A operação não foi salva.' });
+    sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível. Seus dados locais continuam protegidos.' });
     return null;
   }
   const profile = await ensureProfile(db, identity);
   return { identity, db, profile };
+}
+
+async function handleDatabaseHealth(req, res) {
+  const configured = Boolean(databaseConnectionString());
+  if (!configured) return sendJson(res, 200, { ok: false, configured: false, connected: false, coreReady: false, degraded: true, migrationRequired: true, missingOptionalCount: 0, message: 'Banco aguardando configuração.' });
+  const db = await pool();
+  const report = state.schemaReport || { coreReady: false, optionalReady: false, missingCore: [], missingOptional: [] };
+  const connected = Boolean(db && report.coreReady);
+  return sendJson(res, 200, {
+    ok: connected,
+    configured: true,
+    connected,
+    coreReady: Boolean(report.coreReady),
+    degraded: connected && !report.optionalReady,
+    migrationRequired: !report.coreReady || !report.optionalReady,
+    missingOptionalCount: Array.isArray(report.missingOptional) ? report.missingOptional.length : 0,
+    retryable: !connected,
+    message: connected
+      ? report.optionalReady ? 'Banco conectado e schema completo.' : 'Banco principal conectado; módulos opcionais aguardam migration.'
+      : 'Não foi possível conectar ao núcleo do banco agora.',
+  });
 }
 
 async function requirePremium(context, res, feature = 'Este recurso') {
@@ -821,6 +895,7 @@ function requestFingerprint(req, email = '') {
 
 async function checkAuthThrottle(db, req, email) {
   const identifier = requestFingerprint(req, email);
+  if (!await platformTableReady(db, 'crewcheck_platform_auth_attempts')) return identifier;
   const result = await db.query('SELECT failures,window_started,blocked_until FROM crewcheck_platform_auth_attempts WHERE identifier=$1', [identifier]);
   const row = result.rows[0];
   if (row?.blocked_until && new Date(row.blocked_until).getTime() > Date.now()) {
@@ -834,6 +909,7 @@ async function checkAuthThrottle(db, req, email) {
 }
 
 async function recordAuthFailure(db, identifier) {
+  if (!await platformTableReady(db, 'crewcheck_platform_auth_attempts')) return;
   await db.query(`INSERT INTO crewcheck_platform_auth_attempts(identifier,failures,window_started,blocked_until)
     VALUES($1,1,NOW(),NULL)
     ON CONFLICT(identifier) DO UPDATE SET
@@ -844,11 +920,13 @@ async function recordAuthFailure(db, identifier) {
 }
 
 async function clearAuthFailures(db, identifier) {
+  if (!await platformTableReady(db, 'crewcheck_platform_auth_attempts')) return;
   await db.query('DELETE FROM crewcheck_platform_auth_attempts WHERE identifier=$1', [identifier]);
 }
 
 const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/catalog$/, ['GET']],
+  [/^\/api\/platform\/database\/health$/, ['GET']],
   [/^\/api\/platform\/profile$/, ['GET', 'PATCH']],
   [/^\/api\/platform\/billing\/status$/, ['GET']],
   [/^\/api\/platform\/billing\/google-play\/verify$/, ['POST']],
@@ -878,6 +956,7 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/compare$/, ['GET']],
   [/^\/api\/platform\/chat$/, ['GET', 'POST']],
   [/^\/api\/platform\/gyms\/checkins$/, ['GET', 'POST']],
+  [/^\/api\/platform\/parking$/, ['GET', 'POST', 'DELETE']],
   [/^\/api\/platform\/account\/delete$/, ['POST']],
 ];
 
@@ -1708,6 +1787,67 @@ async function handleOwnerVisitorChat(req, res, visitorId) {
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: visitor.display_name, visitorId: visitor.id }, messages: await chatMessages(context.db, threadId, context.identity.email) });
 }
 
+function parkingPositionPayload(row) {
+  if (!row) return null;
+  let details = {};
+  try { details = JSON.parse(row.notes || '{}'); } catch { details = { notes: row.notes || '' }; }
+  return {
+    id: row.id,
+    lat: Number(row.latitude),
+    lng: Number(row.longitude),
+    level: row.level_label || '',
+    spot: row.spot_label || '',
+    reference: normalizeText(details.reference, 240),
+    notes: normalizeText(details.notes, 1000),
+    accuracy: Number(details.accuracy || 0) || undefined,
+    savedAt: row.parked_at,
+  };
+}
+
+async function handleParking(req, res) {
+  const body = req.method === 'POST' ? await readBody(req, 100_000) : {};
+  const context = await requireMain(req, res, body);
+  if (!context) return;
+  if (!await platformTableReady(context.db, 'crewcheck_platform_parking_positions')) {
+    return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'A sincronização de estacionamento aguarda a migration; a marcação local continua disponível.' });
+  }
+  if (req.method === 'DELETE') {
+    await context.db.query('UPDATE crewcheck_platform_parking_positions SET active=FALSE,cleared_at=NOW() WHERE owner_email=$1 AND active=TRUE', [context.identity.email]);
+    return sendJson(res, 200, { ok: true, position: null });
+  }
+  if (req.method === 'POST') {
+    const latitude = Number(body.lat);
+    const longitude = Number(body.lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+      return sendJson(res, 400, { ok: false, message: 'Coordenadas de estacionamento inválidas.' });
+    }
+    const details = JSON.stringify({
+      reference: normalizeText(body.reference || body.label, 240),
+      notes: normalizeText(body.notes, 1000),
+      accuracy: Number(body.accuracy || 0) || null,
+    });
+    const client = await context.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE crewcheck_platform_parking_positions SET active=FALSE,cleared_at=NOW() WHERE owner_email=$1 AND active=TRUE', [context.identity.email]);
+      const saved = await client.query(`INSERT INTO crewcheck_platform_parking_positions(id,owner_email,latitude,longitude,level_label,spot_label,notes,active,parked_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,TRUE,NOW()) RETURNING *`, [
+        crypto.randomUUID(), context.identity.email, latitude, longitude,
+        normalizeText(body.level, 80), normalizeText(body.spot, 80), details,
+      ]);
+      await client.query('COMMIT');
+      return sendJson(res, 200, { ok: true, position: parkingPositionPayload(saved.rows[0]) });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const result = await context.db.query('SELECT * FROM crewcheck_platform_parking_positions WHERE owner_email=$1 AND active=TRUE ORDER BY parked_at DESC LIMIT 1', [context.identity.email]);
+  return sendJson(res, 200, { ok: true, position: parkingPositionPayload(result.rows[0]) });
+}
+
 async function handleGym(req, res, url) {
   const body = req.method === 'POST' ? await readBody(req, 200_000) : {};
   const context = await requireMain(req, res, body);
@@ -1875,6 +2015,9 @@ async function handleAccountDeletion(req, res) {
     await client.query('DELETE FROM crewcheck_platform_hotel_rules WHERE owner_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_shares WHERE owner_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_gym_checkins WHERE owner_email=$1', [context.identity.email]);
+    if (await platformTableReady(client, 'crewcheck_platform_parking_positions')) {
+      await client.query('DELETE FROM crewcheck_platform_parking_positions WHERE owner_email=$1', [context.identity.email]);
+    }
     await client.query('DELETE FROM crewcheck_platform_rosters WHERE owner_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_usage WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
@@ -1903,6 +2046,7 @@ export async function handlePlatformRoute(req, res, url) {
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
+    if (url.pathname === '/api/platform/database/health') { await handleDatabaseHealth(req, res); return true; }
     if (url.pathname === '/api/platform/profile') { await handleProfile(req, res); return true; }
     if (url.pathname === '/api/platform/billing/status') { await handleBillingStatus(req, res); return true; }
     if (url.pathname === '/api/platform/billing/google-play/verify') { await handleGooglePurchase(req, res); return true; }
@@ -1937,6 +2081,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/compare') { await handleCompare(req, res, url); return true; }
     if (url.pathname === '/api/platform/chat') { await handleChat(req, res, url); return true; }
     if (url.pathname === '/api/platform/gyms/checkins') { await handleGym(req, res, url); return true; }
+    if (url.pathname === '/api/platform/parking') { await handleParking(req, res); return true; }
     if (url.pathname === '/api/platform/account/delete') { await handleAccountDeletion(req, res); return true; }
     sendJson(res, 404, { ok: false, message: 'Recurso da plataforma não localizado.' });
     return true;

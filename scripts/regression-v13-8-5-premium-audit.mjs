@@ -11,7 +11,13 @@ const auth = read('client/src/lib/authClient.ts');
 const platformServer = read('server/platform.mjs');
 const server = read('server.mjs');
 
-assert.match(home, /const DEFAULT_VERSION = '13\.8\.5'/);
+const versionMatch = home.match(/const DEFAULT_VERSION = '(\d+)\.(\d+)\.(\d+)'/);
+assert.ok(versionMatch, 'Versão padrão da interface ausente');
+const [, major, minor, patch] = versionMatch.map(Number);
+assert.ok(
+  major > 13 || (major === 13 && (minor > 8 || (minor === 8 && patch >= 5))),
+  'A auditoria premium exige CrewCheck 13.8.5 ou superior',
+);
 assert.doesNotMatch(home, /view === 'salary' && <><FinancialStatementImporter/);
 assert.doesNotMatch(home, /view === 'perdiem' && <><FinancialStatementImporter/);
 assert.match(home, /function AdminFinancialCalibration/);

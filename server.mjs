@@ -385,6 +385,8 @@ async function handleRoutePreview(req, res, url) {
   const key = mapsServerKey();
   const origin = url.searchParams.get('origin') || '';
   const destination = url.searchParams.get('destination') || '';
+  const requestedMode = String(url.searchParams.get('mode') || 'driving').toLowerCase();
+  const travelMode = requestedMode === 'transit' ? 'TRANSIT' : 'DRIVE';
   if (!origin || !destination) return sendJson(res, 400, { ok: false, message: 'Origem e destino são necessários.' });
   if (!key) return sendJson(res, 200, { ok: false, configured: false, message: 'Mapa real configurável. Abra no Google Maps para ver rota e trânsito.' });
   try {
@@ -398,8 +400,8 @@ async function handleRoutePreview(req, res, url) {
       body: JSON.stringify({
         origin: { address: origin },
         destination: { address: destination },
-        travelMode: 'DRIVE',
-        routingPreference: 'TRAFFIC_AWARE',
+        travelMode,
+        ...(travelMode === 'DRIVE' ? { routingPreference: 'TRAFFIC_AWARE' } : {}),
         computeAlternativeRoutes: false,
         languageCode: 'pt-BR',
         units: 'METRIC',
@@ -411,13 +413,13 @@ async function handleRoutePreview(req, res, url) {
     sendJson(res, 200, {
       ok: true,
       configured: true,
-      trafficAware: true,
+      trafficAware: travelMode === 'DRIVE',
       distanceMeters: route.distanceMeters || 0,
       distanceText: route.localizedValues?.distance?.text || formatMeters(route.distanceMeters),
       durationText: route.localizedValues?.duration?.text || formatDuration(route.duration),
       durationInTrafficText: route.localizedValues?.duration?.text || formatDuration(route.duration),
       polyline: route.polyline?.encodedPolyline || '',
-      message: 'Rota calculada com preferência de trânsito quando disponível.',
+      message: travelMode === 'DRIVE' ? 'Rota calculada com trânsito quando disponível.' : 'Rota de transporte público calculada dentro do CrewCheck.',
     });
   } catch {
     sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
@@ -432,11 +434,23 @@ function coordinateDistanceMeters(a, b) {
   return Math.round(2 * earth * Math.asin(Math.sqrt(h)));
 }
 
-async function handleFitness(req, res, url) {
+const PLACE_CATEGORY_CONFIG = {
+  gym: { label: 'academias', query: 'academia fitness', fallbackName: 'Academia' },
+  hospital: { label: 'hospitais', query: 'hospital pronto atendimento emergência', fallbackName: 'Hospital' },
+  pharmacy: { label: 'farmácias', query: 'farmácia drogaria', fallbackName: 'Farmácia' },
+  laundry: { label: 'lavanderias', query: 'lavanderia', fallbackName: 'Lavanderia' },
+};
+
+async function handlePlacesSearch(req, res, url, forcedCategory = '') {
   const key = mapsServerKey();
-  const location = url.searchParams.get('location') || '';
-  const query = url.searchParams.get('query') || 'academia Smart Fit Wellhub fitness';
-  if (!key) return sendJson(res, 200, { ok: false, configured: false, places: [], message: 'Busca interna de academias aguardando configuração.' });
+  const location = String(url.searchParams.get('location') || '').trim().slice(0, 240);
+  const requestedCategory = String(forcedCategory || url.searchParams.get('category') || 'gym').trim().toLowerCase();
+  const category = Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_CONFIG, requestedCategory) ? requestedCategory : 'gym';
+  const config = PLACE_CATEGORY_CONFIG[category];
+  const customQuery = category === 'gym' ? String(url.searchParams.get('query') || '').trim().slice(0, 240) : '';
+  const query = customQuery || config.query;
+  if (!location) return sendJson(res, 400, { ok: false, configured: Boolean(key), category, places: [], message: 'Informe a localização da busca.' });
+  if (!key) return sendJson(res, 200, { ok: false, configured: false, category, places: [], message: `Busca interna de ${config.label} aguardando configuração.` });
   const coordinateMatch = location.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   const center = coordinateMatch ? { latitude: Number(coordinateMatch[1]), longitude: Number(coordinateMatch[2]) } : null;
   try {
@@ -445,40 +459,48 @@ async function handleFitness(req, res, url) {
       headers: {
         'content-type': 'application/json',
         'X-Goog-Api-Key': key,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.googleMapsUri,places.currentOpeningHours.openNow,places.location',
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.googleMapsUri,places.currentOpeningHours.openNow,places.regularOpeningHours.weekdayDescriptions,places.location,places.nationalPhoneNumber,places.websiteUri',
       },
       body: JSON.stringify({
         textQuery: center ? query : (query + ' perto de ' + location).trim(),
         languageCode: 'pt-BR',
         regionCode: 'BR',
-        maxResultCount: 8,
+        maxResultCount: 12,
         ...(center ? { locationBias: { circle: { center, radius: 12_000 } } } : {}),
       }),
     });
     const payload = await response.json().catch(() => null);
-    if (!response.ok) return sendJson(res, 200, { ok: false, configured: true, places: [], message: 'Busca de academias indisponível agora.' });
+    if (!response.ok) return sendJson(res, 200, { ok: false, configured: true, category, places: [], message: `Busca interna de ${config.label} indisponível agora.` });
     const places = (payload?.places || []).map((place) => {
       const point = place.location && Number.isFinite(Number(place.location.latitude)) && Number.isFinite(Number(place.location.longitude))
         ? { latitude: Number(place.location.latitude), longitude: Number(place.location.longitude) }
         : null;
       return {
-        name: place.displayName?.text || 'Academia',
+        category,
+        name: place.displayName?.text || config.fallbackName,
         address: place.formattedAddress || '',
-        rating: place.rating || undefined,
+        rating: Number(place.rating) || undefined,
         mapsUrl: place.googleMapsUri || '',
         openNow: place.currentOpeningHours?.openNow,
+        openingHours: Array.isArray(place.regularOpeningHours?.weekdayDescriptions) ? place.regularOpeningHours.weekdayDescriptions.slice(0, 7) : [],
+        phone: place.nationalPhoneNumber || '',
+        website: place.websiteUri || '',
         latitude: point?.latitude,
         longitude: point?.longitude,
         distanceMeters: center && point ? coordinateDistanceMeters(center, point) : undefined,
       };
-    }).sort((left, right) => Number(left.distanceMeters || Infinity) - Number(right.distanceMeters || Infinity));
-    sendJson(res, 200, { ok: true, configured: true, origin: center ? 'current_location' : 'layover', places });
+    }).sort((left, right) => Number(left.distanceMeters || Infinity) - Number(right.distanceMeters || Infinity)
+      || Number(right.openNow === true) - Number(left.openNow === true)
+      || Number(right.rating || 0) - Number(left.rating || 0));
+    sendJson(res, 200, { ok: true, configured: true, category, origin: center ? 'current_location' : 'layover', places });
   } catch {
-    sendJson(res, 200, { ok: false, configured: true, places: [], message: 'Busca de academias indisponível agora.' });
+    sendJson(res, 200, { ok: false, configured: true, category, places: [], message: `Busca interna de ${config.label} indisponível agora.` });
   }
 }
 
-
+async function handleFitness(req, res, url) {
+  return handlePlacesSearch(req, res, url, 'gym');
+}
 const WEATHER_AIRPORT_POINTS = {
   BSB:{lat:-15.8711,lon:-47.9186,city:'Brasília'}, GRU:{lat:-23.4356,lon:-46.4731,city:'Guarulhos'}, CGH:{lat:-23.6261,lon:-46.6564,city:'São Paulo'}, VCP:{lat:-23.0074,lon:-47.1345,city:'Campinas'},
   SDU:{lat:-22.9105,lon:-43.1631,city:'Rio de Janeiro'}, GIG:{lat:-22.8099,lon:-43.2506,city:'Rio de Janeiro'}, CNF:{lat:-19.6244,lon:-43.9719,city:'Belo Horizonte'}, CWB:{lat:-25.5317,lon:-49.1761,city:'Curitiba'},
@@ -1329,7 +1351,7 @@ async function handleTtsHealth(req, res) {
 function handleTtsProviderHealth(req, res) {
   return sendJson(res, 200, {
     ok: effectiveTtsProvider() === 'elevenlabs',
-    version: '13.8.5',
+    version: '13.8.6',
     ...ttsPolicySnapshot(),
     message: effectiveTtsProvider() === 'elevenlabs'
       ? 'ElevenLabs é o provedor efetivo de voz.'
@@ -2691,16 +2713,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.8.5', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.8.6', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-  return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.8.5', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.8.6', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.8.5', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/account/delete','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.8.6', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -2738,7 +2760,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.8.5 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.8.6 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -2748,8 +2770,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.8.5">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.8.5">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.8.6">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.8.6">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -2795,7 +2817,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.8.5&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.8.6&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -2807,7 +2829,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.8.5'
+    'x-crewcheck-boot': 'static-shell-13.8.6'
   });
   res.end(html);
 }
@@ -2841,7 +2863,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.8.5', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.8.6', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -2856,6 +2878,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/aviation-weather') return handleAviationWeather(req, res, url);
   if (url.pathname === '/api/parse-pdf') return handleParsePdfApi(req, res, url);
   if (url.pathname === '/api/maps/route-preview') return handleRoutePreview(req, res, url);
+  if (url.pathname === '/api/places/search') return handlePlacesSearch(req, res, url);
   if (url.pathname === '/api/places/fitness') return handleFitness(req, res, url);
   if (url.pathname === '/api/email/health') return handleEmailHealth(req, res);
   if (url.pathname === '/api/email/share') return handleEmailShare(req, res);
@@ -2876,7 +2899,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.8.5', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.8.6', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });

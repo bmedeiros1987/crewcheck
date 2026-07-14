@@ -107,7 +107,13 @@ export function learnPayrollStatement(text: string, sourceDocument: string): Sta
   for (const [pattern, key, label, unit] of PAYROLL_KEYS) {
     const m = text.match(pattern);
     if (!m) continue;
-    const value = unit === 'km' ? decimal(m[2]) : money(m[1]);
+    const quantity = unit === 'km' ? decimal(m[1]) : 0;
+    const statedRate = unit === 'km' ? decimal(m[2]) : 0;
+    const derivedRate = unit === 'km' && quantity > 0 ? Number((money(m[3]) / quantity).toFixed(6)) : NaN;
+    const statedRateMatchesTotal = Number.isFinite(derivedRate) && Math.abs(statedRate - derivedRate) <= Math.max(0.0001, derivedRate * 0.02);
+    const value = unit === 'km'
+      ? Number.isFinite(statedRate) && statedRate > 0 && statedRate <= 5 && statedRateMatchesTotal ? statedRate : derivedRate
+      : money(m[1]);
     if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push(rate(key, label, value, unit, effectiveFrom, sourceDocument, fp));
   }
   for (const [pattern, key, label] of [
