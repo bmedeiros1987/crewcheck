@@ -137,4 +137,4 @@
     "node": ">=22.13.0"
   },
   "check:1264-futuristic-premium": "node -e \"console.log('CrewCheck v12.5.65 futuristic premium design OK')\""
-}\n
+}
