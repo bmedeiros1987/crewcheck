@@ -1951,8 +1951,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
         <KpiCard icon={DollarSign} title="Revisar valores" value={String(comparison.summary.financialReviewCount)} detail={comparison.summary.workTypeChanges + ' mudança(s) OP/PS'}/>
       </section>
       {(comparison.summary.lostDaysOff.length > 0 || comparison.summary.gainedDaysOff.length > 0) && <section className="cz-compare-days-off">
-        {comparison.summary.lostDaysOff.length > 0 && <p><AlertTriangle/><span><strong>Folgas retiradas</strong>{comparison.summary.lostDaysOff.join(' · ')}</span></p>}
-        {comparison.summary.gainedDaysOff.length > 0 && <p><ShieldCheck/><span><strong>Folgas adicionadas</strong>{comparison.summary.gainedDaysOff.join(' · ')}</span></p>}
+        {comparison.summary.lostDaysOff.length > 0 && <p className="lost"><AlertTriangle/><span><strong>Folgas retiradas</strong>{comparison.summary.lostDaysOff.join(' · ')}</span></p>}
+        {comparison.summary.gainedDaysOff.length > 0 && <p className="gained"><ShieldCheck/><span><strong>Folgas adicionadas</strong>{comparison.summary.gainedDaysOff.join(' · ')}</span></p>}
       </section>}
       <section className="cz-finance-table cz-compare-financial">
         <h2>Possível impacto financeiro</h2>
