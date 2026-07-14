@@ -10,7 +10,7 @@ const [home, compliance, financialRules, styles, packageJson] = await Promise.al
   read('package.json'),
 ]);
 
-assert.match(packageJson, /"version":\s*"13\.8\.1"/);
+assert.match(packageJson, /"version":\s*"13\.8\.[12]"/);
 assert.match(home, /resolveActFinancialRules/);
 assert.match(home, /resolvePerDiemRule/);
 assert.match(home, /pendingCurrencies/);
