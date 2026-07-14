@@ -3299,6 +3299,7 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     <section className="cz-panel-head cz-panel-head-compact"><h1>Academias</h1><p>Busca pelo pernoite ou pela sua localização atual.</p></section>
     <section className="cz-toolbox cz-gym-search">
       <header><div><Dumbbell/><span><small>Origem da busca</small><h2>{locationMode === 'layover' ? 'Pernoite' : 'Localização atual'}</h2></span></div><strong>{locationMode === 'layover' ? layoverLocation || 'Sem pernoite identificado' : coordinates ? 'GPS atualizado' : 'GPS pendente'}</strong></header>
+      <p className="cz-gym-provider-note">Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia. Confirme a elegibilidade no aplicativo Wellhub antes de sair.</p>
       <div className="cz-location-selector">
         <button className={locationMode === 'layover' ? 'active' : ''} disabled={!layoverLocation} onClick={() => setLocationMode('layover')}><Hotel/> Usar pernoite</button>
         <button className={locationMode === 'current' ? 'active' : ''} onClick={requestCurrentLocation}><MapIcon/> Usar localização atual</button>
