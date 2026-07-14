@@ -77,6 +77,13 @@ assert.ok(result.summary.financialReviewCount >= 3);
 assert.notEqual(comparison.rosterFingerprint(planned), comparison.rosterFingerprint(current));
 assert.equal(comparison.sameRosterPeriod(planned, current), true);
 assert.match(result.changes.find((change) => change.categories.includes('time')).descriptions.join(' '), /\+1h30min/);
+assert.equal(comparison.compareRosters(planned, planned).summary.unchanged, true);
+const august = {
+  ...current,
+  month: 8,
+  days: current.days.map((item) => ({ ...item, date: item.date.replace('/07/', '/08/') })),
+};
+assert.equal(comparison.sameRosterPeriod(planned, august), false);
 
 assert.match(packageJson, /"version":\s*"13\.8\.2"/);
 assert.match(home, /type PlannedRosterSnapshot/);
