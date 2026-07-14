@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-8-2-work-compare",
-  "version": "13.8.2",
+  "name": "crewcheck-v13-8-3-financial-learning",
+  "version": "13.8.3",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.8.2 — comparação entre escala planejada e escala atual com impacto financeiro",
+  "description": "CrewCheck v13.8.3 — aprendizado de diárias e salário por demonstrativos confirmados",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -97,7 +97,8 @@
     "regression:v13.7.16:concierge": "node scripts/regression-v13-7-16-telegram-concierge-ops.mjs",
     "regression:v13.8.0:platform": "node scripts/regression-v13-8-0-platform.mjs",
     "regression:v13.8.1:audit": "node scripts/regression-v13-8-1-audit-financial.mjs",
-    "regression:v13.8.2:compare": "node scripts/regression-v13-8-2-roster-comparison.mjs"
+    "regression:v13.8.2:compare": "node scripts/regression-v13-8-2-roster-comparison.mjs",
+    "regression:v13.8.3:finance-learning": "node scripts/regression-v13-8-3-financial-learning.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
@@ -136,4 +137,4 @@
     "node": ">=22.13.0"
   },
   "check:1264-futuristic-premium": "node -e \"console.log('CrewCheck v12.5.65 futuristic premium design OK')\""
-}
+}\n
