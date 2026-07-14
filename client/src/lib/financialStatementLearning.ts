@@ -26,7 +26,9 @@ export interface StatementLearningResult {
 }
 
 const money = (raw: string) => Number(raw.replace(/\./g, '').replace(',', '.'));
-const decimal = (raw: string) => Number(raw.replace(/\./g, '').replace(',', '.'));
+const decimal = (raw: string) => raw.includes(',')
+  ? Number(raw.replace(/\./g, '').replace(',', '.'))
+  : Number(raw.replace(/\s+/g, ''));
 const isoDate = (raw: string) => {
   const m = raw.match(/(\d{2})[/.\-](\d{2})[/.\-](\d{4})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
@@ -106,14 +108,16 @@ export function learnPayrollStatement(text: string, sourceDocument: string): Sta
     const m = text.match(pattern);
     if (!m) continue;
     const value = unit === 'km' ? decimal(m[2]) : money(m[1]);
-    rates.push(rate(key, label, value, unit, effectiveFrom, sourceDocument, fp));
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push(rate(key, label, value, unit, effectiveFrom, sourceDocument, fp));
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
     [/([\d.,]+)\s+Horas Sobre Aviso - CMS\s+([\d.]+,\d{2})/i, 'salary.standbyHour', 'Hora de sobreaviso'],
   ] as const) {
     const m = text.match(pattern);
-    if (m) rates.push(rate(key, label, money(m[2]) / decimal(m[1]), 'hour', effectiveFrom, sourceDocument, fp, 'medium'));
+    const quantity = m ? decimal(m[1]) : 0;
+    const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
+    if (Number.isFinite(hourlyValue)) rates.push(rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'medium'));
   }
   const totals = text.match(/TOTAIS\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
   const net = text.match(/L[ií]quido\s*\n?\s*(?:[\d.]+,\d{2}\s+)?([\d.]+,\d{2})/i);
