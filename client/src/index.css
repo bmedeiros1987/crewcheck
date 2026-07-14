@@ -17813,3 +17813,45 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
     border-left: 0;
   }
 }
+
+
+/* CrewCheck v13.8.4 — iPad drawer viewport final override */
+html.crewcheck-menu-open .cz-bottom-nav,
+body.crewcheck-menu-open .cz-bottom-nav {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+.cz-menu-overlay {
+  height: 100svh !important;
+  max-height: 100svh !important;
+}
+.cz-menu-panel {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 16px 0 !important;
+  box-sizing: border-box !important;
+}
+.cz-menu-panel > .cz-menu-header {
+  flex: 0 0 auto !important;
+  margin: 0 0 8px !important;
+}
+.cz-menu-panel > .cz-menu-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 0 0 calc(32px + env(safe-area-inset-bottom, 0px)) !important;
+  background: transparent !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-gutter: stable !important;
+}
+.cz-menu-panel > .cz-menu-scroll > .cz-menu-section:last-child {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+}
+@supports (height: 100dvh) {
+  .cz-menu-overlay { height: 100dvh !important; max-height: 100dvh !important; }
+}
