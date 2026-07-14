@@ -6,6 +6,12 @@ export interface DatabaseStatus {
   ok: boolean;
   connected?: boolean;
   databaseConfigured?: boolean;
+  configured?: boolean;
+  coreReady?: boolean;
+  degraded?: boolean;
+  migrationRequired?: boolean;
+  missingOptionalCount?: number;
+  localOnly?: boolean;
   database?: string;
   user_name?: string;
   now?: string;
@@ -75,19 +81,30 @@ function hasCrewCheckAuthToken(): boolean {
   try { return Boolean(getToken()); } catch { return false; }
 }
 
-function localDatabaseStatus(message = 'Sessão offline/local ativa. Faça login para sincronizar com o banco em nuvem.'): DatabaseStatus {
-  return { ok: false, connected: false, databaseConfigured: false, message };
+function localDatabaseStatus(message = 'Sessão offline/local ativa. Faça login para sincronizar com o banco em nuvem.', health: Partial<DatabaseStatus> = {}): DatabaseStatus {
+  return { ...health, ok: Boolean(health.connected), connected: Boolean(health.connected), databaseConfigured: Boolean(health.databaseConfigured ?? health.configured), localOnly: true, message };
 }
 
 
 export async function getDatabaseStatus(): Promise<DatabaseStatus> {
-  if (!hasCrewCheckAuthToken()) return localDatabaseStatus();
+  let health: DatabaseStatus = { ok: false };
   try {
-    return await jsonFetch<DatabaseStatus>('/api/db/status');
+    const response = await fetch('/api/platform/database/health', { cache: 'no-store' });
+    health = await response.json().catch(() => ({}));
+  } catch {}
+  if (!hasCrewCheckAuthToken()) {
+    return localDatabaseStatus(
+      health.connected ? 'Banco principal disponível. Faça login para sincronizar esta conta.' : 'Modo local protegido ativo. A sincronização será retomada quando o banco voltar.',
+      { ...health, databaseConfigured: Boolean(health.configured) }
+    );
+  }
+  try {
+    const status = await jsonFetch<DatabaseStatus>('/api/db/status');
+    return { ...health, ...status, databaseConfigured: true, connected: true };
   } catch (error: any) {
     const code = String(error?.code || error?.payload?.code || '').toUpperCase();
-    if (code === 'AUTH_REQUIRED' || error?.status === 401) return localDatabaseStatus('Login expirado. Histórico local ativo; entre novamente para sincronizar.');
-    throw error;
+    if (code === 'AUTH_REQUIRED' || error?.status === 401) return localDatabaseStatus('Login expirado. Histórico local ativo; entre novamente para sincronizar.', health);
+    return localDatabaseStatus(health.message || 'Banco temporariamente indisponível. O histórico local permanece ativo e será sincronizado depois.', health);
   }
 }
 
