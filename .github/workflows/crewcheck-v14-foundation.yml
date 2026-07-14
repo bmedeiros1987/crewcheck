@@ -1,0 +1,40 @@
+name: CrewCheck v14 foundation validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".env.example"
+      - "migrations/**"
+      - "docs/V14_RENDER_SUPABASE_POSTGRES_SETUP.md"
+      - "scripts/validate-production-config.mjs"
+      - "scripts/regression-v14-db-env-reliability.mjs"
+      - "server.mjs"
+      - "server/platform.mjs"
+      - ".github/workflows/crewcheck-v14-foundation.yml"
+  push:
+    branches:
+      - agent/v14-db-env-reliability
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewcheck-v14-foundation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: node scripts/regression-v14-db-env-reliability.mjs
+      - run: node scripts/validate-production-config.mjs --template
