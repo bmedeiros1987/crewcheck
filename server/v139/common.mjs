@@ -36,7 +36,7 @@ export function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-export function readBody(req, limit = 36_000_000) {
+export function readBody(req, limit = 1_000_000) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
@@ -62,85 +62,14 @@ export function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-export function authSecret() {
-  const secret = env('CREWCHECK_AUTH_SECRET');
-  if (!secret && env('NODE_ENV').toLowerCase() === 'production') {
-    throw Object.assign(new Error('Autenticação aguardando segredo seguro.'), { status: 503 });
-  }
-  return secret || 'crewcheck-local-development-secret';
-}
-
-export function hmac(value) {
-  return crypto.createHmac('sha256', authSecret()).update(String(value)).digest('hex');
-}
-
-function b64(value) {
-  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
-}
-
-export function issueJwt(user) {
-  const now = Math.floor(Date.now() / 1000);
-  const head = b64({ alg: 'HS256', typ: 'JWT' });
-  const body = b64({
-    iss: 'crewcheck',
-    aud: 'crewcheck-web',
-    sub: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    plan: user.plan,
-    admin: user.admin,
-    mustChangePassword: Boolean(user.mustChangePassword),
-    iat: now,
-    exp: now + 60 * 60 * 24 * 30,
-  });
-  const signature = crypto.createHmac('sha256', authSecret()).update(`${head}.${body}`).digest('base64url');
-  return `${head}.${body}.${signature}`;
-}
-
-export function verifyJwt(token = '') {
-  const parts = String(token || '').split('.');
-  if (parts.length !== 3) return null;
-  const [head, body, signature] = parts;
-  const expected = crypto.createHmac('sha256', authSecret()).update(`${head}.${body}`).digest('base64url');
-  const actualBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  if (!actualBuffer.length || actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+export function secureCompare(a, b) {
   try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (payload.exp && Number(payload.exp) < Math.floor(Date.now() / 1000)) return null;
-    return payload;
+    const left = Buffer.from(String(a));
+    const right = Buffer.from(String(b));
+    return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
   } catch {
-    return null;
+    return false;
   }
-}
-
-export function requestToken(req) {
-  const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
-  if (bearer) return bearer.trim();
-  const match = String(req.headers.cookie || '').match(/(?:^|;\s*)crewcheck_auth_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
-}
-
-export function setCookie(res, token) {
-  const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_auth_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`);
-}
-
-export function clearCookie(res) {
-  const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
-}
-
-export function adminEmails() {
-  return env('CREWCHECK_ADMIN_EMAILS', env('CREWCHECK_ADMIN_EMAIL'))
-    .split(',')
-    .map(safeEmail)
-    .filter(Boolean);
-}
-
-export function isAdminEmail(email) {
-  return adminEmails().includes(safeEmail(email));
 }
 
 function mysqlOptions(connectionString) {
@@ -153,15 +82,15 @@ function mysqlOptions(connectionString) {
     user: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
     database: decodeURIComponent(parsed.pathname.replace(/^\//, '') || 'defaultdb'),
-    connectionLimit: 5,
-    connectTimeout: 6000,
+    connectionLimit: 6,
+    connectTimeout: 8000,
     waitForConnections: true,
     dateStrings: true,
     ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
   };
 }
 
-export async function pool() {
+export async function dbPool() {
   const connectionString = env('DATABASE_URL', env('CREWCHECK_DATABASE_URL', env('MYSQL_URL')));
   if (!/^mysql:\/\//i.test(connectionString)) return null;
   if (!poolPromise) {
@@ -183,38 +112,134 @@ export async function pool() {
   return poolPromise;
 }
 
-export function passwordDigest(password, salt = crypto.randomBytes(16).toString('hex')) {
-  return { salt, hash: crypto.scryptSync(String(password), salt, 64).toString('hex') };
+export function parseJsonColumn(value, fallback = null) {
+  if (value && typeof value === 'object') return value;
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-export function passwordMatches(password, salt, expected) {
+export function adminEmails() {
+  return env('CREWCHECK_ADMIN_EMAILS', env('CREWCHECK_ADMIN_EMAIL'))
+    .split(',')
+    .map(safeEmail)
+    .filter(Boolean);
+}
+
+export function isAdminEmail(email) {
+  return adminEmails().includes(safeEmail(email));
+}
+
+export function authSecret() {
+  const secret = env('CREWCHECK_AUTH_SECRET', env('JWT_SECRET'));
+  if (!secret) throw Object.assign(new Error('Segredo de autenticação não configurado.'), { status: 503 });
+  return secret;
+}
+
+function b64Json(value) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+export function issueJwt(user) {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64Json({ alg: 'HS256', typ: 'JWT' });
+  const body = b64Json({
+    iss: 'crewcheck',
+    aud: 'crewcheck-web',
+    sub: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    plan: user.plan,
+    admin: Boolean(user.admin),
+    mustChangePassword: Boolean(user.mustChangePassword),
+    iat: now,
+    exp: now + 60 * 60 * 24 * 30,
+  });
+  const signature = crypto
+    .createHmac('sha256', authSecret())
+    .update(`${head}.${body}`)
+    .digest('base64url');
+  return `${head}.${body}.${signature}`;
+}
+
+export function verifyJwt(token = '') {
+  const parts = String(token || '').trim().split('.');
+  if (parts.length !== 3) return null;
+  const [head, body, signature] = parts;
+  const expected = crypto
+    .createHmac('sha256', authSecret())
+    .update(`${head}.${body}`)
+    .digest('base64url');
+  if (!secureCompare(signature, expected)) return null;
   try {
-    const actual = Buffer.from(passwordDigest(password, salt).hash, 'hex');
-    const target = Buffer.from(String(expected || ''), 'hex');
-    return actual.length === target.length && actual.length > 0 && crypto.timingSafeEqual(actual, target);
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (payload.exp && Number(payload.exp) < Math.floor(Date.now() / 1000)) return null;
+    return payload;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function requestToken(req) {
+  const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) return bearer.trim();
+  const match = String(req.headers.cookie || '').match(/(?:^|;\s*)crewcheck_auth_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+export function setAuthCookie(res, token) {
+  const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `crewcheck_auth_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`,
+  );
+}
+
+export function clearAuthCookie(res) {
+  const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `crewcheck_auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
 }
 
 function publicId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = crypto.randomBytes(8);
-  const part = (offset) => Array.from(bytes.subarray(offset, offset + 4), (value) => chars[value % chars.length]).join('');
+  const part = (offset) => Array.from(
+    bytes.subarray(offset, offset + 4),
+    (value) => chars[value % chars.length],
+  ).join('');
   return `CC-${part(0)}-${part(4)}`;
 }
 
 export async function ensureProfile(db, email, name = '') {
-  const [rows] = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]);
+  const [rows] = await db.query(
+    'SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1',
+    [email],
+  );
   if (rows[0]) return rows[0];
+
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
       const id = publicId();
       await db.query(
-        'INSERT INTO crewcheck_platform_profiles(email,public_id,display_name,locale,timezone,plan,share_presence) VALUES(?,?,?,?,?,?,0)',
-        [email, id, cleanText(name || email.split('@')[0], 120) || 'Tripulante', 'pt-BR', 'America/Sao_Paulo', isAdminEmail(email) ? 'premium_unlimited' : 'free'],
+        `INSERT INTO crewcheck_platform_profiles
+         (email,public_id,display_name,locale,timezone,plan,share_presence)
+         VALUES(?,?,?,?,?,?,0)`,
+        [
+          email,
+          id,
+          cleanText(name || email.split('@')[0], 120) || 'Tripulante',
+          'pt-BR',
+          'America/Sao_Paulo',
+          isAdminEmail(email) ? 'premium_unlimited' : 'free',
+        ],
       );
-      const [created] = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]);
+      const [created] = await db.query(
+        'SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1',
+        [email],
+      );
       return created[0];
     } catch (error) {
       if (String(error?.code) !== 'ER_DUP_ENTRY') throw error;
@@ -223,7 +248,7 @@ export async function ensureProfile(db, email, name = '') {
   throw Object.assign(new Error('Não consegui gerar o ID CrewCheck.'), { status: 503 });
 }
 
-export async function accountUser(db, email, mustChangePassword = false) {
+export async function userFromAccount(db, email, mustChangePassword = false) {
   const profile = await ensureProfile(db, email);
   const admin = isAdminEmail(email);
   const plan = admin ? 'premium_unlimited' : String(profile.plan || 'free');
@@ -236,33 +261,28 @@ export async function accountUser(db, email, mustChangePassword = false) {
     premium: admin || plan !== 'free',
     admin,
     verified: true,
-    mustChangePassword,
+    mustChangePassword: Boolean(mustChangePassword),
   };
 }
 
-export function issueLogin(res, user, message = 'Login realizado.') {
-  const token = issueJwt(user);
-  setCookie(res, token);
-  return sendJson(res, 200, { ok: true, token, user, message });
-}
-
 export async function requireIdentity(req, res) {
-  const token = verifyJwt(requestToken(req));
-  const email = safeEmail(token?.email);
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+    return null;
+  }
+  const email = safeEmail(payload?.email);
   if (!email) {
     sendJson(res, 401, { ok: false, message: 'Faça login para continuar.' });
     return null;
   }
-  const db = await pool();
+  const db = await dbPool();
   if (!db) {
     sendJson(res, 503, { ok: false, message: 'Banco Aiven indisponível.' });
     return null;
   }
-  const profile = await ensureProfile(db, email, token?.name);
-  return { db, email, profile, admin: Boolean(token?.admin || isAdminEmail(email)), token };
-}
-
-export function dateValue(value) {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
+  const profile = await ensureProfile(db, email, payload?.name);
+  return { db, email, profile, admin: Boolean(payload?.admin || isAdminEmail(email)), payload };
 }
