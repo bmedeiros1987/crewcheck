@@ -60,7 +60,7 @@ assert.match(migration, /ENGINE=InnoDB/g);
 assert.match(migration, /DEFAULT CHARSET=utf8mb4/g);
 assert.match(migration, /ON DUPLICATE KEY UPDATE/);
 assert.doesNotMatch(migration, forbiddenSql);
-assert.doesNotMatch(migration, /postgres|supabase|mysql:\/\/[^\s]+:[^\s]+@|AVNS_|aivencloud\.com/i);
+assert.doesNotMatch(migration, /postgres|supabase|mysql:\/\/(?!USER:PASSWORD@)[^\s]+:[^\s]+@|AVNS_|aivencloud\.com/i);
 
 assert.match(envExample, /DATABASE_URL=mysql:\/\/USER:PASSWORD@HOST:PORT\/defaultdb\?ssl-mode=REQUIRED/);
 assert.match(envExample, /CREWCHECK_DATABASE_PROVIDER=aiven-mysql/);
@@ -73,7 +73,7 @@ assert.equal(pkg.dependencies.pg, undefined, 'pg deve ser removido');
 assert.ok(pkg.scripts['regression:v13.8.7:mysql']);
 assert.doesNotMatch(lock, /node_modules\/pg(?:-|")|node_modules\/postgres-/);
 
-const secretLike = /AVNS_[A-Za-z0-9_-]{16,}|mysql:\/\/[^\s]+:[^\s]+@|ghp_[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|cloudinary:\/\/[^:\s]+:[^@\s]+@/i;
+const secretLike = /AVNS_[A-Za-z0-9_-]{16,}|mysql:\/\/(?!USER:PASSWORD@)[^\s]+:[^\s]+@|ghp_[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|cloudinary:\/\/[^:\s]+:[^@\s]+@/i;
 for (const [name, source] of Object.entries({ platform, server, migration, envExample })) {
   assert.doesNotMatch(source, secretLike, 'Segredo encontrado em ' + name);
 }
