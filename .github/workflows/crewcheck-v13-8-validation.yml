@@ -34,6 +34,7 @@ jobs:
       - run: npm run regression:v13.8.0:platform
       - run: npm run regression:v13.8.5:audit
       - run: npm run regression:v13.8.6:internal
+      - run: npm run regression:v13.8.7:mysql
       - run: node test-server.mjs
 
   android:

@@ -216,11 +216,15 @@ function visitorIdentity(req) {
 }
 
 function databaseConnectionString() {
-  for (const name of ['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL']) {
+  for (const name of ['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'MYSQL_URL']) {
     const value = env(name);
-    if (/^postgres(?:ql)?:\/\//i.test(value)) return value;
+    if (/^mysql:\/\//i.test(value)) return value;
   }
   return '';
+}
+
+function databaseDialect(connectionString = databaseConnectionString()) {
+  return /^mysql:\/\//i.test(connectionString) ? 'mysql' : '';
 }
 
 const PLATFORM_CORE_TABLES = [
@@ -254,20 +258,97 @@ const PLATFORM_OPTIONAL_TABLES = [
   'crewcheck_platform_schedule_comparisons',
 ];
 
+
+const MYSQL_JSON_COLUMNS = new Set(['metadata', 'roster', 'compliance', 'gym', 'permissions', 'payload', 'channels', 'opening_hours', 'community_status', 'activities', 'constraints', 'salary_rules', 'per_diem_rules', 'last_snapshot', 'offered_duty', 'requested_duty', 'result']);
+const MYSQL_BOOLEAN_COLUMNS = new Set([
+  'share_presence', 'cancel_at_period_end', 'active', 'share_same_hotel',
+  'share_with_visitors', 'must_change_password', 'is_default', 'favorite',
+]);
+
+function normalizeMysqlRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    const normalized = { ...row };
+    for (const [key, value] of Object.entries(normalized)) {
+      if (MYSQL_JSON_COLUMNS.has(key) && typeof value === 'string') {
+        try { normalized[key] = JSON.parse(value); } catch {}
+      }
+      if (MYSQL_BOOLEAN_COLUMNS.has(key)) normalized[key] = Boolean(value);
+    }
+    return normalized;
+  });
+}
+
+function mysqlStatement(sql, params = []) {
+  const values = [];
+  const statement = String(sql).replace(/\$(\d+)/g, (_match, index) => {
+    const value = params[Number(index) - 1];
+    values.push(value && typeof value === 'object' && !(value instanceof Date) && !Buffer.isBuffer(value)
+      ? JSON.stringify(value)
+      : value);
+    return '?';
+  });
+  return { statement, values };
+}
+
+function mysqlAdapter(native, release = null) {
+  const adapter = {
+    dialect: 'mysql',
+    async query(sql, params = []) {
+      const prepared = mysqlStatement(sql, params);
+      const [result] = await native.query(prepared.statement, prepared.values);
+      if (Array.isArray(result)) return { rows: normalizeMysqlRows(result), rowCount: result.length };
+      return { rows: [], rowCount: Number(result?.affectedRows || 0), insertId: result?.insertId || null };
+    },
+    async connect() {
+      if (typeof native.getConnection !== 'function') return adapter;
+      const connection = await native.getConnection();
+      return mysqlAdapter(connection, () => connection.release());
+    },
+    release() {
+      if (release) release();
+    },
+  };
+  return adapter;
+}
+
+function mysqlPoolOptions(connectionString) {
+  const parsed = new URL(connectionString);
+  const sslDisabled = /^(?:disable|disabled|false|off)$/i.test(env('MYSQL_SSL_MODE'));
+  const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || 3306),
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database: decodeURIComponent(parsed.pathname.replace(/^\//, '') || 'defaultdb'),
+    waitForConnections: true,
+    connectionLimit: 5,
+    connectTimeout: 5000,
+    dateStrings: true,
+    decimalNumbers: true,
+    ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
+  };
+}
+
 async function platformSchemaReport(db) {
   const tables = [...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES];
-  const result = await db.query(
-    "SELECT table_name, to_regclass('public.' || table_name) relation FROM unnest($1::text[]) AS table_name",
-    [tables]
-  );
-  const ready = new Set(result.rows.filter((row) => Boolean(row.relation)).map((row) => row.table_name));
   const requiredColumns = {
     crewcheck_platform_profiles: ['email', 'public_id', 'display_name', 'locale', 'timezone', 'plan', 'share_presence'],
     crewcheck_platform_shares: ['id', 'owner_email', 'token_hash', 'kind', 'permissions', 'expires_at', 'created_at'],
   };
+  const tableParams = tables.map((_table, index) => `$${index + 1}`).join(',');
+  const result = await db.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN (${tableParams})`,
+    tables,
+  );
+  const ready = new Set(result.rows.map((row) => row.table_name));
+  const columnTables = Object.keys(requiredColumns);
+  const columnParams = columnTables.map((_table, index) => `$${index + 1}`).join(',');
   const columnResult = await db.query(
-    "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1::text[])",
-    [Object.keys(requiredColumns)]
+    `SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN (${columnParams})`,
+    columnTables,
   );
   const columns = new Set(columnResult.rows.map((row) => `${row.table_name}.${row.column_name}`));
   const missingProfileColumns = requiredColumns.crewcheck_platform_profiles
@@ -308,143 +389,28 @@ async function platformTableReady(db, tableName) {
   if (tableName === 'crewcheck_platform_profiles' && state.schemaReport && !state.schemaReport.profileIdReady) return false;
   if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
   if (state.schemaReport?.available?.includes(tableName)) return true;
-  const result = await db.query("SELECT to_regclass('public.' || $1) relation", [tableName]);
+  const result = await db.query(
+    'SELECT table_name relation FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=$1 LIMIT 1',
+    [tableName],
+  );
   const ready = Boolean(result.rows[0]?.relation);
   if (ready && state.schemaReport) state.schemaReport.available = [...new Set([...(state.schemaReport.available || []), tableName])];
   return ready;
 }
 async function pool() {
   const connectionString = databaseConnectionString();
-  if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) return null;
+  if (!/^mysql:\/\//i.test(connectionString)) return null;
   if (!state.poolPromise) {
     state.poolPromise = (async () => {
-      const pg = await import('pg');
-      const Pool = pg.Pool || pg.default?.Pool;
-      if (!Pool) return null;
-      const local = /localhost|127\.0\.0\.1/.test(connectionString) || env('PGSSLMODE').toLowerCase() === 'disable';
-      const db = new Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, ssl: local ? false : { rejectUnauthorized: false } });
+      const mysqlModule = await import('mysql2/promise');
+      const mysql = mysqlModule.default || mysqlModule;
+      if (typeof mysql.createPool !== 'function') return null;
+      const native = mysql.createPool(mysqlPoolOptions(connectionString));
+      const db = mysqlAdapter(native);
       await db.query('SELECT 1');
-      const report = await platformSchemaReport(db);
-      state.schemaReport = report;
-      const autoMigrate = env('CREWCHECK_DB_AUTO_MIGRATE', 'true').toLowerCase() !== 'false';
-      if (report.coreReady && (report.optionalReady || !autoMigrate)) {
-        state.databaseFailure = null;
-        return db;
-      }
-      if (!report.coreReady && !autoMigrate) {
-        throw Object.assign(new Error('A migration do banco ainda não foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
-      }
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_profiles (
-          email TEXT PRIMARY KEY, public_id TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL,
-          locale TEXT NOT NULL DEFAULT 'pt-BR', timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
-          plan TEXT NOT NULL DEFAULT 'free', share_presence BOOLEAN NOT NULL DEFAULT FALSE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_subscriptions (
-          email TEXT PRIMARY KEY, plan TEXT NOT NULL, status TEXT NOT NULL, provider TEXT NOT NULL,
-          product_id TEXT, provider_ref TEXT, purchase_token_hash TEXT, current_period_end TIMESTAMPTZ,
-          cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE, metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS crewcheck_platform_purchase_token_idx
-          ON crewcheck_platform_subscriptions(purchase_token_hash)
-          WHERE purchase_token_hash IS NOT NULL;
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_usage (
-          email TEXT NOT NULL, month_key TEXT NOT NULL, usage_kind TEXT NOT NULL,
-          used INTEGER NOT NULL DEFAULT 0, limit_value INTEGER NOT NULL,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(email, month_key, usage_kind)
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_rosters (
-          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL, roster_key TEXT NOT NULL,
-          roster JSONB NOT NULL, compliance JSONB NOT NULL DEFAULT '{}'::jsonb, gym JSONB NOT NULL DEFAULT '[]'::jsonb,
-          source_name TEXT, fingerprint TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(owner_email, roster_key)
-        );
-        CREATE INDEX IF NOT EXISTS crewcheck_platform_rosters_owner_idx ON crewcheck_platform_rosters(owner_email, active, updated_at DESC);
-        ALTER TABLE crewcheck_platform_rosters ADD COLUMN IF NOT EXISTS gym JSONB NOT NULL DEFAULT '[]'::jsonb;
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_hotel_rules (
-          owner_email TEXT NOT NULL, hotel_key TEXT NOT NULL, hotel_name TEXT NOT NULL,
-          lead_minutes INTEGER NOT NULL, sample_count INTEGER NOT NULL DEFAULT 1,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(owner_email, hotel_key)
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_stays (
-          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL, roster_key TEXT, stay_date DATE NOT NULL,
-          hotel_key TEXT NOT NULL, hotel_name TEXT NOT NULL, airport TEXT, room_cipher TEXT,
-          presentation_time TEXT, lead_minutes INTEGER, share_same_hotel BOOLEAN NOT NULL DEFAULT FALSE,
-          share_with_visitors BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(owner_email, stay_date, hotel_key)
-        );
-        CREATE INDEX IF NOT EXISTS crewcheck_platform_stays_match_idx ON crewcheck_platform_stays(hotel_key, stay_date, share_same_hotel);
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_shares (
-          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,
-          kind TEXT NOT NULL, roster_key TEXT, permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
-          expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_visitors (
-          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL, email TEXT NOT NULL, display_name TEXT NOT NULL,
-          telegram TEXT, telegram_chat_id TEXT, telegram_token_hash TEXT, password_hash TEXT NOT NULL, invite_token_hash TEXT UNIQUE NOT NULL,
-          permissions JSONB NOT NULL DEFAULT '{}'::jsonb, status TEXT NOT NULL DEFAULT 'invited',
-          must_change_password BOOLEAN NOT NULL DEFAULT TRUE, last_login_at TIMESTAMPTZ,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(owner_email, email)
-        );
-        CREATE INDEX IF NOT EXISTS crewcheck_platform_visitors_email_idx ON crewcheck_platform_visitors(email, status);
-        ALTER TABLE crewcheck_platform_visitors ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
-        ALTER TABLE crewcheck_platform_visitors ADD COLUMN IF NOT EXISTS telegram_token_hash TEXT;
-        CREATE UNIQUE INDEX IF NOT EXISTS crewcheck_platform_visitor_telegram_token_idx
-          ON crewcheck_platform_visitors(telegram_token_hash)
-          WHERE telegram_token_hash IS NOT NULL;
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_connections (
-          id TEXT PRIMARY KEY, requester_email TEXT NOT NULL, target_email TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending', permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(requester_email, target_email)
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_chat_threads (
-          id TEXT PRIMARY KEY, direct_key TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_chat_messages (
-          id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, sender_email TEXT NOT NULL, body TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS crewcheck_platform_chat_messages_idx ON crewcheck_platform_chat_messages(thread_id, created_at DESC);
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_gym_checkins (
-          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL, gym_key TEXT NOT NULL, gym_name TEXT NOT NULL,
-          chain_name TEXT, share_presence BOOLEAN NOT NULL DEFAULT FALSE,
-          checked_in_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), expires_at TIMESTAMPTZ NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS crewcheck_platform_gym_live_idx ON crewcheck_platform_gym_checkins(gym_key, expires_at, share_presence);
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_webhook_events (
-          provider TEXT NOT NULL, event_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(provider,event_id)
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_emergencies (
-          id TEXT PRIMARY KEY, visitor_id TEXT NOT NULL, owner_email TEXT NOT NULL,
-          message TEXT NOT NULL, location_url TEXT, channels JSONB NOT NULL DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_telegram_state (
-          state_key TEXT PRIMARY KEY, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_auth_attempts (
-          identifier TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
-          window_started TIMESTAMPTZ NOT NULL DEFAULT NOW(), blocked_until TIMESTAMPTZ,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS crewcheck_platform_parking_positions (
-          id TEXT PRIMARY KEY, owner_email TEXT NOT NULL,
-          latitude DOUBLE PRECISION NOT NULL, longitude DOUBLE PRECISION NOT NULL,
-          level_label TEXT, spot_label TEXT, notes TEXT, photo_url TEXT,
-          active BOOLEAN NOT NULL DEFAULT TRUE, parked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), cleared_at TIMESTAMPTZ
-        );
-        CREATE INDEX IF NOT EXISTS crewcheck_platform_parking_active_idx
-          ON crewcheck_platform_parking_positions(owner_email, active, parked_at DESC);
-      `);
       state.schemaReport = await platformSchemaReport(db);
       if (!state.schemaReport.coreReady) {
-        throw Object.assign(new Error('O núcleo do banco ainda não está pronto.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+        throw Object.assign(new Error('A migration MySQL do CrewCheck ainda não foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
       }
       state.databaseFailure = null;
       return db;
@@ -490,9 +456,8 @@ function unlimitedEmails() {
 
 function isPublicIdConflict(error) {
   const code = String(error?.code || '');
-  const constraint = String(error?.constraint || '').toLowerCase();
-  const detail = String(error?.detail || error?.message || '').toLowerCase();
-  return code === '23505' && (constraint.includes('public_id') || detail.includes('public_id'));
+  const detail = String(error?.message || '').toLowerCase();
+  return (code === 'ER_DUP_ENTRY' || Number(error?.errno) === 1062) && detail.includes('public_id');
 }
 
 async function ensureProfile(db, identity, patch = {}) {
@@ -504,24 +469,39 @@ async function ensureProfile(db, identity, patch = {}) {
   const timezone = normalizeTimezone(patch.timezone || identity.timezone || DEFAULT_TIMEZONE);
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    const existing = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [identity.email]);
+    const current = existing.rows[0] || null;
+    const candidate = current?.public_id || publicId();
     try {
-      const result = await db.query(`
-        INSERT INTO crewcheck_platform_profiles(email, public_id, display_name, locale, timezone, plan, share_presence)
-        VALUES($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT(email) DO UPDATE SET
-          public_id=COALESCE(NULLIF(BTRIM(crewcheck_platform_profiles.public_id), ''), EXCLUDED.public_id),
-          display_name=CASE WHEN $8 THEN EXCLUDED.display_name ELSE crewcheck_platform_profiles.display_name END,
-          locale=CASE WHEN $8 THEN EXCLUDED.locale ELSE crewcheck_platform_profiles.locale END,
-          timezone=CASE WHEN $8 THEN EXCLUDED.timezone ELSE crewcheck_platform_profiles.timezone END,
-          share_presence=CASE WHEN $8 THEN EXCLUDED.share_presence ELSE crewcheck_platform_profiles.share_presence END,
-          plan=CASE WHEN $9 THEN 'premium_unlimited' WHEN $10 THEN EXCLUDED.plan ELSE crewcheck_platform_profiles.plan END,
-          updated_at=NOW()
-        RETURNING *`, [identity.email, publicId(), displayName, locale, timezone, requestedPlan || defaultPlan, Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin)]);
+      if (current) {
+        await db.query(`
+          UPDATE crewcheck_platform_profiles SET
+            public_id=IF(public_id IS NULL OR TRIM(public_id)='', $2, public_id),
+            display_name=IF($8, $3, display_name),
+            locale=IF($8, $4, locale),
+            timezone=IF($8, $5, timezone),
+            share_presence=IF($8, $7, share_presence),
+            plan=IF($9, 'premium_unlimited', IF($10, $6, plan)),
+            updated_at=CURRENT_TIMESTAMP(3)
+          WHERE email=$1`, [
+          identity.email, candidate, displayName, locale, timezone, requestedPlan || defaultPlan,
+          Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin),
+        ]);
+      } else {
+        await db.query(`
+          INSERT INTO crewcheck_platform_profiles(email,public_id,display_name,locale,timezone,plan,share_presence)
+          VALUES($1,$2,$3,$4,$5,$6,$7)`, [
+          identity.email, candidate, displayName, locale, timezone, requestedPlan || defaultPlan,
+          Boolean(patch.sharePresence),
+        ]);
+      }
+      const result = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [identity.email]);
       const profile = result.rows[0];
       if (!profile?.public_id) throw Object.assign(new Error('O perfil não recebeu um ID público.'), { code: 'PROFILE_ID_MISSING' });
       return profile;
     } catch (error) {
-      if (attempt < 4 && isPublicIdConflict(error)) continue;
+      const duplicate = String(error?.code || '') === 'ER_DUP_ENTRY' || Number(error?.errno) === 1062;
+      if (duplicate && attempt < 4) continue;
       throw error;
     }
   }
@@ -606,20 +586,33 @@ export async function consumePlatformUsage(reqOrIdentity, kind = 'wakeup_call', 
   const monthKey = currentMonthKey(profile.timezone);
   const limit = planLimit(status.plan, kind);
   if (amount <= 0 || amount > limit) return { allowed: false, status: 429, used: 0, limit, remaining: limit, message: `Limite mensal de ${limit} ligações atingido.` };
-  const result = await db.query(`
-    INSERT INTO crewcheck_platform_usage(email,month_key,usage_kind,used,limit_value)
-    VALUES($1,$2,$3,$4,$5)
-    ON CONFLICT(email,month_key,usage_kind) DO UPDATE SET
-      used=crewcheck_platform_usage.used + $4, limit_value=$5, updated_at=NOW()
-      WHERE crewcheck_platform_usage.used + $4 <= $5
-    RETURNING used`, [identity.email, monthKey, kind, amount, limit]);
-  if (!result.rows[0]) {
-    const current = await db.query('SELECT used FROM crewcheck_platform_usage WHERE email=$1 AND month_key=$2 AND usage_kind=$3', [identity.email, monthKey, kind]);
-    const used = Number(current.rows[0]?.used || limit);
-    return { allowed: false, status: 429, used, limit, remaining: Math.max(0, limit - used), message: `Limite mensal de ${limit} ligações atingido. Mensagens Telegram e lembrete local continuam disponíveis.` };
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      'SELECT used FROM crewcheck_platform_usage WHERE email=$1 AND month_key=$2 AND usage_kind=$3 FOR UPDATE',
+      [identity.email, monthKey, kind],
+    );
+    const usedBefore = Number(current.rows[0]?.used || 0);
+    const used = usedBefore + amount;
+    if (used > limit) {
+      await client.query('ROLLBACK');
+      return { allowed: false, status: 429, used: usedBefore, limit, remaining: Math.max(0, limit - usedBefore), message: `Limite mensal de ${limit} ligações atingido. Mensagens Telegram e lembrete local continuam disponíveis.` };
+    }
+    await client.query(`
+      INSERT INTO crewcheck_platform_usage(email,month_key,usage_kind,used,limit_value)
+      VALUES($1,$2,$3,$4,$5)
+      ON DUPLICATE KEY UPDATE used=VALUES(used),limit_value=VALUES(limit_value),updated_at=CURRENT_TIMESTAMP(3)`,
+    [identity.email, monthKey, kind, used, limit]);
+    await client.query('COMMIT');
+    return { allowed: true, used, limit, remaining: Math.max(0, limit - used), monthKey };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
-  const used = Number(result.rows[0].used || 0);
-  return { allowed: true, used, limit, remaining: Math.max(0, limit - used), monthKey };
 }
 
 function encryptionKey() {
@@ -837,12 +830,14 @@ async function saveGoogleSubscription(db, email, purchaseToken, verified) {
   const normalized = normalizedGoogleStatus(verified.payload, verified.expiry);
   await db.query(`
     INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,purchase_token_hash,current_period_end,cancel_at_period_end,metadata)
-    VALUES($1,$2,$3,'google_play',$4,$5,$6,$7,$8,$9::jsonb)
-    ON CONFLICT(email) DO UPDATE SET plan=EXCLUDED.plan,status=EXCLUDED.status,provider='google_play',product_id=EXCLUDED.product_id,
-      provider_ref=EXCLUDED.provider_ref,purchase_token_hash=EXCLUDED.purchase_token_hash,current_period_end=EXCLUDED.current_period_end,
-      cancel_at_period_end=EXCLUDED.cancel_at_period_end,metadata=EXCLUDED.metadata,updated_at=NOW()`, [
+    VALUES($1,$2,$3,'google_play',$4,$5,$6,$7,$8,$9)
+    ON DUPLICATE KEY UPDATE
+      plan=VALUES(plan),status=VALUES(status),provider='google_play',product_id=VALUES(product_id),
+      provider_ref=VALUES(provider_ref),purchase_token_hash=VALUES(purchase_token_hash),
+      current_period_end=VALUES(current_period_end),cancel_at_period_end=VALUES(cancel_at_period_end),
+      metadata=VALUES(metadata),updated_at=CURRENT_TIMESTAMP(3)`, [
     email, plan, normalized.status, productId, normalizeText(verified.payload.latestOrderId, 180), tokenHash,
-    verified.expiry?.toISOString() || null, normalized.cancelAtPeriodEnd,
+    verified.expiry?.toISOString().slice(0, 23).replace('T', ' ') || null, normalized.cancelAtPeriodEnd,
     JSON.stringify({ subscriptionState: verified.payload.subscriptionState, acknowledgementState: verified.payload.acknowledgementState }),
   ]);
   const current = await db.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=$1', [email]);
@@ -896,7 +891,7 @@ async function requirePlatformTable(context, res, tableName, feature) {
     ok: false,
     code: 'DATABASE_MIGRATION_REQUIRED',
     missingTable: tableName,
-    message: `${feature} aguarda a migration do banco PostgreSQL.`,
+    message: `${feature} aguarda a migration do banco configurado.`,
   });
   return false;
 }
@@ -912,6 +907,7 @@ async function handleDatabaseHealth(req, res) {
   return sendJson(res, 200, {
     ok: connected,
     configured: true,
+    provider: databaseDialect(),
     connected,
     coreReady: Boolean(report.coreReady),
     profileIdReady,
@@ -971,12 +967,13 @@ async function checkAuthThrottle(db, req, email) {
 
 async function recordAuthFailure(db, identifier) {
   if (!await platformTableReady(db, 'crewcheck_platform_auth_attempts')) return;
-  await db.query(`INSERT INTO crewcheck_platform_auth_attempts(identifier,failures,window_started,blocked_until)
+  await db.query(`
+    INSERT INTO crewcheck_platform_auth_attempts(identifier,failures,window_started,blocked_until)
     VALUES($1,1,NOW(),NULL)
-    ON CONFLICT(identifier) DO UPDATE SET
-      failures=CASE WHEN crewcheck_platform_auth_attempts.window_started<NOW()-INTERVAL '15 minutes' THEN 1 ELSE crewcheck_platform_auth_attempts.failures+1 END,
-      window_started=CASE WHEN crewcheck_platform_auth_attempts.window_started<NOW()-INTERVAL '15 minutes' THEN NOW() ELSE crewcheck_platform_auth_attempts.window_started END,
-      blocked_until=CASE WHEN (CASE WHEN crewcheck_platform_auth_attempts.window_started<NOW()-INTERVAL '15 minutes' THEN 1 ELSE crewcheck_platform_auth_attempts.failures+1 END)>=5 THEN NOW()+INTERVAL '15 minutes' ELSE NULL END,
+    ON DUPLICATE KEY UPDATE
+      failures=IF(window_started<DATE_SUB(NOW(), INTERVAL 15 MINUTE),1,failures+1),
+      window_started=IF(window_started<DATE_SUB(NOW(), INTERVAL 15 MINUTE),NOW(),window_started),
+      blocked_until=IF(IF(window_started<DATE_SUB(NOW(), INTERVAL 15 MINUTE),1,failures+1)>=5,DATE_ADD(NOW(), INTERVAL 15 MINUTE),NULL),
       updated_at=NOW()`, [identifier]);
 }
 
@@ -1132,7 +1129,8 @@ async function handleAsaasCheckout(req, res) {
   const paymentPage = await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.id)}/payments?limit=1`).catch(() => null);
   const firstPayment = paymentPage?.data?.[0] || null;
   await context.db.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
-    VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4::jsonb) ON CONFLICT(email) DO UPDATE SET plan=EXCLUDED.plan,status='pending',provider='asaas',product_id=EXCLUDED.product_id,provider_ref=EXCLUDED.provider_ref,metadata=EXCLUDED.metadata,updated_at=NOW()`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
+    VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)
+    ON DUPLICATE KEY UPDATE plan=VALUES(plan),status='pending',provider='asaas',product_id=VALUES(product_id),provider_ref=VALUES(provider_ref),metadata=VALUES(metadata),updated_at=NOW()`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
   return sendJson(res, 200, { ok: true, provider: 'asaas', plan, firstDueDate: firstDue, checkoutUrl: firstPayment?.invoiceUrl || firstPayment?.bankSlipUrl || subscription.invoiceUrl || subscription.paymentLink || null, message: 'Assinatura web criada. A primeira cobrança ocorrerá após o período informado.' });
 }
 
@@ -1176,9 +1174,9 @@ async function handleAsaasWebhook(req, res) {
   if (!eventId || !eventName) return sendJson(res, 400, { ok: false, message: 'Evento Asaas inválido.' });
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  const eventRow = await db.query(`INSERT INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash)
-    VALUES('asaas',$1,$2) ON CONFLICT(provider,event_id) DO NOTHING RETURNING event_id`, [eventId, sha256(JSON.stringify(body))]);
-  if (!eventRow.rows[0]) return sendJson(res, 200, { ok: true, duplicate: true });
+  const eventRow = await db.query(`INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash)
+    VALUES('asaas',$1,$2)`, [eventId, sha256(JSON.stringify(body))]);
+  if (!eventRow.rowCount) return sendJson(res, 200, { ok: true, duplicate: true });
   if (!subscriptionRef) return sendJson(res, 200, { ok: true, ignored: true });
   const current = await db.query("SELECT * FROM crewcheck_platform_subscriptions WHERE provider='asaas' AND provider_ref=$1 LIMIT 1", [subscriptionRef]);
   const subscription = current.rows[0];
@@ -1191,7 +1189,8 @@ async function handleAsaasWebhook(req, res) {
   const due = parseDateOnly(body.payment?.confirmedDate || body.payment?.clientPaymentDate || body.payment?.paymentDate || body.payment?.dueDate || body.dateCreated);
   const periodEnd = due ? new Date(`${due}T12:00:00.000Z`) : new Date();
   periodEnd.setUTCDate(periodEnd.getUTCDate() + (subscription.plan === 'premium_annual' ? 366 : 31));
-  await db.query('UPDATE crewcheck_platform_subscriptions SET status=$2,current_period_end=CASE WHEN $2=$3 THEN $4 ELSE current_period_end END,metadata=metadata||$5::jsonb,updated_at=NOW() WHERE email=$1', [subscription.email, status, 'active', periodEnd.toISOString(), JSON.stringify({ lastAsaasEvent: eventName, lastAsaasEventId: eventId })]);
+  const nextMetadata = { ...(subscription.metadata && typeof subscription.metadata === 'object' ? subscription.metadata : {}), lastAsaasEvent: eventName, lastAsaasEventId: eventId };
+  await db.query('UPDATE crewcheck_platform_subscriptions SET status=$2,current_period_end=CASE WHEN $2=$3 THEN $4 ELSE current_period_end END,metadata=$5,updated_at=NOW() WHERE email=$1', [subscription.email, status, 'active', periodEnd.toISOString().slice(0, 23).replace('T', ' '), JSON.stringify(nextMetadata)]);
   const profile = await db.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=$1', [subscription.email]);
   if (profile.rows[0]?.plan !== 'premium_unlimited') {
     await db.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW() WHERE email=$1', [subscription.email, status === 'active' ? subscription.plan : 'free']);
@@ -1222,7 +1221,7 @@ async function handleGoogleRtdn(req, res) {
   }
   if (!owner.rows[0]) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliável.' });
   await saveGoogleSubscription(db, owner.rows[0].email, purchaseToken, verified);
-  await db.query("INSERT INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2) ON CONFLICT DO NOTHING", [eventId, sha256(JSON.stringify(notification))]);
+  await db.query("INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2)", [eventId, sha256(JSON.stringify(notification))]);
   return sendJson(res, 200, { ok: true });
 }
 
@@ -1266,12 +1265,68 @@ function rosterSummary(row) {
     activeAt: row.active ? row.updated_at : null,
     deletedAt: null,
     importStatus: 'ready',
-    storageProvider: 'postgres',
+    storageProvider: 'database',
     sourceStoragePath: null,
     sourceFileSizeBytes: null,
     storageUploadedAt: null,
     storageReady: true,
   };
+}
+
+async function saveRosterMysql(context, { id, key, roster, compliance, gym, sourceName, fingerprint, stays }) {
+  const client = await context.db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);
+    await client.query(`
+      INSERT INTO crewcheck_platform_rosters(id,owner_email,roster_key,roster,compliance,gym,source_name,fingerprint,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
+      ON DUPLICATE KEY UPDATE
+        roster=VALUES(roster),compliance=VALUES(compliance),gym=VALUES(gym),
+        source_name=VALUES(source_name),fingerprint=VALUES(fingerprint),active=TRUE,updated_at=CURRENT_TIMESTAMP(3)`,
+    [id, context.identity.email, key, JSON.stringify(roster), JSON.stringify(compliance), JSON.stringify(gym), sourceName, fingerprint]);
+
+    const existing = await client.query(
+      'SELECT id,stay_date,hotel_key FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2',
+      [context.identity.email, key],
+    );
+    const expected = new Set(stays.map((stay) => `${stay.stayDate}|${stay.hotelKey}`));
+    for (const row of existing.rows) {
+      const stayDate = parseDateOnly(row.stay_date);
+      if (!expected.has(`${stayDate}|${row.hotel_key}`)) {
+        await client.query('DELETE FROM crewcheck_platform_stays WHERE id=$1 AND owner_email=$2', [row.id, context.identity.email]);
+      }
+    }
+    for (const stay of stays) {
+      const rule = await client.query(
+        'SELECT lead_minutes FROM crewcheck_platform_hotel_rules WHERE owner_email=$1 AND hotel_key=$2',
+        [context.identity.email, stay.hotelKey],
+      );
+      await client.query(`
+        INSERT INTO crewcheck_platform_stays(id,owner_email,roster_key,stay_date,hotel_key,hotel_name,airport,presentation_time,lead_minutes)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        ON DUPLICATE KEY UPDATE
+          roster_key=VALUES(roster_key),hotel_name=VALUES(hotel_name),airport=VALUES(airport),
+          presentation_time=COALESCE(VALUES(presentation_time),presentation_time),
+          lead_minutes=COALESCE(lead_minutes,VALUES(lead_minutes)),updated_at=CURRENT_TIMESTAMP(3)`,
+      [crypto.randomUUID(), context.identity.email, key, stay.stayDate, stay.hotelKey, stay.hotelName, stay.airport, stay.presentationTime, rule.rows[0]?.lead_minutes || null]);
+    }
+    const saved = await client.query(
+      'SELECT id,roster_key,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1',
+      [context.identity.email, key],
+    );
+    const full = await client.query(
+      'SELECT * FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1',
+      [context.identity.email, key],
+    );
+    await client.query('COMMIT');
+    return { saved: saved.rows[0], full: full.rows[0] };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function handleRosterSync(req, res) {
@@ -1306,37 +1361,16 @@ async function handleRosterSync(req, res) {
       presentationTime: normalizeText(day.hotelPresentation || day.presentation || day.dutyReport, 10),
     });
   }
-  const rosterStays = [...rosterStaysByKey.values()];
-  const client = await context.db.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);
-    const result = await client.query(`
-      INSERT INTO crewcheck_platform_rosters(id,owner_email,roster_key,roster,compliance,gym,source_name,fingerprint,active)
-      VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8,TRUE)
-      ON CONFLICT(owner_email,roster_key) DO UPDATE SET roster=EXCLUDED.roster,compliance=EXCLUDED.compliance,gym=EXCLUDED.gym,
-        source_name=EXCLUDED.source_name,fingerprint=EXCLUDED.fingerprint,active=TRUE,updated_at=NOW()
-      RETURNING id,roster_key,updated_at`, [id, context.identity.email, key, JSON.stringify(roster), JSON.stringify(compliance), JSON.stringify(gym), normalizeText(body.sourceName || body.sourceFileName, 180), rosterFingerprint(roster)]);
-    await client.query(`DELETE FROM crewcheck_platform_stays AS existing
-      WHERE existing.owner_email=$1 AND existing.roster_key=$2
-        AND NOT EXISTS (
-          SELECT 1 FROM jsonb_to_recordset($3::jsonb) AS expected(stay_date DATE, hotel_key TEXT)
-          WHERE expected.stay_date=existing.stay_date AND expected.hotel_key=existing.hotel_key
-        )`, [context.identity.email, key, JSON.stringify(rosterStays.map((stay) => ({ stay_date: stay.stayDate, hotel_key: stay.hotelKey })))]);
-    for (const stay of rosterStays) {
-      const rule = await client.query('SELECT lead_minutes FROM crewcheck_platform_hotel_rules WHERE owner_email=$1 AND hotel_key=$2', [context.identity.email, stay.hotelKey]);
-      await client.query(`INSERT INTO crewcheck_platform_stays(id,owner_email,roster_key,stay_date,hotel_key,hotel_name,airport,presentation_time,lead_minutes)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_email,stay_date,hotel_key) DO UPDATE SET roster_key=EXCLUDED.roster_key,hotel_name=EXCLUDED.hotel_name,airport=EXCLUDED.airport,presentation_time=COALESCE(EXCLUDED.presentation_time,crewcheck_platform_stays.presentation_time),lead_minutes=COALESCE(crewcheck_platform_stays.lead_minutes,EXCLUDED.lead_minutes),updated_at=NOW()`, [crypto.randomUUID(), context.identity.email, key, stay.stayDate, stay.hotelKey, stay.hotelName, stay.airport, stay.presentationTime, rule.rows[0]?.lead_minutes || null]);
-    }
-    const full = await client.query('SELECT * FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1', [context.identity.email, key]);
-    await client.query('COMMIT');
-    return sendJson(res, 200, { ok: true, saved: result.rows[0], roster: rosterSummary(full.rows[0]), databasePrimary: true, message: 'Escala ativa salva no banco principal.' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  const saved = await saveRosterMysql(context, {
+    id, key, roster, compliance, gym,
+    sourceName: normalizeText(body.sourceName || body.sourceFileName, 180),
+    fingerprint: rosterFingerprint(roster),
+    stays: [...rosterStaysByKey.values()],
+  });
+  return sendJson(res, 200, {
+    ok: true, saved: saved.saved, roster: rosterSummary(saved.full),
+    databasePrimary: true, message: 'Escala ativa salva no banco principal.',
+  });
 }
 
 async function handleRosterActive(req, res) {
@@ -1360,18 +1394,35 @@ async function handleStays(req, res) {
     const lead = Number(body.leadMinutes);
     const leadMinutes = Number.isFinite(lead) && lead >= 0 && lead <= 720 ? Math.round(lead) : null;
     if (body.learnRule && hKey && leadMinutes !== null) {
-      await context.db.query(`INSERT INTO crewcheck_platform_hotel_rules(owner_email,hotel_key,hotel_name,lead_minutes,sample_count)
-        VALUES($1,$2,$3,$4,1) ON CONFLICT(owner_email,hotel_key) DO UPDATE SET lead_minutes=ROUND((crewcheck_platform_hotel_rules.lead_minutes*crewcheck_platform_hotel_rules.sample_count+$4)::numeric/(crewcheck_platform_hotel_rules.sample_count+1)),sample_count=crewcheck_platform_hotel_rules.sample_count+1,hotel_name=EXCLUDED.hotel_name,updated_at=NOW()`, [context.identity.email, hKey, hotelName, leadMinutes]);
+      await context.db.query(`
+        INSERT INTO crewcheck_platform_hotel_rules(owner_email,hotel_key,hotel_name,lead_minutes,sample_count)
+        VALUES($1,$2,$3,$4,1)
+        ON DUPLICATE KEY UPDATE
+          lead_minutes=ROUND((lead_minutes*sample_count+VALUES(lead_minutes))/(sample_count+1)),
+          sample_count=sample_count+1,hotel_name=VALUES(hotel_name),updated_at=NOW()`,
+      [context.identity.email, hKey, hotelName, leadMinutes]);
     }
     if (id) {
-      await context.db.query(`UPDATE crewcheck_platform_stays SET hotel_name=COALESCE(NULLIF($3,''),hotel_name),hotel_key=COALESCE(NULLIF($4,''),hotel_key),room_cipher=CASE WHEN $5 THEN $6 ELSE room_cipher END,presentation_time=COALESCE(NULLIF($7,''),presentation_time),lead_minutes=COALESCE($8,lead_minutes),share_same_hotel=$9,share_with_visitors=$10,updated_at=NOW() WHERE id=$1 AND owner_email=$2`, [id, context.identity.email, hotelName, hKey, Object.hasOwn(body, 'room'), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
+      await context.db.query(`UPDATE crewcheck_platform_stays
+        SET hotel_name=COALESCE(NULLIF($3,''),hotel_name),hotel_key=COALESCE(NULLIF($4,''),hotel_key),
+          room_cipher=IF($5,$6,room_cipher),presentation_time=COALESCE(NULLIF($7,''),presentation_time),
+          lead_minutes=COALESCE($8,lead_minutes),share_same_hotel=$9,share_with_visitors=$10,updated_at=NOW()
+        WHERE id=$1 AND owner_email=$2`,
+      [id, context.identity.email, hotelName, hKey, Object.hasOwn(body, 'room'), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
     } else if (hotelName && stayDate) {
-      await context.db.query(`INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_key,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_same_hotel,share_with_visitors)
+      await context.db.query(`
+        INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_key,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_same_hotel,share_with_visitors)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-        ON CONFLICT(owner_email,stay_date,hotel_key) DO UPDATE SET hotel_name=EXCLUDED.hotel_name,airport=EXCLUDED.airport,room_cipher=EXCLUDED.room_cipher,presentation_time=EXCLUDED.presentation_time,lead_minutes=EXCLUDED.lead_minutes,share_same_hotel=EXCLUDED.share_same_hotel,share_with_visitors=EXCLUDED.share_with_visitors,updated_at=NOW()`, [crypto.randomUUID(), context.identity.email, stayDate, hKey, hotelName, normalizeText(body.airport, 8).toUpperCase(), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
+        ON DUPLICATE KEY UPDATE
+          hotel_name=VALUES(hotel_name),airport=VALUES(airport),room_cipher=VALUES(room_cipher),
+          presentation_time=VALUES(presentation_time),lead_minutes=VALUES(lead_minutes),
+          share_same_hotel=VALUES(share_same_hotel),share_with_visitors=VALUES(share_with_visitors),updated_at=NOW()`,
+      [crypto.randomUUID(), context.identity.email, stayDate, hKey, hotelName, normalizeText(body.airport, 8).toUpperCase(), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
     }
   }
-  const result = await context.db.query(`SELECT s.*,r.sample_count FROM crewcheck_platform_stays s LEFT JOIN crewcheck_platform_hotel_rules r ON r.owner_email=s.owner_email AND r.hotel_key=s.hotel_key WHERE s.owner_email=$1 ORDER BY s.stay_date DESC LIMIT 120`, [context.identity.email]);
+  const result = await context.db.query(`SELECT s.*,r.sample_count FROM crewcheck_platform_stays s
+    LEFT JOIN crewcheck_platform_hotel_rules r ON r.owner_email=s.owner_email AND r.hotel_key=s.hotel_key
+    WHERE s.owner_email=$1 ORDER BY s.stay_date DESC LIMIT 120`, [context.identity.email]);
   const stays = result.rows.map((row) => ({ id: row.id, rosterKey: row.roster_key, stayDate: row.stay_date, hotelKey: row.hotel_key, hotelName: row.hotel_name, airport: row.airport, room: decryptPrivate(row.room_cipher), presentationTime: row.presentation_time, leadMinutes: row.lead_minutes, learnedSamples: row.sample_count || 0, shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors }));
   return sendJson(res, 200, { ok: true, stays });
 }
@@ -1402,9 +1453,16 @@ async function handleVisitors(req, res) {
     const permissions = allowedPermissions(body.permissions);
     const displayName = normalizeText(body.displayName || email.split('@')[0], 120);
     const telegram = normalizeText(body.telegram, 80).replace(/^@/, '');
-    const result = await context.db.query(`INSERT INTO crewcheck_platform_visitors(id,owner_email,email,display_name,telegram,password_hash,invite_token_hash,telegram_token_hash,permissions,status,must_change_password)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,'invited',TRUE)
-      ON CONFLICT(owner_email,email) DO UPDATE SET display_name=EXCLUDED.display_name,telegram=EXCLUDED.telegram,telegram_chat_id=NULL,password_hash=EXCLUDED.password_hash,invite_token_hash=EXCLUDED.invite_token_hash,telegram_token_hash=EXCLUDED.telegram_token_hash,permissions=EXCLUDED.permissions,status='invited',must_change_password=TRUE,updated_at=NOW() RETURNING id`, [id, context.identity.email, email, displayName, telegram, passwordHash(password), sha256(token), sha256(telegramToken), JSON.stringify(permissions)]);
+    await context.db.query(`
+      INSERT INTO crewcheck_platform_visitors(id,owner_email,email,display_name,telegram,password_hash,invite_token_hash,telegram_token_hash,permissions,status,must_change_password)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'invited',TRUE)
+      ON DUPLICATE KEY UPDATE
+        id=VALUES(id),display_name=VALUES(display_name),telegram=VALUES(telegram),telegram_chat_id=NULL,
+        password_hash=VALUES(password_hash),invite_token_hash=VALUES(invite_token_hash),
+        telegram_token_hash=VALUES(telegram_token_hash),permissions=VALUES(permissions),
+        status='invited',must_change_password=TRUE,updated_at=NOW()`,
+    [id, context.identity.email, email, displayName, telegram, passwordHash(password), sha256(token), sha256(telegramToken), JSON.stringify(permissions)]);
+    const saved = await context.db.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 AND email=$2 LIMIT 1', [context.identity.email, email]);
     const link = `${publicBaseUrl(req)}/visitor?token=${encodeURIComponent(token)}`;
     const bot = env('TELEGRAM_BOT_USERNAME', env('CREWCHECK_TELEGRAM_BOT_USERNAME', 'crewchecknotify_bot')).replace(/^@/, '');
     const telegramLink = `https://t.me/${bot}?start=visitor_${telegramToken}`;
@@ -1418,7 +1476,7 @@ async function handleVisitors(req, res) {
       text: `Você recebeu acesso de visitante ao CrewCheck.\n\nLink: ${link}\nSenha temporária: ${password}\n\nNo primeiro acesso, defina uma nova senha. O titular controla e pode revogar todas as permissões.\nTelegram: ${telegramLink}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Convite CrewCheck</h1><p><b>${safeOwnerName}</b> convidou você para acompanhar informações selecionadas da escala.</p><p><a href="${safeLink}" style="display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold">Aceitar convite</a></p><p>Senha temporária: <b>${safePassword}</b></p><p>Você deverá criar outra senha no primeiro acesso.</p><p><a href="${safeTelegramLink}">Vincular Telegram</a></p></div>`,
     });
-    return sendJson(res, 200, { ok: true, id: result.rows[0].id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
+    return sendJson(res, 200, { ok: true, id: saved.rows[0]?.id || id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
   }
   const result = await context.db.query('SELECT id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at FROM crewcheck_platform_visitors WHERE owner_email=$1 ORDER BY created_at DESC', [context.identity.email]);
   return sendJson(res, 200, { ok: true, visitors: result.rows });
@@ -1437,11 +1495,16 @@ async function handleVisitorUpdate(req, res, id) {
   if (!context) return;
   if (!await requirePremium(context, res, 'Permissões do visitante')) return;
   const permissions = allowedPermissions(body.permissions);
-  const result = await context.db.query(`UPDATE crewcheck_platform_visitors
-    SET permissions=$3::jsonb,updated_at=NOW()
-    WHERE id=$1 AND owner_email=$2 AND status<>'revoked'
-    RETURNING id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at`, [normalizeText(id, 80), context.identity.email, JSON.stringify(permissions)]);
-  if (!result.rows[0]) return sendJson(res, 404, { ok: false, message: 'Visitante ativo ou convidado não localizado.' });
+  const visitorId = normalizeText(id, 80);
+  const updated = await context.db.query(`
+    UPDATE crewcheck_platform_visitors SET permissions=$3,updated_at=NOW()
+    WHERE id=$1 AND owner_email=$2 AND status<>'revoked'`,
+  [visitorId, context.identity.email, JSON.stringify(permissions)]);
+  if (!updated.rowCount) return sendJson(res, 404, { ok: false, message: 'Visitante ativo ou convidado não localizado.' });
+  const result = await context.db.query(
+    'SELECT id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 LIMIT 1',
+    [visitorId, context.identity.email],
+  );
   return sendJson(res, 200, { ok: true, visitor: result.rows[0], message: 'Permissões atualizadas imediatamente.' });
 }
 
@@ -1490,15 +1553,17 @@ async function handleVisitorLogin(req, res) {
   const result = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE email=$1 AND status='active' ORDER BY updated_at DESC LIMIT 20", [email]);
   const matches = result.rows.filter((candidate) => passwordMatches(password, candidate.password_hash));
   const requestedOwner = normalizeText(body.ownerPublicId, 20).toUpperCase();
+  const ownerEmails = [...new Set(matches.map((item) => item.owner_email).filter(Boolean))];
+  const ownerParams = ownerEmails.map((_email, index) => `$${index + 1}`).join(',');
   let visitor = matches[0];
   if (matches.length > 1 && requestedOwner) {
-    const owners = await db.query('SELECT email,public_id FROM crewcheck_platform_profiles WHERE email=ANY($1::text[])', [matches.map((item) => item.owner_email)]);
+    const owners = await db.query(`SELECT email,public_id FROM crewcheck_platform_profiles WHERE email IN (${ownerParams || 'NULL'})`, ownerEmails);
     const selectedEmail = owners.rows.find((owner) => owner.public_id === requestedOwner)?.email;
     visitor = matches.find((candidate) => candidate.owner_email === selectedEmail);
   }
   if (!visitor || (matches.length > 1 && !requestedOwner)) {
     if (matches.length > 1) {
-      const owners = await db.query('SELECT display_name,public_id FROM crewcheck_platform_profiles WHERE email=ANY($1::text[])', [matches.map((item) => item.owner_email)]);
+      const owners = await db.query(`SELECT display_name,public_id FROM crewcheck_platform_profiles WHERE email IN (${ownerParams || 'NULL'})`, ownerEmails);
       return sendJson(res, 409, { ok: false, code: 'OWNER_SELECTION_REQUIRED', owners: owners.rows.map((owner) => ({ displayName: owner.display_name, publicId: owner.public_id })), message: 'Escolha qual convite deseja acessar.' });
     }
     await recordAuthFailure(db, throttleId);
@@ -1547,7 +1612,7 @@ function emergencyLocation(body = {}) {
 }
 
 async function notifyOwnerEmergency(db, visitor, body = {}) {
-  const recent = await db.query("SELECT COUNT(*)::int count FROM crewcheck_platform_emergencies WHERE visitor_id=$1 AND created_at>NOW()-INTERVAL '10 minutes'", [visitor.id]);
+  const recent = await db.query("SELECT COUNT(*) count FROM crewcheck_platform_emergencies WHERE visitor_id=$1 AND created_at>DATE_SUB(NOW(), INTERVAL 10 MINUTE)", [visitor.id]);
   if (Number(recent.rows[0]?.count || 0) >= 3) throw Object.assign(new Error('Aguarde alguns minutos antes de enviar outro pedido de ajuda.'), { status: 429 });
   const message = normalizeText(body.message || 'Preciso de ajuda. Entre em contato comigo assim que possível.', 800);
   const locationUrl = emergencyLocation(body);
@@ -1572,7 +1637,7 @@ async function notifyOwnerEmergency(db, visitor, body = {}) {
     sendTelegramDirect(telegramChatId, alertText),
   ]);
   const channels = { email: mail.ok, telegram: telegram.ok };
-  await db.query('INSERT INTO crewcheck_platform_emergencies(id,visitor_id,owner_email,message,location_url,channels) VALUES($1,$2,$3,$4,$5,$6::jsonb)', [crypto.randomUUID(), visitor.id, visitor.owner_email, message, locationUrl || null, JSON.stringify(channels)]);
+  await db.query('INSERT INTO crewcheck_platform_emergencies(id,visitor_id,owner_email,message,location_url,channels) VALUES($1,$2,$3,$4,$5,$6)', [crypto.randomUUID(), visitor.id, visitor.owner_email, message, locationUrl || null, JSON.stringify(channels)]);
   return channels;
 }
 
@@ -1677,25 +1742,29 @@ async function handleShares(req, res) {
     const expiresHours = Math.min(24 * 30, Math.max(1, Number(body.expiresHours || 72)));
     const expiresAt = new Date(Date.now() + expiresHours * 3600000);
     const permissions = allowedPermissions(body.permissions || { roster: true, map: true });
-    await context.db.query('INSERT INTO crewcheck_platform_shares(id,owner_email,token_hash,kind,roster_key,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)', [id, context.identity.email, sha256(token), kind, normalizeText(body.rosterKey, 20) || null, JSON.stringify(permissions), expiresAt]);
+    await context.db.query(
+      'INSERT INTO crewcheck_platform_shares(id,owner_email,token_hash,kind,roster_key,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)',
+      [id, context.identity.email, sha256(token), kind, normalizeText(body.rosterKey, 20) || null, JSON.stringify(permissions), expiresAt],
+    );
     const url = `${publicBaseUrl(req)}/share/${token}`;
     return sendJson(res, 200, { ok: true, id, url, token, expiresAt, permissions, revocable: true, message: 'Link temporário criado. O QR deve conter somente este link revogável.' });
   }
   const result = await context.db.query('SELECT id,kind,roster_key,permissions,expires_at,revoked_at,created_at FROM crewcheck_platform_shares WHERE owner_email=$1 ORDER BY created_at DESC LIMIT 100', [context.identity.email]);
   return sendJson(res, 200, { ok: true, shares: result.rows });
 }
-
 async function handleSharePublic(req, res, token) {
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  if (!await platformTableReady(db, 'crewcheck_platform_shares')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'O compartilhamento aguarda a migration do banco PostgreSQL.' });
+  if (!await platformTableReady(db, 'crewcheck_platform_shares')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'O compartilhamento aguarda a migration do banco configurado.' });
   const shareResult = await db.query('SELECT * FROM crewcheck_platform_shares WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>NOW() LIMIT 1', [sha256(token)]);
   const share = shareResult.rows[0];
   if (!share) return sendJson(res, 404, { ok: false, message: 'Compartilhamento expirado ou revogado.' });
   const permissions = allowedPermissions(share.permissions);
   const owner = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [share.owner_email]);
   if (!owner.rows[0] || !(await subscriptionStatus(db, owner.rows[0])).premiumAccess) return sendJson(res, 410, { ok: false, code: 'SHARE_PAUSED', message: 'Este compartilhamento não está mais disponível.' });
-  const roster = await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND ($2::text IS NULL OR roster_key=$2) ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email, share.roster_key]);
+  const roster = share.roster_key
+    ? await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email, share.roster_key])
+    : await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email]);
   const payload = roster.rows[0]?.roster || null;
   const selectedRosterKey = roster.rows[0]?.roster_key || null;
   const staysResult = permissions.hotels && selectedRosterKey ? await db.query('SELECT stay_date,hotel_name,airport,room_cipher,presentation_time,lead_minutes FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2 AND share_with_visitors=TRUE ORDER BY stay_date LIMIT 90', [share.owner_email, selectedRosterKey]) : { rows: [] };
@@ -1727,9 +1796,12 @@ async function handleConnections(req, res) {
       ? await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [targetEmail])
       : await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [targetId]);
     if (!target.rows[0] || target.rows[0].email === context.identity.email) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck não localizado.' });
-    const id = crypto.randomUUID();
-    await context.db.query(`INSERT INTO crewcheck_platform_connections(id,requester_email,target_email,status,permissions) VALUES($1,$2,$3,'pending',$4::jsonb)
-      ON CONFLICT(requester_email,target_email) DO UPDATE SET status='pending',permissions=EXCLUDED.permissions,updated_at=NOW()`, [id, context.identity.email, target.rows[0].email, JSON.stringify({ compareRoster: true, chat: Boolean(body.chat !== false) })]);
+    await context.db.query(
+      `INSERT INTO crewcheck_platform_connections(id,requester_email,target_email,status,permissions)
+       VALUES($1,$2,$3,'pending',$4)
+       ON DUPLICATE KEY UPDATE status='pending',permissions=VALUES(permissions),updated_at=NOW()`,
+      [crypto.randomUUID(), context.identity.email, target.rows[0].email, JSON.stringify({ compareRoster: true, chat: Boolean(body.chat !== false) })],
+    );
   }
   if (req.method === 'PATCH') {
     const id = normalizeText(body.id, 80);
@@ -1739,7 +1811,6 @@ async function handleConnections(req, res) {
   const result = await context.db.query(`SELECT c.*,pr.display_name requester_name,pr.public_id requester_id,pt.display_name target_name,pt.public_id target_id FROM crewcheck_platform_connections c JOIN crewcheck_platform_profiles pr ON pr.email=c.requester_email JOIN crewcheck_platform_profiles pt ON pt.email=c.target_email WHERE c.requester_email=$1 OR c.target_email=$1 ORDER BY c.updated_at DESC`, [context.identity.email]);
   return sendJson(res, 200, { ok: true, connections: result.rows.map((row) => ({ id: row.id, direction: row.requester_email === context.identity.email ? 'outgoing' : 'incoming', status: row.status, person: row.requester_email === context.identity.email ? { displayName: row.target_name, publicId: row.target_id } : { displayName: row.requester_name, publicId: row.requester_id }, permissions: row.permissions })) });
 }
-
 async function handleCompare(req, res, url) {
   const context = await requireMain(req, res);
   if (!context) return;
@@ -1750,13 +1821,13 @@ async function handleCompare(req, res, url) {
   if (!other) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck não localizado.' });
   const connection = await context.db.query("SELECT 1 FROM crewcheck_platform_connections WHERE status='accepted' AND ((requester_email=$1 AND target_email=$2) OR (requester_email=$2 AND target_email=$1)) LIMIT 1", [context.identity.email, other.email]);
   if (!connection.rows[0]) return sendJson(res, 403, { ok: false, message: 'A comparação precisa ser aceita pelos dois usuários.' });
-  const rosters = await context.db.query('SELECT owner_email,roster FROM crewcheck_platform_rosters WHERE active=TRUE AND owner_email=ANY($1::text[]) ORDER BY updated_at DESC', [[context.identity.email, other.email]]);
+  const rosters = await context.db.query('SELECT owner_email,roster FROM crewcheck_platform_rosters WHERE active=TRUE AND owner_email IN ($1,$2) ORDER BY updated_at DESC', [context.identity.email, other.email]);
   const mine = rosters.rows.find((row) => row.owner_email === context.identity.email)?.roster;
   const theirs = rosters.rows.find((row) => row.owner_email === other.email)?.roster;
   const dayMap = (roster) => new Map((roster?.days || []).map((day) => [parseDateOnly(day.date), day]));
   const a = dayMap(mine); const b = dayMap(theirs);
   const dates = [...new Set([...a.keys(), ...b.keys()])].filter(Boolean).sort();
-  const sharedStays = await context.db.query('SELECT owner_email,stay_date,hotel_key FROM crewcheck_platform_stays WHERE owner_email=ANY($1::text[]) AND share_same_hotel=TRUE', [[context.identity.email, other.email]]);
+  const sharedStays = await context.db.query('SELECT owner_email,stay_date,hotel_key FROM crewcheck_platform_stays WHERE owner_email IN ($1,$2) AND share_same_hotel=TRUE', [context.identity.email, other.email]);
   const sharedHotelMap = new Map(sharedStays.rows.map((stay) => [`${stay.owner_email}|${parseDateOnly(stay.stay_date)}`, stay.hotel_key]));
   const rows = dates.map((date) => {
     const x = a.get(date); const y = b.get(date);
@@ -1767,7 +1838,6 @@ async function handleCompare(req, res, url) {
   });
   return sendJson(res, 200, { ok: true, colleague: { displayName: other.display_name, publicId: other.public_id }, summary: { daysCompared: rows.length, bothFree: rows.filter((row) => row.bothFree).length, sameHotel: rows.filter((row) => row.sameHotel).length }, rows, privacy: 'A comparação exibe disponibilidade agregada, não números de voo, quarto ou dados pessoais.' });
 }
-
 async function handleChat(req, res, url) {
   const body = req.method === 'POST' ? await readBody(req, 100_000) : {};
   const context = await requireMain(req, res, body);
@@ -1781,12 +1851,16 @@ async function handleChat(req, res, url) {
   if (!connection.rows[0]?.permissions?.chat) return sendJson(res, 403, { ok: false, message: 'O chat precisa estar autorizado na conexão.' });
   const directKey = [context.identity.email, other.email].sort().join('|');
   const id = crypto.randomUUID();
-  const threadResult = await context.db.query(`INSERT INTO crewcheck_platform_chat_threads(id,direct_key) VALUES($1,$2) ON CONFLICT(direct_key) DO UPDATE SET direct_key=EXCLUDED.direct_key RETURNING id`, [id, directKey]);
+  await context.db.query(
+    'INSERT INTO crewcheck_platform_chat_threads(id,direct_key) VALUES($1,$2) ON DUPLICATE KEY UPDATE direct_key=VALUES(direct_key)',
+    [id, directKey],
+  );
+  const threadResult = await context.db.query('SELECT id FROM crewcheck_platform_chat_threads WHERE direct_key=$1 LIMIT 1', [directKey]);
   const threadId = threadResult.rows[0].id;
   if (req.method === 'POST') {
     const message = normalizeText(body.message, 2000);
     if (!message) return sendJson(res, 400, { ok: false, message: 'Digite uma mensagem.' });
-    const recent = await context.db.query("SELECT COUNT(*)::int count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>NOW()-INTERVAL '1 minute'", [threadId, context.identity.email]);
+    const recent = await context.db.query('SELECT COUNT(*) count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>DATE_SUB(NOW(), INTERVAL 1 MINUTE)', [threadId, context.identity.email]);
     if (Number(recent.rows[0]?.count || 0) >= 20) return sendJson(res, 429, { ok: false, message: 'Muitas mensagens em pouco tempo. Aguarde um minuto.' });
     await context.db.query('INSERT INTO crewcheck_platform_chat_messages(id,thread_id,sender_email,body) VALUES($1,$2,$3,$4)', [crypto.randomUUID(), threadId, context.identity.email, message]);
   }
@@ -1799,16 +1873,19 @@ function visitorChatKey(visitor) {
 }
 
 async function visitorChatThread(db, visitor) {
-  const id = crypto.randomUUID();
-  const result = await db.query(`INSERT INTO crewcheck_platform_chat_threads(id,direct_key) VALUES($1,$2)
-    ON CONFLICT(direct_key) DO UPDATE SET direct_key=EXCLUDED.direct_key RETURNING id`, [id, visitorChatKey(visitor)]);
+  const directKey = visitorChatKey(visitor);
+  await db.query(
+    'INSERT INTO crewcheck_platform_chat_threads(id,direct_key) VALUES($1,$2) ON DUPLICATE KEY UPDATE direct_key=VALUES(direct_key)',
+    [crypto.randomUUID(), directKey],
+  );
+  const result = await db.query('SELECT id FROM crewcheck_platform_chat_threads WHERE direct_key=$1 LIMIT 1', [directKey]);
   return result.rows[0].id;
 }
 
 async function appendChatMessage(db, threadId, sender, value) {
   const message = normalizeText(value, 2000);
   if (!message) throw Object.assign(new Error('Digite uma mensagem.'), { status: 400 });
-  const recent = await db.query("SELECT COUNT(*)::int count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>NOW()-INTERVAL '1 minute'", [threadId, sender]);
+  const recent = await db.query('SELECT COUNT(*) count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>DATE_SUB(NOW(), INTERVAL 1 MINUTE)', [threadId, sender]);
   if (Number(recent.rows[0]?.count || 0) >= 20) throw Object.assign(new Error('Muitas mensagens em pouco tempo. Aguarde um minuto.'), { status: 429 });
   await db.query('INSERT INTO crewcheck_platform_chat_messages(id,thread_id,sender_email,body) VALUES($1,$2,$3,$4)', [crypto.randomUUID(), threadId, sender, message]);
 }
@@ -1889,15 +1966,17 @@ async function handleParking(req, res) {
       notes: normalizeText(body.notes, 1000),
       accuracy: Number(body.accuracy || 0) || null,
     });
+    const id = crypto.randomUUID();
     const client = await context.db.connect();
     try {
       await client.query('BEGIN');
       await client.query('UPDATE crewcheck_platform_parking_positions SET active=FALSE,cleared_at=NOW() WHERE owner_email=$1 AND active=TRUE', [context.identity.email]);
-      const saved = await client.query(`INSERT INTO crewcheck_platform_parking_positions(id,owner_email,latitude,longitude,level_label,spot_label,notes,active,parked_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,TRUE,NOW()) RETURNING *`, [
-        crypto.randomUUID(), context.identity.email, latitude, longitude,
+      await client.query(`INSERT INTO crewcheck_platform_parking_positions(id,owner_email,latitude,longitude,level_label,spot_label,notes,active,parked_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,TRUE,NOW())`, [
+        id, context.identity.email, latitude, longitude,
         normalizeText(body.level, 80), normalizeText(body.spot, 80), details,
       ]);
+      const saved = await client.query('SELECT * FROM crewcheck_platform_parking_positions WHERE id=$1 LIMIT 1', [id]);
       await client.query('COMMIT');
       return sendJson(res, 200, { ok: true, position: parkingPositionPayload(saved.rows[0]) });
     } catch (error) {
@@ -1922,10 +2001,17 @@ async function handleGym(req, res, url) {
     const gKey = hotelKey(`${body.chainName || ''}-${gymName}-${body.location || ''}`);
     const minutes = Math.min(240, Math.max(15, Number(body.durationMinutes || 90)));
     await context.db.query('DELETE FROM crewcheck_platform_gym_checkins WHERE owner_email=$1 OR expires_at<NOW()', [context.identity.email]);
-    await context.db.query('INSERT INTO crewcheck_platform_gym_checkins(id,owner_email,gym_key,gym_name,chain_name,share_presence,expires_at) VALUES($1,$2,$3,$4,$5,$6,NOW()+($7||\' minutes\')::interval)', [crypto.randomUUID(), context.identity.email, gKey, gymName, normalizeText(body.chainName, 100), Boolean(body.sharePresence), String(minutes)]);
+    await context.db.query(
+      'INSERT INTO crewcheck_platform_gym_checkins(id,owner_email,gym_key,gym_name,chain_name,share_presence,expires_at) VALUES($1,$2,$3,$4,$5,$6,DATE_ADD(NOW(), INTERVAL $7 MINUTE))',
+      [crypto.randomUUID(), context.identity.email, gKey, gymName, normalizeText(body.chainName, 100), Boolean(body.sharePresence), minutes],
+    );
   }
+  const aggregate = `SELECT gym_key,gym_name,chain_name,SUM(CASE WHEN share_presence=TRUE THEN 1 ELSE 0 END) shared_count,COUNT(*) total_count,MAX(checked_in_at) last_report
+    FROM crewcheck_platform_gym_checkins WHERE expires_at>NOW()`;
   const queryKey = hotelKey(url.searchParams.get('gymKey'));
-  const result = queryKey ? await context.db.query(`SELECT gym_key,gym_name,chain_name,COUNT(*) FILTER(WHERE share_presence) shared_count,COUNT(*) total_count,MAX(checked_in_at) last_report FROM crewcheck_platform_gym_checkins WHERE gym_key=$1 AND expires_at>NOW() GROUP BY gym_key,gym_name,chain_name`, [queryKey]) : await context.db.query(`SELECT gym_key,gym_name,chain_name,COUNT(*) FILTER(WHERE share_presence) shared_count,COUNT(*) total_count,MAX(checked_in_at) last_report FROM crewcheck_platform_gym_checkins WHERE expires_at>NOW() GROUP BY gym_key,gym_name,chain_name ORDER BY shared_count DESC LIMIT 50`);
+  const result = queryKey
+    ? await context.db.query(`${aggregate} AND gym_key=$1 GROUP BY gym_key,gym_name,chain_name`, [queryKey])
+    : await context.db.query(`${aggregate} GROUP BY gym_key,gym_name,chain_name ORDER BY shared_count DESC LIMIT 50`);
   return sendJson(res, 200, { ok: true, gyms: result.rows.map((row) => ({ gymKey: row.gym_key, gymName: row.gym_name, chainName: row.chain_name, peopleSharing: Number(row.shared_count || 0), crowdLabel: Number(row.shared_count || 0) >= 8 ? 'Movimentada segundo usuários' : Number(row.shared_count || 0) >= 3 ? 'Movimento moderado segundo usuários' : Number(row.shared_count || 0) > 0 ? 'Poucos relatos agora' : 'Sem relatos recentes', lastReport: row.last_report })), disclaimer: 'Lotação é colaborativa e temporária; não representa dado oficial da academia ou do Wellhub.' });
 }
 
@@ -1971,7 +2057,7 @@ async function handleLegacyStats(req, res) {
   if (!context) return;
   const personalRows = await context.db.query('SELECT * FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY roster_key', [context.identity.email]);
   const periods = personalRows.rows.map(periodStats);
-  const population = await context.db.query('SELECT COUNT(DISTINCT owner_email)::int count FROM crewcheck_platform_rosters');
+  const population = await context.db.query('SELECT COUNT(DISTINCT owner_email) count FROM crewcheck_platform_rosters');
   const enoughForAggregate = Number(population.rows[0]?.count || 0) >= 5;
   const globalRows = enoughForAggregate ? await context.db.query('SELECT * FROM crewcheck_platform_rosters ORDER BY roster_key') : { rows: [] };
   const globalPeriods = globalRows.rows.map(periodStats);
@@ -1987,8 +2073,8 @@ async function handleLegacyDatabase(req, res, url) {
   if (url.pathname === '/api/db/status') {
     const context = await requireMain(req, res);
     if (!context) return;
-    const result = await context.db.query('SELECT current_database() database, current_user user_name, NOW() now');
-    return sendJson(res, 200, { ok: true, connected: true, databaseConfigured: true, ...result.rows[0], storage: { provider: 'postgres', mode: 'primary', configured: true, databasePrimary: true, premiumBackupPriority: true } });
+    const result = await context.db.query('SELECT DATABASE() database, CURRENT_USER() user_name, NOW() now');
+    return sendJson(res, 200, { ok: true, connected: true, databaseConfigured: true, ...result.rows[0], storage: { provider: 'aiven-mysql', mode: 'primary', configured: true, databasePrimary: true, premiumBackupPriority: true } });
   }
   if (url.pathname === '/api/stats') return handleLegacyStats(req, res);
   if (url.pathname === '/api/rosters' && req.method === 'POST') return handleRosterSync(req, res);
@@ -2015,8 +2101,13 @@ async function handleLegacyDatabase(req, res, url) {
   const openId = url.pathname === '/api/rosters/open' ? normalizeText(url.searchParams.get('id'), 100) : '';
   const id = byId?.[1] || openId;
   if (id && req.method === 'DELETE') {
-    const removed = await context.db.query('DELETE FROM crewcheck_platform_rosters WHERE id=$1 AND owner_email=$2 RETURNING active', [id, context.identity.email]);
-    if (removed.rows[0]?.active) await context.db.query('UPDATE crewcheck_platform_rosters SET active=TRUE,updated_at=NOW() WHERE id=(SELECT id FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY updated_at DESC LIMIT 1)', [context.identity.email]);
+    const current = await context.db.query('SELECT active FROM crewcheck_platform_rosters WHERE id=$1 AND owner_email=$2 LIMIT 1', [id, context.identity.email]);
+    const wasActive = Boolean(current.rows[0]?.active);
+    const removed = await context.db.query('DELETE FROM crewcheck_platform_rosters WHERE id=$1 AND owner_email=$2', [id, context.identity.email]);
+    if (wasActive) {
+      const next = await context.db.query('SELECT id FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY updated_at DESC LIMIT 1', [context.identity.email]);
+      if (next.rows[0]?.id) await context.db.query('UPDATE crewcheck_platform_rosters SET active=TRUE,updated_at=NOW() WHERE id=$1', [next.rows[0].id]);
+    }
     return sendJson(res, 200, { ok: Boolean(removed.rowCount), message: removed.rowCount ? 'Escala excluída.' : 'Escala não localizada.' });
   }
   if (id && req.method === 'GET') {
@@ -2064,13 +2155,20 @@ async function handleAccountDeletion(req, res) {
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`DELETE FROM crewcheck_platform_chat_messages WHERE sender_email=$1 OR thread_id IN (
-      SELECT t.id FROM crewcheck_platform_chat_threads t WHERE $1=ANY(string_to_array(t.direct_key,'|')) OR EXISTS (
-        SELECT 1 FROM crewcheck_platform_visitors v WHERE (v.owner_email=$1 OR v.email=$1) AND ('visitor:'||v.id)=ANY(string_to_array(t.direct_key,'|'))
-      ))`, [context.identity.email]);
-    await client.query(`DELETE FROM crewcheck_platform_chat_threads t WHERE $1=ANY(string_to_array(t.direct_key,'|')) OR EXISTS (
-      SELECT 1 FROM crewcheck_platform_visitors v WHERE (v.owner_email=$1 OR v.email=$1) AND ('visitor:'||v.id)=ANY(string_to_array(t.direct_key,'|'))
-    )`, [context.identity.email]);
+    const visitorRows = await client.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
+    const visitorKeys = new Set(visitorRows.rows.map((row) => `visitor:${row.id}`));
+    const threadRows = await client.query('SELECT id,direct_key FROM crewcheck_platform_chat_threads');
+    const threadIds = threadRows.rows
+      .filter((row) => String(row.direct_key || '').split('|').some((part) => part === context.identity.email || visitorKeys.has(part)))
+      .map((row) => row.id);
+    if (threadIds.length) {
+      const messageThreadParams = threadIds.map((_, index) => `$${index + 2}`).join(',');
+      await client.query(`DELETE FROM crewcheck_platform_chat_messages WHERE sender_email=$1 OR thread_id IN (${messageThreadParams})`, [context.identity.email, ...threadIds]);
+      const threadParams = threadIds.map((_, index) => `$${index + 1}`).join(',');
+      await client.query(`DELETE FROM crewcheck_platform_chat_threads WHERE id IN (${threadParams})`, threadIds);
+    } else {
+      await client.query('DELETE FROM crewcheck_platform_chat_messages WHERE sender_email=$1', [context.identity.email]);
+    }
     await client.query('DELETE FROM crewcheck_platform_connections WHERE requester_email=$1 OR target_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_emergencies WHERE owner_email=$1 OR visitor_id IN (SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1)', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
