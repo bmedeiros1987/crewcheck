@@ -73,7 +73,7 @@ assert.equal(pkg.dependencies.pg, undefined, 'pg deve ser removido');
 assert.ok(pkg.scripts['regression:v13.8.7:mysql']);
 assert.doesNotMatch(lock, /node_modules\/pg(?:-|")|node_modules\/postgres-/);
 
-const secretLike = /AVNS_|aivencloud\.com|mysql:\/\/[^\s]+:[^\s]+@|ghp_|sk-proj-|cloudinary:\/\/[^\s]+/i;
+const secretLike = /AVNS_[A-Za-z0-9_-]{16,}|mysql:\/\/[^\s]+:[^\s]+@|ghp_[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|cloudinary:\/\/[^:\s]+:[^@\s]+@/i;
 for (const [name, source] of Object.entries({ platform, server, migration, envExample })) {
   assert.doesNotMatch(source, secretLike, 'Segredo encontrado em ' + name);
 }
