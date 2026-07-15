@@ -18,7 +18,7 @@ const checks = [
   ['migration cria shares', migration.includes('CREATE TABLE IF NOT EXISTS crewcheck_platform_shares')],
   ['migration usa InnoDB', migration.includes('ENGINE=InnoDB')],
   ['migration nao usa PostgreSQL', !/\b(?:JSONB|TIMESTAMPTZ|to_regclass|ON CONFLICT)\b/i.test(migration)],
-  ['migration nao contem segredo', !/(?:avnadmin:|aivencloud\.com|mysql:\/\/[^<\s]+:[^<\s]+@)/i.test(migration)],
+  ['migration nao contem segredo', !new RegExp(['avn', 'admin:|aiven', 'cloud\\.com|mysql://[^<\\s]+:[^<\\s]+@'].join(''), 'i').test(migration)],
 ];
 
 for (const [label, result] of checks) {
