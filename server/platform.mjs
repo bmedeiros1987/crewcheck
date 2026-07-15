@@ -508,6 +508,37 @@ async function ensureProfile(db, identity, patch = {}) {
   throw Object.assign(new Error('Não foi possível gerar um ID público único.'), { code: 'PROFILE_ID_GENERATION_FAILED' });
 }
 
+function planCatalog() {
+  const monthly = Number(env('CREWCHECK_PREMIUM_MONTHLY_BRL', '19.90'));
+  const annual = Number(env('CREWCHECK_PREMIUM_ANNUAL_BRL', '179.90'));
+  return PLAN_CATALOG.map((plan) => ({
+    id: plan.id,
+    name: plan.name,
+    cycle: plan.cycle,
+    currency: 'BRL',
+    value: plan.priceEnv ? Number(env(plan.priceEnv, String(plan.defaultPrice))) : plan.defaultPrice,
+    callLimit: Math.max(0, Math.min(500, Math.round(Number(env(plan.callLimitEnv, String(plan.callLimit))) || plan.callLimit))),
+    features: [...plan.features],
+    googlePlayProductId: plan.id === 'premium_monthly' ? 'crewcheck_premium_monthly' : plan.id === 'premium_annual' ? 'crewcheck_premium_annual' : null,
+    webCheckout: ['premium_monthly', 'premium_annual'].includes(plan.id),
+    adminGrantOnly: plan.id === 'premium_unlimited',
+    trialDays: ['premium_monthly', 'premium_annual'].includes(plan.id) ? 7 : 0,
+    annualSavings: plan.id === 'premium_annual' && monthly > 0 && annual > 0 ? Math.max(0, Math.round((1 - annual / (monthly * 12)) * 100)) : 0,
+  }));
+}
+
+function currentMonthKey(timezone = DEFAULT_TIMEZONE) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: normalizeTimezone(timezone), year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  return `${year}-${month}`;
+}
+
+function planLimit(plan, kind) {
+  if (kind !== 'wakeup_call') return 0;
+  return planCatalog().find((item) => item.id === plan)?.callLimit ?? 1;
+}
+
 async function subscriptionStatus(db, profile) {
   const result = await db.query('SELECT * FROM crewcheck_platform_subscriptions WHERE email=$1 LIMIT 1', [profile.email]);
   const subscription = result.rows[0] || null;
