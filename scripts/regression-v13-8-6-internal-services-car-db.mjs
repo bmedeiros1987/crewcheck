@@ -13,7 +13,7 @@ const [home, css, platformClient, databaseClient, server, platform, pkg, learnin
 ]);
 
 const metadata = JSON.parse(pkg);
-assert.equal(metadata.version, '13.8.6');
+assert.match(metadata.version, /^13\.8\.(?:[6-9]|[1-9][0-9]+)$/);
 assert.equal(metadata.scripts['regression:v13.8.6:internal'], 'node scripts/regression-v13-8-6-internal-services-car-db.mjs');
 
 for (const category of ['gym', 'hospital', 'pharmacy', 'laundry']) {
