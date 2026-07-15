@@ -261,11 +261,34 @@ async function platformSchemaReport(db) {
     [tables]
   );
   const ready = new Set(result.rows.filter((row) => Boolean(row.relation)).map((row) => row.table_name));
-  const missingCore = PLATFORM_CORE_TABLES.filter((table) => !ready.has(table));
-  const missingOptional = PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table));
+  const requiredColumns = {
+    crewcheck_platform_profiles: ['email', 'public_id', 'display_name', 'locale', 'timezone', 'plan', 'share_presence'],
+    crewcheck_platform_shares: ['id', 'owner_email', 'token_hash', 'kind', 'permissions', 'expires_at', 'created_at'],
+  };
+  const columnResult = await db.query(
+    "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1::text[])",
+    [Object.keys(requiredColumns)]
+  );
+  const columns = new Set(columnResult.rows.map((row) => `${row.table_name}.${row.column_name}`));
+  const missingProfileColumns = requiredColumns.crewcheck_platform_profiles
+    .filter((column) => !columns.has(`crewcheck_platform_profiles.${column}`))
+    .map((column) => `crewcheck_platform_profiles.${column}`);
+  const missingShareColumns = requiredColumns.crewcheck_platform_shares
+    .filter((column) => !columns.has(`crewcheck_platform_shares.${column}`))
+    .map((column) => `crewcheck_platform_shares.${column}`);
+  const missingCore = [
+    ...PLATFORM_CORE_TABLES.filter((table) => !ready.has(table)),
+    ...missingProfileColumns,
+  ];
+  const missingOptional = [
+    ...PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table)),
+    ...missingShareColumns,
+  ];
   return {
     coreReady: missingCore.length === 0,
     optionalReady: missingOptional.length === 0,
+    profileIdReady: ready.has('crewcheck_platform_profiles') && missingProfileColumns.length === 0,
+    qrShareReady: ready.has('crewcheck_platform_shares') && missingShareColumns.length === 0,
     missingCore,
     missingOptional,
     available: [...ready],
@@ -282,6 +305,8 @@ async function platformSchemaReady(db) {
 
 async function platformTableReady(db, tableName) {
   if (![...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES].includes(tableName)) return false;
+  if (tableName === 'crewcheck_platform_profiles' && state.schemaReport && !state.schemaReport.profileIdReady) return false;
+  if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
   if (state.schemaReport?.available?.includes(tableName)) return true;
   const result = await db.query("SELECT to_regclass('public.' || $1) relation", [tableName]);
   const ready = Boolean(result.rows[0]?.relation);
@@ -882,8 +907,8 @@ async function handleDatabaseHealth(req, res) {
   const db = await pool();
   const report = state.schemaReport || { coreReady: false, optionalReady: false, missingCore: [], missingOptional: [] };
   const connected = Boolean(db && report.coreReady);
-  const profileIdReady = Boolean(connected && report.available?.includes('crewcheck_platform_profiles'));
-  const qrShareReady = Boolean(connected && report.available?.includes('crewcheck_platform_shares'));
+  const profileIdReady = Boolean(connected && report.profileIdReady);
+  const qrShareReady = Boolean(connected && report.qrShareReady);
   return sendJson(res, 200, {
     ok: connected,
     configured: true,
