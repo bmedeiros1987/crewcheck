@@ -22,6 +22,8 @@ assert(css.includes('.cz-menu-header') && css.includes('.cz-bottom-nav'), 'menu 
 assert(css.includes('prefers-reduced-motion'), 'animacoes respeitam acessibilidade');
 assert(css.includes('word-break: normal'), 'quebra vertical de nomes bloqueada');
 assert(home.includes("['admin', 'Admin'"), 'menu Admin restaurado');
+assert(home.includes("['bids','BIDS'") && home.includes('function BidsView'), 'BIDS restaurado com preferências reais');
+assert(home.includes("['regulation','Regulamentação'") && home.includes("view === 'regulation'"), 'menu exclusivo de regulamentação restaurado');
 assert(home.includes('cc-departure-mode-grid'), 'modos da Saida Inteligente restaurados');
 assert(home.includes('Amil dentro do CrewCheck'), 'consulta Amil interna implementada');
 assert(server.includes("'/api/platform/health/amil/search'"), 'proxy Amil protegido registrado');
