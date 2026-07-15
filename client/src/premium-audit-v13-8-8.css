@@ -503,6 +503,12 @@ h1, h2, h3, strong, p, small, span { min-width: 0; }
 .cc-stop-alert input { width: 18px; height: 18px; flex: 0 0 auto; }
 .cc-stop-alert span { display: grid; gap: 2px; }
 .cc-stop-alert small { color: var(--cc-text-muted); }
+.cc-bids-panel { display: grid; gap: 14px; }
+.cc-bids-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cc-bids-options label { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 13px; border: 1px solid var(--cc-border); border-radius: 7px; background: var(--cc-surface-raised); color: var(--cc-text); }
+.cc-bids-options input { width: 18px; height: 18px; flex: 0 0 auto; }
+.cc-bids-options span { display: grid; gap: 3px; }
+.cc-bids-options small { color: var(--cc-text-muted); }
 .cc-iflight-wizard > header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .cc-iflight-wizard > header > svg { width: 36px; height: 36px; color: var(--cc-success); }
 .cc-iflight-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -540,6 +546,7 @@ h1, h2, h3, strong, p, small, span { min-width: 0; }
   .cz-depart-hero > strong { font-size: 40px !important; }
   .cz-wakeup-card .cz-form-grid { grid-template-columns: 1fr !important; }
   .cc-iflight-steps { grid-template-columns: 1fr; }
+  .cc-bids-options { grid-template-columns: 1fr; }
   .cc-amil-results > header { align-items: flex-start; flex-direction: column; }
   .cc-amil-results article { grid-template-columns: minmax(0, 1fr) auto; }
   .cc-amil-results article a { grid-column: 1 / -1; justify-self: start; }
