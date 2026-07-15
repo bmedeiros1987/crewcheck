@@ -1460,21 +1460,38 @@ const conciergeKeyboard = {
 };
 
 async function conciergeDbPool() {
-  const connectionString = envAny(['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL']);
-  if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) return null;
+  const connectionString = envAny(['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'MYSQL_URL']);
+  if (!/^mysql:\/\//i.test(connectionString)) return null;
   if (!conciergeDbPoolPromise) {
     conciergeDbPoolPromise = (async () => {
       try {
-        const pg = await import('pg');
-        const Pool = pg.Pool || pg.default?.Pool;
-        if (!Pool) return null;
-        const sslDisabled = /localhost|127\.0\.0\.1/.test(connectionString) || String(process.env.PGSSLMODE || '').toLowerCase() === 'disable';
-        const pool = new Pool({ connectionString, max: 3, connectionTimeoutMillis: 3500, idleTimeoutMillis: 20_000, ssl: sslDisabled ? false : { rejectUnauthorized: false } });
+        const mysql = await import('mysql2/promise');
+        const createPool = mysql.createPool || mysql.default?.createPool;
+        if (!createPool) return null;
+        const parsed = new URL(connectionString);
+        const pool = createPool({
+          host: parsed.hostname,
+          port: Number(parsed.port || 3306),
+          user: decodeURIComponent(parsed.username),
+          password: decodeURIComponent(parsed.password),
+          database: parsed.pathname.replace(/^\//, '') || 'defaultdb',
+          connectionLimit: 3,
+          connectTimeout: 3500,
+          waitForConnections: true,
+          ssl: { rejectUnauthorized: false },
+        });
         await pool.query('SELECT 1');
-        const schema = await pool.query("SELECT to_regclass('public.crewcheck_telegram_state') relation");
-        if (!schema.rows[0]?.relation) {
-          if (String(process.env.CREWCHECK_DB_AUTO_MIGRATE || 'true').toLowerCase() === 'false') return null;
-          await pool.query('CREATE TABLE IF NOT EXISTS crewcheck_telegram_state (state_key TEXT PRIMARY KEY, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+        const [schema] = await pool.query(
+          'SELECT COUNT(*) count FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?',
+          ['crewcheck_telegram_state'],
+        );
+        if (!Number(schema?.[0]?.count || 0)) {
+          if (String(process.env.CREWCHECK_DB_AUTO_MIGRATE || 'false').toLowerCase() !== 'true') return null;
+          await pool.query(`CREATE TABLE IF NOT EXISTS crewcheck_telegram_state (
+            state_key VARCHAR(255) PRIMARY KEY,
+            payload JSON NOT NULL,
+            updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
         }
         return pool;
       } catch {
@@ -1488,7 +1505,10 @@ async function conciergeDbPut(key, payload) {
   try {
     const pool = await conciergeDbPool();
     if (!pool || !key) return false;
-    await pool.query('INSERT INTO crewcheck_telegram_state (state_key, payload, updated_at) VALUES ($1, $2::jsonb, NOW()) ON CONFLICT (state_key) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()', [String(key), JSON.stringify(payload || {})]);
+    await pool.query(
+      'INSERT INTO crewcheck_telegram_state (state_key, payload, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE payload=VALUES(payload), updated_at=NOW()',
+      [String(key), JSON.stringify(payload || {})],
+    );
     return true;
   } catch {
     return false;
@@ -1498,8 +1518,10 @@ async function conciergeDbGet(key) {
   try {
     const pool = await conciergeDbPool();
     if (!pool || !key) return null;
-    const result = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key = $1 LIMIT 1', [String(key)]);
-    return result.rows?.[0]?.payload || null;
+    const [rows] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [String(key)]);
+    const payload = rows?.[0]?.payload;
+    if (typeof payload !== 'string') return payload || null;
+    try { return JSON.parse(payload); } catch { return null; }
   } catch {
     return null;
   }
@@ -1508,7 +1530,7 @@ async function conciergeDbDelete(key) {
   try {
     const pool = await conciergeDbPool();
     if (!pool || !key) return false;
-    await pool.query('DELETE FROM crewcheck_telegram_state WHERE state_key = $1', [String(key)]);
+    await pool.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?', [String(key)]);
     return true;
   } catch {
     return false;
@@ -2704,7 +2726,7 @@ function reliabilityEnvItems() {
     reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('telegram-stt-elevenlabs','Áudio Telegram ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY']),
     reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER','TELEGRAM_BOT_TOKEN']),
-    reliabilityModule('database','Banco de dados',['DATABASE_URL','CREWCHECK_DATABASE_URL','POSTGRES_URL','POSTGRES_URL_NON_POOLING','SUPABASE_DB_URL']),
+    reliabilityModule('database','Banco Aiven MySQL',['DATABASE_URL','CREWCHECK_DATABASE_URL','MYSQL_URL']),
     reliabilityModuleAll('billing-web','Assinatura web Asaas',['ASAAS_API_KEY','ASAAS_WEBHOOK_TOKEN']),
     reliabilityModuleAll('billing-google-play','Assinatura Google Play',['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON','GOOGLE_PLAY_PACKAGE_NAME','GOOGLE_PLAY_RTDN_AUDIENCE','GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL']),
     reliabilityModule('privacy-key','Criptografia de quarto',['CREWCHECK_DATA_ENCRYPTION_KEY','CREWCHECK_AUTH_SECRET']),
