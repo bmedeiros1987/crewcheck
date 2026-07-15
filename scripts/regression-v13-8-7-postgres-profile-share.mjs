@@ -16,7 +16,8 @@ assert(platform.includes("public_id=COALESCE(NULLIF(BTRIM(crewcheck_platform_pro
 assert(platform.includes('for (let attempt = 0; attempt < 5; attempt += 1)'), 'geracao de ID repete em colisao');
 assert(platform.includes("code: 'PROFILE_ID_MISSING'"), 'perfil sem ID nao passa silenciosamente');
 assert(platform.includes("requirePlatformTable(context, res, 'crewcheck_platform_shares'"), 'QR verifica migration antes de gravar');
-assert(platform.includes('profileIdReady') && platform.includes('qrShareReady'), 'health informa prontidao de ID e QR');
+assert(platform.includes("information_schema.columns") && platform.includes('missingProfileColumns') && platform.includes('missingShareColumns'), 'health valida tabelas e colunas de ID e QR');
+assert(platform.includes('report.profileIdReady') && platform.includes('report.qrShareReady'), 'health informa prontidao real de ID e QR');
 assert(migration.includes('ALTER TABLE crewcheck_platform_profiles ADD COLUMN IF NOT EXISTS public_id TEXT'), 'migration repara coluna public_id');
 assert(migration.includes('CREATE UNIQUE INDEX IF NOT EXISTS crewcheck_platform_profiles_public_id_idx'), 'migration garante ID unico');
 assert(migration.includes('CREATE TABLE IF NOT EXISTS crewcheck_platform_shares'), 'migration cria compartilhamentos');
