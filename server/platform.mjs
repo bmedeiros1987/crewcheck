@@ -1138,10 +1138,19 @@ async function handleAdminTerms(req, res) {
   const title = normalizeText(body.title, 180);
   const bodyText = normalizeText(body.body, 120_000);
   if (title.length < 5 || bodyText.length < 300) return sendJson(res, 400, { ok: false, message: 'Informe título e texto completo com pelo menos 300 caracteres.' });
+  const contentHash = crypto.createHash('sha256').update(bodyText, 'utf8').digest('hex');
+  const published = await currentTerms(context.db);
+  if (published && String(published.content_hash || '') === contentHash) {
+    return sendJson(res, 200, {
+      ok: true,
+      unchanged: true,
+      terms: publicTerms(published),
+      message: 'O texto não mudou. A versão atual foi mantida e nenhum novo aceite será solicitado.',
+    });
+  }
   const latest = await context.db.query('SELECT COALESCE(MAX(version),0) version FROM crewcheck_platform_terms');
   const version = Number(latest.rows[0]?.version || 0) + 1;
   const id = `terms-${version}-${crypto.randomUUID().slice(0, 8)}`;
-  const contentHash = crypto.createHash('sha256').update(bodyText, 'utf8').digest('hex');
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
