@@ -216,11 +216,21 @@ function visitorIdentity(req) {
 }
 
 function databaseConnectionString() {
-  for (const name of ['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL']) {
+  for (const name of ['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'MYSQL_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL']) {
     const value = env(name);
-    if (/^postgres(?:ql)?:\/\//i.test(value)) return value;
+    if (/^(?:postgres(?:ql)?|mysql):\/\//i.test(value)) return value;
   }
   return '';
+}
+
+function databaseDialect(connectionString = databaseConnectionString()) {
+  if (/^mysql:\/\//i.test(connectionString)) return 'mysql';
+  if (/^postgres(?:ql)?:\/\//i.test(connectionString)) return 'postgres';
+  return '';
+}
+
+function isMysqlDatabase(db) {
+  return db?.dialect === 'mysql';
 }
 
 const PLATFORM_CORE_TABLES = [
@@ -254,21 +264,114 @@ const PLATFORM_OPTIONAL_TABLES = [
   'crewcheck_platform_schedule_comparisons',
 ];
 
+
+const MYSQL_JSON_COLUMNS = new Set(['metadata', 'roster', 'compliance', 'gym', 'permissions', 'payload', 'channels']);
+const MYSQL_BOOLEAN_COLUMNS = new Set([
+  'share_presence', 'cancel_at_period_end', 'active', 'share_same_hotel',
+  'share_with_visitors', 'must_change_password',
+]);
+
+function normalizeMysqlRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    const normalized = { ...row };
+    for (const [key, value] of Object.entries(normalized)) {
+      if (MYSQL_JSON_COLUMNS.has(key) && typeof value === 'string') {
+        try { normalized[key] = JSON.parse(value); } catch {}
+      }
+      if (MYSQL_BOOLEAN_COLUMNS.has(key)) normalized[key] = Boolean(value);
+    }
+    return normalized;
+  });
+}
+
+function mysqlStatement(sql, params = []) {
+  const values = [];
+  const statement = String(sql).replace(
+    /\$(\d+)(?:::(?:jsonb|text|date|timestamp(?:tz)?|int(?:eger)?|numeric))?/gi,
+    (_match, index) => {
+      const value = params[Number(index) - 1];
+      values.push(value && typeof value === 'object' && !(value instanceof Date) && !Buffer.isBuffer(value)
+        ? JSON.stringify(value)
+        : value);
+      return '?';
+    },
+  ).replace(/::(?:jsonb|text|date|timestamp(?:tz)?|int(?:eger)?|numeric)\b/gi, '');
+  return { statement, values };
+}
+
+function mysqlAdapter(native, release = null) {
+  const adapter = {
+    dialect: 'mysql',
+    async query(sql, params = []) {
+      const prepared = mysqlStatement(sql, params);
+      const [result] = await native.query(prepared.statement, prepared.values);
+      if (Array.isArray(result)) return { rows: normalizeMysqlRows(result), rowCount: result.length };
+      return { rows: [], rowCount: Number(result?.affectedRows || 0), insertId: result?.insertId || null };
+    },
+    async connect() {
+      if (typeof native.getConnection !== 'function') return adapter;
+      const connection = await native.getConnection();
+      return mysqlAdapter(connection, () => connection.release());
+    },
+    release() {
+      if (release) release();
+    },
+  };
+  return adapter;
+}
+
+function mysqlPoolOptions(connectionString) {
+  const parsed = new URL(connectionString);
+  const sslDisabled = /^(?:disable|disabled|false|off)$/i.test(env('MYSQL_SSL_MODE'));
+  const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || 3306),
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database: decodeURIComponent(parsed.pathname.replace(/^\//, '') || 'defaultdb'),
+    waitForConnections: true,
+    connectionLimit: 5,
+    connectTimeout: 5000,
+    dateStrings: true,
+    decimalNumbers: true,
+    ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
+  };
+}
+
 async function platformSchemaReport(db) {
   const tables = [...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES];
-  const result = await db.query(
-    "SELECT table_name, to_regclass('public.' || table_name) relation FROM unnest($1::text[]) AS table_name",
-    [tables]
-  );
-  const ready = new Set(result.rows.filter((row) => Boolean(row.relation)).map((row) => row.table_name));
   const requiredColumns = {
     crewcheck_platform_profiles: ['email', 'public_id', 'display_name', 'locale', 'timezone', 'plan', 'share_presence'],
     crewcheck_platform_shares: ['id', 'owner_email', 'token_hash', 'kind', 'permissions', 'expires_at', 'created_at'],
   };
-  const columnResult = await db.query(
-    "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1::text[])",
-    [Object.keys(requiredColumns)]
-  );
+  let result;
+  let columnResult;
+  if (isMysqlDatabase(db)) {
+    const tableParams = tables.map((_table, index) => `$${index + 1}`).join(',');
+    result = await db.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN (${tableParams})`,
+      tables,
+    );
+    const columnTables = Object.keys(requiredColumns);
+    const columnParams = columnTables.map((_table, index) => `$${index + 1}`).join(',');
+    columnResult = await db.query(
+      `SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN (${columnParams})`,
+      columnTables,
+    );
+  } else {
+    result = await db.query(
+      "SELECT table_name, to_regclass('public.' || table_name) relation FROM unnest($1::text[]) AS table_name",
+      [tables],
+    );
+    columnResult = await db.query(
+      "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1::text[])",
+      [Object.keys(requiredColumns)],
+    );
+  }
+  const ready = new Set(result.rows.filter((row) => isMysqlDatabase(db) || Boolean(row.relation)).map((row) => row.table_name));
   const columns = new Set(columnResult.rows.map((row) => `${row.table_name}.${row.column_name}`));
   const missingProfileColumns = requiredColumns.crewcheck_platform_profiles
     .filter((column) => !columns.has(`crewcheck_platform_profiles.${column}`))
@@ -308,16 +411,33 @@ async function platformTableReady(db, tableName) {
   if (tableName === 'crewcheck_platform_profiles' && state.schemaReport && !state.schemaReport.profileIdReady) return false;
   if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
   if (state.schemaReport?.available?.includes(tableName)) return true;
-  const result = await db.query("SELECT to_regclass('public.' || $1) relation", [tableName]);
+  const result = isMysqlDatabase(db)
+    ? await db.query('SELECT table_name relation FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=$1 LIMIT 1', [tableName])
+    : await db.query("SELECT to_regclass('public.' || $1) relation", [tableName]);
   const ready = Boolean(result.rows[0]?.relation);
   if (ready && state.schemaReport) state.schemaReport.available = [...new Set([...(state.schemaReport.available || []), tableName])];
   return ready;
 }
 async function pool() {
   const connectionString = databaseConnectionString();
-  if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) return null;
+  const dialect = databaseDialect(connectionString);
+  if (!dialect) return null;
   if (!state.poolPromise) {
     state.poolPromise = (async () => {
+      if (dialect === 'mysql') {
+        const mysqlModule = await import('mysql2/promise');
+        const mysql = mysqlModule.default || mysqlModule;
+        if (typeof mysql.createPool !== 'function') return null;
+        const native = mysql.createPool(mysqlPoolOptions(connectionString));
+        const db = mysqlAdapter(native);
+        await db.query('SELECT 1');
+        state.schemaReport = await platformSchemaReport(db);
+        if (!state.schemaReport.coreReady) {
+          throw Object.assign(new Error('A migration MySQL do CrewCheck ainda não foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+        }
+        state.databaseFailure = null;
+        return db;
+      }
       const pg = await import('pg');
       const Pool = pg.Pool || pg.default?.Pool;
       if (!Pool) return null;
@@ -492,7 +612,8 @@ function isPublicIdConflict(error) {
   const code = String(error?.code || '');
   const constraint = String(error?.constraint || '').toLowerCase();
   const detail = String(error?.detail || error?.message || '').toLowerCase();
-  return code === '23505' && (constraint.includes('public_id') || detail.includes('public_id'));
+  return (code === '23505' || code === 'ER_DUP_ENTRY' || Number(error?.errno) === 1062)
+    && (constraint.includes('public_id') || detail.includes('public_id'));
 }
 
 async function ensureProfile(db, identity, patch = {}) {
@@ -502,6 +623,35 @@ async function ensureProfile(db, identity, patch = {}) {
   const displayName = normalizeText(patch.displayName || identity.name || identity.email.split('@')[0], 120) || 'Tripulante';
   const locale = normalizeLocale(patch.locale || identity.locale || 'pt-BR');
   const timezone = normalizeTimezone(patch.timezone || identity.timezone || DEFAULT_TIMEZONE);
+
+  if (isMysqlDatabase(db)) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await db.query(`
+          INSERT INTO crewcheck_platform_profiles(email, public_id, display_name, locale, timezone, plan, share_presence)
+          VALUES($1,$2,$3,$4,$5,$6,$7)
+          ON DUPLICATE KEY UPDATE
+            public_id=IF(public_id IS NULL OR TRIM(public_id)='', VALUES(public_id), public_id),
+            display_name=IF($8, VALUES(display_name), display_name),
+            locale=IF($8, VALUES(locale), locale),
+            timezone=IF($8, VALUES(timezone), timezone),
+            share_presence=IF($8, VALUES(share_presence), share_presence),
+            plan=IF($9, 'premium_unlimited', IF($10, VALUES(plan), plan)),
+            updated_at=CURRENT_TIMESTAMP(3)`, [
+          identity.email, publicId(), displayName, locale, timezone, requestedPlan || defaultPlan,
+          Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin),
+        ]);
+        const result = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [identity.email]);
+        const profile = result.rows[0];
+        if (!profile?.public_id) throw Object.assign(new Error('O perfil não recebeu um ID público.'), { code: 'PROFILE_ID_MISSING' });
+        return profile;
+      } catch (error) {
+        if (attempt < 4 && isPublicIdConflict(error)) continue;
+        throw error;
+      }
+    }
+    throw Object.assign(new Error('Não foi possível gerar um ID público único.'), { code: 'PROFILE_ID_GENERATION_FAILED' });
+  }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -896,7 +1046,7 @@ async function requirePlatformTable(context, res, tableName, feature) {
     ok: false,
     code: 'DATABASE_MIGRATION_REQUIRED',
     missingTable: tableName,
-    message: `${feature} aguarda a migration do banco PostgreSQL.`,
+    message: `${feature} aguarda a migration do banco configurado.`,
   });
   return false;
 }
@@ -912,6 +1062,7 @@ async function handleDatabaseHealth(req, res) {
   return sendJson(res, 200, {
     ok: connected,
     configured: true,
+    provider: databaseDialect(),
     connected,
     coreReady: Boolean(report.coreReady),
     profileIdReady,
@@ -1266,12 +1417,68 @@ function rosterSummary(row) {
     activeAt: row.active ? row.updated_at : null,
     deletedAt: null,
     importStatus: 'ready',
-    storageProvider: 'postgres',
+    storageProvider: 'database',
     sourceStoragePath: null,
     sourceFileSizeBytes: null,
     storageUploadedAt: null,
     storageReady: true,
   };
+}
+
+async function saveRosterMysql(context, { id, key, roster, compliance, gym, sourceName, fingerprint, stays }) {
+  const client = await context.db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);
+    await client.query(`
+      INSERT INTO crewcheck_platform_rosters(id,owner_email,roster_key,roster,compliance,gym,source_name,fingerprint,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
+      ON DUPLICATE KEY UPDATE
+        roster=VALUES(roster),compliance=VALUES(compliance),gym=VALUES(gym),
+        source_name=VALUES(source_name),fingerprint=VALUES(fingerprint),active=TRUE,updated_at=CURRENT_TIMESTAMP(3)`,
+    [id, context.identity.email, key, JSON.stringify(roster), JSON.stringify(compliance), JSON.stringify(gym), sourceName, fingerprint]);
+
+    const existing = await client.query(
+      'SELECT id,stay_date,hotel_key FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2',
+      [context.identity.email, key],
+    );
+    const expected = new Set(stays.map((stay) => `${stay.stayDate}|${stay.hotelKey}`));
+    for (const row of existing.rows) {
+      const stayDate = parseDateOnly(row.stay_date);
+      if (!expected.has(`${stayDate}|${row.hotel_key}`)) {
+        await client.query('DELETE FROM crewcheck_platform_stays WHERE id=$1 AND owner_email=$2', [row.id, context.identity.email]);
+      }
+    }
+    for (const stay of stays) {
+      const rule = await client.query(
+        'SELECT lead_minutes FROM crewcheck_platform_hotel_rules WHERE owner_email=$1 AND hotel_key=$2',
+        [context.identity.email, stay.hotelKey],
+      );
+      await client.query(`
+        INSERT INTO crewcheck_platform_stays(id,owner_email,roster_key,stay_date,hotel_key,hotel_name,airport,presentation_time,lead_minutes)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        ON DUPLICATE KEY UPDATE
+          roster_key=VALUES(roster_key),hotel_name=VALUES(hotel_name),airport=VALUES(airport),
+          presentation_time=COALESCE(VALUES(presentation_time),presentation_time),
+          lead_minutes=COALESCE(lead_minutes,VALUES(lead_minutes)),updated_at=CURRENT_TIMESTAMP(3)`,
+      [crypto.randomUUID(), context.identity.email, key, stay.stayDate, stay.hotelKey, stay.hotelName, stay.airport, stay.presentationTime, rule.rows[0]?.lead_minutes || null]);
+    }
+    const saved = await client.query(
+      'SELECT id,roster_key,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1',
+      [context.identity.email, key],
+    );
+    const full = await client.query(
+      'SELECT * FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1',
+      [context.identity.email, key],
+    );
+    await client.query('COMMIT');
+    return { saved: saved.rows[0], full: full.rows[0] };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function handleRosterSync(req, res) {
@@ -1307,6 +1514,18 @@ async function handleRosterSync(req, res) {
     });
   }
   const rosterStays = [...rosterStaysByKey.values()];
+  if (isMysqlDatabase(context.db)) {
+    const saved = await saveRosterMysql(context, {
+      id, key, roster, compliance, gym,
+      sourceName: normalizeText(body.sourceName || body.sourceFileName, 180),
+      fingerprint: rosterFingerprint(roster),
+      stays: rosterStays,
+    });
+    return sendJson(res, 200, {
+      ok: true, saved: saved.saved, roster: rosterSummary(saved.full),
+      databasePrimary: true, message: 'Escala ativa salva no banco principal.',
+    });
+  }
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
@@ -1677,7 +1896,10 @@ async function handleShares(req, res) {
     const expiresHours = Math.min(24 * 30, Math.max(1, Number(body.expiresHours || 72)));
     const expiresAt = new Date(Date.now() + expiresHours * 3600000);
     const permissions = allowedPermissions(body.permissions || { roster: true, map: true });
-    await context.db.query('INSERT INTO crewcheck_platform_shares(id,owner_email,token_hash,kind,roster_key,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)', [id, context.identity.email, sha256(token), kind, normalizeText(body.rosterKey, 20) || null, JSON.stringify(permissions), expiresAt]);
+    const insertShareSql = isMysqlDatabase(context.db)
+      ? 'INSERT INTO crewcheck_platform_shares(id,owner_email,token_hash,kind,roster_key,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)'
+      : 'INSERT INTO crewcheck_platform_shares(id,owner_email,token_hash,kind,roster_key,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)';
+    await context.db.query(insertShareSql, [id, context.identity.email, sha256(token), kind, normalizeText(body.rosterKey, 20) || null, JSON.stringify(permissions), expiresAt]);
     const url = `${publicBaseUrl(req)}/share/${token}`;
     return sendJson(res, 200, { ok: true, id, url, token, expiresAt, permissions, revocable: true, message: 'Link temporário criado. O QR deve conter somente este link revogável.' });
   }
@@ -1688,14 +1910,16 @@ async function handleShares(req, res) {
 async function handleSharePublic(req, res, token) {
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  if (!await platformTableReady(db, 'crewcheck_platform_shares')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'O compartilhamento aguarda a migration do banco PostgreSQL.' });
+  if (!await platformTableReady(db, 'crewcheck_platform_shares')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'O compartilhamento aguarda a migration do banco configurado.' });
   const shareResult = await db.query('SELECT * FROM crewcheck_platform_shares WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>NOW() LIMIT 1', [sha256(token)]);
   const share = shareResult.rows[0];
   if (!share) return sendJson(res, 404, { ok: false, message: 'Compartilhamento expirado ou revogado.' });
   const permissions = allowedPermissions(share.permissions);
   const owner = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [share.owner_email]);
   if (!owner.rows[0] || !(await subscriptionStatus(db, owner.rows[0])).premiumAccess) return sendJson(res, 410, { ok: false, code: 'SHARE_PAUSED', message: 'Este compartilhamento não está mais disponível.' });
-  const roster = await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND ($2::text IS NULL OR roster_key=$2) ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email, share.roster_key]);
+  const roster = share.roster_key
+    ? await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email, share.roster_key])
+    : await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email]);
   const payload = roster.rows[0]?.roster || null;
   const selectedRosterKey = roster.rows[0]?.roster_key || null;
   const staysResult = permissions.hotels && selectedRosterKey ? await db.query('SELECT stay_date,hotel_name,airport,room_cipher,presentation_time,lead_minutes FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2 AND share_with_visitors=TRUE ORDER BY stay_date LIMIT 90', [share.owner_email, selectedRosterKey]) : { rows: [] };
