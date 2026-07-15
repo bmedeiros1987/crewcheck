@@ -14,7 +14,7 @@ const forbiddenProvider = /POSTGRES_URL|PGSSLMODE|SUPABASE_DB_URL|await\s+import
 
 assert.match(platform, /mysql2\/promise/);
 assert.match(platform, /function mysqlStatement/);
-assert.match(platform, /table_schema=DATABASE\(\)/);
+assert.match(platform, /table_schema=DATABASE\(\)/i);
 assert.match(platform, /ON DUPLICATE KEY UPDATE/);
 assert.match(platform, /INSERT IGNORE/);
 assert.doesNotMatch(platform, forbiddenSql);
