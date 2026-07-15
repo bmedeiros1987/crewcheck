@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-const APP_VERSION = '13.8.6';
+const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const SUPPORTED_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES']);
 const PLAN_IDS = new Set(['free', 'premium_monthly', 'premium_annual', 'premium_unlimited']);
@@ -256,6 +256,8 @@ const PLATFORM_OPTIONAL_TABLES = [
   'crewcheck_platform_flight_follows',
   'crewcheck_platform_swap_analyses',
   'crewcheck_platform_schedule_comparisons',
+  'crewcheck_platform_terms',
+  'crewcheck_platform_terms_acceptances',
 ];
 
 
@@ -1016,6 +1018,12 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/gyms\/checkins$/, ['GET', 'POST']],
   [/^\/api\/platform\/parking$/, ['GET', 'POST', 'DELETE']],
   [/^\/api\/platform\/account\/delete$/, ['POST']],
+  [/^\/api\/platform\/terms\/current$/, ['GET']],
+  [/^\/api\/platform\/terms\/accept$/, ['POST']],
+  [/^\/api\/platform\/admin\/terms$/, ['GET', 'POST']],
+  [/^\/api\/platform\/admin\/unlimited$/, ['POST']],
+  [/^\/api\/platform\/health\/amil$/, ['GET']],
+  [/^\/api\/platform\/health\/amil\/search$/, ['GET']],
 ];
 
 function enforcePlatformMethod(req, res, pathname) {
@@ -1040,9 +1048,11 @@ function publicProfile(row) {
 }
 
 async function handleCatalog(req, res) {
+  const identity = mainIdentity(req);
+  const visiblePlans = planCatalog().filter((plan) => plan.id !== 'premium_unlimited' || identity.admin);
   return sendJson(res, 200, {
     ok: true, version: APP_VERSION, encoding: 'UTF-8', defaultLocale: 'pt-BR', supportedLocales: [...SUPPORTED_LOCALES],
-    defaultTimezone: DEFAULT_TIMEZONE, plans: planCatalog(),
+    defaultTimezone: DEFAULT_TIMEZONE, plans: visiblePlans,
     disclosures: {
       autoRenew: 'Assinaturas Mensal e Anual renovam automaticamente até o cancelamento.',
       trial: 'Quando disponível, o teste de 7 dias informa a data da primeira cobrança antes da confirmação.',
@@ -1050,6 +1060,174 @@ async function handleCatalog(req, res) {
       calls: 'Ligações usam provedores externos e têm franquia mensal. Telegram por texto e lembrete local continuam disponíveis ao atingir o limite.',
     },
   });
+}
+
+function requestAuditHash(req, value = '') {
+  const salt = env('CREWCHECK_AUDIT_HASH_SALT', env('CREWCHECK_TERMS_AUDIT_SALT', env('CREWCHECK_AUTH_SECRET', 'crewcheck-audit')));
+  return crypto.createHash('sha256').update(`${salt}:${String(value || '')}`).digest('hex');
+}
+
+async function currentTerms(db) {
+  if (!await platformTableReady(db, 'crewcheck_platform_terms')) return null;
+  const result = await db.query("SELECT id,version,title,body_text,content_hash,published_at,effective_at FROM crewcheck_platform_terms WHERE status='published' ORDER BY version DESC LIMIT 1");
+  return result.rows[0] || null;
+}
+
+function publicTerms(row, accepted = false) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    version: Number(row.version || 0),
+    title: row.title,
+    body: row.body_text,
+    contentHash: row.content_hash,
+    publishedAt: row.published_at,
+    effectiveAt: row.effective_at,
+    accepted: Boolean(accepted),
+  };
+}
+
+async function handleTermsCurrent(req, res) {
+  const db = await pool();
+  if (!db || !await platformTableReady(db, 'crewcheck_platform_terms')) {
+    return sendJson(res, 200, { ok: true, configured: false, terms: null, message: 'Termos aguardando migration MySQL.' });
+  }
+  const terms = await currentTerms(db);
+  if (!terms) return sendJson(res, 200, { ok: true, configured: false, terms: null, message: 'Nenhuma versão publicada.' });
+  const identity = mainIdentity(req);
+  let accepted = false;
+  if (identity.email && await platformTableReady(db, 'crewcheck_platform_terms_acceptances')) {
+    const result = await db.query('SELECT 1 accepted FROM crewcheck_platform_terms_acceptances WHERE email=$1 AND terms_id=$2 AND content_hash=$3 LIMIT 1', [identity.email, terms.id, terms.content_hash]);
+    accepted = Boolean(result.rows[0]?.accepted);
+  }
+  return sendJson(res, 200, { ok: true, configured: true, terms: publicTerms(terms, accepted) });
+}
+
+async function handleTermsAccept(req, res) {
+  const body = await readBody(req, 100_000);
+  const context = await requireMain(req, res, body);
+  if (!context) return;
+  if (!await requirePlatformTable(context, res, 'crewcheck_platform_terms', 'Aceite dos Termos')) return;
+  if (!await requirePlatformTable(context, res, 'crewcheck_platform_terms_acceptances', 'Aceite dos Termos')) return;
+  const terms = await currentTerms(context.db);
+  if (!terms) return sendJson(res, 409, { ok: false, message: 'Nenhuma versão dos Termos está publicada.' });
+  if (String(body.termsId || '') !== String(terms.id) || String(body.contentHash || '') !== String(terms.content_hash)) {
+    return sendJson(res, 409, { ok: false, code: 'TERMS_VERSION_CHANGED', message: 'Os Termos foram atualizados. Leia a versão vigente antes de aceitar.' });
+  }
+  const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  const userAgent = normalizeText(req.headers['user-agent'], 500);
+  await context.db.query(`INSERT INTO crewcheck_platform_terms_acceptances(email,terms_id,terms_version,content_hash,accepted_at,ip_hash,user_agent_hash)
+    VALUES($1,$2,$3,$4,NOW(),$5,$6)
+    ON DUPLICATE KEY UPDATE terms_version=VALUES(terms_version),content_hash=VALUES(content_hash),accepted_at=NOW(),ip_hash=VALUES(ip_hash),user_agent_hash=VALUES(user_agent_hash)`, [
+    context.identity.email, terms.id, Number(terms.version), terms.content_hash,
+    requestAuditHash(req, ip), requestAuditHash(req, userAgent),
+  ]);
+  return sendJson(res, 200, { ok: true, accepted: true, terms: publicTerms(terms, true), message: 'Aceite registrado.' });
+}
+
+async function handleAdminTerms(req, res) {
+  const body = req.method === 'POST' ? await readBody(req, 500_000) : {};
+  const context = await requireMain(req, res, body);
+  if (!context) return;
+  if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessário.' });
+  if (!await requirePlatformTable(context, res, 'crewcheck_platform_terms', 'Editor de Termos')) return;
+  if (req.method === 'GET') {
+    const result = await context.db.query('SELECT id,version,title,content_hash,status,published_at,effective_at,created_by FROM crewcheck_platform_terms ORDER BY version DESC LIMIT 20');
+    return sendJson(res, 200, { ok: true, terms: result.rows });
+  }
+  const title = normalizeText(body.title, 180);
+  const bodyText = normalizeText(body.body, 120_000);
+  if (title.length < 5 || bodyText.length < 300) return sendJson(res, 400, { ok: false, message: 'Informe título e texto completo com pelo menos 300 caracteres.' });
+  const contentHash = crypto.createHash('sha256').update(bodyText, 'utf8').digest('hex');
+  const published = await currentTerms(context.db);
+  if (published && String(published.content_hash || '') === contentHash) {
+    return sendJson(res, 200, {
+      ok: true,
+      unchanged: true,
+      terms: publicTerms(published),
+      message: 'O texto não mudou. A versão atual foi mantida e nenhum novo aceite será solicitado.',
+    });
+  }
+  const latest = await context.db.query('SELECT COALESCE(MAX(version),0) version FROM crewcheck_platform_terms');
+  const version = Number(latest.rows[0]?.version || 0) + 1;
+  const id = `terms-${version}-${crypto.randomUUID().slice(0, 8)}`;
+  const client = await context.db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("UPDATE crewcheck_platform_terms SET status='superseded' WHERE status='published'");
+    await client.query(`INSERT INTO crewcheck_platform_terms(id,version,title,body_text,content_hash,status,published_at,effective_at,created_by)
+      VALUES($1,$2,$3,$4,$5,'published',NOW(),NOW(),$6)`, [id, version, title, bodyText, contentHash, context.identity.email]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
+  return sendJson(res, 200, { ok: true, terms: publicTerms({ id, version, title, body_text: bodyText, content_hash: contentHash, published_at: new Date(), effective_at: new Date() }), message: 'Nova versão publicada. Usuários deverão aceitá-la uma vez.' });
+}
+
+async function handleAdminUnlimited(req, res) {
+  const body = await readBody(req, 100_000);
+  const context = await requireMain(req, res, body);
+  if (!context) return;
+  if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessário.' });
+  const email = safeEmail(body.email);
+  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  const targetIdentity = { email, name: normalizeText(body.name || email.split('@')[0], 120), role: 'user', plan: 'free', locale: 'pt-BR', timezone: DEFAULT_TIMEZONE, admin: false };
+  const profile = await ensureProfile(context.db, targetIdentity, { apply: true, displayName: targetIdentity.name });
+  await context.db.query("UPDATE crewcheck_platform_profiles SET plan='premium_unlimited',updated_at=NOW() WHERE email=$1", [email]);
+  return sendJson(res, 200, { ok: true, profile: { ...publicProfile(profile), plan: 'premium_unlimited' }, message: 'Premium Unlimited concedido. Obrigado por fazer parte do CrewCheck.' });
+}
+
+function amilConfiguration() {
+  const baseUrl = env('AMIL_API_BASE_URL', 'https://api-dev.servicos.grupoamil.com.br').replace(/\/+$/, '');
+  const searchPath = env('AMIL_API_SEARCH_PATH');
+  const token = env('AMIL_API_ACCESS_TOKEN');
+  const apiKey = env('AMIL_API_KEY');
+  const enabled = env('CREWCHECK_AMIL_ENABLED', 'false').toLowerCase() === 'true';
+  const safePath = /^\/[A-Za-z0-9_./-]+$/.test(searchPath) && !searchPath.includes('..') ? searchPath : '';
+  return { baseUrl, searchPath: safePath, token, apiKey, enabled, configured: enabled && baseUrl.startsWith('https://') && Boolean(safePath) && Boolean(token || apiKey) };
+}
+
+async function handleAmilHealth(req, res) {
+  const config = amilConfiguration();
+  return sendJson(res, 200, { ok: config.configured, configured: config.configured, provider: 'amil', environment: config.baseUrl.includes('api-dev.') ? 'development' : 'production', message: config.configured ? 'Rede Amil configurada no backend.' : 'Integração Amil aguarda credenciais oficiais e o caminho de busca contratado.' });
+}
+
+async function handleAmilSearch(req, res, url) {
+  const context = await requireMain(req, res);
+  if (!context) return;
+  const config = amilConfiguration();
+  if (!config.configured) return sendJson(res, 503, { ok: false, configured: false, code: 'AMIL_NOT_CONFIGURED', message: 'A consulta Amil aguarda credenciais oficiais no Render.' });
+  const params = new URLSearchParams();
+  for (const key of ['latitude', 'longitude', 'postalCode', 'city', 'state', 'serviceType', 'planCode']) {
+    const value = normalizeText(url.searchParams.get(key), 120);
+    if (value) params.set(key, value);
+  }
+  if (url.searchParams.get('open24Hours') === 'true') params.set('open24Hours', 'true');
+  const headers = { accept: 'application/json' };
+  if (config.token) headers.authorization = `Bearer ${config.token}`;
+  if (config.apiKey) headers['x-api-key'] = config.apiKey;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${config.baseUrl}${config.searchPath}?${params.toString()}`, { headers, signal: controller.signal });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return sendJson(res, 502, { ok: false, configured: true, message: 'A Amil não concluiu a consulta agora.' });
+    const candidates = Array.isArray(payload) ? payload : payload?.items || payload?.results || payload?.data || payload?.prestadores || [];
+    const providers = Array.isArray(candidates) ? candidates.slice(0, 30).map((item) => ({
+      id: normalizeText(item.id || item.codigo || item.providerId, 100),
+      name: normalizeText(item.name || item.nome || item.razaoSocial, 180),
+      serviceType: normalizeText(item.serviceType || item.tipoServico || item.especialidade, 120),
+      address: normalizeText(item.address || item.endereco || item.formattedAddress, 300),
+      city: normalizeText(item.city || item.cidade, 100),
+      state: normalizeText(item.state || item.uf, 20),
+      phone: normalizeText(item.phone || item.telefone, 60),
+      open24Hours: Boolean(item.open24Hours || item.atendimento24Horas),
+      latitude: Number(item.latitude || item.lat) || null,
+      longitude: Number(item.longitude || item.lng || item.lon) || null,
+    })).filter((item) => item.name) : [];
+    return sendJson(res, 200, { ok: true, configured: true, providers, count: providers.length, disclaimer: 'Confirme cobertura, elegibilidade e atendimento diretamente com a operadora antes do deslocamento.' });
+  } finally { clearTimeout(timer); }
 }
 
 async function handleProfile(req, res) {
@@ -2181,6 +2359,9 @@ async function handleAccountDeletion(req, res) {
     }
     await client.query('DELETE FROM crewcheck_platform_rosters WHERE owner_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_usage WHERE email=$1', [context.identity.email]);
+    if (await platformTableReady(client, 'crewcheck_platform_terms_acceptances')) {
+      await client.query('DELETE FROM crewcheck_platform_terms_acceptances WHERE email=$1', [context.identity.email]);
+    }
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2) OR state_key=$3', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`]);
@@ -2207,6 +2388,12 @@ export async function handlePlatformRoute(req, res, url) {
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
+    if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }
+    if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }
+    if (url.pathname === '/api/platform/admin/terms') { await handleAdminTerms(req, res); return true; }
+    if (url.pathname === '/api/platform/admin/unlimited') { await handleAdminUnlimited(req, res); return true; }
+    if (url.pathname === '/api/platform/health/amil') { await handleAmilHealth(req, res); return true; }
+    if (url.pathname === '/api/platform/health/amil/search') { await handleAmilSearch(req, res, url); return true; }
     if (url.pathname === '/api/platform/database/health') { await handleDatabaseHealth(req, res); return true; }
     if (url.pathname === '/api/platform/profile') { await handleProfile(req, res); return true; }
     if (url.pathname === '/api/platform/billing/status') { await handleBillingStatus(req, res); return true; }

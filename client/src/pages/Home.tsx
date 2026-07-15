@@ -70,10 +70,11 @@ import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
+import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
   id: string;
@@ -122,8 +123,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.8.6';
-const CREWCHECK_UI_CORE_NOTE = 'v13.8.6: serviços internos, Meu Carro e banco modular';
+const DEFAULT_VERSION = '13.8.8';
+const CREWCHECK_UI_CORE_NOTE = 'v13.8.8: auditoria visual, termos, admin e serviços assistidos';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -360,6 +361,7 @@ type RoutePreviewInfo = {
   trafficAware?: boolean;
   message?: string;
   polyline?: string;
+  distanceMeters?: number;
 };
 
 type NearbyPlace = {
@@ -375,6 +377,17 @@ type NearbyPlace = {
   phone?: string;
   website?: string;
   openingHours?: string[];
+};
+
+type AmilProvider = {
+  id?: string;
+  name: string;
+  serviceType?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  phone?: string;
+  open24Hours?: boolean;
 };
 
 type PlaceCategory = 'gym' | 'hospital' | 'pharmacy' | 'laundry';
@@ -407,6 +420,17 @@ async function fetchNearbyPlaces(location: string, category: PlaceCategory, quer
     return Array.isArray(payload?.places) ? payload!.places!.slice(0, 12) : [];
   } catch {
     return [];
+  }
+}
+async function fetchAmilProviders(location: string, coordinates: { lat: number; lon: number } | null, open24Hours = false): Promise<{ providers: AmilProvider[]; configured: boolean; message?: string }> {
+  try {
+    const params = new URLSearchParams({ serviceType: open24Hours ? 'pronto atendimento' : 'hospital clinica', open24Hours: String(open24Hours) });
+    if (coordinates) { params.set('latitude', String(coordinates.lat)); params.set('longitude', String(coordinates.lon)); }
+    else if (location) params.set('city', location);
+    const response = await authFetch<any>(`/api/platform/health/amil/search?${params.toString()}`, { cache: 'no-store' });
+    return { providers: Array.isArray(response.providers) ? response.providers : [], configured: true, message: response.disclaimer };
+  } catch (error) {
+    return { providers: [], configured: false, message: error instanceof Error ? error.message : 'Rede Amil aguardando configuração.' };
   }
 }
 function hotelSearchLocation(event: ZeroLeg): string {
@@ -1148,7 +1172,8 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: Z
   const [origin, setOrigin] = useState(() => eventRouteOrigin(event));
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const destination = eventRouteDestination(event);
-  const mapsMode = mode === 'transit' ? 'transit' : 'driving';
+  const mapsMode = mode.includes('transit') ? 'transit' : 'driving';
+  const routeModeLabel = mode === 'automatic' ? 'mais rápido' : mode.includes('transit') ? 'transporte público' : mode.includes('uber') ? 'Uber/99' : mode.includes('flight') ? 'carro + voo' : 'carro';
   const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, mapsMode);
   useEffect(() => {
     let alive = true;
@@ -1168,19 +1193,27 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: Z
   const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, mapsMode);
   const staticRouteUrl = buildGoogleStaticRouteMapUrl(origin, destination, route);
   const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';
+  const distanceKm = Number(route?.distanceMeters || 0) / 1000;
+  const uberReference = distanceKm > 0 ? `R$ ${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ ${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}` : '';
+  function openUber() {
+    const params = new URLSearchParams({ action: 'setPickup', pickup: 'my_location' });
+    params.set('dropoff[formatted_address]', destination);
+    window.open(`https://m.uber.com/ul/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+  }
   return <article className="cz-google-route-card">
-    <header><div><b>Rota inteligente</b><span>Prévia do mapa · {mode === 'transit' ? 'transporte público' : mode === 'motorcycle' ? 'moto' : mode === 'uber' ? 'Uber/táxi' : 'carro'} · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
+    <header><div><b>Rota inteligente</b><span>Prévia do mapa · {routeModeLabel} · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
     <div className="cz-route-kpis">
       <div><small>Origem</small><strong>{origin === 'Minha localização' ? 'Minha localização' : origin}</strong></div>
       <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
       <div><small>Distância</small><strong>{route?.distanceText || 'Abrir Maps'}</strong></div>
       <div><small>Trânsito/Maps</small><strong>{trafficText}</strong></div>
+      {mode.includes('uber') && <div><small>Uber/99 estimado</small><strong>{uberReference || 'Calcular rota'}</strong></div>}
     </div>
     <div className="cz-google-map-preview">
       {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
     </div>
     {route?.message && <p className="cz-mini-status">{route.message}</p>}
-    <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button><button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
+    <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{mode.includes('uber') && <button onClick={openUber}><Car/> Chamar Uber</button>}<button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
   </article>;
 }
 
@@ -1297,7 +1330,7 @@ function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community'].includes(view));
+    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
     return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
@@ -1546,46 +1579,30 @@ function UpdateCenterView() {
 
 function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; close: () => void; view: ZeroView; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const storedUser = getStoredUser();
+  const admin = isAdmin();
   const [profileName] = useState(() => storage.get('crewcheck_profile_display_name', String(storedUser?.name || storedUser?.email || 'Tripulante CrewCheck')));
-  const [profileAvatar, setProfileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
+  const [profileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
   const initials = profileName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'CC';
   function openProfile() { setView('settings'); close(); }
-  function handleProfileAvatar(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { toast.error('Escolha uma imagem para o perfil.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const data = String(reader.result || '');
-      if (!data) return;
-      storage.set('crewcheck_profile_avatar', data);
-      setProfileAvatar(data);
-      toast.success('Foto do perfil atualizada.');
-    };
-    reader.onerror = () => toast.error('Não consegui ler a foto.');
-    reader.readAsDataURL(file);
-  }
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
-    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
+    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['bids','BIDS','Preferências para a próxima escala',CalendarDays], ['alerts','Irregularidades','Alertas confirmados',AlertTriangle], ['regulation','Regulamentação','RBAC 117, ACT e limites',ShieldCheck], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Locais próximos','Academias, saúde e serviços',MapIcon], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
-    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings], ['maintenance','Manutenção','Prévia admin',Lock],
+    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings],
   ];
+  if (admin) nav.push(['maintenance','Manutenção','Prévia administrativa',Lock], ['admin', 'Admin', 'Termos, usuários e operação', ShieldCheck]);
   const jump = (v: ZeroView) => { setView(v); close(); };
   return <div className="cz-menu-overlay" role="dialog" aria-modal="true">
     <button className="cz-menu-backdrop" onClick={close} aria-label="Fechar menu" />
     <aside className="cz-menu-panel" data-crew-menu-panel="true" onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
       <header className="cz-menu-header">
         <div className="cz-menu-identity" aria-label="CrewCheck">
-          <span className="cz-logo" title="CrewCheck"><Plane size={24}/></span>
-          <button className="cz-menu-avatar cz-menu-avatar-profile" onClick={openProfile} type="button" aria-label="Abrir configurações do perfil">
-            {profileAvatar ? <img src={profileAvatar} alt="" /> : initials}
+          <span className="cz-menu-brandmark" title="CrewCheck"><Plane size={22}/></span>
+          <button className="cz-menu-profile" onClick={openProfile} type="button" aria-label="Abrir perfil">
+            <span className="cz-menu-avatar">{profileAvatar ? <img src={profileAvatar} alt="" /> : initials}</span>
+            <span><strong>{profileName}</strong><small>{admin ? 'Administrador · Premium Unlimited' : 'Abrir perfil'}</small></span>
           </button>
-          <label className="cz-menu-avatar-edit" title="Alterar foto do perfil" aria-label="Alterar foto do perfil">
-            <Upload size={18}/>
-            <input hidden type="file" accept="image/*" onChange={handleProfileAvatar}/>
-          </label>
         </div>
         <button className="cz-menu-close" onClick={close} aria-label="Fechar menu"><X/></button>
       </header>
@@ -2082,18 +2099,28 @@ function eventClockDate(event: ZeroLeg, clock: string): Date {
   return target;
 }
 function Departure({ event }: { event: ZeroLeg }) {
-  const [mode, setMode] = useState(() => storage.get('crewcheck_departure_mode', 'driving'));
+  const departureModes = [
+    { id: 'automatic', label: 'Automático', detail: 'Meio mais rápido', icon: Navigation },
+    { id: 'car-flight', label: 'Carro + voo', detail: 'Casa até o aeroporto', icon: Car },
+    { id: 'uber-flight', label: 'Uber/99 + voo', detail: 'Corrida até o aeroporto', icon: Car },
+    { id: 'transit-flight', label: 'Transporte + voo', detail: 'Etapas até o aeroporto', icon: MapIcon },
+    { id: 'driving', label: 'Carro', detail: 'Rota rodoviária', icon: Car },
+    { id: 'uber', label: 'Uber/99', detail: 'Estimativa e chamada', icon: Car },
+    { id: 'transit', label: 'Transporte público', detail: 'Itinerário detalhado', icon: MapIcon },
+  ];
+  const [mode, setMode] = useState(() => storage.get('crewcheck_departure_mode', 'automatic'));
   const [margin, setMargin] = useState(() => Number(storage.get('crewcheck_departure_margin', '25')) || 25);
+  const [stopAlerts, setStopAlerts] = useState(() => storage.get('crewcheck_transit_stop_alerts', '0') === '1');
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, mapa e trânsito.</p></article></>;
   const travelMinutes = routeDurationMinutes(route);
   const presentationDate = eventClockDate(event, event.presentation);
   const leaveDate = travelMinutes ? new Date(presentationDate.getTime() - (travelMinutes + margin) * 60000) : null;
   const leaveLabel = leaveDate ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(leaveDate) : 'Calcular';
-  const modeLabel = mode === 'transit' ? 'Transporte público' : mode === 'motorcycle' ? 'Moto' : mode === 'uber' ? 'Uber/táxi' : 'Carro';
+  const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';
   function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); }
   function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA PREVISTA</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>O horário em destaque é a saída prevista. A apresentação oficial de {event.presentation} é usada somente como limite operacional do cálculo.</p><div className="cz-tool-actions"><button className={mode === 'driving' ? 'active' : ''} onClick={() => chooseMode('driving')}><Car/> Carro</button><button className={mode === 'uber' ? 'active' : ''} onClick={() => chooseMode('uber')}><Car/> Uber/táxi</button><button className={mode === 'motorcycle' ? 'active' : ''} onClick={() => chooseMode('motorcycle')}><Car/> Moto</button><button className={mode === 'transit' ? 'active' : ''} onClick={() => chooseMode('transit')}><MapIcon/> Transporte público</button></div><div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute}/></section></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA PREVISTA</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute}/></section></>;
 }
 
 function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
@@ -2187,7 +2214,21 @@ function CarView({ event }: { event: ZeroLeg }) {
 }
 
 function IFlightPushView({ actions }: { actions: QuickActions }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Push iFlight assistido</h1><p>Importação assistida sem salvar usuário, senha, MFA, cookies ou sessão.</p></section><section className="cz-toolbox"><h2>Ambiente seguro</h2><p>Use apenas credenciais corporativas autorizadas no portal oficial. O CrewCheck processa somente o PDF ou calendário autorizado e limpa o estado temporário ao finalizar.</p><div className="cz-tool-actions"><button onClick={actions.upload}><Upload/> Importar PDF baixado</button><button onClick={() => window.open('https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage', '_blank', 'noopener,noreferrer')}><Globe2/> Abrir portal oficial</button><button onClick={() => toast.info('O acesso automático exige ponte corporativa segura. Por LGPD, login/MFA continuam manuais.') }><ShieldCheck/> Ver política segura</button></div></section><section className="cz-mini-status"><p><strong>Permitido:</strong> login manual, MFA manual e importação do PDF autorizado.</p><p><strong>Proibido:</strong> salvar senha, SMS, MFA, cookies, token ou sessão.</p></section></>;
+  const [step, setStep] = useState<'ready' | 'portal' | 'local-time' | 'download'>('ready');
+  function openPortal() {
+    setStep('portal');
+    window.open('https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage', 'crewcheck-iflight', 'noopener,noreferrer');
+  }
+  function importDownloaded() { setStep('download'); actions.upload(); }
+  const steps = [
+    ['portal', 'Login e MFA', 'Digite diretamente no portal corporativo.'],
+    ['local-time', 'Calendário em LT', 'Confirme Local Time antes de gerar o arquivo.'],
+    ['download', 'Importar arquivo', 'O parser canônico processa o PDF autorizado.'],
+  ] as const;
+  return <><Brand back/><section className="cz-panel-head"><h1>Importar do iFlight</h1><p>Fluxo assistido para Web e Android, sem armazenar usuário, senha, MFA, cookie ou sessão.</p></section>
+    <section className="cz-toolbox cc-iflight-wizard"><header><ShieldCheck/><div><small>SESSÃO CORPORATIVA EFÊMERA</small><h2>Importação protegida</h2></div></header><div className="cc-iflight-steps">{steps.map(([id, title, detail], index) => <article className={step === id || (step === 'ready' && index === 0) ? 'active' : ''} key={id}><span>{index + 1}</span><div><strong>{title}</strong><small>{detail}</small></div></article>)}</div><div className="cz-tool-actions"><button className="primary" onClick={openPortal}><Globe2/> Abrir ambiente corporativo</button><button onClick={() => setStep('local-time')}><Clock/> Confirmar calendário em LT</button><button onClick={importDownloaded}><Upload/> Selecionar PDF baixado</button></div></section>
+    <section className="cz-mini-status"><p><strong>Na Web:</strong> o portal abre em uma janela separada por proteção do navegador. Depois do download, volte ao CrewCheck e selecione o PDF.</p><p><strong>No Android:</strong> o mesmo fluxo pode usar WebView efêmera quando o wrapper corporativo estiver autorizado. O CrewCheck não lê os campos de login.</p></section>
+  </>;
 }
 
 
@@ -2301,7 +2342,7 @@ function DatabaseConnectionCard({ admin }: { admin: boolean }) {
   return <section className={'cz-toolbox cz-database-status ' + (connected ? 'connected' : 'offline')}>
     <header><span><Database/></span><div><h2>{connected ? degraded ? 'Banco conectado · modo resiliente' : 'Banco conectado' : 'Modo local protegido'}</h2><p>{status?.message || (connected ? 'Sincronização segura disponível para os módulos internos.' : 'Seus dados permanecem neste dispositivo e serão sincronizados quando a conexão voltar.')}</p></div></header>
     <div className="cz-routine-strip">
-      <span>{connected ? 'PostgreSQL ativo' : 'Histórico local ativo'}</span>
+      <span>{connected ? 'Aiven MySQL ativo' : 'Histórico local ativo'}</span>
       <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Fila de sincronização'}</span>
       {admin && <span>{connected ? status?.migrationRequired ? `${status?.missingOptionalCount || 0} módulo(s) aguardando migration` : String(status?.database || 'Banco principal') : 'Verifique conexão e migration'}</span>}
     </div>
@@ -2347,9 +2388,52 @@ function AdminFinancialCalibration() {
   </section>;
 }
 
+function AdminControlView() {
+  const [memberEmail, setMemberEmail] = useState('');
+  const [memberName, setMemberName] = useState('');
+  const [termsTitle, setTermsTitle] = useState('Termos de Uso e Privacidade CrewCheck');
+  const [termsBody, setTermsBody] = useState('');
+  const [busy, setBusy] = useState('');
+  useEffect(() => {
+    getCurrentTerms().then((terms) => {
+      if (!terms) return;
+      setTermsTitle(terms.title);
+      setTermsBody(terms.body);
+    }).catch(() => undefined);
+  }, []);
+  async function saveUnlimited() {
+    if (!memberEmail.trim()) return toast.info('Informe o e-mail do usuário.');
+    setBusy('unlimited');
+    try {
+      const payload = await grantUnlimited({ email: memberEmail.trim(), name: memberName.trim() });
+      toast.success(payload.message || 'Premium Unlimited concedido.');
+      setMemberEmail(''); setMemberName('');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui atualizar o plano.'); }
+    finally { setBusy(''); }
+  }
+  async function saveTerms() {
+    if (termsBody.trim().length < 300) return toast.info('O texto precisa ter pelo menos 300 caracteres.');
+    if (!confirm('Publicar uma nova versão? Todos os usuários precisarão aceitá-la uma vez.')) return;
+    setBusy('terms');
+    try {
+      const terms = await publishTerms({ title: termsTitle.trim(), body: termsBody.trim() });
+      toast.success(`Termos versão ${terms.version} publicados.`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui publicar os Termos.'); }
+    finally { setBusy(''); }
+  }
+  if (!isAdmin()) return <><Brand back/><article className="cz-empty-real"><Lock/><h2>Acesso restrito</h2><p>Este painel é exclusivo da administração.</p></article></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Admin CrewCheck</h1><p>Operação, termos e concessões protegidas. Sua conta possui Premium Unlimited como agradecimento por construir o CrewCheck.</p></section>
+    <section className="cz-toolbox cc-admin-honor"><ShieldCheck/><div><small>CONDECORAÇÃO CREWCHECK</small><h2>Fundador · Premium Unlimited</h2><p>Obrigado por transformar a rotina de tripulantes em um produto mais seguro, humano e útil.</p></div></section>
+    <section className="cz-toolbox"><h2>Conceder Premium Unlimited</h2><p>Este plano não aparece na vitrine pública. Somente a administração pode concedê-lo a uma conta cadastrada.</p><div className="cz-form-grid"><label><span>Nome</span><input value={memberName} onChange={(event) => setMemberName(event.target.value)} placeholder="Nome do usuário"/></label><label><span>E-mail</span><input type="email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="usuario@exemplo.com"/></label></div><div className="cz-tool-actions"><button className="primary" onClick={saveUnlimited} disabled={Boolean(busy)}><ShieldCheck/> {busy === 'unlimited' ? 'Atualizando...' : 'Conceder acesso'}</button></div></section>
+    <section className="cz-toolbox"><h2>Termos de Uso e Privacidade</h2><p>Edite com cuidado. Publicar cria uma nova versão e solicita novo aceite somente quando o conteúdo muda.</p><div className="cz-form-grid"><label><span>Título</span><input value={termsTitle} onChange={(event) => setTermsTitle(event.target.value)}/></label><label className="wide"><span>Texto completo</span><textarea className="cz-update-textarea" rows={16} value={termsBody} onChange={(event) => setTermsBody(event.target.value)}/></label></div><div className="cz-tool-actions"><button className="primary" onClick={saveTerms} disabled={Boolean(busy)}><FileText/> {busy === 'terms' ? 'Publicando...' : 'Publicar nova versão'}</button></div></section>
+    <AdminFinancialCalibration/>
+  </>;
+}
+
 function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; actions: QuickActions }) {
   const admin = isAdmin();
   const user = getStoredUser();
+  const [profileAvatar, setProfileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
   const [planLabel, setPlanLabel] = useState('Verificando assinatura…');
   useEffect(() => {
     getPlatformBilling().then((billing) => {
@@ -2368,6 +2452,21 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     }
   }
   function saveProfile() { toast.success('Configurações salvas no CrewCheck.'); }
+  function updateProfileAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) return toast.error('Escolha JPG, PNG ou WebP com até 2 MB.');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = String(reader.result || '');
+      if (!data) return;
+      storage.set('crewcheck_profile_avatar', data);
+      setProfileAvatar(data);
+      toast.success('Foto do perfil atualizada neste dispositivo.');
+    };
+    reader.onerror = () => toast.error('Não consegui ler a foto.');
+    reader.readAsDataURL(file);
+  }
   async function deleteAccount() {
     if (!confirm('Excluir permanentemente sua conta, escalas, visitantes, hotéis, chat e histórico? Esta ação não pode ser desfeita.')) return;
     const confirmation = prompt('Para confirmar, digite EXCLUIR') || '';
@@ -2383,7 +2482,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
   }
   const profileName = String(user?.name || user?.email?.split('@')[0] || storage.get('crewcheck_profile_display_name', '') || 'Tripulante CrewCheck');
   return <><Brand back/><section className="cz-settings">
-    <article className="cz-profile"><UserRound/><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article>
+    <article className="cz-profile"><label className="cc-profile-photo" title="Alterar foto"><span>{profileAvatar ? <img src={profileAvatar} alt="Foto do perfil"/> : <UserRound/>}</span><input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={updateProfileAvatar}/></label><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article>
     <DatabaseConnectionCard admin={admin}/>
     <PlatformPreferences/>
     <section className="cz-settings-actions"><button onClick={() => setView('plans')}><ShieldCheck/> Assinaturas e limites</button><button onClick={() => setView('community')}><UserRound/> Pessoas, visitantes e chat</button></section>
@@ -2412,7 +2511,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
     <ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/>
 
-    {admin && <><h3>Administração</h3><AdminFinancialCalibration/></>}
+    {admin && <><h3>Administração</h3><section className="cz-settings-actions"><button onClick={() => setView('admin')}><ShieldCheck/> Abrir painel Admin</button></section></>}
 
     <section className="cz-settings-actions">
       <button className="primary" onClick={saveProfile}><Save/> Salvar perfil</button>
@@ -3254,6 +3353,24 @@ function RoutineView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => openNearbyPlaces('gym', next ? hotelSearchLocation(next) : '')}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
 }
 
+function BidsView({ events }: { events: ZeroLeg[] }) {
+  const [daysOff, setDaysOff] = useState(() => storage.get('crewcheck:bids-days-off', ''));
+  const [preferredBase, setPreferredBase] = useState(() => storage.get('crewcheck:bids-base', ''));
+  const [avoidEarly, setAvoidEarly] = useState(() => storage.get('crewcheck:bids-avoid-early', '0') === '1');
+  const [preferLayovers, setPreferLayovers] = useState(() => storage.get('crewcheck:bids-prefer-layovers', '0') === '1');
+  const flights = events.filter((event) => event.kind === 'flight' && !event.placeholder);
+  const layovers = events.filter((event) => event.kind === 'stay' || Boolean(event.hotel));
+  const destinations = [...new Set(flights.map((event) => event.destination).filter(Boolean))];
+  function saveBids() {
+    storage.set('crewcheck:bids-days-off', daysOff.trim());
+    storage.set('crewcheck:bids-base', preferredBase.trim().toUpperCase());
+    storage.set('crewcheck:bids-avoid-early', avoidEarly ? '1' : '0');
+    storage.set('crewcheck:bids-prefer-layovers', preferLayovers ? '1' : '0');
+    toast.success('Preferências de BIDS salvas neste dispositivo.');
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>BIDS</h1><p>Organize preferências para a próxima escala sem alterar a programação oficial publicada.</p></section><section className="cz-finance-grid"><KpiCard icon={Plane} title="Voos atuais" value={String(flights.length)} detail={`${destinations.length} destino(s)`}/><KpiCard icon={Hotel} title="Pernoites atuais" value={String(layovers.length)} detail="referência da escala ativa"/><KpiCard icon={CalendarDays} title="Folgas desejadas" value={daysOff.trim() ? daysOff.trim().split(/[,;]+/).filter(Boolean).length.toString() : '0'} detail="preferências informadas"/></section><section className="cz-toolbox cc-bids-panel"><h2>Preferências da próxima escala</h2><p>O CrewCheck guarda sua intenção para comparação e planejamento. A aceitação final continua sendo feita no sistema oficial da companhia.</p><div className="cz-form-grid"><label><span>Dias de folga prioritários</span><input value={daysOff} onChange={(event) => setDaysOff(event.target.value)} placeholder="Ex.: 05, 12, 20 e 21"/></label><label><span>Base ou destino preferido</span><input value={preferredBase} onChange={(event) => setPreferredBase(event.target.value)} placeholder="Ex.: BSB, GRU"/></label></div><div className="cc-bids-options"><label><input type="checkbox" checked={avoidEarly} onChange={(event) => setAvoidEarly(event.target.checked)}/><span><strong>Evitar madrugadas</strong><small>Priorizar apresentações após o início da manhã.</small></span></label><label><input type="checkbox" checked={preferLayovers} onChange={(event) => setPreferLayovers(event.target.checked)}/><span><strong>Priorizar pernoites</strong><small>Usar os pernoites atuais como referência de preferência.</small></span></label></div><div className="cz-tool-actions"><button className="primary" onClick={saveBids}><Save/> Salvar preferências</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'compare' }))}><GitCompareArrows/> Comparar com escala publicada</button></div></section></>;
+}
+
 const DEFAULT_GYM_PARTNER_CHAINS = ['Selfit', 'Panobianco', 'Bluefit', 'Corpo e Saúde', 'Pratique', 'Fórmula', 'Bodytech', 'Fábrica de Monstros', 'Ultra'];
 
 function configuredGymPartnerChains(): string[] {
@@ -3291,6 +3408,9 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   const [selected, setSelected] = useState<NearbyPlace | null>(null);
   const [crowding, setCrowding] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [amilProviders, setAmilProviders] = useState<AmilProvider[]>([]);
+  const [amilMessage, setAmilMessage] = useState('');
+  const [amilOnly24h, setAmilOnly24h] = useState(false);
   const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'wellhub'));
   const [onlyOpen, setOnlyOpen] = useState(() => storage.get('crewcheck:gym-only-open', '1') !== '0');
   const partnerChains = configuredGymPartnerChains();
@@ -3336,13 +3456,21 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
       setPlaces(found);
       setSelected((current) => current && found.some((place) => place.name === current.name) ? current : found[0] || null);
       if (category === 'gym') listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
+      if (category === 'hospital') {
+        const amil = await fetchAmilProviders(location, coordinates, amilOnly24h);
+        setAmilProviders(amil.providers);
+        setAmilMessage(amil.message || '');
+      } else {
+        setAmilProviders([]);
+        setAmilMessage('');
+      }
       if (!found.length) toast.message(`A busca interna de ${categoryMeta.plural.toLocaleLowerCase()} não retornou opções agora.`);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { search(); }, [location, category, plan]);
+  useEffect(() => { search(); }, [location, category, plan, amilOnly24h]);
 
   useEffect(() => {
     if (locationMode !== 'current' || coordinates) return;
@@ -3412,8 +3540,9 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
       : [selected.name, selected.address].filter(Boolean).join(' ')
     : '';
   const internalMapUrl = selected ? buildGoogleMapsEmbedDirectionsUrl(location, selectedDestination, 'walking') : '';
+  const amilResultsSection = category === 'hospital' ? <section className="cc-amil-results"><header><div><Hospital/><span><small>REDE CREDENCIADA</small><h2>Amil dentro do CrewCheck</h2></span></div><strong>{amilProviders.length ? `${amilProviders.length} resultado(s)` : 'Consulta protegida'}</strong></header><div className="cz-tool-actions"><button className={amilOnly24h ? 'active' : ''} onClick={() => setAmilOnly24h((current) => !current)}><Hospital/> {amilOnly24h ? 'Somente PA 24h' : 'Hospitais e clínicas'}</button><button onClick={search}><ShieldCheck/> Consultar rede Amil</button></div>{amilProviders.length ? <div>{amilProviders.map((provider, index) => <article key={provider.id || `${provider.name}-${index}`}><div><strong>{provider.name}</strong><small>{[provider.serviceType, provider.address, provider.city, provider.state].filter(Boolean).join(' · ')}</small></div><span>{provider.open24Hours ? '24h' : 'Horário a confirmar'}</span>{provider.phone && <a href={`tel:${provider.phone}`}><Phone/> Ligar</a>}</article>)}</div> : <p>{amilMessage || 'A pesquisa geral de hospitais continua disponível. A rede Amil será exibida quando as credenciais oficiais forem configuradas no Render.'}</p>}<footer>Confirme cobertura, elegibilidade e atendimento com a operadora antes de sair.</footer></section> : null;
 
-  return <><Brand back/>
+  return <><Brand back/>{amilResultsSection}
     <section className="cz-panel-head cz-panel-head-compact"><h1>Locais próximos</h1><p>Pesquise, compare e trace a rota dentro do CrewCheck. O Google Maps é opcional.</p></section>
     <section className="cz-toolbox cz-places-search">
       <div className="cz-place-category-tabs">{(Object.keys(PLACE_CATEGORY_META) as PlaceCategory[]).map((value) => {
@@ -3663,7 +3792,9 @@ function OpeningVideo({ onDone }: { onDone: () => void }) {
 function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'roster' || value === 'results' || value === 'result') return 'roster';
   if (value === 'compare' || value === 'comparar' || value === 'planned-vs-current') return 'compare';
+  if (value === 'bids' || value === 'bid') return 'bids';
   if (value === 'alerts' || value === 'irregularities') return 'alerts';
+  if (value === 'regulation' || value === 'regulamentacao' || value === 'regulamentação') return 'regulation';
   if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';
   if (value === 'settings') return 'settings';
   if (value === 'import') return 'import';
@@ -3688,6 +3819,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'updates' || value === 'atualizacoes' || value === 'atualizações') return 'updates';
   if (value === 'plans' || value === 'assinaturas' || value === 'subscription') return 'plans';
   if (value === 'community' || value === 'pessoas' || value === 'visitantes' || value === 'chat') return 'community';
+  if (value === 'admin' || value === 'administracao') return 'admin';
   if (value === 'crew') return 'crew';
   return 'cockpit';
 }
@@ -3924,11 +4056,14 @@ export default function Home() {
     {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
+    {view === 'bids' && <BidsView events={events}/>} 
     {view === 'alerts' && <Alerts compliance={compliance}/>}
+    {view === 'regulation' && <Alerts compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
+    {view === 'admin' && <AdminControlView/>}
     {view === 'updates' && <UpdateCenterView/>}
     {view === 'maintenance' && <MaintenancePreview/>}
     {view === 'import' && <ImportPanel onUpload={actions.upload} onConcierge={() => setView('concierge')}/>}

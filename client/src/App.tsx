@@ -13,6 +13,7 @@ import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
 import { getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
+import TermsGate from "./components/TermsGate";
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
 
@@ -86,7 +87,7 @@ function Protected({ children }: { children: ReactNode }) {
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
   if (!ready) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
 
-  return <>{children}</>;
+  return <TermsGate>{children}</TermsGate>;
 }
 
 
@@ -138,7 +139,7 @@ export default function App() {
     applySavedTheme();
 
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '13.8.0');
+      window.localStorage.setItem('crewcheck_last_loaded_version', '13.8.8');
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations()
           .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
