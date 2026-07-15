@@ -435,6 +435,7 @@ function coordinateDistanceMeters(a, b) {
 }
 
 const PLACE_CATEGORY_CONFIG = {
+  hotel: { label: 'hotéis', query: 'hotel hospedagem', fallbackName: 'Hotel' },
   gym: { label: 'academias', query: 'academia fitness', fallbackName: 'Academia' },
   hospital: { label: 'hospitais', query: 'hospital pronto atendimento emergência', fallbackName: 'Hospital' },
   pharmacy: { label: 'farmácias', query: 'farmácia drogaria', fallbackName: 'Farmácia' },
@@ -447,7 +448,7 @@ async function handlePlacesSearch(req, res, url, forcedCategory = '') {
   const requestedCategory = String(forcedCategory || url.searchParams.get('category') || 'gym').trim().toLowerCase();
   const category = Object.prototype.hasOwnProperty.call(PLACE_CATEGORY_CONFIG, requestedCategory) ? requestedCategory : 'gym';
   const config = PLACE_CATEGORY_CONFIG[category];
-  const customQuery = category === 'gym' ? String(url.searchParams.get('query') || '').trim().slice(0, 240) : '';
+  const customQuery = String(url.searchParams.get('query') || '').trim().slice(0, 240);
   const query = customQuery || config.query;
   if (!location) return sendJson(res, 400, { ok: false, configured: Boolean(key), category, places: [], message: 'Informe a localização da busca.' });
   if (!key) return sendJson(res, 200, { ok: false, configured: false, category, places: [], message: `Busca interna de ${config.label} aguardando configuração.` });
