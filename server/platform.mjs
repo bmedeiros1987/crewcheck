@@ -261,11 +261,34 @@ async function platformSchemaReport(db) {
     [tables]
   );
   const ready = new Set(result.rows.filter((row) => Boolean(row.relation)).map((row) => row.table_name));
-  const missingCore = PLATFORM_CORE_TABLES.filter((table) => !ready.has(table));
-  const missingOptional = PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table));
+  const requiredColumns = {
+    crewcheck_platform_profiles: ['email', 'public_id', 'display_name', 'locale', 'timezone', 'plan', 'share_presence'],
+    crewcheck_platform_shares: ['id', 'owner_email', 'token_hash', 'kind', 'permissions', 'expires_at', 'created_at'],
+  };
+  const columnResult = await db.query(
+    "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1::text[])",
+    [Object.keys(requiredColumns)]
+  );
+  const columns = new Set(columnResult.rows.map((row) => `${row.table_name}.${row.column_name}`));
+  const missingProfileColumns = requiredColumns.crewcheck_platform_profiles
+    .filter((column) => !columns.has(`crewcheck_platform_profiles.${column}`))
+    .map((column) => `crewcheck_platform_profiles.${column}`);
+  const missingShareColumns = requiredColumns.crewcheck_platform_shares
+    .filter((column) => !columns.has(`crewcheck_platform_shares.${column}`))
+    .map((column) => `crewcheck_platform_shares.${column}`);
+  const missingCore = [
+    ...PLATFORM_CORE_TABLES.filter((table) => !ready.has(table)),
+    ...missingProfileColumns,
+  ];
+  const missingOptional = [
+    ...PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table)),
+    ...missingShareColumns,
+  ];
   return {
     coreReady: missingCore.length === 0,
     optionalReady: missingOptional.length === 0,
+    profileIdReady: ready.has('crewcheck_platform_profiles') && missingProfileColumns.length === 0,
+    qrShareReady: ready.has('crewcheck_platform_shares') && missingShareColumns.length === 0,
     missingCore,
     missingOptional,
     available: [...ready],
@@ -282,6 +305,8 @@ async function platformSchemaReady(db) {
 
 async function platformTableReady(db, tableName) {
   if (![...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES].includes(tableName)) return false;
+  if (tableName === 'crewcheck_platform_profiles' && state.schemaReport && !state.schemaReport.profileIdReady) return false;
+  if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
   if (state.schemaReport?.available?.includes(tableName)) return true;
   const result = await db.query("SELECT to_regclass('public.' || $1) relation", [tableName]);
   const ready = Boolean(result.rows[0]?.relation);
@@ -463,6 +488,13 @@ function unlimitedEmails() {
   return env('CREWCHECK_PREMIUM_UNLIMITED_EMAILS').split(',').map(safeEmail).filter(Boolean);
 }
 
+function isPublicIdConflict(error) {
+  const code = String(error?.code || '');
+  const constraint = String(error?.constraint || '').toLowerCase();
+  const detail = String(error?.detail || error?.message || '').toLowerCase();
+  return code === '23505' && (constraint.includes('public_id') || detail.includes('public_id'));
+}
+
 async function ensureProfile(db, identity, patch = {}) {
   const forcedUnlimited = identity.admin || unlimitedEmails().includes(identity.email);
   const requestedPlan = PLAN_IDS.has(patch.plan) ? patch.plan : null;
@@ -470,18 +502,30 @@ async function ensureProfile(db, identity, patch = {}) {
   const displayName = normalizeText(patch.displayName || identity.name || identity.email.split('@')[0], 120) || 'Tripulante';
   const locale = normalizeLocale(patch.locale || identity.locale || 'pt-BR');
   const timezone = normalizeTimezone(patch.timezone || identity.timezone || DEFAULT_TIMEZONE);
-  const result = await db.query(`
-    INSERT INTO crewcheck_platform_profiles(email, public_id, display_name, locale, timezone, plan, share_presence)
-    VALUES($1,$2,$3,$4,$5,$6,$7)
-    ON CONFLICT(email) DO UPDATE SET
-      display_name=CASE WHEN $8 THEN EXCLUDED.display_name ELSE crewcheck_platform_profiles.display_name END,
-      locale=CASE WHEN $8 THEN EXCLUDED.locale ELSE crewcheck_platform_profiles.locale END,
-      timezone=CASE WHEN $8 THEN EXCLUDED.timezone ELSE crewcheck_platform_profiles.timezone END,
-      share_presence=CASE WHEN $8 THEN EXCLUDED.share_presence ELSE crewcheck_platform_profiles.share_presence END,
-      plan=CASE WHEN $9 THEN 'premium_unlimited' WHEN $10 THEN EXCLUDED.plan ELSE crewcheck_platform_profiles.plan END,
-      updated_at=NOW()
-    RETURNING *`, [identity.email, publicId(), displayName, locale, timezone, requestedPlan || defaultPlan, Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin)]);
-  return result.rows[0];
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const result = await db.query(`
+        INSERT INTO crewcheck_platform_profiles(email, public_id, display_name, locale, timezone, plan, share_presence)
+        VALUES($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(email) DO UPDATE SET
+          public_id=COALESCE(NULLIF(BTRIM(crewcheck_platform_profiles.public_id), ''), EXCLUDED.public_id),
+          display_name=CASE WHEN $8 THEN EXCLUDED.display_name ELSE crewcheck_platform_profiles.display_name END,
+          locale=CASE WHEN $8 THEN EXCLUDED.locale ELSE crewcheck_platform_profiles.locale END,
+          timezone=CASE WHEN $8 THEN EXCLUDED.timezone ELSE crewcheck_platform_profiles.timezone END,
+          share_presence=CASE WHEN $8 THEN EXCLUDED.share_presence ELSE crewcheck_platform_profiles.share_presence END,
+          plan=CASE WHEN $9 THEN 'premium_unlimited' WHEN $10 THEN EXCLUDED.plan ELSE crewcheck_platform_profiles.plan END,
+          updated_at=NOW()
+        RETURNING *`, [identity.email, publicId(), displayName, locale, timezone, requestedPlan || defaultPlan, Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin)]);
+      const profile = result.rows[0];
+      if (!profile?.public_id) throw Object.assign(new Error('O perfil não recebeu um ID público.'), { code: 'PROFILE_ID_MISSING' });
+      return profile;
+    } catch (error) {
+      if (attempt < 4 && isPublicIdConflict(error)) continue;
+      throw error;
+    }
+  }
+  throw Object.assign(new Error('Não foi possível gerar um ID público único.'), { code: 'PROFILE_ID_GENERATION_FAILED' });
 }
 
 function planCatalog() {
@@ -846,19 +890,36 @@ async function requireMain(req, res, body = {}) {
   return { identity, db, profile };
 }
 
+async function requirePlatformTable(context, res, tableName, feature) {
+  if (await platformTableReady(context.db, tableName)) return true;
+  sendJson(res, 503, {
+    ok: false,
+    code: 'DATABASE_MIGRATION_REQUIRED',
+    missingTable: tableName,
+    message: `${feature} aguarda a migration do banco PostgreSQL.`,
+  });
+  return false;
+}
+
 async function handleDatabaseHealth(req, res) {
   const configured = Boolean(databaseConnectionString());
   if (!configured) return sendJson(res, 200, { ok: false, configured: false, connected: false, coreReady: false, degraded: true, migrationRequired: true, missingOptionalCount: 0, message: 'Banco aguardando configuração.' });
   const db = await pool();
   const report = state.schemaReport || { coreReady: false, optionalReady: false, missingCore: [], missingOptional: [] };
   const connected = Boolean(db && report.coreReady);
+  const profileIdReady = Boolean(connected && report.profileIdReady);
+  const qrShareReady = Boolean(connected && report.qrShareReady);
   return sendJson(res, 200, {
     ok: connected,
     configured: true,
     connected,
     coreReady: Boolean(report.coreReady),
+    profileIdReady,
+    qrShareReady,
     degraded: connected && !report.optionalReady,
     migrationRequired: !report.coreReady || !report.optionalReady,
+    missingCore: Array.isArray(report.missingCore) ? report.missingCore : [],
+    missingOptional: Array.isArray(report.missingOptional) ? report.missingOptional : [],
     missingOptionalCount: Array.isArray(report.missingOptional) ? report.missingOptional.length : 0,
     retryable: !connected,
     message: connected
@@ -1608,6 +1669,7 @@ async function handleShares(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   if (!await requirePremium(context, res, 'Compartilhamentos revogáveis')) return;
+  if (!await requirePlatformTable(context, res, 'crewcheck_platform_shares', 'O QR Code e o compartilhamento')) return;
   if (req.method === 'POST') {
     const token = crypto.randomBytes(32).toString('base64url');
     const id = crypto.randomUUID();
@@ -1626,6 +1688,7 @@ async function handleShares(req, res) {
 async function handleSharePublic(req, res, token) {
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!await platformTableReady(db, 'crewcheck_platform_shares')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'O compartilhamento aguarda a migration do banco PostgreSQL.' });
   const shareResult = await db.query('SELECT * FROM crewcheck_platform_shares WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>NOW() LIMIT 1', [sha256(token)]);
   const share = shareResult.rows[0];
   if (!share) return sendJson(res, 404, { ok: false, message: 'Compartilhamento expirado ou revogado.' });
