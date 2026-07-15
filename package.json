@@ -103,7 +103,8 @@
     "regression:v13.8.5:audit": "node scripts/regression-v13-8-5-premium-audit.mjs",
     "regression:v13.8.6:internal": "node scripts/regression-v13-8-6-internal-services-car-db.mjs",
     "regression:v13.8.7:mysql": "node scripts/regression-v13-8-7-aiven-mysql-full-platform.mjs",
-    "regression:v13.8.8:audit": "node scripts/regression-v13-8-8-premium-system-audit.mjs"
+    "regression:v13.8.8:audit": "node scripts/regression-v13-8-8-premium-system-audit.mjs",
+    "regression:v13.8.9:mobile-hotels": "node scripts/regression-v13-8-9-mobile-hotels-qr.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
