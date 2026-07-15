@@ -30,7 +30,7 @@ assert.ok(!home.includes("openFitnessSearch("));
 
 assert.ok(home.includes('SAÍDA PREVISTA'));
 assert.ok(home.includes('Sair às'));
-assert.ok(home.includes('O horário em destaque é a saída prevista'));
+assert.ok(home.includes('Escolha o trajeto completo'));
 assert.ok(!home.includes('<Clock/>Chegar<strong>{event.presentation}</strong>'));
 
 for (const fragment of ['Nível / piso', 'Vaga', 'Ponto de referência', 'Observações', 'Rota a pé', 'WhatsApp', 'Telegram', 'Outros apps', 'Apagar marcação']) {
