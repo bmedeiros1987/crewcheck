@@ -249,11 +249,35 @@ function PermissionEditor({ value, onChange }: { value: PlatformPermissions; onC
   return <div className="cp-permissions">{PERMISSION_LABELS.map(([key, label, detail]) => <label key={key} className={key === 'room' ? 'sensitive' : ''}><input type="checkbox" checked={value[key]} onChange={(event) => update(key, event.target.checked)}/><span><strong>{label}</strong><small>{detail}</small></span><i/></label>)}</div>;
 }
 
+function openWhatsAppShare(value: string, label: string) {
+  const text = `${label}\n${value}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+}
+
+function QrPreviewModal({ open, image, value, title, onClose }: { open: boolean; image: string; value: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [open, onClose]);
+  if (!open || !image) return null;
+  async function copy() {
+    try { await navigator.clipboard.writeText(value); toast.success('Conteúdo do QR copiado.'); }
+    catch { toast.error('Não consegui copiar o conteúdo.'); }
+  }
+  return <section className="cp-qr-modal" role="dialog" aria-modal="true" aria-label={title}>
+    <button className="cp-qr-backdrop" aria-label="Fechar QR ampliado" onClick={onClose}/>
+    <article><header><div><QrCode/><span><small>QR CODE</small><h2>{title}</h2></span></div><button aria-label="Fechar" onClick={onClose}><X/></button></header><img src={image} alt={`${title} ampliado`}/><p>Mostre este código para leitura ou compartilhe o conteúdo seguro pelo WhatsApp.</p><div className="cp-actions"><button className="cp-primary" onClick={() => openWhatsAppShare(value, title)}><MessageCircle/> WhatsApp</button><button onClick={copy}><Copy/> Copiar conteúdo</button></div></article>
+  </section>;
+}
+
 function SharePanel({ rosterKey, onEmailPdf }: { rosterKey?: string; onEmailPdf?: () => void }) {
   const [shares, setShares] = useState<any[]>([]);
   const [permissions, setPermissions] = useState<PlatformPermissions>({ ...defaultVisitorPermissions, hotels: true, room: false, chat: false });
   const [current, setCurrent] = useState<any>(null);
   const [qr, setQr] = useState('');
+  const [qrExpanded, setQrExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   async function load() { try { setShares((await listShares()).shares || []); } catch {} }
   useEffect(() => { load(); }, []);
@@ -272,7 +296,8 @@ function SharePanel({ rosterKey, onEmailPdf }: { rosterKey?: string; onEmailPdf?
   async function remove(id: string) { try { await revokeShare(id); if (current?.id === id) { setCurrent(null); setQr(''); } await load(); toast.success('Compartilhamento revogado.'); } catch { toast.error('Não consegui revogar.'); } }
   return <div className="cp-stack">
     <article className="cp-box"><header><div><QrCode/><span><h2>QR e link temporário</h2><p>O QR contém somente um link revogável; nunca contém escala, hotel ou quarto diretamente.</p></span></div></header><PermissionEditor value={permissions} onChange={setPermissions}/><div className="cp-actions"><button className="cp-primary" onClick={create} disabled={busy}>{busy ? <Loader2 className="cp-spin"/> : <Link2/>} Criar por 72 horas</button>{onEmailPdf && <button onClick={onEmailPdf}><Mail/> Enviar escala + PDF por e-mail</button>}</div></article>
-    {current && <article className="cp-share-result">{qr && <img src={qr} alt="QR code do link temporário da escala"/>}<div><small>Link temporário</small><strong>{current.url}</strong><p>Expira em {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(current.expiresAt))}.</p><div className="cp-actions"><button onClick={() => copy(current.url)}><Copy/> Copiar</button>{navigator.share && <button onClick={() => navigator.share({ title: 'Escala CrewCheck', text: 'Acesso temporário à minha escala', url: current.url }).catch(() => undefined)}><Send/> Compartilhar</button>}<button className="danger" onClick={() => remove(current.id)}><X/> Revogar</button></div></div></article>}
+    {current && <article className="cp-share-result">{qr && <button className="cp-qr-trigger" onClick={() => setQrExpanded(true)} aria-label="Ampliar QR code da escala"><img src={qr} alt="QR code do link temporário da escala"/><span><QrCode/> Toque para ampliar</span></button>}<div><small>Link temporário</small><strong>{current.url}</strong><p>Expira em {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(current.expiresAt))}.</p><div className="cp-actions"><button className="cp-whatsapp" onClick={() => openWhatsAppShare(current.url, 'Escala CrewCheck · acesso temporário')}><MessageCircle/> WhatsApp</button><button onClick={() => copy(current.url)}><Copy/> Copiar link</button>{navigator.share && <button onClick={() => navigator.share({ title: 'Escala CrewCheck', text: 'Acesso temporário à minha escala', url: current.url }).catch(() => undefined)}><Send/> Outros apps</button>}<button className="danger" onClick={() => remove(current.id)}><X/> Revogar</button></div></div></article>}
+    <QrPreviewModal open={qrExpanded} image={qr} value={current?.url || ''} title="Escala CrewCheck" onClose={() => setQrExpanded(false)}/>
     <article className="cp-box"><h2>Compartilhamentos recentes</h2>{shares.length ? <div className="cp-list">{shares.map((share) => <div key={share.id}><span><strong>{share.kind === 'roster' ? 'Escala' : share.kind}</strong><small>{share.revoked_at ? 'Revogado' : new Date(share.expires_at) < new Date() ? 'Expirado' : `Ativo até ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(share.expires_at))}`}</small></span>{!share.revoked_at && <button onClick={() => remove(share.id)}>Revogar</button>}</div>)}</div> : <p>Nenhum link criado ainda.</p>}</article>
   </div>;
 }
@@ -343,6 +368,7 @@ export function CommunityCenter({ rosterKey, onBack, onEmailPdf }: Omit<Props, '
   const [profile, setProfile] = useState<PlatformProfile | null>(null);
   const [error, setError] = useState('');
   const [idQr, setIdQr] = useState('');
+  const [idQrExpanded, setIdQrExpanded] = useState(false);
   useEffect(() => { getPlatformProfile().then((result) => setProfile(result.profile)).catch((err) => setError(err instanceof Error ? err.message : 'Não consegui carregar seu perfil.')); }, []);
   useEffect(() => { if (profile?.publicId) QRCode.toDataURL(`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`, { width: 240, margin: 2, errorCorrectionLevel: 'M' }).then(setIdQr).catch(() => setIdQr('')); }, [profile?.publicId]);
   const rosterLabel = useMemo(() => rosterKey && !/^0-00$/.test(rosterKey) ? rosterKey : 'escala ativa', [rosterKey]);
@@ -350,7 +376,8 @@ export function CommunityCenter({ rosterKey, onBack, onEmailPdf }: Omit<Props, '
   return <section className="cp-center">
     <PageHead onBack={onBack} title="Pessoas e compartilhamento" subtitle={`Compartilhe ${rosterLabel} com controle, prazo, consentimento e revogação.`}/>
     {error ? <ErrorCard message={error} retry={() => window.location.reload()}/> : !profile ? <LoadingCard/> : <>
-      <article className="cp-id-card"><div><span><KeyRound/></span><div><small>Seu ID CrewCheck</small><h2>{profile.publicId}</h2><p>{profile.displayName} · compartilhe o ID, o QR ou seu e-mail de login.</p></div></div>{idQr && <img className="cp-id-qr" src={idQr} alt="QR code para solicitar comparação de escala"/>}<button onClick={copyId}><Copy/> Copiar ID</button></article>
+      <article className="cp-id-card"><div><span><KeyRound/></span><div><small>Seu ID CrewCheck</small><h2>{profile.publicId}</h2><p>{profile.displayName} · compartilhe o ID, o QR ou seu e-mail de login.</p></div></div>{idQr && <button className="cp-id-qr-trigger" onClick={() => setIdQrExpanded(true)} aria-label="Ampliar QR code do seu ID"><img className="cp-id-qr" src={idQr} alt="QR code para solicitar comparação de escala"/><small>Ampliar</small></button>}<div className="cp-id-actions"><button onClick={copyId}><Copy/> Copiar ID</button><button className="cp-whatsapp" onClick={() => openWhatsAppShare(`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`, `Conecte-se comigo no CrewCheck · ${profile.publicId}`)}><MessageCircle/> WhatsApp</button></div></article>
+      <QrPreviewModal open={idQrExpanded} image={idQr} value={`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`} title={`ID CrewCheck ${profile.publicId}`} onClose={() => setIdQrExpanded(false)}/>
       <nav className="cp-tabs"><button className={tab === 'share' ? 'active' : ''} onClick={() => setTab('share')}><QrCode/> Compartilhar</button><button className={tab === 'visitors' ? 'active' : ''} onClick={() => setTab('visitors')}><UserPlus/> Visitantes</button><button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Users/> Colegas e chat</button></nav>
       {tab === 'share' && <SharePanel rosterKey={rosterKey} onEmailPdf={onEmailPdf}/>} {tab === 'visitors' && <VisitorsPanel/>} {tab === 'people' && <ConnectionsPanel/>}
       <article className="cp-privacy"><Lock/><div><h2>Privacidade por padrão</h2><p>Quarto, localização, hotel e escala ficam desligados até você autorizar. Links expiram, acessos podem ser revogados e o número do quarto nunca aparece na busca de colegas.</p></div></article>
