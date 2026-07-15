@@ -33,7 +33,7 @@ try {
     if (path === '/api/health' && payload.version !== expectedVersion) throw new Error(`Versão incorreta: esperado ${expectedVersion}, recebido ${payload.version}`);
     if (path === '/api/platform/catalog') {
       if (payload.encoding !== 'UTF-8' || payload.defaultTimezone !== 'America/Sao_Paulo') throw new Error('Preferências de plataforma incorretas');
-      if (!Array.isArray(payload.plans) || payload.plans.length !== 4) throw new Error('Catálogo de assinaturas incompleto');
+      if (!Array.isArray(payload.plans) || payload.plans.length !== 3 || payload.plans.some((plan) => plan.id === 'premium_unlimited')) throw new Error('Catálogo público deve ocultar Premium Unlimited');
       const premium = payload.plans.find((plan) => plan.id === 'premium_monthly');
       if (premium?.callLimit !== 20 || premium?.googlePlayProductId !== 'crewcheck_premium_monthly') throw new Error('Plano Premium incorreto');
     }
