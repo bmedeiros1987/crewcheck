@@ -74,7 +74,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'admin';
+  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
   id: string;
@@ -1330,7 +1330,7 @@ function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','admin','maintenance'].includes(view));
+    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
     return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
@@ -1586,7 +1586,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   function openProfile() { setView('settings'); close(); }
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
-    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['alerts','Irregularidades','RBAC/ACT',AlertTriangle], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
+    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['bids','BIDS','Preferências para a próxima escala',CalendarDays], ['alerts','Irregularidades','Alertas confirmados',AlertTriangle], ['regulation','Regulamentação','RBAC 117, ACT e limites',ShieldCheck], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Locais próximos','Academias, saúde e serviços',MapIcon], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Banco e sync',Database], ['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['settings','Configurações','Perfil completo',Settings],
@@ -3353,6 +3353,24 @@ function RoutineView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => openNearbyPlaces('gym', next ? hotelSearchLocation(next) : '')}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
 }
 
+function BidsView({ events }: { events: ZeroLeg[] }) {
+  const [daysOff, setDaysOff] = useState(() => storage.get('crewcheck:bids-days-off', ''));
+  const [preferredBase, setPreferredBase] = useState(() => storage.get('crewcheck:bids-base', ''));
+  const [avoidEarly, setAvoidEarly] = useState(() => storage.get('crewcheck:bids-avoid-early', '0') === '1');
+  const [preferLayovers, setPreferLayovers] = useState(() => storage.get('crewcheck:bids-prefer-layovers', '0') === '1');
+  const flights = events.filter((event) => event.kind === 'flight' && !event.placeholder);
+  const layovers = events.filter((event) => event.kind === 'stay' || Boolean(event.hotel));
+  const destinations = [...new Set(flights.map((event) => event.destination).filter(Boolean))];
+  function saveBids() {
+    storage.set('crewcheck:bids-days-off', daysOff.trim());
+    storage.set('crewcheck:bids-base', preferredBase.trim().toUpperCase());
+    storage.set('crewcheck:bids-avoid-early', avoidEarly ? '1' : '0');
+    storage.set('crewcheck:bids-prefer-layovers', preferLayovers ? '1' : '0');
+    toast.success('Preferências de BIDS salvas neste dispositivo.');
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>BIDS</h1><p>Organize preferências para a próxima escala sem alterar a programação oficial publicada.</p></section><section className="cz-finance-grid"><KpiCard icon={Plane} title="Voos atuais" value={String(flights.length)} detail={`${destinations.length} destino(s)`}/><KpiCard icon={Hotel} title="Pernoites atuais" value={String(layovers.length)} detail="referência da escala ativa"/><KpiCard icon={CalendarDays} title="Folgas desejadas" value={daysOff.trim() ? daysOff.trim().split(/[,;]+/).filter(Boolean).length.toString() : '0'} detail="preferências informadas"/></section><section className="cz-toolbox cc-bids-panel"><h2>Preferências da próxima escala</h2><p>O CrewCheck guarda sua intenção para comparação e planejamento. A aceitação final continua sendo feita no sistema oficial da companhia.</p><div className="cz-form-grid"><label><span>Dias de folga prioritários</span><input value={daysOff} onChange={(event) => setDaysOff(event.target.value)} placeholder="Ex.: 05, 12, 20 e 21"/></label><label><span>Base ou destino preferido</span><input value={preferredBase} onChange={(event) => setPreferredBase(event.target.value)} placeholder="Ex.: BSB, GRU"/></label></div><div className="cc-bids-options"><label><input type="checkbox" checked={avoidEarly} onChange={(event) => setAvoidEarly(event.target.checked)}/><span><strong>Evitar madrugadas</strong><small>Priorizar apresentações após o início da manhã.</small></span></label><label><input type="checkbox" checked={preferLayovers} onChange={(event) => setPreferLayovers(event.target.checked)}/><span><strong>Priorizar pernoites</strong><small>Usar os pernoites atuais como referência de preferência.</small></span></label></div><div className="cz-tool-actions"><button className="primary" onClick={saveBids}><Save/> Salvar preferências</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'compare' }))}><GitCompareArrows/> Comparar com escala publicada</button></div></section></>;
+}
+
 const DEFAULT_GYM_PARTNER_CHAINS = ['Selfit', 'Panobianco', 'Bluefit', 'Corpo e Saúde', 'Pratique', 'Fórmula', 'Bodytech', 'Fábrica de Monstros', 'Ultra'];
 
 function configuredGymPartnerChains(): string[] {
@@ -3774,7 +3792,9 @@ function OpeningVideo({ onDone }: { onDone: () => void }) {
 function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'roster' || value === 'results' || value === 'result') return 'roster';
   if (value === 'compare' || value === 'comparar' || value === 'planned-vs-current') return 'compare';
+  if (value === 'bids' || value === 'bid') return 'bids';
   if (value === 'alerts' || value === 'irregularities') return 'alerts';
+  if (value === 'regulation' || value === 'regulamentacao' || value === 'regulamentação') return 'regulation';
   if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';
   if (value === 'settings') return 'settings';
   if (value === 'import') return 'import';
@@ -4036,7 +4056,9 @@ export default function Home() {
     {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
+    {view === 'bids' && <BidsView events={events}/>} 
     {view === 'alerts' && <Alerts compliance={compliance}/>}
+    {view === 'regulation' && <Alerts compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
