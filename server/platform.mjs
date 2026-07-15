@@ -342,14 +342,14 @@ async function platformSchemaReport(db) {
   };
   const tableParams = tables.map((_table, index) => `$${index + 1}`).join(',');
   const result = await db.query(
-    `SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN (${tableParams})`,
+    `SELECT TABLE_NAME AS table_name FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${tableParams})`,
     tables,
   );
   const ready = new Set(result.rows.map((row) => row.table_name));
   const columnTables = Object.keys(requiredColumns);
   const columnParams = columnTables.map((_table, index) => `$${index + 1}`).join(',');
   const columnResult = await db.query(
-    `SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN (${columnParams})`,
+    `SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${columnParams})`,
     columnTables,
   );
   const columns = new Set(columnResult.rows.map((row) => `${row.table_name}.${row.column_name}`));
@@ -392,7 +392,7 @@ async function platformTableReady(db, tableName) {
   if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
   if (state.schemaReport?.available?.includes(tableName)) return true;
   const result = await db.query(
-    'SELECT table_name relation FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=$1 LIMIT 1',
+    'SELECT TABLE_NAME AS relation FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=$1 LIMIT 1',
     [tableName],
   );
   const ready = Boolean(result.rows[0]?.relation);

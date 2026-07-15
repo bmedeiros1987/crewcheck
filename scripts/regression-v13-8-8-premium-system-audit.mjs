@@ -31,6 +31,7 @@ assert(app.includes('<TermsGate>'), 'aceite de termos aplicado a usuarios existe
 assert(server.includes("'/api/platform/terms/accept'"), 'aceite de termos persistido');
 assert(server.includes("'/api/platform/admin/terms'"), 'editor administrativo de termos registrado');
 assert(server.includes("String(published.content_hash || '') === contentHash"), 'termos identicos nao criam nova versao nem novo aceite');
+assert(server.includes('TABLE_NAME AS table_name') && server.includes('COLUMN_NAME AS column_name') && server.includes('TABLE_NAME AS relation'), 'schema MySQL normaliza nomes do information_schema');
 assert(server.includes("'/api/platform/admin/unlimited'"), 'concessao Unlimited administrativa registrada');
 assert(migration.includes('ENGINE=InnoDB') && migration.includes('crewcheck_platform_terms_acceptances'), 'migration incremental Aiven MySQL pronta');
 assert(!/\b(?:PGSSLMODE|POSTGRES|SUPABASE)\b/i.test(envExample), 'template sem variaveis PostgreSQL ou Supabase');
