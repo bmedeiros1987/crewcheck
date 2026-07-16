@@ -15,5 +15,6 @@ for (const path of [
 ]) {
   let source = fs.readFileSync(path, 'utf8');
   source = source.replaceAll('groundBeforeMinutes?: number;', 'groundBeforeMinutes?: number | null;');
+  source = source.replaceAll('groundBeforeMinutes?: number }', 'groundBeforeMinutes?: number | null }');
   fs.writeFileSync(path, source, 'utf8');
 }
