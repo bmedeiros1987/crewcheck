@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-9-3-redemet-critical-weather",
-  "version": "13.9.3",
+  "name": "crewcheck-v13-9-4-telegram-layout-amil-network",
+  "version": "13.9.4",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.9.3 - REDEMET, decoded weather and schedule-aware critical alerts",
+  "description": "CrewCheck v13.9.4 - Telegram rebind, protected layouts, nearby address and Amil S450/S750 network",
   "scripts": {
     "prepare:v139": "node scripts/v139/apply.mjs",
     "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
@@ -109,7 +109,8 @@
     "regression:v13.8.8:audit": "node scripts/regression-v13-8-8-premium-system-audit.mjs",
     "regression:v13.8.9:mobile-hotels": "node scripts/regression-v13-8-9-mobile-hotels-qr.mjs",
     "regression:v13.9.2:telegram-atis-regulation": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-2-telegram-atis-regulation.mjs",
-    "regression:v13.9.3:redemet-weather": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-3-redemet-weather.mjs"
+    "regression:v13.9.3:redemet-weather": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-3-redemet-weather.mjs",
+    "regression:v13.9.4:telegram-layout-amil": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-4-telegram-layout-amil-network.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
