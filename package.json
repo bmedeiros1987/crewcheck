@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-9-5-medical-emergency-care",
-  "version": "13.9.5",
+  "name": "crewcheck-v13-9-6-infobip-premium-calls",
+  "version": "13.9.6",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.9.5 - medical profile repair, coordinated emergencies and open care on Telegram",
+  "description": "CrewCheck v13.9.6 - Infobip Premium call provider rebind and secure diagnostics",
   "scripts": {
     "prepare:v139": "node scripts/v139/apply.mjs",
     "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
@@ -112,7 +112,8 @@
     "regression:v13.9.3:redemet-weather": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-3-redemet-weather.mjs",
     "regression:v13.9.4:telegram-layout-amil": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-4-telegram-layout-amil-network.mjs",
     "db:migrate:v13.9.5": "node scripts/apply-v13-9-5-migration.mjs",
-    "regression:v13.9.5:medical-emergency": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-5-medical-emergency-care.mjs"
+    "regression:v13.9.5:medical-emergency": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-5-medical-emergency-care.mjs",
+    "regression:v13.9.6:infobip-calls": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-6-infobip-premium-calls.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
