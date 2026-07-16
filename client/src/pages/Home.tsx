@@ -113,6 +113,8 @@ type ZeroLeg = {
   placeholder?: boolean;
   canonical?: CanonicalRosterEvent;
   presentationSource?: string;
+  workMode?: 'operating' | 'extra';
+  groundBeforeMinutes?: number;
 };
 
 type BundleState = { roster: CrewRoster; compliance: ComplianceResult | null; source: string };
@@ -1025,6 +1027,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       const airlineName = airlineNameFor(airlineCode, anyLeg.airlineName || anyLeg.carrierName || anyLeg.operatorName);
       const suffix = event.isNextDay ? ' +1' : '';
       const workType = safe(anyLeg.workType || (leg as any).workType, 'OP').toUpperCase();
+      const workMode: 'operating' | 'extra' = /(^|\s)(PS|PAX|DH|EXTRA|PASSAGEIRO)(\s|$)/.test(workType) ? 'extra' : 'operating';
       const title = event.flightNumber;
       const subtitle = event.showPresentation
         ? `Apres. ${event.presentation} · ${event.departure} → ${event.arrival}${suffix} · ${city(event.origin)} → ${city(event.destination)}`
@@ -1051,6 +1054,8 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         status: safe(anyLeg.status || (day as any).status, 'Programado'),
         airlineCode,
         airlineName,
+        workMode,
+        groundBeforeMinutes: event.groundBeforeMinutes,
         hotel: safe((day as any).hotel || anyLeg.hotel, ''),
         crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
         routine: [
