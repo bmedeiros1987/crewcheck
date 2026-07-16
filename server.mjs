@@ -589,26 +589,88 @@ async function safeJsonFetch(url, options = {}, timeoutMs = 2400) {
 function aviationWeatherUserAgent() {
   return String(envAny(['AVIATION_WEATHER_USER_AGENT', 'CREWCHECK_AVIATION_WEATHER_USER_AGENT']) || 'CrewCheck/13.9.2 (aviation-weather; crewcheck.online)').slice(0, 180);
 }
+function redemetApiKey() {
+  return String(envAny(['REDEMET_API_KEY', 'CREWCHECK_REDEMET_API_KEY', 'API_REDEMET_KEY']) || '').trim();
+}
+function redemetHour(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 13).replace(/[-T:]/g, '');
+}
+function reportTimestamp(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})?/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5] || '00'}:00Z`;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
+}
+async function fetchRedemetMetars(stations = [], options = {}) {
+  const apiKey = redemetApiKey();
+  const unique = [...new Set(stations.map(airportIcao).filter((station) => /^[A-Z]{4}$/.test(station)))].slice(0, 8);
+  if (!apiKey || !unique.length) return { ok: false, configured: Boolean(apiKey), reports: {}, provider: 'redemet' };
+  const now = Date.now();
+  const cacheKey = `redemet:${unique.sort().join(',')}`;
+  const cached = aviationWeatherCache.get(cacheKey);
+  if (cached && now - cached.cachedAt < 60_000) return { ...cached, cache: 'fresh' };
+  const url = new URL(`https://api-redemet.decea.mil.br/mensagens/metar/${unique.join(',')}`);
+  url.searchParams.set('api_key', apiKey);
+  const dataIni = /^\d{10}$/.test(String(options.dataIni || '')) ? String(options.dataIni) : redemetHour(new Date(now - 3 * 60 * 60_000));
+  const dataFim = /^\d{10}$/.test(String(options.dataFim || '')) ? String(options.dataFim) : redemetHour(new Date(now + 60 * 60_000));
+  url.searchParams.set('data_ini', dataIni);
+  url.searchParams.set('data_fim', dataFim);
+  url.searchParams.set('page_tam', String(Math.min(100, Math.max(10, Number(options.pageSize || 40)))));
+  try {
+    const { payload, ok } = await safeJsonFetch(url.toString(), { headers: { accept: 'application/json', 'user-agent': aviationWeatherUserAgent() } }, 7000);
+    const rows = Array.isArray(payload?.data?.data) ? payload.data.data : Array.isArray(payload?.data) ? payload.data : [];
+    const reports = {};
+    for (const row of rows) {
+      const station = airportIcao(row?.id_localidade || row?.localidade || row?.station || '');
+      const raw = safeText(row?.mens || row?.mensagem || row?.message || '').toUpperCase();
+      if (!unique.includes(station) || !/^(METAR|SPECI)\b/.test(raw)) continue;
+      const observedAt = reportTimestamp(firstKnown(row?.validade_inicial, row?.recebimento, row?.data));
+      const previousTime = new Date(reports[station]?.observedAt || 0).getTime();
+      const currentTime = new Date(observedAt || 0).getTime();
+      if (!reports[station] || currentTime >= previousTime) reports[station] = { ok: true, configured: true, station, type: 'METAR', raw, observedAt, provider: 'redemet', source: 'REDEMET · DECEA', official: true, cachedAt: now };
+    }
+    if (ok && Object.keys(reports).length) {
+      const result = { ok: true, configured: true, reports, provider: 'redemet', cachedAt: now };
+      aviationWeatherCache.set(cacheKey, result);
+      return { ...result, cache: 'live' };
+    }
+  } catch {}
+  if (cached && now - cached.cachedAt < 30 * 60_000) return { ...cached, cache: 'stale', stale: true };
+  return { ok: false, configured: true, reports: {}, provider: 'redemet', cachedAt: now, cache: 'miss' };
+}
 async function fetchAviationWeatherReport(station, type = 'metar') {
   const endpointType = String(type).toLowerCase() === 'taf' ? 'taf' : 'metar';
-  const key = `${endpointType}:${station}`;
+  const normalizedStation = airportIcao(station);
+  const key = `${endpointType}:${normalizedStation}`;
   const now = Date.now();
   const ttl = endpointType === 'taf' ? 10 * 60_000 : 60_000;
   const cached = aviationWeatherCache.get(key);
   if (cached && now - cached.cachedAt < ttl) return { ...cached, cache: 'fresh' };
-  const apiUrl = `https://aviationweather.gov/api/data/${endpointType}?ids=${encodeURIComponent(station)}&format=json`;
+  if (endpointType === 'metar' && /^SB[A-Z]{2}$/.test(normalizedStation) && redemetApiKey()) {
+    const redemet = await fetchRedemetMetars([normalizedStation]);
+    const report = redemet.reports?.[normalizedStation];
+    if (report?.raw) {
+      aviationWeatherCache.set(key, report);
+      return { ...report, cache: redemet.cache || 'live' };
+    }
+  }
+  const apiUrl = `https://aviationweather.gov/api/data/${endpointType}?ids=${encodeURIComponent(normalizedStation)}&format=json`;
   try {
     const { payload, text, ok } = await safeJsonFetch(apiUrl, { headers: { accept: 'application/json', 'user-agent': aviationWeatherUserAgent() } }, 6000);
     const row = ok && Array.isArray(payload) ? payload[0] || {} : {};
     const raw = safeText(row.rawOb || row.rawTAF || row.raw_text || row.raw || (text && !text.trim().startsWith('<') ? text : ''));
     if (raw) {
-      const report = { ok: true, configured: true, station, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), cachedAt: now };
+      const report = { ok: true, configured: true, station: normalizedStation, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), provider: 'aviationweather', source: 'AviationWeather.gov', official: true, cachedAt: now };
       aviationWeatherCache.set(key, report);
       return { ...report, cache: 'live' };
     }
   } catch {}
   if (cached && now - cached.cachedAt < 30 * 60_000) return { ...cached, cache: 'stale', stale: true };
-  return { ok: false, configured: true, station, type: endpointType.toUpperCase(), raw: '', observedAt: '', cachedAt: now, cache: 'miss' };
+  return { ok: false, configured: true, station: normalizedStation, type: endpointType.toUpperCase(), raw: '', observedAt: '', provider: 'unavailable', source: '', official: false, cachedAt: now, cache: 'miss' };
 }
 const METAR_WEATHER_PT = {
   TS:'trovoada', RA:'chuva', DZ:'chuvisco', SH:'pancadas', BR:'névoa úmida', FG:'nevoeiro', HZ:'névoa seca', FU:'fumaça',
@@ -654,6 +716,66 @@ function decodeMetarPtBr(rawValue = '', station = '') {
   if (airportName && lines.length) lines.unshift(`${airportName}, ${station}`);
   return lines;
 }
+function decodeTafPtBr(rawValue = '', station = '') {
+  const raw = safeText(rawValue).toUpperCase();
+  if (!raw) return [];
+  const lines = [];
+  const issue = raw.match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+  if (issue) lines.push(`emitido no dia ${issue[1]}, às ${issue[2]}:${issue[3]} Zulu`);
+  const validity = raw.match(/\b(\d{2})(\d{2})\/(\d{2})(\d{2})\b/);
+  if (validity) lines.push(`válido do dia ${validity[1]} às ${validity[2]} Zulu até o dia ${validity[3]} às ${validity[4]} Zulu`);
+  const initial = decodeMetarPtBr(raw.replace(/^TAF(?:\s+(?:AMD|COR|CNL))?\s+[A-Z]{4}\s+/, ''), '').filter((line) => !line.startsWith('observação do dia'));
+  if (initial.length) lines.push(`condição predominante: ${initial.join('; ')}`);
+  const changes = [];
+  for (const match of raw.matchAll(/\bFM(\d{2})(\d{2})(\d{2})\b/g)) changes.push(`mudança a partir do dia ${match[1]} às ${match[2]}:${match[3]} Zulu`);
+  if (/\bTEMPO\b/.test(raw)) changes.push('há condição temporária prevista');
+  if (/\bBECMG\b/.test(raw)) changes.push('há transição gradual prevista');
+  const probability = raw.match(/\bPROB(30|40)\b/);
+  if (probability) changes.push(`há probabilidade de ${probability[1]}% para a condição indicada`);
+  if (changes.length) lines.push(...changes);
+  if (/\bCNL\b/.test(raw)) lines.push('TAF cancelado');
+  const airportName = CREWCHECK_AIRPORT_NAMES[station];
+  if (airportName && lines.length) lines.unshift(`${airportName}, ${station}`);
+  return [...new Set(lines)];
+}
+function aviationReportMetrics(rawValue = '') {
+  const raw = safeText(rawValue).toUpperCase();
+  const visibilityMatch = raw.match(/\s(\d{4})\s/);
+  const visibility = /\bCAVOK\b/.test(raw) || visibilityMatch?.[1] === '9999' ? 10_000 : visibilityMatch ? Number(visibilityMatch[1]) : null;
+  const cloudBases = [...raw.matchAll(/\b(?:BKN|OVC)(\d{3})(?:CB|TCU)?\b/g)].map((match) => Number(match[1]) * 100).filter(Number.isFinite);
+  const ceiling = cloudBases.length ? Math.min(...cloudBases) : null;
+  const wind = raw.match(/\b(?:\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b/);
+  const hazards = [
+    ['TS', /\b(?:[-+]?TS|[-+]?TSRA|VCTS)\b/, 'trovoada'], ['CB', /\bCB\b/, 'cumulonimbus'], ['WS', /\bWS\b/, 'cortante de vento'],
+    ['SQ', /\bSQ\b/, 'linha de instabilidade'], ['FC', /\bFC\b/, 'tornado ou tromba'], ['GR', /\bGR\b/, 'granizo'],
+    ['FZ', /\b(?:FZRA|FZDZ|FZFG)\b/, 'fenômeno congelante'], ['SN', /\b(?:SN|SHSN|BLSN)\b/, 'neve'],
+    ['VA', /\bVA\b/, 'cinzas vulcânicas'], ['+RA', /\+RA\b/, 'chuva forte'], ['FG', /\bFG\b/, 'nevoeiro'],
+  ].filter(([, pattern]) => pattern.test(raw)).map(([code, , label]) => ({ code, label }));
+  let severity = hazards.some((item) => ['FC', 'VA', 'FZ', 'TS', 'WS', 'GR', 'SQ'].includes(item.code)) ? 3 : hazards.length ? 2 : 0;
+  if (visibility !== null) severity = Math.max(severity, visibility < 1500 ? 3 : visibility < 3000 ? 2 : visibility < 5000 ? 1 : 0);
+  if (ceiling !== null) severity = Math.max(severity, ceiling < 500 ? 3 : ceiling < 1000 ? 2 : ceiling < 1500 ? 1 : 0);
+  const windKt = Number(wind?.[1] || 0);
+  const gustKt = Number(wind?.[2] || 0);
+  severity = Math.max(severity, gustKt >= 35 || windKt >= 30 ? 3 : gustKt >= 25 || windKt >= 25 ? 2 : 0);
+  return { raw, severity, visibility, ceiling, windKt, gustKt, hazards, speci: /^SPECI\b/.test(raw) };
+}
+function criticalWeatherChange(previousRaw = '', currentRaw = '') {
+  const previous = aviationReportMetrics(previousRaw);
+  const current = aviationReportMetrics(currentRaw);
+  const previousHazards = new Set(previous.hazards.map((item) => item.code));
+  const newHazards = current.hazards.filter((item) => !previousHazards.has(item.code));
+  const reasons = newHazards.map((item) => item.label);
+  const thresholdDrop = (before, after, limits) => after !== null && limits.some((limit) => after < limit && (before === null || before >= limit));
+  if (thresholdDrop(previous.visibility, current.visibility, [5000, 3000, 1500])) reasons.push(`visibilidade caiu para ${current.visibility} m`);
+  if (thresholdDrop(previous.ceiling, current.ceiling, [1500, 1000, 500])) reasons.push(`teto caiu para ${current.ceiling} pés`);
+  if (current.gustKt >= 25 && previous.gustKt < 25) reasons.push(`rajadas de ${current.gustKt} nós`);
+  if (current.windKt >= 25 && previous.windKt < 25) reasons.push(`vento de ${current.windKt} nós`);
+  const worsened = current.severity > previous.severity;
+  const hasPrevious = Boolean(safeText(previousRaw));
+  const critical = current.severity >= 2 && (hasPrevious ? (worsened || reasons.length > 0) : current.severity >= 3);
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ severity: current.severity, hazards: current.hazards.map((item) => item.code).sort(), visibility: current.visibility, ceiling: current.ceiling, windKt: current.windKt, gustKt: current.gustKt })).digest('hex').slice(0, 24);
+  return { critical, severity: current.severity, reasons: [...new Set(reasons)], fingerprint, current };
+}
 function buildCrewCheckAtis(station, metar, taf) {
   const decoded = decodeMetarPtBr(metar?.raw, station);
   const issue = String(metar?.raw || '').match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
@@ -676,15 +798,43 @@ function crewCheckAtisVoiceText(value = '') {
 }
 async function handleAviationWeather(req, res, url) {
   const airport = String(url.searchParams.get('airport') || url.searchParams.get('station') || url.searchParams.get('id') || '').trim().toUpperCase();
+  const requestedAirports = String(url.searchParams.get('airports') || airport).split(',').map((value) => value.trim().toUpperCase()).filter(Boolean).slice(0, 6);
   const type = String(url.searchParams.get('type') || 'metar').trim().toLowerCase();
-  const station = airportIcao(airport);
-  if (!station) return sendJson(res, 200, { ok: false, configured: false, message: 'Informe um aeroporto para consultar meteorologia.' });
+  const view = ['raw', 'decoded', 'both'].includes(String(url.searchParams.get('view') || '').toLowerCase()) ? String(url.searchParams.get('view')).toLowerCase() : 'both';
+  const station = airportIcao(requestedAirports[0]);
+  if (!station) return sendJson(res, 200, { ok: false, configured: redemetApiKey() ? true : false, message: 'Informe um aeroporto para consultar meteorologia.' });
+  if (requestedAirports.length > 1 || url.searchParams.has('airports') || type === 'all') {
+    const stations = {};
+    await Promise.all(requestedAirports.map(async (requested) => {
+      const icao = airportIcao(requested);
+      if (!/^[A-Z]{4}$/.test(icao)) return;
+      const [metar, taf] = await Promise.all([fetchAviationWeatherReport(icao, 'metar'), fetchAviationWeatherReport(icao, 'taf')]);
+      const data = {
+        airport: requested,
+        icao,
+        metar: metar.raw || '',
+        taf: taf.raw || '',
+        metarDecoded: decodeMetarPtBr(metar.raw, icao),
+        tafDecoded: decodeTafPtBr(taf.raw, icao),
+        source: { metar: metar.source || '', taf: taf.source || '' },
+        provider: { metar: metar.provider || '', taf: taf.provider || '' },
+        observedAt: { metar: metar.observedAt || '', taf: taf.observedAt || '' },
+        cache: { metar: metar.cache, taf: taf.cache },
+        monitoring: aviationReportMetrics(metar.raw),
+        ok: Boolean(metar.ok || taf.ok),
+      };
+      stations[requested] = data;
+      if (!stations[icao]) stations[icao] = data;
+    }));
+    const uniqueStations = requestedAirports.map((requested) => stations[requested]).filter(Boolean);
+    return sendJson(res, 200, { ok: uniqueStations.some((item) => item.ok), configured: true, view, stations, redemetConfigured: Boolean(redemetApiKey()), alertPolicy: { onlyCritical: true, recoveryNotifications: false, cooldownMinutes: 90 }, message: uniqueStations.some((item) => item.ok) ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
+  }
   if (type === 'atis') {
     const [metar, taf] = await Promise.all([fetchAviationWeatherReport(station, 'metar'), fetchAviationWeatherReport(station, 'taf')]);
     return sendJson(res, 200, { ok: Boolean(metar.ok || taf.ok), configured: true, airport, station, type: 'ATIS', metar: metar.raw, taf: taf.raw, decoded: decodeMetarPtBr(metar.raw, station), atis: buildCrewCheckAtis(station, metar, taf), cache: { metar: metar.cache, taf: taf.cache }, message: metar.ok || taf.ok ? 'ATIS meteorológico atualizado.' : 'Meteorologia indisponível agora.' });
   }
   const report = await fetchAviationWeatherReport(station, type);
-  return sendJson(res, 200, { ...report, airport, decoded: report.type === 'METAR' ? decodeMetarPtBr(report.raw, station) : [], message: report.ok ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
+  return sendJson(res, 200, { ...report, airport: requestedAirports[0], view, decoded: report.type === 'METAR' ? decodeMetarPtBr(report.raw, station) : decodeTafPtBr(report.raw, station), monitoring: report.type === 'METAR' ? aviationReportMetrics(report.raw) : null, redemetConfigured: Boolean(redemetApiKey()), message: report.ok ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
 }
 function parseCoords(value) {
   const raw = String(value || '').trim();
@@ -1585,7 +1735,7 @@ function normalizeConciergeButtonText(value = '') {
   if (normalized === 'rotina') return '/rotina';
   if (normalized === 'hotéis' || normalized === 'hoteis') return '/hoteis';
   if (normalized === 'academias') return '/academias';
-  if (normalized.includes('atis')) return '/atis';
+  if (normalized.includes('atis')) return '/metar';
   if (normalized.includes('solicitar ligação') || normalized.includes('solicitar ligacao')) return '/ligacao';
   if (normalized.includes('emergência') || normalized.includes('emergencia')) return '/emergencia';
   if (normalized === 'ajuda') return '/ajuda';
@@ -1667,6 +1817,22 @@ async function conciergeDbDelete(key) {
     return true;
   } catch {
     return false;
+  }
+}
+async function conciergeDbListSnapshots(limit = 200) {
+  try {
+    const pool = await conciergeDbPool();
+    if (!pool) return [];
+    const [rows] = await pool.query(
+      "SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'snapshot:%' AND updated_at >= DATE_SUB(NOW(), INTERVAL 45 DAY) ORDER BY updated_at DESC LIMIT ?",
+      [Math.min(500, Math.max(1, Number(limit || 200)))],
+    );
+    return (rows || []).map((row) => {
+      if (typeof row?.payload !== 'string') return row?.payload || null;
+      try { return JSON.parse(row.payload); } catch { return null; }
+    }).filter(Boolean);
+  } catch {
+    return [];
   }
 }
 
@@ -1897,9 +2063,11 @@ function conciergeHelp(name = 'Tripulante') {
     '/portao LA3730 — portão e terminal',
     '/radar LA3730 — status ao vivo',
     '/saida — Saída Inteligente',
-    '/metar SBBR — METAR',
-    '/taf SBGR — TAF',
+    '/metar SBBR raw — METAR original',
+    '/metar SBBR decodificado — leitura acessível',
+    '/taf SBGR raw|decodificado — previsão do aeródromo',
     '/atis SBBR — boletim meteorológico em texto e voz',
+    '/alertameteo on|off — alertas críticos ligados à escala',
     '/hoteis — pernoites e hotéis',
     '/academias — academias próximas',
     '/rotina — rotina sugerida',
@@ -1971,12 +2139,17 @@ async function conciergeWeatherReply(text, snapshot) {
   const airport = explicit?.[0] || next?.legs?.[0]?.origin || '';
   const station = airportIcao(airport);
   const type = /taf/i.test(text) ? 'taf' : 'metar';
-  if (!station) return 'Informe o aeroporto, por exemplo: /metar SBBR ou /taf GRU.';
+  const mode = /\b(raw|bruto|original)\b/i.test(text) ? 'raw' : /\b(decodificado|decodificada|traduzido|traduzida|acess[ií]vel)\b/i.test(text) ? 'decoded' : 'both';
+  if (!station) return 'Informe o aeroporto, por exemplo: /metar SBBR raw ou /taf GRU decodificado.';
   const report = await fetchAviationWeatherReport(station, type);
   if (!report.raw) return `${type.toUpperCase()} ${station}: informação indisponível agora.`;
-  if (type === 'taf') return `TAF ${station}\n${report.raw}\n\nPrevisão de aeródromo. Use /atis ${station} para receber o boletim meteorológico em voz.`;
-  const decoded = decodeMetarPtBr(report.raw, station);
-  return [`METAR ${station}`, report.raw, '', 'Leitura acessível:', ...decoded.map((line) => `• ${line}`), '', `Atualização: ${report.cache === 'live' ? 'fonte consultada agora' : report.stale ? 'último dado disponível' : 'cache operacional'}.`].join('\n');
+  const decoded = type === 'taf' ? decodeTafPtBr(report.raw, station) : decodeMetarPtBr(report.raw, station);
+  const lines = [`${type.toUpperCase()} ${station}`];
+  if (mode !== 'decoded') lines.push(report.raw);
+  if (mode !== 'raw') lines.push('', 'Leitura decodificada:', ...decoded.map((line) => `• ${line}`));
+  lines.push('', `Fonte: ${report.source || 'fonte meteorológica disponível'}.`, `Atualização: ${report.cache === 'live' ? 'consultada agora' : report.stale ? 'último dado disponível' : 'cache operacional'}.`);
+  if (type === 'taf') lines.push('Use /atis ' + station + ' para receber o boletim meteorológico em voz.');
+  return lines.join('\n');
 }
 async function conciergeAtisReply(text, snapshot) {
   const explicit = String(text).toUpperCase().match(/\b[A-Z]{4}\b|\b[A-Z]{3}\b/);
@@ -1990,6 +2163,22 @@ async function conciergeAtisReply(text, snapshot) {
   ]);
   if (!metar.ok && !taf.ok) return `ATIS meteorológico ${station}: informação indisponível agora.`;
   return buildCrewCheckAtis(station, metar, taf);
+}
+async function conciergeWeatherAlertsReply(text, profile, snapshot) {
+  const lower = String(text || '').toLowerCase();
+  const enabled = !/\b(off|desligar|desativar|parar|0)\b/.test(lower);
+  const explicitChange = /\b(on|ligar|ativar|off|desligar|desativar|parar|0|1)\b/.test(lower);
+  if (explicitChange) {
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { weatherCriticalAlerts: enabled } });
+    if (!saved) return 'Não consegui salvar a preferência agora. Tente novamente em instantes.';
+  }
+  const current = explicitChange ? enabled : snapshot?.preferences?.weatherCriticalAlerts !== false;
+  return [
+    `Alertas meteorológicos críticos: ${current ? 'ATIVOS' : 'DESATIVADOS'}.`,
+    current ? 'O CrewCheck observa apenas origem perto da partida e destino perto da chegada.' : 'Nenhuma mudança meteorológica será enviada automaticamente pelo Telegram.',
+    current ? 'Só há aviso em piora relevante: teto/visibilidade cruzando limites, trovoada, cortante, granizo, fenômeno congelante ou vento forte.' : 'Para reativar, envie /alertameteo on.',
+    current ? 'Boletins repetidos, melhora e mudanças leves não geram notificação.' : '',
+  ].filter(Boolean).join('\n');
 }
 function conciergeHaversineKm(a, b) {
   const rad = (value) => Number(value) * Math.PI / 180;
@@ -2170,6 +2359,7 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   if (/^\/(?:proximo|próximo)(?:@\S+)?\b/i.test(value) || /pr[oó]xima\s+(programa[cç][aã]o|escala|atividade|voo)/i.test(lower)) return conciergeScheduleReply(snapshot, 'next');
   if (/^\/escala(?:@\S+)?\b/i.test(value) || /resumo\s+(da\s+)?escala/i.test(lower)) return conciergeScheduleReply(snapshot, 'summary');
   if (/^\/(?:portao|portão|radar)(?:@\S+)?\b/i.test(value) || /\b(port[aã]o|gate|radar|status\s+do\s+voo)\b/i.test(lower)) return conciergeRadarReply(value, profile, snapshot);
+  if (/^\/(?:alertameteo|alertasmeteo)(?:@\S+)?\b/i.test(value)) return conciergeWeatherAlertsReply(value, profile, snapshot);
   if (/^\/atis(?:@\S+)?\b/i.test(value) || /\b(atis)\b/i.test(lower)) return conciergeAtisReply(value, snapshot);
   if (/^\/(?:metar|taf)(?:@\S+)?\b/i.test(value) || /\b(metar|taf|meteorologia)\b/i.test(lower)) return conciergeWeatherReply(value, snapshot);
   if (/^\/saida(?:@\S+)?\b/i.test(value) || /\b(que horas devo sair|sa[ií]da inteligente|hora de sair)\b/i.test(lower)) return conciergeDepartureReply(snapshot);
@@ -2656,9 +2846,10 @@ async function configureTelegramBotMenu() {
     { command: 'escala', description: 'Resumo da escala ativa' },
     { command: 'radar', description: 'Portão, terminal e status' },
     { command: 'saida', description: 'Saída Inteligente' },
-    { command: 'metar', description: 'METAR do aeroporto' },
-    { command: 'taf', description: 'TAF do aeroporto' },
+    { command: 'metar', description: 'METAR bruto ou decodificado' },
+    { command: 'taf', description: 'TAF bruto ou decodificado' },
     { command: 'atis', description: 'ATIS meteorológico em voz' },
+    { command: 'alertameteo', description: 'Ativar/desativar alertas críticos' },
     { command: 'hoteis', description: 'Hotéis e pernoites' },
     { command: 'academias', description: 'Academias próximas' },
     { command: 'rotina', description: 'Rotina sugerida' },
@@ -2686,6 +2877,41 @@ async function answerTelegramCallback(callbackId, text = '') {
   const url = telegramApiUrl('answerCallbackQuery');
   if (!url || !callbackId) return;
   try { await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ callback_query_id: callbackId, text: String(text).slice(0, 180) }) }); } catch {}
+}
+function conciergeWeatherKeyboard(station = '', type = 'metar') {
+  const icao = airportIcao(station);
+  const kind = String(type).toLowerCase() === 'taf' ? 'taf' : 'metar';
+  if (!/^[A-Z]{4}$/.test(icao)) return conciergeKeyboard;
+  return { inline_keyboard: [
+    [
+      { text: '📡 Bruto', callback_data: `cc_weather:${kind}:${icao}:raw` },
+      { text: '🧾 Decodificado', callback_data: `cc_weather:${kind}:${icao}:decoded` },
+      { text: '🔁 Ambos', callback_data: `cc_weather:${kind}:${icao}:both` },
+    ],
+    [
+      { text: kind === 'metar' ? 'Ver TAF' : 'Ver METAR', callback_data: `cc_weather:${kind === 'metar' ? 'taf' : 'metar'}:${icao}:both` },
+      { text: '🔊 ATIS em voz', callback_data: `cc_weather:atis:${icao}:both` },
+    ],
+  ] };
+}
+async function handleTelegramWeatherCallback(update = {}) {
+  const callback = update?.callback_query;
+  const data = String(callback?.data || '');
+  if (!data.startsWith('cc_weather:')) return false;
+  const [, type, station, mode] = data.split(':');
+  const chatId = callback?.message?.chat?.id;
+  if (!chatId || !/^[A-Z]{4}$/.test(String(station || ''))) return true;
+  await answerTelegramCallback(callback.id, 'Atualizando meteorologia…');
+  if (type === 'atis') {
+    const reply = await conciergeAtisReply(`/atis ${station}`, null);
+    await sendTelegramMessage(chatId, reply, { reply_markup: conciergeWeatherKeyboard(station, 'metar') });
+    await sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply));
+    return true;
+  }
+  const modeText = mode === 'decoded' ? 'decodificado' : mode === 'raw' ? 'raw' : '';
+  const reply = await conciergeWeatherReply(`/${type} ${station} ${modeText}`, null);
+  await sendTelegramMessage(chatId, reply, { reply_markup: conciergeWeatherKeyboard(station, type) });
+  return true;
 }
 function conciergeCallConfirmationKeyboard() {
   return { inline_keyboard: [[
@@ -2736,6 +2962,7 @@ async function handleTelegramWebhook(req, res) {
   }
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
   const update = await readJsonBody(req);
+  if (await handleTelegramWeatherCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'weather-button' });
   if (await handleTelegramCallCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'call-button' });
   const message = update?.message || update?.edited_message || {};
   const chatId = message?.chat?.id;
@@ -2754,11 +2981,136 @@ async function handleTelegramWebhook(req, res) {
     } else {
       await sendTelegramChatAction(chatId, 'typing');
       const reply = await buildTelegramConciergeReply(normalizedText, profile, snapshot);
-      await sendTelegramMessage(chatId, reply, { reply_markup: conciergeKeyboard });
+      const weatherMatch = normalizedText.toUpperCase().match(/\b[A-Z]{4}\b|\b[A-Z]{3}\b/);
+      const next = conciergeNextProgram(snapshot?.roster);
+      const weatherStation = airportIcao(weatherMatch?.[0] || next?.legs?.[0]?.origin || '');
+      const isWeather = /^\/(?:metar|taf)(?:@\S+)?\b/i.test(normalizedText) || /\b(metar|taf|meteorologia)\b/i.test(normalizedText);
+      await sendTelegramMessage(chatId, reply, { reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeKeyboard });
       if (/^\/atis(?:@\S+)?\b/i.test(normalizedText)) await sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply));
     }
   } else if (chatId && (message?.voice || message?.audio || message?.document?.mime_type?.startsWith?.('audio/'))) await handleTelegramVoiceMessage(message);
   return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
+}
+
+function conciergeWeatherCandidates(snapshot = {}, now = new Date()) {
+  const candidates = [];
+  for (const record of conciergeProgramRecords(snapshot?.roster || {})) {
+    for (const [index, leg] of (record.legs || []).entries()) {
+      let departure = conciergeProgramDate(record.day, leg?.departureTime || record.startTime);
+      if (departure.getTime() < record.start.getTime() - 6 * 60 * 60_000) departure = new Date(departure.getTime() + 86_400_000);
+      let arrival = conciergeProgramDate(record.day, leg?.arrivalTime || record.endTime);
+      while (arrival.getTime() <= departure.getTime()) arrival = new Date(arrival.getTime() + 86_400_000);
+      const flight = String(leg?.flightNumber || `etapa-${index + 1}`).trim();
+      const key = `${conciergeRecordDateKey(record)}:${flight}:${index}`;
+      const origin = airportIcao(leg?.origin || '');
+      const destination = airportIcao(leg?.destination || '');
+      if (/^[A-Z]{4}$/.test(origin) && now.getTime() >= departure.getTime() - 180 * 60_000 && now.getTime() <= departure.getTime() + 30 * 60_000) {
+        candidates.push({ key, role: 'origem', station: origin, flight, scheduledAt: departure, route: `${leg?.origin || origin} → ${leg?.destination || destination}` });
+      }
+      if (/^[A-Z]{4}$/.test(destination) && now.getTime() >= arrival.getTime() - 120 * 60_000 && now.getTime() <= arrival.getTime() + 45 * 60_000) {
+        candidates.push({ key, role: 'destino', station: destination, flight, scheduledAt: arrival, route: `${leg?.origin || origin} → ${leg?.destination || destination}` });
+      }
+    }
+  }
+  return candidates.slice(0, 6);
+}
+function weatherAlertStateKey(snapshot = {}, candidate = {}) {
+  const identity = `${snapshot.key || snapshot.email || snapshot.chatId}|${candidate.key}|${candidate.role}|${candidate.station}`;
+  return `weather-alert:${crypto.createHash('sha256').update(identity).digest('hex').slice(0, 48)}`;
+}
+function weatherAlertSchedulerAuthorized(req) {
+  const expected = String(envAny(['CREWCHECK_SCHEDULER_SECRET', 'WEATHER_ALERT_SCHEDULER_SECRET']) || '').trim();
+  if (!expected) return { ok: false, configured: false };
+  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  const received = String(req.headers['x-crewcheck-scheduler-secret'] || bearer || '').trim();
+  if (!received || received.length !== expected.length) return { ok: false, configured: true };
+  return { ok: crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected)), configured: true };
+}
+const criticalWeatherMonitorMemory = new Map();
+let criticalWeatherMonitorRunning = false;
+async function runCriticalWeatherMonitor(now = new Date()) {
+  const localSnapshots = Object.values(telegramRostersRead().snapshots || {});
+  const databaseSnapshots = await conciergeDbListSnapshots(250);
+  const snapshots = [...new Map([...databaseSnapshots, ...localSnapshots].filter(Boolean).map((snapshot) => [snapshot.key || snapshot.email || snapshot.chatId, snapshot])).values()];
+  const summary = { snapshots: snapshots.length, monitored: 0, reports: 0, alerts: 0, skipped: 0, failures: 0 };
+  for (const snapshot of snapshots.slice(0, 250)) {
+    if (!snapshot?.chatId || !snapshot?.roster || snapshot?.preferences?.weatherCriticalAlerts === false) { summary.skipped += 1; continue; }
+    const candidates = conciergeWeatherCandidates(snapshot, now);
+    if (!candidates.length) continue;
+    summary.monitored += 1;
+    const messages = [];
+    for (const candidate of candidates) {
+      try {
+        const report = await fetchAviationWeatherReport(candidate.station, 'metar');
+        if (!report?.raw) { summary.failures += 1; continue; }
+        summary.reports += 1;
+        const stateKey = weatherAlertStateKey(snapshot, candidate);
+        const previous = await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
+        const change = criticalWeatherChange(previous.raw || '', report.raw);
+        const lastSentAt = new Date(previous.lastSentAt || 0).getTime();
+        const cooldownActive = Number.isFinite(lastSentAt) && now.getTime() - lastSentAt < 90 * 60_000;
+        const severityIncreased = change.severity > Number(previous.severity || 0);
+        const duplicate = previous.fingerprint === change.fingerprint;
+        const shouldSend = Boolean(previous.pendingDelivery && change.severity >= 2) || (change.critical && !duplicate && (!cooldownActive || severityIncreased));
+        const alertReasons = change.reasons.length ? change.reasons : Array.isArray(previous.reasons) ? previous.reasons : ['condição crítica no boletim'];
+        const nextState = { raw: report.raw, fingerprint: change.fingerprint, severity: change.severity, reasons: alertReasons, pendingDelivery: shouldSend, observedAt: report.observedAt || '', checkedAt: now.toISOString(), lastSentAt: previous.lastSentAt || '', source: report.source || '' };
+        criticalWeatherMonitorMemory.set(stateKey, nextState);
+        await conciergeDbPut(stateKey, nextState);
+        if (!shouldSend) continue;
+        messages.push({ stateKey, nextState, text: [
+          `${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`,
+          ...alertReasons.slice(0, 4).map((reason) => `• ${reason}`),
+          `METAR/SPECI: ${report.raw}`,
+          `Fonte: ${report.source || 'fonte meteorológica oficial disponível'}`,
+        ].join('\n') });
+      } catch {
+        summary.failures += 1;
+      }
+    }
+    if (messages.length) {
+      const result = await sendTelegramMessage(snapshot.chatId, [
+        '⚠️ Mudança meteorológica crítica na sua escala',
+        '',
+        ...messages.slice(0, 3).map((message) => message.text),
+        '',
+        'O CrewCheck suprimiu repetições e mudanças leves. Confirme o ATIS e as fontes operacionais oficiais antes da operação.',
+        'Para parar: /alertameteo off',
+      ].join('\n\n'));
+      if (result.ok) {
+        summary.alerts += Math.min(3, messages.length);
+        for (const message of messages.slice(0, 3)) {
+          const deliveredState = { ...message.nextState, pendingDelivery: false, lastSentAt: now.toISOString() };
+          criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
+          await conciergeDbPut(message.stateKey, deliveredState);
+        }
+      } else summary.failures += 1;
+    }
+  }
+  return summary;
+}
+async function handleCriticalWeatherMonitor(req, res) {
+  const authorization = weatherAlertSchedulerAuthorized(req);
+  if (!authorization.configured) return sendJson(res, 503, { ok: false, configured: false, message: 'Configure CREWCHECK_SCHEDULER_SECRET para ativar o monitor meteorológico.' });
+  if (!authorization.ok) return sendJson(res, 401, { ok: false, configured: true, message: 'Monitor não autorizado.' });
+  if (!['GET', 'POST'].includes(String(req.method || '').toUpperCase())) return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  const summary = await runCriticalWeatherMonitor(new Date());
+  return sendJson(res, 200, { ok: true, configured: true, summary, policy: { originWindowMinutes: 180, destinationWindowMinutes: 120, afterEventMinutes: 45, cooldownMinutes: 90, recoveryNotifications: false, minimumSeverity: 2 }, message: 'Monitor meteorológico concluído sem notificações repetidas.' });
+}
+function scheduleCriticalWeatherMonitor() {
+  if (String(envAny(['CREWCHECK_WEATHER_MONITOR_ENABLED']) || 'false').toLowerCase() !== 'true') return;
+  if (!envAny(['CREWCHECK_SCHEDULER_SECRET', 'WEATHER_ALERT_SCHEDULER_SECRET'])) return;
+  const minutes = Math.min(30, Math.max(5, Number(envAny(['CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES']) || 10)));
+  const execute = async () => {
+    if (criticalWeatherMonitorRunning) return;
+    criticalWeatherMonitorRunning = true;
+    try { await runCriticalWeatherMonitor(new Date()); }
+    catch {}
+    finally { criticalWeatherMonitorRunning = false; }
+  };
+  const first = setTimeout(execute, 45_000);
+  const timer = setInterval(execute, minutes * 60_000);
+  first.unref?.();
+  timer.unref?.();
 }
 
 const crewcheckAlarmTestRateLimit = new Map();
@@ -2959,7 +3311,8 @@ function reliabilityEnvItems() {
     reliabilityModule('maps','Mapas e rotas',['GOOGLE_MAPS_SERVER_KEY','GOOGLE_ROUTES_API_KEY','GOOGLE_MAPS_API_KEY','TOMTOM_API_KEY']),
     reliabilityModule('places','Locais/academias',['GOOGLE_PLACES_API_KEY','GOOGLE_PLACES_SERVER_KEY']),
     reliabilityModule('radar','Radar de voos',['FLIGHTAWARE_AEROAPI_KEY','AEROAPI_KEY','AIRLABS_API_KEY','AVIATIONSTACK_API_KEY','AVIATIONSTACK_ACCESS_KEY','OAG_FLIGHT_INFO_PRIMARY_KEY']),
-    reliabilityModule('weather','Meteorologia',['AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE']),
+    reliabilityModule('weather','Meteorologia',['REDEMET_API_KEY','CREWCHECK_REDEMET_API_KEY','AVIATION_WEATHER_API_BASE','CREWCHECK_WEATHER_API_BASE'], 'REDEMET ou contingência meteorológica configurada.', 'REDEMET sem credencial; contingência pública permanece disponível.'),
+    reliabilityModule('weather-alerts','Alertas meteorológicos',['CREWCHECK_SCHEDULER_SECRET','WEATHER_ALERT_SCHEDULER_SECRET'], 'Monitor protegido pronto para agendamento.', 'Configure o segredo do agendador para ativar alertas automáticos.'),
     reliabilityModule('telegram','Telegram',['TELEGRAM_BOT_TOKEN','CREWCHECK_TELEGRAM_BOT_TOKEN']),
     reliabilityModule('email','E-mail interno com PDF',['MAILERSEND_API_KEY','MAILERSEND_FROM']),
     reliabilityModule('tts-elevenlabs','Voz Premium ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY','ELEVENLABS_VOICE_ID','ELEVENLABS_TTS_VOICE_ID','CREWCHECK_ELEVENLABS_VOICE_ID','CREWCHECK_ELEVENLABS_TTS_VOICE_ID','ELEVENLABS_DEFAULT_VOICE_ID']),
@@ -3157,6 +3510,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/telegram/stt-health') return handleTelegramSttHealth(req, res, url);
   if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
+  if (url.pathname === '/api/telegram/weather-monitor/run') return handleCriticalWeatherMonitor(req, res, url);
   if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
   if (url.pathname === '/api/telegram/setup-webhook') return handleTelegramSetupWebhook(req, res, url);
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
@@ -3167,4 +3521,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
   return serveStatic(req, res, url);
-}).listen(port, () => console.log(`CrewCheck server listening on ${port}`));
+}).listen(port, () => {
+  scheduleCriticalWeatherMonitor();
+  console.log(`CrewCheck server listening on ${port}`);
+});

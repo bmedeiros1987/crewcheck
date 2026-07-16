@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
 import JSZip from 'jszip';
 import { toast } from 'sonner';
@@ -77,6 +77,7 @@ import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatfo
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
+import '@/components/v1393/weather.css';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
@@ -129,8 +130,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.9.2';
-const CREWCHECK_UI_CORE_NOTE = 'v13.9.2: voz nativa Telegram, ATIS aeronáutico e regulamentação manual';
+const DEFAULT_VERSION = '13.9.3';
+const CREWCHECK_UI_CORE_NOTE = 'v13.9.3: REDEMET, pesquisa meteorológica e alertas críticos por escala';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -2612,20 +2613,95 @@ function RadarView({ event }: { event: ZeroLeg }) {
   return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section></>;
 }
 
+type WeatherDisplayMode = 'both' | 'raw' | 'decoded';
+type WeatherStationResult = {
+  airport?: string;
+  icao?: string;
+  metar?: string;
+  taf?: string;
+  metarDecoded?: string[];
+  tafDecoded?: string[];
+  source?: { metar?: string; taf?: string };
+  observedAt?: { metar?: string; taf?: string };
+  monitoring?: { severity?: number; hazards?: Array<{ code: string; label: string }>; visibility?: number | null; ceiling?: number | null; windKt?: number; gustKt?: number };
+  ok?: boolean;
+};
+function weatherSeverityLabel(value = 0) {
+  if (value >= 3) return 'Mudança crítica';
+  if (value >= 2) return 'Atenção operacional';
+  if (value >= 1) return 'Acompanhar';
+  return 'Sem critério crítico';
+}
+function WeatherDecoded({ lines }: { lines?: string[] }) {
+  if (!lines?.length) return <p className="cc-weather-unavailable">Decodificação indisponível para este boletim.</p>;
+  return <ul className="cc-weather-decoded">{lines.map((line, index) => <li key={`${line}-${index}`}>{line}</li>)}</ul>;
+}
+function WeatherReport({ title, raw, decoded, mode }: { title: string; raw?: string; decoded?: string[]; mode: WeatherDisplayMode }) {
+  return <section className="cc-weather-report"><h3>{title}</h3>
+    {mode !== 'decoded' && <pre>{raw || `${title} indisponível agora.`}</pre>}
+    {mode !== 'raw' && <WeatherDecoded lines={decoded}/>}
+  </section>;
+}
 function WeatherView({ event }: { event: ZeroLeg }) {
+  const scheduled = [event.origin, event.destination].filter(Boolean).join(', ');
+  const [query, setQuery] = useState(scheduled || 'SBBR');
+  const [activeQuery, setActiveQuery] = useState(scheduled || 'SBBR');
+  const [mode, setMode] = useState<WeatherDisplayMode>('both');
   const [weather, setWeather] = useState<any>(null);
-  const airports = [event.origin, event.destination].filter(Boolean).join(',');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!scheduled) return;
+    setQuery(scheduled);
+    setActiveQuery(scheduled);
+  }, [event.id, scheduled]);
   useEffect(() => {
     let alive = true;
-    fetch(`/api/aviation-weather?airports=${encodeURIComponent(airports)}&v=1278`, { cache: 'no-store' })
-      .then(r => r.json())
-      .then(p => alive && setWeather(p))
-      .catch((error) => alive && setWeather({ ok: false, message: error?.message || 'Falha METAR/TAF' }));
+    const airports = activeQuery.split(/[\s,;]+/).map((value) => value.trim().toUpperCase()).filter(Boolean).slice(0, 6).join(',');
+    if (!airports) return;
+    setLoading(true);
+    fetch(`/api/aviation-weather?airports=${encodeURIComponent(airports)}&type=all&view=${mode}&v=1393`, { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((payload) => { if (alive) setWeather(payload); })
+      .catch((error) => { if (alive) setWeather({ ok: false, message: error?.message || 'Falha ao consultar meteorologia.' }); })
+      .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [airports]);
-  const origin = weather?.stations?.[event.origin] || weather?.stations?.[weather?.originIcao] || weather?.origin || {};
-  const dest = weather?.stations?.[event.destination] || weather?.stations?.[weather?.destinationIcao] || weather?.destination || origin || {};
-  return <><Brand back/><section className="cz-panel-head"><h1>Meteorologia</h1><p>METAR, TAF, Defesa Civil e concierge meteorológico. Fonte AviationWeather.gov com cache operacional de 60 minutos.</p></section><section className="cz-weather-grid"><article><CloudSun/><h2>{event.origin}</h2><strong>METAR</strong><p>{origin?.metar || weather?.metar || weather?.message || 'Aguardando METAR da fonte oficial.'}</p><small>{origin?.icao || weather?.originIcao || 'Aeroporto origem'}</small></article><article><Wifi/><h2>{event.destination}</h2><strong>TAF</strong><p>{dest?.taf || weather?.taf || 'Previsão será exibida quando disponível.'}</p><small>{dest?.icao || weather?.destinationIcao || 'Aeroporto destino'}</small></article></section>{!weather?.ok && <article className="cz-empty-real"><CloudSun/><h2>METAR/TAF indisponível agora</h2><p>Confira rede do Render. O endpoint interno /api/aviation-weather foi restaurado nesta versão.</p></article>}</>;
+  }, [activeQuery, mode]);
+  const requested = activeQuery.split(/[\s,;]+/).map((value) => value.trim().toUpperCase()).filter(Boolean).slice(0, 6);
+  const stations: WeatherStationResult[] = requested.map((code) => weather?.stations?.[code]).filter(Boolean);
+  const search = (submit: FormEvent) => {
+    submit.preventDefault();
+    const normalized = query.split(/[\s,;]+/).map((value) => value.trim().toUpperCase()).filter((value) => /^[A-Z]{3,4}$/.test(value)).slice(0, 6).join(', ');
+    if (!normalized) return toast.error('Informe um código IATA ou ICAO válido, como BSB ou SBBR.');
+    setQuery(normalized);
+    setActiveQuery(normalized);
+  };
+  return <><Brand back/>
+    <section className="cz-panel-head cc-weather-heading"><div><h1>Meteorologia</h1><p>METAR/SPECI oficial brasileiro com contingência internacional, TAF e leitura acessível.</p></div><span><ShieldCheck/> Consulta protegida no servidor</span></section>
+    <section className="cc-weather-console">
+      <form onSubmit={search} className="cc-weather-search"><label><span>Aeroporto(s)</span><div><Search/><input value={query} onChange={(change) => setQuery(change.target.value.toUpperCase())} placeholder="Ex.: BSB, GRU ou SBBR"/><button type="submit" disabled={loading}>{loading ? 'Consultando…' : 'Pesquisar'}</button></div></label></form>
+      <div className="cc-weather-mode" role="group" aria-label="Formato da meteorologia">
+        <span>Exibição</span>
+        <button className={mode === 'raw' ? 'active' : ''} onClick={() => setMode('raw')}>Bruto</button>
+        <button className={mode === 'decoded' ? 'active' : ''} onClick={() => setMode('decoded')}>Decodificado</button>
+        <button className={mode === 'both' ? 'active' : ''} onClick={() => setMode('both')}>Ambos</button>
+      </div>
+      {scheduled && <div className="cc-weather-flight-window"><Plane/><div><strong>Ligado à próxima etapa</strong><span>{event.origin} {safe(event.departure, 'horário a confirmar')} → {event.destination} {safe(event.arrival, 'horário a confirmar')}</span></div><small>Origem: 3 h antes da partida · destino: 2 h antes da chegada</small></div>}
+    </section>
+    {stations.length > 0 && <section className="cc-weather-stations">{stations.map((station) => {
+      const severity = Number(station.monitoring?.severity || 0);
+      const hazards = station.monitoring?.hazards || [];
+      return <article key={`${station.airport}-${station.icao}`} className={`cc-weather-station severity-${Math.min(3, severity)}`}>
+        <header><div><small>{station.airport && station.airport !== station.icao ? `${station.airport} · ` : ''}AERÓDROMO</small><h2>{station.icao || station.airport}</h2></div><span className="cc-weather-status">{weatherSeverityLabel(severity)}</span></header>
+        <div className="cc-weather-source"><span><Wifi/> METAR: {station.source?.metar || 'fonte indisponível'}</span><span><CloudSun/> TAF: {station.source?.taf || 'fonte indisponível'}</span></div>
+        {hazards.length > 0 && <div className="cc-weather-hazards">{hazards.map((hazard) => <span key={hazard.code}>{hazard.label}</span>)}</div>}
+        <WeatherReport title="METAR / SPECI" raw={station.metar} decoded={station.metarDecoded} mode={mode}/>
+        <WeatherReport title="TAF" raw={station.taf} decoded={station.tafDecoded} mode={mode}/>
+      </article>;
+    })}</section>}
+    {!loading && !weather?.ok && <article className="cz-empty-real cc-weather-empty"><CloudSun/><h2>METAR/TAF indisponível agora</h2><p>{weather?.message || 'A fonte não respondeu. Tente novamente sem recarregar o sistema.'}</p></article>}
+    <section className="cc-weather-alert-policy"><Bell/><div><h2>Alertas sem excesso</h2><p>O Telegram avisa somente piora crítica dentro da janela do voo: cruzamento de teto/visibilidade, trovoada, cortante, granizo, fenômeno congelante ou vento forte. Boletim repetido, melhora e mudança leve ficam silenciosos.</p><code>/alertameteo on</code><code>/alertameteo off</code></div></section>
+    <p className="cc-weather-disclaimer">A decodificação é apoio de leitura e não substitui METAR/SPECI, TAF, ATIS, despacho, NOTAM nem orientação operacional oficial.</p>
+  </>;
 }
 function moneyBRL(value: number) {
   return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
