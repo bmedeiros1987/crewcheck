@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -9,6 +10,13 @@ const GOOGLE_PLAY_PRODUCTS = new Map([
   ['crewcheck_premium_annual', 'premium_annual'],
 ]);
 const state = { poolPromise: null, databaseFailure: null, schemaReport: null, googleToken: null, googleTokenExpiresAt: 0 };
+const AMIL_NETWORK_SNAPSHOT = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('./data/amil-network-s450-s750.json', import.meta.url), 'utf8'));
+  } catch {
+    return { schemaVersion: 0, generatedAt: '', sources: [], providers: [], missingPublishedStates: ['AM'], disclaimer: 'Base credenciada local indisponível.' };
+  }
+})();
 
 const PLAN_CATALOG = [
   {
@@ -1203,18 +1211,133 @@ function amilConfiguration() {
   return { baseUrl, searchPath: safePath, token, apiKey, enabled, configured: enabled && baseUrl.startsWith('https://') && Boolean(safePath) && Boolean(token || apiKey) };
 }
 
+function amilSearchText(value = '') {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function amilPlanCode(value = '') {
+  const normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return normalized === 'S450' ? 'S450' : 'S750';
+}
+
+function amilProviderCare(provider, planCode) {
+  const codes = Array.isArray(provider?.plans?.[planCode]) ? provider.plans[planCode] : [];
+  const name = amilSearchText(provider?.name);
+  const pediatricName = /\b(crianca|infantil|pediatr|kids|baby)\b/.test(name);
+  const adultSpecific = codes.some((code) => ['H CARD', 'H ORT', 'PS', 'PS CARD', 'PSO'].includes(code));
+  const pediatricOnly = pediatricName && !adultSpecific;
+  const care = [];
+  if (!pediatricOnly && codes.some((code) => ['PA', 'PS', 'PS CARD', 'PSO'].includes(code))) care.push('adult_emergency');
+  if (!pediatricOnly && codes.some((code) => ['H', 'H CARD', 'H ORT', 'HD'].includes(code))) care.push('adult_hospital');
+  if (codes.includes('PS OBST') || codes.includes('M')) care.push('obstetric');
+  if (provider?.category === 'diagnostic') care.push('diagnostic');
+  if (provider?.category === 'diagnostic' || /\b(clinica|centro medico|policlinica|day hospital|instituto)\b/.test(name)) care.push('clinic');
+  if (pediatricOnly || codes.some((code) => ['HP', 'PSI'].includes(code))) care.push('pediatric');
+  return [...new Set(care)];
+}
+
+function amilServiceLabel(codes = []) {
+  const labels = {
+    H: 'Hospital eletivo', 'H CARD': 'Hospital cardiológico', HD: 'Hospital-dia', 'H ORT': 'Hospital ortopédico',
+    M: 'Maternidade', HP: 'Hospital pediátrico', PA: 'Pronto atendimento', PS: 'Pronto-socorro',
+    'PS CARD': 'Pronto-socorro cardiológico', 'PS OBST': 'Pronto-socorro obstétrico', PSI: 'Pronto-socorro infantil',
+    PSO: 'Pronto-socorro ortopédico', DIAGNOSTICO: 'Clínica / diagnóstico',
+  };
+  return codes.map((code) => labels[code] || code).join(' · ');
+}
+
+function amilSnapshotSearch(url) {
+  const planCode = amilPlanCode(url.searchParams.get('planCode'));
+  const stateFilter = String(url.searchParams.get('state') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+  const cityFilter = amilSearchText(url.searchParams.get('city'));
+  const queryFilter = amilSearchText(url.searchParams.get('query') || url.searchParams.get('q'));
+  const careFilter = ['adult_emergency', 'adult_hospital', 'clinic', 'diagnostic', 'pediatric', 'obstetric', 'all'].includes(String(url.searchParams.get('care') || ''))
+    ? String(url.searchParams.get('care')) : 'adult_emergency';
+  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit')) || 40));
+  if (!stateFilter && !cityFilter && !queryFilter) {
+    return { ok: false, status: 400, planCode, careFilter, message: 'Escolha a UF, informe a cidade ou pesquise o nome do prestador.' };
+  }
+  const matches = [];
+  for (const provider of AMIL_NETWORK_SNAPSHOT.providers || []) {
+    const codes = Array.isArray(provider?.plans?.[planCode]) ? provider.plans[planCode] : [];
+    if (!codes.length) continue;
+    if (stateFilter && provider.state !== stateFilter) continue;
+    const city = amilSearchText(provider.city);
+    if (cityFilter && !city.includes(cityFilter) && !cityFilter.includes(city)) continue;
+    const haystack = amilSearchText([provider.name, provider.city, provider.region, provider.state].join(' '));
+    if (queryFilter && !queryFilter.split(/\s+/).every((word) => haystack.includes(word))) continue;
+    const care = amilProviderCare(provider, planCode);
+    if (careFilter !== 'all' && !care.includes(careFilter)) continue;
+    const source = (AMIL_NETWORK_SNAPSHOT.sources || []).find((item) => item.id === provider.sourceId) || {};
+    matches.push({
+      id: provider.id,
+      name: provider.name,
+      serviceType: amilServiceLabel(codes),
+      serviceCodes: codes,
+      care,
+      address: '',
+      city: provider.city,
+      region: provider.region,
+      state: provider.state,
+      phone: '',
+      open24Hours: null,
+      planCode,
+      covered: true,
+      sourceId: provider.sourceId,
+      sourcePage: provider.sourcePage,
+      sourcePrintedAt: source.printedAt || '',
+      sourceUrl: source.url || AMIL_NETWORK_SNAPSHOT.sourcePage,
+      mapsQuery: [provider.name, provider.city, provider.state].filter(Boolean).join(', '),
+    });
+  }
+  matches.sort((left, right) => {
+    const leftCity = cityFilter && amilSearchText(left.city) === cityFilter ? 1 : 0;
+    const rightCity = cityFilter && amilSearchText(right.city) === cityFilter ? 1 : 0;
+    return rightCity - leftCity || left.city.localeCompare(right.city, 'pt-BR') || left.name.localeCompare(right.name, 'pt-BR');
+  });
+  return { ok: true, planCode, careFilter, providers: matches.slice(0, limit), total: matches.length };
+}
+
 async function handleAmilHealth(req, res) {
   const config = amilConfiguration();
-  return sendJson(res, 200, { ok: config.configured, configured: config.configured, provider: 'amil', environment: config.baseUrl.includes('api-dev.') ? 'development' : 'production', message: config.configured ? 'Rede Amil configurada no backend.' : 'Integração Amil aguarda credenciais oficiais e o caminho de busca contratado.' });
+  const snapshotReady = Number(AMIL_NETWORK_SNAPSHOT.schemaVersion || 0) > 0 && Array.isArray(AMIL_NETWORK_SNAPSHOT.providers) && AMIL_NETWORK_SNAPSHOT.providers.length > 0;
+  return sendJson(res, 200, {
+    ok: snapshotReady || config.configured,
+    configured: snapshotReady || config.configured,
+    provider: 'amil',
+    mode: config.configured ? 'official-api-with-snapshot-fallback' : 'published-pdf-snapshot',
+    environment: config.baseUrl.includes('api-dev.') ? 'development' : 'production',
+    snapshot: {
+      generatedAt: AMIL_NETWORK_SNAPSHOT.generatedAt || '',
+      providers: AMIL_NETWORK_SNAPSHOT.providers?.length || 0,
+      sources: AMIL_NETWORK_SNAPSHOT.sources?.length || 0,
+      plans: AMIL_NETWORK_SNAPSHOT.plans || ['S450', 'S750'],
+      missingPublishedStates: AMIL_NETWORK_SNAPSHOT.missingPublishedStates || ['AM'],
+      sourcePage: AMIL_NETWORK_SNAPSHOT.sourcePage || '',
+    },
+    message: snapshotReady ? 'Snapshot S450/S750 publicado e disponível; confirme a rede nos canais oficiais antes do atendimento.' : 'Rede Amil indisponível agora.',
+  });
 }
 
 async function handleAmilSearch(req, res, url) {
   const context = await requireMain(req, res);
   if (!context) return;
   const config = amilConfiguration();
-  if (!config.configured) return sendJson(res, 503, { ok: false, configured: false, code: 'AMIL_NOT_CONFIGURED', message: 'A consulta Amil aguarda credenciais oficiais no Render.' });
+  if (!config.configured) {
+    const snapshot = amilSnapshotSearch(url);
+    if (!snapshot.ok) return sendJson(res, snapshot.status || 400, { ...snapshot, configured: true, source: 'published-pdf-snapshot' });
+    return sendJson(res, 200, {
+      ...snapshot,
+      configured: true,
+      source: 'published-pdf-snapshot',
+      count: snapshot.providers.length,
+      snapshotGeneratedAt: AMIL_NETWORK_SNAPSHOT.generatedAt || '',
+      sourcePage: AMIL_NETWORK_SNAPSHOT.sourcePage || '',
+      disclaimer: AMIL_NETWORK_SNAPSHOT.disclaimer || 'Confirme cobertura, elegibilidade e atendimento diretamente com a operadora antes do deslocamento.',
+    });
+  }
   const params = new URLSearchParams();
-  for (const key of ['latitude', 'longitude', 'postalCode', 'city', 'state', 'serviceType', 'planCode']) {
+  for (const key of ['latitude', 'longitude', 'postalCode', 'city', 'state', 'serviceType', 'planCode', 'care', 'query']) {
     const value = normalizeText(url.searchParams.get(key), 120);
     if (value) params.set(key, value);
   }
@@ -1241,7 +1364,7 @@ async function handleAmilSearch(req, res, url) {
       latitude: Number(item.latitude || item.lat) || null,
       longitude: Number(item.longitude || item.lng || item.lon) || null,
     })).filter((item) => item.name) : [];
-    return sendJson(res, 200, { ok: true, configured: true, providers, count: providers.length, disclaimer: 'Confirme cobertura, elegibilidade e atendimento diretamente com a operadora antes do deslocamento.' });
+    return sendJson(res, 200, { ok: true, configured: true, source: 'official-api', providers, count: providers.length, disclaimer: 'Confirme cobertura, elegibilidade e atendimento diretamente com a operadora antes do deslocamento.' });
   } finally { clearTimeout(timer); }
 }
 
