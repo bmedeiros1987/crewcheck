@@ -24,7 +24,13 @@ services:
         value: CrewCheck
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_PUBLIC_BASE_URL
+        value: https://crewcheck.online
+      - key: GOOGLE_MAPS_SERVER_KEY
         sync: false
       - key: REDEMET_API_KEY
         sync: false
@@ -60,4 +66,3 @@ services:
         sync: false
       - key: EXTRA_FLIGHT_PROVIDER_ORDER
         value: OAG_CONNECTIONS,OAG_FLIGHT_INFO,SABRE,SERPAPI,SEARCHAPI,AMADEUS
-
