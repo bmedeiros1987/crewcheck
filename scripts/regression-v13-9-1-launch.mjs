@@ -64,4 +64,4 @@ for (const source of [crewlock, emergency, migration, androidGradle, androidMani
   assert(!/cloudinary:\/\/[^:\s]+:[^@\s]+@/.test(source), 'sem segredo Cloudinary hardcoded');
 }
 
-console.log('OK: CrewCheck v13.9.1 launch stabilization regression complete.');
+console.log('OK: CrewCheck 13.9.x launch stabilization regression complete.');
