@@ -6,11 +6,13 @@ import { handleCrewLockRoute, handleCrewLockTelegram } from './crewlock.mjs';
 import { cleanText, sendJson } from './common.mjs';
 import { handleRoutineRoute } from './routine.mjs';
 import { handleEmergencyRoute, handleEmergencyTelegram } from '../v1391/emergency.mjs';
+import { handleStayProfileRoute } from '../v1391/stayProfile.mjs';
 
 export async function handleV139Route(req, res, url) {
   try {
     if (await handleAuthRoute(req, res, url)) return true;
     if (await handleEmergencyRoute(req, res, url)) return true;
+    if (await handleStayProfileRoute(req, res, url)) return true;
     if (await handleBidsScheduler(req, res, url)) return true;
     if (await handleBidsCalendar(req, res, url)) return true;
     if (await handleBidsCore(req, res, url)) return true;
@@ -44,5 +46,5 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 
 export const crewCheckV139 = {
   version: '13.9.1',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency'],
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile'],
 };
