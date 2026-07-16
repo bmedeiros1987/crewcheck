@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { v139Api } from '@/components/v139/api';
 import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
+import '@/components/v1395/v1395.css';
 
 const TYPES = [
   { id: 'fire', label: 'Fogo ou fumaça', Icon: Flame, detail: 'Hotel, aeronave, residência ou área próxima.' },
@@ -26,6 +27,15 @@ type MedicalProfile = {
   allergies: string;
   continuousMedication: string;
   medicalNotes: string;
+  healthPlanProvider: string;
+  healthPlanCode: string;
+};
+
+type DeliveryReport = {
+  alertId: string;
+  sent: number;
+  failed: number;
+  recipients: Array<{ name: string; source: string; ok: boolean }>;
 };
 
 const DEFAULT_PREFS: Preferences = {
@@ -36,7 +46,7 @@ const DEFAULT_PREFS: Preferences = {
 };
 
 const DEFAULT_PROFILE: MedicalProfile = {
-  bloodType: '', allergies: '', continuousMedication: '', medicalNotes: '',
+  bloodType: '', allergies: '', continuousMedication: '', medicalNotes: '', healthPlanProvider: '', healthPlanCode: '',
 };
 
 function currentLocationUrl(): Promise<string> {
@@ -57,6 +67,7 @@ export default function EmergencyCenterView() {
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFS);
   const [profile, setProfile] = useState<MedicalProfile>(DEFAULT_PROFILE);
   const [consentMedicalShare, setConsentMedicalShare] = useState(false);
+  const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null);
   const [busy, setBusy] = useState('');
 
   useEffect(() => {
@@ -86,15 +97,19 @@ export default function EmergencyCenterView() {
   async function savePreferences() {
     setBusy('save');
     try {
-      await Promise.all([
-        v139Api('/api/platform/emergency/preferences', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(preferences),
-        }),
-        v139Api('/api/platform/emergency/profile', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...profile, consentMedicalShare }),
-        }),
-      ]);
-      toast.success('Preferências e perfil médico protegidos.');
+      const profilePayload = await v139Api('/api/platform/emergency/profile', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...profile, consentMedicalShare }),
+      });
+      if (!profilePayload?.ok || !profilePayload?.saved) throw new Error(profilePayload?.message || 'O banco não confirmou o perfil médico.');
+      await v139Api('/api/platform/emergency/preferences', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(preferences),
+      });
+      if (profile.healthPlanProvider === 'Amil' && ['S450', 'S750'].includes(profile.healthPlanCode)) {
+        try { localStorage.setItem('crewcheck:amil-plan', profile.healthPlanCode); } catch {}
+      }
+      setProfile({ ...DEFAULT_PROFILE, ...(profilePayload.profile || profile) });
+      setConsentMedicalShare(Boolean(profilePayload.consentMedicalShare));
+      toast.success(profilePayload.message || 'Preferências e perfil médico protegidos.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui salvar.');
     } finally {
@@ -118,6 +133,7 @@ export default function EmergencyCenterView() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ kind, details, locationUrl: effectiveLocation }),
       });
+      setDeliveryReport({ alertId: String(payload.alertId || ''), sent: Number(payload.sent || 0), failed: Number(payload.failed || 0), recipients: Array.isArray(payload.recipients) ? payload.recipients : [] });
       toast.success(payload.message || 'Alerta enviado.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui enviar o alerta. Acione o serviço público/local de emergência.');
@@ -129,9 +145,20 @@ export default function EmergencyCenterView() {
   async function cancelAlert() {
     try {
       const payload = await v139Api('/api/platform/emergency/cancel', { method: 'POST', body: '{}' });
+      if (payload.cancelled) setDeliveryReport(null);
       toast.success(payload.message || 'Alerta cancelado.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui cancelar.');
+    }
+  }
+
+  async function markAssisted() {
+    try {
+      const payload = await v139Api('/api/platform/emergency/assisted', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alertId: deliveryReport?.alertId || '' }) });
+      if (payload.assisted) setDeliveryReport(null);
+      toast.success(payload.message || 'Situação atualizada.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui avisar que você já está sendo assistido.');
     }
   }
 
@@ -164,6 +191,7 @@ export default function EmergencyCenterView() {
         <button className="danger" onClick={sendAlert} disabled={!kind || Boolean(busy)}><Siren/> {busy === 'send' ? 'Enviando alerta…' : 'Confirmar e enviar alerta'}</button>
         <button onClick={cancelAlert}><CheckCircle2/> Estou bem / cancelar alerta</button>
       </div>
+      {deliveryReport && <div className="cc139-delivery-report" role="status"><strong>Alerta entregue a {deliveryReport.sent} contato(s)</strong><ul>{deliveryReport.recipients.map((recipient, index) => <li key={`${recipient.name}-${index}`} className={recipient.ok ? 'ok' : 'failed'}>{recipient.ok ? '✓' : '×'} {recipient.name} · {recipient.source === 'same-hotel' ? 'mesmo hotel' : 'Compartilhar'}</li>)}</ul><button className="primary" onClick={markAssisted}><ShieldCheck/> Já estou sendo assistido</button><small>Ao confirmar, todos que receberam o alerta serão avisados para não se deslocarem.</small></div>}
     </section>
     <section className="cc139-card">
       <h2>2. Quem pode receber</h2>
@@ -183,6 +211,8 @@ export default function EmergencyCenterView() {
         <label>Alergias<input value={profile.allergies} onChange={(event) => setProfile({ ...profile, allergies: event.target.value })} placeholder="Nenhuma ou descreva"/></label>
         <label>Medicamento contínuo<input value={profile.continuousMedication} onChange={(event) => setProfile({ ...profile, continuousMedication: event.target.value })} placeholder="Nome e dose, se aplicável"/></label>
         <label>Observações médicas<input value={profile.medicalNotes} onChange={(event) => setProfile({ ...profile, medicalNotes: event.target.value })} placeholder="Condição relevante"/></label>
+        <label>Operadora do plano<select value={profile.healthPlanProvider} onChange={(event) => setProfile({ ...profile, healthPlanProvider: event.target.value, healthPlanCode: event.target.value === 'Amil' ? profile.healthPlanCode : '' })}><option value="">Não informado</option><option value="Amil">Amil</option><option value="Outro">Outro plano</option></select></label>
+        <label>Plano/rede{profile.healthPlanProvider === 'Amil' ? <select value={profile.healthPlanCode} onChange={(event) => setProfile({ ...profile, healthPlanCode: event.target.value })}><option value="">Selecione</option><option value="S450">S450</option><option value="S750">S750</option></select> : <input value={profile.healthPlanCode} onChange={(event) => setProfile({ ...profile, healthPlanCode: event.target.value })} placeholder="Nome ou código da rede"/>}</label>
         <label className="wide"><input type="checkbox" checked={consentMedicalShare} onChange={(event) => setConsentMedicalShare(event.target.checked)}/> Autorizo o envio desses dados em uma emergência médica confirmada.</label>
       </div>
       <div className="cc139-actions"><button className="primary" onClick={savePreferences} disabled={Boolean(busy)}><Save/> {busy === 'save' ? 'Salvando…' : 'Salvar proteção e preferências'}</button></div>
