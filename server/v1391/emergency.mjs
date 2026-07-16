@@ -317,7 +317,9 @@ export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) 
   const chatId = String(message?.chat?.id || '');
   const text = String(message?.text || message?.caption || '').trim();
   const data = String(callback?.data || '').trim();
-  const isCommand = /^\/emergencia(?:@\S+)?\b/i.test(text) || data.startsWith('cc_emergency');
+  const isCommand = /^\/emergencia(?:@\S+)?\b/i.test(text)
+    || /^🚨?\s*emerg[êe]ncia\b/i.test(text)
+    || data.startsWith('cc_emergency');
   if (!chatId || !isCommand) return false;
   const db = await dbPool();
   if (!db) {
