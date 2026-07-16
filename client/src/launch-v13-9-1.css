@@ -1,0 +1,103 @@
+/* CrewCheck v13.9.1 - launch stabilization. Loaded after premium-audit. */
+
+.cz-roster-card[data-work-mode="operating"],
+.cz-roster-card.cc-flight-operating {
+  border-inline-start: 5px solid #16a34a !important;
+  background: color-mix(in srgb, #16a34a 10%, var(--cc-surface)) !important;
+}
+
+.cz-roster-card[data-work-mode="extra"],
+.cz-roster-card.cc-flight-extra {
+  border-inline-start: 5px solid #64748b !important;
+  background: color-mix(in srgb, #64748b 11%, var(--cc-surface)) !important;
+}
+
+.cz-roster-card[data-event-kind="stay"],
+.cz-roster-card.cc-roster-stay {
+  border-inline-start: 5px solid #7c3aed !important;
+  background: color-mix(in srgb, #7c3aed 9%, var(--cc-surface)) !important;
+}
+
+.cc-ground-time,
+.cc-rest-window,
+.cc-routine-card-detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--cc-accent) 28%, var(--cc-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cc-accent) 7%, var(--cc-surface));
+  color: var(--cc-text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cc-roster-card-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+@media (min-width: 1024px) {
+  .cz-menu-panel {
+    width: min(88vw, 860px) !important;
+    max-width: 860px !important;
+    height: min(94dvh, 980px) !important;
+    margin: 3dvh 0 3dvh 3vw !important;
+    border-radius: 22px !important;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .34) !important;
+  }
+
+  .cz-menu-scroll {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, .85fr) !important;
+    align-items: start !important;
+    gap: 22px !important;
+    padding: 20px 24px 30px !important;
+    overflow: auto !important;
+  }
+
+  .cz-menu-section {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .cz-menu-section:first-child {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .cz-menu-section:first-child > h3 {
+    grid-column: 1 / -1;
+  }
+
+  .cz-menu-section > button {
+    min-height: 66px !important;
+    padding: 12px 14px !important;
+  }
+
+  .cz-menu-header {
+    min-height: 94px !important;
+    padding: 18px 24px !important;
+  }
+
+  .cz-menu-profile strong {
+    font-size: 17px !important;
+  }
+
+  .cz-menu-profile small,
+  .cz-menu-section small {
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .cz-menu-panel {
+    width: min(92vw, 430px) !important;
+    max-width: 430px !important;
+  }
+}
