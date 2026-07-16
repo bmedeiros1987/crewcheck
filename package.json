@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-9-2-telegram-atis-regulation",
-  "version": "13.9.2",
+  "name": "crewcheck-v13-9-3-redemet-critical-weather",
+  "version": "13.9.3",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.9.2 - Telegram voice notes, aviation ATIS, manual regulation and desktop menu audit",
+  "description": "CrewCheck v13.9.3 - REDEMET, decoded weather and schedule-aware critical alerts",
   "scripts": {
     "prepare:v139": "node scripts/v139/apply.mjs",
     "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
@@ -108,7 +108,8 @@
     "regression:v13.8.7:mysql": "node scripts/regression-v13-8-7-aiven-mysql-full-platform.mjs",
     "regression:v13.8.8:audit": "node scripts/regression-v13-8-8-premium-system-audit.mjs",
     "regression:v13.8.9:mobile-hotels": "node scripts/regression-v13-8-9-mobile-hotels-qr.mjs",
-    "regression:v13.9.2:telegram-atis-regulation": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-2-telegram-atis-regulation.mjs"
+    "regression:v13.9.2:telegram-atis-regulation": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-2-telegram-atis-regulation.mjs",
+    "regression:v13.9.3:redemet-weather": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-3-redemet-weather.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
