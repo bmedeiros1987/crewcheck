@@ -51,6 +51,7 @@ assert.doesNotMatch(JSON.stringify(incomplete), /private-value/);
 const server = fs.readFileSync('server.mjs', 'utf8');
 const render = fs.readFileSync('render.yaml', 'utf8');
 const example = fs.readFileSync('.env.example', 'utf8');
+const safeguards = fs.readFileSync('scripts/v1396/apply.mjs', 'utf8');
 assert.match(server, /buildInfobipTtsRequest/);
 assert.match(server, /phoneCallMessage/);
 assert.match(server, /conectado para ligações Premium/);
@@ -60,5 +61,7 @@ assert.doesNotMatch(server, /message\?\.document && await handleV139Telegram\(me
 assert.match(render, /CREWCHECK_WAKEUP_CALL_PROVIDER\s*\n\s*value: infobip/);
 assert.match(render, /key: INFOBIP_PHONE_FROM/);
 assert.match(example, /CREWCHECK_WAKEUP_CALL_PROVIDER=infobip/);
+assert.match(safeguards, /versionCode\\s\+\\d\+\\b/);
+assert.match(safeguards, /manifest\.version = VERSION/);
 
 console.log('CrewCheck v13.9.6 Infobip Premium call integration regression OK.');
