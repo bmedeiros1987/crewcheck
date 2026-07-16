@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, FileText, KeyRound, Lock, Save, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { Cloud, Database, Download, FileText, KeyRound, Lock, RefreshCw, Save, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadBlob, v139Api } from './api';
 import { decryptCrewLockFile, decryptCrewLockName, encryptCrewLockFile } from './crypto';
@@ -13,19 +13,34 @@ type CrewDocument = {
   mimeType: string;
   bytes: number;
   source: string;
+  storageProvider?: string;
   cipherAlgorithm: string;
   cipherIv: string;
   kdfSalt: string;
   createdAt: string;
 };
 
+type CrewLockHealth = {
+  ok: boolean;
+  cloudinary?: boolean;
+  databaseFallback?: boolean;
+  databaseFallbackReady?: boolean;
+  maxDatabaseFallbackMb?: number;
+  message?: string;
+};
+
 function megabytes(bytes: number): string {
   return `${(Number(bytes || 0) / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function extension(fileName: string): string {
+  return String(fileName || '').split('.').pop()?.toLowerCase() || '';
 }
 
 export default function CrewLockView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [documents, setDocuments] = useState<CrewDocument[]>([]);
+  const [health, setHealth] = useState<CrewLockHealth | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [category, setCategory] = useState('documento-operacional');
   const [pin, setPin] = useState('');
@@ -33,9 +48,13 @@ export default function CrewLockView() {
   const [busy, setBusy] = useState('');
 
   async function load() {
-    const payload = await v139Api('/api/platform/crewlock/documents');
-    setDocuments(payload.documents || []);
-    return payload.documents || [];
+    const [documentPayload, healthPayload] = await Promise.all([
+      v139Api('/api/platform/crewlock/documents'),
+      v139Api('/api/platform/crewlock/health').catch((error) => ({ ok: false, message: error instanceof Error ? error.message : 'Diagnóstico indisponível.' })),
+    ]);
+    setDocuments(documentPayload.documents || []);
+    setHealth(healthPayload);
+    return documentPayload.documents || [];
   }
 
   useEffect(() => {
@@ -86,17 +105,27 @@ export default function CrewLockView() {
       toast.info('Desbloqueie o CrewLock antes de salvar.');
       return;
     }
+    if (health && !health.ok) {
+      toast.error(health.message || 'O armazenamento do CrewLock ainda não está pronto.');
+      return;
+    }
     setBusy('upload');
     try {
       const encrypted = await encryptCrewLockFile(file, pin);
-      await v139Api('/api/platform/crewlock/documents', {
+      const payload = await v139Api('/api/platform/crewlock/documents', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...encrypted, category, mimeType: file.type || 'application/octet-stream' }),
+        body: JSON.stringify({
+          ...encrypted,
+          category,
+          fileName: file.name,
+          fileExtension: extension(file.name),
+          mimeType: file.type || 'application/octet-stream',
+        }),
       });
       const items = await load();
       await revealNames(items, pin);
-      toast.success('Documento cifrado no dispositivo e salvo.');
+      toast.success(payload.message || 'Documento cifrado no dispositivo e salvo.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui salvar o documento.');
     } finally {
@@ -158,8 +187,17 @@ export default function CrewLockView() {
     <V139Header title="CrewLock" detail="Cofre privado com criptografia de ponta a ponta antes do armazenamento."/>
     <section className="cc139-grid">
       <article><Lock/><span>Criptografia</span><strong>AES-256-GCM</strong></article>
-      <article><ShieldCheck/><span>Servidor</span><strong>Não possui seu PIN</strong></article>
+      <article>{health?.cloudinary ? <Cloud/> : <Database/>}<span>Armazenamento</span><strong>{health?.cloudinary ? 'Nuvem cifrada' : health?.databaseFallbackReady ? 'Aiven cifrado' : 'Verificando'}</strong></article>
       <article><FileText/><span>Documentos</span><strong>{documents.length}</strong></article>
+    </section>
+    <section className={`cc139-card cc139-plan-card ${health?.ok ? 'ok' : 'warn'}`}>
+      <h2>Estado do cofre</h2>
+      <p>{health?.message || 'Verificando armazenamento e migration.'}</p>
+      <div className="cc139-badges">
+        <span>{health?.cloudinary ? 'Cloudinary configurado' : 'Cloudinary não configurado'}</span>
+        <span>{health?.databaseFallbackReady ? `Fallback Aiven pronto · até ${health.maxDatabaseFallbackMb || 10} MB` : 'Fallback Aiven aguardando migration'}</span>
+      </div>
+      <div className="cc139-actions"><button onClick={() => load().then(() => toast.success('Diagnóstico atualizado.')).catch((error) => toast.error(error.message))}><RefreshCw/> Verificar novamente</button></div>
     </section>
     <section className="cc139-card">
       <h2>{unlocked ? 'CrewLock desbloqueado' : 'Desbloquear ou criar PIN'}</h2>
@@ -185,13 +223,13 @@ export default function CrewLockView() {
       </div>
       <input ref={fileRef} hidden type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={(event) => upload(event.target.files?.[0])}/>
       <div className="cc139-actions">
-        <button className="primary" onClick={() => fileRef.current?.click()} disabled={!unlocked || Boolean(busy)}><Upload/> {busy === 'upload' ? 'Cifrando e enviando…' : 'Selecionar arquivo'}</button>
+        <button className="primary" onClick={() => fileRef.current?.click()} disabled={!unlocked || Boolean(busy) || health?.ok === false}><Upload/> {busy === 'upload' ? 'Cifrando e enviando…' : 'Selecionar arquivo'}</button>
       </div>
     </section>
     <section className="cc139-list">
       {documents.map((item) => <article className="cc139-card" key={item.id}>
         <header><span><strong>{unlocked ? names[item.id] || 'Descriptografando…' : 'Documento protegido'}</strong><small>{item.category} · {megabytes(item.bytes)} · {item.source}</small></span><Lock/></header>
-        <div className="cc139-badges"><span>{item.mimeType}</span><span>{new Date(item.createdAt).toLocaleDateString('pt-BR')}</span></div>
+        <div className="cc139-badges"><span>{item.mimeType}</span><span>{item.storageProvider === 'aiven-mysql' ? 'Fallback Aiven' : 'Nuvem cifrada'}</span><span>{new Date(item.createdAt).toLocaleDateString('pt-BR')}</span></div>
         <div className="cc139-actions">
           <button onClick={() => download(item)} disabled={!unlocked || busy === item.id}><Download/> Abrir</button>
           <button className="danger" onClick={() => remove(item)} disabled={busy === item.id}><Trash2/> Excluir</button>

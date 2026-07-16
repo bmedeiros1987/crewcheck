@@ -69,7 +69,7 @@ patch('client/src/pages/Home.tsx', (source) => {
     "@/components/v139/BidsWindowsView",
     'Home imports',
   );
-  if (!source.includes("| 'bids' | 'crewlock' | 'admin';")) {
+  if (!source.includes("| 'bids' | 'crewlock' |")) {
     requireAnchor(source, "| 'bids' | 'admin';", 'Home ZeroView');
     source = source.replace("| 'bids' | 'admin';", "| 'bids' | 'crewlock' | 'admin';");
   }

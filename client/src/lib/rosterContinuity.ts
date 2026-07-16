@@ -54,10 +54,42 @@ function lastLocation(day: RosterDay) { return airport(day.legs?.at(-1)?.destina
 function firstLocation(day: RosterDay) { return airport(day.legs?.[0]?.origin || day.base); }
 function isPublishedRest(day: RosterDay) { return REST_CODES.has(String(day.type || day.pairingCode || '').trim().toUpperCase()); }
 
+function syntheticStay(date: Date, end: Date, start: Date, location: string, gapHours: number, roster: CrewRoster, suffix: string): RosterDay {
+  const atBase = location === airport(roster.base);
+  const type = atBase ? 'DESCANSO_BASE_CONTINUIDADE' : 'PERNOITE_CONTINUIDADE';
+  const report = `${pad2(end.getHours())}:${pad2(end.getMinutes())}`;
+  const debrief = `${pad2(start.getHours())}:${pad2(start.getMinutes())}`;
+  return {
+    date: dateKey(date),
+    dayNumber: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
+    dayOfWeek: date.toLocaleDateString('pt-BR', { weekday:'short' }),
+    type,
+    pairingCode: `${atBase ? 'DESCANSO BASE' : 'PERNOITE'} ${suffix}`.trim(),
+    dutyReport: report,
+    dutyDebrief: debrief,
+    legs: [],
+    dutyHours: gapHours,
+    flyingHours: 0,
+    isNextDay: start.toDateString() !== date.toDateString(),
+    hotel: null,
+    base: location,
+    rawText: `${atBase ? 'Descanso na base' : 'Pernoite'} inferido por continuidade física em ${location}. Intervalo total ${gapHours.toFixed(2)} h. Não é folga publicada.`,
+    continuityInferred: true,
+    continuityLocation: location,
+    continuityHours: gapHours,
+    continuityAtBase: atBase,
+    continuityStart: end.toISOString(),
+    continuityEnd: start.toISOString(),
+  } as unknown as RosterDay & Record<string, unknown>;
+}
+
 export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): RosterDay[] {
   const sorted = [...days].sort((a,b) => localDate(a, roster).getTime() - localDate(b, roster).getTime() || dayStart(a, roster).getTime() - dayStart(b, roster).getTime());
   const explicit = new Set(sorted.map((day) => day.date));
   const synthetic: RosterDay[] = [];
+  const syntheticKeys = new Set<string>();
 
   for (let index = 0; index < sorted.length - 1; index += 1) {
     const previous = sorted[index];
@@ -79,36 +111,26 @@ export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): R
       cursor.setDate(cursor.getDate() + 1);
     }
 
+    if (!missing.length) {
+      const date = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0);
+      const key = `${dateKey(date)}|${location}|${end.toISOString()}|${start.toISOString()}`;
+      if (!syntheticKeys.has(key)) {
+        synthetic.push(syntheticStay(date, end, start, location, gapHours, roster, 'ENTRE JORNADAS'));
+        syntheticKeys.add(key);
+      }
+      continue;
+    }
+
     missing.forEach((date, missingIndex) => {
-      const single = missing.length === 1;
       const first = missingIndex === 0;
       const last = missingIndex === missing.length - 1;
-      const report = first ? `${pad2(end.getHours())}:${pad2(end.getMinutes())}` : '00:00';
-      const debrief = last ? `${pad2(start.getHours())}:${pad2(start.getMinutes())}` : '23:59';
-      const nextDayEnd = single && start.toDateString() !== date.toDateString();
-      const item = {
-        date: dateKey(date),
-        dayNumber: date.getDate(),
-        month: date.getMonth() + 1,
-        year: date.getFullYear(),
-        dayOfWeek: date.toLocaleDateString('pt-BR', { weekday:'short' }),
-        type: 'PERNOITE_CONTINUIDADE',
-        pairingCode: 'PERNOITE',
-        dutyReport: report,
-        dutyDebrief: debrief,
-        legs: [],
-        dutyHours: gapHours,
-        flyingHours: 0,
-        isNextDay: nextDayEnd,
-        hotel: null,
-        base: location,
-        rawText: `Pernoite inferido por continuidade física em ${location}. Intervalo total ${gapHours.toFixed(2)} h.`,
-        continuityInferred: true,
-        continuityLocation: location,
-        continuityHours: gapHours,
-      } as unknown as RosterDay & Record<string, unknown>;
-      synthetic.push(item);
-      explicit.add(item.date);
+      const segmentEnd = first ? end : new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+      const segmentStart = last ? start : new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 0, 0);
+      const key = `${dateKey(date)}|${location}|${missingIndex}`;
+      if (syntheticKeys.has(key)) return;
+      synthetic.push(syntheticStay(date, segmentEnd, segmentStart, location, gapHours, roster, missing.length > 1 ? `${missingIndex + 1}/${missing.length}` : ''));
+      syntheticKeys.add(key);
+      explicit.add(dateKey(date));
     });
   }
 

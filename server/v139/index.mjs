@@ -5,10 +5,14 @@ import { handleBidsScheduler } from './bidsNotify.mjs';
 import { handleCrewLockRoute, handleCrewLockTelegram } from './crewlock.mjs';
 import { cleanText, sendJson } from './common.mjs';
 import { handleRoutineRoute } from './routine.mjs';
+import { handleEmergencyRoute, handleEmergencyTelegram } from '../v1391/emergency.mjs';
+import { handleStayProfileRoute } from '../v1391/stayProfile.mjs';
 
 export async function handleV139Route(req, res, url) {
   try {
     if (await handleAuthRoute(req, res, url)) return true;
+    if (await handleEmergencyRoute(req, res, url)) return true;
+    if (await handleStayProfileRoute(req, res, url)) return true;
     if (await handleBidsScheduler(req, res, url)) return true;
     if (await handleBidsCalendar(req, res, url)) return true;
     if (await handleBidsCore(req, res, url)) return true;
@@ -17,18 +21,23 @@ export async function handleV139Route(req, res, url) {
     return false;
   } catch (error) {
     const status = Number(error?.status || 500);
-    console.error('[crewcheck:v139]', cleanText(error?.code || error?.message || 'V139_ERROR', 180));
+    console.error('[crewcheck:v1391]', cleanText(error?.code || error?.message || 'V1391_ERROR', 180));
     sendJson(res, status >= 400 && status < 600 ? status : 500, {
       ok: false,
-      code: error?.code || 'V139_ERROR',
+      code: error?.code || 'V1391_ERROR',
       message: status >= 500 ? 'O CrewCheck não conseguiu concluir esta operação agora.' : error?.message || 'Solicitação inválida.',
     });
     return true;
   }
 }
 
-export async function handleV139Telegram(message = {}, sendTelegram) {
+export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
   try {
+    const update = updateOrMessage?.callback_query || updateOrMessage?.message || updateOrMessage?.edited_message
+      ? updateOrMessage
+      : { message: updateOrMessage };
+    if (await handleEmergencyTelegram(update, sendTelegram)) return true;
+    const message = update?.message || update?.edited_message || updateOrMessage || {};
     return await handleCrewLockTelegram(message, sendTelegram);
   } catch {
     return false;
@@ -36,6 +45,6 @@ export async function handleV139Telegram(message = {}, sendTelegram) {
 }
 
 export const crewCheckV139 = {
-  version: '13.9.0',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine'],
+  version: '13.9.1',
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile'],
 };
