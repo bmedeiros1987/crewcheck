@@ -35,3 +35,7 @@ Com `CREWCHECK_WEATHER_MONITOR_ENABLED=true`, o próprio serviço executa o moni
 ## Limite operacional
 
 A decodificação é apoio de leitura. O usuário deve confirmar as fontes oficiais, ATIS, NOTAM, despacho e orientação operacional antes do voo.
+
+## Validação de entrega
+
+O workflow da versão executa TypeScript, build web, regressões operacionais, teste do servidor e geração/verificação do AAB assinado antes de liberar o merge manual.
