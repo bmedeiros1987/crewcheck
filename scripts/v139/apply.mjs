@@ -10,3 +10,4 @@ if (fs.existsSync(authClientPath)) {
 }
 
 await import('./apply-core.mjs');
+await import('../v1391/apply.mjs');
