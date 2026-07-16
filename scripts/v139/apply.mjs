@@ -12,3 +12,4 @@ if (fs.existsSync(authClientPath)) {
 await import('./apply-core.mjs');
 await import('../v1391/apply.mjs');
 await import('../v1391/telegram-routing.mjs');
+await import('../v1391/android-readonly.mjs');
