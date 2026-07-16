@@ -1,4 +1,4 @@
-name: CrewCheck v13.9.6 validation
+name: CrewCheck v13.9.7 validation
 
 on:
   pull_request:
@@ -10,12 +10,13 @@ on:
       - agent/v13-9-4-telegram-layout-amil-network
       - agent/v13-9-5-medical-emergency-care
       - agent/v13-9-6-infobip-premium-calls
+      - agent/v13-9-7-premium-roster-finance
 
 permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-13-9-6-${{ github.ref }}
+  group: crewcheck-13-9-7-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +40,7 @@ jobs:
       - run: npm run regression:v13.9.4:telegram-layout-amil
       - run: npm run regression:v13.9.5:medical-emergency
       - run: npm run regression:v13.9.6:infobip-calls
+      - run: npm run regression:v13.9.7:premium-roster
       - run: npm run regression:v13.8.0:platform
       - run: npm run regression:v13.8.5:audit
       - run: npm run regression:v13.8.6:internal
@@ -69,7 +71,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Apply v13.9.6 source safeguards
+      - name: Apply v13.9.7 source safeguards
         run: node scripts/v139/apply.mjs
       - name: Prepare protected upload keystore
         shell: bash
@@ -112,8 +114,8 @@ jobs:
           grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           unzip -t "$source_aab" >/dev/null
-          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.9.6-production.aab"
-          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-13.9.6-production.aab > CrewCheck-13.9.6-production.aab.sha256)
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.9.7-production.aab"
+          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-13.9.7-production.aab > CrewCheck-13.9.7-production.aab.sha256)
       - name: Generate Google Play 512 icon from current site logo
         shell: bash
         run: |
@@ -143,10 +145,10 @@ jobs:
           file "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-13.9.6-Google-Play-and-brand
+          name: CrewCheck-13.9.7-Google-Play-and-brand
           path: |
-            ${{ runner.temp }}/CrewCheck-13.9.6-production.aab
-            ${{ runner.temp }}/CrewCheck-13.9.6-production.aab.sha256
+            ${{ runner.temp }}/CrewCheck-13.9.7-production.aab
+            ${{ runner.temp }}/CrewCheck-13.9.7-production.aab.sha256
             ${{ runner.temp }}/CrewCheck-Google-Play-512.png
             ${{ runner.temp }}/CrewCheck-PWA-1024.png
           if-no-files-found: error
