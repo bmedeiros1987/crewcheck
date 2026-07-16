@@ -13,8 +13,8 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/AppTheme"
         android:label="CrewCheck"
-        android:icon="@drawable/ic_launcher"
-        android:roundIcon="@drawable/ic_launcher"
+        android:icon="@drawable/crewcheck_icon_site"
+        android:roundIcon="@drawable/crewcheck_icon_site"
         android:hardwareAccelerated="true"
         android:resizeableActivity="true">
         <activity
