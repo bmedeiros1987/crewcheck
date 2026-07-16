@@ -262,19 +262,28 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
   // Updated Date ou datas fora do período publicado.
   const sequentialDays = dedupeColumnarRosterDays(looseDays);
   const sequentialEventCount = countRosterEvents(sequentialDays);
+  const transposedEventCount = countRosterEvents(transposedDays);
+  const useStrongTransposed = /Roster\s+Report/i.test(fullText)
+    && transposedDays.length >= 25
+    && transposedEventCount >= 30;
   const useSequentialOnly = /Roster\s+Report/i.test(fullText)
     && sequentialDays.length >= 8
-    && sequentialEventCount >= 8;
+    && sequentialEventCount >= 8
+    && (transposedDays.length < 20 || sequentialEventCount >= countRosterEvents(transposedDays) * 0.85);
 
   const primaryVisual = transposedScore >= Math.max(columnarScore, visualScore, looseScore)
     ? transposedDays
     : (columnarScore > visualScore ? columnarDays : visualDays);
 
-  const mergedDays = useSequentialOnly
+  const mergedDays = useStrongTransposed
+    ? transposedDays
+    : useSequentialOnly
     ? sequentialDays
     : mergeParsedDaySources(primaryVisual, [...looseDays, ...(primaryVisual === transposedDays ? [...visualDays, ...columnarDays] : (columnarScore > visualScore ? visualDays : columnarDays))], header.month, header.year);
 
-  const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);
+  const rescuedDays = useStrongTransposed
+    ? mergedDays
+    : rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);
   const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);
   const days = applyGenericTripulationRecordsToDays(normalizeCrewRosterReportContinuationDays(rescuedDays, header.month, header.year, header.base), crewRecords, header.crewName);
 
@@ -311,7 +320,7 @@ function parseCrewRosterTransposedColumns(rows: VisualRow[], defaultMonth: numbe
     const columns: { x: number; items: VisualItem[] }[] = [];
     const relevant = pageItems
       .map(item => ({ ...item, str: cleanColumnarRosterText(item.str) }))
-      .filter(item => item.str && item.x > 70 && item.y > 35 && !/^(LEGEND|ASB|RCFI|HSB|DOF|DO|DR|<==)$/i.test(item.str));
+      .filter(item => item.str && item.x > 45 && item.y > 35 && !/^(LEGEND|<==)$/i.test(item.str));
     for (const item of relevant.sort((a, b) => a.x - b.x || b.y - a.y)) {
       let column = columns.find(col => Math.abs(col.x - item.x) <= 18);
       if (!column) {
@@ -332,14 +341,34 @@ function parseCrewRosterTransposedColumns(rows: VisualRow[], defaultMonth: numbe
 
   const days: RosterDay[] = [];
   let currentDate: { day: number; month: number; year: number } | null = null;
+  let openFlightDuty: RosterDay | null = null;
   for (const group of groups.sort((a, b) => a.page - b.page || a.x - b.x)) {
     const dateToken = group.text.match(DATE_TOKEN_RE)?.[0] || null;
     if (dateToken) currentDate = parseDateToken(dateToken, defaultMonth, defaultYear);
     if (!currentDate) continue;
     const parsed = parseTransposedColumnGroup(group, currentDate, base);
-    if (parsed && isPublishedRosterContextMonth(parsed.month || defaultMonth, parsed.year || defaultYear, defaultMonth, defaultYear)) days.push(parsed);
+    if (!parsed || !isPublishedRosterContextMonth(parsed.month || defaultMonth, parsed.year || defaultYear, defaultMonth, defaultYear)) continue;
+    if (parsed.type === 'VOO' && parsed.legs?.length && !dateToken && openFlightDuty) {
+      mergeTransposedFlightDuty(openFlightDuty, parsed);
+      continue;
+    }
+    days.push(parsed);
+    openFlightDuty = parsed.type === 'VOO' && parsed.legs?.length ? parsed : null;
   }
   return dedupeColumnarRosterDays(days);
+}
+
+function mergeTransposedFlightDuty(target: RosterDay, continuation: RosterDay): void {
+  for (const leg of continuation.legs || []) {
+    if (!target.legs.some(old => old.flightNumber === leg.flightNumber && old.origin === leg.origin && old.departureTime === leg.departureTime)) {
+      target.legs.push(leg);
+    }
+  }
+  target.rawText = normalizeSpaces(`${target.rawText || ''} ${continuation.rawText || ''}`);
+  target.dutyReport = target.dutyReport || continuation.dutyReport || target.legs[0]?.departureTime || null;
+  if (continuation.dutyDebrief) target.dutyDebrief = continuation.dutyDebrief;
+  target.isNextDay = Boolean(target.isNextDay || continuation.isNextDay || target.legs.some(leg => leg.isNextDay));
+  finalizeRosterDay(target);
 }
 
 function addDaysToParsedDate(marker: { day: number; month: number; year: number }, daysToAdd: number): { day: number; month: number; year: number } {
@@ -369,30 +398,25 @@ function parseTransposedColumnGroup(group: { items: VisualItem[]; text: string }
 }
 
 function parseTransposedFlightGroup(items: VisualItem[], text: string, currentDate: { day: number; month: number; year: number }, base: string, flightNumber: string): RosterDay | null {
-  const depIndex = items.findIndex(item => /^[A-Z]{3}\s+\d{1,2}:\d{2}(?:\(\+\d+\))?$/i.test(item.str));
-  if (depIndex < 0) return null;
-  const dep = items[depIndex].str.match(/^([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)$/i);
-  if (!dep) return null;
-  const origin = dep[1].toUpperCase();
-  const rawDeparture = dep[2];
-  let destination = '';
-  let rawArrival = '';
-  for (let i = depIndex - 1; i >= 0; i--) {
-    const value = items[i].str.toUpperCase();
-    if (!destination && /^[A-Z]{3}$/.test(value)) { destination = value; continue; }
-    if (destination && !rawArrival && /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(value)) { rawArrival = value; break; }
-  }
-  if (!destination || !rawArrival) return null;
+  const stationRows = transposedStationTimeRows(items);
+  if (stationRows.length < 2) return null;
+  const [departureRow, arrivalRow] = stationRows;
+  const origin = departureRow.airport;
+  const rawDeparture = departureRow.time;
+  const destination = arrivalRow.airport;
+  const rawArrival = arrivalRow.time;
   const offset = Math.max(dayOffsetFromTime(rawDeparture), dayOffsetFromTime(rawArrival));
-  const marker = addDaysToParsedDate(currentDate, offset);
-  const day = createRosterDay(marker.day, marker.month, marker.year, base);
+  const day = createRosterDay(currentDate.day, currentDate.month, currentDate.year, base);
   const departureTime = cleanTime(rawDeparture);
   const arrivalTime = cleanTime(rawArrival);
   const workType = items.find(item => /^(OP|PS|DH)$/i.test(item.str))?.str.toUpperCase() || 'OP';
   const aircraftType = items.find(item => /^(32S|31R|39R|328|319|320|321|32N)$/i.test(item.str))?.str.toUpperCase();
   const flightIndex = items.findIndex(item => /^LA\s?\d{3,4}$/i.test(item.str));
   const reportRaw = flightIndex >= 0 ? items.slice(flightIndex + 1).find(item => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str))?.str : null;
-  const debriefRaw = items.slice(0, Math.max(0, depIndex - 1)).find(item => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str) && !looksLikeColumnDuration(cleanTime(item.str)) && cleanTime(item.str) !== arrivalTime)?.str || null;
+  const destinationY = arrivalRow.y;
+  const debriefRaw = Number.isFinite(destinationY)
+    ? items.find(item => item.y > Number(destinationY) && item.y < Number(destinationY) + 145 && /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str))?.str || null
+    : null;
   const isNextDay = dayOffsetFromTime(rawArrival) > dayOffsetFromTime(rawDeparture) || timeToMinutes(arrivalTime) < timeToMinutes(departureTime);
   day.rawText = text;
   day.type = 'VOO';
@@ -405,13 +429,35 @@ function parseTransposedFlightGroup(items: VisualItem[], text: string, currentDa
   return day;
 }
 
+function transposedStationTimeRows(items: VisualItem[]): Array<{ airport: string; time: string; y: number }> {
+  const rows: Array<{ y: number; items: VisualItem[] }> = [];
+  for (const item of items) {
+    let row = rows.find(candidate => Math.abs(candidate.y - item.y) <= 2);
+    if (!row) { row = { y: item.y, items: [] }; rows.push(row); }
+    row.items.push(item);
+  }
+  return rows
+    .map(row => ({ y: row.y, text: normalizeSpaces(row.items.sort((a, b) => a.x - b.x).map(item => item.str).join(' ')) }))
+    .map(row => ({ ...row, match: row.text.match(/^([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)$/i) }))
+    .filter((row): row is typeof row & { match: RegExpMatchArray } => Boolean(row.match))
+    .map(row => ({ airport: row.match[1].toUpperCase(), time: row.match[2], y: row.y }))
+    .filter(row => !/^(OP|PS|HSB|ASB|DOF|OFF)$/.test(row.airport))
+    .sort((a, b) => a.y - b.y)
+    .slice(0, 2);
+}
+
 function parseTransposedActivityGroup(text: string, currentDate: { day: number; month: number; year: number }, base: string, rawCode: string): RosterDay {
   const code = rawCode === 'CRMBSB' || rawCode === 'CRMB' || /^C\d{2,3}F$/.test(rawCode) ? 'CRM' : rawCode;
   const day = createRosterDay(currentDate.day, currentDate.month, currentDate.year, base);
   day.rawText = text;
   day.pairingCode = code;
   day.type = code === 'ASB' || code === 'HSB' || code === 'HSBE' ? code as RosterDay['type'] : (code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');
-  const unique = Array.from(new Set((text.match(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g) || []).map(cleanTime).filter(time => time !== '00:00' && !looksLikeColumnDuration(time)))).sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+  const stationTimes = Array.from(text.matchAll(/\b[A-Z]{3}\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/g))
+    .map(match => cleanTime(match[1]))
+    .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+  const unique = stationTimes.length >= 2
+    ? stationTimes
+    : Array.from(new Set((text.match(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g) || []).map(cleanTime).filter(time => time !== '00:00' && !looksLikeColumnDuration(time)))).sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
   day.dutyReport = unique[0] || null;
   day.dutyDebrief = unique.length > 1 ? unique[unique.length - 1] : null;
   day.flyingHours = 0;
@@ -554,6 +600,16 @@ function normalizeCrewRosterReportContinuationDays(days: RosterDay[], referenceM
   const output: RosterDay[] = [];
   for (const day of days) {
     if (!day.legs?.length || !/\(\+\d+\)/.test(day.rawText || '')) {
+      output.push(day);
+      continue;
+    }
+    const isSingleConnectedDuty = day.legs.length > 1
+      && day.legs.every((leg, index) => index === 0 || day.legs[index - 1].destination === leg.origin)
+      && Boolean(day.dutyReport);
+    if (isSingleConnectedDuty) {
+      day.legs = day.legs.map((leg) => ({ ...leg, departureTime: cleanTime(leg.departureTime), arrivalTime: cleanTime(leg.arrivalTime) }));
+      day.isNextDay = true;
+      finalizeRosterDay(day);
       output.push(day);
       continue;
     }
@@ -1369,7 +1425,7 @@ function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
       day.dutyReport = extractDutyReportBeforeFirstFlight(text, firstLeg.flightNumber) || null;
     }
     const lastLeg = day.legs[day.legs.length - 1];
-    day.dutyDebrief = findColumnarDebriefForLastLeg(day.rawText || '', lastLeg) || day.dutyDebrief || addMinutes(lastLeg.arrivalTime, 30);
+    day.dutyDebrief = day.dutyDebrief || findColumnarDebriefForLastLeg(day.rawText || '', lastLeg) || addMinutes(lastLeg.arrivalTime, 30);
     const dutyStartForCalc = day.dutyReport || firstLeg.departureTime;
     day.isNextDay = day.isNextDay || Boolean(lastLeg.isNextDay) || timeToMinutes(day.dutyDebrief) < timeToMinutes(dutyStartForCalc);
     day.dutyHours = round2(diffHours(dutyStartForCalc, day.dutyDebrief, day.isNextDay));

@@ -1,4 +1,5 @@
 import type { CrewRoster, FlightLeg, RosterDay } from './pdfParser';
+import { completeContinuityDays } from './rosterContinuity';
 
 export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest';
 
@@ -96,6 +97,10 @@ function legKey(day: RosterDay, leg: FlightLeg) {
 }
 
 function sortLegs(legs: FlightLeg[]) {
+  const published = [...legs];
+  const alreadyConnected = published.length > 1
+    && published.every((leg, index) => index === 0 || airportCode(published[index - 1].destination) === airportCode(leg.origin));
+  if (alreadyConnected) return published;
   return [...legs].sort((a, b) => (minutes(a.departureTime) ?? 99999) - (minutes(b.departureTime) ?? 99999));
 }
 
@@ -298,7 +303,7 @@ function inferCanonicalRosterPeriod(roster: CrewRoster, days: RosterDay[], fallb
 }
 
 export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
-  const byDate = new Map<string, RosterDay>();
+  const byActivity = new Map<string, RosterDay>();
   const defaultMonth = roster.month || new Date().getMonth() + 1;
   const defaultYear = roster.year || new Date().getFullYear();
 
@@ -308,7 +313,10 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     const day = cloneDay({ ...sourceDay, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year });
     day.legs = selectPhysicalLegSequence(sortLegs(day.legs || []));
 
-    const current = byDate.get(date);
+    const activityKey = day.legs?.length
+      ? `${date}|VOO|${day.dutyReport || ''}|${day.legs[0]?.flightNumber || day.pairingCode || ''}`
+      : `${date}|${day.type || day.pairingCode || 'OTHER'}|${day.dutyReport || ''}|${day.dutyDebrief || ''}`;
+    const current = byActivity.get(activityKey);
     if (!current) {
       const seen = new Set<string>();
       day.legs = day.legs.filter((leg) => {
@@ -317,7 +325,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
         seen.add(key);
         return true;
       });
-      byDate.set(date, day);
+      byActivity.set(activityKey, day);
       continue;
     }
 
@@ -340,11 +348,12 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     current.isNextDay = Boolean(current.isNextDay || day.isNextDay || current.legs.some((leg) => legCrossesNextDay(leg)));
   }
 
-  const collectedDays = Array.from(byDate.values())
+  const collectedDays = Array.from(byActivity.values())
     .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [])) }))
     .sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
   const period = inferCanonicalRosterPeriod(roster, collectedDays, defaultMonth, defaultYear);
-  const normalizedDays = filterDaysByPublishedRange(collectedDays, roster, period.month, period.year);
+  const completedDays = completeContinuityDays(collectedDays, roster);
+  const normalizedDays = filterDaysByPublishedRange(completedDays, roster, period.month, period.year);
 
   return {
     ...roster,
@@ -361,6 +370,8 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   normalized.days.forEach((day) => {
     if (day.legs?.length) {
       const legs = sortLegs(day.legs);
+      let physicalDayOffset = 0;
+      let previousArrivalAbsolute: number | null = null;
       legs.forEach((leg, index) => {
         const departure = normalizeTime(leg.departureTime) || '00:00';
         const arrival = normalizeTime(leg.arrivalTime) || departure;
@@ -369,8 +380,14 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
         const presentation = showPresentation && !presentationIsUnsafe(rawPresentation, departure) ? rawPresentation : departure;
         const start = dateAt(day, departure, 0);
         const end = dateAt(day, arrival, 23);
-        const isNextDay = legCrossesNextDay(leg);
-        if (isNextDay) end.setDate(end.getDate() + 1);
+        const departureMinute = minutes(departure) || 0;
+        const arrivalMinute = minutes(arrival) || 0;
+        while (previousArrivalAbsolute != null && departureMinute + physicalDayOffset * 1440 < previousArrivalAbsolute) physicalDayOffset += 1;
+        start.setDate(start.getDate() + physicalDayOffset);
+        const arrivalOffset = physicalDayOffset + (legCrossesNextDay(leg) || arrivalMinute < departureMinute ? 1 : 0);
+        end.setDate(end.getDate() + arrivalOffset);
+        previousArrivalAbsolute = arrivalMinute + arrivalOffset * 1440;
+        const isNextDay = physicalDayOffset > 0 || arrivalOffset > 0;
 
         events.push({
           id: `${day.date}|${index}|${leg.flightNumber}|${leg.origin}|${leg.destination}|${departure}|${arrival}`,
@@ -398,7 +415,9 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
     }
 
     const type = String(day.type || day.pairingCode || '').toUpperCase();
-    const kind: CanonicalRosterEventKind = ['DO', 'DOF', 'DR', 'OFF'].includes(type) ? 'rest' : (day.hotel ? 'stay' : 'duty');
+    const kind: CanonicalRosterEventKind = ['DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'VC'].includes(type)
+      ? 'rest'
+      : (day.hotel || /PERNOITE|LAYOVER|ESTADIA|HOTEL/.test(type) ? 'stay' : 'duty');
     const startTime = normalizeTime(day.dutyReport) || '00:00';
     const endTime = normalizeTime(day.dutyDebrief) || '23:59';
     const start = dateAt(day, startTime, 0);
