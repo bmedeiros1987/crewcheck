@@ -1,7 +1,28 @@
-import { BedDouble, Building2, CalendarDays, Clock, Dumbbell, Home, Hotel, MapPin, Plane, ShieldCheck } from 'lucide-react';
+import {
+  Banknote,
+  BedDouble,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  Clock,
+  Coffee,
+  Dumbbell,
+  GraduationCap,
+  Home,
+  Hotel,
+  MapPin,
+  Moon,
+  Plane,
+  Route,
+  ShieldCheck,
+  Sparkles,
+  Utensils,
+  WalletCards,
+} from 'lucide-react';
 import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
+import '@/components/v1397/roster-premium.css';
 
 type RosterEvent = {
   id: string;
@@ -22,13 +43,56 @@ type RosterEvent = {
   canonical?: { kind?: string; startDateTime?: string; endDateTime?: string; groundBeforeMinutes?: number; showPresentation?: boolean };
 };
 
+type ProgramMode = 'operating' | 'extra' | 'stay' | 'rest' | 'reserve' | 'standby' | 'training' | 'duty';
+
+type PerDiemItem = {
+  eventId?: string;
+  iso: string;
+  label: string;
+  value: number;
+  currency: string;
+  convertedBRL: number | null;
+  airport?: string;
+};
+
+type FlightEarningItem = {
+  id: string;
+  km: number;
+  dayKm: number;
+  nightKm: number;
+  dayRateApplied: number;
+  nightRateApplied: number;
+  total: number;
+  payRule?: string;
+};
+
+type RosterFinance = {
+  perdiem?: {
+    rows?: PerDiemItem[];
+    monthly?: number;
+    currencySummary?: string;
+    pendingCurrencies?: string[];
+  };
+  salary?: {
+    rows?: FlightEarningItem[];
+    kmTotal?: number;
+    production?: number;
+    configured?: boolean;
+  };
+};
+
 function dateOf(event: RosterEvent) {
   const date = event.canonical?.startDateTime ? new Date(event.canonical.startDateTime) : new Date(event.date || Date.now());
   return Number.isFinite(date.getTime()) ? date : new Date();
 }
 
+function isoOf(event: RosterEvent) {
+  const value = dateOf(event);
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
 function formatDate(date: Date) {
-  return new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(date);
 }
 
 function duration(event: RosterEvent) {
@@ -37,15 +101,25 @@ function duration(event: RosterEvent) {
   return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) ? Math.max(0, (end.getTime() - start.getTime()) / 3600000) : 0;
 }
 
-function workMode(event: RosterEvent): 'operating' | 'extra' | 'stay' | 'rest' | 'duty' {
-  if (event.canonical?.kind === 'rest') return 'rest';
-  if (event.kind === 'stay' || /PERNOITE|ESTADIA|DESCANSO_BASE_CONTINUIDADE/i.test(`${event.day?.type || ''} ${event.day?.pairingCode || ''}`)) return 'stay';
-  if (event.kind !== 'flight') return 'duty';
-  const work = `${event.leg?.workType || ''} ${event.title || ''}`.toUpperCase();
-  return /(^|\s)(PS|PAX|DH|EXTRA|PASSAGEIRO)(\s|$)/.test(work) ? 'extra' : 'operating';
+function eventCode(event: RosterEvent) {
+  return `${event.day?.type || ''} ${event.day?.pairingCode || ''} ${event.title || ''} ${event.flightNumber || ''}`.toUpperCase();
 }
 
-function cardTitle(event: RosterEvent, mode: ReturnType<typeof workMode>) {
+function workMode(event: RosterEvent): ProgramMode {
+  const code = eventCode(event);
+  if (event.kind === 'stay' || /PERNOITE|ESTADIA|DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'stay';
+  if (event.canonical?.kind === 'rest') return 'rest';
+  if (event.kind === 'flight') {
+    const work = `${event.leg?.workType || ''} ${event.title || ''}`.toUpperCase();
+    return /(^|\s)(PS|PAX|DH|EXTRA|PASSAGEIRO)(\s|$)/.test(work) ? 'extra' : 'operating';
+  }
+  if (/\b(ASB|RES|RESERVA|RSV)\b/.test(code)) return 'reserve';
+  if (/\b(HSB|HSBE|SOBREAVISO)\b/.test(code)) return 'standby';
+  if (/\b(CRM|TREIN|TRAIN|SIM|CHECK|CBF|EMER)\b/.test(code)) return 'training';
+  return 'duty';
+}
+
+function cardTitle(event: RosterEvent, mode: ProgramMode) {
   const code = String(event.day?.type || event.day?.pairingCode || '').toUpperCase();
   if (mode === 'rest') {
     if (/(DO|DOF|DOP|OFF)/.test(code)) return `Folga publicada${code ? ` · ${code}` : ''}`;
@@ -53,72 +127,205 @@ function cardTitle(event: RosterEvent, mode: ReturnType<typeof workMode>) {
   }
   if (mode === 'stay') {
     const location = event.destination || event.origin || event.day?.base || '';
-    const atBase = /DESCANSO_BASE/.test(code);
-    return atBase ? `Descanso entre jornadas na base · ${location}` : `Pernoite em ${location || 'localidade'}`;
+    return /DESCANSO_BASE/.test(code) ? `Descanso entre jornadas na base · ${location}` : `Pernoite em ${location || 'localidade'}`;
   }
   if (mode === 'operating' || mode === 'extra') return `${event.flightNumber || 'Voo'} · ${event.origin || '—'} → ${event.destination || '—'}`;
+  if (mode === 'reserve') return `Reserva · ${event.day?.pairingCode || event.day?.type || event.title || 'programação publicada'}`;
+  if (mode === 'standby') return `Sobreaviso · ${event.day?.pairingCode || event.day?.type || event.title || 'programação publicada'}`;
+  if (mode === 'training') return `Treinamento · ${event.day?.pairingCode || event.day?.type || event.title || 'programação publicada'}`;
   return String(event.day?.pairingCode || event.day?.type || event.title || 'Programação');
 }
 
-function modeLabel(mode: ReturnType<typeof workMode>) {
-  if (mode === 'operating') return 'Tripulando';
-  if (mode === 'extra') return 'Deslocamento / extra';
-  if (mode === 'stay') return 'Pernoite / descanso';
-  if (mode === 'rest') return 'Publicado na escala';
-  return 'Programação';
+const modeMeta: Record<ProgramMode, { label: string; shortLabel: string }> = {
+  operating: { label: 'Voo tripulando', shortLabel: 'Tripulando' },
+  extra: { label: 'Voo de deslocamento ou extra', shortLabel: 'Extra' },
+  stay: { label: 'Pernoite ou descanso', shortLabel: 'Pernoite' },
+  rest: { label: 'Folga ou descanso publicado', shortLabel: 'Folga' },
+  reserve: { label: 'Reserva presencial', shortLabel: 'Reserva' },
+  standby: { label: 'Sobreaviso', shortLabel: 'Sobreaviso' },
+  training: { label: 'Treinamento', shortLabel: 'Treinamento' },
+  duty: { label: 'Programação operacional', shortLabel: 'Programação' },
+};
+
+const paletteA11y: Partial<Record<ProgramMode, string>> = {
+  operating: 'Verde · voo tripulando',
+  extra: 'Cinza · deslocamento/extra',
+  stay: 'Roxo · pernoite ou descanso',
+};
+
+function modeIcon(mode: ProgramMode, atBase = false) {
+  if (mode === 'operating' || mode === 'extra') return <Plane/>;
+  if (mode === 'stay') return atBase ? <Home/> : <BedDouble/>;
+  if (mode === 'reserve') return <BriefcaseBusiness/>;
+  if (mode === 'standby') return <Moon/>;
+  if (mode === 'training') return <GraduationCap/>;
+  return <ShieldCheck/>;
 }
 
-export default function RosterLaunchView({ events, setView }: { events: RosterEvent[]; setView: (view: any) => void }) {
-  const ordered = [...events].filter((event) => !event.id?.includes('placeholder')).sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id)));
-  const uniqueDays = new Set(ordered.map((event) => dateOf(event).toISOString().slice(0, 10))).size;
-  const stays = ordered.filter((event) => workMode(event) === 'stay').length;
-  const groundStops = ordered.filter((event) => Number(event.canonical?.groundBeforeMinutes || 0) >= 60).length;
+function mealIcon(label: string) {
+  if (/café/i.test(label)) return <Coffee/>;
+  if (/ceia/i.test(label)) return <Moon/>;
+  return <Utensils/>;
+}
 
-  return <>
-    <V139Header title="Escala completa" detail="Linha do tempo canônica, múltiplas programações por dia e continuidade física sem inventar folgas."/>
-    <section className="cc-roster-launch-metrics">
-      <article><CalendarDays/><span>Dias preservados</span><strong>{uniqueDays}</strong></article>
-      <article><Hotel/><span>Pernoites/descansos</span><strong>{stays}</strong></article>
-      <article><Clock/><span>Tempos em solo ≥ 60 min</span><strong>{groundStops}</strong></article>
+function money(value: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+}
+
+function currencyMoney(value: number, currency = 'BRL') {
+  try {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(value || 0));
+  } catch {
+    return `${currency} ${Number(value || 0).toFixed(2)}`;
+  }
+}
+
+function readableHours(value: number) {
+  const total = Math.round(value * 60);
+  if (!total) return '—';
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  return `${hours ? `${hours}h` : ''}${minutes ? ` ${minutes}min` : ''}`.trim();
+}
+
+export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
+  const ordered = [...events]
+    .filter((event) => !event.id?.includes('placeholder'))
+    .sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id)));
+  const groups = Array.from(ordered.reduce((map, event) => {
+    const iso = isoOf(event);
+    const group = map.get(iso) || { iso, date: dateOf(event), events: [] as RosterEvent[] };
+    group.events.push(event);
+    map.set(iso, group);
+    return map;
+  }, new Map<string, { iso: string; date: Date; events: RosterEvent[] }>()).values());
+  const salaryRows = finance?.salary?.rows || [];
+  const perDiemRows = finance?.perdiem?.rows || [];
+  const salaryByEvent = new Map(salaryRows.map((row) => [row.id, row]));
+  const firstEventByDay = new Map(groups.map((group) => [group.iso, group.events[0]?.id]));
+  const perDiemForEvent = (event: RosterEvent) => perDiemRows.filter((row) => row.eventId === event.id || (!row.eventId && row.iso === isoOf(event) && firstEventByDay.get(row.iso) === event.id));
+  const uniqueDays = groups.length;
+  const flights = ordered.filter((event) => ['operating', 'extra'].includes(workMode(event))).length;
+  const stays = ordered.filter((event) => workMode(event) === 'stay').length;
+  const production = Number(finance?.salary?.production || 0);
+  const totalKm = Number(finance?.salary?.kmTotal || 0);
+  const perDiemTotal = Number(finance?.perdiem?.monthly || 0);
+  const pendingCurrencies = finance?.perdiem?.pendingCurrencies || [];
+
+  return <div className="cc-roster-premium-v1397">
+    <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
+
+    <section className="cc-roster-hero-v1397">
+      <div className="cc-roster-hero-copy-v1397">
+        <span className="cc-roster-eyebrow-v1397"><Sparkles/> VISÃO PREMIUM DO MÊS</span>
+        <h2>Operação clara.<br/><em>Ganhos visíveis.</em></h2>
+        <p>Cada programação preserva os dados da escala e exibe somente o que foi calculado pelas regras financeiras configuradas.</p>
+        <div className="cc-roster-hero-counts-v1397">
+          <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
+          <span><Plane/><b>{flights}</b> voos</span>
+          <span><Hotel/><b>{stays}</b> pernoites</span>
+        </div>
+      </div>
+      <div className="cc-roster-money-overview-v1397">
+        <button type="button" onClick={() => setView('perdiem')}>
+          <span><Utensils/> Diárias previstas</span>
+          <strong>{pendingCurrencies.length ? finance?.perdiem?.currencySummary || money(perDiemTotal) : money(perDiemTotal)}</strong>
+          <small>{pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis'}</small>
+        </button>
+        <button type="button" onClick={() => setView('salary')}>
+          <span><Route/> Produção por KM</span>
+          <strong>{finance?.salary?.configured ? money(production) : 'Calibrar tarifa'}</strong>
+          <small>{totalKm.toLocaleString('pt-BR')} km estimados no mês</small>
+        </button>
+      </div>
     </section>
-    <section className="cc-roster-legend-v1394">
-      <h2>Leitura visual</h2>
-      <div className="cc139-badges"><span>Verde · voo tripulando</span><span>Cinza · deslocamento/extra</span><span>Roxo · pernoite ou descanso entre jornadas</span></div>
-      <p>Os textos “OP/Operando” e “PS/Passageiro” não ocupam mais o título. A distinção é visual e o título prioriza voo, rota e horário.</p>
+
+    <section className="cc-roster-legend-v1397" aria-label="Cores das programações">
+      {(Object.entries(modeMeta) as Array<[ProgramMode, { label: string; shortLabel: string }]>).map(([mode, meta]) =>
+        <span key={mode} data-mode={mode} aria-label={paletteA11y[mode] || meta.label}><i/>{meta.shortLabel}</span>
+      )}
     </section>
-    <section className="cc-roster-timeline-v1394">
-      {ordered.map((event) => {
-        const mode = workMode(event);
-        const hours = duration(event);
-        const ground = Number(event.canonical?.groundBeforeMinutes || 0);
-        const routine = Array.isArray(event.routine) ? event.routine.filter(Boolean).slice(0, 3) : [];
-        const atBase = /DESCANSO_BASE/.test(String(event.day?.type || ''));
-        const eventDate = dateOf(event);
-        const icon = mode === 'operating' || mode === 'extra' ? <Plane/> : mode === 'stay' ? atBase ? <Home/> : <BedDouble/> : <ShieldCheck/>;
-        return <article key={event.id} className="cc-roster-event-v1394" data-work-mode={mode} data-event-kind={event.kind || ''}>
-          <header>
-            <time dateTime={eventDate.toISOString()}><b>{String(eventDate.getDate()).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(eventDate)}</span></time>
-            <div className="cc-roster-event-heading"><small>{modeLabel(mode)} · {formatDate(eventDate)}</small><h2>{cardTitle(event, mode)}</h2></div>
-            <span className="cc-roster-event-icon">{icon}</span>
+
+    <section className="cc-roster-days-v1397">
+      {groups.map((group) => {
+        const groupPerDiems = group.events.flatMap(perDiemForEvent);
+        const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
+        const groupPerDiemTotal = groupPerDiems.reduce((sum, row) => sum + Number(row.convertedBRL || 0), 0);
+        const groupProduction = groupEarnings.reduce((sum, row) => sum + Number(row.total || 0), 0);
+        const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
+        return <section className="cc-roster-day-v1397" key={group.iso}>
+          <header className="cc-roster-day-header-v1397">
+            <time dateTime={group.iso}><b>{String(group.date.getDate()).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(group.date)}</span></time>
+            <div><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(group.date)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
+            {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397">
+              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{money(groupPerDiemTotal)}</b></span>}
+              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{finance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
+            </div>}
           </header>
-          {(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-schedule"><span><b>Apresentação</b>{event.presentation && event.presentation !== 'Conexão/Solo' ? event.presentation : '—'}</span><span><b>Etapa</b>{event.departure || '—'} → {event.arrival || '—'}</span>{event.subtitle && <span className="cc-roster-flight-detail"><b>Detalhes</b>{event.subtitle}</span>}</div>}
-          {mode === 'stay' && <p className="cc-roster-event-summary">{hours ? `${hours.toFixed(1)} h entre o fim da jornada e a próxima apresentação.` : 'Intervalo de continuidade entre jornadas.'} {event.hotel ? `Hotel: ${event.hotel}.` : atBase ? 'Use o endereço de casa salvo no Gerenciador de apresentação.' : 'Hotel ainda não informado.'}</p>}
-          {mode === 'rest' && <p className="cc-roster-event-summary">{event.subtitle || 'Código preservado conforme a escala publicada.'}</p>}
-          {mode === 'duty' && <p className="cc-roster-event-summary">{event.subtitle || `${event.departure || '—'} → ${event.arrival || '—'}`}</p>}
-          <div className="cc-roster-card-details cc-roster-detail-chips-v1394">
-            {ground >= 60 && <span className="cc-ground-time"><Clock/> Solo/conexão {ground} min</span>}
-            {mode === 'stay' && <span className="cc-rest-window"><BedDouble/> Sono prioritário: pelo menos 8 h</span>}
-            {event.hotel && <span className="cc-rest-window"><Hotel/> {event.hotel}</span>}
-            {routine.map((item) => <span className="cc-routine-card-detail" key={item}><Dumbbell/> {item}</span>)}
+
+          <div className="cc-roster-programs-v1397">
+            {group.events.map((event) => {
+              const mode = workMode(event);
+              const meta = modeMeta[mode];
+              const hours = duration(event);
+              const ground = Number(event.canonical?.groundBeforeMinutes || 0);
+              const routine = Array.isArray(event.routine) ? event.routine.filter(Boolean).slice(0, 3) : [];
+              const atBase = /DESCANSO_BASE/.test(eventCode(event));
+              const eventPerDiems = perDiemForEvent(event);
+              const earning = salaryByEvent.get(event.id);
+              return <article key={event.id} className="cc-roster-program-v1397 cc-roster-event-v1394" data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''}>
+                <header className="cc-roster-program-head-v1397">
+                  <span className="cc-roster-program-icon-v1397">{modeIcon(mode, atBase)}</span>
+                  <div><small>{meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>
+                  {hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
+                </header>
+
+                {(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-grid-v1397">
+                  <span><small>Apresentação</small><b>{event.presentation && event.presentation !== 'Conexão/Solo' ? event.presentation : '—'}</b></span>
+                  <span><small>Partida</small><b>{event.departure || '—'}</b></span>
+                  <span><small>Chegada</small><b>{event.arrival || '—'}</b></span>
+                  {event.subtitle && <span className="wide"><small>Detalhes da etapa</small><b>{event.subtitle}</b></span>}
+                </div>}
+
+                {mode === 'stay' && <p className="cc-roster-summary-v1397">{hours ? `${readableHours(hours)} entre o fim da jornada e a próxima apresentação.` : 'Intervalo de continuidade entre jornadas.'} {event.hotel ? `Hotel: ${event.hotel}.` : atBase ? 'Endereço de casa salvo pode ser usado na Saída Inteligente.' : 'Hotel ainda não informado.'}</p>}
+                {mode === 'rest' && <p className="cc-roster-summary-v1397">{event.subtitle || 'Código e dia preservados conforme a escala publicada.'}</p>}
+                {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${event.departure || 'Horário a confirmar'} → ${event.arrival || 'Horário a confirmar'}`}</p>}
+
+                {(eventPerDiems.length > 0 || earning) && <section className="cc-roster-event-finance-v1397">
+                  {eventPerDiems.length > 0 && <div className="cc-roster-meals-v1397">
+                    <small><WalletCards/> Diárias desta programação</small>
+                    <div>{eventPerDiems.map((row, index) => <span key={`${row.iso}-${row.label}-${index}`}>{mealIcon(row.label)}<b>{row.label}</b><em>{currencyMoney(row.value, row.currency)}</em></span>)}</div>
+                  </div>}
+                  {earning && <div className="cc-roster-km-gain-v1397">
+                    <small><Route/> Ganho por KM</small>
+                    <strong>{finance?.salary?.configured ? money(earning.total) : 'Tarifa pendente'}</strong>
+                    <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>
+                    {earning.payRule && <em>{earning.payRule}</em>}
+                  </div>}
+                </section>}
+
+                <div className="cc-roster-detail-chips-v1397">
+                  {ground >= 60 && <span><Clock/> Solo/conexão {ground} min</span>}
+                  {mode === 'stay' && <span><BedDouble/> Sono prioritário: pelo menos 8 h</span>}
+                  {event.hotel && <span><Hotel/> {event.hotel}</span>}
+                  {routine.map((item) => <span key={item}><Dumbbell/> {item}</span>)}
+                </div>
+
+                <div className="cc-roster-actions-v1397">
+                  {(mode === 'stay' || event.hotel) && <button type="button" onClick={() => setView('presentation')}><Building2/> Hotel e apresentação</button>}
+                  {(mode === 'stay' || mode === 'rest') && <button type="button" onClick={() => setView('routine')}><Dumbbell/> Planejar rotina</button>}
+                  {(mode === 'operating' || mode === 'extra') && <button type="button" onClick={() => setView('departure')}><MapPin/> Saída Inteligente</button>}
+                  {(eventPerDiems.length > 0 || earning) && <button type="button" onClick={() => setView(earning ? 'salary' : 'perdiem')}><Banknote/> Ver memória de cálculo</button>}
+                </div>
+              </article>;
+            })}
           </div>
-          <div className="cc-roster-actions-v1394">
-            {(mode === 'stay' || event.hotel) && <button onClick={() => setView('presentation')}><Building2/> Hotel, quarto e apresentação</button>}
-            {(mode === 'stay' || mode === 'rest') && <button onClick={() => setView('routine')}><Dumbbell/> Planejar rotina</button>}
-            {(mode === 'operating' || mode === 'extra') && <button onClick={() => setView('departure')}><MapPin/> Saída Inteligente</button>}
-          </div>
-        </article>;
+        </section>;
       })}
-      {!ordered.length && <article className="cc-roster-empty-v1394"><CalendarDays/><h2>Nenhuma escala carregada</h2><p>Importe o PDF ou sincronize o calendário autorizado do iFlight.</p></article>}
+
+      {!ordered.length && <article className="cc-roster-empty-v1397"><CalendarDays/><h2>Nenhuma escala carregada</h2><p>Importe o PDF ou sincronize o calendário autorizado do iFlight.</p></article>}
     </section>
-  </>;
+
+    {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
+  </div>;
 }

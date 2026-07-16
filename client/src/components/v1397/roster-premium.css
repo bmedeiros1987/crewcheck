@@ -1,0 +1,563 @@
+/* CrewCheck v13.9.7 — escala premium operacional e financeira.
+   O escopo usa uma classe estável, sem depender do data-version global. */
+
+.cc-roster-premium-v1397 {
+  --ccr-panel: rgba(8, 25, 43, .86);
+  --ccr-panel-strong: rgba(7, 21, 38, .96);
+  --ccr-panel-soft: rgba(15, 41, 66, .72);
+  --ccr-line: rgba(133, 193, 231, .19);
+  --ccr-title: #f8fbff;
+  --ccr-text: #d6e5f1;
+  --ccr-muted: #91a9bc;
+  --ccr-cyan: #35d5ec;
+  --ccr-blue: #4388ff;
+  width: min(100%, 1480px) !important;
+  max-width: 1480px !important;
+  min-width: 0 !important;
+  margin: 0 auto !important;
+  padding: 0 0 132px !important;
+  color: var(--ccr-text) !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-premium-v1397 {
+  --ccr-panel: rgba(255, 255, 255, .91);
+  --ccr-panel-strong: #ffffff;
+  --ccr-panel-soft: #edf5fb;
+  --ccr-line: rgba(89, 125, 153, .22);
+  --ccr-title: #071a2e;
+  --ccr-text: #263f55;
+  --ccr-muted: #5c7387;
+  --ccr-cyan: #087fa0;
+  --ccr-blue: #2563eb;
+}
+
+.cc-roster-premium-v1397,
+.cc-roster-premium-v1397 * {
+  box-sizing: border-box !important;
+  min-width: 0;
+}
+
+.cc-roster-premium-v1397 button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.cc-roster-hero-v1397 {
+  position: relative;
+  isolation: isolate;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr) !important;
+  gap: clamp(24px, 4vw, 68px) !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  margin: 16px 0 18px !important;
+  padding: clamp(26px, 4.4vw, 58px) !important;
+  overflow: hidden !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 34px !important;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(29, 219, 224, .17), transparent 34%),
+    radial-gradient(circle at 86% 22%, rgba(127, 86, 240, .22), transparent 42%),
+    linear-gradient(142deg, rgba(7, 35, 56, .98), rgba(8, 17, 36, .97)) !important;
+  box-shadow: 0 26px 78px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .05) !important;
+}
+
+.cc-roster-hero-v1397::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: -8%;
+  bottom: -52%;
+  width: 520px;
+  height: 520px;
+  border: 1px solid rgba(81, 216, 240, .13);
+  border-radius: 50%;
+  box-shadow: 0 0 0 72px rgba(73, 132, 255, .025), 0 0 0 144px rgba(159, 93, 246, .022);
+}
+
+html[data-crew-theme="light"] .cc-roster-hero-v1397 {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(10, 181, 201, .13), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(111, 75, 225, .14), transparent 42%),
+    linear-gradient(142deg, rgba(250, 254, 255, .98), rgba(233, 243, 252, .98)) !important;
+  box-shadow: 0 22px 65px rgba(19, 53, 80, .13), inset 0 1px 0 #fff !important;
+}
+
+.cc-roster-hero-copy-v1397 {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.cc-roster-eyebrow-v1397 {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 18px !important;
+  padding: 8px 12px !important;
+  border: 1px solid rgba(53, 213, 236, .28) !important;
+  border-radius: 999px !important;
+  background: rgba(53, 213, 236, .09) !important;
+  color: #6ce6f7 !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: .14em !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-eyebrow-v1397 { color: #087d97 !important; }
+.cc-roster-eyebrow-v1397 svg { width: 15px !important; height: 15px !important; }
+
+.cc-roster-hero-copy-v1397 h2 {
+  max-width: 740px !important;
+  margin: 0 !important;
+  color: var(--ccr-title) !important;
+  font-size: clamp(2.15rem, 4.6vw, 4.75rem) !important;
+  font-weight: 920 !important;
+  line-height: .94 !important;
+  letter-spacing: -.065em !important;
+}
+
+.cc-roster-hero-copy-v1397 h2 em {
+  color: transparent !important;
+  background: linear-gradient(90deg, #30d6df, #55a7ff 48%, #a77bf5) !important;
+  background-clip: text !important;
+  -webkit-background-clip: text !important;
+  font-style: normal !important;
+}
+
+.cc-roster-hero-copy-v1397 > p {
+  max-width: 660px !important;
+  margin: 18px 0 0 !important;
+  color: var(--ccr-muted) !important;
+  font-size: clamp(.94rem, 1.3vw, 1.08rem) !important;
+  line-height: 1.6 !important;
+}
+
+.cc-roster-hero-counts-v1397 {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 9px !important;
+  margin-top: 24px !important;
+}
+
+.cc-roster-hero-counts-v1397 span {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 9px 12px !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 13px !important;
+  background: rgba(5, 18, 33, .31) !important;
+  color: var(--ccr-muted) !important;
+  font-size: 12px !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-hero-counts-v1397 span { background: rgba(255, 255, 255, .55) !important; }
+.cc-roster-hero-counts-v1397 svg { width: 16px !important; height: 16px !important; color: var(--ccr-cyan) !important; }
+.cc-roster-hero-counts-v1397 b { color: var(--ccr-title) !important; font-size: 15px !important; }
+
+.cc-roster-money-overview-v1397 {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+}
+
+.cc-roster-money-overview-v1397 button {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  width: 100% !important;
+  padding: clamp(20px, 3vw, 30px) !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(130, 193, 226, .19) !important;
+  border-radius: 24px !important;
+  background: linear-gradient(145deg, rgba(15, 48, 71, .69), rgba(5, 20, 38, .76)) !important;
+  color: var(--ccr-title) !important;
+  text-align: left !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04) !important;
+  transition: transform .18s ease, border-color .18s ease !important;
+}
+
+.cc-roster-money-overview-v1397 button:hover { transform: translateY(-2px) !important; border-color: rgba(74, 218, 236, .42) !important; }
+.cc-roster-money-overview-v1397 button::after { content: ""; position: absolute; right: -30px; bottom: -50px; width: 140px; height: 140px; border-radius: 50%; background: rgba(40, 211, 222, .08); filter: blur(2px); }
+.cc-roster-money-overview-v1397 button:last-child::after { background: rgba(139, 92, 246, .12); }
+html[data-crew-theme="light"] .cc-roster-money-overview-v1397 button { background: rgba(255, 255, 255, .72) !important; }
+
+.cc-roster-money-overview-v1397 button > span {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  color: var(--ccr-muted) !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+.cc-roster-money-overview-v1397 button svg { width: 18px !important; height: 18px !important; color: var(--ccr-cyan) !important; }
+.cc-roster-money-overview-v1397 button strong { z-index: 1; margin-top: 8px !important; color: var(--ccr-title) !important; font-size: clamp(1.75rem, 3vw, 2.75rem) !important; line-height: 1 !important; letter-spacing: -.045em !important; overflow-wrap: anywhere !important; }
+.cc-roster-money-overview-v1397 button small { z-index: 1; margin-top: 8px !important; color: var(--ccr-muted) !important; font-size: 11px !important; }
+
+.cc-roster-legend-v1397 {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  width: 100% !important;
+  margin: 0 0 22px !important;
+  padding: 12px !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 19px !important;
+  background: var(--ccr-panel) !important;
+  backdrop-filter: blur(18px) !important;
+}
+
+.cc-roster-legend-v1397 span {
+  --legend-accent: #22d3ee;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 7px 10px !important;
+  border: 1px solid color-mix(in srgb, var(--legend-accent) 24%, transparent) !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--legend-accent) 7%, transparent) !important;
+  color: var(--ccr-text) !important;
+  font-size: 10px !important;
+  font-weight: 760 !important;
+}
+
+.cc-roster-legend-v1397 i { width: 8px !important; height: 8px !important; border-radius: 50% !important; background: var(--legend-accent) !important; box-shadow: 0 0 14px color-mix(in srgb, var(--legend-accent) 70%, transparent) !important; }
+.cc-roster-legend-v1397 [data-mode="operating"] { --legend-accent: #2dd4a2; }
+.cc-roster-legend-v1397 [data-mode="extra"] { --legend-accent: #94a3b8; }
+.cc-roster-legend-v1397 [data-mode="stay"] { --legend-accent: #a78bfa; }
+.cc-roster-legend-v1397 [data-mode="rest"] { --legend-accent: #38bdf8; }
+.cc-roster-legend-v1397 [data-mode="reserve"] { --legend-accent: #fbbf24; }
+.cc-roster-legend-v1397 [data-mode="standby"] { --legend-accent: #fb7185; }
+.cc-roster-legend-v1397 [data-mode="training"] { --legend-accent: #818cf8; }
+
+.cc-roster-days-v1397 {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 18px !important;
+  width: 100% !important;
+}
+
+.cc-roster-day-v1397 {
+  width: 100% !important;
+  padding: clamp(15px, 2vw, 22px) !important;
+  overflow: hidden !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 28px !important;
+  background: linear-gradient(145deg, var(--ccr-panel), color-mix(in srgb, var(--ccr-panel) 92%, transparent)) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .16) !important;
+  backdrop-filter: blur(18px) !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-day-v1397 { box-shadow: 0 15px 38px rgba(22, 54, 78, .09) !important; }
+
+.cc-roster-day-header-v1397 {
+  display: grid !important;
+  grid-template-columns: 64px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 15px !important;
+  margin-bottom: 14px !important;
+  padding: 2px 3px 14px !important;
+  border-bottom: 1px solid var(--ccr-line) !important;
+}
+
+.cc-roster-day-header-v1397 > time {
+  display: grid !important;
+  place-items: center !important;
+  width: 62px !important;
+  height: 62px !important;
+  border: 1px solid rgba(53, 213, 236, .27) !important;
+  border-radius: 19px !important;
+  background: linear-gradient(145deg, rgba(53, 213, 236, .13), rgba(66, 111, 255, .08)) !important;
+  text-transform: uppercase !important;
+}
+
+.cc-roster-day-header-v1397 > time b { color: var(--ccr-title) !important; font-size: 24px !important; line-height: 1 !important; }
+.cc-roster-day-header-v1397 > time span { color: var(--ccr-cyan) !important; font-size: 9px !important; font-weight: 900 !important; letter-spacing: .08em !important; }
+.cc-roster-day-header-v1397 > div:nth-child(2) small { color: var(--ccr-muted) !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
+.cc-roster-day-header-v1397 h2 { margin: 3px 0 0 !important; color: var(--ccr-title) !important; font-size: clamp(1.05rem, 1.8vw, 1.35rem) !important; line-height: 1.1 !important; }
+
+.cc-roster-day-money-v1397 {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+}
+
+.cc-roster-day-money-v1397 > span {
+  display: grid !important;
+  grid-template-columns: 18px auto !important;
+  grid-template-areas: "icon label" "icon value" !important;
+  gap: 1px 7px !important;
+  align-items: center !important;
+  padding: 9px 11px !important;
+  border: 1px solid rgba(67, 211, 215, .17) !important;
+  border-radius: 13px !important;
+  background: rgba(19, 80, 91, .12) !important;
+}
+
+.cc-roster-day-money-v1397 svg { grid-area: icon; width: 17px !important; height: 17px !important; color: var(--ccr-cyan) !important; }
+.cc-roster-day-money-v1397 small { grid-area: label; color: var(--ccr-muted) !important; font-size: 8px !important; text-transform: uppercase !important; }
+.cc-roster-day-money-v1397 b { grid-area: value; color: var(--ccr-title) !important; font-size: 12px !important; }
+
+.cc-roster-programs-v1397 {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 13px !important;
+}
+
+.cc-roster-program-v1397 {
+  --program-accent: #22d3ee;
+  --program-rgb: 34, 211, 238;
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-height: 100% !important;
+  padding: clamp(16px, 2vw, 22px) !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(var(--program-rgb), .24) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(var(--program-rgb), .10), transparent 35%),
+    linear-gradient(148deg, rgba(var(--program-rgb), .075), var(--ccr-panel-strong) 48%) !important;
+  box-shadow: inset 4px 0 0 var(--program-accent), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-program-v1397 {
+  background: radial-gradient(circle at 100% 0, rgba(var(--program-rgb), .10), transparent 38%), #fff !important;
+  box-shadow: inset 4px 0 0 var(--program-accent), 0 10px 24px rgba(22, 54, 78, .06) !important;
+}
+
+.cc-roster-program-v1397[data-mode="operating"] { --program-accent: #2dd4a2; --program-rgb: 45, 212, 162; }
+.cc-roster-program-v1397[data-mode="extra"] { --program-accent: #94a3b8; --program-rgb: 148, 163, 184; }
+.cc-roster-program-v1397[data-mode="stay"] { --program-accent: #a78bfa; --program-rgb: 167, 139, 250; }
+.cc-roster-program-v1397[data-mode="rest"] { --program-accent: #38bdf8; --program-rgb: 56, 189, 248; }
+.cc-roster-program-v1397[data-mode="reserve"] { --program-accent: #fbbf24; --program-rgb: 251, 191, 36; }
+.cc-roster-program-v1397[data-mode="standby"] { --program-accent: #fb7185; --program-rgb: 251, 113, 133; }
+.cc-roster-program-v1397[data-mode="training"] { --program-accent: #818cf8; --program-rgb: 129, 140, 248; }
+
+.cc-roster-program-head-v1397 {
+  display: grid !important;
+  grid-template-columns: 46px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.cc-roster-program-icon-v1397 {
+  display: grid !important;
+  place-items: center !important;
+  width: 44px !important;
+  height: 44px !important;
+  border: 1px solid rgba(var(--program-rgb), .26) !important;
+  border-radius: 14px !important;
+  background: rgba(var(--program-rgb), .10) !important;
+  color: var(--program-accent) !important;
+}
+
+.cc-roster-program-icon-v1397 svg { width: 21px !important; height: 21px !important; }
+.cc-roster-program-head-v1397 > div > small { display: block !important; margin-bottom: 4px !important; color: var(--program-accent) !important; font-size: 9px !important; font-weight: 850 !important; letter-spacing: .075em !important; text-transform: uppercase !important; }
+.cc-roster-program-head-v1397 h3 { margin: 0 !important; color: var(--ccr-title) !important; font-size: clamp(1rem, 1.6vw, 1.28rem) !important; line-height: 1.18 !important; overflow-wrap: anywhere !important; }
+
+.cc-roster-duration-v1397 {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 7px 9px !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 11px !important;
+  background: rgba(2, 15, 28, .25) !important;
+  color: var(--ccr-muted) !important;
+  white-space: nowrap !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-duration-v1397 { background: var(--ccr-panel-soft) !important; }
+.cc-roster-duration-v1397 svg { width: 14px !important; height: 14px !important; }
+.cc-roster-duration-v1397 b { color: var(--ccr-text) !important; font-size: 10px !important; }
+
+.cc-roster-flight-grid-v1397 {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin-top: 15px !important;
+}
+
+.cc-roster-flight-grid-v1397 > span {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 11px 12px !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 13px !important;
+  background: rgba(2, 14, 27, .26) !important;
+}
+
+html[data-crew-theme="light"] .cc-roster-flight-grid-v1397 > span { background: var(--ccr-panel-soft) !important; }
+.cc-roster-flight-grid-v1397 > .wide { grid-column: 1 / -1 !important; }
+.cc-roster-flight-grid-v1397 small { color: var(--ccr-muted) !important; font-size: 8px !important; font-weight: 850 !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
+.cc-roster-flight-grid-v1397 b { color: var(--ccr-title) !important; font-size: 12px !important; line-height: 1.25 !important; overflow-wrap: anywhere !important; }
+
+.cc-roster-summary-v1397 {
+  margin: 15px 0 0 !important;
+  color: var(--ccr-text) !important;
+  font-size: 12px !important;
+  line-height: 1.55 !important;
+}
+
+.cc-roster-event-finance-v1397 {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 9px !important;
+  margin-top: 14px !important;
+  padding-top: 14px !important;
+  border-top: 1px solid var(--ccr-line) !important;
+}
+
+.cc-roster-event-finance-v1397 > div:only-child { grid-column: 1 / -1 !important; }
+.cc-roster-meals-v1397,
+.cc-roster-km-gain-v1397 { padding: 12px !important; border: 1px solid rgba(var(--program-rgb), .20) !important; border-radius: 15px !important; background: rgba(var(--program-rgb), .055) !important; }
+.cc-roster-meals-v1397 > small,
+.cc-roster-km-gain-v1397 > small { display: flex !important; align-items: center !important; gap: 6px !important; color: var(--ccr-muted) !important; font-size: 8px !important; font-weight: 850 !important; letter-spacing: .07em !important; text-transform: uppercase !important; }
+.cc-roster-meals-v1397 > small svg,
+.cc-roster-km-gain-v1397 > small svg { width: 14px !important; height: 14px !important; color: var(--program-accent) !important; }
+.cc-roster-meals-v1397 > div { display: flex !important; flex-wrap: wrap !important; gap: 6px !important; margin-top: 9px !important; }
+.cc-roster-meals-v1397 > div > span { display: grid !important; grid-template-columns: 15px minmax(0, 1fr) !important; grid-template-areas: "icon meal" "icon value" !important; gap: 1px 5px !important; align-items: center !important; flex: 1 1 108px !important; padding: 7px 8px !important; border-radius: 10px !important; background: rgba(1, 13, 25, .24) !important; }
+html[data-crew-theme="light"] .cc-roster-meals-v1397 > div > span { background: rgba(255, 255, 255, .62) !important; }
+.cc-roster-meals-v1397 span svg { grid-area: icon; width: 14px !important; height: 14px !important; color: var(--program-accent) !important; }
+.cc-roster-meals-v1397 span b { grid-area: meal; color: var(--ccr-title) !important; font-size: 9px !important; }
+.cc-roster-meals-v1397 span em { grid-area: value; color: var(--ccr-muted) !important; font-size: 9px !important; font-style: normal !important; }
+.cc-roster-km-gain-v1397 strong { display: block !important; margin-top: 8px !important; color: var(--ccr-title) !important; font-size: 19px !important; letter-spacing: -.03em !important; }
+.cc-roster-km-gain-v1397 p { margin: 5px 0 0 !important; color: var(--ccr-muted) !important; font-size: 9px !important; line-height: 1.42 !important; overflow-wrap: anywhere !important; }
+.cc-roster-km-gain-v1397 em { display: inline-block !important; margin-top: 6px !important; color: var(--program-accent) !important; font-size: 8px !important; font-style: normal !important; font-weight: 800 !important; text-transform: uppercase !important; }
+
+.cc-roster-detail-chips-v1397 {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  margin-top: 13px !important;
+}
+
+.cc-roster-detail-chips-v1397 > span {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  max-width: 100% !important;
+  padding: 7px 9px !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 999px !important;
+  background: rgba(65, 117, 148, .10) !important;
+  color: var(--ccr-text) !important;
+  font-size: 9px !important;
+  line-height: 1.25 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.cc-roster-detail-chips-v1397 svg { flex: 0 0 auto !important; width: 13px !important; height: 13px !important; color: var(--program-accent) !important; }
+
+.cc-roster-actions-v1397 {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 7px !important;
+  margin-top: auto !important;
+  padding-top: 14px !important;
+}
+
+.cc-roster-actions-v1397 button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  min-height: 39px !important;
+  padding: 8px 10px !important;
+  border: 1px solid rgba(var(--program-rgb), .25) !important;
+  border-radius: 11px !important;
+  background: rgba(var(--program-rgb), .085) !important;
+  color: var(--ccr-text) !important;
+  font-size: 9px !important;
+  font-weight: 820 !important;
+  transition: transform .16s ease, background .16s ease !important;
+}
+
+.cc-roster-actions-v1397 button:hover { transform: translateY(-1px) !important; background: rgba(var(--program-rgb), .15) !important; }
+.cc-roster-actions-v1397 svg { width: 14px !important; height: 14px !important; color: var(--program-accent) !important; }
+
+.cc-roster-empty-v1397 {
+  display: grid !important;
+  place-items: center !important;
+  min-height: 330px !important;
+  padding: 40px !important;
+  border: 1px dashed var(--ccr-line) !important;
+  border-radius: 28px !important;
+  background: var(--ccr-panel) !important;
+  text-align: center !important;
+}
+
+.cc-roster-empty-v1397 > svg { width: 44px !important; height: 44px !important; color: var(--ccr-cyan) !important; }
+.cc-roster-empty-v1397 h2 { margin: 12px 0 0 !important; color: var(--ccr-title) !important; }
+.cc-roster-empty-v1397 p { margin: 5px 0 0 !important; color: var(--ccr-muted) !important; }
+
+.cc-roster-estimate-note-v1397 {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  width: 100% !important;
+  margin-top: 18px !important;
+  padding: 16px 18px !important;
+  border: 1px solid rgba(53, 213, 236, .18) !important;
+  border-radius: 18px !important;
+  background: rgba(20, 94, 107, .10) !important;
+}
+
+.cc-roster-estimate-note-v1397 svg { flex: 0 0 auto !important; width: 20px !important; height: 20px !important; color: var(--ccr-cyan) !important; }
+.cc-roster-estimate-note-v1397 p { margin: 0 !important; color: var(--ccr-muted) !important; font-size: 10px !important; line-height: 1.5 !important; }
+.cc-roster-estimate-note-v1397 strong { color: var(--ccr-text) !important; }
+
+@media (max-width: 1080px) {
+  .cc-roster-hero-v1397 { grid-template-columns: 1fr !important; }
+  .cc-roster-money-overview-v1397 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .cc-roster-programs-v1397 { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 680px) {
+  .cc-roster-premium-v1397 { padding-bottom: 104px !important; }
+  .cc-roster-hero-v1397 { gap: 22px !important; margin-top: 10px !important; padding: 22px !important; border-radius: 26px !important; }
+  .cc-roster-hero-copy-v1397 h2 { font-size: clamp(2rem, 12vw, 3.15rem) !important; }
+  .cc-roster-money-overview-v1397 { grid-template-columns: 1fr !important; }
+  .cc-roster-money-overview-v1397 button { min-height: 132px !important; border-radius: 20px !important; }
+  .cc-roster-legend-v1397 { flex-wrap: nowrap !important; overflow-x: auto !important; scrollbar-width: none !important; }
+  .cc-roster-legend-v1397::-webkit-scrollbar { display: none !important; }
+  .cc-roster-legend-v1397 span { flex: 0 0 auto !important; }
+  .cc-roster-day-v1397 { padding: 12px !important; border-radius: 23px !important; }
+  .cc-roster-day-header-v1397 { grid-template-columns: 54px minmax(0, 1fr) !important; gap: 11px !important; }
+  .cc-roster-day-header-v1397 > time { width: 52px !important; height: 52px !important; border-radius: 16px !important; }
+  .cc-roster-day-header-v1397 > time b { font-size: 21px !important; }
+  .cc-roster-day-money-v1397 { grid-column: 1 / -1 !important; justify-content: flex-start !important; }
+  .cc-roster-day-money-v1397 > span { flex: 1 1 130px !important; }
+  .cc-roster-program-v1397 { padding: 15px !important; border-radius: 19px !important; }
+  .cc-roster-program-head-v1397 { grid-template-columns: 42px minmax(0, 1fr) !important; gap: 10px !important; }
+  .cc-roster-program-icon-v1397 { width: 40px !important; height: 40px !important; }
+  .cc-roster-duration-v1397 { grid-column: 1 / -1 !important; justify-self: start !important; }
+  .cc-roster-flight-grid-v1397 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .cc-roster-flight-grid-v1397 > span { padding: 9px !important; text-align: center !important; }
+  .cc-roster-event-finance-v1397 { grid-template-columns: 1fr !important; }
+  .cc-roster-event-finance-v1397 > div { grid-column: 1 !important; }
+  .cc-roster-actions-v1397 { display: grid !important; grid-template-columns: 1fr !important; }
+  .cc-roster-actions-v1397 button { width: 100% !important; min-height: 44px !important; }
+}
+
+@media (max-width: 390px) {
+  .cc-roster-hero-v1397 { padding: 18px !important; }
+  .cc-roster-hero-counts-v1397 span { flex: 1 1 92px !important; }
+  .cc-roster-flight-grid-v1397 { grid-template-columns: 1fr !important; }
+  .cc-roster-flight-grid-v1397 > .wide { grid-column: auto !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-roster-premium-v1397 * { scroll-behavior: auto !important; transition: none !important; }
+}
