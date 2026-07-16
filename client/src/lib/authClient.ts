@@ -29,23 +29,15 @@ export interface AuthSession {
 const TOKEN_KEY = 'crewcheck_auth_token';
 const USER_KEY = 'crewcheck_auth_user';
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
+export function getToken(): string | null { return localStorage.getItem(TOKEN_KEY); }
 
 export function getStoredUser(): AuthUser | null {
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
-  try {
-    return JSON.parse(raw) as AuthUser;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(raw) as AuthUser; } catch { return null; }
 }
 
-export function isAuthenticated(): boolean {
-  return Boolean(getToken());
-}
+export function isAuthenticated(): boolean { return Boolean(getToken()); }
 
 export function crewcheckAuthHeader(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
@@ -66,9 +58,7 @@ function persistSession(session: AuthSession) {
       localStorage.removeItem('crewcheck_roster_sync_latest_v108134');
       localStorage.removeItem('crewcheck_latest_roster_bundle');
     }
-  } catch {
-    // Se o storage estiver bloqueado, segue com a sessão nova.
-  }
+  } catch {}
   localStorage.setItem(TOKEN_KEY, session.token);
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
 }
@@ -90,7 +80,6 @@ export class AuthClientError extends Error {
   status?: number;
   code?: string;
   payload?: any;
-
   constructor(message: string, status?: number, code?: string, payload?: any) {
     super(message);
     this.name = 'AuthClientError';
@@ -108,7 +97,7 @@ function publicApiErrorMessage(payload: any, status: number): string {
   if (code === 'AUTH_REQUIRED' || status === 401) return 'Sua sessão expirou. Entre novamente para continuar.';
   if (code === 'PREMIUM_REQUIRED' || status === 402) return String(payload?.message || 'Este recurso requer uma assinatura Premium.');
   if (status >= 500) return String(payload?.message || 'O CrewCheck não conseguiu concluir esta operação agora. Tente novamente em alguns instantes.');
-  return String(payload?.message || ('Erro HTTP ' + status));
+  return String(payload?.message || (`Erro HTTP ${status}`));
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -170,10 +159,7 @@ export async function verifyEmail(email: string, code: string): Promise<AuthSess
 }
 
 export async function resendVerification(email: string): Promise<{ ok: boolean; sent?: boolean; emailSent?: boolean; message?: string }> {
-  return jsonFetch('/api/auth/resend-verification', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  });
+  return jsonFetch('/api/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) });
 }
 
 export async function login(email: string, password: string): Promise<AuthSession> {
@@ -185,20 +171,20 @@ export async function login(email: string, password: string): Promise<AuthSessio
   return session;
 }
 
+export type PasswordResetDelivery = 'email' | 'telegram' | 'both' | 'telegram-call';
 
-export async function requestPasswordReset(email: string): Promise<{ ok: boolean; emailSent?: boolean; emailStatus?: unknown }> {
-  return jsonFetch<{ ok: boolean; emailSent?: boolean; emailStatus?: unknown }>('/api/auth/request-reset', {
+export async function requestPasswordReset(
+  email: string,
+  delivery: PasswordResetDelivery = 'both',
+): Promise<{ ok: boolean; emailSent?: boolean; emailStatus?: unknown; delivery?: PasswordResetDelivery; message?: string }> {
+  return jsonFetch('/api/auth/request-reset', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, delivery }),
   });
 }
 
-
 export async function confirmPasswordReset(payload: { email: string; code: string; password: string; confirmPassword: string }): Promise<{ ok: boolean; message?: string }> {
-  return jsonFetch<{ ok: boolean; message?: string }>('/api/auth/reset-password', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  return jsonFetch('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export async function getMe(): Promise<AuthUser> {
@@ -211,7 +197,6 @@ export async function logout(): Promise<void> {
   try {
     await jsonFetch('/api/auth/logout', { method: 'POST', body: '{}' });
   } catch {
-    // Mesmo offline, removemos a sessão local.
   } finally {
     clearSession();
   }
