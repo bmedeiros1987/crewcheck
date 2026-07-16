@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-9-0-critical-crew-core",
-  "version": "13.9.0",
+  "name": "crewcheck-v13-9-2-telegram-atis-regulation",
+  "version": "13.9.2",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.9.0 - PR 79, recovery, BIDS, CrewLock, roster continuity and routine intelligence",
+  "description": "CrewCheck v13.9.2 - Telegram voice notes, aviation ATIS, manual regulation and desktop menu audit",
   "scripts": {
     "prepare:v139": "node scripts/v139/apply.mjs",
     "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
@@ -107,7 +107,8 @@
     "regression:v13.8.6:internal": "node scripts/regression-v13-8-6-internal-services-car-db.mjs",
     "regression:v13.8.7:mysql": "node scripts/regression-v13-8-7-aiven-mysql-full-platform.mjs",
     "regression:v13.8.8:audit": "node scripts/regression-v13-8-8-premium-system-audit.mjs",
-    "regression:v13.8.9:mobile-hotels": "node scripts/regression-v13-8-9-mobile-hotels-qr.mjs"
+    "regression:v13.8.9:mobile-hotels": "node scripts/regression-v13-8-9-mobile-hotels-qr.mjs",
+    "regression:v13.9.2:telegram-atis-regulation": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-2-telegram-atis-regulation.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

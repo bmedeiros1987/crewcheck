@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
-import { handlePlatformRoute, consumePlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
@@ -554,6 +555,13 @@ const CREWCHECK_AIRPORT_ICAO = {
   SLZ:'SBSL', NAT:'SBSG', MCZ:'SBMO', AJU:'SBAR', VIX:'SBVT', BVB:'SBBV', MCP:'SBMQ', PMW:'SBPJ',
   THE:'SBTE', GYN:'SBGO', CGB:'SBCY', CGR:'SBCG', PVH:'SBPV', RBR:'SBRB', JPA:'SBJP', IOS:'SBIL'
 };
+const CREWCHECK_AIRPORT_NAMES = {
+  SBBR:'Brasília', SBGR:'Guarulhos', SBSP:'Congonhas', SBKP:'Viracopos', SBRJ:'Santos Dumont', SBGL:'Galeão', SBCF:'Confins', SBBH:'Pampulha',
+  SBCT:'Curitiba', SBPA:'Porto Alegre', SBFL:'Florianópolis', SBSV:'Salvador', SBRF:'Recife', SBFZ:'Fortaleza', SBBE:'Belém', SBEG:'Manaus',
+  SBSL:'São Luís', SBSG:'Natal', SBMO:'Maceió', SBAR:'Aracaju', SBVT:'Vitória', SBBV:'Boa Vista', SBMQ:'Macapá', SBPJ:'Palmas',
+  SBTE:'Teresina', SBGO:'Goiânia', SBCY:'Cuiabá', SBCG:'Campo Grande', SBPV:'Porto Velho', SBRB:'Rio Branco', SBJP:'João Pessoa', SBIL:'Ilhéus'
+};
+const aviationWeatherCache = new Map();
 function airportIcao(value) {
   const raw = String(value || '').trim().toUpperCase();
   if (!raw) return '';
@@ -578,25 +586,105 @@ async function safeJsonFetch(url, options = {}, timeoutMs = 2400) {
     return { response, payload: null, text, ok: false, contentType };
   } finally { clearTimeout(timer); }
 }
+function aviationWeatherUserAgent() {
+  return String(envAny(['AVIATION_WEATHER_USER_AGENT', 'CREWCHECK_AVIATION_WEATHER_USER_AGENT']) || 'CrewCheck/13.9.2 (aviation-weather; crewcheck.online)').slice(0, 180);
+}
+async function fetchAviationWeatherReport(station, type = 'metar') {
+  const endpointType = String(type).toLowerCase() === 'taf' ? 'taf' : 'metar';
+  const key = `${endpointType}:${station}`;
+  const now = Date.now();
+  const ttl = endpointType === 'taf' ? 10 * 60_000 : 60_000;
+  const cached = aviationWeatherCache.get(key);
+  if (cached && now - cached.cachedAt < ttl) return { ...cached, cache: 'fresh' };
+  const apiUrl = `https://aviationweather.gov/api/data/${endpointType}?ids=${encodeURIComponent(station)}&format=json`;
+  try {
+    const { payload, text, ok } = await safeJsonFetch(apiUrl, { headers: { accept: 'application/json', 'user-agent': aviationWeatherUserAgent() } }, 6000);
+    const row = ok && Array.isArray(payload) ? payload[0] || {} : {};
+    const raw = safeText(row.rawOb || row.rawTAF || row.raw_text || row.raw || (text && !text.trim().startsWith('<') ? text : ''));
+    if (raw) {
+      const report = { ok: true, configured: true, station, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), cachedAt: now };
+      aviationWeatherCache.set(key, report);
+      return { ...report, cache: 'live' };
+    }
+  } catch {}
+  if (cached && now - cached.cachedAt < 30 * 60_000) return { ...cached, cache: 'stale', stale: true };
+  return { ok: false, configured: true, station, type: endpointType.toUpperCase(), raw: '', observedAt: '', cachedAt: now, cache: 'miss' };
+}
+const METAR_WEATHER_PT = {
+  TS:'trovoada', RA:'chuva', DZ:'chuvisco', SH:'pancadas', BR:'névoa úmida', FG:'nevoeiro', HZ:'névoa seca', FU:'fumaça',
+  SN:'neve', GR:'granizo', GS:'granizo pequeno', SQ:'tempestade', VA:'cinzas vulcânicas', FZ:'congelante', VC:'nas proximidades'
+};
+function signedMetarTemperature(value = '') {
+  const raw = String(value || '');
+  if (!raw) return null;
+  return Number(raw.replace(/^M/, '-'));
+}
+function decodeMetarPtBr(rawValue = '', station = '') {
+  const raw = safeText(rawValue).toUpperCase();
+  if (!raw) return [];
+  const lines = [];
+  const observed = raw.match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+  if (observed) lines.push(`observação do dia ${observed[1]}, às ${observed[2]}:${observed[3]} Zulu`);
+  const wind = raw.match(/\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b/);
+  if (wind) lines.push(wind[1] === 'VRB' ? `vento variável com ${Number(wind[2])} nós${wind[3] ? `, rajadas de ${Number(wind[3])} nós` : ''}` : `vento de ${Number(wind[1])} graus com ${Number(wind[2])} nós${wind[3] ? `, rajadas de ${Number(wind[3])} nós` : ''}`);
+  if (/\bCAVOK\b/.test(raw)) lines.push('CAVOK: visibilidade de dez quilômetros ou mais, sem nuvens ou tempo significativo nos critérios do reporte');
+  else {
+    const visibility = raw.match(/\s(\d{4})\s/);
+    if (visibility) lines.push(`visibilidade predominante de ${visibility[1] === '9999' ? 'dez quilômetros ou mais' : `${Number(visibility[1])} metros`}`);
+  }
+  const weatherToken = raw.split(/\s+/).find((token) => /^[-+]?(?:VC)?(?:MI|BC|PR|DR|BL|SH|TS|FZ)?(?:DZ|RA|SN|SG|PL|GR|GS|BR|FG|FU|VA|DU|SA|HZ|PO|SQ|FC|SS|DS)+$/.test(token));
+  if (weatherToken) {
+    const intensity = weatherToken.startsWith('+') ? 'forte' : weatherToken.startsWith('-') ? 'leve' : 'moderada';
+    const meanings = Object.entries(METAR_WEATHER_PT).filter(([code]) => weatherToken.includes(code)).map(([, label]) => label);
+    if (meanings.length) lines.push(`tempo presente: ${[...new Set(meanings)].join(', ')}, intensidade ${intensity}`);
+  }
+  const clouds = [...raw.matchAll(/\b(FEW|SCT|BKN|OVC)(\d{3})(CB|TCU)?\b/g)].map((match) => {
+    const amount = { FEW:'poucas nuvens', SCT:'nuvens esparsas', BKN:'céu nublado', OVC:'céu encoberto' }[match[1]];
+    return `${amount} a ${Number(match[2]) * 100} pés${match[3] ? `, ${match[3]}` : ''}`;
+  });
+  if (clouds.length) lines.push(clouds.join('; '));
+  const temperatures = raw.match(/\b(M?\d{2})\/(M?\d{2})\b/);
+  if (temperatures) lines.push(`temperatura ${signedMetarTemperature(temperatures[1])} graus, ponto de orvalho ${signedMetarTemperature(temperatures[2])} graus`);
+  const qnh = raw.match(/\bQ(\d{4})\b/);
+  if (qnh) lines.push(`QNH ${qnh[1]} hectopascais`);
+  if (/\bWS\b/.test(raw)) lines.push('atenção para indicação de cortante de vento');
+  if (/\bCB\b/.test(raw)) lines.push('atenção para cumulonimbus');
+  if (/\bTCU\b/.test(raw)) lines.push('atenção para cumulus de grande desenvolvimento vertical');
+  const airportName = CREWCHECK_AIRPORT_NAMES[station];
+  if (airportName && lines.length) lines.unshift(`${airportName}, ${station}`);
+  return lines;
+}
+function buildCrewCheckAtis(station, metar, taf) {
+  const decoded = decodeMetarPtBr(metar?.raw, station);
+  const issue = String(metar?.raw || '').match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+  const lines = [
+    `ATIS meteorológico CrewCheck · ${station}`,
+    issue ? `Boletim baseado na observação das ${issue[2]}:${issue[3]} Zulu.` : 'Horário do reporte não identificado.',
+    ...decoded.map((line) => `${line}.`),
+    metar?.raw ? `METAR bruto: ${metar.raw}` : 'METAR indisponível.',
+    taf?.raw ? `TAF vigente: ${taf.raw}` : 'TAF indisponível.',
+    'Não inclui pista, aproximação ou instruções ATC. Confirme o ATIS e as fontes oficiais antes da operação.',
+  ];
+  return lines.join('\n');
+}
+function crewCheckAtisVoiceText(value = '') {
+  return String(value || '').split('\n')
+    .filter((line) => !/^\s*(METAR bruto|TAF vigente):/i.test(line))
+    .join('\n')
+    .replace(/·/g, ',')
+    .trim();
+}
 async function handleAviationWeather(req, res, url) {
   const airport = String(url.searchParams.get('airport') || url.searchParams.get('station') || url.searchParams.get('id') || '').trim().toUpperCase();
   const type = String(url.searchParams.get('type') || 'metar').trim().toLowerCase();
   const station = airportIcao(airport);
   if (!station) return sendJson(res, 200, { ok: false, configured: false, message: 'Informe um aeroporto para consultar meteorologia.' });
-  const endpointType = type === 'taf' ? 'taf' : 'metar';
-  const apiUrl = `https://aviationweather.gov/api/data/${endpointType}?ids=${encodeURIComponent(station)}&format=json`;
-  try {
-    const { payload, text, ok } = await safeJsonFetch(apiUrl, { headers: { accept: 'application/json' } }, 3200);
-    if (ok && Array.isArray(payload)) {
-      const row = payload[0] || {};
-      const raw = safeText(row.rawOb || row.rawTAF || row.raw_text || row.raw || '');
-      return sendJson(res, 200, { ok: Boolean(raw), configured: true, airport, station, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), message: raw ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
-    }
-    if (text && !text.trim().startsWith('<')) return sendJson(res, 200, { ok: Boolean(text.trim()), configured: true, airport, station, type: endpointType.toUpperCase(), raw: safeText(text), message: text.trim() ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
-    return sendJson(res, 200, { ok: false, configured: true, airport, station, type: endpointType.toUpperCase(), message: 'Meteorologia indisponível agora.' });
-  } catch {
-    return sendJson(res, 200, { ok: false, configured: true, airport, station, type: endpointType.toUpperCase(), message: 'Meteorologia indisponível agora.' });
+  if (type === 'atis') {
+    const [metar, taf] = await Promise.all([fetchAviationWeatherReport(station, 'metar'), fetchAviationWeatherReport(station, 'taf')]);
+    return sendJson(res, 200, { ok: Boolean(metar.ok || taf.ok), configured: true, airport, station, type: 'ATIS', metar: metar.raw, taf: taf.raw, decoded: decodeMetarPtBr(metar.raw, station), atis: buildCrewCheckAtis(station, metar, taf), cache: { metar: metar.cache, taf: taf.cache }, message: metar.ok || taf.ok ? 'ATIS meteorológico atualizado.' : 'Meteorologia indisponível agora.' });
   }
+  const report = await fetchAviationWeatherReport(station, type);
+  return sendJson(res, 200, { ...report, airport, decoded: report.type === 'METAR' ? decodeMetarPtBr(report.raw, station) : [], message: report.ok ? 'Meteorologia atualizada.' : 'Meteorologia indisponível agora.' });
 }
 function parseCoords(value) {
   const raw = String(value || '').trim();
@@ -1122,7 +1210,13 @@ function elevenLabsModelId() {
   return envAny(ELEVENLABS_MODEL_ENV_KEYS) || 'eleven_multilingual_v2';
 }
 function elevenLabsOutputFormat() {
-  return envAny(ELEVENLABS_OUTPUT_ENV_KEYS) || 'mp3_44100_128';
+  return envAny(ELEVENLABS_OUTPUT_ENV_KEYS) || 'opus_48000_128';
+}
+function elevenLabsAudioMetadata(outputFormat = '') {
+  const normalized = String(outputFormat || '').toLowerCase();
+  if (normalized.startsWith('opus_')) return { contentType: 'audio/ogg', extension: 'ogg' };
+  if (normalized.startsWith('mp3_')) return { contentType: 'audio/mpeg', extension: 'mp3' };
+  return { contentType: 'audio/mp4', extension: 'm4a' };
 }
 function elevenLabsTtsConfigured() {
   return Boolean(elevenLabsApiKey() && elevenLabsVoiceId());
@@ -1146,6 +1240,7 @@ async function generateElevenLabsSpeech(text, options = {}) {
   if (!finalText) return { ok: false, configured: true, message: 'Texto vazio para gerar áudio.' };
 
   const outputFormat = elevenLabsOutputFormat();
+  const audioMetadata = elevenLabsAudioMetadata(outputFormat);
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`;
   const body = {
     text: finalText,
@@ -1162,7 +1257,7 @@ async function generateElevenLabsSpeech(text, options = {}) {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        accept: 'audio/mpeg',
+        accept: audioMetadata.contentType,
         'content-type': 'application/json',
         'xi-api-key': apiKey,
       },
@@ -1179,7 +1274,7 @@ async function generateElevenLabsSpeech(text, options = {}) {
     }
     const buffer = Buffer.from(await response.arrayBuffer());
     if (!buffer.length) return { ok: false, configured: true, message: 'ElevenLabs retornou áudio vazio.' };
-    return { ok: true, configured: true, buffer, contentType: 'audio/mpeg', outputFormat, modelId: body.model_id, message: 'Áudio ElevenLabs gerado.' };
+    return { ok: true, configured: true, buffer, contentType: audioMetadata.contentType, filename: `crewcheck-voice.${audioMetadata.extension}`, outputFormat, modelId: body.model_id, message: 'Áudio ElevenLabs gerado.' };
   } catch {
     return { ok: false, configured: true, message: 'Não consegui conectar ao ElevenLabs agora.' };
   }
@@ -1227,7 +1322,24 @@ function humanizeTelegramVoiceText(text = '') {
     .replace(/\s{2,}/g, ' ')
     .trim();
   if (!value) value = 'Boa, me manda de novo rapidinho que eu confiro pra você.';
-  return value;
+  return aviationVoiceText(value);
+}
+const ICAO_PHONETIC_WORDS = {
+  A:'Alfa', B:'Bravo', C:'Charlie', D:'Delta', E:'Echo', F:'Foxtrot', G:'Golf', H:'Hotel', I:'India', J:'Juliett', K:'Kilo', L:'Lima', M:'Mike',
+  N:'November', O:'Oscar', P:'Papa', Q:'Quebec', R:'Romeo', S:'Sierra', T:'Tango', U:'Uniform', V:'Victor', W:'Whiskey', X:'X-ray', Y:'Yankee', Z:'Zulu'
+};
+const ICAO_DIGIT_WORDS = { 0:'zero', 1:'uno', 2:'dois', 3:'três', 4:'quatro', 5:'cinco', 6:'seis', 7:'sete', 8:'oito', 9:'nove' };
+function spellAviationToken(token = '') {
+  return String(token).toUpperCase().split('').map((character) => ICAO_PHONETIC_WORDS[character] || ICAO_DIGIT_WORDS[character] || character).join(', ');
+}
+function aviationVoiceText(text = '') {
+  return String(text || '')
+    .replace(/\b([A-Z]{4})\b/g, (token) => `${token}, ${spellAviationToken(token)}`)
+    .replace(/\b((?:LA|JJ|G3|AD|AZU|LAN|TAM)\d{2,5})\b/gi, (token) => spellAviationToken(token))
+    .replace(/\bQNH\s*(\d{4})\b/gi, (_match, digits) => `Q N H ${String(digits).split('').map((digit) => ICAO_DIGIT_WORDS[digit] || digit).join(' ')}`)
+    .replace(/\b(\d{2})Z\b/g, (_match, hour) => `${String(hour).split('').map((digit) => ICAO_DIGIT_WORDS[digit] || digit).join(' ')} Zulu`)
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 function telegramShouldEchoTranscript() {
   return String(envAny(['TELEGRAM_CONCIERGE_ECHO_TRANSCRIPT', 'CREWCHECK_TELEGRAM_ECHO_TRANSCRIPT']) || 'false').toLowerCase() === 'true';
@@ -1237,7 +1349,7 @@ async function sendHumanTelegramVoiceReply(chatId, replyText, transcript = '') {
   await showHumanRecordingAction(chatId, 2);
   const audioReply = await sendTelegramTtsAudio(chatId, finalReply, {
     caption: telegramHumanAudioCaption(),
-    filename: 'crewcheck.mp3',
+    filename: 'crewcheck-voice.ogg',
   });
   if (audioReply?.ok) {
     if (telegramShouldEchoTranscript() && transcript) {
@@ -1247,20 +1359,20 @@ async function sendHumanTelegramVoiceReply(chatId, replyText, transcript = '') {
   }
   return false;
 }
-async function sendTelegramAudioBuffer(chatId, buffer, filename = 'crewcheck-audio.mp3', caption = '') {
-  const url = telegramApiUrl('sendAudio');
+async function sendTelegramVoiceBuffer(chatId, buffer, filename = 'crewcheck-voice.ogg', caption = '', contentType = 'audio/ogg') {
+  const url = telegramApiUrl('sendVoice');
   if (!url) return { ok: false, configured: false, message: 'Telegram aguardando configuração.' };
   if (!chatId) return { ok: false, configured: true, message: 'Chat do Telegram não configurado.' };
   try {
     const form = new FormData();
     form.append('chat_id', String(chatId));
     if (caption) form.append('caption', String(caption).slice(0, 900));
-    form.append('audio', new Blob([buffer], { type: 'audio/mpeg' }), filename);
+    form.append('voice', new Blob([buffer], { type: contentType }), filename);
     const response = await fetch(url, { method: 'POST', body: form });
     const payload = await response.json().catch(() => ({}));
-    return { ok: Boolean(response.ok && payload.ok !== false), configured: true, status: response.status, data: payload, message: response.ok ? 'Áudio enviado.' : 'Áudio não entregue agora.' };
+    return { ok: Boolean(response.ok && payload.ok !== false), configured: true, status: response.status, data: payload, message: response.ok ? 'Mensagem de voz enviada.' : 'Mensagem de voz não entregue agora.' };
   } catch {
-    return { ok: false, configured: true, message: 'Áudio não entregue agora.' };
+    return { ok: false, configured: true, message: 'Mensagem de voz não entregue agora.' };
   }
 }
 // CrewCheck v13.7.15 — TTS provider policy.
@@ -1324,7 +1436,7 @@ async function sendTelegramTtsAudio(chatId, text, options = {}) {
   if (!elevenLabsTtsConfigured()) return { ok: false, configured: false, provider: 'elevenlabs', policy, message: 'ElevenLabs aguardando configuração.' };
   const generated = await generateElevenLabsSpeech(finalText, options);
   if (!generated.ok) return generated;
-  const sent = await sendTelegramAudioBuffer(chatId, generated.buffer, options.filename || 'crewcheck-elevenlabs.mp3', options.caption || 'CrewCheck Concierge');
+  const sent = await sendTelegramVoiceBuffer(chatId, generated.buffer, generated.filename || options.filename || 'crewcheck-voice.ogg', options.caption || '', generated.contentType || 'audio/ogg');
   return { ...sent, provider: 'elevenlabs', effectiveProvider: 'elevenlabs', policy: ttsPolicySnapshot(),
     humanVoiceEnabled: telegramHumanVoiceEnabled(),
     echoTranscript: telegramShouldEchoTranscript(), tts: { ok: generated.ok, outputFormat: generated.outputFormat, modelId: generated.modelId } };
@@ -1352,7 +1464,7 @@ async function handleTtsHealth(req, res) {
 function handleTtsProviderHealth(req, res) {
   return sendJson(res, 200, {
     ok: effectiveTtsProvider() === 'elevenlabs',
-    version: '13.8.8',
+    version: '13.9.0',
     ...ttsPolicySnapshot(),
     message: effectiveTtsProvider() === 'elevenlabs'
       ? 'ElevenLabs é o provedor efetivo de voz.'
@@ -1389,7 +1501,7 @@ function telegramDefaultChatId() {
 }
 
 function publicUrl() {
-  return String(envAny(['CREWCHECK_PUBLIC_URL', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL']) || '').replace(/\/$/, '');
+  return String(envAny(['TELEGRAM_PUBLIC_BASE_URL', 'CREWCHECK_PUBLIC_URL', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL']) || '').replace(/\/$/, '');
 }
 
 function telegramApiUrl(method) {
@@ -1450,15 +1562,35 @@ const conciergeRemoteCodes = new Set(['EAD', 'ONLINE', 'REMOTO', 'REMOTE', 'DOP'
 let conciergeDbPoolPromise = null;
 const conciergeKeyboard = {
   keyboard: [
-    ['/proximo', '/hoje'],
-    ['/radar', '/saida'],
-    ['/escala', '/rotina'],
-    ['/hoteis', '/academias'],
-    ['/metar', '/ajuda'],
+    [{ text: '✈️ Próximo voo' }, { text: '📅 Hoje' }],
+    [{ text: '🛫 Radar / portão' }, { text: '🚗 Saída inteligente' }],
+    [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],
+    [{ text: '🏨 Hotéis' }, { text: '🏋️ Academias' }],
+    [{ text: '🌦️ ATIS / METAR' }, { text: '📞 Solicitar ligação' }],
+    [{ text: '🚨 Emergência' }, { text: 'ℹ️ Ajuda' }],
   ],
   resize_keyboard: true,
   is_persistent: true,
+  one_time_keyboard: false,
+  input_field_placeholder: 'Pergunte sobre sua escala ou envie um áudio…',
 };
+function normalizeConciergeButtonText(value = '') {
+  const text = String(value || '').trim();
+  const normalized = text.replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, '').trim().toLowerCase();
+  if (normalized === 'próximo voo' || normalized === 'proximo voo') return '/proximo';
+  if (normalized === 'hoje') return '/hoje';
+  if (normalized.includes('radar') || normalized.includes('portão')) return '/radar';
+  if (normalized.includes('saída inteligente') || normalized.includes('saida inteligente')) return '/saida';
+  if (normalized === 'minha escala') return '/escala';
+  if (normalized === 'rotina') return '/rotina';
+  if (normalized === 'hotéis' || normalized === 'hoteis') return '/hoteis';
+  if (normalized === 'academias') return '/academias';
+  if (normalized.includes('atis')) return '/atis';
+  if (normalized.includes('solicitar ligação') || normalized.includes('solicitar ligacao')) return '/ligacao';
+  if (normalized.includes('emergência') || normalized.includes('emergencia')) return '/emergencia';
+  if (normalized === 'ajuda') return '/ajuda';
+  return text;
+}
 
 async function conciergeDbPool() {
   const connectionString = envAny(['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'MYSQL_URL']);
@@ -1767,11 +1899,14 @@ function conciergeHelp(name = 'Tripulante') {
     '/saida — Saída Inteligente',
     '/metar SBBR — METAR',
     '/taf SBGR — TAF',
+    '/atis SBBR — boletim meteorológico em texto e voz',
     '/hoteis — pernoites e hotéis',
     '/academias — academias próximas',
     '/rotina — rotina sugerida',
     '/diarias — pernoites detectados',
     '/conformidade — leitura preventiva',
+    '/emergencia — Central de Emergência',
+    '/ligacao — solicitar ligação pelo bot auxiliar',
     '',
     'Também entendo perguntas naturais e mensagens de voz. Para busca perto de você, envie sua localização pelo Telegram.',
   ].join('\n');
@@ -1837,15 +1972,24 @@ async function conciergeWeatherReply(text, snapshot) {
   const station = airportIcao(airport);
   const type = /taf/i.test(text) ? 'taf' : 'metar';
   if (!station) return 'Informe o aeroporto, por exemplo: /metar SBBR ou /taf GRU.';
-  try {
-    const apiUrl = `https://aviationweather.gov/api/data/${type}?ids=${encodeURIComponent(station)}&format=json`;
-    const { payload, text: rawText, ok } = await safeJsonFetch(apiUrl, { headers: { accept: 'application/json' } }, 3600);
-    const row = ok && Array.isArray(payload) ? payload[0] || {} : {};
-    const raw = safeText(row.rawOb || row.rawTAF || row.raw_text || row.raw || rawText || '');
-    return raw ? `${type.toUpperCase()} ${station}\n${raw}` : `${type.toUpperCase()} ${station}: informação indisponível agora.`;
-  } catch {
-    return `${type.toUpperCase()} ${station}: informação indisponível agora.`;
-  }
+  const report = await fetchAviationWeatherReport(station, type);
+  if (!report.raw) return `${type.toUpperCase()} ${station}: informação indisponível agora.`;
+  if (type === 'taf') return `TAF ${station}\n${report.raw}\n\nPrevisão de aeródromo. Use /atis ${station} para receber o boletim meteorológico em voz.`;
+  const decoded = decodeMetarPtBr(report.raw, station);
+  return [`METAR ${station}`, report.raw, '', 'Leitura acessível:', ...decoded.map((line) => `• ${line}`), '', `Atualização: ${report.cache === 'live' ? 'fonte consultada agora' : report.stale ? 'último dado disponível' : 'cache operacional'}.`].join('\n');
+}
+async function conciergeAtisReply(text, snapshot) {
+  const explicit = String(text).toUpperCase().match(/\b[A-Z]{4}\b|\b[A-Z]{3}\b/);
+  const next = conciergeNextProgram(snapshot?.roster);
+  const airport = explicit?.[0] || next?.legs?.[0]?.origin || '';
+  const station = airportIcao(airport);
+  if (!station) return 'Informe o aeroporto, por exemplo: /atis SBBR.';
+  const [metar, taf] = await Promise.all([
+    fetchAviationWeatherReport(station, 'metar'),
+    fetchAviationWeatherReport(station, 'taf'),
+  ]);
+  if (!metar.ok && !taf.ok) return `ATIS meteorológico ${station}: informação indisponível agora.`;
+  return buildCrewCheckAtis(station, metar, taf);
 }
 function conciergeHaversineKm(a, b) {
   const rad = (value) => Number(value) * Math.PI / 180;
@@ -2018,7 +2162,7 @@ function conciergeScheduleReply(snapshot, mode = 'next') {
   return next ? `Próxima programação\n\n${conciergeFormatProgram(next)}` : 'Nenhuma programação futura detectada na escala ativa.';
 }
 async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
-  const value = String(text || '').trim();
+  const value = normalizeConciergeButtonText(text);
   const lower = value.toLowerCase();
   if (!value || /^\/(?:start|ajuda|help|comandos)(?:@\S+)?$/i.test(value) || /^(ajuda|comandos)$/i.test(value)) return conciergeHelp(profile.name);
   if (/^\/(?:hoje)(?:@\S+)?\b/i.test(value) || /\b(programa[cç][aã]o|escala)\s+(de\s+)?hoje\b/i.test(lower)) return conciergeScheduleReply(snapshot, 'today');
@@ -2026,6 +2170,7 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   if (/^\/(?:proximo|próximo)(?:@\S+)?\b/i.test(value) || /pr[oó]xima\s+(programa[cç][aã]o|escala|atividade|voo)/i.test(lower)) return conciergeScheduleReply(snapshot, 'next');
   if (/^\/escala(?:@\S+)?\b/i.test(value) || /resumo\s+(da\s+)?escala/i.test(lower)) return conciergeScheduleReply(snapshot, 'summary');
   if (/^\/(?:portao|portão|radar)(?:@\S+)?\b/i.test(value) || /\b(port[aã]o|gate|radar|status\s+do\s+voo)\b/i.test(lower)) return conciergeRadarReply(value, profile, snapshot);
+  if (/^\/atis(?:@\S+)?\b/i.test(value) || /\b(atis)\b/i.test(lower)) return conciergeAtisReply(value, snapshot);
   if (/^\/(?:metar|taf)(?:@\S+)?\b/i.test(value) || /\b(metar|taf|meteorologia)\b/i.test(lower)) return conciergeWeatherReply(value, snapshot);
   if (/^\/saida(?:@\S+)?\b/i.test(value) || /\b(que horas devo sair|sa[ií]da inteligente|hora de sair)\b/i.test(lower)) return conciergeDepartureReply(snapshot);
   if (/^\/(?:hoteis|hotéis|hotel)(?:@\S+)?\b/i.test(value) || /\b(hotel|hot[eé]is|pernoite)\b/i.test(lower)) return conciergeHotelsReply(snapshot);
@@ -2469,7 +2614,7 @@ function handleTelegramSttHealth(req, res) {
 
 function handleTelegramHealth(req, res) {
   const webhookUrl = publicUrl() ? `${publicUrl()}/api/telegram/webhook` : '';
-  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), pdfImport: true, rosterSync: true, persistentStore: Boolean(envAny(['DATABASE_URL'])), locationSupported: true, voiceSupported: crewcheckSttConfigured() || elevenLabsSttConfigured(), commandsRestored: true, ttsProvider: 'elevenlabs', ttsConfigured: elevenLabsTtsConfigured(), message: telegramConfigured() ? 'Concierge completo configurado.' : 'Concierge aguardando configuração.' });
+  return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), pdfImport: true, rosterSync: true, persistentStore: Boolean(envAny(['DATABASE_URL'])), locationSupported: true, voiceSupported: crewcheckSttConfigured() || elevenLabsSttConfigured(), nativeVoiceNotes: true, atisSupported: true, aviationWeatherCache: true, commandsRestored: true, ttsProvider: 'elevenlabs', ttsConfigured: elevenLabsTtsConfigured(), message: telegramConfigured() ? 'Concierge completo configurado.' : 'Concierge aguardando configuração.' });
 }
 
 async function handleTelegramSend(req, res) {
@@ -2495,12 +2640,92 @@ async function handleTelegramSetupWebhook(req, res) {
   if (!url || !base) return sendJson(res, 200, { ok: false, configured: Boolean(url), message: 'Webhook aguardando configuração do endereço público.' });
   const secret = envAny(['TELEGRAM_WEBHOOK_SECRET']);
   try {
-    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `${base}/api/telegram/webhook`, ...(secret ? { secret_token: secret } : {}), allowed_updates: ['message'], drop_pending_updates: false }) });
+    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `${base}/api/telegram/webhook`, ...(secret ? { secret_token: secret } : {}), allowed_updates: ['message', 'edited_message', 'callback_query'], drop_pending_updates: false }) });
     const data = await response.json().catch(() => ({}));
-    return sendJson(res, 200, { ok: Boolean(response.ok && data.ok !== false), configured: true, message: response.ok ? 'Webhook atualizado.' : 'Webhook não atualizado agora.' });
+    const menu = await configureTelegramBotMenu();
+    return sendJson(res, 200, { ok: Boolean(response.ok && data.ok !== false), configured: true, menu, message: response.ok ? 'Webhook e menu do bot atualizados.' : 'Webhook não atualizado agora.' });
   } catch {
     return sendJson(res, 200, { ok: false, configured: true, message: 'Webhook não atualizado agora.' });
   }
+}
+
+async function configureTelegramBotMenu() {
+  const commands = [
+    { command: 'proximo', description: 'Próxima programação' },
+    { command: 'hoje', description: 'Programação de hoje' },
+    { command: 'escala', description: 'Resumo da escala ativa' },
+    { command: 'radar', description: 'Portão, terminal e status' },
+    { command: 'saida', description: 'Saída Inteligente' },
+    { command: 'metar', description: 'METAR do aeroporto' },
+    { command: 'taf', description: 'TAF do aeroporto' },
+    { command: 'atis', description: 'ATIS meteorológico em voz' },
+    { command: 'hoteis', description: 'Hotéis e pernoites' },
+    { command: 'academias', description: 'Academias próximas' },
+    { command: 'rotina', description: 'Rotina sugerida' },
+    { command: 'ligacao', description: 'Solicitar ligação pelo bot' },
+    { command: 'emergencia', description: 'Central de Emergência' },
+    { command: 'ajuda', description: 'Todos os comandos' },
+  ];
+  const call = async (method, payload) => {
+    const target = telegramApiUrl(method);
+    if (!target) return false;
+    try {
+      const response = await fetch(target, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      const result = await response.json().catch(() => ({}));
+      return Boolean(response.ok && result.ok !== false);
+    } catch { return false; }
+  };
+  const [commandsOk, buttonOk] = await Promise.all([
+    call('setMyCommands', { commands, language_code: 'pt-br' }),
+    call('setChatMenuButton', { menu_button: { type: 'commands' } }),
+  ]);
+  return { commands: commandsOk, menuButton: buttonOk };
+}
+
+async function answerTelegramCallback(callbackId, text = '') {
+  const url = telegramApiUrl('answerCallbackQuery');
+  if (!url || !callbackId) return;
+  try { await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ callback_query_id: callbackId, text: String(text).slice(0, 180) }) }); } catch {}
+}
+function conciergeCallConfirmationKeyboard() {
+  return { inline_keyboard: [[
+    { text: '📞 Confirmar ligação', callback_data: 'cc_call:confirm' },
+    { text: 'Cancelar', callback_data: 'cc_call:cancel' },
+  ]] };
+}
+async function requestConciergeCallConfirmation(chatId) {
+  return sendTelegramMessage(chatId, 'Posso acionar o bot auxiliar de ligação para o seu usuário do Telegram. Isso não é uma chamada nativa do Telegram e pode consumir uma unidade da franquia mensal. Deseja continuar?', { reply_markup: conciergeCallConfirmationKeyboard() });
+}
+async function handleTelegramCallCallback(update = {}) {
+  const callback = update?.callback_query;
+  const data = String(callback?.data || '');
+  if (!data.startsWith('cc_call:')) return false;
+  const chatId = callback?.message?.chat?.id;
+  if (!chatId) return true;
+  if (data === 'cc_call:cancel') {
+    await answerTelegramCallback(callback.id, 'Ligação cancelada.');
+    await sendTelegramMessage(chatId, 'Tudo certo. Nenhuma ligação foi solicitada.', { reply_markup: conciergeKeyboard });
+    return true;
+  }
+  await answerTelegramCallback(callback.id, 'Solicitando ligação…');
+  const message = { ...(callback.message || {}), from: callback.from || callback.message?.from || {} };
+  const profile = await telegramProfileForChatAsync(message);
+  const email = String(profile?.email || '').trim().toLowerCase();
+  const admin = Boolean(typeof cc1371IsAdmin === 'function' && cc1371IsAdmin(email));
+  const username = String(callback?.from?.username || await telegramLinkedUsernameForEmailAsync(email) || '').trim().replace(/^@/, '');
+  if (!email || !username) {
+    await sendTelegramMessage(chatId, 'Para receber a ligação, vincule sua conta do CrewCheck e defina um nome de usuário no Telegram.', { reply_markup: conciergeKeyboard });
+    return true;
+  }
+  const usage = await consumePlatformUsage({ email, admin }, 'wakeup_call', 1);
+  if (!usage.allowed) {
+    await sendTelegramMessage(chatId, usage.message || 'Sua franquia mensal de ligações foi atingida. As mensagens e notas de voz continuam disponíveis.', { reply_markup: conciergeKeyboard });
+    return true;
+  }
+  const result = await sendTelegramVoiceCall(username, 'CrewCheck chamando. Esta é a ligação solicitada pelo Concierge.');
+  if (!result.ok) await refundPlatformUsage({ email, admin }, 'wakeup_call', 1);
+  await sendTelegramMessage(chatId, result.ok ? 'Ligação solicitada ao bot auxiliar. Atenda a chamada recebida no Telegram.' : `${result.message || 'A ligação não foi aceita agora.'} A franquia não foi consumida.`, { reply_markup: conciergeKeyboard });
+  return true;
 }
 
 async function handleTelegramWebhook(req, res) {
@@ -2511,18 +2736,27 @@ async function handleTelegramWebhook(req, res) {
   }
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
   const update = await readJsonBody(req);
+  if (await handleTelegramCallCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'call-button' });
   const message = update?.message || update?.edited_message || {};
   const chatId = message?.chat?.id;
   const text = String(message?.text || message?.caption || '').trim();
   if (chatId && text && await handlePlatformVisitorTelegram(message, text, sendTelegramMessage)) return sendJson(res, 200, { ok: true, visitor: true, message: 'Comando de visitante processado.' });
   if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });
+  if (chatId && message?.document && await handleV139Telegram(message, sendTelegramMessage)) return sendJson(res, 200, { ok: true, crewlock: true, message: 'Solicitação CrewLock processada.' });
   if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
   else if (chatId && message?.location) await handleTelegramLocation(message);
   else if (chatId && text) {
     const profile = await telegramProfileForChatAsync(message);
     const snapshot = await conciergeLoadSnapshot(profile);
-    await sendTelegramChatAction(chatId, 'typing');
-    await sendTelegramMessage(chatId, await buildTelegramConciergeReply(text, profile, snapshot), { reply_markup: conciergeKeyboard });
+    const normalizedText = normalizeConciergeButtonText(text);
+    if (/^\/ligacao(?:@\S+)?\b/i.test(normalizedText)) {
+      await requestConciergeCallConfirmation(chatId);
+    } else {
+      await sendTelegramChatAction(chatId, 'typing');
+      const reply = await buildTelegramConciergeReply(normalizedText, profile, snapshot);
+      await sendTelegramMessage(chatId, reply, { reply_markup: conciergeKeyboard });
+      if (/^\/atis(?:@\S+)?\b/i.test(normalizedText)) await sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply));
+    }
   } else if (chatId && (message?.voice || message?.audio || message?.document?.mime_type?.startsWith?.('audio/'))) await handleTelegramVoiceMessage(message);
   return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
 }
@@ -2686,7 +2920,12 @@ async function handleAlarmTest(req, res) {
       usage = await consumePlatformUsage(req, 'wakeup_call', 1);
       if (!usage.allowed) return sendJson(res, Number(usage.status || 429), { ok: false, usage, message: usage.message || 'Limite mensal de ligações atingido.' });
     }
-    results.push({ channel: 'telegram-call', ...(await sendTelegramVoiceCall(username, text)) });
+    const telegramCallResult = { channel: 'telegram-call', ...(await sendTelegramVoiceCall(username, text)) };
+    results.push(telegramCallResult);
+    if (!identity.admin && !telegramCallResult.ok) {
+      await refundPlatformUsage(req, 'wakeup_call', 1);
+      usage = { ...usage, refunded: true };
+    }
   }
   if (wantsPhoneCall) results.push({ channel: 'phone-call', ...(await sendAdminPhoneCall(payload.phone, text)) });
   if (!results.length) return sendJson(res, 400, { ok: false, message: 'Escolha um canal de teste válido.' });
@@ -2736,16 +2975,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.8.8', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'13.9.0', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.8.8', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.9.0', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.8.8', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.9.0', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -2783,7 +3022,7 @@ function handleCrewCheckStaticShell(req, res) {
 </head>
 <body>
 <main>
-  <span class="badge">CrewCheck 13.8.8 - Safe Shell</span>
+  <span class="badge">CrewCheck 13.9.0 - Safe Shell</span>
   <h1>Inicializacao segura</h1>
   <p>Esta tela e servida direto pelo servidor, sem depender do painel principal. Use quando o app ficar preso na abertura.</p>
   <div class="mini">
@@ -2793,8 +3032,8 @@ function handleCrewCheckStaticShell(req, res) {
   </div>
   <div class="grid">
     <button onclick="repairAndOpen()">Reparar cache e abrir app seguro</button>
-    <a class="primary" href="/app?safe=1&v=13.8.8">Abrir app em modo seguro</a>
-    <a class="secondary" href="/app?v=13.8.8">Abrir app normal</a>
+    <a class="primary" href="/app?safe=1&v=13.9.0">Abrir app em modo seguro</a>
+    <a class="secondary" href="/app?v=13.9.0">Abrir app normal</a>
     <a class="secondary" href="/api/reliability/health">Ver diagnostico do backend</a>
   </div>
   <div class="status" id="status">Nenhum token, chave ou senha e exibido aqui.</div>
@@ -2840,7 +3079,7 @@ function handleCrewCheckStaticShell(req, res) {
       }
     } catch(e) {}
     log('Reparo concluido. Abrindo app seguro...');
-    setTimeout(function(){ location.href = '/app?safe=1&v=13.8.8&ts=' + Date.now(); }, 600);
+    setTimeout(function(){ location.href = '/app?safe=1&v=13.9.0&ts=' + Date.now(); }, 600);
   }
 })();
 </script>
@@ -2852,7 +3091,7 @@ function handleCrewCheckStaticShell(req, res) {
     'pragma': 'no-cache',
     'expires': '0',
     'surrogate-control': 'no-store',
-    'x-crewcheck-boot': 'static-shell-13.8.8'
+    'x-crewcheck-boot': 'static-shell-13.9.0'
   });
   res.end(html);
 }
@@ -2878,6 +3117,7 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (await handleV139Route(req, res, url)) return;
   if (['/crewcheck-repair','/repair','/safe-start','/emergency'].includes(url.pathname) || /^\/__crewcheck_boot_rescue_\d+\.html$/.test(url.pathname)) return handleCrewCheckStaticShell(req, res);
 
   if (url.pathname === '/api/reliability/health') return handleReliabilityHealth(req, res);
@@ -2886,7 +3126,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.8.8', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version: '13.9.0', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -2922,7 +3162,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.8.8', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version: '13.9.0', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });

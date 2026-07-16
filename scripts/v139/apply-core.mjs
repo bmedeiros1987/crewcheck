@@ -20,9 +20,12 @@ function insertAfter(text, anchor, value, marker, label) {
 }
 
 patch('server.mjs', (source) => {
+  const platformImport = source.includes('consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram')
+    ? "import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';"
+    : "import { handlePlatformRoute, consumePlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';";
   source = insertAfter(
     source,
-    "import { handlePlatformRoute, consumePlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';",
+    platformImport,
     "import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';",
     "from './server/v139/index.mjs'",
     'server import',
