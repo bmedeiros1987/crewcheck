@@ -38,7 +38,7 @@ CALLMEBOT_TELEGRAM_CALL_USER=usuario_sem_arroba
 CALLMEBOT_TELEGRAM_LANG=pt-BR-Standard-A
 ```
 
-Depois do deploy, execute uma vez `POST /api/telegram/setup-webhook` autenticado conforme a configuração do ambiente. A rota atualiza o webhook, os comandos e o botão de menu.
+Depois do deploy, execute uma vez `POST /api/telegram/setup-webhook`. A rota atualiza o webhook, os comandos e o botão de menu.
 
 ## Limites operacionais
 
