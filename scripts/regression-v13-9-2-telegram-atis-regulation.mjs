@@ -8,6 +8,8 @@ const home = read('client/src/pages/Home.tsx');
 const regulation = read('client/src/components/v1392/ManualRegulationView.tsx');
 const regulationCss = read('client/src/components/v1392/v1392.css');
 const emergency = read('server/v1391/emergency.mjs');
+const manifest = read('client/public/manifest.json');
+const androidGradle = read('android-wrapper/app/build.gradle');
 
 assert.match(server, /telegramApiUrl\('sendVoice'\)/, 'Telegram deve usar sendVoice.');
 assert.doesNotMatch(server, /telegramApiUrl\('sendAudio'\)/, 'O fluxo humano não deve usar sendAudio.');
@@ -30,5 +32,8 @@ assert.match(regulation, /Tabela B\.1/, 'Simulador deve informar a tabela aplica
 assert.match(regulation, /não é autorização automática/i, 'Extensão deve preservar aviso operacional.');
 assert.match(regulationCss, /@media \(min-width:1024px\)/, 'A melhoria do menu deve ser exclusiva do desktop.');
 assert.match(regulationCss, /1180px/, 'Menu desktop deve aproveitar uma área maior.');
+assert.match(manifest, /"version": "13\.9\.2"/, 'Manifesto PWA deve publicar a versão atual.');
+assert.match(androidGradle, /versionCode 139200/, 'Android deve avançar o versionCode para a Play Console.');
+assert.match(androidGradle, /versionName '13\.9\.2'/, 'Android deve gerar o AAB v13.9.2.');
 
 console.log('CrewCheck v13.9.2 regression: Telegram voice, ATIS, emergency, regulation and desktop menu OK.');
