@@ -37,6 +37,13 @@ if (fs.existsSync('client/public/manifest.json')) {
   write('client/public/manifest.json', manifest);
 }
 
+if (fs.existsSync('android-wrapper/app/build.gradle')) {
+  let android = read('android-wrapper/app/build.gradle');
+  android = android.replace(/versionCode\s+139200\b/, 'versionCode 139300');
+  android = android.replace(/versionName\s+'13\.9\.2'/, `versionName '${VERSION}'`);
+  write('android-wrapper/app/build.gradle', android);
+}
+
 requireMarker('server.mjs', 'api-redemet.decea.mil.br/mensagens/metar');
 requireMarker('server.mjs', 'handleCriticalWeatherMonitor');
 requireMarker('server.mjs', 'criticalWeatherChange');
