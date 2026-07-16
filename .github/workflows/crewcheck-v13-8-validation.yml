@@ -51,6 +51,9 @@ jobs:
       CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD || vars.CREWCHECK_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -58,6 +61,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Apply v13.9.1 source safeguards
+        run: node scripts/v139/apply.mjs
       - name: Prepare protected upload keystore
         shell: bash
         run: |
