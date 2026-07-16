@@ -15,3 +15,4 @@ await import('../v1391/backend-fixes.mjs');
 await import('../v1391/telegram-routing.mjs');
 await import('../v1391/android-readonly.mjs');
 await import('../v1392/apply.mjs');
+await import('../v1393/apply.mjs');
