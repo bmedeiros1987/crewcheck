@@ -1770,7 +1770,8 @@ const conciergeKeyboard = {
     [{ text: '✈️ Próximo voo' }, { text: '📅 Hoje' }],
     [{ text: '🛫 Radar / portão' }, { text: '🚗 Saída inteligente' }],
     [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],
-    [{ text: '🏨 Hotéis' }, { text: '🏋️ Academias' }],
+    [{ text: '🏨 Hotéis' }, { text: '🏥 Hospitais' }],
+    [{ text: '💊 Farmácias' }, { text: '🏋️ Academias' }],
     [{ text: '🌦️ ATIS / METAR' }, { text: '📞 Solicitar ligação' }],
     [{ text: '🚨 Emergência' }, { text: 'ℹ️ Ajuda' }],
   ],
@@ -1789,6 +1790,8 @@ function normalizeConciergeButtonText(value = '') {
   if (normalized === 'minha escala') return '/escala';
   if (normalized === 'rotina') return '/rotina';
   if (normalized === 'hotéis' || normalized === 'hoteis') return '/hoteis';
+  if (normalized === 'hospitais' || normalized.includes('pronto atendimento') || normalized.includes('pronto-socorro')) return '/hospitais';
+  if (normalized === 'farmácias' || normalized === 'farmacias') return '/farmacias';
   if (normalized === 'academias') return '/academias';
   if (normalized.includes('atis')) return '/metar';
   if (normalized.includes('solicitar ligação') || normalized.includes('solicitar ligacao')) return '/ligacao';
@@ -2124,6 +2127,9 @@ function conciergeHelp(name = 'Tripulante') {
     '/atis SBBR — boletim meteorológico em texto e voz',
     '/alertameteo on|off — alertas críticos ligados à escala',
     '/hoteis — pernoites e hotéis',
+    '/hospitais — hospitais e pronto-atendimentos abertos',
+    '/farmacias — farmácias abertas',
+    '/plano S450|S750 — definir filtro da rede Amil',
     '/academias — academias próximas',
     '/rotina — rotina sugerida',
     '/diarias — pernoites detectados',
@@ -2525,7 +2531,7 @@ async function handleTelegramLocation(message = {}) {
   if (!chatId || !location) return false;
   const profile = await telegramProfileForChatAsync(message);
   await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: { latitude: Number(location.latitude), longitude: Number(location.longitude), accuracy: Number(location.horizontal_accuracy || 0), updatedAt: new Date().toISOString() } } });
-  await sendTelegramMessage(chatId, 'Localização atualizada. Agora posso calcular /saida e procurar /academias ou /hoteis perto de você.', { reply_markup: conciergeKeyboard });
+  await sendTelegramMessage(chatId, 'Localização atualizada. Agora posso calcular /saida e procurar /hospitais, /farmacias ou /academias perto de você.', { reply_markup: conciergeKeyboard });
   return true;
 }
 
@@ -2959,6 +2965,9 @@ async function configureTelegramBotMenu() {
     { command: 'atis', description: 'ATIS meteorológico em voz' },
     { command: 'alertameteo', description: 'Ativar/desativar alertas críticos' },
     { command: 'hoteis', description: 'Hotéis e pernoites' },
+    { command: 'hospitais', description: 'Hospitais e pronto-atendimentos abertos' },
+    { command: 'farmacias', description: 'Farmácias abertas agora' },
+    { command: 'plano', description: 'Definir plano Amil S450/S750' },
     { command: 'academias', description: 'Academias próximas' },
     { command: 'rotina', description: 'Rotina sugerida' },
     { command: 'ligacao', description: 'Solicitar ligação pelo bot' },
@@ -3445,7 +3454,7 @@ function handleReliabilityHealth(req, res) {
 return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.9.0', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.9.4', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.9.5', expectedRoutes:['/api/platform/emergency/profile','/api/platform/emergency/send','/api/platform/emergency/assisted','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
