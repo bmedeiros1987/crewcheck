@@ -10,7 +10,7 @@ const css = read('client/src/components/v1394/v1394.css');
 const dataset = JSON.parse(read('server/data/amil-network-s450-s750.json'));
 const metadata = JSON.parse(read('package.json'));
 
-assert.equal(metadata.version, '13.9.4');
+assert.match(metadata.version, /^13\.9\.\d+$/);
 assert.match(server, /\/api\/telegram\/diagnostic/);
 assert.match(server, /telegramWebhookUrl\(\)/);
 assert.match(server, /\/api\/telegram\/webhook/);

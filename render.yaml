@@ -32,6 +32,10 @@ services:
         value: https://crewcheck.online
       - key: GOOGLE_MAPS_SERVER_KEY
         sync: false
+      - key: UBER_CLIENT_ID
+        sync: false
+      - key: CREWCHECK_EMERGENCY_ENABLED
+        value: true
       - key: REDEMET_API_KEY
         sync: false
       - key: CREWCHECK_SCHEDULER_SECRET
