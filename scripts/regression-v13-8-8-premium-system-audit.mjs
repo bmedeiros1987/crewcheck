@@ -16,8 +16,8 @@ const migration = read('migrations/20260715_004_terms_admin_amil.sql');
 const envExample = read('.env.example');
 
 assert(main.includes("premium-audit-v13-8-8.css"), 'camada visual final carregada');
-assert(home.includes("const DEFAULT_VERSION = '13.9.0'") || home.includes("const DEFAULT_VERSION = '13.8.8'"), 'Home versionada em release auditada');
-assert(auth.includes('data-version="13.9.0"') || auth.includes('data-version="13.8.8"'), 'cadastro versionado em release auditada');
+assert(home.includes("const DEFAULT_VERSION = '13.9.1'") || home.includes("const DEFAULT_VERSION = '13.9.0'") || home.includes("const DEFAULT_VERSION = '13.8.8'"), 'Home versionada em release auditada');
+assert(auth.includes('data-version="13.9.1"') || auth.includes('data-version="13.9.0"') || auth.includes('data-version="13.8.8"'), 'cadastro versionado em release auditada');
 assert(css.includes('.cz-menu-header') && css.includes('.cz-bottom-nav'), 'menu e rodape auditados');
 assert(css.includes('prefers-reduced-motion'), 'animacoes respeitam acessibilidade');
 assert(css.includes('word-break: normal'), 'quebra vertical de nomes bloqueada');
