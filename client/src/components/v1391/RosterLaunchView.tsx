@@ -147,6 +147,12 @@ const modeMeta: Record<ProgramMode, { label: string; shortLabel: string }> = {
   duty: { label: 'Programação operacional', shortLabel: 'Programação' },
 };
 
+const paletteA11y: Partial<Record<ProgramMode, string>> = {
+  operating: 'Verde · voo tripulando',
+  extra: 'Cinza · deslocamento/extra',
+  stay: 'Roxo · pernoite ou descanso',
+};
+
 function modeIcon(mode: ProgramMode, atBase = false) {
   if (mode === 'operating' || mode === 'extra') return <Plane/>;
   if (mode === 'stay') return atBase ? <Home/> : <BedDouble/>;
@@ -236,7 +242,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
 
     <section className="cc-roster-legend-v1397" aria-label="Cores das programações">
       {(Object.entries(modeMeta) as Array<[ProgramMode, { label: string; shortLabel: string }]>).map(([mode, meta]) =>
-        <span key={mode} data-mode={mode}><i/>{meta.shortLabel}</span>
+        <span key={mode} data-mode={mode} aria-label={paletteA11y[mode] || meta.label}><i/>{meta.shortLabel}</span>
       )}
     </section>
 
@@ -267,7 +273,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
               const atBase = /DESCANSO_BASE/.test(eventCode(event));
               const eventPerDiems = perDiemForEvent(event);
               const earning = salaryByEvent.get(event.id);
-              return <article key={event.id} className="cc-roster-program-v1397" data-mode={mode} data-event-kind={event.kind || ''}>
+              return <article key={event.id} className="cc-roster-program-v1397 cc-roster-event-v1394" data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''}>
                 <header className="cc-roster-program-head-v1397">
                   <span className="cc-roster-program-icon-v1397">{modeIcon(mode, atBase)}</span>
                   <div><small>{meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>
