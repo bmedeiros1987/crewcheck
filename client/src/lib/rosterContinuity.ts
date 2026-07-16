@@ -106,7 +106,7 @@ export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): R
         continuityInferred: true,
         continuityLocation: location,
         continuityHours: gapHours,
-      } as RosterDay & Record<string, unknown>;
+      } as unknown as RosterDay & Record<string, unknown>;
       synthetic.push(item);
       explicit.add(item.date);
     });
