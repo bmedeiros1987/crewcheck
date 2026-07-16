@@ -338,6 +338,10 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    const next = upperTokens.findIndex((token, idx) => idx > i + 1 && token === 'LA');
    const seq = normalized.slice(i + 2, next > 0 ? next : normalized.length);
    const leg = parseAimsFlightSeq('LA' + upperTokens[i+1], seq);
+   const hasLeadingExtraMarker = upperTokens
+    .slice(Math.max(0, i - 4), i)
+    .some((token) => ['EXTRA','[EXTRA]','PS','PAX','PASSAGEIRO'].includes(token));
+   if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
    if (leg) flightDay.legs.push(leg);
   }
  }
@@ -618,6 +622,7 @@ function parseServerAims(fullText, pages) {
   const markers = page.items.map(item=>({ item, marker: parseAimsDateMarkerServer(item.str, h.month, h.year) })).filter(x=>x.marker);
   if (!markers.length) continue;
   markers.sort((a,b)=>a.item.x-b.item.x);
+  const columns = [];
   for (let i=0;i<markers.length;i++) {
    const { item, marker } = markers[i];
    // PDFs de acionamento podem trazer final do mês anterior e início do próximo.
@@ -630,10 +635,50 @@ function parseServerAims(fullText, pages) {
     .flatMap(it=>String(it.str||'').split(/\s+/))
     .map(t=>t.trim()).filter(Boolean)
     .filter(t=>!ignoreAimsTokenServer(t));
+   columns.push({ marker, tokens });
+  }
+  for (const { marker, tokens } of stitchServerAimsMidnightColumns(columns)) {
    days.push(...parseAimsTokensIntoEventsV3(tokens, marker.day, marker.month, marker.year, h.base));
   }
  }
  return { ...h, days, rawText: fullText, totals: extractTotals(fullText) };
+}
+
+/**
+ * No AIMS, uma etapa que termina depois da meia-noite pode ser impressa em duas
+ * colunas: a origem/saída fica no dia da apresentação e o destino/chegada abre a
+ * coluna seguinte. O parser do servidor é o fallback da importação; por isso ele
+ * recompõe a etapa antes de interpretar cada dia, sem deslocar a atividade para
+ * a data seguinte nem perder a continuidade da jornada.
+ */
+function stitchServerAimsMidnightColumns(columns) {
+ return columns.map((column, index) => {
+  const next = columns[index + 1];
+  if (!next) return column;
+  const tokens = [...column.tokens];
+  const upper = tokens.map((token) => String(token || '').toUpperCase());
+  let lastLa = -1;
+  for (let i = 0; i < upper.length - 1; i++) if (upper[i] === 'LA' && /^\d{3,4}$/.test(upper[i + 1] || '')) lastLa = i;
+  if (lastLa < 0) return column;
+  const ellipsisIndex = upper.findIndex((token, tokenIndex) => tokenIndex > lastLa + 1 && /^\(\.{3}\)$/.test(token));
+  if (ellipsisIndex < 0) return column;
+
+  const nextUpper = next.tokens.map((token) => String(token || '').toUpperCase());
+  const nextFirstLa = nextUpper.findIndex((token, tokenIndex) => token === 'LA' && /^\d{3,4}$/.test(nextUpper[tokenIndex + 1] || ''));
+  const headLimit = nextFirstLa >= 0 ? nextFirstLa : next.tokens.length;
+  const head = next.tokens.slice(0, headLimit);
+  if (!head.some((token) => /^\(\.{3}\)$/.test(String(token || '')))) return column;
+
+  const destinationIndex = head.findIndex((token) => isAirportCodeToken(String(token || '').toUpperCase()));
+  if (destinationIndex < 0) return column;
+  const arrivalIndex = head.findIndex((token, tokenIndex) => tokenIndex > destinationIndex && isTimeToken(token));
+  if (arrivalIndex < 0) return column;
+  const continuation = [head[destinationIndex], head[arrivalIndex]];
+  const debriefIndex = head.findIndex((token, tokenIndex) => tokenIndex > arrivalIndex && isTimeToken(token));
+  if (debriefIndex >= 0) continuation.push(head[debriefIndex]);
+  tokens.splice(ellipsisIndex, 1, ...continuation);
+  return { ...column, tokens };
+ });
 }
 
 function parseAimsDateMarkerServer(value, baseMonth, baseYear) {

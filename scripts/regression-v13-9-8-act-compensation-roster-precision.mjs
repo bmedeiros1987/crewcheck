@@ -46,6 +46,8 @@ const menuCss = read('client/src/components/v1394/v1394.css');
 const rosterView = read('client/src/components/v1391/RosterLaunchView.tsx');
 assert.match(parser, /transposedStationTimeRows/);
 assert.match(serverParser, /serverTransposedStationTimeRows/);
+assert.match(serverParser, /stitchServerAimsMidnightColumns/);
+assert.match(serverParser, /hasLeadingExtraMarker/);
 assert.match(aims, /removeCollapsedDuplicateAimsFlights/);
 assert.match(aims, /extraFlightNumbers/);
 assert.match(canonical, /physicalDayOffset/);
