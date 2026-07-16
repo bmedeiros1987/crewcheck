@@ -87,6 +87,9 @@ function syntheticStay(date: Date, end: Date, start: Date, location: string, gap
 
 export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): RosterDay[] {
   const sorted = [...days].sort((a,b) => localDate(a, roster).getTime() - localDate(b, roster).getTime() || dayStart(a, roster).getTime() - dayStart(b, roster).getTime());
+  // A normalização é chamada por mais de uma camada (importação, projeção e UI).
+  // Se a escala já contém a rodada completa de continuidade, mantenha-a idempotente.
+  if (sorted.some((day) => Boolean((day as RosterDay & { continuityInferred?: boolean }).continuityInferred))) return sorted;
   const explicit = new Set(sorted.map((day) => day.date));
   const synthetic: RosterDay[] = [];
   const syntheticKeys = new Set<string>();

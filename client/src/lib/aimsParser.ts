@@ -1408,7 +1408,31 @@ function humanReviewAimsRoster(roster: CrewRoster): CrewRoster {
     .filter(day => !(day.type === 'VOO' && Number(day.dutyHours || 0) > 18))
     .filter(day => !(day.type === 'VOO' && !(day.legs || []).length))
     .filter(day => !(day.type === 'OTHER' && !(day.legs || []).length && !day.dutyReport && !day.dutyDebrief));
-  return { ...roster, days: linked };
+  return { ...roster, days: removeCollapsedDuplicateAimsFlights(linked) };
+}
+
+function removeCollapsedDuplicateAimsFlights(days: RosterDay[]): RosterDay[] {
+  const dropped = new Set<RosterDay>();
+  const byDateAndFlight = new Map<string, RosterDay[]>();
+  for (const day of days) for (const leg of day.legs || []) {
+    const key = `${day.date}|${leg.flightNumber}`;
+    const list = byDateAndFlight.get(key) || [];
+    if (!list.includes(day)) list.push(day);
+    byDateAndFlight.set(key, list);
+  }
+  for (const candidates of byDateAndFlight.values()) {
+    if (candidates.length < 2) continue;
+    const multi = candidates.find(day => day.legs.length > 1);
+    if (!multi) continue;
+    const first = multi.legs[0];
+    const last = multi.legs[multi.legs.length - 1];
+    for (const candidate of candidates) {
+      if (candidate === multi || candidate.legs.length !== 1) continue;
+      const only = candidate.legs[0];
+      if (only.origin === first.origin && only.destination === last.destination) dropped.add(candidate);
+    }
+  }
+  return days.filter(day => !dropped.has(day));
 }
 
 function humanReviewAimsDay(day: RosterDay, homeBase: string): RosterDay | null {
@@ -1468,6 +1492,8 @@ function humanReviewAimsDay(day: RosterDay, homeBase: string): RosterDay | null 
   }
 
   if (fixed.legs.length) {
+    const extraFlightNumbers = new Set(Array.from(raw.matchAll(/(?:\[?extra\]?|passageiro|pax)\s+LA\s*(\d{3,4})/gi)).map(match => `LA${match[1]}`));
+    if (extraFlightNumbers.size) fixed.legs = fixed.legs.map(leg => extraFlightNumbers.has(leg.flightNumber) ? { ...leg, workType: 'PS' } : leg);
     const first = fixed.legs[0];
     const last = fixed.legs[fixed.legs.length - 1];
     const activationCode = /\b(HSBE|HSB|ASB|RES)\b/i.test(`${fixed.rawText || ''} ${fixed.pairingCode || ''}`)

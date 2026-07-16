@@ -338,6 +338,10 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    const next = upperTokens.findIndex((token, idx) => idx > i + 1 && token === 'LA');
    const seq = normalized.slice(i + 2, next > 0 ? next : normalized.length);
    const leg = parseAimsFlightSeq('LA' + upperTokens[i+1], seq);
+   const hasLeadingExtraMarker = upperTokens
+    .slice(Math.max(0, i - 4), i)
+    .some((token) => ['EXTRA','[EXTRA]','PS','PAX','PASSAGEIRO'].includes(token));
+   if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
    if (leg) flightDay.legs.push(leg);
   }
  }
@@ -402,7 +406,7 @@ function buildServerRosterColumnGroups(pages) {
  for (const page of pages || []) {
   const relevant = (page.items || [])
    .map((item) => ({ ...item, str: cleanRosterLineV3(item.str) }))
-   .filter((item) => item.str && item.x > 70 && item.y > 10 && !/^(LEGEND)$/i.test(item.str));
+   .filter((item) => item.str && item.x > 45 && item.y > 10 && !/^(LEGEND)$/i.test(item.str));
   const columns = [];
   for (const item of relevant.sort((a, b) => a.x - b.x || b.y - a.y)) {
    let column = columns.find((col) => Math.abs(col.x - item.x) <= 18);
@@ -467,35 +471,24 @@ function parseServerColumnarFlightDay(group, currentMarker, base, flightNumber) 
  const items = group.items || [];
  const text = group.text || '';
  const flightIndex = items.findIndex((item) => /^LA\s?\d{3,4}$/i.test(item.str));
- const depIndex = items.findIndex((item) => /^[A-Z]{3}\s+\d{1,2}:\d{2}(?:\(\+\d+\))?$/i.test(item.str));
- if (depIndex < 0) return null;
- const depMatch = items[depIndex].str.match(/^([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)$/i);
- if (!depMatch) return null;
- const origin = depMatch[1].toUpperCase();
- const rawDeparture = depMatch[2];
- let destination = '';
- let rawArrival = '';
- for (let i = depIndex - 1; i >= 0; i--) {
-  const value = String(items[i].str || '').toUpperCase();
-  if (!destination && /^[A-Z]{3}$/.test(value) && isAirportCodeToken(value)) {
-   destination = value;
-   continue;
-  }
-  if (destination && !rawArrival && /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(value)) {
-   rawArrival = value;
-   break;
-  }
- }
- if (!destination || !rawArrival) return null;
+ const stationRows = serverTransposedStationTimeRows(items);
+ if (stationRows.length < 2) return null;
+ const [departureRow, arrivalRow] = stationRows;
+ const origin = departureRow.airport;
+ const rawDeparture = departureRow.time;
+ const destination = arrivalRow.airport;
+ const rawArrival = arrivalRow.time;
  const offset = Math.max(serverDayOffsetFromToken(rawDeparture), serverDayOffsetFromToken(rawArrival), serverDayOffsetFromToken(items.slice(Math.max(0, flightIndex)).map((item) => item.str).join(' ')));
- const marker = addDaysToServerDate(currentMarker, offset);
- const day = makeDay(marker.day, marker.month, marker.year, base);
+ const day = makeDay(currentMarker.day, currentMarker.month, currentMarker.year, base);
  const departureTime = normalizeTimeToken(rawDeparture);
  const arrivalTime = normalizeTimeToken(rawArrival);
  const workType = items.find((item) => /^(OP|PS|DH)$/i.test(item.str))?.str?.toUpperCase() || 'OP';
  const aircraftType = items.find((item) => /^(32S|31R|39R|328|319|320|321|32N)$/i.test(item.str))?.str?.toUpperCase();
  const reportRaw = flightIndex >= 0 ? items.slice(flightIndex + 1).find((item) => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str))?.str : null;
- const debriefRaw = items.slice(0, Math.max(0, depIndex - 1)).find((item) => /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str) && !looksLikeDurationV3(normalizeTimeToken(item.str)) && normalizeTimeToken(item.str) !== arrivalTime)?.str || null;
+ const destinationY = arrivalRow.y;
+ const debriefRaw = Number.isFinite(destinationY)
+  ? items.find((item) => item.y > Number(destinationY) && item.y < Number(destinationY) + 145 && /^\d{1,2}:\d{2}(?:\(\+\d+\))?$/.test(item.str))?.str || null
+  : null;
  const isNextDay = serverDayOffsetFromToken(rawArrival) > serverDayOffsetFromToken(rawDeparture) || toMin(arrivalTime) < toMin(departureTime);
  day.rawText = text;
  day.type = 'VOO';
@@ -509,6 +502,21 @@ function parseServerColumnarFlightDay(group, currentMarker, base, flightNumber) 
  return day;
 }
 
+function serverTransposedStationTimeRows(items) {
+ const rows = [];
+ for (const item of items || []) {
+  let row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= 2);
+  if (!row) { row = { y: item.y, items: [] }; rows.push(row); }
+  row.items.push(item);
+ }
+ return rows.map((row) => ({ y: row.y, text: row.items.sort((a, b) => a.x - b.x).map((item) => item.str).join(' ').replace(/\s+/g, ' ').trim() }))
+  .map((row) => ({ ...row, match: row.text.match(/^([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)$/i) }))
+  .filter((row) => row.match && isAirportCodeToken(row.match[1]))
+  .map((row) => ({ airport: row.match[1].toUpperCase(), time: row.match[2], y: row.y }))
+  .sort((a, b) => a.y - b.y)
+  .slice(0, 2);
+}
+
 function parseServerColumnarActivityDay(group, currentMarker, base, rawCode) {
  const text = group.text || '';
  const code = rawCode === 'CRMBSB' || rawCode === 'CRMB' || /^C\d{2,3}F$/.test(rawCode) ? 'CRM' : rawCode;
@@ -517,7 +525,8 @@ function parseServerColumnarActivityDay(group, currentMarker, base, rawCode) {
  day.rawText = text;
  day.pairingCode = code;
  day.type = code === 'ASB' || code === 'HSB' || code === 'HSBE' ? code : (code === 'RCFI' || code === 'CRM' || code === 'MT' || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');
- const times = [...text.matchAll(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g)]
+ const stationTimes = [...text.matchAll(/\b[A-Z]{3}\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/g)].map((m) => normalizeTimeToken(m[1]));
+ const times = stationTimes.length >= 2 ? stationTimes : [...text.matchAll(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g)]
   .map((m) => normalizeTimeToken(m[0]))
   .filter((time) => time !== '00:00' && !looksLikeDurationV3(time));
  const unique = uniqueTimesV3(times).sort((a, b) => toMin(a) - toMin(b));
@@ -532,15 +541,30 @@ function parseServerRosterReportColumnGroups(pages, h) {
  const groups = buildServerRosterColumnGroups(pages);
  const days = [];
  let currentMarker = null;
+ let openFlightDuty = null;
  for (const group of groups) {
   const dateToken = group.text.match(/\d{2}-[A-Za-z]{3}-\d{4}/)?.[0] || null;
   if (dateToken) currentMarker = serverDateFromToken(dateToken, h.month, h.year);
   if (!currentMarker) continue;
-  if (group.text.includes('<==') && !dateToken) continue;
+  if (group.text.includes('<==') && !dateToken && !/\bLA\s?\d{3,4}\b/i.test(group.text)) continue;
   const day = parseServerColumnarGroupToDay(group, currentMarker, h.base);
   if (!day) continue;
+  if (day.type !== 'VOO' && !dateToken) continue;
   if (day.month < h.month - 6) day.year = h.year + 1;
+  if (day.type === 'VOO' && day.legs?.length && !dateToken && openFlightDuty) {
+   for (const leg of day.legs) {
+    if (!openFlightDuty.legs.some((old) => old.flightNumber === leg.flightNumber && old.origin === leg.origin && old.departureTime === leg.departureTime)) openFlightDuty.legs.push(leg);
+   }
+   openFlightDuty.rawText = `${openFlightDuty.rawText || ''} ${day.rawText || ''}`.trim();
+   openFlightDuty.dutyReport = openFlightDuty.dutyReport || day.dutyReport || openFlightDuty.legs[0]?.departureTime || null;
+   if (day.dutyDebrief) openFlightDuty.dutyDebrief = day.dutyDebrief;
+   openFlightDuty.isNextDay = Boolean(openFlightDuty.isNextDay || day.isNextDay || openFlightDuty.legs.some((leg) => leg.isNextDay));
+   openFlightDuty.flyingHours = openFlightDuty.legs.reduce((sum, leg) => sum + (leg.duration || 0), 0);
+   openFlightDuty.dutyHours = openFlightDuty.dutyReport && openFlightDuty.dutyDebrief ? diffHours(openFlightDuty.dutyReport, openFlightDuty.dutyDebrief) : null;
+   continue;
+  }
   days.push(day);
+  openFlightDuty = day.type === 'VOO' && day.legs?.length ? day : null;
  }
  return mergeServerRosterColumnDays(days, h.month, h.year);
 }
@@ -548,7 +572,9 @@ function parseServerRosterReportColumnGroups(pages, h) {
 function mergeServerRosterColumnDays(days, referenceMonth, referenceYear) {
  const buckets = new Map();
  for (const day of days) {
-  if (!day || day.month !== referenceMonth || day.year !== referenceYear) continue;
+  if (!day) continue;
+  const monthDistance = Math.abs((Number(day.year) * 12 + Number(day.month)) - (Number(referenceYear) * 12 + Number(referenceMonth)));
+  if (monthDistance > 1) continue;
   const dateKey = day.date;
   const minuteKey = day.dutyReport || (day.legs?.[0]?.departureTime) || '99:99';
   const isFlight = day.type === 'VOO' && day.legs?.length;
@@ -596,6 +622,7 @@ function parseServerAims(fullText, pages) {
   const markers = page.items.map(item=>({ item, marker: parseAimsDateMarkerServer(item.str, h.month, h.year) })).filter(x=>x.marker);
   if (!markers.length) continue;
   markers.sort((a,b)=>a.item.x-b.item.x);
+  const columns = [];
   for (let i=0;i<markers.length;i++) {
    const { item, marker } = markers[i];
    // PDFs de acionamento podem trazer final do mês anterior e início do próximo.
@@ -608,10 +635,50 @@ function parseServerAims(fullText, pages) {
     .flatMap(it=>String(it.str||'').split(/\s+/))
     .map(t=>t.trim()).filter(Boolean)
     .filter(t=>!ignoreAimsTokenServer(t));
+   columns.push({ marker, tokens });
+  }
+  for (const { marker, tokens } of stitchServerAimsMidnightColumns(columns)) {
    days.push(...parseAimsTokensIntoEventsV3(tokens, marker.day, marker.month, marker.year, h.base));
   }
  }
  return { ...h, days, rawText: fullText, totals: extractTotals(fullText) };
+}
+
+/**
+ * No AIMS, uma etapa que termina depois da meia-noite pode ser impressa em duas
+ * colunas: a origem/saída fica no dia da apresentação e o destino/chegada abre a
+ * coluna seguinte. O parser do servidor é o fallback da importação; por isso ele
+ * recompõe a etapa antes de interpretar cada dia, sem deslocar a atividade para
+ * a data seguinte nem perder a continuidade da jornada.
+ */
+function stitchServerAimsMidnightColumns(columns) {
+ return columns.map((column, index) => {
+  const next = columns[index + 1];
+  if (!next) return column;
+  const tokens = [...column.tokens];
+  const upper = tokens.map((token) => String(token || '').toUpperCase());
+  let lastLa = -1;
+  for (let i = 0; i < upper.length - 1; i++) if (upper[i] === 'LA' && /^\d{3,4}$/.test(upper[i + 1] || '')) lastLa = i;
+  if (lastLa < 0) return column;
+  const ellipsisIndex = upper.findIndex((token, tokenIndex) => tokenIndex > lastLa + 1 && /^\(\.{3}\)$/.test(token));
+  if (ellipsisIndex < 0) return column;
+
+  const nextUpper = next.tokens.map((token) => String(token || '').toUpperCase());
+  const nextFirstLa = nextUpper.findIndex((token, tokenIndex) => token === 'LA' && /^\d{3,4}$/.test(nextUpper[tokenIndex + 1] || ''));
+  const headLimit = nextFirstLa >= 0 ? nextFirstLa : next.tokens.length;
+  const head = next.tokens.slice(0, headLimit);
+  if (!head.some((token) => /^\(\.{3}\)$/.test(String(token || '')))) return column;
+
+  const destinationIndex = head.findIndex((token) => isAirportCodeToken(String(token || '').toUpperCase()));
+  if (destinationIndex < 0) return column;
+  const arrivalIndex = head.findIndex((token, tokenIndex) => tokenIndex > destinationIndex && isTimeToken(token));
+  if (arrivalIndex < 0) return column;
+  const continuation = [head[destinationIndex], head[arrivalIndex]];
+  const debriefIndex = head.findIndex((token, tokenIndex) => tokenIndex > arrivalIndex && isTimeToken(token));
+  if (debriefIndex >= 0) continuation.push(head[debriefIndex]);
+  tokens.splice(ellipsisIndex, 1, ...continuation);
+  return { ...column, tokens };
+ });
 }
 
 function parseAimsDateMarkerServer(value, baseMonth, baseYear) {
@@ -670,7 +737,7 @@ function buildParseDiagnostics(roster, sourceFormat) {
  const reserve = days.filter((d)=>d.type==='ASB').length;
  const meetings = days.filter((d)=>(d.pairingCode||'')==='MT').length;
  const activities = days.filter(d=>d.pairingCode || d.legs?.length).length;
- const confidence = uniqueDays >= 25 && flights >= 20 && reserve >= 2 && meetings >= 1 ? 'alta' : uniqueDays >= 20 && flights >= 15 ? 'média' : 'baixa';
+ const confidence = uniqueDays >= 28 && flights >= 20 && reserve >= 2 ? 'alta' : uniqueDays >= 20 && flights >= 15 ? 'média' : 'baixa';
  return { sourceFormat, uniqueDays, totalEvents: days.length, flights, reserve, meetings, activities, confidence, message: confidence === 'baixa' ? 'Poucos eventos foram lidos; use o modo de reprocessamento ou confira o PDF.' : 'Escala lida com auditoria de servidor: ASB/MT/voos validados.' };
 }
 

@@ -72,6 +72,7 @@ import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverri
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
+import { classifyAllowanceWindows, freeDayPostponementIndemnity, observedStatementCycle } from '@/lib/compensationPolicy';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
@@ -112,6 +113,8 @@ type ZeroLeg = {
   placeholder?: boolean;
   canonical?: CanonicalRosterEvent;
   presentationSource?: string;
+  workMode?: 'operating' | 'extra';
+  groundBeforeMinutes?: number;
 };
 
 type BundleState = { roster: CrewRoster; compliance: ComplianceResult | null; source: string };
@@ -131,8 +134,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.9.7';
-const CREWCHECK_UI_CORE_NOTE = 'v13.9.7: escala premium com diárias e produção por KM em cada programação';
+const DEFAULT_VERSION = '13.9.8';
+const CREWCHECK_UI_CORE_NOTE = 'v13.9.8: diárias ACT, fechamento do demonstrativo, parser contínuo e menu iPad';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -1024,7 +1027,8 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       const airlineName = airlineNameFor(airlineCode, anyLeg.airlineName || anyLeg.carrierName || anyLeg.operatorName);
       const suffix = event.isNextDay ? ' +1' : '';
       const workType = safe(anyLeg.workType || (leg as any).workType, 'OP').toUpperCase();
-      const title = event.flightNumber + ' · ' + workTypeLabel(workType);
+      const workMode: 'operating' | 'extra' = /(^|\s)(PS|PAX|DH|EXTRA|PASSAGEIRO)(\s|$)/.test(workType) ? 'extra' : 'operating';
+      const title = event.flightNumber;
       const subtitle = event.showPresentation
         ? `Apres. ${event.presentation} · ${event.departure} → ${event.arrival}${suffix} · ${city(event.origin)} → ${city(event.destination)}`
         : `Conexão/Solo ${event.groundBeforeMinutes ?? '—'} min · ${event.departure} → ${event.arrival}${suffix} · ${city(event.origin)} → ${city(event.destination)}`;
@@ -1050,6 +1054,8 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         status: safe(anyLeg.status || (day as any).status, 'Programado'),
         airlineCode,
         airlineName,
+        workMode,
+        groundBeforeMinutes: event.groundBeforeMinutes,
         hotel: safe((day as any).hotel || anyLeg.hotel, ''),
         crew: Array.isArray(anyLeg.crew) ? anyLeg.crew.map((c:any) => safe(c.name || c.employeeName || c.role || c, '')).filter(Boolean) : [],
         routine: [
@@ -1789,9 +1795,9 @@ function rosterCode(day?: RosterDay): string {
 }
 function workTypeLabel(value?: string | null): string {
   const normalized = String(value || '').trim().toUpperCase();
-  if (normalized === 'OP') return 'Operando (OP)';
-  if (normalized === 'PS') return 'Extra / passageiro (PS)';
-  if (normalized === 'DH') return 'Deslocamento (DH)';
+  if (normalized === 'OP') return 'Tripulando';
+  if (normalized === 'PS') return 'Extra';
+  if (normalized === 'DH') return 'Deslocamento';
   return normalized || 'Operação';
 }
 function flightWorkType(event: ZeroLeg): string {
@@ -2103,6 +2109,8 @@ function comparisonChangeLabel(change: RosterChange): string {
 function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload: () => void }) {
   const [planned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
   const [filter, setFilter] = useState<'all' | 'financial' | 'days_off'>('all');
+  const [freeDayDelay, setFreeDayDelay] = useState(() => readNumberSetting('crewcheck_free_day_delay_hours', 0));
+  const [exceptionalNeed, setExceptionalNeed] = useState(() => storage.get('crewcheck_free_day_exceptional_need', '0') === '1');
   const hasCurrent = Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0;
   const comparison = useMemo(
     () => planned && hasCurrent ? compareRosters(planned.roster, bundle.roster) : null,
@@ -2129,6 +2137,9 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       .filter((item) => Math.abs(item.value) >= 0.005);
     return {
       variableDelta: afterVariable - beforeVariable,
+      plannedVariable: beforeVariable,
+      currentVariable: afterVariable,
+      plannedGuaranteeReview: afterVariable + 0.005 < beforeVariable,
       perDiemDelta,
       salaryReady: !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction,
     };
@@ -2168,6 +2179,7 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   const perDiemDeltaText = financial?.perDiemDelta.length
     ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency)).join(' · ')
     : 'Sem diferença';
+  const freeDayIndemnity = freeDayPostponementIndemnity(freeDayDelay, exceptionalNeed);
 
   return <><Brand back/>
     <section className="cz-panel-head">
@@ -2198,7 +2210,17 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       <section className="cz-finance-table cz-compare-financial">
         <h2>Possível impacto financeiro</h2>
         <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Função pendente'}</b></div>
+        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{financial?.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
         <div className="cz-finance-row"><span>Diárias</span><strong>Diferença por moeda</strong><small>Sem somar moedas diferentes e sem presumir câmbio</small><b>{perDiemDeltaText}</b></div>
+        <div className="cz-finance-row"><span>Início da folga</span><strong>{freeDayDelay.toFixed(2).replace('.', ',')} h de postergação</strong><small>{exceptionalNeed ? 'Exceção operacional comprovada: limite de 12 h' : 'Regra geral do ACT: acima de 4 h'} · uma indenização por sequência agrupada</small><b>{moneyBRL(freeDayIndemnity)}</b></div>
+      </section>
+      <section className="cz-toolbox">
+        <h2>Conferir postergação/inversão de folga</h2>
+        <p>Informe o atraso efetivo entre o início publicado e o início realizado da folga. O modo excepcional só deve ser marcado quando houver a hipótese do ACT documentada; falha administrativa comum não entra nessa exceção.</p>
+        <div className="cz-form-grid">
+          <label><span>Atraso do início da folga (horas)</span><input type="number" min="0" step="0.01" value={freeDayDelay} onChange={(event) => { const value = Math.max(0, Number(event.target.value) || 0); setFreeDayDelay(value); storage.set('crewcheck_free_day_delay_hours', String(value)); }}/></label>
+          <label><span>Hipótese excepcional comprovada</span><select value={exceptionalNeed ? '1' : '0'} onChange={(event) => { const value = event.target.value === '1'; setExceptionalNeed(value); storage.set('crewcheck_free_day_exceptional_need', value ? '1' : '0'); }}><option value="0">Não — limite 4 h</option><option value="1">Sim — limite 12 h</option></select></label>
+        </div>
       </section>
       <div className="cz-compare-tabs" role="tablist" aria-label="Filtrar alterações">
         <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>Todas</button>
@@ -2803,12 +2825,6 @@ function WeatherView({ event }: { event: ZeroLeg }) {
 function moneyBRL(value: number) {
   return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-function overlapsWindow(start: Date, end: Date, hourStart: number, hourEnd: number) {
-  const a = new Date(start); a.setHours(hourStart, 0, 0, 0);
-  const b = new Date(start); b.setHours(hourEnd, 0, 0, 0);
-  if (hourEnd <= hourStart) b.setDate(b.getDate() + 1);
-  return start.getTime() < b.getTime() && end.getTime() > a.getTime();
-}
 function durationHours(event: ZeroLeg) {
   const start = eventStartDateTime(event).getTime();
   const end = eventEndDateTime(event).getTime();
@@ -3023,14 +3039,12 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
   const seen = new Set<string>();
   const pendingAirports = new Set<string>();
   const usedRateKeys = new Set<PerDiemRateKey>();
-  const add = (event: ZeroLeg, slot: string, label: string, source: string) => {
+  const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string) => {
     const classification = resolvePerDiemRule(event.origin, event.destination, cfg.airportOverrides);
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
       return;
     }
-    const iso = rosterDayIso(event.day)
-      || event.date.getFullYear() + '-' + pad2(event.date.getMonth() + 1) + '-' + pad2(event.date.getDate());
     const key = iso + '-' + slot;
     if (seen.has(key)) return;
     seen.add(key);
@@ -3053,36 +3067,60 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
       rateKey: classification.rateKey,
     });
   };
-  events.filter(isOperationalEvent).forEach((event) => {
-    const start = eventStartDateTime(event);
-    const end = new Date(eventEndDateTime(event).getTime() + 30 * 60 * 1000);
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return;
-    const code = (event.flightNumber + ' ' + ((event.day as any)?.type || '') + ' '
-      + ((event.day as any)?.pairingCode || '')).toUpperCase();
-    const isReserve = /\b(ASB|RES|RESERVA|RSV)\b/.test(code);
-    const source = event.kind === 'stay' || event.hotel
-      ? 'Pernoite/hotel na janela'
-      : isReserve ? 'Reserva operacional na janela' : 'Jornada na janela';
-    const breakfastIncluded = Boolean(
-      (event.day as any)?.breakfastIncluded
-      || (event.day as any)?.hotelBreakfastIncluded
-      || (event as any)?.breakfastIncluded
-    );
-    const breakfastSource = event.kind === 'stay' || event.hotel
-      ? source + ' · 05:00-08:00 · confirmar se o café não está incluído no hotel'
-      : source + ' · 05:00-08:00';
-    if (overlapsWindow(start, end, 5, 8) && !breakfastIncluded) {
-      add(event, 'breakfast', 'Café', breakfastSource);
+  const operational = events.filter(isOperationalEvent);
+  const processedFlightDays = new Set<RosterDay>();
+  for (const event of operational) {
+    const code = financialEventCode(event);
+    let activityKind: 'flight' | 'reserve' | 'standby' | 'training' | 'stay_external' | 'stay_base' | 'other' = 'other';
+    let start = eventStartDateTime(event);
+    let end = eventEndDateTime(event);
+    let enginesOff: Date | null = null;
+    let representative = event;
+
+    if (event.kind === 'flight') {
+      if (processedFlightDays.has(event.day)) continue;
+      processedFlightDays.add(event.day);
+      const dutyFlights = operational.filter(candidate => candidate.kind === 'flight' && candidate.day === event.day)
+        .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+      representative = dutyFlights[0] || event;
+      const last = dutyFlights[dutyFlights.length - 1] || event;
+      start = eventStartDateTime(representative);
+      const report = String((event.day as any)?.dutyReport || representative.presentation || '').match(/(\d{1,2}):(\d{2})/);
+      if (report) start.setHours(Number(report[1]), Number(report[2]), 0, 0);
+      enginesOff = eventEndDateTime(last);
+      end = enginesOff;
+      activityKind = 'flight';
+    } else if (/\b(HSB|HSBE|SOBREAVISO)\b/.test(code)) {
+      activityKind = 'standby';
+    } else if (/\b(ASB|RES|RESERVA|RSV)\b/.test(code)) {
+      activityKind = 'reserve';
+    } else if (event.kind === 'stay' || event.hotel || /PERNOITE|LAYOVER|ESTADIA/.test(code)) {
+      const atBase = Boolean((event.day as any)?.continuityAtBase)
+        || String((event.day as any)?.continuityLocation || event.destination || event.origin).toUpperCase() === String(roster.base || '').toUpperCase();
+      activityKind = atBase ? 'stay_base' : 'stay_external';
+    } else if (/\b(CRM|TREIN|TRAIN|SIM|CHECK|CBF|EMER|RCFI)\b/.test(code)) {
+      activityKind = 'training';
     }
-    if (overlapsWindow(start, end, 11, 13)) add(event, 'lunch', isReserve ? 'Diária reserva · almoço' : 'Almoço', source + ' · 11:00-13:00');
-    if (overlapsWindow(start, end, 19, 20)) add(event, 'dinner', isReserve ? 'Diária reserva · jantar' : 'Jantar', source + ' · 19:00-20:00');
-    const isTraining = /\b(CRM|TREIN|TRAIN|SIM|CHECK|CBF|EMER)\b/.test(code);
-    const isExtra = flightWorkType(event) === 'PS';
-    const ceiaEligible = event.kind === 'flight' || isReserve || isTraining || isExtra;
-    if (ceiaEligible && overlapsWindow(start, end, 0, 1)) {
-      add(event, 'supper', 'Ceia', source + ' · 00:00-01:00');
+
+    const breakfastIncluded = Boolean((event.day as any)?.breakfastIncluded || (event.day as any)?.hotelBreakfastIncluded || (event as any)?.breakfastIncluded);
+    const occurrences = classifyAllowanceWindows({
+      start,
+      end,
+      enginesOff,
+      kind: activityKind,
+      activated: event.kind === 'flight',
+      originAtContractualBase: String(representative.origin || '').toUpperCase() === String(roster.base || '').toUpperCase(),
+      breakfastIncluded,
+    });
+    const source = activityKind === 'stay_external' ? 'Pernoite fora da base'
+      : activityKind === 'reserve' ? 'Reserva no aeroporto'
+      : activityKind === 'flight' ? 'Jornada: apresentação até motores cortados + 30 min'
+      : 'Programação operacional';
+    for (const occurrence of occurrences) {
+      const labels: Record<string, string> = { breakfast: 'Café', lunch: 'Almoço', dinner: 'Jantar', supper: 'Ceia' };
+      add(representative, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`);
     }
-  });
+  }
   const totalsByCurrency = rows.reduce((totals, row) => {
     totals[row.currency] = (totals[row.currency] || 0) + row.value;
     return totals;
@@ -3090,10 +3128,10 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
   const pendingCurrencies = (Object.keys(totalsByCurrency) as PerDiemCurrency[])
     .filter((currency) => currency !== 'BRL' && totalsByCurrency[currency] && cfg.exchangeRates[currency] <= 0);
   const convertedTotalBRL = rows.reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
-  const bounds = currentWeekBounds();
+  const cycle = observedStatementCycle(new Date());
   const weekly = rows.filter((row) => {
     const date = new Date(row.iso + 'T12:00:00');
-    return date >= bounds.start && date < bounds.end;
+    return date >= cycle.start && date <= cycle.end;
   }).reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
   const currencySummary = (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .filter(([, value]) => value > 0)
@@ -3110,6 +3148,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     pendingAirports: Array.from(pendingAirports).sort(),
     usedRateKeys: Array.from(usedRateKeys),
     convertedComplete: pendingCurrencies.length === 0,
+    cycle,
     config: cfg,
     configured: true,
   };
@@ -3146,11 +3185,18 @@ function financialEventCode(event: ZeroLeg): string {
 function financialFlightRule(event: ZeroLeg): { extra: boolean; reason: string } {
   const code = financialEventCode(event);
   const extra = flightWorkType(event) === 'PS' || /\b(DFS|EXTRA|EXTRAORDINARIO|EXTRAORDINARIA)\b/.test(code);
-  const reserveActivation = /\b(ASB|RES|RESERVA|RSV|HSB|HSBE|SOBREAVISO)\b/.test(code)
-    && /\b(ACION|ACIONADO|CHAMAD|VOO)\b/.test(code);
   if (extra) return { extra: true, reason: 'tarifa extra/DFS' };
-  if (reserveActivation) return { extra: true, reason: 'tarifa de voo acionado' };
-  return { extra: false, reason: 'tarifa regular' };
+  return { extra: false, reason: /\b(ASB|RES|RESERVA|RSV|HSB|HSBE|SOBREAVISO)\b/.test(code)
+    ? 'acionamento: voo calculado normalmente'
+    : 'tarifa regular' };
+}
+
+function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean {
+  const date = eventStartDateTime(event);
+  if (date.getDay() === 0) return true;
+  const iso = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  const configured = storage.get('crewcheck_local_holiday_dates', '').split(',').map(value => value.trim()).filter(Boolean);
+  return configured.includes(iso);
 }
 
 function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
@@ -3162,9 +3208,10 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     const block = Math.max(0, durationHours(event));
     const nightHours = nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event));
     const nightFraction = block > 0 ? Math.min(1, nightHours / block) : 0;
-    const nightKm = Math.min(km, Math.max(0, Math.round(km * nightFraction)));
-    const dayKm = Math.max(0, km - nightKm);
     const payRule = financialFlightRule(event);
+    const premiumAllKm = payRule.extra || isSundayOrConfiguredHoliday(event);
+    const nightKm = premiumAllKm ? km : Math.min(km, Math.max(0, Math.round(km * nightFraction)));
+    const dayKm = Math.max(0, km - nightKm);
     const dayRateApplied = payRule.extra ? cfg.nightKmMetric : cfg.dayKmMetric;
     const nightRateApplied = cfg.nightKmMetric;
     const dayProduction = dayKm * dayRateApplied;
@@ -3194,7 +3241,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
       chiefEligible,
       dayRateApplied,
       nightRateApplied,
-      payRule: payRule.reason,
+      payRule: isSundayOrConfiguredHoliday(event) ? `${payRule.reason} · domingo/feriado na tarifa dobrada` : payRule.reason,
       extraFlight: payRule.extra,
       source: cfg.source,
     };
@@ -3277,7 +3324,7 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
     <section className="cz-finance-grid">
       <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={String(forecast.currencyCount)} detail={forecast.currencySummary || 'Sem itens previstos'}/>
       <KpiCard icon={CalendarDays} title="Convertido previsto" value={forecast.pendingCurrencies.length ? 'Câmbio pendente' : moneyBRL(forecast.monthly)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Conversão conferível'}/>
-      <KpiCard icon={Plane} title="Semana atual" value={moneyBRL(forecast.weekly)} detail="Somente valores convertidos"/>
+      <KpiCard icon={Plane} title="Ciclo do demonstrativo" value={moneyBRL(forecast.weekly)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)} · paga ${dateChip(forecast.cycle.payment)}`}/>
     </section>
     {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
       <h2>Câmbio necessário</h2>

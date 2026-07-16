@@ -251,6 +251,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
         const groupPerDiemTotal = groupPerDiems.reduce((sum, row) => sum + Number(row.convertedBRL || 0), 0);
+        const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
         const groupProduction = groupEarnings.reduce((sum, row) => sum + Number(row.total || 0), 0);
         const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
         return <section className="cc-roster-day-v1397" key={group.iso}>
@@ -258,7 +259,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
             <time dateTime={group.iso}><b>{String(group.date.getDate()).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(group.date)}</span></time>
             <div><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(group.date)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
             {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397">
-              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{money(groupPerDiemTotal)}</b></span>}
+              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
               {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{finance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
             </div>}
           </header>
