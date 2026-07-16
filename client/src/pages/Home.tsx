@@ -131,8 +131,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.9.6';
-const CREWCHECK_UI_CORE_NOTE = 'v13.9.6: ligações Premium revinculadas à Infobip com diagnóstico seguro';
+const DEFAULT_VERSION = '13.9.7';
+const CREWCHECK_UI_CORE_NOTE = 'v13.9.7: escala premium com diárias e produção por KM em cada programação';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -2865,6 +2865,7 @@ type FlightEarningRow = {
   source: string;
 };
 type PerDiemRow = {
+  eventId: string;
   date: string;
   iso: string;
   label: string;
@@ -3040,6 +3041,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
       : slot === 'breakfast' ? rate.mainMeal * cfg.breakfastPercent : rate.mainMeal;
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
+      eventId: event.id,
       date: dateChip(event.date),
       iso,
       label,
