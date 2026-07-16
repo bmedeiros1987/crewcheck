@@ -45,7 +45,15 @@ services:
       - key: CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES
         value: 10
       - key: CREWCHECK_WAKEUP_CALL_PROVIDER
-        value: callmebot
+        value: infobip
+      - key: INFOBIP_API_KEY
+        sync: false
+      - key: INFOBIP_BASE_URL
+        sync: false
+      - key: INFOBIP_PHONE_FROM
+        sync: false
+      - key: INFOBIP_VOICE_LANGUAGE
+        value: pt-BR
       - key: CALLMEBOT_MODE
         sync: false
       - key: CALLMEBOT_PHONE

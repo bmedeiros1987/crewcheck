@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
+import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
@@ -3081,12 +3082,13 @@ async function handleTelegramWebhook(req, res) {
   const update = await readJsonBody(req);
   if (await handleTelegramWeatherCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'weather-button' });
   if (await handleTelegramCallCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'call-button' });
+  if (update?.callback_query && await handleV139Telegram(update, sendTelegramMessage)) return sendJson(res, 200, { ok: true, handled: true, channel: 'crewcheck-button' });
   const message = update?.message || update?.edited_message || {};
   const chatId = message?.chat?.id;
   const text = String(message?.text || message?.caption || '').trim();
   if (chatId && text && await handlePlatformVisitorTelegram(message, text, sendTelegramMessage)) return sendJson(res, 200, { ok: true, visitor: true, message: 'Comando de visitante processado.' });
   if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });
-  if (chatId && message?.document && await handleV139Telegram(message, sendTelegramMessage)) return sendJson(res, 200, { ok: true, crewlock: true, message: 'Solicitação CrewLock processada.' });
+  if (chatId && await handleV139Telegram(update, sendTelegramMessage)) return sendJson(res, 200, { ok: true, handled: true, channel: 'crewcheck-v139', message: 'Solicitação CrewCheck processada.' });
   if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
   else if (chatId && message?.location) await handleTelegramLocation(message);
   else if (chatId && text) {
@@ -3239,10 +3241,25 @@ function callMeBotPhoneConfigured() {
   return Boolean(envAny(['CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
 }
 function infobipPhoneConfigured() {
-  return Boolean(envAny(['INFOBIP_API_KEY']) && envAny(['INFOBIP_BASE_URL']) && envAny(['INFOBIP_FROM', 'INFOBIP_CALLER_ID']));
+  return infobipConfiguration().configured;
+}
+function preferredPhoneCallProvider() {
+  const preferred = String(envAny(['CREWCHECK_WAKEUP_CALL_PROVIDER']) || 'auto').trim().toLowerCase();
+  if (preferred.includes('infobip')) return 'infobip';
+  if (preferred.includes('callmebot')) return 'callmebot';
+  if (infobipPhoneConfigured()) return 'infobip';
+  if (callMeBotPhoneConfigured()) return 'callmebot';
+  return 'none';
+}
+function phoneProviderStatus() {
+  const infobip = infobipPublicStatus();
+  const callmebot = { provider: 'callmebot', configured: callMeBotPhoneConfigured() };
+  const selected = preferredPhoneCallProvider();
+  const configured = selected === 'infobip' ? infobip.configured : selected === 'callmebot' ? callmebot.configured : false;
+  return { selected, configured, infobip, callmebot };
 }
 function phoneCallConfigured() {
-  return callMeBotPhoneConfigured() || infobipPhoneConfigured();
+  return phoneProviderStatus().configured;
 }
 function cleanVoiceCallText(value = '') {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
@@ -3288,27 +3305,25 @@ async function sendCallMeBotPhoneCall(phone, text) {
   return { ...result, provider: 'callmebot-phone', message: result.ok ? 'Ligação telefônica de teste iniciada.' : result.message || 'A ligação telefônica não foi aceita agora.' };
 }
 async function sendInfobipPhoneCall(phone, text) {
-  const apiKey = envAny(['INFOBIP_API_KEY']);
-  const baseUrl = envAny(['INFOBIP_BASE_URL']).replace(/\/+$/, '');
-  const from = envAny(['INFOBIP_FROM', 'INFOBIP_CALLER_ID']);
-  const destination = String(phone || envAny(['CREWCHECK_ADMIN_PHONE']) || '').trim().replace(/[^+\d]/g, '');
-  if (!apiKey || !baseUrl || !from) return { ok: false, configured: false, provider: 'infobip', message: 'Infobip aguardando API key, base URL e identificador de origem.' };
-  if (!destination) return { ok: false, configured: true, provider: 'infobip', message: 'Informe o telefone do administrador com DDI.' };
-  const result = await fetchVoiceProvider(`${baseUrl}/tts/3/advanced`, {
+  const request = buildInfobipTtsRequest({ phone, text: cleanVoiceCallText(text) || 'Teste de ligação CrewCheck.' });
+  if (!request.ok) return request;
+  const result = await fetchVoiceProvider(request.url, {
     method: 'POST',
-    headers: { authorization: `App ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ messages: [{ from, destinations: [{ to: destination }], text: cleanVoiceCallText(text), language: 'pt-BR' }] }),
+    headers: request.headers,
+    body: JSON.stringify(request.body),
   }, 18_000);
-  return { ...result, provider: 'infobip', message: result.ok ? 'Ligação telefônica de teste iniciada.' : result.message || 'A Infobip não aceitou a ligação agora.' };
+  let message = result.ok ? 'Ligação Premium iniciada pela Infobip.' : result.message || 'A Infobip não aceitou a ligação agora.';
+  if ([401, 403].includes(Number(result.status))) message = 'A Infobip recusou a API key ou a permissão de Voice. Confira a chave no Render e o produto Voice na conta.';
+  else if (Number(result.status) === 400) message = 'A Infobip recusou o número de origem/destino ou o texto da chamada. Use números com DDI e confirme o remetente Voice.';
+  return { ...result, provider: 'infobip', message };
 }
 async function sendAdminPhoneCall(phone, text) {
-  const preferred = String(envAny(['CREWCHECK_WAKEUP_CALL_PROVIDER']) || '').toLowerCase();
-  if (preferred.includes('infobip') && infobipPhoneConfigured()) {
-    const primary = await sendInfobipPhoneCall(phone, text);
-    if (primary.ok || !callMeBotPhoneConfigured()) return primary;
+  const preferred = preferredPhoneCallProvider();
+  if (preferred === 'infobip') return sendInfobipPhoneCall(phone, text);
+  if (preferred === 'callmebot') {
+    if (callMeBotPhoneConfigured()) return sendCallMeBotPhoneCall(phone, text);
+    return { ok: false, configured: false, provider: 'callmebot-phone', message: 'CallMeBot selecionado, mas CALLMEBOT_API_KEY não está configurada.' };
   }
-  if (callMeBotPhoneConfigured()) return sendCallMeBotPhoneCall(phone, text);
-  if (infobipPhoneConfigured()) return sendInfobipPhoneCall(phone, text);
   return { ok: false, configured: false, provider: '', message: 'Nenhum provedor de ligação telefônica está configurado.' };
 }
 function alarmRequestIdentity(req) {
@@ -3334,6 +3349,14 @@ async function handleAlarmHealth(req, res) {
   const username = telegramLinkedUsernameForEmail(identity.email);
   const telegramCall = telegramCallProviderEnabled() && Boolean(username);
   const phoneCall = phoneCallConfigured();
+  const phoneProvider = phoneProviderStatus();
+  const phoneCallMessage = phoneCall
+    ? `${phoneProvider.selected === 'infobip' ? 'Infobip' : 'CallMeBot'} conectado para ligações Premium.`
+    : phoneProvider.selected === 'infobip'
+      ? `Infobip aguardando: ${phoneProvider.infobip.missing.join(', ')}.`
+      : phoneProvider.selected === 'callmebot'
+        ? 'CallMeBot aguardando CALLMEBOT_API_KEY.'
+        : 'Selecione Infobip ou CallMeBot e configure as credenciais.';
   return sendJson(res, 200, {
     ok: telegram || telegramCall || phoneCall,
     configured: telegram || phoneCall,
@@ -3341,9 +3364,11 @@ async function handleAlarmHealth(req, res) {
     telegramCall,
     telegramCallAvailable: telegramCallProviderEnabled(),
     phoneCall,
+    phoneCallMessage,
+    phoneProvider: identity.admin ? phoneProvider : { selected: phoneProvider.selected, configured: phoneProvider.configured },
     voice: telegramCall || phoneCall,
     channels: { telegram, telegramCall, phoneCall, both: telegram || phoneCall },
-    message: telegram || telegramCall || phoneCall ? 'Despertador pronto para teste e configuração.' : 'Despertador aguardando configuração de canal.',
+    message: telegram || telegramCall || phoneCall ? 'Despertador pronto para teste e configuração.' : phoneCallMessage,
   });
 }
 async function handleAlarmPreview(req, res, url) {
@@ -3435,7 +3460,7 @@ function reliabilityEnvItems() {
     reliabilityModule('tts-elevenlabs','Voz Premium ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY','ELEVENLABS_VOICE_ID','ELEVENLABS_TTS_VOICE_ID','CREWCHECK_ELEVENLABS_VOICE_ID','CREWCHECK_ELEVENLABS_TTS_VOICE_ID','ELEVENLABS_DEFAULT_VOICE_ID']),
     reliabilityModule('telegram-stt','Áudio Telegram',['OPENAI_API_KEY','OPENAI_STT_API_KEY','CREWCHECK_OPENAI_API_KEY','CREWCHECK_STT_API_KEY']),
     reliabilityModule('telegram-stt-elevenlabs','Áudio Telegram ElevenLabs',['ELEVENLABS_API_KEY','CREWCHECK_ELEVENLABS_API_KEY','ELEVENLABS_TTS_API_KEY']),
-    reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER','TELEGRAM_BOT_TOKEN']),
+    reliabilityModule('wakeup','Despertador',['INFOBIP_API_KEY','INFOBIP_BASE_URL','INFOBIP_PHONE_FROM','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER','TELEGRAM_BOT_TOKEN']),
     reliabilityModule('database','Banco Aiven MySQL',['DATABASE_URL','CREWCHECK_DATABASE_URL','MYSQL_URL']),
     reliabilityModuleAll('billing-web','Assinatura web Asaas',['ASAAS_API_KEY','ASAAS_WEBHOOK_TOKEN']),
     reliabilityModuleAll('billing-google-play','Assinatura Google Play',['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON','GOOGLE_PLAY_PACKAGE_NAME','GOOGLE_PLAY_RTDN_AUDIENCE','GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL']),
@@ -3454,7 +3479,7 @@ function handleReliabilityHealth(req, res) {
 return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.9.0', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.9.5', expectedRoutes:['/api/platform/emergency/profile','/api/platform/emergency/send','/api/platform/emergency/assisted','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.9.6', expectedRoutes:['/api/platform/emergency/profile','/api/platform/emergency/send','/api/platform/emergency/assisted','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
