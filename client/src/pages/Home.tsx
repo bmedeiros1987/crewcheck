@@ -131,8 +131,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.9.4';
-const CREWCHECK_UI_CORE_NOTE = 'v13.9.4: Telegram revinculável, rede S450/S750, endereço próximo e layout protegido';
+const DEFAULT_VERSION = '13.9.5';
+const CREWCHECK_UI_CORE_NOTE = 'v13.9.5: perfil médico persistente, emergência coordenada e atendimento aberto no Telegram';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
