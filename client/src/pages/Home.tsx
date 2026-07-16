@@ -3880,7 +3880,7 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     : '';
   const internalMapUrl = selected ? buildGoogleMapsEmbedDirectionsUrl(location, selectedDestination, 'walking') : '';
   const amilResultsSection = category === 'hospital' ? <section className="cc-amil-results cc-amil-network-v1394">
-    <header><div><Hospital/><span><small>REDE PUBLICADA · S450 / S750</small><h2>Atendimento coberto pelo plano</h2></span></div><strong>{amilTotal ? `${amilProviders.length} de ${amilTotal}` : 'Escolha a região'}</strong></header>
+    <header><div><Hospital/><span><small>Amil dentro do CrewCheck · S450 / S750</small><h2>Atendimento coberto pelo plano</h2></span></div><strong>{amilTotal ? `${amilProviders.length} de ${amilTotal}` : 'Escolha a região'}</strong></header>
     <div className="cc-amil-filter-grid">
       <label><span>Plano</span><select value={amilPlan} onChange={(event) => { const value = event.target.value as 'S450' | 'S750'; setAmilPlan(value); storage.set('crewcheck:amil-plan', value); }}><option value="S450">Amil S450</option><option value="S750">Amil S750</option></select></label>
       <label><span>Tipo de atendimento</span><select value={amilCare} onChange={(event) => { setAmilCare(event.target.value); storage.set('crewcheck:amil-care', event.target.value); }}><option value="adult_emergency">Pronto atendimento adulto</option><option value="adult_hospital">Hospital adulto</option><option value="clinic">Clínicas e diagnóstico</option><option value="obstetric">Obstetrícia</option><option value="pediatric">Pediatria</option><option value="all">Toda a rede coberta</option></select></label>
