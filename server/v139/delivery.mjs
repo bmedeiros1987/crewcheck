@@ -1,0 +1,273 @@
+import net from 'node:net';
+import tls from 'node:tls';
+import {
+  cleanText,
+  dbPool,
+  env,
+  flag,
+  parseJsonColumn,
+  safeEmail,
+} from './common.mjs';
+
+async function postJson(url, apiKey, payload, timeoutMs = 12_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = await response.text().catch(() => '');
+    return { ok: response.ok, status: response.status, raw };
+  } catch {
+    return { ok: false, status: 0, raw: '' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function sendEmailSenderApi({ to, subject, text, html }) {
+  const apiUrl = env('EMAILSENDER_API_URL');
+  const apiKey = env('EMAILSENDER_API_KEY', env('EMAIL_SENDER_API_KEY'));
+  const fromEmail = env('EMAILSENDER_FROM', env('EMAIL_FROM', env('MAILERSEND_FROM')));
+  const fromName = env('EMAILSENDER_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
+  if (!apiUrl || !apiKey || !fromEmail) return { ok: false, configured: false, provider: 'emailsender-api' };
+  const result = await postJson(apiUrl, apiKey, {
+    from: { email: fromEmail, name: fromName },
+    to: [{ email: to }],
+    subject,
+    text,
+    html,
+  });
+  return { ...result, configured: true, provider: 'emailsender-api' };
+}
+
+async function sendMailerSend({ to, subject, text, html }) {
+  const apiKey = env('MAILERSEND_API_KEY');
+  const fromEmail = env('MAILERSEND_FROM', env('EMAIL_FROM'));
+  const fromName = env('MAILERSEND_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
+  if (!apiKey || !fromEmail) return { ok: false, configured: false, provider: 'mailersend' };
+  const result = await postJson('https://api.mailersend.com/v1/email', apiKey, {
+    from: { email: fromEmail, name: fromName },
+    to: [{ email: to }],
+    subject,
+    text,
+    html,
+  });
+  return { ...result, configured: true, provider: 'mailersend' };
+}
+
+function smtpResponseReader(socket) {
+  let buffer = '';
+  const queue = [];
+  let wake = null;
+
+  socket.on('data', (chunk) => {
+    buffer += chunk.toString('utf8');
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line) queue.push(line);
+    }
+    if (wake) {
+      const current = wake;
+      wake = null;
+      current();
+    }
+  });
+
+  return async function read(expected, timeoutMs = 10_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      const finalIndex = queue.findIndex((line) => /^\d{3} /.test(line));
+      if (finalIndex >= 0) {
+        const lines = queue.splice(0, finalIndex + 1);
+        const code = Number(lines.at(-1)?.slice(0, 3));
+        if (!expected.includes(code)) throw new Error(`SMTP ${code}`);
+        return lines.join('\n');
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error('SMTP timeout');
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          if (wake === wrapped) wake = null;
+          reject(new Error('SMTP timeout'));
+        }, remaining);
+        const wrapped = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        wake = wrapped;
+      });
+    }
+  };
+}
+
+async function smtpCommand(socket, read, command, expected) {
+  if (command) socket.write(`${command}\r\n`);
+  return read(expected);
+}
+
+function smtpPlainMessage({ fromEmail, fromName, to, subject, text }) {
+  const safeSubject = cleanText(subject, 180).replace(/[\r\n]/g, ' ');
+  const safeFromName = cleanText(fromName, 120).replace(/["\r\n]/g, '');
+  const body = String(text || '').replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+  return [
+    `From: "${safeFromName}" <${fromEmail}>`,
+    `To: <${to}>`,
+    `Subject: ${safeSubject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    body,
+  ].join('\r\n');
+}
+
+async function sendSmtp(message) {
+  const host = env('SMTP_HOST');
+  const user = env('SMTP_USER');
+  const pass = env('SMTP_PASS');
+  const port = Number(env('SMTP_PORT', '587'));
+  const secure = flag('SMTP_SECURE', port === 465);
+  const fromEmail = safeEmail(env('SMTP_FROM', env('EMAIL_FROM', user)));
+  const fromName = env('SMTP_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
+  if (!host || !user || !pass || !fromEmail || flag('CREWCHECK_EMAIL_DISABLE_SMTP', false)) {
+    return { ok: false, configured: false, provider: 'smtp' };
+  }
+
+  let socket;
+  try {
+    socket = secure
+      ? tls.connect({ host, port, servername: host, rejectUnauthorized: !flag('SMTP_ALLOW_SELF_SIGNED', false) })
+      : net.createConnection({ host, port });
+    await new Promise((resolve, reject) => {
+      socket.once(secure ? 'secureConnect' : 'connect', resolve);
+      socket.once('error', reject);
+      socket.setTimeout(15_000, () => reject(new Error('SMTP timeout')));
+    });
+    let read = smtpResponseReader(socket);
+    await read([220]);
+    await smtpCommand(socket, read, `EHLO ${env('SMTP_HELO_NAME', 'crewcheck.online')}`, [250]);
+
+    if (!secure && !flag('SMTP_SKIP_STARTTLS', false)) {
+      await smtpCommand(socket, read, 'STARTTLS', [220]);
+      socket = tls.connect({ socket, servername: host, rejectUnauthorized: !flag('SMTP_ALLOW_SELF_SIGNED', false) });
+      await new Promise((resolve, reject) => {
+        socket.once('secureConnect', resolve);
+        socket.once('error', reject);
+      });
+      read = smtpResponseReader(socket);
+      await smtpCommand(socket, read, `EHLO ${env('SMTP_HELO_NAME', 'crewcheck.online')}`, [250]);
+    }
+
+    await smtpCommand(socket, read, 'AUTH LOGIN', [334]);
+    await smtpCommand(socket, read, Buffer.from(user).toString('base64'), [334]);
+    await smtpCommand(socket, read, Buffer.from(pass).toString('base64'), [235]);
+    await smtpCommand(socket, read, `MAIL FROM:<${fromEmail}>`, [250]);
+    await smtpCommand(socket, read, `RCPT TO:<${message.to}>`, [250, 251]);
+    await smtpCommand(socket, read, 'DATA', [354]);
+    socket.write(`${smtpPlainMessage({ ...message, fromEmail, fromName })}\r\n.\r\n`);
+    await read([250]);
+    socket.write('QUIT\r\n');
+    socket.end();
+    return { ok: true, configured: true, provider: 'smtp' };
+  } catch {
+    try { socket?.destroy(); } catch {}
+    return { ok: false, configured: true, provider: 'smtp' };
+  }
+}
+
+export async function sendSystemEmail(message) {
+  for (const provider of [sendEmailSenderApi, sendMailerSend]) {
+    const result = await provider(message);
+    if (result.ok) return result;
+  }
+  if (flag('CREWCHECK_EMAIL_FALLBACK_ENABLED', true)) return sendSmtp(message);
+  return { ok: false, configured: false, provider: 'none' };
+}
+
+export function telegramToken() {
+  return env('TELEGRAM_BOT_TOKEN', env('CREWCHECK_TELEGRAM_BOT_TOKEN'));
+}
+
+export async function sendTelegram(chatId, text) {
+  const token = telegramToken();
+  if (!token || !chatId) return { ok: false, configured: Boolean(token), provider: 'telegram' };
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: String(chatId), text: String(text).slice(0, 3900), disable_web_page_preview: true }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    return { ok: Boolean(response.ok && payload.ok !== false), configured: true, provider: 'telegram' };
+  } catch {
+    return { ok: false, configured: true, provider: 'telegram' };
+  }
+}
+
+export async function telegramLink(db, email) {
+  for (const key of [`link-email:${email}`, `profile:${email}`]) {
+    const [rows] = await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [key]);
+    const payload = parseJsonColumn(rows[0]?.payload, null);
+    if (payload?.chatId || payload?.username) return payload;
+  }
+  return null;
+}
+
+export async function callTelegram(username, text) {
+  const user = String(username || '').trim().replace(/^@/, '');
+  if (!flag('CALLMEBOT_TELEGRAM_CALL_ENABLED', true) || !user) {
+    return { ok: false, configured: Boolean(user), provider: 'telegram-call' };
+  }
+  try {
+    const url = new URL('https://api.callmebot.com/start.php');
+    url.searchParams.set('user', `@${user}`);
+    url.searchParams.set('text', cleanText(text, 240));
+    url.searchParams.set('lang', env('CALLMEBOT_TELEGRAM_LANG', 'pt-BR-Standard-A'));
+    url.searchParams.set('rpt', '1');
+    url.searchParams.set('cc', 'missed');
+    url.searchParams.set('timeout', '45');
+    const response = await fetch(url);
+    const raw = await response.text().catch(() => '');
+    return { ok: response.ok && !/(error|invalid|unauthor)/i.test(raw), configured: true, provider: 'telegram-call' };
+  } catch {
+    return { ok: false, configured: true, provider: 'telegram-call' };
+  }
+}
+
+export async function callUsageAllowed(db, email) {
+  const [profiles] = await db.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]);
+  const plan = String(profiles[0]?.plan || 'free');
+  const limit = plan === 'premium_unlimited'
+    ? Number(env('CREWCHECK_UNLIMITED_CALL_LIMIT', '60'))
+    : plan === 'free'
+      ? Number(env('CREWCHECK_FREE_CALL_LIMIT', '1'))
+      : Number(env('CREWCHECK_PREMIUM_CALL_LIMIT', '20'));
+  const month = new Date().toISOString().slice(0, 7);
+  const [usage] = await db.query(
+    'SELECT used FROM crewcheck_platform_usage WHERE email=? AND month_key=? AND usage_kind=? LIMIT 1',
+    [email, month, 'password_reset_call'],
+  );
+  return { allowed: Number(usage[0]?.used || 0) < limit, limit, month };
+}
+
+export async function consumeCallUsage(db, email, usage) {
+  await db.query(
+    `INSERT INTO crewcheck_platform_usage(email,month_key,usage_kind,used,limit_value)
+     VALUES(?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE used=used+1,limit_value=VALUES(limit_value),updated_at=CURRENT_TIMESTAMP(3)`,
+    [email, usage.month, 'password_reset_call', 1, usage.limit],
+  );
+}
+
+export async function databaseForDelivery() {
+  return dbPool();
+}

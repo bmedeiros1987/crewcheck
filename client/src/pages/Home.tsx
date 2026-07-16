@@ -8,6 +8,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   Car,
+  Check,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -51,6 +52,9 @@ import {
   Navigation,
   Trash2,
   LocateFixed,
+  MapPin,
+  Plus,
+  Search,
 } from 'lucide-react';
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
@@ -71,6 +75,7 @@ import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRos
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
+import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
@@ -365,6 +370,7 @@ type RoutePreviewInfo = {
 };
 
 type NearbyPlace = {
+  id?: string;
   name: string;
   category?: PlaceCategory;
   address?: string;
@@ -377,6 +383,7 @@ type NearbyPlace = {
   phone?: string;
   website?: string;
   openingHours?: string[];
+  manual?: boolean;
 };
 
 type AmilProvider = {
@@ -390,14 +397,51 @@ type AmilProvider = {
   open24Hours?: boolean;
 };
 
-type PlaceCategory = 'gym' | 'hospital' | 'pharmacy' | 'laundry';
+type PlaceCategory = 'hotel' | 'gym' | 'hospital' | 'pharmacy' | 'laundry';
 
 const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; plural: string; query: string }> = {
+  hotel: { label: 'Hotel', plural: 'Hotéis', query: 'hotel hospedagem' },
   gym: { label: 'Academia', plural: 'Academias', query: 'academia fitness' },
   hospital: { label: 'Hospital', plural: 'Hospitais', query: 'hospital pronto atendimento emergência' },
   pharmacy: { label: 'Farmácia', plural: 'Farmácias', query: 'farmácia drogaria' },
   laundry: { label: 'Lavanderia', plural: 'Lavanderias', query: 'lavanderia' },
 };
+
+const MANUAL_PLACES_STORAGE_KEY = 'crewcheck:manual-places-v1';
+
+function normalizedSearch(value: unknown) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().trim();
+}
+
+function searchCrewHotels(query: string, airport = ''): CrewHotelCatalogEntry[] {
+  const words = normalizedSearch(query).split(/\s+/).filter(Boolean);
+  const airportCode = normalizedSearch(airport);
+  return CREW_HOTEL_CATALOG
+    .map((hotel) => {
+      const haystack = normalizedSearch([hotel.name, hotel.airport, hotel.alternateAirport, hotel.city, hotel.region, hotel.country].join(' '));
+      const wordScore = words.reduce((score, word) => score + (haystack.includes(word) ? 2 : -6), 0);
+      const airportScore = airportCode && [normalizedSearch(hotel.airport), normalizedSearch(hotel.alternateAirport)].includes(airportCode) ? 12 : 0;
+      const nameScore = words.length && normalizedSearch(hotel.name).includes(words.join(' ')) ? 8 : 0;
+      return { hotel, score: wordScore + airportScore + nameScore };
+    })
+    .filter((item) => (!words.length && !airportCode) || item.score > 0)
+    .sort((a, b) => b.score - a.score || a.hotel.name.localeCompare(b.hotel.name, 'pt-BR'))
+    .slice(0, 24)
+    .map((item) => item.hotel);
+}
+
+function loadManualPlaces(): NearbyPlace[] {
+  try {
+    const parsed = JSON.parse(storage.get(MANUAL_PLACES_STORAGE_KEY, '[]'));
+    return Array.isArray(parsed) ? parsed.filter((place) => place && place.name && place.category) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveManualPlaces(places: NearbyPlace[]) {
+  storage.set(MANUAL_PLACES_STORAGE_KEY, JSON.stringify(places.slice(0, 120)));
+}
 
 function todayRosterKey(now = new Date()) {
   return dateChip(now);
@@ -436,9 +480,10 @@ async function fetchAmilProviders(location: string, coordinates: { lat: number; 
 function hotelSearchLocation(event: ZeroLeg): string {
   return event.hotel || `${city(event.destination || event.origin)} ${event.destination || event.origin}`;
 }
-function openNearbyPlaces(category: PlaceCategory, location = '') {
+function openNearbyPlaces(category: PlaceCategory, location = '', mode: 'layover' | 'current' = location ? 'layover' : 'current') {
   storage.set('crewcheck:places-category', category);
-  if (location) storage.set('crewcheck:places-location', location);
+  storage.set('crewcheck:places-mode', mode);
+  storage.set('crewcheck:places-location', mode === 'layover' ? location : '');
   window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'gyms' }));
 }
 function openPlacesInGoogleMaps(category: PlaceCategory, location: string) {
@@ -3317,31 +3362,101 @@ function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
 }
 
 function HotelsView({ events }: { events: ZeroLeg[] }) {
-  const stays = events.filter((e) => e.kind === 'stay' || e.hotel);
+  const stays = events.filter((event) => event.kind === 'stay' || event.hotel);
   const [saved, setSaved] = useState<any[]>([]);
   const [companions, setCompanions] = useState<Record<string, any[]>>({});
+  const [selectedEventId, setSelectedEventId] = useState(() => stays[0]?.id || '');
+  const [query, setQuery] = useState('');
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '90', shareSameHotel: false, shareWithVisitors: false });
+  const selectedEvent = stays.find((event) => event.id === selectedEventId) || stays[0] || null;
+  const targetAirport = selectedEvent?.destination || selectedEvent?.origin || '';
+  const catalogResults = useMemo(() => searchCrewHotels(query, targetAirport), [query, targetAirport]);
   const refresh = () => listPlatformStays().then((payload) => setSaved(payload.stays || [])).catch(() => undefined);
+
   useEffect(() => { refresh(); }, []);
-  function savedFor(event: ZeroLeg) { const date = rosterDayIso(event.day); const name = safe(event.hotel, `Hotel em ${city(event.destination)}`); return saved.find((item) => String(item.stayDate || '').slice(0, 10) === date && String(item.hotelName || '').toLocaleLowerCase() === name.toLocaleLowerCase()) || saved.find((item) => String(item.stayDate || '').slice(0, 10) === date); }
-  async function edit(event: ZeroLeg) {
-    const current = savedFor(event);
-    const hotelName = prompt('Hotel do pernoite', current?.hotelName || safe(event.hotel, `Hotel em ${city(event.destination)}`)); if (hotelName === null || !hotelName.trim()) return;
-    const room = prompt('Número do quarto (criptografado e privado)', current?.room || ''); if (room === null) return;
-    const presentationTime = prompt('Horário de apresentação/saída no hotel', current?.presentationTime || safe(event.presentation, '')); if (presentationTime === null) return;
-    const leadText = prompt('Quantos minutos este hotel costuma anteceder a apresentação? (aprender padrão)', String(current?.leadMinutes || 90)); if (leadText === null) return;
-    const shareSameHotel = confirm('Deseja aparecer, sem número do quarto, para colegas no mesmo hotel e data?');
-    const shareWithVisitors = confirm('Deseja compartilhar este hotel com visitantes que tenham permissão?');
+  useEffect(() => {
+    if (!selectedEventId && stays[0]) setSelectedEventId(stays[0].id);
+  }, [selectedEventId, stays]);
+
+  function savedFor(event: ZeroLeg) {
+    const date = rosterDayIso(event.day);
+    const name = safe(event.hotel, `Hotel em ${city(event.destination)}`);
+    return saved.find((item) => String(item.stayDate || '').slice(0, 10) === date && String(item.hotelName || '').toLocaleLowerCase() === name.toLocaleLowerCase())
+      || saved.find((item) => String(item.stayDate || '').slice(0, 10) === date);
+  }
+
+  function openEditor(event = selectedEvent, hotel?: CrewHotelCatalogEntry) {
+    const current = event ? savedFor(event) : null;
+    setDraft({
+      hotelName: hotel?.name || current?.hotelName || safe(event?.hotel, ''),
+      airport: hotel?.airport || event?.destination || event?.origin || current?.airport || '',
+      stayDate: event ? rosterDayIso(event.day) : new Date().toISOString().slice(0, 10),
+      room: current?.room || '',
+      presentationTime: current?.presentationTime || safe(event?.presentation, ''),
+      leadMinutes: String(current?.leadMinutes || 90),
+      shareSameHotel: Boolean(current?.shareSameHotel),
+      shareWithVisitors: Boolean(current?.shareWithVisitors),
+    });
+    if (event) setSelectedEventId(event.id);
+    setEditorOpen(true);
+  }
+
+  async function saveDraft() {
+    if (!draft.hotelName.trim() || !draft.stayDate) return toast.error('Informe o hotel e a data do pernoite.');
+    const current = selectedEvent ? savedFor(selectedEvent) : null;
+    setSaving(true);
     try {
-      await updatePlatformStay({ id: current?.id, stayDate: rosterDayIso(event.day), hotelName, airport: event.destination || event.origin, room, presentationTime, leadMinutes: Number(leadText), learnRule: true, shareSameHotel, shareWithVisitors });
-      await refresh(); toast.success('Card de pernoite salvo no banco e aprendizado atualizado.');
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui salvar o pernoite.'); }
+      await updatePlatformStay({
+        id: current?.id,
+        stayDate: draft.stayDate,
+        hotelName: draft.hotelName.trim(),
+        airport: draft.airport.trim().toUpperCase(),
+        room: draft.room.trim(),
+        presentationTime: draft.presentationTime.trim(),
+        leadMinutes: Number(draft.leadMinutes) || 90,
+        learnRule: true,
+        shareSameHotel: draft.shareSameHotel,
+        shareWithVisitors: draft.shareWithVisitors,
+      });
+      await refresh();
+      setEditorOpen(false);
+      toast.success('Hotel salvo no pernoite. O CrewCheck vai lembrar desta escolha.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui salvar o hotel.');
+    } finally {
+      setSaving(false);
+    }
   }
+
   async function loadCompanions(event: ZeroLeg) {
-    const current = savedFor(event); if (!current?.hotelKey) return toast.info('Salve primeiro este pernoite para consultar colegas.');
-    try { const payload = await findHotelCompanions(current.hotelKey, String(current.stayDate).slice(0, 10)); setCompanions((state) => ({ ...state, [event.id]: payload.companions || [] })); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui consultar colegas.'); }
+    const current = savedFor(event);
+    if (!current?.hotelKey) return toast.info('Salve primeiro este pernoite para consultar colegas.');
+    try {
+      const payload = await findHotelCompanions(current.hotelKey, String(current.stayDate).slice(0, 10));
+      setCompanions((state) => ({ ...state, [event.id]: payload.companions || [] }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui consultar colegas.');
+    }
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Hotéis e pernoites</h1><p>Tabela da escala, quarto privado, apresentação aprendida por hotel e presença opcional de colegas.</p></section><section className="cz-stack-list">{stays.length ? stays.map((e) => { const loc = hotelSearchLocation(e); const current = savedFor(e); const people = companions[e.id] || []; return <article className="cz-roster-card cz-hotel-stay-card" key={`hotel-${e.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{current?.hotelName || safe(e.hotel, `Hotel em ${city(e.destination)}`)}</h3><p>{dateChip(e.date)} · {e.origin} → {e.destination}</p><small>{safe((e.day as any).hotelAddress || (e.day as any).address, 'Endereço será exibido quando vier na escala/base de hotéis')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-detail-grid"><div><span>Quarto</span><strong>{current?.room || 'Privado · não informado'}</strong></div><div><span>Apresentação no hotel</span><strong>{current?.presentationTime || safe(e.presentation, 'A confirmar')}</strong></div><div><span>Antecedência aprendida</span><strong>{current?.leadMinutes ? `${current.leadMinutes} min` : 'Ainda não aprendida'}</strong></div><div><span>Compartilhamento</span><strong>{current?.shareSameHotel ? 'Colegas no mesmo hotel' : 'Somente você'} · {current?.shareWithVisitors ? 'visitantes autorizados' : 'visitantes sem acesso'}</strong></div></div><div className="cz-tool-actions"><button onClick={() => edit(e)}><Save/> Editar pernoite</button><button onClick={() => loadCompanions(e)}><UserRound/> Quem está neste hotel</button><button onClick={() => openNearbyPlaces('gym', loc)}><Dumbbell/> Academias próximas</button><button onClick={() => openNearbyPlaces('pharmacy', loc)}><Hospital/> Saúde e serviços</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Apresentação</button></div>{people.length > 0 && <div className="cz-routine-strip">{people.map((person) => <span key={person.publicId}>{person.displayName} · {person.publicId}</span>)}</div>}{companions[e.id] && !people.length && <p className="cz-mini-status">Nenhum colega optou por compartilhar presença neste hotel e data.</p>}</article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum hotel detectado</h2><p>Quando o parser encontrar pernoites/hotéis ou pernoite diurno, eles aparecerão aqui sem dados mockados.</p></article>}</section></>;
+
+  return <><Brand back/>
+    <section className="cz-panel-head cz-panel-head-compact"><h1>Hotéis e pernoites</h1><p>Escolha pela escala, catálogo de aeroportos, localização atual ou informe o hotel manualmente.</p></section>
+    <section className="cz-toolbox cz-hotel-finder">
+      <header><div><Search/><span><small>CATÁLOGO CREWCHECK</small><h2>Encontrar hotel</h2></span></div><strong>{CREW_HOTEL_CATALOG.length} hotéis cadastrados</strong></header>
+      {stays.length > 1 && <label className="cz-field-wide"><span>Pernoite que deseja atualizar</span><select value={selectedEvent?.id || ''} onChange={(event) => setSelectedEventId(event.target.value)}>{stays.map((stay) => <option key={stay.id} value={stay.id}>{dateChip(stay.date)} · {stay.destination || stay.origin} · {safe(stay.hotel, 'Hotel a definir')}</option>)}</select></label>}
+      <div className="cz-search-row"><label><Search/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hotel, cidade ou aeroporto"/></label><button className="primary" onClick={() => openNearbyPlaces('hotel', '', 'current')}><LocateFixed/> Perto de mim</button><button onClick={() => openEditor()}><Plus/> Informar manualmente</button></div>
+      <div className="cz-hotel-catalog-results">{catalogResults.map((hotel) => <article key={`${hotel.name}-${hotel.airport}`}><div><span className="cz-card-icon"><Hotel/></span><span><strong>{hotel.name}</strong><small>{[hotel.city, hotel.region, hotel.country].filter(Boolean).join(' · ')}</small></span></div><b>{[hotel.airport, hotel.alternateAirport].filter(Boolean).join(' / ')}</b><div className="cz-tool-actions"><button className="primary" onClick={() => openEditor(selectedEvent, hotel)}><Check/> Usar neste pernoite</button><button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotel.name} ${hotel.city}`)}`, '_blank', 'noopener,noreferrer')}><MapPin/> Ver localização</button></div></article>)}</div>
+      {!catalogResults.length && <div className="cz-inline-empty"><Hotel/><span><strong>Hotel não encontrado na lista</strong><small>Você ainda pode procurar perto da sua localização ou informar os dados manualmente.</small></span><button onClick={() => openEditor()}><Plus/> Cadastrar hotel</button></div>}
+    </section>
+
+    {editorOpen && <section className="cz-toolbox cz-manual-hotel-form"><header><div><Plus/><span><small>CADASTRO MANUAL</small><h2>Dados do hotel</h2></span></div><button className="cz-icon-button" aria-label="Fechar cadastro" onClick={() => setEditorOpen(false)}><X/></button></header><div className="cz-form-grid"><label className="wide"><span>Nome do hotel</span><input value={draft.hotelName} onChange={(event) => setDraft({ ...draft, hotelName: event.target.value })} placeholder="Ex.: Hotel próximo ao aeroporto"/></label><label><span>Aeroporto</span><input value={draft.airport} onChange={(event) => setDraft({ ...draft, airport: event.target.value.toUpperCase() })} placeholder="BSB" maxLength={8}/></label><label><span>Data</span><input type="date" value={draft.stayDate} onChange={(event) => setDraft({ ...draft, stayDate: event.target.value })}/></label><label><span>Apresentação/saída</span><input type="time" value={draft.presentationTime} onChange={(event) => setDraft({ ...draft, presentationTime: event.target.value })}/></label><label><span>Antecedência</span><input type="number" min="0" max="720" value={draft.leadMinutes} onChange={(event) => setDraft({ ...draft, leadMinutes: event.target.value })}/></label><label className="wide"><span>Quarto <small>privado e criptografado</small></span><input value={draft.room} onChange={(event) => setDraft({ ...draft, room: event.target.value })} placeholder="Opcional"/></label></div><div className="cz-consent-row"><label><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/><span>Mostrar presença a colegas no mesmo hotel, sem exibir o quarto</span></label><label><input type="checkbox" checked={draft.shareWithVisitors} onChange={(event) => setDraft({ ...draft, shareWithVisitors: event.target.checked })}/><span>Compartilhar o hotel com visitantes autorizados</span></label></div><div className="cz-tool-actions"><button className="primary" onClick={saveDraft} disabled={saving}><Save/> {saving ? 'Salvando…' : 'Salvar hotel'}</button><button onClick={() => setEditorOpen(false)}><X/> Cancelar</button></div></section>}
+
+    <section className="cz-stack-list cz-hotel-stays">{stays.length ? stays.map((event) => { const loc = hotelSearchLocation(event); const current = savedFor(event); const people = companions[event.id] || []; return <article className="cz-roster-card cz-hotel-stay-card" key={`hotel-${event.id}`}><div className="cz-roster-main"><span className="cz-roster-icon"><Hotel/></span><div className="cz-roster-copy"><h3>{current?.hotelName || safe(event.hotel, `Hotel em ${city(event.destination)}`)}</h3><p>{dateChip(event.date)} · {event.origin} → {event.destination}</p><small>{safe((event.day as any).hotelAddress || (event.day as any).address, 'Endereço a confirmar')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-detail-grid"><div><span>Quarto</span><strong>{current?.room || 'Privado · não informado'}</strong></div><div><span>Apresentação</span><strong>{current?.presentationTime || safe(event.presentation, 'A confirmar')}</strong></div><div><span>Antecedência</span><strong>{current?.leadMinutes ? `${current.leadMinutes} min` : 'Ainda não aprendida'}</strong></div><div><span>Visibilidade</span><strong>{current?.shareSameHotel ? 'Colegas autorizados' : 'Somente você'}</strong></div></div><div className="cz-tool-actions"><button className="primary" onClick={() => openEditor(event)}><Save/> Editar pernoite</button><button onClick={() => loadCompanions(event)}><UserRound/> Colegas no hotel</button><button onClick={() => openNearbyPlaces('gym', loc)}><Dumbbell/> Academias</button><button onClick={() => openNearbyPlaces('laundry', loc)}><WashingMachine/> Lavanderias</button><button onClick={() => openNearbyPlaces('pharmacy', loc)}><Pill/> Farmácias</button></div>{people.length > 0 && <div className="cz-routine-strip">{people.map((person) => <span key={person.publicId}>{person.displayName} · {person.publicId}</span>)}</div>}{companions[event.id] && !people.length && <p className="cz-mini-status">Nenhum colega compartilhou presença neste hotel e data.</p>}</article>; }) : <article className="cz-empty-real"><Hotel/><h2>Nenhum pernoite detectado</h2><p>Você pode cadastrar um hotel manualmente mesmo antes de importar a próxima escala.</p><button onClick={() => openEditor()}><Plus/> Informar hotel</button></article>}</section>
+  </>;
 }
+
 function RoutineView({ bundle }: { bundle: BundleState }) {
   let suggestions: any[] = [];
   try { suggestions = buildRoutineSuggestions(analyzeDayLoads(bundle.roster).days, defaultRoutineActivities()).slice(0, 8); } catch {}
@@ -3398,13 +3513,18 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   const storedCategory = storage.get('crewcheck:places-category', 'gym') as PlaceCategory;
   const initialCategory: PlaceCategory = storedCategory in PLACE_CATEGORY_META ? storedCategory : 'gym';
   const storedLocation = storage.get('crewcheck:places-location', '');
+  const storedMode = storage.get('crewcheck:places-mode', '') as 'layover' | 'current' | '';
   const [category, setCategory] = useState<PlaceCategory>(initialCategory);
   const [coordinates, setCoordinates] = useState<{ lat: number; lon: number } | null>(() => {
     const match = storage.get('crewcheck_last_geo', '').match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
     return match ? { lat: Number(match[1]), lon: Number(match[2]) } : null;
   });
-  const [locationMode, setLocationMode] = useState<'layover' | 'current'>(() => (storedLocation || target) ? 'layover' : 'current');
+  const [locationMode, setLocationMode] = useState<'layover' | 'current'>(() => storedMode || ((storedLocation || target) ? 'layover' : 'current'));
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
+  const [manualPlaces, setManualPlaces] = useState<NearbyPlace[]>(() => loadManualPlaces());
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualDraft, setManualDraft] = useState({ name: '', address: '', openingHours: '' });
+  const [searchTerm, setSearchTerm] = useState('');
   const [selected, setSelected] = useState<NearbyPlace | null>(null);
   const [crowding, setCrowding] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3425,6 +3545,7 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     storage.set('crewcheck:places-category', value);
     setSelected(null);
     setPlaces([]);
+    setSearchTerm('');
   }
   function choosePlan(value: string) {
     setPlan(value);
@@ -3452,7 +3573,8 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
           : plan === 'smartfit' ? 'Smart Fit academia'
           : partnerChains.join(' ') + ' Smart Fit academia'
         : '';
-      const found = await fetchNearbyPlaces(location, category, gymQuery);
+      const customQuery = [searchTerm.trim(), gymQuery].filter(Boolean).join(' ');
+      const found = await fetchNearbyPlaces(location, category, customQuery);
       setPlaces(found);
       setSelected((current) => current && found.some((place) => place.name === current.name) ? current : found[0] || null);
       if (category === 'gym') listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
@@ -3468,6 +3590,35 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function saveManualPlace() {
+    if (!manualDraft.name.trim()) return toast.error(`Informe o nome do ${categoryMeta.label.toLocaleLowerCase()}.`);
+    const item: NearbyPlace = {
+      id: `manual-${Date.now()}`,
+      name: manualDraft.name.trim(),
+      category,
+      address: manualDraft.address.trim(),
+      openingHours: manualDraft.openingHours.trim() ? [manualDraft.openingHours.trim()] : [],
+      latitude: coordinates?.lat,
+      longitude: coordinates?.lon,
+      manual: true,
+    };
+    const next = [item, ...manualPlaces];
+    setManualPlaces(next);
+    saveManualPlaces(next);
+    setManualDraft({ name: '', address: '', openingHours: '' });
+    setManualOpen(false);
+    setSelected(item);
+    toast.success(`${categoryMeta.label} adicionado por você.`);
+  }
+
+  function removeManualPlace(place: NearbyPlace) {
+    const next = manualPlaces.filter((item) => item.id !== place.id);
+    setManualPlaces(next);
+    saveManualPlaces(next);
+    if (selected?.id === place.id) setSelected(null);
+    toast.success('Local removido da sua lista.');
   }
 
   useEffect(() => { search(); }, [location, category, plan, amilOnly24h]);
@@ -3507,7 +3658,9 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
       .catch(() => storage.set(cooldownKey, '0'));
   }, [autoCheckIn, category, coordinates, places]);
 
-  const visiblePlaces = places
+  const allPlaces = [...manualPlaces.filter((place) => place.category === category), ...places]
+    .filter((place, index, values) => values.findIndex((candidate) => normalizedSearch(candidate.name) === normalizedSearch(place.name) && normalizedSearch(candidate.address) === normalizedSearch(place.address)) === index);
+  const visiblePlaces = allPlaces
     .filter((place) => !onlyOpen || place.openNow !== false)
     .sort((a, b) => Number(a.distanceMeters || Infinity) - Number(b.distanceMeters || Infinity)
       || Number(b.openNow === true) - Number(a.openNow === true)
@@ -3528,6 +3681,7 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     return crowding.find((item) => String(item.gymName || '').toLocaleLowerCase() === place.name.toLocaleLowerCase());
   }
   function categoryIcon(value: PlaceCategory) {
+    if (value === 'hotel') return Hotel;
     if (value === 'hospital') return Hospital;
     if (value === 'pharmacy') return Pill;
     if (value === 'laundry') return WashingMachine;
@@ -3554,21 +3708,23 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
         <button className={locationMode === 'layover' ? 'active' : ''} disabled={!resolvedLayoverLocation} onClick={() => setLocationMode('layover')}><Hotel/> Usar pernoite</button>
         <button className={locationMode === 'current' ? 'active' : ''} onClick={requestCurrentLocation}><LocateFixed/> Usar localização atual</button>
       </div>
+      <div className="cz-place-query-row"><label><Search/><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && search()} placeholder={`Nome de ${categoryMeta.label.toLocaleLowerCase()} ou referência`}/></label><button className="primary" onClick={search} disabled={loading}><Search/> {loading ? 'Pesquisando…' : 'Pesquisar'}</button><button onClick={() => setManualOpen((current) => !current)}><Plus/> Não encontrei</button></div>
       {category === 'gym' && <><p className="cz-gym-provider-note">Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia. A busca mostra os estabelecimentos dentro do CrewCheck. Confirme a elegibilidade no canal da empresa antes de sair.</p><div className="cz-tool-actions cz-provider-actions"><button className={plan === 'ambos' ? 'active' : ''} onClick={() => choosePlan('ambos')}>Todas</button><button className={plan === 'wellhub' ? 'active' : ''} onClick={() => choosePlan('wellhub')}>Wellhub</button><button className={plan === 'smartfit' ? 'active' : ''} onClick={() => choosePlan('smartfit')}>Smart Fit</button></div></>}
-      <div className="cz-tool-actions"><button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertos' : 'Incluir fechados'}</button><button className="primary" onClick={search} disabled={loading}><RotateCcw/> {loading ? 'Atualizando…' : 'Atualizar busca interna'}</button><button onClick={() => openPlacesInGoogleMaps(category, location)}><MapIcon/> Google Maps</button></div>
+      <div className="cz-tool-actions"><button className={onlyOpen ? 'active' : ''} onClick={() => { const next = !onlyOpen; setOnlyOpen(next); storage.set('crewcheck:gym-only-open', next ? '1' : '0'); }}><Clock/> {onlyOpen ? 'Somente abertos' : 'Incluir fechados'}</button><button onClick={() => openPlacesInGoogleMaps(category, location)}><MapIcon/> Ver busca no Google Maps</button></div>
+      {manualOpen && <div className="cz-manual-place-form"><header><Plus/><span><strong>Adicionar {categoryMeta.label.toLocaleLowerCase()}</strong><small>Use quando a pesquisa não encontrar o local correto.</small></span></header><div className="cz-form-grid"><label><span>Nome</span><input value={manualDraft.name} onChange={(event) => setManualDraft({ ...manualDraft, name: event.target.value })} placeholder={categoryMeta.label}/></label><label><span>Endereço</span><input value={manualDraft.address} onChange={(event) => setManualDraft({ ...manualDraft, address: event.target.value })} placeholder="Rua, número, cidade"/></label><label><span>Horário</span><input value={manualDraft.openingHours} onChange={(event) => setManualDraft({ ...manualDraft, openingHours: event.target.value })} placeholder="Ex.: aberto 24h"/></label></div><div className="cz-tool-actions"><button className="primary" onClick={saveManualPlace}><Save/> Salvar na minha lista</button><button onClick={() => setManualOpen(false)}><X/> Cancelar</button></div></div>}
       {autoCheckIn && category === 'gym' && <div className="cz-auto-checkin-note"><ShieldCheck/><span><strong>Autocheck-in ativo</strong><small>O GPS contínuo só é usado enquanto esta opção estiver habilitada. Você pode desligá-la em Configurações.</small></span></div>}
     </section>
 
-    {selected && <section className="cz-place-detail-card"><header><span className="cz-card-icon"><SelectedIcon/></span><div><small>{categoryMeta.label.toLocaleUpperCase()}</small><h2>{selected.name}</h2><p>{safe(selected.address, 'Endereço a confirmar')}</p></div><button aria-label="Fechar mapa" onClick={() => setSelected(null)}><X/></button></header><div className="cz-google-map-preview cz-place-map">{internalMapUrl ? <iframe title={`Rota a pé até ${selected.name}`} loading="lazy" src={internalMapUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa interno indisponível</strong><span>Atualize a busca para recalcular a rota.</span></div>}</div><div className="cz-place-facts"><span><b>Status</b>{selected.openNow === true ? 'Aberto agora' : selected.openNow === false ? 'Fechado agora' : 'Horário a confirmar'}</span><span><b>Distância</b>{selected.distanceMeters ? (selected.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : 'A calcular'}</span><span><b>Avaliação</b>{selected.rating ? selected.rating.toFixed(1) : 'Sem nota'}</span>{selected.phone && <a href={`tel:${selected.phone}`}><Phone/> {selected.phone}</a>}</div>{selected.openingHours?.length ? <div className="cz-opening-hours">{selected.openingHours.slice(0, 3).map((line) => <span key={line}>{line}</span>)}</div> : null}<div className="cz-tool-actions"><button className="primary" onClick={requestCurrentLocation}><Navigation/> Atualizar rota a pé</button><button onClick={() => window.open(selected.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedDestination)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{category === 'gym' && <button onClick={() => checkIn(selected)}><UserRound/> Fazer check-in</button>}</div></section>}
+    {selected && <section className="cz-place-detail-card"><header><span className="cz-card-icon"><SelectedIcon/></span><div><small>{categoryMeta.label.toLocaleUpperCase()}{selected.manual ? ' · ADICIONADO POR VOCÊ' : ''}</small><h2>{selected.name}</h2><p>{safe(selected.address, 'Endereço a confirmar')}</p></div><button aria-label="Fechar mapa" onClick={() => setSelected(null)}><X/></button></header><div className="cz-google-map-preview cz-place-map">{internalMapUrl ? <iframe title={`Rota a pé até ${selected.name}`} loading="lazy" src={internalMapUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa interno indisponível</strong><span>Atualize a localização para recalcular a rota.</span></div>}</div><div className="cz-place-facts"><span><b>Status</b>{selected.openNow === true ? 'Aberto agora' : selected.openNow === false ? 'Fechado agora' : 'Horário a confirmar'}</span><span><b>Distância</b>{selected.distanceMeters ? (selected.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : 'A calcular'}</span><span><b>Avaliação</b>{selected.rating ? selected.rating.toFixed(1) : 'Sem nota'}</span>{selected.phone && <a href={`tel:${selected.phone}`}><Phone/> {selected.phone}</a>}</div>{selected.openingHours?.length ? <div className="cz-opening-hours">{selected.openingHours.slice(0, 3).map((line) => <span key={line}>{line}</span>)}</div> : null}<div className="cz-tool-actions"><button className="primary" onClick={requestCurrentLocation}><Navigation/> Traçar rota a pé</button><button onClick={() => window.open(selected.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedDestination)}`, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{category === 'gym' && <button onClick={() => checkIn(selected)}><UserRound/> Fazer check-in</button>}{selected.manual && <button className="danger" onClick={() => removeManualPlace(selected)}><Trash2/> Remover da lista</button>}</div></section>}
 
     <section className="cz-stack-list cz-places-results">{visiblePlaces.length ? visiblePlaces.map((place, index) => {
       const Icon = categoryIcon(category);
       const crowd = category === 'gym' ? crowdFor(place) : null;
       return <article className={`cz-roster-card cz-place-result-card ${selected?.name === place.name ? 'selected' : ''}`} key={place.name + '-' + index}>
         <button className="cz-place-select" onClick={() => setSelected(place)}><span className="cz-roster-icon"><Icon/></span><span className="cz-roster-copy"><h3>{place.name}</h3><p>{safe(place.address, 'Endereço a confirmar')}</p><small>{place.openNow === true ? 'Aberto agora' : place.openNow === false ? 'Fechado agora' : 'Horário a confirmar'}{place.distanceMeters ? ' · ' + (place.distanceMeters / 1000).toFixed(1).replace('.', ',') + ' km' : ''}{place.rating ? ' · avaliação ' + place.rating : ''}{crowd ? ' · ' + crowd.crowdLabel : ''}</small></span><ChevronRight/></button>
-        <div className="cz-tool-actions"><button className="primary" onClick={() => setSelected(place)}><MapIcon/> Ver no app</button>{category === 'gym' && <button onClick={() => checkIn(place)}><UserRound/> Check-in</button>}</div>
+        <div className="cz-tool-actions"><button className="primary" onClick={() => setSelected(place)}><MapIcon/> Ver no app · rota e detalhes</button><button onClick={() => window.open(place.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([place.name, place.address].filter(Boolean).join(' '))}`, '_blank', 'noopener,noreferrer')}><Navigation/> Abrir mapa</button>{category === 'gym' && <button onClick={() => checkIn(place)}><UserRound/> Check-in</button>}{place.manual && <button className="danger" onClick={() => removeManualPlace(place)}><Trash2/> Remover</button>}</div>
       </article>;
-    }) : <article className="cz-empty-real"><SelectedIcon/><h2>{onlyOpen && places.length ? `Nenhum ${categoryMeta.label.toLocaleLowerCase()} aberto` : `Nenhum resultado em ${categoryMeta.plural.toLocaleLowerCase()}`}</h2><p>Atualize a localização, use o pernoite ou altere a categoria.</p><button onClick={search}>Tentar novamente</button></article>}</section>
+    }) : <article className="cz-empty-real"><SelectedIcon/><h2>{onlyOpen && allPlaces.length ? `Nenhum ${categoryMeta.label.toLocaleLowerCase()} aberto` : `Nenhum resultado em ${categoryMeta.plural.toLocaleLowerCase()}`}</h2><p>Atualize a localização, use o pernoite ou informe o local manualmente.</p><div className="cz-tool-actions"><button className="primary" onClick={search}><Search/> Tentar novamente</button><button onClick={() => setManualOpen(true)}><Plus/> Informar manualmente</button></div></article>}</section>
   </>;
 }
 function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleState; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {

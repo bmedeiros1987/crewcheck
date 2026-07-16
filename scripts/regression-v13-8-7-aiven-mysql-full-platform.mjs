@@ -66,7 +66,7 @@ assert.match(envExample, /DATABASE_URL=mysql:\/\/USER:PASSWORD@HOST:PORT\/defaul
 assert.match(envExample, /CREWCHECK_DATABASE_PROVIDER=aiven-mysql/);
 assert.match(envExample, /ASAAS_ENV=production/);
 assert.match(envExample, /ASAAS_API_BASE_URL=https:\/\/api\.asaas\.com\/v3/);
-assert.doesNotMatch(envExample, /POSTGRES_URL|PGSSLMODE|SUPABASE_|SMTP_/);
+assert.doesNotMatch(envExample, /POSTGRES_URL|PGSSLMODE|SUPABASE_/);
 
 assert.ok(pkg.dependencies.mysql2, 'mysql2 deve permanecer instalado');
 assert.equal(pkg.dependencies.pg, undefined, 'pg deve ser removido');
