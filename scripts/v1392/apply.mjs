@@ -34,6 +34,19 @@ server = server.replaceAll('v=13.8.8', `v=${VERSION}`);
 server = server.replaceAll('static-shell-13.8.8', `static-shell-${VERSION}`);
 write(serverPath, server);
 
+if (fs.existsSync('client/public/manifest.json')) {
+  let manifest = read('client/public/manifest.json');
+  manifest = manifest.replaceAll('13.9.1', VERSION).replaceAll('v=1391', 'v=1392');
+  write('client/public/manifest.json', manifest);
+}
+
+if (fs.existsSync('android-wrapper/app/build.gradle')) {
+  let android = read('android-wrapper/app/build.gradle');
+  android = android.replace(/versionCode\s+139100\b/, 'versionCode 139200');
+  android = android.replace(/versionName\s+'13\.9\.1'/, `versionName '${VERSION}'`);
+  write('android-wrapper/app/build.gradle', android);
+}
+
 requireMarker('server.mjs', "telegramApiUrl('sendVoice')");
 requireMarker('server.mjs', 'buildCrewCheckAtis');
 requireMarker('server.mjs', "allowed_updates: ['message', 'edited_message', 'callback_query']");
