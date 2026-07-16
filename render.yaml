@@ -26,6 +26,14 @@ services:
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         sync: false
+      - key: REDEMET_API_KEY
+        sync: false
+      - key: CREWCHECK_SCHEDULER_SECRET
+        generateValue: true
+      - key: CREWCHECK_WEATHER_MONITOR_ENABLED
+        value: true
+      - key: CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES
+        value: 10
       - key: CREWCHECK_WAKEUP_CALL_PROVIDER
         value: callmebot
       - key: CALLMEBOT_MODE
@@ -52,3 +60,4 @@ services:
         sync: false
       - key: EXTRA_FLIGHT_PROVIDER_ORDER
         value: OAG_CONNECTIONS,OAG_FLIGHT_INFO,SABRE,SERPAPI,SEARCHAPI,AMADEUS
+
