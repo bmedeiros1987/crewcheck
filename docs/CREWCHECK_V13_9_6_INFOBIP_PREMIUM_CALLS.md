@@ -6,6 +6,8 @@ O backend agora reconhece `INFOBIP_PHONE_FROM`, que já era documentada pelo pro
 
 Esta versão também corrige o roteamento do webhook para que os comandos e botões de emergência/hospitais/farmácias/plano entregues na v13.9.5 alcancem o handler correspondente, em vez de caírem na resposta genérica do Concierge.
 
+O versionamento do PWA e do Android deixa de depender da versão anterior exata. O manifesto passa para `13.9.6` e o Android recebe `versionCode 139600`, evitando gerar outro AAB com o código antigo `139100`.
+
 A integração também aceita:
 
 - `INFOBIP_BASE_URL` com ou sem `https://`;
