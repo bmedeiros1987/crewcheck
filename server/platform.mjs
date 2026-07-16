@@ -617,6 +617,21 @@ export async function consumePlatformUsage(reqOrIdentity, kind = 'wakeup_call', 
   }
 }
 
+export async function refundPlatformUsage(reqOrIdentity, kind = 'wakeup_call', amount = 1) {
+  const identity = reqOrIdentity?.headers ? mainIdentity(reqOrIdentity) : reqOrIdentity;
+  if (!identity?.email || amount <= 0) return { refunded: false };
+  if (identity.admin) return { refunded: true, admin: true };
+  const db = await pool();
+  if (!db) return { refunded: false };
+  const profile = await ensureProfile(db, identity);
+  const monthKey = currentMonthKey(profile.timezone);
+  await db.query(
+    'UPDATE crewcheck_platform_usage SET used=GREATEST(0,used-$4),updated_at=CURRENT_TIMESTAMP(3) WHERE email=$1 AND month_key=$2 AND usage_kind=$3',
+    [identity.email, monthKey, kind, Math.max(1, Math.round(amount))],
+  );
+  return { refunded: true, monthKey };
+}
+
 function encryptionKey() {
   return crypto.createHash('sha256').update(env('CREWCHECK_DATA_ENCRYPTION_KEY', authSecret())).digest();
 }
