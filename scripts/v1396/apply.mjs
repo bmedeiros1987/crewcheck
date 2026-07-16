@@ -33,13 +33,20 @@ home = home.replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, "const CREWCHECK_
 write('client/src/pages/Home.tsx', home);
 
 if (fs.existsSync('client/public/manifest.json')) {
-  const manifest = read('client/public/manifest.json').replaceAll('13.9.5', VERSION).replaceAll('v=1395', 'v=1396');
-  write('client/public/manifest.json', manifest);
+  const manifest = JSON.parse(read('client/public/manifest.json'));
+  manifest.version = VERSION;
+  manifest.start_url = String(manifest.start_url || '/').replace(/([?&]v=)[^&]+/, `$1${VERSION}`);
+  const refreshAssetVersion = (value) => String(value || '').replace(/([?&]v=)\d+/, '$11396');
+  for (const icon of manifest.icons || []) icon.src = refreshAssetVersion(icon.src);
+  for (const shortcut of manifest.shortcuts || []) {
+    for (const icon of shortcut.icons || []) icon.src = refreshAssetVersion(icon.src);
+  }
+  write('client/public/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
 }
 if (fs.existsSync('android-wrapper/app/build.gradle')) {
   let android = read('android-wrapper/app/build.gradle');
-  android = android.replace(/versionCode\s+139500\b/, 'versionCode 139600');
-  android = android.replace(/versionName\s+'13\.9\.5'/, `versionName '${VERSION}'`);
+  android = android.replace(/versionCode\s+\d+\b/, 'versionCode 139600');
+  android = android.replace(/versionName\s+'[^']+'/, `versionName '${VERSION}'`);
   write('android-wrapper/app/build.gradle', android);
 }
 
