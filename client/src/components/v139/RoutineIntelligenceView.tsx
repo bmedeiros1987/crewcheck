@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, BookOpen, Clock, Dumbbell, Moon, Save, ShieldCheck, Sparkles, Walking } from 'lucide-react';
+import { Activity, Bell, BookOpen, Clock, Dumbbell, Moon, Save, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { v139Api } from './api';
 import { V139Header } from './Shell';
@@ -21,8 +21,8 @@ const ACTIVITIES = [
   ['academia', 'Academia', Dumbbell],
   ['crossfit', 'CrossFit', Dumbbell],
   ['pilates', 'Pilates', Sparkles],
-  ['corrida', 'Corrida', Walking],
-  ['caminhada', 'Caminhada', Walking],
+  ['corrida', 'Corrida', Activity],
+  ['caminhada', 'Caminhada', Activity],
   ['estudo', 'Estudo', BookOpen],
   ['descanso', 'Descanso', ShieldCheck],
 ] as const;
