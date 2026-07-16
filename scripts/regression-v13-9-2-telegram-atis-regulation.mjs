@@ -17,8 +17,11 @@ assert.match(server, /contentType: 'audio\/ogg'/, 'Telegram deve receber o MIME 
 assert.match(server, /allowed_updates: \['message', 'edited_message', 'callback_query'\]/, 'Webhook deve receber callbacks.');
 assert.match(server, /setMyCommands/, 'Menu de comandos deve ser sincronizado com o Telegram.');
 assert.match(server, /buildCrewCheckAtis/, 'ATIS meteorológico deve existir.');
+assert.match(server, /crewCheckAtisVoiceText/, 'ATIS falado deve omitir códigos brutos difíceis de entender.');
+assert.doesNotMatch(server, /Informação \$\{informationLetter\}/, 'ATIS CrewCheck não deve inventar letra de informação oficial.');
 assert.match(server, /decodeMetarPtBr/, 'METAR deve ter leitura acessível.');
 assert.match(server, /AVIATION_WEATHER_USER_AGENT/, 'AviationWeather deve receber identificação do cliente.');
+assert.match(server, /TELEGRAM_PUBLIC_BASE_URL/, 'URL pública do webhook deve aceitar a variável documentada.');
 assert.match(server, /cc_call:confirm/, 'Ligação deve exigir confirmação explícita.');
 assert.match(platform, /export async function refundPlatformUsage/, 'Falha do provedor deve permitir estorno de franquia.');
 assert.match(emergency, /emerg\[êe\]ncia/, 'Botão visual de emergência deve alcançar a central.');
