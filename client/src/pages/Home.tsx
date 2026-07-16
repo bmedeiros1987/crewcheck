@@ -78,6 +78,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
+import '@/components/v1394/v1394.css';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
@@ -130,8 +131,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.9.3';
-const CREWCHECK_UI_CORE_NOTE = 'v13.9.3: REDEMET, pesquisa meteorológica e alertas críticos por escala';
+const DEFAULT_VERSION = '13.9.4';
+const CREWCHECK_UI_CORE_NOTE = 'v13.9.4: Telegram revinculável, rede S450/S750, endereço próximo e layout protegido';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -254,6 +255,49 @@ function getCurrentGeoPosition(): Promise<{ lat: number; lng: number; accuracy?:
     );
   });
 }
+type NearbyAddress = { address: string; shortAddress: string; city?: string; state?: string; coordinates: { latitude: number; longitude: number }; updatedAt: string };
+const LAST_ADDRESS_STORAGE_KEY = 'crewcheck_last_address';
+function coordinatePair(value = ''): { lat: number; lng: number } | null {
+  const match = String(value).match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lng = Number(match[2]);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+function loadNearbyAddress(origin = ''): NearbyAddress | null {
+  try {
+    const saved = JSON.parse(storage.get(LAST_ADDRESS_STORAGE_KEY, 'null')) as NearbyAddress | null;
+    if (!saved?.shortAddress || !saved.coordinates) return null;
+    const pair = coordinatePair(origin);
+    if (!pair) return saved;
+    const samePoint = Math.abs(pair.lat - Number(saved.coordinates.latitude)) < 0.001 && Math.abs(pair.lng - Number(saved.coordinates.longitude)) < 0.001;
+    return samePoint ? saved : null;
+  } catch {
+    return null;
+  }
+}
+async function reverseGeocodePosition(lat: number, lng: number): Promise<NearbyAddress | null> {
+  try {
+    const params = new URLSearchParams({ latitude: String(lat), longitude: String(lng) });
+    const response = await fetch(`/api/maps/reverse-geocode?${params.toString()}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (!payload?.ok || !payload?.address) return null;
+    const address: NearbyAddress = {
+      address: String(payload.address),
+      shortAddress: String(payload.shortAddress || payload.address),
+      city: String(payload.city || ''),
+      state: String(payload.state || ''),
+      coordinates: { latitude: lat, longitude: lng },
+      updatedAt: new Date().toISOString(),
+    };
+    storage.set(LAST_ADDRESS_STORAGE_KEY, JSON.stringify(address));
+    if (address.state) storage.set('crewcheck:amil-state', address.state);
+    if (address.city) storage.set('crewcheck:amil-city', address.city);
+    return address;
+  } catch {
+    return null;
+  }
+}
 function saveCarParkingPosition(position: ParkingPosition): void {
   storage.set(CAR_PARKING_STORAGE_KEY, JSON.stringify(position));
 }
@@ -282,6 +326,12 @@ function eventRouteOrigin(event: ZeroLeg): string {
   if (saved) return saved;
   if (event.hotel) return event.hotel;
   return 'Minha localização';
+}
+function eventRouteOriginLabel(event: ZeroLeg): string {
+  const origin = eventRouteOrigin(event);
+  if (storage.get('crewcheck_manual_route_origin', '')) return origin;
+  if (!coordinatePair(origin)) return origin;
+  return loadNearbyAddress(origin)?.shortAddress || 'Localização atual';
 }
 function eventRouteDestination(event: ZeroLeg): string {
   return airportRouteQuery(event.origin || event.destination);
@@ -392,11 +442,20 @@ type AmilProvider = {
   id?: string;
   name: string;
   serviceType?: string;
+  serviceCodes?: string[];
+  care?: string[];
   address?: string;
   city?: string;
+  region?: string;
   state?: string;
   phone?: string;
-  open24Hours?: boolean;
+  open24Hours?: boolean | null;
+  planCode?: 'S450' | 'S750';
+  covered?: boolean;
+  sourcePrintedAt?: string;
+  sourceUrl?: string;
+  sourcePage?: number;
+  mapsQuery?: string;
 };
 
 type PlaceCategory = 'hotel' | 'gym' | 'hospital' | 'pharmacy' | 'laundry';
@@ -408,6 +467,7 @@ const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; plural: string
   pharmacy: { label: 'Farmácia', plural: 'Farmácias', query: 'farmácia drogaria' },
   laundry: { label: 'Lavanderia', plural: 'Lavanderias', query: 'lavanderia' },
 };
+const BRAZIL_STATE_CODES = ['AC','AL','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 const MANUAL_PLACES_STORAGE_KEY = 'crewcheck:manual-places-v1';
 
@@ -468,15 +528,17 @@ async function fetchNearbyPlaces(location: string, category: PlaceCategory, quer
     return [];
   }
 }
-async function fetchAmilProviders(location: string, coordinates: { lat: number; lon: number } | null, open24Hours = false): Promise<{ providers: AmilProvider[]; configured: boolean; message?: string }> {
+async function fetchAmilProviders(options: { location?: string; coordinates?: { lat: number; lon: number } | null; planCode: 'S450' | 'S750'; state?: string; city?: string; query?: string; care: string }): Promise<{ providers: AmilProvider[]; configured: boolean; message?: string; total?: number; sourcePage?: string }> {
   try {
-    const params = new URLSearchParams({ serviceType: open24Hours ? 'pronto atendimento' : 'hospital clinica', open24Hours: String(open24Hours) });
-    if (coordinates) { params.set('latitude', String(coordinates.lat)); params.set('longitude', String(coordinates.lon)); }
-    else if (location) params.set('city', location);
+    const params = new URLSearchParams({ planCode: options.planCode, care: options.care, limit: '60' });
+    if (options.coordinates) { params.set('latitude', String(options.coordinates.lat)); params.set('longitude', String(options.coordinates.lon)); }
+    if (options.state) params.set('state', options.state);
+    if (options.city) params.set('city', options.city);
+    if (options.query) params.set('query', options.query);
     const response = await authFetch<any>(`/api/platform/health/amil/search?${params.toString()}`, { cache: 'no-store' });
-    return { providers: Array.isArray(response.providers) ? response.providers : [], configured: true, message: response.disclaimer };
+    return { providers: Array.isArray(response.providers) ? response.providers : [], configured: true, message: response.disclaimer, total: Number(response.total || response.count || 0), sourcePage: response.sourcePage };
   } catch (error) {
-    return { providers: [], configured: false, message: error instanceof Error ? error.message : 'Rede Amil aguardando configuração.' };
+    return { providers: [], configured: false, message: error instanceof Error ? error.message : 'Rede Amil indisponível agora.' };
   }
 }
 function hotelSearchLocation(event: ZeroLeg): string {
@@ -1215,8 +1277,9 @@ function RouteVisual({ event, compact = false }: { event: ZeroLeg; compact?: boo
 }
 
 
-function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: ZeroLeg; mode?: string; onRoute?: (route: RoutePreviewInfo | null) => void }) {
+function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute, onOriginLabel }: { event: ZeroLeg; mode?: string; onRoute?: (route: RoutePreviewInfo | null) => void; onOriginLabel?: (label: string) => void }) {
   const [origin, setOrigin] = useState(() => eventRouteOrigin(event));
+  const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const destination = eventRouteDestination(event);
   const mapsMode = mode.includes('transit') ? 'transit' : 'driving';
@@ -1227,12 +1290,40 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: Z
     fetchRoutePreviewInfo(origin, destination, mapsMode).then((info) => { if (alive) { setRoute(info); onRoute?.(info); } });
     return () => { alive = false; };
   }, [origin, destination, mode]);
+  useEffect(() => {
+    const pair = coordinatePair(origin);
+    if (!pair) {
+      setOriginLabel(origin);
+      onOriginLabel?.(origin);
+      return;
+    }
+    const cached = loadNearbyAddress(origin);
+    if (cached) {
+      setOriginLabel(cached.shortAddress);
+      onOriginLabel?.(cached.shortAddress);
+      return;
+    }
+    let alive = true;
+    reverseGeocodePosition(pair.lat, pair.lng).then((address) => {
+      if (!alive) return;
+      const label = address?.shortAddress || 'Localização atual';
+      setOriginLabel(label);
+      onOriginLabel?.(label);
+    });
+    return () => { alive = false; };
+  }, [origin]);
   async function refreshLocation() {
     try {
       const position = await getCurrentGeoPosition();
       const next = coordsLabel(position.lat, position.lng);
       setOrigin(next);
-      toast.success('Localização atualizada para a prévia da rota.');
+      setOriginLabel('Localizando endereço próximo…');
+      onOriginLabel?.('Localizando endereço próximo…');
+      const address = await reverseGeocodePosition(position.lat, position.lng);
+      const label = address?.shortAddress || 'Localização atual';
+      setOriginLabel(label);
+      onOriginLabel?.(label);
+      toast.success(address ? 'Localização atualizada com o endereço próximo.' : 'Localização atualizada para a prévia da rota.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui atualizar sua localização.');
     }
@@ -1250,7 +1341,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: Z
   return <article className="cz-google-route-card">
     <header><div><b>Rota inteligente</b><span>Prévia do mapa · {routeModeLabel} · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
     <div className="cz-route-kpis">
-      <div><small>Origem</small><strong>{origin === 'Minha localização' ? 'Minha localização' : origin}</strong></div>
+      <div><small>Origem</small><strong>{originLabel}</strong></div>
       <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
       <div><small>Distância</small><strong>{route?.distanceText || 'Abrir Maps'}</strong></div>
       <div><small>Trânsito/Maps</small><strong>{trafficText}</strong></div>
@@ -1260,7 +1351,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute }: { event: Z
       {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
     </div>
     {route?.message && <p className="cz-mini-status">{route.message}</p>}
-    <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{mode.includes('uber') && <button onClick={openUber}><Car/> Chamar Uber</button>}<button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
+    <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{mode.includes('uber') && <button onClick={openUber}><Car/> Chamar Uber</button>}<button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); setOriginLabel(manual.trim()); onOriginLabel?.(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
   </article>;
 }
 
@@ -1629,6 +1720,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   const admin = isAdmin();
   const [profileName] = useState(() => storage.get('crewcheck_profile_display_name', String(storedUser?.name || storedUser?.email || 'Tripulante CrewCheck')));
   const [profileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
+  const [menuGroup, setMenuGroup] = useState<'navigation' | 'actions'>('navigation');
   const initials = profileName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'CC';
   function openProfile() { setView('settings'); close(); }
   if (!open) return null;
@@ -1653,9 +1745,13 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
         </div>
         <button className="cz-menu-close" onClick={close} aria-label="Fechar menu"><X/></button>
       </header>
+      <nav className="cc-menu-tabs" aria-label="Seções do menu">
+        <button type="button" className={menuGroup === 'navigation' ? 'active' : ''} onClick={() => setMenuGroup('navigation')}><Menu/> Navegação</button>
+        <button type="button" className={menuGroup === 'actions' ? 'active' : ''} onClick={() => setMenuGroup('actions')}><ToggleRight/> Ações rápidas</button>
+      </nav>
       <div className="cz-menu-scroll" data-crew-menu-scroll="true">
-      <section className="cz-menu-section"><h3>Navegação</h3>{nav.map(([v, label, desc, Icon]) => <button key={v} className={view === v ? 'active' : ''} onClick={() => jump(v)}><Icon/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight/></button>)}</section>
-      <section className="cz-menu-section"><h3>Ações rápidas</h3>
+      <section className="cz-menu-section" data-menu-group="navigation" data-menu-active={menuGroup === 'navigation'}><h3>Navegação</h3>{nav.map(([v, label, desc, Icon]) => <button key={v} className={view === v ? 'active' : ''} onClick={() => jump(v)}><Icon/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight/></button>)}</section>
+      <section className="cz-menu-section" data-menu-group="actions" data-menu-active={menuGroup === 'actions'}><h3>Ações rápidas</h3>
         <button onClick={() => { actions.upload(); close(); }}><Upload/><span><strong>Importar escala PDF</strong><small>AIMS/CrewRoster</small></span><ChevronRight/></button>
         <button onClick={() => { actions.pdf(); close(); }}><FileText/><span><strong>Exportar PDF</strong><small>Relatório completo</small></span><ChevronRight/></button>
         <button onClick={() => { actions.sharePdf(); close(); }}><Share2/><span><strong>Compartilhar PDF</strong><small>Anexo pelo sistema ou menu nativo</small></span><ChevronRight/></button>
@@ -2159,6 +2255,7 @@ function Departure({ event }: { event: ZeroLeg }) {
   const [margin, setMargin] = useState(() => Number(storage.get('crewcheck_departure_margin', '25')) || 25);
   const [stopAlerts, setStopAlerts] = useState(() => storage.get('crewcheck_transit_stop_alerts', '0') === '1');
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
+  const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, mapa e trânsito.</p></article></>;
   const travelMinutes = routeDurationMinutes(route);
   const presentationDate = eventClockDate(event, event.presentation);
@@ -2167,7 +2264,7 @@ function Departure({ event }: { event: ZeroLeg }) {
   const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';
   function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); }
   function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA PREVISTA</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{eventRouteOrigin(event)} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute}/></section></>;
+  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA PREVISTA</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{originLabel} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute} onOriginLabel={setOriginLabel}/></section></>;
 }
 
 function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
@@ -3607,7 +3704,13 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
   const [loading, setLoading] = useState(false);
   const [amilProviders, setAmilProviders] = useState<AmilProvider[]>([]);
   const [amilMessage, setAmilMessage] = useState('');
-  const [amilOnly24h, setAmilOnly24h] = useState(false);
+  const [amilTotal, setAmilTotal] = useState(0);
+  const [amilSourcePage, setAmilSourcePage] = useState('');
+  const [amilPlan, setAmilPlan] = useState<'S450' | 'S750'>(() => storage.get('crewcheck:amil-plan', 'S750') === 'S450' ? 'S450' : 'S750');
+  const [amilCare, setAmilCare] = useState(() => storage.get('crewcheck:amil-care', 'adult_emergency'));
+  const [amilState, setAmilState] = useState(() => storage.get('crewcheck:amil-state', ''));
+  const [amilCity, setAmilCity] = useState(() => storage.get('crewcheck:amil-city', ''));
+  const [amilQuery, setAmilQuery] = useState('');
   const [plan, setPlan] = useState(() => storage.get('crewcheck:gym-provider-plan', 'wellhub'));
   const [onlyOpen, setOnlyOpen] = useState(() => storage.get('crewcheck:gym-only-open', '1') !== '0');
   const partnerChains = configuredGymPartnerChains();
@@ -3635,7 +3738,10 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
       setCoordinates(next);
       setLocationMode('current');
       storage.set('crewcheck:places-location', '');
-      toast.success('Busca ajustada à sua localização atual.');
+      const address = await reverseGeocodePosition(position.lat, position.lng);
+      if (address?.state) setAmilState(address.state);
+      if (address?.city) setAmilCity(address.city);
+      toast.success(address ? `Busca ajustada para ${address.shortAddress}.` : 'Busca ajustada à sua localização atual.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Autorize a localização para procurar serviços próximos.');
     }
@@ -3656,9 +3762,11 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
       setSelected((current) => current && found.some((place) => place.name === current.name) ? current : found[0] || null);
       if (category === 'gym') listGymCrowding().then((payload) => setCrowding(payload.gyms || [])).catch(() => undefined);
       if (category === 'hospital') {
-        const amil = await fetchAmilProviders(location, coordinates, amilOnly24h);
+        const amil = await fetchAmilProviders({ location, coordinates, planCode: amilPlan, state: amilState, city: amilCity, query: amilQuery, care: amilCare });
         setAmilProviders(amil.providers);
         setAmilMessage(amil.message || '');
+        setAmilTotal(Number(amil.total || amil.providers.length));
+        setAmilSourcePage(amil.sourcePage || '');
       } else {
         setAmilProviders([]);
         setAmilMessage('');
@@ -3698,7 +3806,7 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     toast.success('Local removido da sua lista.');
   }
 
-  useEffect(() => { search(); }, [location, category, plan, amilOnly24h]);
+  useEffect(() => { search(); }, [location, category, plan, amilPlan, amilCare, amilState]);
 
   useEffect(() => {
     if (locationMode !== 'current' || coordinates) return;
@@ -3771,7 +3879,23 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
       : [selected.name, selected.address].filter(Boolean).join(' ')
     : '';
   const internalMapUrl = selected ? buildGoogleMapsEmbedDirectionsUrl(location, selectedDestination, 'walking') : '';
-  const amilResultsSection = category === 'hospital' ? <section className="cc-amil-results"><header><div><Hospital/><span><small>REDE CREDENCIADA</small><h2>Amil dentro do CrewCheck</h2></span></div><strong>{amilProviders.length ? `${amilProviders.length} resultado(s)` : 'Consulta protegida'}</strong></header><div className="cz-tool-actions"><button className={amilOnly24h ? 'active' : ''} onClick={() => setAmilOnly24h((current) => !current)}><Hospital/> {amilOnly24h ? 'Somente PA 24h' : 'Hospitais e clínicas'}</button><button onClick={search}><ShieldCheck/> Consultar rede Amil</button></div>{amilProviders.length ? <div>{amilProviders.map((provider, index) => <article key={provider.id || `${provider.name}-${index}`}><div><strong>{provider.name}</strong><small>{[provider.serviceType, provider.address, provider.city, provider.state].filter(Boolean).join(' · ')}</small></div><span>{provider.open24Hours ? '24h' : 'Horário a confirmar'}</span>{provider.phone && <a href={`tel:${provider.phone}`}><Phone/> Ligar</a>}</article>)}</div> : <p>{amilMessage || 'A pesquisa geral de hospitais continua disponível. A rede Amil será exibida quando as credenciais oficiais forem configuradas no Render.'}</p>}<footer>Confirme cobertura, elegibilidade e atendimento com a operadora antes de sair.</footer></section> : null;
+  const amilResultsSection = category === 'hospital' ? <section className="cc-amil-results cc-amil-network-v1394">
+    <header><div><Hospital/><span><small>REDE PUBLICADA · S450 / S750</small><h2>Atendimento coberto pelo plano</h2></span></div><strong>{amilTotal ? `${amilProviders.length} de ${amilTotal}` : 'Escolha a região'}</strong></header>
+    <div className="cc-amil-filter-grid">
+      <label><span>Plano</span><select value={amilPlan} onChange={(event) => { const value = event.target.value as 'S450' | 'S750'; setAmilPlan(value); storage.set('crewcheck:amil-plan', value); }}><option value="S450">Amil S450</option><option value="S750">Amil S750</option></select></label>
+      <label><span>Tipo de atendimento</span><select value={amilCare} onChange={(event) => { setAmilCare(event.target.value); storage.set('crewcheck:amil-care', event.target.value); }}><option value="adult_emergency">Pronto atendimento adulto</option><option value="adult_hospital">Hospital adulto</option><option value="clinic">Clínicas e diagnóstico</option><option value="obstetric">Obstetrícia</option><option value="pediatric">Pediatria</option><option value="all">Toda a rede coberta</option></select></label>
+      <label><span>UF</span><select value={amilState} onChange={(event) => { setAmilState(event.target.value); storage.set('crewcheck:amil-state', event.target.value); }}><option value="">Selecione</option>{BRAZIL_STATE_CODES.map((state) => <option value={state} key={state}>{state}</option>)}</select></label>
+      <label><span>Cidade</span><input value={amilCity} onChange={(event) => setAmilCity(event.target.value)} onBlur={() => storage.set('crewcheck:amil-city', amilCity)} placeholder="Ex.: Brasília"/></label>
+      <label className="cc-amil-query"><span>Nome do hospital ou clínica</span><input value={amilQuery} onChange={(event) => setAmilQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && search()} placeholder="Opcional"/></label>
+      <button className="primary" onClick={search} disabled={loading}><Search/> {loading ? 'Consultando…' : 'Pesquisar cobertura'}</button>
+    </div>
+    {amilProviders.length ? <div className="cc-amil-provider-list">{amilProviders.map((provider, index) => <article key={provider.id || `${provider.name}-${index}`}>
+      <div><strong>{provider.name}</strong><small>{[provider.serviceType, provider.city, provider.state, provider.region].filter(Boolean).join(' · ')}</small><em>{provider.sourcePrintedAt ? `PDF impresso em ${new Intl.DateTimeFormat('pt-BR').format(new Date(`${provider.sourcePrintedAt}T12:00:00`))} · página ${provider.sourcePage || '—'}` : 'Fonte publicada · data no documento'}</em></div>
+      <span><ShieldCheck/> Coberto no {provider.planCode || amilPlan}</span>
+      <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(provider.mapsQuery || [provider.name, provider.city, provider.state].filter(Boolean).join(' '))}`} target="_blank" rel="noreferrer"><MapIcon/> Localizar</a>
+    </article>)}</div> : <p>{amilMessage || 'Escolha a UF e o tipo de atendimento para ver somente prestadores publicados para o plano selecionado.'}</p>}
+    <footer><AlertTriangle/> Snapshot informativo extraído dos PDFs publicados. Confirme rede, elegibilidade, especialidade, horário e autorização nos canais oficiais da Amil antes do atendimento.{amilSourcePage && <> <a href={amilSourcePage} target="_blank" rel="noreferrer">Ver fonte dos PDFs</a>.</>}</footer>
+  </section> : null;
 
   return <><Brand back/>{amilResultsSection}
     <section className="cz-panel-head cz-panel-head-compact"><h1>Locais próximos</h1><p>Pesquise, compare e trace a rota dentro do CrewCheck. O Google Maps é opcional.</p></section>
@@ -3806,6 +3930,7 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
 }
 function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleState; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void }) {
   const [status, setStatus] = useState<any>(null);
+  const [telegramDiagnostic, setTelegramDiagnostic] = useState<any>(null);
   const [question, setQuestion] = useState('/proximo');
   const [answer, setAnswer] = useState('');
   const [busy, setBusy] = useState('');
@@ -3825,11 +3950,13 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     try {
       const identity = telegramConciergeIdentity();
       const params = new URLSearchParams(identity);
-      const [linkResponse, rosterPayload] = await Promise.all([
+      const [linkResponse, rosterPayload, diagnosticPayload] = await Promise.all([
         fetch(`/api/telegram/link/status?${params.toString()}`, { credentials: 'include', cache: 'no-store' }).then((response) => response.json()),
         fetchTelegramConciergeRoster(),
+        fetch('/api/telegram/diagnostic', { cache: 'no-store' }).then((response) => response.json()).catch(() => null),
       ]);
       setStatus({ ...(linkResponse || {}), roster: rosterPayload?.snapshot || null, hasRoster: Boolean(rosterPayload?.snapshot?.roster || linkResponse?.hasRoster), rosterMessage: rosterPayload?.message || '' });
+      setTelegramDiagnostic(diagnosticPayload);
     } catch {
       setStatus({ ok: false, linked: false, message: 'Concierge aguardando conexão.' });
     }
@@ -3892,6 +4019,21 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     }
   }
 
+  async function repairWebhook() {
+    setBusy('webhook');
+    try {
+      const response = await fetch('/api/telegram/setup-webhook', { method: 'POST', cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
+      setTelegramDiagnostic(payload?.diagnostic || payload);
+      if (payload?.ok) toast.success('Webhook e menu do Telegram revinculados.');
+      else toast.error(payload?.message || 'O Telegram não aceitou a revinculação. Confira o novo token no Render.');
+    } catch {
+      toast.error('Não consegui revincular o Telegram agora.');
+    } finally {
+      setBusy('');
+    }
+  }
+
   return <><Brand back/><section className="cz-panel-head"><h1>Concierge Telegram</h1><p>Envie sua escala em PDF ao bot, use os comandos antigos e consulte radar, portão, saída, meteorologia, hotéis, academias e rotina por texto ou voz.</p></section>
     <section className="cz-finance-grid">
       <KpiCard icon={Send} title="Telegram" value={status?.linked ? 'Vinculado' : 'Vincular'} detail={status?.message || 'Verificando bot'}/>
@@ -3908,6 +4050,18 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
         <button onClick={refresh} disabled={Boolean(busy)}><Radar/> Atualizar status</button>
       </div>
       {!hasLocalRoster && <p className="cz-mini-status">Você ainda pode enviar o PDF diretamente ao bot. Para sincronizar do app, importe uma escala primeiro.</p>}
+    </section>
+    <section className={`cz-toolbox cc-telegram-diagnostic ${telegramDiagnostic?.ok ? 'ok' : 'warning'}`}>
+      <header><ShieldCheck/><span><small>DIAGNÓSTICO DO WEBHOOK</small><h2>{telegramDiagnostic?.ok ? 'Integração ligada' : 'Revinculação necessária'}</h2></span></header>
+      <p>{telegramDiagnostic?.message || 'Verificando a ligação com a API do Telegram.'}</p>
+      <div className="cc-telegram-webhook-grid">
+        <span><b>Esperado</b>{telegramDiagnostic?.expectedWebhookUrl || 'Endereço público pendente'}</span>
+        <span><b>Atual</b>{telegramDiagnostic?.webhook?.actualUrl || 'Nenhum webhook confirmado'}</span>
+        <span><b>Fila</b>{Number(telegramDiagnostic?.webhook?.pendingUpdates || 0)} atualização(ões)</span>
+        <span><b>Último erro</b>{telegramDiagnostic?.webhook?.lastErrorMessage || 'Nenhum informado'}</span>
+      </div>
+      <div className="cz-tool-actions"><button className="primary" onClick={repairWebhook} disabled={Boolean(busy)}><RotateCcw/> {busy === 'webhook' ? 'Revinculando…' : 'Revincular webhook e menu'}</button><button onClick={refresh} disabled={Boolean(busy)}><Radar/> Consultar novamente</button></div>
+      {!telegramDiagnostic?.tokenConfigured && <p className="cz-mini-status">Gere um token novo no @BotFather e salve apenas em TELEGRAM_BOT_TOKEN no Render. Nunca cole o token no site, no GitHub ou em mensagens.</p>}
     </section>
     <section className="cz-toolbox">
       <h2>Prévia dos comandos</h2>
