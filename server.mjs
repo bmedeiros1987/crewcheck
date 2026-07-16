@@ -368,6 +368,7 @@ function handleRadarHealth(req, res) {
 function mapsServerKey() {
   return envAny(['GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);
 }
+const reverseGeocodeCache = new Map();
 function formatMeters(value) {
   const n = Number(value || 0);
   if (!n) return '';
@@ -424,6 +425,55 @@ async function handleRoutePreview(req, res, url) {
     });
   } catch {
     sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
+  }
+}
+async function handleReverseGeocode(req, res, url) {
+  const key = mapsServerKey();
+  const latitude = Number(url.searchParams.get('latitude'));
+  const longitude = Number(url.searchParams.get('longitude'));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    return sendJson(res, 400, { ok: false, configured: Boolean(key), message: 'Coordenadas inválidas.' });
+  }
+  if (!key) return sendJson(res, 200, { ok: false, configured: false, address: 'Localização atual', message: 'Endereço próximo aguarda a chave de mapas do servidor.' });
+  const cacheKey = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+  const cached = reverseGeocodeCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < 24 * 60 * 60_000) return sendJson(res, 200, { ...cached, cache: 'fresh' });
+  try {
+    const endpoint = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    endpoint.searchParams.set('latlng', `${latitude},${longitude}`);
+    endpoint.searchParams.set('language', 'pt-BR');
+    endpoint.searchParams.set('key', key);
+    const response = await fetch(endpoint, { headers: { accept: 'application/json' } });
+    const payload = await response.json().catch(() => null);
+    const results = Array.isArray(payload?.results) ? payload.results : [];
+    const result = results.find((item) => item.types?.some((type) => ['street_address', 'premise', 'subpremise', 'route'].includes(type))) || results[0];
+    if (!response.ok || !result?.formatted_address) return sendJson(res, 200, { ok: false, configured: true, address: 'Localização atual', message: 'Não encontrei um endereço próximo agora.' });
+    const component = (type, short = false) => {
+      const item = result.address_components?.find((entry) => entry.types?.includes(type));
+      return String(short ? item?.short_name || '' : item?.long_name || '');
+    };
+    const route = component('route');
+    const number = component('street_number');
+    const neighborhood = component('sublocality_level_1') || component('sublocality');
+    const city = component('locality') || component('administrative_area_level_2');
+    const state = component('administrative_area_level_1', true);
+    const resultPayload = {
+      ok: true,
+      configured: true,
+      address: result.formatted_address,
+      shortAddress: [route && [route, number].filter(Boolean).join(', '), neighborhood, city && state ? `${city}/${state}` : city || state].filter(Boolean).join(' · ') || result.formatted_address,
+      city,
+      state,
+      postalCode: component('postal_code'),
+      placeId: result.place_id || '',
+      coordinates: { latitude, longitude },
+      source: 'Google Maps',
+      cachedAt: Date.now(),
+    };
+    reverseGeocodeCache.set(cacheKey, resultPayload);
+    return sendJson(res, 200, { ...resultPayload, cache: 'live' });
+  } catch {
+    return sendJson(res, 200, { ok: false, configured: true, address: 'Localização atual', message: 'Não encontrei um endereço próximo agora.' });
   }
 }
 function coordinateDistanceMeters(a, b) {
@@ -1654,6 +1704,11 @@ function publicUrl() {
   return String(envAny(['TELEGRAM_PUBLIC_BASE_URL', 'CREWCHECK_PUBLIC_URL', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL']) || '').replace(/\/$/, '');
 }
 
+function telegramWebhookUrl() {
+  const base = publicUrl();
+  return base ? `${base}/api/telegram/webhook` : '';
+}
+
 function telegramApiUrl(method) {
   const token = telegramToken();
   return token ? `https://api.telegram.org/bot${token}/${method}` : '';
@@ -2803,8 +2858,60 @@ function handleTelegramSttHealth(req, res) {
 }
 
 function handleTelegramHealth(req, res) {
-  const webhookUrl = publicUrl() ? `${publicUrl()}/api/telegram/webhook` : '';
+  const webhookUrl = telegramWebhookUrl();
   return sendJson(res, 200, { ok: telegramConfigured(), configured: telegramConfigured(), webhookConfigured: Boolean(webhookUrl), defaultChatConfigured: Boolean(telegramDefaultChatId()), botUsername: telegramBotUsername(), linkSupported: Boolean(telegramBotUsername()), pdfImport: true, rosterSync: true, persistentStore: Boolean(envAny(['DATABASE_URL'])), locationSupported: true, voiceSupported: crewcheckSttConfigured() || elevenLabsSttConfigured(), nativeVoiceNotes: true, atisSupported: true, aviationWeatherCache: true, commandsRestored: true, ttsProvider: 'elevenlabs', ttsConfigured: elevenLabsTtsConfigured(), message: telegramConfigured() ? 'Concierge completo configurado.' : 'Concierge aguardando configuração.' });
+}
+
+async function telegramWebhookDiagnostic() {
+  const expectedWebhookUrl = telegramWebhookUrl();
+  const result = {
+    ok: false,
+    tokenConfigured: telegramConfigured(),
+    publicUrlConfigured: Boolean(publicUrl()),
+    secretConfigured: Boolean(envAny(['TELEGRAM_WEBHOOK_SECRET'])),
+    expectedWebhookUrl,
+    botUsername: telegramBotUsername(),
+    webhook: null,
+    message: '',
+  };
+  if (!telegramConfigured() || !expectedWebhookUrl) {
+    result.message = !telegramConfigured() ? 'Configure um novo TELEGRAM_BOT_TOKEN no Render.' : 'Configure TELEGRAM_PUBLIC_BASE_URL ou CREWCHECK_PUBLIC_URL.';
+    return result;
+  }
+  try {
+    const [webhookResponse, botResponse] = await Promise.all([
+      fetch(telegramApiUrl('getWebhookInfo'), { headers: { accept: 'application/json' } }),
+      fetch(telegramApiUrl('getMe'), { headers: { accept: 'application/json' } }),
+    ]);
+    const webhookPayload = await webhookResponse.json().catch(() => ({}));
+    const botPayload = await botResponse.json().catch(() => ({}));
+    const info = webhookPayload?.result || {};
+    const actualUrl = String(info.url || '');
+    const matchesExpected = actualUrl === expectedWebhookUrl;
+    result.botUsername = String(botPayload?.result?.username || result.botUsername || '');
+    result.webhook = {
+      actualUrl,
+      matchesExpected,
+      pendingUpdates: Number(info.pending_update_count || 0),
+      maxConnections: Number(info.max_connections || 0),
+      ipAddress: String(info.ip_address || ''),
+      lastErrorAt: info.last_error_date ? new Date(Number(info.last_error_date) * 1000).toISOString() : '',
+      lastErrorMessage: safeText(info.last_error_message).slice(0, 240),
+      allowedUpdates: Array.isArray(info.allowed_updates) ? info.allowed_updates : [],
+      secretTokenEnabled: Boolean(info.has_custom_certificate === false && envAny(['TELEGRAM_WEBHOOK_SECRET'])),
+    };
+    result.ok = Boolean(webhookResponse.ok && webhookPayload?.ok !== false && botResponse.ok && botPayload?.ok !== false && matchesExpected);
+    result.message = result.ok ? 'Telegram ligado ao webhook correto.' : !matchesExpected ? 'O Telegram aponta para um endereço incorreto; execute a revinculação.' : safeText(webhookPayload?.description || botPayload?.description || 'Telegram não confirmou o webhook agora.');
+    return result;
+  } catch {
+    result.message = 'Não consegui consultar o Telegram agora.';
+    return result;
+  }
+}
+
+async function handleTelegramDiagnostic(req, res) {
+  const diagnostic = await telegramWebhookDiagnostic();
+  return sendJson(res, diagnostic.ok ? 200 : 200, diagnostic);
 }
 
 async function handleTelegramSend(req, res) {
@@ -2826,16 +2933,17 @@ async function handleTelegramSend(req, res) {
 
 async function handleTelegramSetupWebhook(req, res) {
   const url = telegramApiUrl('setWebhook');
-  const base = publicUrl();
-  if (!url || !base) return sendJson(res, 200, { ok: false, configured: Boolean(url), message: 'Webhook aguardando configuração do endereço público.' });
+  const webhookUrl = telegramWebhookUrl();
+  if (!url || !webhookUrl) return sendJson(res, 200, { ok: false, configured: Boolean(url), expectedWebhookUrl: webhookUrl, message: 'Webhook aguardando token novo e endereço público.' });
   const secret = envAny(['TELEGRAM_WEBHOOK_SECRET']);
   try {
-    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `${base}/api/telegram/webhook`, ...(secret ? { secret_token: secret } : {}), allowed_updates: ['message', 'edited_message', 'callback_query'], drop_pending_updates: false }) });
+    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: webhookUrl, ...(secret ? { secret_token: secret } : {}), allowed_updates: ['message', 'edited_message', 'callback_query'], max_connections: 40, drop_pending_updates: false }) });
     const data = await response.json().catch(() => ({}));
     const menu = await configureTelegramBotMenu();
-    return sendJson(res, 200, { ok: Boolean(response.ok && data.ok !== false), configured: true, menu, message: response.ok ? 'Webhook e menu do bot atualizados.' : 'Webhook não atualizado agora.' });
+    const diagnostic = await telegramWebhookDiagnostic();
+    return sendJson(res, 200, { ok: Boolean(response.ok && data.ok !== false && diagnostic.ok), configured: true, expectedWebhookUrl: webhookUrl, telegramDescription: safeText(data?.description).slice(0, 180), menu, diagnostic, message: response.ok && data.ok !== false ? 'Webhook e menu do bot atualizados.' : safeText(data?.description || 'Webhook não atualizado agora.') });
   } catch {
-    return sendJson(res, 200, { ok: false, configured: true, message: 'Webhook não atualizado agora.' });
+    return sendJson(res, 200, { ok: false, configured: true, expectedWebhookUrl: webhookUrl, message: 'Webhook não atualizado agora.' });
   }
 }
 
@@ -3337,7 +3445,7 @@ function handleReliabilityHealth(req, res) {
 return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.9.0', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.9.0', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'13.9.4', expectedRoutes:['/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -3494,6 +3602,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/aviation-weather') return handleAviationWeather(req, res, url);
   if (url.pathname === '/api/parse-pdf') return handleParsePdfApi(req, res, url);
   if (url.pathname === '/api/maps/route-preview') return handleRoutePreview(req, res, url);
+  if (url.pathname === '/api/maps/reverse-geocode') return handleReverseGeocode(req, res, url);
   if (url.pathname === '/api/places/search') return handlePlacesSearch(req, res, url);
   if (url.pathname === '/api/places/fitness') return handleFitness(req, res, url);
   if (url.pathname === '/api/email/health') return handleEmailHealth(req, res);
@@ -3509,6 +3618,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/telegram/concierge/ask') return handleTelegramConciergeAsk(req, res, url);
   if (url.pathname === '/api/telegram/stt-health') return handleTelegramSttHealth(req, res, url);
   if (url.pathname === '/api/telegram/health') return handleTelegramHealth(req, res, url);
+  if (url.pathname === '/api/telegram/diagnostic') return handleTelegramDiagnostic(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
   if (url.pathname === '/api/telegram/weather-monitor/run') return handleCriticalWeatherMonitor(req, res, url);
   if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
