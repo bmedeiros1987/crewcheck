@@ -24,7 +24,7 @@ const androidGradle = read('android-wrapper/app/build.gradle');
 const androidActivity = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const migration = read('migrations/20260716_006_v1391_launch_stabilization.sql');
 
-assert(home.includes("const DEFAULT_VERSION = '13.9.1'"), 'Home versionada 13.9.1');
+assert(/const DEFAULT_VERSION = '13\\.9\\.[12]'/.test(home), 'Home versionada na linha 13.9.x');
 assert(main.includes('launch-v13-9-1.css'), 'camada visual de lançamento carregada');
 assert(home.includes('EmergencyCenterView'), 'Central de Emergência ligada ao menu');
 assert(home.includes('PresentationStayManagerView'), 'hotel, quarto e apresentação ligados');
@@ -51,7 +51,7 @@ assert(pbs.includes("label: 'Novembro', generalStart: 10, generalEnd: 14"), 'exc
 assert(manifest.includes('"version": "13.9.1"'), 'manifest PWA 13.9.1');
 assert(manifest.includes('crewcheck-icon-v2.png?v=1391'), 'logo atual no PWA');
 assert(androidManifest.includes('@drawable/crewcheck_icon_site'), 'logo atual no launcher Android');
-assert(androidGradle.includes("versionName '13.9.1'"), 'Android versionName 13.9.1');
+assert(/versionName '13\\.9\\.[12]'/.test(androidGradle), 'Android versionName na linha 13.9.x');
 assert(androidGradle.includes('generateCrewCheckBrandAssets'), 'logo do site copiada para Android');
 assert(/acknowledge\|acknowledgement\|accept schedule/.test(androidActivity), 'iFlight bloqueia ações de ciência/aceite');
 assert(migration.includes('crewcheck_platform_crewlock_blobs'), 'migration CrewLock fallback');
