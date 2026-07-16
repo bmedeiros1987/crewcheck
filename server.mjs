@@ -657,16 +657,22 @@ function decodeMetarPtBr(rawValue = '', station = '') {
 function buildCrewCheckAtis(station, metar, taf) {
   const decoded = decodeMetarPtBr(metar?.raw, station);
   const issue = String(metar?.raw || '').match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
-  const informationLetter = issue ? String.fromCharCode(65 + ((Number(issue[2]) * 60 + Number(issue[3])) / 30 | 0) % 26) : 'A';
   const lines = [
     `ATIS meteorológico CrewCheck · ${station}`,
-    `Informação ${informationLetter}.`,
+    issue ? `Boletim baseado na observação das ${issue[2]}:${issue[3]} Zulu.` : 'Horário do reporte não identificado.',
     ...decoded.map((line) => `${line}.`),
     metar?.raw ? `METAR bruto: ${metar.raw}` : 'METAR indisponível.',
     taf?.raw ? `TAF vigente: ${taf.raw}` : 'TAF indisponível.',
     'Não inclui pista, aproximação ou instruções ATC. Confirme o ATIS e as fontes oficiais antes da operação.',
   ];
   return lines.join('\n');
+}
+function crewCheckAtisVoiceText(value = '') {
+  return String(value || '').split('\n')
+    .filter((line) => !/^\s*(METAR bruto|TAF vigente):/i.test(line))
+    .join('\n')
+    .replace(/·/g, ',')
+    .trim();
 }
 async function handleAviationWeather(req, res, url) {
   const airport = String(url.searchParams.get('airport') || url.searchParams.get('station') || url.searchParams.get('id') || '').trim().toUpperCase();
@@ -1495,7 +1501,7 @@ function telegramDefaultChatId() {
 }
 
 function publicUrl() {
-  return String(envAny(['CREWCHECK_PUBLIC_URL', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL']) || '').replace(/\/$/, '');
+  return String(envAny(['TELEGRAM_PUBLIC_BASE_URL', 'CREWCHECK_PUBLIC_URL', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL']) || '').replace(/\/$/, '');
 }
 
 function telegramApiUrl(method) {
@@ -2749,7 +2755,7 @@ async function handleTelegramWebhook(req, res) {
       await sendTelegramChatAction(chatId, 'typing');
       const reply = await buildTelegramConciergeReply(normalizedText, profile, snapshot);
       await sendTelegramMessage(chatId, reply, { reply_markup: conciergeKeyboard });
-      if (/^\/atis(?:@\S+)?\b/i.test(normalizedText)) await sendHumanTelegramVoiceReply(chatId, reply);
+      if (/^\/atis(?:@\S+)?\b/i.test(normalizedText)) await sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply));
     }
   } else if (chatId && (message?.voice || message?.audio || message?.document?.mime_type?.startsWith?.('audio/'))) await handleTelegramVoiceMessage(message);
   return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
