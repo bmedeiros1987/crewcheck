@@ -253,9 +253,12 @@ function filterDaysByPublishedRange(days: RosterDay[], roster: CrewRoster, fallb
 
   const start = range.start.getTime();
   const end = range.end.getTime();
+  const forwardContinuationLimit = end + 45 * 24 * 60 * 60_000;
   return days.filter((day) => {
     const time = dayDateTime(day, fallbackMonth, fallbackYear);
-    return time >= start && time <= end;
+    // Remove resíduos do mês anterior, mas preserva a programação já
+    // publicada do mês seguinte para que ela apareça no seletor mensal.
+    return (time >= start && time <= end) || (time > end && time <= forwardContinuationLimit);
   });
 }
 
@@ -415,14 +418,19 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
     }
 
     const type = String(day.type || day.pairingCode || '').toUpperCase();
+    const continuity = day as RosterDay & { continuityInferred?: boolean; continuityStart?: string; continuityEnd?: string };
+    const isContinuityStay = Boolean(continuity.continuityInferred) || /(?:PERNOITE|DESCANSO_BASE)_CONTINUIDADE/.test(type);
     const kind: CanonicalRosterEventKind = ['DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'VC'].includes(type)
       ? 'rest'
-      : (day.hotel || /PERNOITE|LAYOVER|ESTADIA|HOTEL/.test(type) ? 'stay' : 'duty');
+      : (isContinuityStay || day.hotel || /PERNOITE|LAYOVER|ESTADIA|HOTEL/.test(type) ? 'stay' : 'duty');
     const startTime = normalizeTime(day.dutyReport) || '00:00';
     const endTime = normalizeTime(day.dutyDebrief) || '23:59';
-    const start = dateAt(day, startTime, 0);
-    const end = dateAt(day, endTime, 23);
-    if ((minutes(endTime) ?? 0) < (minutes(startTime) ?? 0)) end.setDate(end.getDate() + 1);
+    const continuityStart = continuity.continuityStart ? new Date(continuity.continuityStart) : null;
+    const continuityEnd = continuity.continuityEnd ? new Date(continuity.continuityEnd) : null;
+    const hasExactContinuity = Boolean(continuityStart && continuityEnd && Number.isFinite(continuityStart.getTime()) && Number.isFinite(continuityEnd.getTime()) && continuityEnd >= continuityStart);
+    const start = hasExactContinuity ? continuityStart! : dateAt(day, startTime, 0);
+    const end = hasExactContinuity ? continuityEnd! : dateAt(day, endTime, 23);
+    if (!hasExactContinuity && (minutes(endTime) ?? 0) < (minutes(startTime) ?? 0)) end.setDate(end.getDate() + 1);
 
     events.push({
       id: `${day.date}|${kind}|${day.pairingCode || day.type || 'event'}`,
