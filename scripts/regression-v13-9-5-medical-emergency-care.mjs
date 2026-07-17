@@ -10,7 +10,7 @@ const migration = read('migrations/20260716_007_v1395_medical_emergency_care.sql
 const render = read('render.yaml');
 const metadata = JSON.parse(read('package.json'));
 
-assert.match(metadata.version, /^13\.9\.\d+$/);
+assert.match(metadata.version, /^(?:13\.9\.\d+|14\.0\.0)$/);
 assert.match(emergency, /ensureEmergencySchema/);
 assert.match(emergency, /CREATE TABLE IF NOT EXISTS crewcheck_platform_emergency_profiles/);
 assert.match(emergency, /CREATE TABLE IF NOT EXISTS crewcheck_platform_emergency_sessions/);
@@ -41,4 +41,4 @@ for (const [path, source] of [['emergency.mjs', emergency], ['EmergencyCenterVie
   assert.doesNotMatch(source, secretPattern, `Telegram token must not be committed in ${path}`);
 }
 
-console.log('CrewCheck v13.9.5 medical profile, coordinated emergency and open care regression OK.');
+console.log('CrewCheck medical profile, coordinated emergency and open care regression OK.');
