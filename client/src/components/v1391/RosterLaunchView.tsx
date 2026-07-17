@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import {
   Banknote,
   BedDouble,
@@ -89,6 +90,15 @@ function dateOf(event: RosterEvent) {
 function isoOf(event: RosterEvent) {
   const value = dateOf(event);
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
+function monthOf(event: RosterEvent) {
+  return isoOf(event).slice(0, 7);
+}
+
+function monthLabel(value: string) {
+  const [year, month] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
 }
 
 function formatDate(date: Date) {
@@ -189,9 +199,16 @@ function readableHours(value: number) {
 }
 
 export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
-  const ordered = [...events]
+  const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
-    .sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id)));
+    .sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id))), [events]);
+  const months = useMemo(() => Array.from(new Set(allOrdered.map(monthOf))).sort(), [allOrdered]);
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const [selectedMonth, setSelectedMonth] = useState(() => months.includes(currentMonth) ? currentMonth : months[0] || currentMonth);
+  useEffect(() => {
+    if (months.length && !months.includes(selectedMonth)) setSelectedMonth(months.includes(currentMonth) ? currentMonth : months[0]);
+  }, [months.join('|'), selectedMonth, currentMonth]);
+  const ordered = useMemo(() => allOrdered.filter((event) => monthOf(event) === selectedMonth), [allOrdered, selectedMonth]);
   const groups = Array.from(ordered.reduce((map, event) => {
     const iso = isoOf(event);
     const group = map.get(iso) || { iso, date: dateOf(event), events: [] as RosterEvent[] };
@@ -201,19 +218,36 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   }, new Map<string, { iso: string; date: Date; events: RosterEvent[] }>()).values());
   const salaryRows = finance?.salary?.rows || [];
   const perDiemRows = finance?.perdiem?.rows || [];
-  const salaryByEvent = new Map(salaryRows.map((row) => [row.id, row]));
+  const selectedEventIds = new Set(ordered.map((event) => event.id));
+  const selectedSalaryRows = salaryRows.filter((row) => selectedEventIds.has(row.id));
+  const selectedPerDiemRows = perDiemRows.filter((row) => String(row.iso || '').startsWith(`${selectedMonth}-`));
+  const salaryByEvent = new Map(selectedSalaryRows.map((row) => [row.id, row]));
   const firstEventByDay = new Map(groups.map((group) => [group.iso, group.events[0]?.id]));
-  const perDiemForEvent = (event: RosterEvent) => perDiemRows.filter((row) => row.eventId === event.id || (!row.eventId && row.iso === isoOf(event) && firstEventByDay.get(row.iso) === event.id));
+  const perDiemForEvent = (event: RosterEvent) => selectedPerDiemRows.filter((row) => row.eventId === event.id || (!row.eventId && row.iso === isoOf(event) && firstEventByDay.get(row.iso) === event.id));
   const uniqueDays = groups.length;
   const flights = ordered.filter((event) => ['operating', 'extra'].includes(workMode(event))).length;
   const stays = ordered.filter((event) => workMode(event) === 'stay').length;
-  const production = Number(finance?.salary?.production || 0);
-  const totalKm = Number(finance?.salary?.kmTotal || 0);
-  const perDiemTotal = Number(finance?.perdiem?.monthly || 0);
-  const pendingCurrencies = finance?.perdiem?.pendingCurrencies || [];
+  const production = selectedSalaryRows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const totalKm = selectedSalaryRows.reduce((sum, row) => sum + Number(row.km || 0), 0);
+  const perDiemTotal = selectedPerDiemRows.reduce((sum, row) => sum + Number(row.convertedBRL || 0), 0);
+  const pendingCurrencies = Array.from(new Set(selectedPerDiemRows.filter((row) => row.convertedBRL === null).map((row) => row.currency)));
+  const dutyHours = ordered.filter((event) => !['stay', 'rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
+  const todayIso = isoOf({ id: 'today', date: new Date() });
+
+  function goToday() {
+    const month = todayIso.slice(0, 7);
+    if (months.includes(month) && selectedMonth !== month) setSelectedMonth(month);
+    window.setTimeout(() => document.querySelector(`[data-roster-iso="${todayIso}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
 
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
+
+    <section className="cc-roster-period-v1399" aria-label="Período da escala">
+      <div><small>PERÍODO EXIBIDO</small><strong>{monthLabel(selectedMonth)}</strong><span>Totais financeiros e horas isolados por mês.</span></div>
+      <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
+      <button type="button" onClick={goToday}><Clock/> Hoje</button>
+    </section>
 
     <section className="cc-roster-hero-v1397">
       <div className="cc-roster-hero-copy-v1397">
@@ -224,12 +258,13 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
           <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
           <span><Plane/><b>{flights}</b> voos</span>
           <span><Hotel/><b>{stays}</b> pernoites</span>
+          <span><Clock/><b>{readableHours(dutyHours)}</b> em programação</span>
         </div>
       </div>
       <div className="cc-roster-money-overview-v1397">
         <button type="button" onClick={() => setView('perdiem')}>
           <span><Utensils/> Diárias previstas</span>
-          <strong>{pendingCurrencies.length ? finance?.perdiem?.currencySummary || money(perDiemTotal) : money(perDiemTotal)}</strong>
+          <strong>{money(perDiemTotal)}</strong>
           <small>{pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis'}</small>
         </button>
         <button type="button" onClick={() => setView('salary')}>
@@ -254,7 +289,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
         const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
         const groupProduction = groupEarnings.reduce((sum, row) => sum + Number(row.total || 0), 0);
         const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
-        return <section className="cc-roster-day-v1397" key={group.iso}>
+        return <section className="cc-roster-day-v1397" key={group.iso} data-roster-iso={group.iso}>
           <header className="cc-roster-day-header-v1397">
             <time dateTime={group.iso}><b>{String(group.date.getDate()).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(group.date)}</span></time>
             <div><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(group.date)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
@@ -270,7 +305,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
               const meta = modeMeta[mode];
               const hours = duration(event);
               const ground = Number(event.canonical?.groundBeforeMinutes || 0);
-              const routine = Array.isArray(event.routine) ? event.routine.filter(Boolean).slice(0, 3) : [];
+              const routine = Array.isArray(event.routine) ? event.routine.filter((item) => item && !/academia|restaurante|mercado|farmácia|farmacia|lavanderia/i.test(item)).slice(0, 3) : [];
               const atBase = /DESCANSO_BASE/.test(eventCode(event));
               const eventPerDiems = perDiemForEvent(event);
               const earning = salaryByEvent.get(event.id);

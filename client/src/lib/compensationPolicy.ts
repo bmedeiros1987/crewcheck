@@ -11,6 +11,7 @@ export type AllowanceActivity = {
   end: Date;
   kind: 'flight' | 'reserve' | 'standby' | 'training' | 'stay_external' | 'stay_base' | 'other';
   originAtContractualBase?: boolean;
+  destinationAtContractualBase?: boolean;
   activated?: boolean;
   breakfastIncluded?: boolean;
   enginesOff?: Date | null;
@@ -59,11 +60,17 @@ export function classifyAllowanceWindows(activity: AllowanceActivity): Allowance
 
   const allowed: AllowanceSlot[] = [];
   if (activity.kind === 'stay_external') {
-    allowed.push('lunch', 'dinner');
+    // No pernoite, ceia depende da próxima apresentação estar dentro da
+    // janela de 00:00–01:00; a simples permanência no hotel não a cria.
+    return [
+      ...mealWindowOccurrences(start, end, 'lunch'),
+      ...mealWindowOccurrences(start, end, 'dinner'),
+      ...mealWindowOccurrences(end, end, 'supper'),
+    ];
   } else if (activity.kind === 'reserve') {
     allowed.push('breakfast', 'lunch', 'dinner', 'supper');
   } else if (activity.kind === 'flight') {
-    if (activity.originAtContractualBase && !activity.breakfastIncluded) allowed.push('breakfast');
+    if ((activity.originAtContractualBase || activity.destinationAtContractualBase) && !activity.breakfastIncluded) allowed.push('breakfast');
     allowed.push('lunch', 'dinner', 'supper');
   } else if (activity.kind === 'training' || activity.kind === 'other') {
     allowed.push('lunch', 'dinner', 'supper');

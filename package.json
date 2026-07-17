@@ -1,9 +1,9 @@
 {
-  "name": "crewcheck-v13-9-8-act-compensation-roster-precision",
-  "version": "13.9.8",
+  "name": "crewcheck-v13-9-9-monthly-roster-base-allowances-premium-admin",
+  "version": "13.9.9",
   "type": "module",
   "private": true,
-  "description": "CrewCheck v13.9.8 - ACT compensation, statement cycle, roster continuity and iPad menu precision",
+  "description": "CrewCheck v13.9.9 - monthly roster, contractual-base allowances, premium responsive UI and Admin health",
   "scripts": {
     "prepare:v139": "node scripts/v139/apply.mjs",
     "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
@@ -115,7 +115,8 @@
     "regression:v13.9.5:medical-emergency": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-5-medical-emergency-care.mjs",
     "regression:v13.9.6:infobip-calls": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-6-infobip-premium-calls.mjs",
     "regression:v13.9.7:premium-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-7-premium-roster-finance.mjs",
-    "regression:v13.9.8:act-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs"
+    "regression:v13.9.8:act-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs",
+    "regression:v13.9.9:monthly-premium": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-9-month-base-menu-admin-infobip.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

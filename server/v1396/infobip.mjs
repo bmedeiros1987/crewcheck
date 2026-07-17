@@ -49,6 +49,23 @@ export function normalizeInfobipEndpoint(value = '') {
   return candidate;
 }
 
+export function normalizeInfobipVoice(value = '') {
+  const candidate = String(value || '').trim();
+  if (!candidate) return null;
+  if (candidate.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const name = String(parsed?.name || '').trim();
+      const gender = String(parsed?.gender || '').trim();
+      if (!name) return null;
+      return gender ? { name, gender } : { name };
+    } catch {
+      return { name: candidate };
+    }
+  }
+  return { name: candidate };
+}
+
 export function infobipConfiguration(environment = process.env) {
   const apiKeyEntry = firstEnvironmentValue(environment, INFOBIP_API_KEY_ALIASES);
   const baseUrlEntry = firstEnvironmentValue(environment, INFOBIP_BASE_URL_ALIASES);
@@ -69,7 +86,7 @@ export function infobipConfiguration(environment = process.env) {
     baseUrl,
     from,
     language: firstEnvironmentValue(environment, ['INFOBIP_VOICE_LANGUAGE', 'INFOBIP_LANGUAGE']).value || 'pt-BR',
-    voice: firstEnvironmentValue(environment, ['INFOBIP_VOICE_NAME', 'INFOBIP_TTS_VOICE']).value,
+    voice: normalizeInfobipVoice(firstEnvironmentValue(environment, ['INFOBIP_VOICE_NAME', 'INFOBIP_TTS_VOICE']).value),
     sources: {
       apiKey: apiKeyEntry.source,
       baseUrl: baseUrlEntry.source,
