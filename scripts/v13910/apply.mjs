@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 const VERSION = '13.9.10';
-const VERSION_CODE = '1391000';
+const VERSION_CODE = '139910';
 const CACHE_VERSION = '13910';
 const NAME = 'crewcheck-v13-9-10-premium-brand-reports';
 const read = (path) => fs.readFileSync(path, 'utf8');
