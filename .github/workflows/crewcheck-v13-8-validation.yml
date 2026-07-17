@@ -1,4 +1,4 @@
-name: CrewCheck v13.9.10 validation
+name: CrewCheck v14 validation
 
 on:
   pull_request:
@@ -6,21 +6,13 @@ on:
   push:
     branches:
       - main
-      - agent/v13-9-3-redemet-critical-weather
-      - agent/v13-9-4-telegram-layout-amil-network
-      - agent/v13-9-5-medical-emergency-care
-      - agent/v13-9-6-infobip-premium-calls
-      - agent/v13-9-7-premium-roster-finance
-      - agent/v13-9-8-act-compensation-roster-precision
-      - agent/v13-9-9-monthly-premium-admin
-      - agent/v13-9-10-premium-brand-reports
-      - agent/v13-9-10-icon-resolution-hotfix
+      - agent/v14-premium-system-audit
 
 permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-13-9-10-${{ github.ref }}
+  group: crewcheck-v14-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -78,7 +70,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Apply v13.9.10 source safeguards
+      - name: Apply CrewCheck v14 source safeguards
         run: node scripts/v139/apply.mjs
       - name: Prepare protected upload keystore
         shell: bash
@@ -94,10 +86,7 @@ jobs:
             exit 1
           fi
           encoded="${KEYSTORE_SOURCE#base64:}"
-          if ! printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"; then
-            echo "::error::O keystore configurado não está em Base64 válido."
-            exit 1
-          fi
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
           chmod 600 "$CREWCHECK_STORE_FILE"
           keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$CREWCHECK_STORE_PASSWORD" -alias "$CREWCHECK_KEY_ALIAS" >/dev/null
       - name: Compile APK and signed AAB
@@ -115,52 +104,26 @@ jobs:
           set -e
           if [[ "$verify_status" -ne 0 && "$verify_status" -ne 4 ]]; then
             cat "$RUNNER_TEMP/jarsigner-verification.txt"
-            echo "::error::A assinatura do AAB é inválida ou o certificado não está válido."
             exit "$verify_status"
           fi
           grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           unzip -t "$source_aab" >/dev/null
-          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.9.10-production.aab"
-          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-13.9.10-production.aab > CrewCheck-13.9.10-production.aab.sha256)
-      - name: Validate and package official 512px brand icon
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.0.0-production.aab"
+          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.0.0-production.aab > CrewCheck-14.0.0-production.aab.sha256)
+      - name: Package official brand assets
         shell: bash
         run: |
-          cat > "$RUNNER_TEMP/ResizeCrewCheckIcon.java" <<'JAVA'
-          import java.awt.Graphics2D;
-          import java.awt.RenderingHints;
-          import java.awt.image.BufferedImage;
-          import java.io.File;
-          import javax.imageio.ImageIO;
-          public class ResizeCrewCheckIcon {
-            public static void main(String[] args) throws Exception {
-              BufferedImage source = ImageIO.read(new File(args[0]));
-              if (source == null) throw new IllegalStateException("Ícone CrewCheck não é um PNG válido.");
-              if (source.getWidth() != 512 || source.getHeight() != 512) {
-                throw new IllegalStateException("Ícone oficial precisa ter 512x512; encontrado " + source.getWidth() + "x" + source.getHeight());
-              }
-              BufferedImage target = new BufferedImage(512, 512, BufferedImage.TYPE_INT_ARGB);
-              Graphics2D graphics = target.createGraphics();
-              graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-              graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-              graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-              graphics.drawImage(source, 0, 0, 512, 512, null);
-              graphics.dispose();
-              ImageIO.write(target, "png", new File(args[1]));
-            }
-          }
-          JAVA
-          javac "$RUNNER_TEMP/ResizeCrewCheckIcon.java"
-          java -Djava.awt.headless=true -cp "$RUNNER_TEMP" ResizeCrewCheckIcon client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
+          cp client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
           cp client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-PWA-512.png"
           cp client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-Telegram-512.png"
           file "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-13.9.10-Google-Play-and-brand
+          name: CrewCheck-14.0.0-Premium-System
           path: |
-            ${{ runner.temp }}/CrewCheck-13.9.10-production.aab
-            ${{ runner.temp }}/CrewCheck-13.9.10-production.aab.sha256
+            ${{ runner.temp }}/CrewCheck-14.0.0-production.aab
+            ${{ runner.temp }}/CrewCheck-14.0.0-production.aab.sha256
             ${{ runner.temp }}/CrewCheck-Google-Play-512.png
             ${{ runner.temp }}/CrewCheck-PWA-512.png
             ${{ runner.temp }}/CrewCheck-Telegram-512.png
