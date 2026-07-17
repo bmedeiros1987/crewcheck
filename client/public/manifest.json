@@ -2,7 +2,7 @@
   "name": "CrewCheck — Roster Intelligence",
   "short_name": "CrewCheck",
   "description": "Escala inteligente, Saída Inteligente, CrewLock, BIDS, rotina e alertas para tripulantes.",
-  "start_url": "/?source=pwa&v=13.9.8",
+  "start_url": "/?source=pwa&v=13.9.9",
   "scope": "/",
   "display": "standalone",
   "display_override": [
@@ -22,16 +22,16 @@
     "lifestyle"
   ],
   "prefer_related_applications": false,
-  "version": "13.9.8",
+  "version": "13.9.9",
   "icons": [
     {
-      "src": "/icons/crewcheck-icon-v2.png?v=1398",
+      "src": "/icons/crewcheck-icon-v2.png?v=1399",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/crewcheck-icon-v2.png?v=1398",
+      "src": "/icons/crewcheck-icon-v2.png?v=1399",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "maskable"
@@ -44,7 +44,7 @@
       "url": "/?view=roster",
       "icons": [
         {
-          "src": "/icons/crewcheck-icon-v2.png?v=1398",
+          "src": "/icons/crewcheck-icon-v2.png?v=1399",
           "sizes": "1024x1024",
           "type": "image/png"
         }
@@ -56,7 +56,7 @@
       "url": "/?view=crewlock",
       "icons": [
         {
-          "src": "/icons/crewcheck-icon-v2.png?v=1398",
+          "src": "/icons/crewcheck-icon-v2.png?v=1399",
           "sizes": "1024x1024",
           "type": "image/png"
         }
@@ -68,7 +68,7 @@
       "url": "/?view=emergency",
       "icons": [
         {
-          "src": "/icons/crewcheck-icon-v2.png?v=1398",
+          "src": "/icons/crewcheck-icon-v2.png?v=1399",
           "sizes": "1024x1024",
           "type": "image/png"
         }
@@ -80,7 +80,7 @@
       "url": "/?view=radar",
       "icons": [
         {
-          "src": "/icons/crewcheck-icon-v2.png?v=1398",
+          "src": "/icons/crewcheck-icon-v2.png?v=1399",
           "sizes": "1024x1024",
           "type": "image/png"
         }
