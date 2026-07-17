@@ -49,7 +49,6 @@ if (fs.existsSync(homePath)) {
     "{view === 'crew' && <CabinChiefAssistant bundle={bundle} onBack={() => setView('cockpit')} onOpenRoster={() => setView('roster')}/>}"
   );
 
-  // Modo automático como padrão, acompanhando o sistema em tempo real.
   home = home.replace(
     /const mode = storage\.get\('crewcheck_theme_mode',[\s\S]*?document\.documentElement\.style\.colorScheme = effective;/,
     `const mode = storage.get('crewcheck_theme_mode', 'auto');\n    const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;\n    const effective = mode === 'auto' ? (systemDark ? 'dark' : 'light') : mode === 'light' ? 'light' : 'dark';\n    document.documentElement.dataset.crewTheme = effective;\n    document.documentElement.classList.toggle('dark', effective === 'dark');\n    document.documentElement.style.colorScheme = effective;`
@@ -58,7 +57,7 @@ if (fs.existsSync(homePath)) {
     /const syncTheme = \(\) => \{[\s\S]*?document\.documentElement\.style\.colorScheme = next;\n    \};/,
     `const syncTheme = () => {\n      const selected = storage.get('crewcheck_theme_mode', 'auto');\n      const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;\n      const next = selected === 'auto' ? (systemDark ? 'dark' : 'light') : selected === 'light' ? 'light' : 'dark';\n      document.documentElement.dataset.crewTheme = next;\n      document.documentElement.classList.toggle('dark', next === 'dark');\n      document.documentElement.style.colorScheme = next;\n    };`
   );
-  if (!home.includes("crewcheck-system-theme-listener")) {
+  if (!home.includes('const crewcheckSystemTheme =')) {
     home = home.replace(
       "window.addEventListener('crewcheck:theme-change', syncTheme);",
       "window.addEventListener('crewcheck:theme-change', syncTheme);\n    const crewcheckSystemTheme = window.matchMedia?.('(prefers-color-scheme: dark)');\n    const crewcheckSystemThemeListener = () => { if (storage.get('crewcheck_theme_mode', 'auto') === 'auto') syncTheme(); };\n    crewcheckSystemTheme?.addEventListener?.('change', crewcheckSystemThemeListener);\n    document.documentElement.dataset.crewcheckSystemThemeListener = 'active';",
