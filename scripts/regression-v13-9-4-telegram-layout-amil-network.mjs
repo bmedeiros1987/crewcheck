@@ -10,7 +10,7 @@ const css = read('client/src/components/v1394/v1394.css');
 const dataset = JSON.parse(read('server/data/amil-network-s450-s750.json'));
 const metadata = JSON.parse(read('package.json'));
 
-assert.match(metadata.version, /^13\.9\.\d+$/);
+assert.match(metadata.version, /^(?:13\.9\.\d+|14\.0\.0)$/);
 assert.match(server, /\/api\/telegram\/diagnostic/);
 assert.match(server, /telegramWebhookUrl\(\)/);
 assert.match(server, /\/api\/telegram\/webhook/);
@@ -45,4 +45,4 @@ for (const [path, value] of [['server.mjs', server], ['Home.tsx', home], ['v1394
   assert.doesNotMatch(value, secretPattern, `Telegram token must not be committed in ${path}`);
 }
 
-console.log(`CrewCheck v13.9.4 regression OK: ${dataset.providers.length} covered provider records from ${dataset.sources.length} PDFs.`);
+console.log(`CrewCheck network regression OK: ${dataset.providers.length} covered provider records from ${dataset.sources.length} PDFs.`);
