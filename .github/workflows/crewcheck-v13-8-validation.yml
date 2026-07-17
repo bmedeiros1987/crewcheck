@@ -14,6 +14,7 @@ on:
       - agent/v13-9-8-act-compensation-roster-precision
       - agent/v13-9-9-monthly-premium-admin
       - agent/v13-9-10-premium-brand-reports
+      - agent/v13-9-10-icon-resolution-hotfix
 
 permissions:
   contents: read
@@ -122,7 +123,7 @@ jobs:
           unzip -t "$source_aab" >/dev/null
           cp "$source_aab" "$RUNNER_TEMP/CrewCheck-13.9.10-production.aab"
           (cd "$RUNNER_TEMP" && sha256sum CrewCheck-13.9.10-production.aab > CrewCheck-13.9.10-production.aab.sha256)
-      - name: Generate Google Play 512 icon from current site logo
+      - name: Validate and package official 512px brand icon
         shell: bash
         run: |
           cat > "$RUNNER_TEMP/ResizeCrewCheckIcon.java" <<'JAVA'
@@ -134,6 +135,10 @@ jobs:
           public class ResizeCrewCheckIcon {
             public static void main(String[] args) throws Exception {
               BufferedImage source = ImageIO.read(new File(args[0]));
+              if (source == null) throw new IllegalStateException("Ícone CrewCheck não é um PNG válido.");
+              if (source.getWidth() != 512 || source.getHeight() != 512) {
+                throw new IllegalStateException("Ícone oficial precisa ter 512x512; encontrado " + source.getWidth() + "x" + source.getHeight());
+              }
               BufferedImage target = new BufferedImage(512, 512, BufferedImage.TYPE_INT_ARGB);
               Graphics2D graphics = target.createGraphics();
               graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
@@ -147,7 +152,8 @@ jobs:
           JAVA
           javac "$RUNNER_TEMP/ResizeCrewCheckIcon.java"
           java -Djava.awt.headless=true -cp "$RUNNER_TEMP" ResizeCrewCheckIcon client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
-          cp client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-PWA-1024.png"
+          cp client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-PWA-512.png"
+          cp client/public/icons/crewcheck-icon-v2.png "$RUNNER_TEMP/CrewCheck-Telegram-512.png"
           file "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
       - uses: actions/upload-artifact@v4
         with:
@@ -156,6 +162,7 @@ jobs:
             ${{ runner.temp }}/CrewCheck-13.9.10-production.aab
             ${{ runner.temp }}/CrewCheck-13.9.10-production.aab.sha256
             ${{ runner.temp }}/CrewCheck-Google-Play-512.png
-            ${{ runner.temp }}/CrewCheck-PWA-1024.png
+            ${{ runner.temp }}/CrewCheck-PWA-512.png
+            ${{ runner.temp }}/CrewCheck-Telegram-512.png
           if-no-files-found: error
           retention-days: 14
