@@ -49,7 +49,7 @@ const parser = read('client/src/lib/pdfParser.ts');
 const canonical = read('client/src/lib/canonicalRoster.ts');
 const menuCss = read('client/src/components/v1394/v1394.css');
 if (!policy.includes('enginesOff.getTime() + 30 * 60_000')) throw new Error('v13.9.8: corte de motores +30 min ausente');
-if (!policy.includes("allowed.push('lunch', 'dinner')")) throw new Error('v13.9.8: regra de pernoite externo ausente');
+if (!policy.includes("mealWindowOccurrences(start, end, 'lunch')") || !policy.includes("mealWindowOccurrences(start, end, 'dinner')")) throw new Error('v13.9.8: regra de pernoite externo ausente');
 if (!parser.includes('transposedStationTimeRows')) throw new Error('v13.9.8: parser CrewRoster transposto ausente');
 if (!canonical.includes('physicalDayOffset')) throw new Error('v13.9.8: continuidade física na virada ausente');
 if (!menuCss.includes('v13.9.8 — iPad/tablet')) throw new Error('v13.9.8: correção do menu iPad ausente');
