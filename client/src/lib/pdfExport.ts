@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
-import { CREWCHECK_BRAND, crewCheckLogoDataUrl } from './brand';
+import { CREWCHECK_BRAND } from './brand';
 
 export type CrewCheckPdfExportResult = {
   fileName: string;
@@ -86,27 +86,42 @@ function drawTopAccent(doc: jsPDF, pageWidth: number) {
   doc.rect(segment * 2, 0, pageWidth - segment * 2, 2.4, 'F');
 }
 
-function drawMainHeader(
-  doc: jsPDF,
-  pageWidth: number,
-  logoDataUrl: string,
-  roster: CrewRoster,
-  reportTitle: string,
-) {
+/**
+ * Símbolo vetorial do CrewCheck para manter a identidade oficial também no PDF,
+ * sem depender de internet, cache do navegador ou conversão externa de imagem.
+ */
+function drawBrandIcon(doc: jsPDF, x: number, y: number, size: number) {
+  fill(doc, COLOR.magenta);
+  doc.roundedRect(x, y, size, size, size * 0.23, size * 0.23, 'F');
+
+  fill(doc, COLOR.violet);
+  doc.triangle(x, y, x + size * 0.72, y, x, y + size * 0.72, 'F');
+  fill(doc, COLOR.cyan);
+  doc.triangle(x + size, y + size, x + size * 0.38, y + size, x + size, y + size * 0.38, 'F');
+
+  stroke(doc, COLOR.white);
+  doc.setLineWidth(Math.max(0.9, size * 0.065));
+  doc.setLineCap('round');
+  doc.setLineJoin('round');
+  const points = [
+    [0.18, 0.46], [0.43, 0.49], [0.66, 0.27], [0.76, 0.23], [0.79, 0.27],
+    [0.58, 0.51], [0.61, 0.79], [0.55, 0.82], [0.43, 0.61], [0.33, 0.70],
+    [0.27, 0.79], [0.23, 0.76], [0.27, 0.65], [0.17, 0.60], [0.15, 0.56],
+    [0.18, 0.52], [0.29, 0.54], [0.16, 0.49], [0.15, 0.46], [0.18, 0.46],
+  ];
+  for (let index = 0; index < points.length - 1; index++) {
+    const from = points[index];
+    const to = points[index + 1];
+    doc.line(x + from[0] * size, y + from[1] * size, x + to[0] * size, y + to[1] * size);
+  }
+  doc.setLineWidth(0.2);
+}
+
+function drawMainHeader(doc: jsPDF, pageWidth: number, roster: CrewRoster, reportTitle: string) {
   fill(doc, COLOR.navy950);
   doc.rect(0, 0, pageWidth, 49, 'F');
   drawTopAccent(doc, pageWidth);
-
-  if (logoDataUrl) {
-    try { doc.addImage(logoDataUrl, 'PNG', 14, 9, 25, 25, undefined, 'FAST'); } catch {}
-  } else {
-    fill(doc, COLOR.magenta);
-    doc.roundedRect(14, 9, 25, 25, 6, 6, 'F');
-    text(doc, COLOR.white);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('CC', 26.5, 24.5, { align: 'center' });
-  }
+  drawBrandIcon(doc, 14, 9, 25);
 
   text(doc, COLOR.white);
   doc.setFont('helvetica', 'bold');
@@ -130,18 +145,19 @@ function drawMainHeader(
   doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageWidth - 14, 42, { align: 'right' });
 }
 
-function drawContinuationHeader(doc: jsPDF, pageWidth: number, title: string) {
+function drawContinuationHeader(doc: jsPDF, pageWidth: number, titleLabel: string) {
   fill(doc, COLOR.navy950);
   doc.rect(0, 0, pageWidth, 18, 'F');
   drawTopAccent(doc, pageWidth);
+  drawBrandIcon(doc, 14, 5, 9);
   text(doc, COLOR.white);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
-  doc.text(CREWCHECK_BRAND.name, 14, 12);
+  doc.text(CREWCHECK_BRAND.name, 26, 12);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(205, 239, 255);
-  doc.text(title, pageWidth - 14, 12, { align: 'right' });
+  doc.text(titleLabel, pageWidth - 14, 12, { align: 'right' });
 }
 
 function sectionHeading(doc: jsPDF, y: number, titleLabel: string, accent: RGB = COLOR.violet): number {
@@ -230,7 +246,7 @@ function premiumTableDefaults(headColor: RGB) {
   };
 }
 
-function addDocumentFooter(doc: jsPDF, pageWidth: number, logoDataUrl: string) {
+function addDocumentFooter(doc: jsPDF, pageWidth: number) {
   const totalPages = doc.getNumberOfPages();
   const pageHeight = doc.internal.pageSize.getHeight();
   for (let page = 1; page <= totalPages; page++) {
@@ -246,30 +262,27 @@ function addDocumentFooter(doc: jsPDF, pageWidth: number, logoDataUrl: string) {
     fill(doc, COLOR.cyan);
     doc.rect(46, pageHeight - 13.2, 16, 1.1, 'F');
 
-    if (logoDataUrl) {
-      try { doc.addImage(logoDataUrl, 'PNG', 14, pageHeight - 10.8, 5.5, 5.5, undefined, 'FAST'); } catch {}
-    }
+    drawBrandIcon(doc, 14, pageHeight - 11, 6);
     text(doc, COLOR.muted);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text(`${CREWCHECK_BRAND.name} · Relatório Premium`, logoDataUrl ? 22 : 14, pageHeight - 7);
+    doc.text(`${CREWCHECK_BRAND.name} · Relatório Premium`, 23, pageHeight - 7);
     doc.text(`Página ${page}/${totalPages}`, pageWidth - 14, pageHeight - 7, { align: 'right' });
   }
 }
 
-export async function exportReport(
+export function exportReport(
   roster: CrewRoster,
   compliance: ComplianceResult,
   gymRecommendations: GymRecommendation[],
-): Promise<CrewCheckPdfExportResult> {
-  const logoDataUrl = await crewCheckLogoDataUrl();
+): CrewCheckPdfExportResult {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
 
   const irregularities = compliance.alerts.filter((alert) => alert.severity === 'error');
   const warnings = compliance.alerts.filter((alert) => alert.severity === 'warning');
 
-  drawMainHeader(doc, pageWidth, logoDataUrl, roster, 'Relatório Premium de Conformidade da Escala');
+  drawMainHeader(doc, pageWidth, roster, 'Relatório Premium de Conformidade da Escala');
 
   let y = drawCrewCard(doc, pageWidth, 56, roster, compliance);
   const cardGap = 4;
@@ -431,7 +444,7 @@ export async function exportReport(
     doc.text('Nenhuma janela de academia foi calculada para este período.', 22, y + 13);
   }
 
-  addDocumentFooter(doc, pageWidth, logoDataUrl);
+  addDocumentFooter(doc, pageWidth);
 
   const safeName = String(roster.crewName || 'Tripulante').split(' ')[0].replace(/[^A-Za-z0-9_-]/g, '') || 'Tripulante';
   const fileName = `CrewCheck_${MONTHS[roster.month - 1]}_${roster.year}_${safeName}.pdf`;
