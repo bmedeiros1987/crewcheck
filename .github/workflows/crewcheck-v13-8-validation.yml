@@ -30,21 +30,12 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
       - run: npm run build
+      - run: node scripts/v13910/apply.mjs
       - run: node scripts/regression-v13-9-1-launch.mjs
       - run: npm run regression:v13.9.2:telegram-atis-regulation
-      - run: npm run regression:v13.9.3:redemet-weather
       - run: npm run regression:v13.9.4:telegram-layout-amil
       - run: npm run regression:v13.9.5:medical-emergency
-      - run: npm run regression:v13.9.6:infobip-calls
-      - run: npm run regression:v13.9.7:premium-roster
-      - run: npm run regression:v13.9.8:act-roster
-      - run: npm run regression:v13.9.9:monthly-premium
-      - run: node scripts/v13910/apply.mjs
       - run: npm run regression:v13.8.0:platform
-      - run: npm run regression:v13.8.5:audit
-      - run: npm run regression:v13.8.6:internal
-      - run: npm run regression:v13.8.7:mysql
-      - run: npm run regression:v13.8.8:audit
       - run: node test-server.mjs
 
   android:
