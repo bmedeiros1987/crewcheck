@@ -7,6 +7,9 @@ const NAME = 'crewcheck-v13-9-10-premium-brand-reports';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const write = (path, value) => fs.writeFileSync(path, value, 'utf8');
 
+// Gera sempre o mesmo asset oficial antes de qualquer build web, PWA ou Android.
+await import('./generate-brand-icon.mjs');
+
 for (const path of ['package.json', 'package-lock.json']) {
   if (!fs.existsSync(path)) continue;
   const metadata = JSON.parse(read(path));
@@ -52,9 +55,15 @@ if (fs.existsSync('client/public/manifest.json')) {
       ? source.replace(/([?&]v=)\d+/, `$1${CACHE_VERSION}`)
       : `${source}${source.includes('?') ? '&' : '?'}v=${CACHE_VERSION}`;
   };
-  for (const icon of manifest.icons || []) icon.src = refresh(icon.src);
+  for (const icon of manifest.icons || []) {
+    icon.src = refresh(icon.src);
+    icon.sizes = '512x512';
+  }
   for (const shortcut of manifest.shortcuts || []) {
-    for (const icon of shortcut.icons || []) icon.src = refresh(icon.src);
+    for (const icon of shortcut.icons || []) {
+      icon.src = refresh(icon.src);
+      icon.sizes = '512x512';
+    }
   }
   write('client/public/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
 }
@@ -76,6 +85,11 @@ const requiredFiles = [
 for (const path of requiredFiles) {
   if (!fs.existsSync(path)) throw new Error(`v${VERSION}: asset obrigatório ausente: ${path}`);
 }
+
+const icon = fs.readFileSync('client/public/icons/crewcheck-icon-v2.png');
+const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+if (icon.length < 24 || !icon.subarray(0, 8).equals(pngSignature)) throw new Error(`v${VERSION}: ícone oficial não é um PNG válido`);
+if (icon.readUInt32BE(16) !== 512 || icon.readUInt32BE(20) !== 512) throw new Error(`v${VERSION}: ícone oficial precisa ter 512x512`);
 
 const brand = read('client/src/lib/brand.ts');
 const pdf = read('client/src/lib/pdfExport.ts');
