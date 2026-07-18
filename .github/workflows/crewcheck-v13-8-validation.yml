@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - agent/v14-premium-system-audit
+      - agent/v14-0-1-telegram-voice-policy
 
 permissions:
   contents: read
@@ -36,6 +37,7 @@ jobs:
       - run: npm run regression:v13.9.4:telegram-layout-amil
       - run: npm run regression:v13.9.5:medical-emergency
       - run: npm run regression:v13.8.0:platform
+      - run: node scripts/regression-v14-0-1-telegram-voice-policy.mjs
       - run: node test-server.mjs
 
   android:
