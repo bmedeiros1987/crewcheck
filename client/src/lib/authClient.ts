@@ -28,6 +28,15 @@ export interface AuthSession {
 
 const TOKEN_KEY = 'crewcheck_auth_token';
 const USER_KEY = 'crewcheck_auth_user';
+const PUBLIC_AUTH_ENDPOINTS = new Set([
+  '/api/auth/config',
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/verify-email',
+  '/api/auth/resend-verification',
+  '/api/auth/request-reset',
+  '/api/auth/reset-password',
+]);
 
 export function getToken(): string | null { return localStorage.getItem(TOKEN_KEY); }
 
@@ -63,6 +72,16 @@ function persistSession(session: AuthSession) {
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
 }
 
+/**
+ * Expira apenas a credencial de acesso. Mantém a identidade anterior e os dados
+ * locais para que um novo login da mesma pessoa possa retomar a escala. Se outra
+ * conta entrar, persistSession detecta a troca e limpa os dados operacionais.
+ */
+export function expireSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  try { window.dispatchEvent(new CustomEvent('crewcheck:auth-expired')); } catch {}
+}
+
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
@@ -89,21 +108,37 @@ export class AuthClientError extends Error {
   }
 }
 
-function publicApiErrorMessage(payload: any, status: number): string {
+function requestPath(url: string): string {
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'https://crewcheck.local';
+    return new URL(url, base).pathname;
+  } catch {
+    return String(url || '').split('?')[0];
+  }
+}
+
+function isPublicAuthRequest(url: string): boolean {
+  return PUBLIC_AUTH_ENDPOINTS.has(requestPath(url));
+}
+
+function publicApiErrorMessage(payload: any, status: number, protectedRequest: boolean): string {
   const code = String(payload?.code || '').toUpperCase();
   if (code === 'DATABASE_REQUIRED' || code === 'DATABASE_MIGRATION_REQUIRED') {
     return 'A sincronização em nuvem está temporariamente indisponível. Seus dados continuam protegidos neste dispositivo e a operação poderá ser tentada novamente.';
   }
-  if (code === 'AUTH_REQUIRED' || status === 401) return 'Sua sessão expirou. Entre novamente para continuar.';
+  if (code === 'AUTH_REQUIRED' || (status === 401 && protectedRequest)) return 'Sua sessão expirou. Entre novamente para continuar.';
+  if (status === 401) return String(payload?.message || 'E-mail ou senha inválidos. Confira os dados e tente novamente.');
   if (code === 'PREMIUM_REQUIRED' || status === 402) return String(payload?.message || 'Este recurso requer uma assinatura Premium.');
   if (status >= 500) return String(payload?.message || 'O CrewCheck não conseguiu concluir esta operação agora. Tente novamente em alguns instantes.');
   return String(payload?.message || (`Erro HTTP ${status}`));
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
+  const protectedRequest = !isPublicAuthRequest(url);
+  const token = protectedRequest ? getToken() : null;
   const response = await fetch(url, {
     ...init,
+    credentials: init?.credentials || 'same-origin',
     headers: {
       'content-type': 'application/json',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -112,8 +147,8 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
-    if (response.status === 401) clearSession();
-    throw new AuthClientError(publicApiErrorMessage(payload, response.status), response.status, payload?.code, payload);
+    if (response.status === 401 && protectedRequest) expireSession();
+    throw new AuthClientError(publicApiErrorMessage(payload, response.status, protectedRequest), response.status, payload?.code, payload);
   }
   return payload as T;
 }
@@ -163,6 +198,8 @@ export async function resendVerification(email: string): Promise<{ ok: boolean; 
 }
 
 export async function login(email: string, password: string): Promise<AuthSession> {
+  // Um token vencido jamais deve acompanhar a tentativa de novo login.
+  expireSession();
   const session = await jsonFetch<AuthSession & { ok: boolean }>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
