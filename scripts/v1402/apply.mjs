@@ -55,7 +55,12 @@ for (const metadataPath of ['package.json', 'package-lock.json']) {
   if (!fs.existsSync(metadataPath)) continue;
   const metadata = JSON.parse(read(metadataPath));
   metadata.version = VERSION;
-  if (metadataPath === 'package.json') metadata.description = 'CrewCheck v14.0.2 - Google Calendar com menor privilégio, termos UTF-8 e pacote de verificação OAuth';
+  if (metadataPath === 'package.json') {
+    metadata.description = 'CrewCheck v14.0.2 - Google Calendar com menor privilégio, termos UTF-8 e pacote de verificação OAuth';
+    metadata.scripts = metadata.scripts || {};
+    metadata.scripts['db:migrate:v14.0.2'] = 'node scripts/apply-v14-0-2-migration.mjs';
+    metadata.scripts['regression:v14.0.2:oauth-legal'] = 'node scripts/regression-v14-0-2-google-oauth-legal.mjs';
+  }
   if (metadata.packages?.['']) metadata.packages[''].version = VERSION;
   write(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
 }
@@ -96,6 +101,7 @@ for (const required of [
   'client/src/pages/OAuthVerificationPage.tsx',
   'docs/google-oauth-verification-kit-2026.md',
   'migrations/20260719_009_google_oauth_legal_utf8.sql',
+  'scripts/apply-v14-0-2-migration.mjs',
 ]) {
   if (!fs.existsSync(required)) throw new Error(`CrewCheck v${VERSION}: arquivo obrigatório ausente: ${required}`);
 }
