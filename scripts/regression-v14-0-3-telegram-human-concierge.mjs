@@ -37,7 +37,7 @@ assert.match(server, /premiumVoiceText\(/);
 assert.doesNotMatch(server, /\[`Ouvi: “\$\{transcript\.slice/);
 
 assert.match(human, /DEFAULT_CONCIERGE_NAME/);
-assert.match(human, /Fala,/);
+assert.match(human, /premiumGreeting/);
 assert.match(human, /você tem \$\{count\} perna/);
 assert.match(human, /Sua apresentação é às/);
 assert.match(human, /a chave termina em/);
