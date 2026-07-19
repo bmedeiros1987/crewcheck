@@ -5,276 +5,75 @@ const VERSION_CODE = '140003';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const write = (path, content) => fs.writeFileSync(path, content, 'utf8');
 
-function replaceRequired(source, pattern, replacement, label) {
+function requiredReplace(source, pattern, replacement, label) {
+  pattern.lastIndex = 0;
   if (!pattern.test(source)) throw new Error(`CrewCheck v${VERSION}: ponto nÃ£o localizado â€” ${label}.`);
   pattern.lastIndex = 0;
   return source.replace(pattern, replacement);
 }
 
+const snippets = {
+  keyboards: 'server/v1403/keyboards.snippet',
+  requestUser: 'server/v1403/request-user.snippet',
+  helpers: 'server/v1403/premium-helpers.snippet',
+  buildReply: 'server/v1403/build-reply.snippet',
+  navigation: 'server/v1403/navigation-callback.snippet',
+};
+for (const file of ['server/v1403/telegram-human.mjs', ...Object.values(snippets)]) {
+  if (!fs.existsSync(file)) throw new Error(`CrewCheck v${VERSION}: arquivo obrigatÃ³rio ausente: ${file}`);
+}
+
 const serverPath = 'server.mjs';
-if (!fs.existsSync(serverPath)) throw new Error(`CrewCheck v${VERSION}: server.mjs nÃ£o encontrado.`);
 let server = read(serverPath);
 
 const importAnchor = "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';";
-const premiumImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, cleanDisplayName, isPremiumConcierge, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1403/telegram-human.mjs';";
+const premiumImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, cleanDisplayName, isPremiumConcierge, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1403/telegram-human.mjs';";
 if (!server.includes(premiumImport)) {
-  if (!server.includes(importAnchor)) throw new Error(`CrewCheck v${VERSION}: import do Infobip nÃ£o localizado.`);
+  if (!server.includes(importAnchor)) throw new Error(`CrewCheck v${VERSION}: import base nÃ£o localizado.`);
   server = server.replace(importAnchor, `${importAnchor}\n${premiumImport}`);
 }
 
 server = server
   .replace("|| 0.48),", "|| 0.34),")
   .replace("|| 0.78),", "|| 0.86),")
-  .replace("|| 0.18),", "|| 0.32),")
-  .replace("const policy = telegramVoiceReplyPolicy(replyText, transcript);", "const policy = premiumVoicePolicy(replyText, transcript, Math.max(420, Math.min(700, Number(envAny(['TELEGRAM_CONCIERGE_MAX_VOICE_CHARS', 'CREWCHECK_TELEGRAM_MAX_VOICE_CHARS']) || 650))));")
-  .replace("const finalReply = humanizeTelegramVoiceText(replyText);", "const finalReply = premiumVoiceText(replyText);")
-  .replace("await showHumanRecordingAction(chatId, 2);", "await showHumanRecordingAction(chatId, 1);");
+  .replace(" || 0.18),", "|| 0.32),")
+  .replace(
+    /const policy = (?:telegramVoiceReplyPolicy|premiumVoicePolicy)\(×Š×1;n]+;/,
+    "const policy = premiumVoicePolicy(replyText, transcript, Math.max(420, Math.min(700, Number(envAny(['TELEGRAM_CONCIERGE_MAX_VOICE_CHARS', 'CREWCHECK_TELEGRAM_MAX_VOICE_CHARS']) || 650))));",
+   )
+  .replace(
+    /const finalReply = (?:humanizeTelegramVoiceText|premiumVoiceText)\(replyText\);/,
+    'const finalReply = premiumVoiceText(replyText);',
+   )
+  .replace('await showHumanRecordingAction(chatId, 2);', 'await showHumanRecordingAction(chatId, 1);');
 
-const keyboardPattern = /const conciergeKeyboard = \{[\s\S]*?\n\};\nfunction normalizeConciergeButtonText\(value = ''\) \{[\s\S]*?\n\}/;
-const keyboardReplacement = `const conciergeKeyboard = {
-  keyboard: [
-    [{ text: 'âœˆï¸ PrÃ³xima programaÃ§Ã£o' }, { text: 'ğŸ“… Hoje' }],
-    [{ text: 'ğŸ›« Radar / portÃ£o' }, { text: 'ğŸš— SaÃ­da inteligente' }],
-    [{ text: 'ğŸ—“ Minha escala' }, { text: 'ğŸ§˜ Rotina' }],
-    [{ text: 'ğŸ¨ HotÃ©is' }, { text: 'ğŸ¥ Hospitais' }],
-    [{ text: 'ğŸ’Š FarmÃ¡cias' }, { text: 'ğŸ‹ï¸ Academias' }],
-    [{ text: 'ğŸŒ¦ï¸ ATIS / METAR' }, { text: 'ğŸ“ Solicitar ligaÃ§Ã£o' }],
-    [{ text: 'âš™ï¸ ConfiguraÃ§Ãµes' }, { text: 'ğŸš¨ EmergÃªncia' }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-  one_time_keyboard: false,
-  input_field_placeholder: 'Pergunte naturalmente sobre a sua escalaâ€¦',
-};
-const conciergeFunctionKeyboard = {
-  keyboard: [
-    [{ text: 'â¬…ï¸ Voltar ao menu' }],
-    [{ text: 'âœˆï¸ PrÃ³xima programaÃ§Ã£o' }, { text: 'ğŸš— SaÃ­da inteligente' }],
-    [{ text: 'ğŸ›« Radar / portÃ£o' }, { text: 'âš™ï¸ ConfiguraÃ§Ãµes' }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-  one_time_keyboard: false,
-  input_field_placeholder: 'FaÃ§a outra pergunta ou volte ao menuâ€¦',
-};
-const conciergeSettingsKeyboard = {
-  keyboard: [
-    [{ text: 'âœï¸ Como me chamar' }, { text: 'ğŸªª Nome do concierge' }],
-    [{ text: 'â¬…ï¸ Voltar ao menu' }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-  one_time_keyboard: false,
-  input_field_placeholder: 'As configuraÃ§Ãµes sÃ£o alteradas somente por textoâ€¦',
-};
-function normalizeConciergeButtonText(value = '') {
-  const text = String(value || '').trim();
-  const normalized = text.replace(/^\\p{Extended_Pictographic}\\uFE0F?\\s*/u, '').trim().toLowerCase();
-  if (normalized === 'prÃ³xima programaÃ§Ã£o' || normalized === 'proxima programacao' || normalized === 'prÃ³ximo voo' || normalized === 'proximo voo') return '/proximo';
-  if (normalized === 'hoje') return '/hoje';
-  if (normalized.includes('radar') || normalized.includes('portÃ£o')) return '/radar';
-  if (normalized.includes('saÃ­da inteligente') || normalized.includes('saida inteligente')) return '/saida';
-  if (normalized === 'minha escala') return '/escala';
-  if (normalized === 'rotina') return '/rotina';
-  if (normalized === 'hotÃ©is' || normalized === 'hoteis') return '/hoteis';
-  if (normalized === 'hospitais' || normalized.includes('pronto atendimento') || normalized.includes('pronto-socorro')) return '/hospitais';
-  if (normalized === 'farmÃ¡cias' || normalized === 'farmacias') return '/farmacias';
-  if (normalized === 'academias') return '/academias';
-  if (normalized.includes('atis')) return '/metar';
-  if (normalized.includes('solicitar ligaÃ§Ã£o') || normalized.includes('solicitar ligacao')) return '/ligacao';
-  if (normalized.includes('emergÃªncia') || normalized.includes('emergencia')) return '/emergencia';
-  if (normalized.includes('configuraÃ§Ãµes') || normalized.includes('configuracoes')) return '/configuracoes';
-  if (normalized.includes('como me chamar')) return '/meunome';
-  if (normalized.includes('nome do concierge')) return '/nomeconcierge';
-  if (normalized.includes('voltar ao menu') || normalized === 'voltar' || normalized === 'menu') return '/menu';
-  if (normalized === 'ajuda') return '/ajuda';
-  return text;
-}`;
-server = replaceRequired(server, keyboardPattern, keyboardReplacement, 'teclado do concierge');
+server = requiredReplace(
+  server,
+  /const conciergeKeyboard = \{[\s]*?\n\};\n(?:const conciergeFunctionKeyboard = \{[\s\S]{0,}?\n\};\nconst conciergeSettingsKeyboard = \{[\s\S]{0,}?\n\};\n)?function normalizeConciergeButtonText\(value = ''\) \{[\s]*?\n\}/,
+  read(snippets.keyboards).trim(),
+   'teclados',
+[];
 
-const requestUserPattern = /function telegramRequestUser\(req, body = \{\}\) \{[\s\S]*?\n\}/;
-const requestUserReplacement = `function telegramRequestUser(req, body = {}) {
-  let email = String(body.email || '').trim().toLowerCase();
-  let name = String(body.name || '').trim();
-  let role = String(body.rank || body.role || '').trim();
-  let premiumAccess = Boolean(body.premiumAccess);
-  let subscriptionPlan = String(body.subscriptionPlan || '').trim();
-  let subscriptionStatus = String(body.subscriptionStatus || '').trim();
-  const accessKeyHash = conciergeAccessHash(body.conciergeKey || body.accessKey || req?.headers?.['x-crewcheck-concierge-key'] || '');
-  let authenticated = false;
-  try {
-    if (typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
-      const payload = cc1371Verify(cc1371RequestToken(req));
-      const tokenEmail = String(payload?.email || '').trim().toLowerCase();
-      if (tokenEmail) {
-        email = tokenEmail;
-        name = String(payload?.name || '').trim() || name;
-        role = String(payload?.rank || payload?.role || payload?.function || '').trim() || role;
-        premiumAccess = Boolean(payload?.premiumAccess || payload?.admin || premiumAccess);
-        subscriptionPlan = String(payload?.subscriptionPlan || payload?.plan || '').trim() || subscriptionPlan;
-        subscriptionStatus = String(payload?.subscriptionStatus || '').trim() || subscriptionStatus;
-        authenticated = true;
-      }
-    }
-  } catch {}
-  if (!email) email = 'local@crewcheck.local';
-  if (!name) name = email.includes('@') ? email.split('@')[0] : 'Tripulante CrewCheck';
-  return { email, name, role, rank: role, premiumAccess, subscriptionPlan, subscriptionStatus, authenticated, accessKeyHash };
-}`;
-server = replaceRequired(server, requestUserPattern, requestUserReplacement, 'identidade do usuÃ¡rio Telegram');
+server = requiredReplace(
+  server,
+  /function telegramRequestUser\(req, body = \{\}\) \{[\s\S]*?\n\}/,
+  read(snippets.requestUser).trim(),
+   'identidade Telegram',
+[]);
 
-const premiumHelpersMarker = '// CrewCheck v14.0.3 â€” Concierge humano, natural e personalizÃ¡vel.';
-if (!server.includes(premiumHelpersMarker)) {
-  const buildAnchor = 'async function buildTelegramConciergeReply(text = \'\', profile = {}, snapshot = null) {';
-  if (!server.includes(buildAnchor)) throw new Error(`CrewCheck v${VERSION}: builder do concierge nÃ£o localizado.`);
-  const helperBlock = `${premiumHelpersMarker}
-function conciergeDayForKey(roster = {}, key = '') {
-  return (Array.isArray(roster?.days) ? roster.days : []).find((day) => conciergeRecordDateKey({ day }) === key) || null;
-}
-function conciergeReplyKeyboard(value = '') {
-  if (/^\\/(?:start|ajuda|help|comandos|menu)(?:@\\S+)?$/i.test(value)) return conciergeKeyboard;
-  if (/^\\/(?:configuracoes|meunome|nomeconcierge)(?:@\\S+)?/i.test(value)) return conciergeSettingsKeyboard;
-  return conciergeFunctionKeyboard;
-}
-async function conciergeIdentityFlow(text = '', profile = {}, snapshot = null) {
-  const value = normalizeConciergeButtonText(text);
-  const preferences = snapshot?.preferences || {};
-  const premium = isPremiumConcierge(snapshot || {}, profile || {}) || Boolean(typeof cc1371IsAdmin === 'function' && cc1371IsAdmin(String(profile?.email || '').toLowerCase()));
-  const command = String(value || '').trim();
-  const natural = command.replace(/^\\/(?:meunome|nomeconcierge)\\s*/i, '').trim();
-  const asksSettings = /^\\/configuracoes(?:@\\S+)?$/i.test(command);
-  const asksUserName = /^\\/meunome(?:@\\S+)?(?:\\s|$)/i.test(command) || /^(?:me chama de|pode me chamar de)\\s+/i.test(command);
-  const asksConciergeName = /^\\/nomeconcierge(?:@\\S+)?(?:\\s|$)/i.test(command) || /^nome do concierge\\s+/i.test(command);
-  if (asksSettings) return { handled: true, reply: buildConciergeSettingsReply(profile, snapshot || {}), snapshot };
-  if (asksUserName) {
-    const proposed = cleanDisplayName(natural || command.replace(/^(?:me chama de|pode me chamar de)\\s+/i, ''), '');
-    if (!proposed) {
-      const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-user-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
-      return { handled: true, reply: 'Como vocÃª gostaria que eu chamasse vocÃª? Escreva somente o nome ou apelido.', snapshot: saved || snapshot };
-    }
-    const nextStep = premium && !preferences.conciergeNameConfirmed ? 'ask-concierge-name' : 'complete';
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { preferredName: proposed, conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME, onboardingStep: nextStep } });
-    const follow = premium
-      ? `Eu comeÃ§o usando ${preferredConciergeName(saved || snapshot || {})}. VocÃª pode manter esse nome ou escrever â€œnome do conciergeâ€ seguido do novo nome.`
-      : `Eu vou usar ${DEFAULT_CONCIERGE_NAME} como nome do concierge. A troca desse nome fica disponÃ­vel no plano Premium.`;
-    return { handled: true, reply: `Fechado, ${proposed}. Vou chamar vocÃª assim daqui pra frente. ${follow}`, snapshot: saved || snapshot };
-  }
-  if (asksConciergeName) {
-    if (!premium) return { handled: true, reply: `Por enquanto, meu nome Ã© ${DEFAULT_CONCIERGE_NAME}. A personalizaÃ§Ã£o do nome do concierge Ã© um recurso Premium e Ã© feita somente por texto.`, snapshot };
-    const proposed = cleanDisplayName(natural || command.replace(/^nome do concierge\\s+/i, ''), '');
-    if (!proposed) {
-      const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-concierge-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
-      return { handled: true, reply: `Qual nome vocÃª quer usar para o concierge? O nome atual Ã© ${preferredConciergeName(saved || snapshot || {})}.`, snapshot: saved || snapshot };
-    }
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeName: proposed, conciergeNameConfirmed: true, onboardingStep: 'complete' } });
-    return { handled: true, reply: `Combinado. A partir de agora, o concierge se chama ${proposed}. Essa configuraÃ§Ã£o fica salva no seu perfil Premium.`, snapshot: saved || snapshot };
-  }
-  if (preferences.onboardingStep === 'ask-user-name' && command && !command.startsWith('/')) {
-    const proposed = cleanDisplayName(command, '');
-    const nextStep = premium ? 'ask-concierge-name' : 'complete';
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { preferredName: proposed, conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME, onboardingStep: nextStep } });
-    const follow = premium
-      ? `Eu sou ${DEFAULT_CONCIERGE_NAME}. Quer manter esse nome ou prefere outro? Escreva â€œnome do conciergeâ€ seguido do nome escolhido.`
-      : `Eu sou ${DEFAULT_CONCIERGE_NAME}. No Premium, vocÃª pode trocar meu nome pelas configuraÃ§Ãµes em texto.`;
-    return { handled: true, reply: `Boa, ${proposed}. Vou chamar vocÃª assim. ${follow}`, snapshot: saved || snapshot };
-  }
-  if (preferences.onboardingStep === 'ask-concierge-name' && command && !command.startsWith('/')) {
-    if (!premium) {
-      const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeName: DEFAULT_CONCIERGE_NAME, onboardingStep: 'complete' } });
-      return { handled: true, reply: `Tudo certo. Vou continuar como ${DEFAULT_CONCIERGE_NAME}.`, snapshot: saved || snapshot };
-    }
-    const proposed = /manter|bruno saraiva/i.test(command) ? DEFAULT_CONCIERGE_NAME : cleanDisplayName(command, DEFAULT_CONCIERGE_NAME);
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeName: proposed, conciergeNameConfirmed: true, onboardingStep: 'complete' } });
-    return { handled: true, reply: `Perfeito. Pode me chamar de ${proposed}. Agora Ã© sÃ³ perguntar sobre a sua escala.`, snapshot: saved || snapshot };
-  }
-  if ((!preferences.preferredName || !preferences.onboardingStep) && /^\\/(?:start|ajuda|help|comandos)(?:@\\S+)?$/i.test(command)) {
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-user-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
-    return { handled: true, reply: `Oi! Eu sou ${DEFAULT_CONCIERGE_NAME}, o concierge da sua escala. Antes da gente comeÃ§ar: como vocÃª gostaria que eu chamasse vocÃª? Responda somente por texto com seu nome ou apelido.`, snapshot: saved || snapshot };
-  }
-  return { handled: false, snapshot };
-}
-async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = {}) {
-  const roster = snapshot?.roster;
-  if (!roster?.days?.length) return `${premiumGreeting(profile, snapshot || {})} ainda nÃ£o tenho uma escala ativa. Envie o PDF oficial ou sincronize pelo app.`;
-  if (mode === 'summary') {
-    const stats = conciergeRosterDiagnostics(roster);
-    const next = conciergeNextProgram(roster);
-    return `${premiumGreeting(profile, snapshot)} sua escala tem ${stats.flights} pernas distribuÃ­das em ${stats.programs} programaÃ§Ãµes. ${next ? buildProgramSummary({ profile, snapshot, record: next, label: 'A prÃ³xima programaÃ§Ã£o', presentationTime: conciergePresentationTime(next) }) : 'NÃ£o encontrei uma programaÃ§Ã£o futura confirmada.'}`;
-  }
-  if (mode === 'today' || mode === 'tomorrow') {
-    const offset = mode === 'tomorrow' ? 86_400_000 : 0;
-    const key = conciergeDateKey(new Date(Date.now() + offset));
-    const label = mode === 'today' ? 'Hoje' : 'AmanhÃ£';
-    const found = conciergeProgramRecords(roster).filter((record) => conciergeRecordDateKey(record) === key);
-    if (!found.length) return buildBlankDaySummary({ profile, snapshot, day: conciergeDayForKey(roster, key), label });
-    return found.map((record, index) => buildProgramSummary({ profile: index ? {} : profile, snapshot, record, label: index ? 'Na sequÃªncia' : label, presentationTime: conciergePresentationTime(record) })).join('\n');
-  }
-  const next = conciergeNextProgram(roster);
-  return next
-    ? buildProgramSummary({ profile, snapshot, record: next, label: 'A prÃ³xima programaÃ§Ã£o', presentationTime: conciergePresentationTime(next) })
-    : `${premiumGreeting(profile, snapshot)} nÃ£o encontrei uma programaÃ§Ã£o futura confirmada na escala ativa.`;
-}
-async function conciergePremiumDepartureReply(snapshot, profile = {}) {
-  const roster = snapshot?.roster;
-  const record = conciergeProgramRecords(roster).find((item) => {
-    if (item.end < new Date()) return false;
-    if (item.legs?.length) return true;
-    return !conciergeRemoteCodes.has(item.code) && ['ASB', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
-  });
-  if (!record) return buildDepartureSummary({ profile, snapshot });
-  const presentation = conciergePresentationTime(record);
-  const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
-  const origin = record.legs?.[0]?.origin || record.day?.base || '';
-  const location = snapshot?.preferences?.location;
-  if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  const route = await conciergeTravelEstimate(location, origin);
-  if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} vocÃª estÃ¡ longe de ${airportName(origin)}. Para esse deslocamento, revise a rota completa no app antes de considerar o horÃ¡rio da apresentaÃ§Ã£o, que Ã© Ã s ${spokenTime(presentation)}.`;
-  const bufferMinutes = 25;
-  const leave = new Date(presentationDate.getTime() - (route.minutes + bufferMinutes) * 60_000);
-  const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(leave);
-  let radar = null;
-  const firstLeg = record.legs?.[0];
-  if (firstLeg && conciergeRecordDateKey(record) === conciergeDateKey(new Date())) {
-    radar = await runRadarRace(buildFlightContext(firstLeg.flightNumber), firstLeg.origin || '', firstLeg.destination || '');
-    if (snapshot && radar?.ok) {
-      conciergeApplyRadar(snapshot, { record, leg: firstLeg }, radar);
-      await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'departure-radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
-    }
-  }
-  return buildDepartureSummary({ profile, snapshot, record, route, leaveTime, origin, radar, presentationTime: presentation });
-}
-`;
-  server = server.replace(buildAnchor, `${helperBlock}\n${buildAnchor}`);
+const helperMarker = '// CrewCheck v14.0.3 â€” Concierge humano, natural e personalizÃ¡vel.';
+if (!server.includes(helperMarker)) {
+  const anchor = "async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {";
+  if (!server.includes(anchor)) throw new Error(`CrewCheck v${VERSION}: builder nÃ£o localizado.`);
+  server = server.replace(anchor, $ {read(snippets.helpers).trim()}\n${anchor}`);
 }
 
-const buildReplyPattern = /async function buildTelegramConciergeReply\(text = '', profile = \{\}, snapshot = null\) \{[\s\S]*?\n\}\nasync function handleParsePdfApi/;
-const buildReplyReplacement = `async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
-  const value = normalizeConciergeButtonText(text);
-  const lower = value.toLowerCase();
-  const identity = await conciergeIdentityFlow(value, profile, snapshot);
-  if (identity.handled) return identity.reply;
-  snapshot = identity.snapshot || snapshot;
-  if (!value || /^\\/(?:start|ajuda|help|comandos|menu)(?:@\\S+)?$/i.test(value) || /^(ajuda|comandos)$/i.test(value)) return conciergeHelp(preferredUserName(profile, snapshot || {}));
-  if (/^\\/(?:hoje)(?:@\\S+)?\\b/i.test(value) || /\\b(programa[cÃ§][aÃ£]o|escala)\\s+(de\\s+)?hoje\\b/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'today', profile);
-  if (/^\\/(?:amanha|amanhÃ£)(?:@\\S+)?\\b/i.test(value) || /\\b(programa[cÃ§][aÃ£]o|escala)\\s+(de\\s+)?amanh[Ã£a]\\b/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'tomorrow', profile);
-  if (/^\\/(?:proximo|prÃ³ximo)(?:@\\S+)?\\b/i.test(value) || /pr[oÃ³]xima\\s+(programa[cÃ§][aÃ£]o|escala|atividade|voo)/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'next', profile);
-  if (/^\\/escala(?:@\\S+)?\\b/i.test(value) || /resumo\\s+(da\\s+)?escala/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'summary', profile);
-  if (/^\\/(?:portao|portÃ£o|radar)(?:@\\S+)?\\b/i.test(value) || /\\b(port[aÃ£]o|gate|radar|status\\s+do\\s+voo)\\b/i.test(lower)) return conciergeRadarReply(value, profile, snapshot);
-  if (/^\\/(?:alertameteo|alertasmeteo)(?:@\\S+)?\\b/i.test(value)) return conciergeWeatherAlertsReply(value, profile, snapshot);
-  if (/^\\/atis(?:@\\S+)?\\b/i.test(value) || /\\b(atis)\\b/i.test(lower)) return conciergeAtisReply(value, snapshot);
-  if (/^\\/(?:metar|taf)(?:@\\S+)?\\b/i.test(value) || /\\b(metar|taf|meteorologia)\\b/i.test(lower)) return conciergeWeatherReply(value, snapshot);
-  if (/^\\/saida(?:@\\S+)?\\b/i.test(value) || /\\b(que horas devo sair|sa[iÃ­]da inteligente|hora de sair)\\b/i.test(lower)) return conciergePremiumDepartureReply(snapshot, profile);
-  if (/^\\/(?:hoteis|hotÃ©is|hotel)(?:@\\S+)?\\b/i.test(value) || /\\b(hotel|hot[eÃ©]is|pernoite)\\b/i.test(lower)) return conciergeHotelsReply(snapshot);
-  if (/^\\/academias?(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto)\\b/i.test(lower)) return conciergeGymsReply(snapshot);
-  if (/^\\/rotina(?:@\\S+)?\\b/i.test(value) || /\\b(rotina|recupera[cÃ§][aÃ£]o|treino hoje)\\b/i.test(lower)) return conciergeRoutineReply(snapshot);
-  if (/^\\/diarias?(?:@\\S+)?\\b/i.test(value) || /\\bdi[aÃ¡]rias?\\b/i.test(lower)) return conciergePerDiemReply(snapshot);
-  if (/^\\/conformidade(?:@\\S+)?\\b/i.test(value) || /\\b(rbac|act|irregularidade|conformidade)\\b/i.test(lower)) return conciergeComplianceReply(snapshot);
-  if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'LocalizaÃ§Ã£o recebida. Escolha a funÃ§Ã£o que deseja consultar.' : 'Envie sua localizaÃ§Ã£o pelo clipe do Telegram para ativar busca prÃ³xima e SaÃ­da Inteligente.';
-  return `NÃ£o peguei exatamente o que vocÃª quer. Pode escrever de outro jeito ou voltar ao menu para escolher uma funÃ§Ã£o.`;
-}
-async function handleParsePdfApi`;
-server = replaceRequired(server, buildReplyPattern, buildReplyReplacement, 'interpretaÃ§Ã£o natural do concierge');
+server = requiredReplace(
+  server,
+  /async function buildTelegramConciergeReply\(text = '', profile = \{\}, snapshot = null\) \{[\s\S]{0,}?\n\}\nasync function handleParsePdfApi/,
+  `${read(snippets.buildReply).trim()}\nasync function handleParsePdfApi`,
+  'roteador natural',
+[]);
 
 server = server.replace(
   "const snapshot = await conciergeSaveSnapshotAsync(profile, roster, { source: String(body.source || 'app'), fileName: String(body.fileName || ''), diagnostics: body.diagnostics || null });",
@@ -285,126 +84,95 @@ server = server.replace(
   "const snapshot = await conciergeSaveSnapshotAsync(profile, roster, { source: 'telegram-pdf', fileName: document.file_name || 'escala.pdf', parserDiagnostics: parsed.diagnostics || null, preferences: { conciergeName: (await conciergeLoadSnapshot(profile))?.preferences?.conciergeName || DEFAULT_CONCIERGE_NAME } });",
 );
 
-server = server.replace(
-  "await conciergeMergeChatSnapshot({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' });\n  await sendTelegramMessage(chatId, [\n    'Telegram vinculado ao CrewCheck.',",
-  "await conciergeMergeChatSnapshot({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' });\n  await conciergeSaveSnapshotAsync({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' }, null, { preferences: { conciergeName: DEFAULT_CONCIERGE_NAME, onboardingStep: 'ask-user-name' } });\n  await sendTelegramMessage(chatId, [\n    `Telegram vinculado. Eu sou ${DEFAULT_CONCIERGE_NAME}, o concierge da sua escala.`,",
-);
-server = server.replace(
-  "'VocÃª jÃ¡ pode enviar o PDF da escala aqui e consultar programaÃ§Ã£o, radar, meteorologia, hotÃ©is, academias, rotina e SaÃ­da Inteligente.',",
-  "'Antes de comeÃ§ar, como vocÃª gostaria que eu chamasse vocÃª? Responda somente por texto com seu nome ou apelido.',",
-);
-server = server.replace(
-  "'Use /ajuda para ver os comandos antigos restaurados. Para testar alertas, volte ao CrewCheck e use Despertador > Testar canal.'",
-  "'Depois disso, eu libero o menu completo e respondo de forma mais natural.'",
-);
-
-server = server.replace(
-  "{ command: 'ajuda', description: 'Todos os comandos' },",
-  "{ command: 'configuracoes', description: 'Nome e preferÃªncias do concierge' },\n    { command: 'ajuda', description: 'Todos os comandos' },",
-);
-
-server = server.replace(
-  "{ text: 'ğŸ”Š ATIS em voz', callback_data: `cc_weather:atis:${icao}:both` },\n    ],\n  ] };",
-  "{ text: 'ğŸ”Š ATIS em voz', callback_data: `cc_weather:atis:${icao}:both` },\n    ],\n    [{ text: 'â¬…ï¸ Voltar ao menu', callback_data: 'cc_nav:menu' }],\n  ] };",
-);
-server = server.replace(
-  "{ text: 'Cancelar', callback_data: 'cc_call:cancel' },\n  ]] };",
-  "{ text: 'Cancelar', callback_data: 'cc_call:cancel' },\n  ], [{ text: 'â¬…ï¸ Voltar ao menu', callback_data: 'cc_nav:menu' }]] };",
-);
-
-if (!server.includes('async function handleTelegramNavigationCallback(update = {})')) {
-  const navAnchor = 'async function handleTelegramWeatherCallback(update = {}) {';
-  const navBlock = `async function handleTelegramNavigationCallback(update = {}) {
-  const callback = update?.callback_query;
-  const data = String(callback?.data || '');
-  if (!data.startsWith('cc_nav:')) return false;
-  const chatId = callback?.message?.chat?.id;
-  if (!chatId) return true;
-  const message = { ...(callback.message || {}), from: callback.from || callback.message?.from || {} };
-  const profile = await telegramProfileForChatAsync(message);
-  const snapshot = await conciergeLoadSnapshot(profile);
-  if (data === 'cc_nav:settings') {
-    await answerTelegramCallback(callback.id, 'Abrindo configuraÃ§Ãµesâ€¦');
-    await sendTelegramMessage(chatId, buildConciergeSettingsReply(profile, snapshot || {}), { reply_markup: conciergeSettingsKeyboard });
-    return true;
-  }
-  await answerTelegramCallback(callback.id, 'Voltando ao menuâ€¦');
-  await sendTelegramMessage(chatId, conciergeHelp(preferredUserName(profile, snapshot || {})), { reply_markup: conciergeKeyboard });
-  return true;
-}
-`;
-  if (!server.includes(navAnchor)) throw new Error(`CrewCheck v${VERSION}: callback meteorolÃ³gico nÃ£o localizado.`);
-  server = server.replace(navAnchor, `${navBlock}${navAnchor}`);
-}
-server = server.replace(
-  "if (await handleTelegramWeatherCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'weather-button' });",
-  "if (await handleTelegramNavigationCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'navigation-button' });\n  if (await handleTelegramWeatherCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'weather-button' });",
-);
-
-server = server.replace(
-  "await sendTelegramMessage(chatId, reply, { reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeKeyboard });",
-  "await sendTelegramMessage(chatId, reply, { reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) });",
-);
-server = server.replace(
-  "await sendTelegramMessage(chatId, [`Ouvi: â€œ${transcript.slice(0, 700)}â€`, '', reply].join('\\n'));",
-  "await sendTelegramMessage(chatId, reply, { reply_markup: conciergeReplyKeyboard(normalizeConciergeButtonText(transcript)) });",
-);
-server = server.replace(
-  "await sendTelegramMessage(chatId, 'LocalizaÃ§Ã£o atualizada. Agora posso calcular /saida e procurar /hospitais, /farmacias ou /academias perto de vocÃª.', { reply_markup: conciergeKeyboard });",
-  "await sendTelegramMessage(chatId, `${premiumGreeting(profile, await conciergeLoadSnapshot(profile) || {})} localizaÃ§Ã£o atualizada. Agora consigo calcular a SaÃ­da Inteligente e fazer buscas perto de vocÃª.`, { reply_markup: conciergeFunctionKeyboard });",
-);
-
-server = server
-  .replace("form.append('prompt', 'CrewCheck, escala, voo, reserva, sobreaviso, pernoite, METAR, TAF, portÃ£o, radar, BSB, GRU, CGH, CNF, GIG, SDU, CWB, POA, REC, FOR, SLZ, SSA.');", "form.append('prompt', 'Conversa natural em portuguÃªs do Brasil sobre escala de tripulante. ReconheÃ§a horas como 12:30, apresentaÃ§Ã£o, tÃ©rmino de chave, nÃºmero de pernas, voos LATAM, Gol e Azul, reserva, sobreaviso, pernoite, portÃ£o, radar, SaÃ­da Inteligente, BSB, GRU, CGH, CNF, GIG, SDU, CWB, POA, REC, FOR, SLZ e SSA.');")
-  .replace("nativeVoiceNotes: true, conciseVoiceOnly: true, locationDirectoriesTextOnly: true, atisSupported: true", "nativeVoiceNotes: true, conciseVoiceOnly: true, naturalPortugueseVoice: true, flightLegInterpretation: true, spokenTimeInterpretation: true, textOnlyIdentitySettings: true, backNavigation: true, locationDirectoriesTextOnly: true, atisSupported: true");
-
-for (const metadataPath of ['package.json', 'package-lock.json']) {
-  if (!fs.existsSync(metadataPath)) continue;
-  const metadata = JSON.parse(read(metadataPath));
-  metadata.version = VERSION;
-  if (metadataPath === 'package.json') {
-    metadata.name = 'crewcheck-v14-0-3-premium-human-telegram-concierge';
-    metadata.description = 'CrewCheck v14.0.3 - concierge Telegram natural, personalizado, objetivo e com navegaÃ§Ã£o Premium';
-    metadata.scripts = metadata.scripts || {};
-    metadata.scripts['regression:v14.0.3:telegram-human'] = 'node scripts/regression-v14-0-3-telegram-human-concierge.mjs';
-  }
-  if (metadata.packages?.['']) {
-    metadata.packages[''].name = 'crewcheck-v14-0-3-premium-human-telegram-concierge';
-    metadata.packages[''].version = VERSION;
-  }
-  write(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+if (!server.includes("preferences: { conciergeName: DEFAULT_CONCIERGE_NAME, onboardingStep: 'ask-user-name' }")) {
+  server = server.replace(
+    "await conciergeMergeChatSnapshot({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' });\n  await sendTelegramMessage(chatId, [\n    'Telegram vinculado ao CrewCheck.',",
+    "await conciergeMergeChatSnapshot({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' });\n  await conciergeSaveSnapshotAsync({ email, name: pending.name || '', chatId: String(chatId), accessKeyHash: pending.accessKeyHash || '' }, null, { preferences: { conciergeName: DEFAULT_CONCIERGE_NAME, onboardingStep: 'ask-user-name' } });\n  await sendTelegramMessage(chatId, [\n    `Telegram vinculado. Eu sou ${DEFAULT_CONCIERGE_NAME}, o concierge da sua escala.`,",
+  );
+  server = server.replace(
+    "'VocÃª jÃ¡ pode enviar oPDF da escala aqui e consultar programaÃ§Ã£o, radar, meteorologia, hotÃ©is, academias, rotina e SaÃ­da Inteligente.',",
+    "'Antes de comeÃ§ar, como vocÃª gostaria que eu chamasse vocÃ©? Responda somente por texto com seu nome ou apelido.',",
+   );
+  server = server.replace(
+    "'Use /ajuda para ver os comandos antigos restaurados. Para testar alertas, volte ao CrewCheck e use Despertador > Testar canal.'",
+    "'Depois disso, eu libero o menu completo e respondo de forma mais natural.'",
+   );
 }
 
-const homePath = 'client/src/pages/Home.tsx';
-if (fs.existsSync(homePath)) {
-  let home = read(homePath);
-  home = home.replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`);
-  home = home.replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, "const CREWCHECK_UI_CORE_NOTE = 'v14.0.3: concierge Telegram humano, natural, personalizado e com navegaÃ§Ã£o Premium';");
-  write(homePath, home);
+if (!server.includes("command: 'configuracoes'")) {
+  server = server.replace(
+    "{ command: 'ajuda', description: 'Todos os comandos' },",
+    "{ command: 'configuracoes', description: 'Nome e preferÃªncias do concierge' },\n    { command: 'ajuda', description: 'Todos os comandos' },",
+  );
 }
 
-const manifestPath = 'client/public/manifest.json';
-if (fs.existsSync(manifestPath)) {
-  const manifest = JSON.parse(read(manifestPath));
-  manifest.version = VERSION;
-  const startUrl = String(manifest.start_url || '/');
-  manifest.start_url = /([?&]v=)[^&]+/.test(startUrl) ? startUrl.replace(/([?&]v=)[^&]+/, `$1${VERSION}`) : `${startUrl}${startUrl.includes('?') ? '&' : '?'}v=${VERSION}`;
-  write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+if (!/function conciergeWeatherKeyboard[\s\S]*?cc_nav:menu[\s\S]*? async function handleTelegramWeatherCallback/.test(server)) {
+  server = server.replace(
+    "{ text: 'ğŸ”¦ ATIS em voz', callback_data: `cc_weather:atis:${icao}:both` },\n    ],\n  ] };",
+    "{ text: 'ğŸ”¦ ATIS em voz', callback_data: `cc_weather:atis:${icao}:both` },\n    ],\n    [{ text: 'â­ï¸ Voltar ao menu', callback_data: 'cc_nav:menu' }],\n  ] };",
+   );
 }
-
-const androidPath = 'android-wrapper/app/build.gradle';
-if (fs.existsSync(androidPath)) {
-  let android = read(androidPath);
-  android = android.replace(/versionCode\s+\d+\b/, `versionCode ${VERSION_CODE}`);
-  android = android.replace(/versionName\s+'[^']+'/, `versionName '${VERSION}'`);
-  write(androidPath, android);
-}
-
-server = server.replace(/version\s*:\s*'(?:13\.9\.\d+|14\.0\.\d+)'/g, `version:'${VERSION}'`);
-write(serverPath, server);
-
-for (const required of ['server/v1403/telegram-human.mjs']) {
-  if (!fs.existsSync(required)) throw new Error(`CrewCheck v${VERSION}: arquivo obrigatÃ³rio ausente: ${required}`);
-}
-
-console.log(`CrewCheck v${VERSION}: concierge Telegram natural, personalizado, objetivo e com navegaÃ§Ã£o Premium aplicado.`);
+if (!/function conciergeCallConfirmationKeyboard[\s\S]*?cc_nav:menu[\s\S]*?async function requestConciergeCallConfirmation/.test(server)) {
+  server = server.replace(
+    "{ text: 'Cancelar', callback_data: 'cc_call:cancel' },\n  ]] };",
+    "{ text: 'Cancelar', callback_data: 'cc_call:cancel' },\n  ], [{^ˆ	ø«d;î#È›Û\ˆ[ÈY[IËØ[˜XÚ×Ù]Nˆ	ØØ×Û˜]›Y[IÈWWHNÈ‹ˆ
+NÂŸB‚šYˆ
+\Ù\™\‹š[˜ÛY\Ê	Ø\Ş[˜È[˜İ[Ûˆ[™U[YÜ˜[S˜]šYØ][ÛØ[˜XÚÊ\]HHßJIÊJHÂˆÛÛœİ[˜ÚÜˆH	Ø\Ş[˜È[˜İ[Ûˆ[™U[YÜ˜[UÙX]\Ø[˜XÚÊ\]HHßJHÉÎÂˆYˆ
+\Ù\™\‹š[˜ÛY\Ê[˜ÚÜŠJH›İÈ™]È\œ›ÜŠÜ™]ĞÚXÚÈ‰Õ‘T”ÒSÓŸNˆØ[˜XÚÈH[\È°èÛÈØØ[^˜YË˜
+NÂˆÙ\™\ˆHÙ\™\‹œ™\XÙJ[˜ÚÜ‹	Ü™XY
+Ûš\]Ë›˜]šYØ][ÛŠKš[J
+_W‰Ø[˜ÚÜŸX
+NÂŸBšYˆ
+\Ù\™\‹š[˜ÛY\Ê˜Ú[›™[ˆ	Û˜]šYØ][Û‹X]Û‰ÈŠJHÂˆÙ\™\ˆHÙ\™\‹œ™\XÙJˆšYˆ
+]ØZ][™U[YÜ˜[UÙX]\Ø[˜XÚÊ\]JJH™]\›ˆÙ[™œÛÛŠ™\ËŒÈÚÎˆYK[™YˆYKÚ[›™[ˆ	İÙX]\‹X]Û‰ÈJNÈ‹ˆšYˆ
+]ØZ][™U[YÜ˜[S˜]šYØ][ÛØ[˜XÚÊ\]JJH™]\›ˆÙ[™œÛÛŠ™\ËŒÈÚÎˆYK[™YˆYKÚ[›™[ˆ	Û˜]šYØ][Û‹X]Û‰ÈJN×ˆYˆ
+]ØZ][™U[YÜ˜[UÙX]\Ø[˜XÚÊ\]JJH™]\›ˆÙ[™œÛÛŠ™\ËŒÈÚÎˆYK[™YˆYKÚ[›™[ˆ	İÙX]\‹X]Û‰ÈJNÈ‹ˆ
+NÂŸB‚œÙ\™\ˆHÙ\™\‹œ™\XÙJˆ˜]ØZ]Ù[™[YÜ˜[SY\ÜØYÙJÚ]Y™\KÈ™\WÛX\šİ\ˆ\ÕÙX]\ˆÈÛÛ˜ÚY\™ÙUÙX]\’Ù^X›Ø\™
+ÙX]\”İ][Û‹İY‹ÚK\İ
+›Ü›X[^™Y^
+HÈ	İY‰Èˆ	ÛY]\‰ÊHˆÛÛ˜ÚY\™ÙRÙ^X›Ø\™JNÈ‹ˆ˜]ØZ]Ù[™[YÜ˜[SY\ÜØYÙJÚ]Y™\KÈ™\WÛX\šİ\ˆ\ÕÙX]\ˆÈÛÛ˜ÚY\™ÙUÙX]\’Ù^X›Ø\™
+ÙX]\”İ][Û‹İY‹ÚK\İ
+›Ü›X[^™Y^
+HÈ	İY‰Èˆ	ÛY]\‰ÊHˆÛÛ˜ÚY\™ÙT™\RÙ^X›Ø\™
+›Ü›X[^™Y^
+HJNÈ‹ŠNÂ‚œÙ\™\ˆHÙ\™\‹œ™\XÙJˆ˜]ØZ]Ù[™[YÜ˜[SY\ÜØYÙJÚ]YØİ]šNˆ8 '	İ˜[œØÜš\œÛXÙJÌ
+_x 'X	ÉË™\WKš›Ú[Š	×‰ÊJNÈ‹ˆ˜]ØZ]Ù[™[YÜ˜[SY\ÜØYÙJÚ]Y™\KÈ™\WÛX\šİ\ˆÛÛ˜ÚY\™ÙT™\RÙ^X›Ø\™
+›Ü›X[^™PÛÛ˜ÚY\™ÙP]Û•^
+˜[œØÜš\
+JHJNÈ‹ŠNÂœÙ\™\ˆHÙ\™\‹œ™\XÙJˆ˜]ØZ]Ù[™[YÜ˜[SY\ÜØYÙJÚ]Y	ÓØØ[^˜péğèÛÈ]X[^˜YKˆYÛÜ˜HÜÜÛÈØ[İ[\ˆÜØZYHH›Øİ\˜\ˆÚÜÜ]Z\ËÙ˜\›XXÚX\ÈİHØXØY[ZX\È\ÈH›Øğê‹‰ËÈ™\WÛX\šİ\ˆÛÛ˜ÚY\™ÙRÙ^X›Ø\™JNÈ‹ˆ˜]ØZ]Ù[™[YÜ˜[SY\ÜØYÙJÚ]Y	Ü™[Z][QÜ™Y][™Ê›Ùš[K]ØZ]ÛÛ˜ÚY\™ÙSØYÛ˜\Úİ
+›Ùš[JHßJ_HØØ[^˜péğèÛÈ]X[^˜YKˆYÛÜ˜HÛÛœÚYÛÈØ[İ[\ˆHØpëYH[[YÙ[HH˜^™\ˆ\ØØ\È\ÈH›Øğê‹˜È™\WÛX\šİ\ˆÛÛ˜ÚY\™ÙQ[˜İ[Û’Ù^X›Ø\™JNÈ‹ŠNÂœÙ\™\ˆHÙ\™\‹œ™\XÙJˆ™›Ü›K˜\[™
+	Ü›Û\	Ë	ĞÜ™]ĞÚXÚË\ØØ[K›ÛË™\Ù\˜KÛØœ™]š\ÛË\››Ú]KQUT‹Q‹Ü0éÛË˜Y\‹”Ğ‹Ô•KÑÒÓ‘‹ÒQËÑKÕĞ‹ĞK‘PË“Ô‹Ó‹ÔĞK‰ÊNÈ‹ˆ™›Ü›K˜\[™
+	Ü›Û\	Ë	ĞÛÛ™\œØH˜]\˜[[HÜYİpêœÈÈœ˜\Ú[ÛØœ™H\ØØ[HHš\[[Kˆ™XÛÛšpéØHÜ˜\ÈÛÛ[ÈLŒÌ\™\Ù[péğèÛË0ê\›Z[›ÈHÚ]™K°î›Y\›ÈH\›˜\Ë›ÛÜÈUSKÛÛH^[™\Ù\˜KÛØœ™]š\ÛË\››Ú]KÜ0èÛË˜Y\‹ØpëYH[[YÙ[K”Ğ‹Ô•KÑÒÓ‘‹ÒQËÑKÕĞ‹ĞK‘PË“Ô‹ÓˆHÔĞK‰ÊNÈ‹ŠKœ™\XÙJˆ	Û˜]]™U›ÚXÙS›İ\ÎˆYKÛÛ˜Ú\ÙU›ÚXÙSÛ›NˆYKØØ][Û‘\™XİÜšY\Õ^Û›NˆYK]\Ôİ\ÜYˆYIËˆ	Û˜]]™U›ÚXÙS›İ\ÎˆYKÛÛ˜Ú\ÙU›ÚXÙSÛ›NˆYK˜]\˜[ÜYİY\ÙU›ÚXÙNˆYK›YÚYÒ[\œ™]][ÛˆYKÜÚÙ[•[YR[\œ™]][ÛˆYK^Û›RY[]TÙ][™ÜÎˆYK˜XÚÓ˜]šYØ][ÛˆYKØØ][Û‘\™XİÜšY\Õ^Û›NˆYK]\Ôİ\ÜYˆYIËŠNÂ‚™›Üˆ
+ÛÛœİY]Y]T]ÙˆÉÜXÚØYÙKšœÛÛ‰Ë	ÜXÚØYÙK[ØÚËšœÛÛ‰×JHÂˆYˆ
+YœË™^\İÔŞ[˜ÊY]Y]T]
+JHÛÛ[YNÂˆÛÛœİY]Y]HH”ÓÓ‹œ\œÙJ™XY
+Y]Y]T]
+JNÂˆY]Y]K™\œÚ[ÛˆH‘T”ÒSÓÂˆYˆ
+Y]Y]T]OOH	ÜXÚØYÙKšœÛÛ‰ÊHÂˆY]Y]K›˜[YHH	ØÜ™]ØÚXÚË]ŒMLLË\™[Z][KZ[X[‹][YÜ˜[KXÛÛ˜ÚY\™ÙIÎÂˆY]Y]K™\ØÜš\[ÛˆH	ĞÜ™]ĞÚXÚÈŒMŒŒÈHÛÛ˜ÚY\™ÙH[YÜ˜[H˜]\˜[\œÛÛ˜[^˜YËØš™]]›ÈHÛÛH˜]™YØpéğèÛÈ™[Z][IÎÂˆY]Y]KœØÜš\ÈHY]Y]KœØÜš\ÈßNÂˆY]Y]KœØÜš\ÖÉÜ™YÜ™\ÜÚ[ÛŒMŒŒÎ[YÜ˜[KZ[X[‰×HH	Û›ÙHØÜš\ËÜ™YÜ™\ÜÚ[Û‹]ŒMLLË][YÜ˜[KZ[X[‹XÛÛ˜ÚY\™ÙK›ZœÉÎÂˆBˆYˆ
+Y]Y]KœXÚØYÙ\ÏË–ÉÉ×JHÂˆY]Y]KœXÚØYÙ\ÖÉ×K›˜[YHH	ØÜ™]ØÚXÚË]ŒMLLË\™[Z][KZ[X[‹][YÜ˜[KXÛÛ˜ÚY\™ÙIÎÂˆY]Y]KœXÚØYÙ\ÖÉÉ×K™\œÚ[ÛˆH‘T”ÒSÓÂˆBˆÜš]JY]Y]T]	Ò”ÓÓ‹œİš[™ÚYJY]Y]K[Š_W˜
+NÂŸB‚˜ÛÛœİÛYT]H	ØÛY[ÜÜ˜ËÜYÙ\ËÒÛYKŞ	ÎÂšYˆ
+œË™^\İÔŞ[˜ÊÛYT]
+JHÂˆ]ÛYHH™XY
+ÛYT]
+NÂˆÛYHHÛYKœ™\XÙJØÛÛœİQUSÕ‘T”ÒSÓˆH	Ö×‰×JÉÎËËÛÛœİQUSÕ‘T”ÒSÓˆH	ÉÕ‘T”ÒSÓŸIÎØ
+NÂˆÛYHHÛYKœ™\XÙJØÛÛœİÔ‘UĞÒPÒ×ÕRWĞÓÔ‘WÓ“ÕHH	Ö×‰×JÉÎËË˜ÛÛœİÔ‘UĞÒPÒ×ÕRWĞÓÔ‘WÓ“ÕHH	İŒMŒŒÎˆÛÛ˜ÚY\™ÙH[YÜ˜[H[X[›Ë˜]\˜[\œÛÛ˜[^˜YÈHÛÛH˜]™YØpéğèÛÈ™[Z][IÎÈŠNÂˆÜš]JÛYT]ÛYJNÂŸB‚˜ÛÛœİX[šY™\İ]H	ØÛY[ÜX›XËÛX[šY™\İšœÛÛ‰ÎÂšYˆ
+œË™^\İÔŞ[˜ÊX[šY™\İ]
+JHÂˆÛÛœİX[šY™\İH”ÓÓ‹œ\œÙJ™XY
+X[šY™\İ]
+JNÂˆX[šY™\İ™\œÚ[ÛˆH‘T”ÒSÓÂˆÛÛœİİ\\›Hİš[™ÊX[šY™\İœİ\İ\›	ËÉÊNÂˆX[šY™\İœİ\İ\›HÊÏÉ—O]JV×‰—JËË\İ
+İ\\›
+BˆÈİ\\›œ™\XÙJÊÉ—]JV×‰—JËË	Ì_IÕ‘T”ÒSÓŸX
+Bˆˆ	Üİ\\›IÜİ\\›š[˜ÛY\Ê	ÏÉÊHÈ	É‰Èˆ	ÏÉß]IÕ‘T”ÒSÓŸXÂˆÜš]JX[šY™\İ]	Ò”ÓÓ‹œİš[™ÚYJX[šY™\İ[Š_W˜
+NÂŸB‚˜ÛÛœİ[™›ÚY]H	Ø[™›ÚY]Ü˜\\‹Ø\ØZ[™Ü˜YIÎÂšYˆ
+œË™^\İÔŞ[˜Ê[™›ÚY]
+JHÂˆ][™›ÚYH™XY
+[™›ÚY]
+NÂˆ[™›ÚYH[™›ÚYœ™\XÙJİ™\œÚ[ÛÛÙWÊ×
+×‹Ë™\œÚ[ÛÛÙH	Õ‘T”ÒSÓ—ĞÓÑ_X
+NÂˆ[™›ÚYH[™›ÚYœ™\XÙJİ™\œÚ[Û“˜[YWÊÉÖ×‰×JÉËË™\œÚ[Û“˜[YH	ÉÕ‘T”ÒSÓŸIØ
+NÂˆÜš]J[™›ÚY][™›ÚY
+NÂŸB‚œÙ\™\ˆHÙ\™\‹œ™\XÙJİ™\œÚ[Û—Ê——Ê‰ÖÌL×WW—
+Ê_MŒ—
+ÊIËÙË™\œÚ[Û‰ÉÕ‘T”ÒSÓŸIØ
+NÂÜš]JÙ\™\”]Ù\™\ŠNÂ‚˜ÛÛœÛÛK›ÙÊÜ™]ĞÚXÚÈ‰Õ‘T”ÒSÓŸNˆÛÛ˜ÚY\™ÙH[YÜ˜[H˜]\˜[\œÛÛ˜[^˜YËØš™]]›ÈHÛÛH˜]™YØpéğèÛÈ™[Z][H\XØYË˜
+NÂ
