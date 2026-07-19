@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarCheck2, CheckCircle2, ExternalLink, FileText, Plane, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, CalendarCheck2, CheckCircle2, ExternalLink, FileText, LogIn, Plane, ShieldCheck, Trash2 } from 'lucide-react';
 import { useLocation } from 'wouter';
 
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
@@ -29,6 +29,7 @@ export default function OAuthVerificationPage() {
           <h1 className="mt-3 text-3xl font-black tracking-tight md:text-5xl">CrewCheck + Google Calendar</h1>
           <p className="mt-5 max-w-4xl text-base leading-8 text-slate-200/90 md:text-lg">O CrewCheck transforma a escala importada pelo próprio usuário em eventos organizados no seu calendário principal. A conexão é voluntária, pode ser recusada e pode ser revogada a qualquer momento.</p>
           <div className="mt-6 flex flex-wrap gap-3">
+            <a href="/login" className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-300 to-fuchsia-300 px-5 py-3 text-sm font-black text-[#07111F] shadow-lg shadow-cyan-500/15 hover:brightness-105"><LogIn className="h-4 w-4" />Entrar no CrewCheck</a>
             <a href="/privacy" className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#07111F] hover:bg-cyan-100"><ShieldCheck className="h-4 w-4" />Política de Privacidade</a>
             <a href="/terms" className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15"><FileText className="h-4 w-4" />Termos de Uso</a>
           </div>
