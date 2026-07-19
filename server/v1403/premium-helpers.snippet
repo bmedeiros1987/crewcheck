@@ -1,0 +1,116 @@
+// CrewCheck v14.0.3 — Concierge humano, natural e personalizável.
+function conciergeDayForKey(roster = {}, key = '') {
+  return (Array.isArray(roster?.days) ? roster.days : []).find((day) => conciergeRecordDateKey({ day }) === key) || null;
+}
+function conciergeReplyKeyboard(value = '') {
+  if (/^\/(?:start|ajuda|help|comandos|menu)(?:@\S+)?$/i.test(value)) return conciergeKeyboard;
+  if (/^\/(?:configuracoes|meunome|nomeconcierge)(?:@\S+)?/i.test(value)) return conciergeSettingsKeyboard;
+  return conciergeFunctionKeyboard;
+}
+async function conciergeIdentityFlow(text = '', profile = {}, snapshot = null) {
+  const value = normalizeConciergeButtonText(text);
+  const preferences = snapshot?.preferences || {};
+  const premium = isPremiumConcierge(snapshot || {}, profile || {}) || Boolean(typeof cc1371IsAdmin === 'function' && cc1371IsAdmin(String(profile?.email || '').toLowerCase()));
+  const command = String(value || '').trim();
+  const asksSettings = /^\/configuracoes(?:@\S+)?$/i.test(command);
+  const asksUserName = /^\/meunome(?:@\S+)?(?:\s|$)/i.test(command) || /^(?:me chama de|pode me chamar de)\s+/i.test(command);
+  const asksConciergeName = /^\/nomeconcierge(?:@\S+)?(?:\s|$)/i.test(command) || /^nome do concierge(?:\s|$)/i.test(command);
+  if (asksSettings) return { handled: true, reply: buildConciergeSettingsReply(profile, snapshot || {}), snapshot };
+  if (asksUserName) {
+    const proposed = cleanDisplayName(command.replace(/^\/meunome(?:@\S+)?\s*/i, '').replace(/^(?:me chama de|pode me chamar de)\s+/i, ''), '');
+    if (!proposed) {
+      const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-user-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
+      return { handled: true, reply: 'Como você gostaria que eu chamasse você? Escreva somente o nome ou apelido.', snapshot: saved || snapshot };
+    }
+    const nextStep = premium && !preferences.conciergeNameConfirmed ? 'ask-concierge-name' : 'complete';
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { preferredName: proposed, conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME, onboardingStep: nextStep } });
+    const follow = premium
+      ? `Eu começo usando ${preferredConciergeName(saved || snapshot || {})}. Você pode manter esse nome ou escrever “nome do concierge” seguido do novo nome.`
+      : `Eu vou usar ${DEFAULT_CONCIERGE_NAME} como nome do concierge. A troca desse nome fica disponível no plano Premium.`;
+    return { handled: true, reply: `Fechado, ${proposed}. Vou chamar você assim daqui pra frente. ${follow}`, snapshot: saved || snapshot };
+  }
+  if (asksConciergeName) {
+    if (!premium) return { handled: true, reply: `Por enquanto, meu nome é ${DEFAULT_CONCIERGE_NAME}. A personalização do nome do concierge é um recurso Premium e é feita somente por texto.`, snapshot };
+    const proposed = cleanDisplayName(command.replace(/^\/nomeconcierge(?:@\S+)?\s*/i, '').replace(/^nome do concierge\s*/i, ''), '');
+    if (!proposed) {
+      const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-concierge-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
+      return { handled: true, reply: `Qual nome você quer usar para o concierge? O nome atual é ${preferredConciergeName(saved || snapshot || {})}.`, snapshot: saved || snapshot };
+    }
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeName: proposed, conciergeNameConfirmed: true, onboardingStep: 'complete' } });
+    return { handled: true, reply: `Combinado. A partir de agora, o concierge se chama ${proposed}. Essa configuração fica salva no seu perfil Premium.`, snapshot: saved || snapshot };
+  }
+  if (preferences.onboardingStep === 'ask-user-name' && command && !command.startsWith('/')) {
+    const proposed = cleanDisplayName(command, '');
+    const nextStep = premium ? 'ask-concierge-name' : 'complete';
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { preferredName: proposed, conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME, onboardingStep: nextStep } });
+    const follow = premium
+      ? `Eu sou ${DEFAULT_CONCIERGE_NAME}. Quer manter esse nome ou prefere outro? Escreva “nome do concierge” seguido do nome escolhido.`
+      : `Eu sou ${DEFAULT_CONCIERGE_NAME}. No Premium, você pode trocar meu nome pelas configurações em texto.`;
+    return { handled: true, reply: `Boa, ${proposed}. Vou chamar você assim. ${follow}`, snapshot: saved || snapshot };
+  }
+  if (preferences.onboardingStep === 'ask-concierge-name' && command && !command.startsWith('/')) {
+    if (!premium) {
+      const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeName: DEFAULT_CONCIERGE_NAME, onboardingStep: 'complete' } });
+      return { handled: true, reply: `Tudo certo. Vou continuar como ${DEFAULT_CONCIERGE_NAME}.`, snapshot: saved || snapshot };
+    }
+    const proposed = /manter|bruno saraiva/i.test(command) ? DEFAULT_CONCIERGE_NAME : cleanDisplayName(command, DEFAULT_CONCIERGE_NAME);
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeName: proposed, conciergeNameConfirmed: true, onboardingStep: 'complete' } });
+    return { handled: true, reply: `Perfeito. Pode me chamar de ${proposed}. Agora é só perguntar sobre a sua escala.`, snapshot: saved || snapshot };
+  }
+  if ((!preferences.preferredName || !preferences.onboardingStep) && /^\/(?:start|ajuda|help|comandos)(?:@\S+)?$/i.test(command)) {
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-user-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
+    return { handled: true, reply: `Oi! Eu sou ${DEFAULT_CONCIERGE_NAME}, o concierge da sua escala. Antes da gente começar: como você gostaria que eu chamasse você? Responda somente por texto com seu nome ou apelido.`, snapshot: saved || snapshot };
+  }
+  return { handled: false, snapshot };
+}
+async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = {}) {
+  const roster = snapshot?.roster;
+  if (!roster?.days?.length) return `${premiumGreeting(profile, snapshot || {})} ainda não tenho uma escala ativa. Envie o PDF oficial ou sincronize pelo app.`;
+  if (mode === 'summary') {
+    const stats = conciergeRosterDiagnostics(roster);
+    const next = conciergeNextProgram(roster);
+    return `${premiumGreeting(profile, snapshot)} sua escala tem ${stats.flights} pernas distribuídas em ${stats.programs} programações. ${next ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next) }) : 'Não encontrei uma programação futura confirmada.'}`;
+  }
+  if (mode === 'today' || mode === 'tomorrow') {
+    const offset = mode === 'tomorrow' ? 86_400_000 : 0;
+    const key = conciergeDateKey(new Date(Date.now() + offset));
+    const label = mode === 'today' ? 'Hoje' : 'Amanhã';
+    const found = conciergeProgramRecords(roster).filter((record) => conciergeRecordDateKey(record) === key);
+    if (!found.length) return buildBlankDaySummary({ profile, snapshot, day: conciergeDayForKey(roster, key), label });
+    return found.map((record, index) => buildProgramSummary({ profile, snapshot, record, label: index ? 'Na sequência' : label, presentationTime: conciergePresentationTime(record) })).join('\n');
+  }
+  const next = conciergeNextProgram(roster);
+  return next
+    ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next) })
+    : `${premiumGreeting(profile, snapshot)} não encontrei uma programação futura confirmada na escala ativa.`;
+}
+async function conciergePremiumDepartureReply(snapshot, profile = {}) {
+  const roster = snapshot?.roster;
+  const record = conciergeProgramRecords(roster).find((item) => {
+    if (item.end < new Date()) return false;
+    if (item.legs?.length) return true;
+    return !conciergeRemoteCodes.has(item.code) && ['ASB', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
+  });
+  if (!record) return buildDepartureSummary({ profile, snapshot });
+  const presentation = conciergePresentationTime(record);
+  const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
+  const origin = record.legs?.[0]?.origin || record.day?.base || '';
+  const location = snapshot?.preferences?.location;
+  if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
+  const route = await conciergeTravelEstimate(location, origin);
+  if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
+  if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} você está longe de ${airportName(origin)}. Para esse deslocamento, revise a rota completa no app antes de considerar o horário da apresentação, que é às ${spokenTime(presentation)}.`;
+  const bufferMinutes = 25;
+  const leave = new Date(presentationDate.getTime() - (route.minutes + bufferMinutes) * 60_000);
+  const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(leave);
+  let radar = null;
+  const firstLeg = record.legs?.[0];
+  if (firstLeg && conciergeRecordDateKey(record) === conciergeDateKey(new Date())) {
+    radar = await runRadarRace(buildFlightContext(firstLeg.flightNumber), firstLeg.origin || '', firstLeg.destination || '');
+    if (snapshot && radar?.ok) {
+      conciergeApplyRadar(snapshot, { record, leg: firstLeg }, radar);
+      await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'departure-radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
+    }
+  }
+  return buildDepartureSummary({ profile, snapshot, record, route, leaveTime, origin, radar, presentationTime: presentation });
+}
