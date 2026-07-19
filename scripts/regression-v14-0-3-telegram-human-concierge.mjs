@@ -8,9 +8,9 @@ const human = fs.readFileSync('server/v1404/telegram-language.mjs', 'utf8');
 const metadata = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const android = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
 
-assert.equal(metadata.version, '14.0.4');
-assert.match(android, /versionCode 140004\b/);
-assert.match(android, /versionName '14\.0\.4'/);
+assert.equal(metadata.version, '14.0.5');
+assert.match(android, /versionCode 140005\b/);
+assert.match(android, /versionName '14\.0\.5'/);
 
 assert.match(server, /server\/v1404\/telegram-language\.mjs/);
 assert.match(server, /conciergeFunctionKeyboard/);
@@ -48,4 +48,4 @@ assert.match(human, /Azul/);
 assert.match(human, /buildBlankDaySummary/);
 assert.match(human, /premiumVoicePolicy/);
 
-console.log('CrewCheck v14.0.4 human Telegram concierge compatibility regression OK.');
+console.log('CrewCheck v14.0.5 Telegram concierge compatibility regression OK.');
