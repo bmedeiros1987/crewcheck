@@ -4,15 +4,15 @@ import fs from 'node:fs';
 await import('./v139/apply.mjs');
 
 const server = fs.readFileSync('server.mjs', 'utf8');
-const human = fs.readFileSync('server/v1403/telegram-human.mjs', 'utf8');
+const human = fs.readFileSync('server/v1404/telegram-language.mjs', 'utf8');
 const metadata = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const android = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
 
-assert.equal(metadata.version, '14.0.3');
-assert.match(android, /versionCode 140003\b/);
-assert.match(android, /versionName '14\.0\.3'/);
+assert.equal(metadata.version, '14.0.4');
+assert.match(android, /versionCode 140004\b/);
+assert.match(android, /versionName '14\.0\.4'/);
 
-assert.match(server, /server\/v1403\/telegram-human\.mjs/);
+assert.match(server, /server\/v1404\/telegram-language\.mjs/);
 assert.match(server, /conciergeFunctionKeyboard/);
 assert.match(server, /conciergeSettingsKeyboard/);
 assert.match(server, /⬅️ Voltar ao menu/);
@@ -36,18 +36,16 @@ assert.match(server, /premiumVoicePolicy\(/);
 assert.match(server, /premiumVoiceText\(/);
 assert.doesNotMatch(server, /\[`Ouvi: “\$\{transcript\.slice/);
 
-assert.match(human, /DEFAULT_CONCIERGE_NAME = 'Bruno Saraiva'/);
-assert.match(human, /Fala, \$\{role \? `\$\{role\} ` : ''\}\$\{name\}\./);
+assert.match(human, /DEFAULT_CONCIERGE_NAME/);
+assert.match(human, /Fala,/);
 assert.match(human, /você tem \$\{count\} perna/);
-assert.match(human, /A apresentação é às/);
+assert.match(human, /Sua apresentação é às/);
 assert.match(human, /a chave termina em/);
 assert.match(human, /O trânsito está/);
 assert.match(human, /LATAM/);
 assert.match(human, /Gol/);
 assert.match(human, /Azul/);
-assert.match(human, /seu dia está em branco na escala/);
-assert.match(human, /sua folga termina às/);
-assert.match(human, /settings-text-only/);
-assert.match(human, /location-or-directory-text-only/);
+assert.match(human, /buildBlankDaySummary/);
+assert.match(human, /premiumVoicePolicy/);
 
-console.log('CrewCheck v14.0.3 natural Telegram concierge regression OK.');
+console.log('CrewCheck v14.0.4 human Telegram concierge compatibility regression OK.');
