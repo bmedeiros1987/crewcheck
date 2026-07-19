@@ -8,7 +8,8 @@ const calendar = read('client/src/lib/googleCalendarSync.ts');
 const legal = read('client/src/pages/LegalPage.tsx');
 const about = read('client/src/pages/OAuthVerificationPage.tsx');
 const app = read('client/src/App.tsx');
-const auth = read('client/src/pages/AuthPage.tsx');
+const authPage = read('client/src/pages/AuthPage.tsx');
+const authClient = read('client/src/lib/authClient.ts');
 const migration = read('migrations/20260719_009_google_oauth_legal_utf8.sql');
 const kit = read('docs/google-oauth-verification-kit-2026.md');
 const android = read('android-wrapper/app/build.gradle');
@@ -42,7 +43,17 @@ assert.match(about, /Limited Use/);
 assert.match(app, /path="\/about"/);
 assert.match(app, /<LegalPage kind="privacy"/);
 assert.match(app, /<LegalPage kind="terms"/);
-assert.match(auth, /Termos de Uso<\/a> e a <a href="\/privacy"/);
+assert.match(authPage, /Termos de Uso<\/a> e a <a href="\/privacy"/);
+
+assert.match(authClient, /const PUBLIC_AUTH_ENDPOINTS = new Set\(/);
+assert.match(authClient, /'\/api\/auth\/login'/);
+assert.match(authClient, /const token = protectedRequest \? getToken\(\) : null;/);
+assert.match(authClient, /export function expireSession\(\)/);
+assert.match(authClient, /expireSession\(\);\n  const session = await jsonFetch/);
+assert.match(authClient, /status === 401 && protectedRequest/);
+assert.match(authClient, /E-mail ou senha inválidos/);
+const expireBlock = authClient.match(/export function expireSession\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+assert.doesNotMatch(expireBlock, /USER_KEY|crewcheck_roster|crewcheck_latest_roster_bundle/);
 
 assert.match(migration, /SET NAMES utf8mb4/);
 assert.match(migration, /CONVERT TO CHARACTER SET utf8mb4/);
@@ -56,4 +67,4 @@ assert.match(kit, /Show all services/);
 assert.match(kit, /Unlisted/);
 assert.match(kit, /source Google Calendar account/);
 
-console.log('CrewCheck v14.0.2 OAuth least privilege, UTF-8 legal terms and verification kit OK.');
+console.log('CrewCheck v14.0.2 OAuth least privilege, UTF-8 legal terms, login recovery and verification kit OK.');
