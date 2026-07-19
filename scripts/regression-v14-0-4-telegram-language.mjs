@@ -20,9 +20,9 @@ const server = fs.readFileSync('server.mjs', 'utf8');
 const metadata = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const android = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
 
-assert.equal(metadata.version, '14.0.4');
-assert.match(android, /versionCode 140004\b/);
-assert.match(android, /versionName '14\.0\.4'/);
+assert.equal(metadata.version, '14.0.5');
+assert.match(android, /versionCode 140005\b/);
+assert.match(android, /versionName '14\.0\.5'/);
 assert.match(server, /matchesTodayIntent\(value\)/);
 assert.match(server, /matchesDepartureIntent\(value\)/);
 assert.match(server, /calculateDepartureWindow\(presentationDate, route\)/);
@@ -112,4 +112,4 @@ assert.match(departure, /O trânsito está/);
 assert.match(departure, /aeroporto de Brasília/);
 assert.doesNotMatch(departure, /saia.*12 horas/);
 
-console.log('CrewCheck v14.0.4 Telegram natural language and grammar regression OK.');
+console.log('CrewCheck v14.0.5 Telegram natural language and grammar regression OK.');
