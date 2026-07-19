@@ -1,0 +1,24 @@
+async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
+  const value = normalizeConciergeButtonText(text);
+  const lower = value.toLowerCase();
+  const identity = await conciergeIdentityFlow(value, profile, snapshot);
+  if (identity.handled) return identity.reply;
+  snapshot = identity.snapshot || snapshot;
+  if (!value || /^\/(?:start|ajuda|help|comandos|menu)(?:@\S+)?$/i.test(value) || /^(ajuda|comandos)$/i.test(value)) return conciergeHelp(preferredUserName(profile, snapshot || {}));
+  if (/^\/(?:hoje)(?:@\S+)?\b/i.test(value) || /\b(programa[cç][aã]o|escala)\s+(de\s+)?hoje\b/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'today', profile);
+  if (/^\/(?:amanha|amanhã)(?:@\S+)?\b/i.test(value) || /\b(programa[cç][aã]o|escala)\s+(de\s+)?amanh[ãa]\b/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'tomorrow', profile);
+  if (/^\/(?:proximo|próximo)(?:@\S+)?\b/i.test(value) || /pr[oó]xima\s+(programa[cç][aã]o|escala|atividade|voo)/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'next', profile);
+  if (/^\/escala(?:@\S+)?\b/i.test(value) || /resumo\s+(da\s+)?escala/i.test(lower)) return conciergePremiumScheduleReply(snapshot, 'summary', profile);
+  if (/^\/(?:portao|portão|radar)(?:@\S+)?\b/i.test(value) || /\b(port[aã]o|gate|radar|status\s+do\s+voo)\b/i.test(lower)) return conciergeRadarReply(value, profile, snapshot);
+  if (/^\/(?:alertameteo|alertasmeteo)(?:@\S+)?\b/i.test(value)) return conciergeWeatherAlertsReply(value, profile, snapshot);
+  if (/^\/atis(?:@\S+)?\b/i.test(value) || /\b(atis)\b/i.test(lower)) return conciergeAtisReply(value, snapshot);
+  if (/^\/(?:metar|taf)(?:@\S+)?\b/i.test(value) || /\b(metar|taf|meteorologia)\b/i.test(lower)) return conciergeWeatherReply(value, snapshot);
+  if (/^\/saida(?:@\S+)?\b/i.test(value) || /\b(que horas devo sair|sa[ií]da inteligente|hora de sair)\b/i.test(lower)) return conciergePremiumDepartureReply(snapshot, profile);
+  if (/^\/(?:hoteis|hotéis|hotel)(?:@\S+)?\b/i.test(value) || /\b(hotel|hot[eé]is|pernoite)\b/i.test(lower)) return conciergeHotelsReply(snapshot);
+  if (/^\/academias?(?:@\S+)?\b/i.test(value) || /\b(academia|wellhub|gympass|smart fit|treino perto)\b/i.test(lower)) return conciergeGymsReply(snapshot);
+  if (/^\/rotina(?:@\S+)?\b/i.test(value) || /\b(rotina|recupera[cç][aã]o|treino hoje)\b/i.test(lower)) return conciergeRoutineReply(snapshot);
+  if (/^\/diarias?(?:@\S+)?\b/i.test(value) || /\bdi[aá]rias?\b/i.test(lower)) return conciergePerDiemReply(snapshot);
+  if (/^\/conformidade(?:@\S+)?\b/i.test(value) || /\b(rbac|act|irregularidade|conformidade)\b/i.test(lower)) return conciergeComplianceReply(snapshot);
+  if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'Localização recebida. Escolha a função que deseja consultar.' : 'Envie sua localização pelo clipe do Telegram para ativar busca próxima e Saída Inteligente.';
+  return 'Não peguei exatamente o que você quer. Pode escrever de outro jeito ou voltar ao menu para escolher uma função.';
+}
