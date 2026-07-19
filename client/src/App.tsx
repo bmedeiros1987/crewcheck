@@ -8,6 +8,8 @@ import Home from "./pages/Home";
 import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
 import InfoPage from "./pages/InfoPage";
+import LegalPage from "./pages/LegalPage";
+import OAuthVerificationPage from "./pages/OAuthVerificationPage";
 import WatchPage from "./pages/WatchPage";
 import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
@@ -20,9 +22,9 @@ type CrewThemeMode = 'light' | 'dark' | 'system';
 function loadCrewThemeMode(): CrewThemeMode {
   try {
     const saved = window.localStorage.getItem('crewcheck_theme_mode');
-    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'dark';
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
   } catch {
-    return 'dark';
+    return 'system';
   }
 }
 
@@ -90,7 +92,6 @@ function Protected({ children }: { children: ReactNode }) {
   return <TermsGate>{children}</TermsGate>;
 }
 
-
 function CrewCheckGlobalBottomMenu() {
   return null;
 }
@@ -116,9 +117,12 @@ function Router() {
       <Route path="/download">{() => <Protected><InfoPage page="download" /></Protected>}</Route>
       <Route path="/android">{() => <Protected><InfoPage page="download" /></Protected>}</Route>
       <Route path="/disclaimer">{() => <InfoPage page="disclaimer" />}</Route>
-      <Route path="/privacy">{() => <InfoPage page="privacy" />}</Route>
+      <Route path="/privacy">{() => <LegalPage kind="privacy" />}</Route>
       <Route path="/delete-account">{() => <InfoPage page="deleteAccount" />}</Route>
-      <Route path="/terms">{() => <InfoPage page="terms" />}</Route>
+      <Route path="/terms">{() => <LegalPage kind="terms" />}</Route>
+      <Route path="/about" component={OAuthVerificationPage} />
+      <Route path="/oauth-verification" component={OAuthVerificationPage} />
+      <Route path="/google-calendar" component={OAuthVerificationPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -139,7 +143,7 @@ export default function App() {
     applySavedTheme();
 
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '13.8.8');
+      window.localStorage.setItem('crewcheck_last_loaded_version', '14.0.2');
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations()
           .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
@@ -203,7 +207,8 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !currentPath.startsWith('/privacy') && !currentPath.startsWith('/terms') && !currentPath.startsWith('/delete-account') && !currentPath.startsWith('/visitor') && !currentPath.startsWith('/share/'));
+  const publicPaths = ['/privacy', '/terms', '/about', '/oauth-verification', '/google-calendar', '/delete-account', '/visitor', '/share/'];
+  const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !publicPaths.some((path) => currentPath.startsWith(path)));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
   if (maintenanceBlocks) return (
