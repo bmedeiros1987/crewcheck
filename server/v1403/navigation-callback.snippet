@@ -1,0 +1,18 @@
+async function handleTelegramNavigationCallback(update = {}) {
+  const callback = update?.callback_query;
+  const data = String(callback?.data || '');
+  if (!data.startsWith('cc_nav:')) return false;
+  const chatId = callback?.message?.chat?.id;
+  if (!chatId) return true;
+  const message = { ...(callback.message || {}), from: callback.from || callback.message?.from || {} };
+  const profile = await telegramProfileForChatAsync(message);
+  const snapshot = await conciergeLoadSnapshot(profile);
+  if (data === 'cc_nav:settings') {
+    await answerTelegramCallback(callback.id, 'Abrindo configurações…');
+    await sendTelegramMessage(chatId, buildConciergeSettingsReply(profile, snapshot || {}), { reply_markup: conciergeSettingsKeyboard });
+    return true;
+  }
+  await answerTelegramCallback(callback.id, 'Voltando ao menu…');
+  await sendTelegramMessage(chatId, conciergeHelp(preferredUserName(profile, snapshot || {})), { reply_markup: conciergeKeyboard });
+  return true;
+}

@@ -17,7 +17,7 @@ if (!source.includes(policyMarker)) {
 const oldSender = `async function sendHumanTelegramVoiceReply(chatId, replyText, transcript = '') {\n  const finalReply = humanizeTelegramVoiceText(replyText);\n  await showHumanRecordingAction(chatId, 2);\n  const audioReply = await sendTelegramTtsAudio(chatId, finalReply, {`;
 const newSender = `async function sendHumanTelegramVoiceReply(chatId, replyText, transcript = '') {\n  const policy = telegramVoiceReplyPolicy(replyText, transcript);\n  if (!policy.allowed) return false;\n  const finalReply = humanizeTelegramVoiceText(replyText);\n  await showHumanRecordingAction(chatId, 1);\n  const audioReply = await sendTelegramTtsAudio(chatId, finalReply, {`;
 if (source.includes(oldSender)) source = source.replace(oldSender, newSender);
-else if (!source.includes('const policy = telegramVoiceReplyPolicy(replyText, transcript);')) throw new Error('CrewCheck v14.0.1: função de envio de voz não localizada.');
+else if (!source.includes('const policy = telegramVoiceReplyPolicy(replyText, transcript);') && !source.includes('const policy = premiumVoicePolicy(replyText, transcript,')) throw new Error('CrewCheck v14.0.1: função de envio de voz não localizada.');
 
 source = source.replace(
   "nativeVoiceNotes: true, atisSupported: true",

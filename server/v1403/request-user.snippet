@@ -1,0 +1,28 @@
+function telegramRequestUser(req, body = {}) {
+  let email = String(body.email || '').trim().toLowerCase();
+  let name = String(body.name || '').trim();
+  let role = String(body.rank || body.role || '').trim();
+  let premiumAccess = Boolean(body.premiumAccess);
+  let subscriptionPlan = String(body.subscriptionPlan || '').trim();
+  let subscriptionStatus = String(body.subscriptionStatus || '').trim();
+  const accessKeyHash = conciergeAccessHash(body.conciergeKey || body.accessKey || req?.headers?.['x-crewcheck-concierge-key'] || '');
+  let authenticated = false;
+  try {
+    if (typeof cc1371Verify === 'function' && typeof cc1371RequestToken === 'function') {
+      const payload = cc1371Verify(cc1371RequestToken(req));
+      const tokenEmail = String(payload?.email || '').trim().toLowerCase();
+      if (tokenEmail) {
+        email = tokenEmail;
+        name = String(payload?.name || '').trim() || name;
+        role = String(payload?.rank || payload?.role || payload?.function || '').trim() || role;
+        premiumAccess = Boolean(payload?.premiumAccess || payload?.admin || premiumAccess);
+        subscriptionPlan = String(payload?.subscriptionPlan || payload?.plan || '').trim() || subscriptionPlan;
+        subscriptionStatus = String(payload?.subscriptionStatus || '').trim() || subscriptionStatus;
+        authenticated = true;
+      }
+    }
+  } catch {}
+  if (!email) email = 'local@crewcheck.local';
+  if (!name) name = email.includes('@') ? email.split('@')[0] : 'Tripulante CrewCheck';
+  return { email, name, role, rank: role, premiumAccess, subscriptionPlan, subscriptionStatus, authenticated, accessKeyHash };
+}
