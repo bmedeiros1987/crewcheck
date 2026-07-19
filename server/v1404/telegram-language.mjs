@@ -101,7 +101,7 @@ export function matchesRosterSummaryIntent(value = '') {
     /\bcomo (?:esta|ficou) (?:a )?minha escala\b/,
     /\bo que (?:eu )?tenho (?:na|nesta|durante a) escala\b/,
     /\bo que (?:eu )?tenho (?:no|neste) mes\b/,
-    /\bquantos? (?:voos?|pernas?|programacoes?) (?:eu )?tenho\b/,
+    /\bquant[oa]s (?:voos?|pernas?|programacoes?) (?:eu )?tenho\b/,
     /\bminha escala (?:do|deste) mes\b/,
   ]);
 }
