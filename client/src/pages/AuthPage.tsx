@@ -22,11 +22,15 @@ export default function AuthPage() {
 
   useEffect(() => { getCurrentTerms().then(setTerms).catch(() => undefined); }, []);
   useEffect(() => {
-    const light = localStorage.getItem('crewcheck_theme_mode') === 'light' || localStorage.getItem('crewcheck_light_premium') === '1';
+    const saved = localStorage.getItem('crewcheck_theme_mode');
+    const mode = saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+    const light = mode === 'light' || (mode === 'system' && !window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.crewThemeMode = mode;
     document.documentElement.dataset.crewTheme = light ? 'light' : 'dark';
     document.documentElement.classList.toggle('dark', !light);
     document.documentElement.style.colorScheme = light ? 'light' : 'dark';
-    localStorage.setItem('crewcheck_last_loaded_version', '13.9.0');
+    localStorage.setItem('crewcheck_theme_mode', mode);
+    localStorage.setItem('crewcheck_last_loaded_version', '14.0.2');
   }, []);
 
   async function submit() {
@@ -40,7 +44,8 @@ export default function AuthPage() {
         setLocation('/');
       } else if (mode === 'register') {
         if (!password) throw new Error('Informe uma senha.');
-        if (!termsAccepted) throw new Error('Leia e aceite os Termos de Uso.');
+        if (password.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+        if (!termsAccepted) throw new Error('Leia e aceite os Termos de Uso e a Política de Privacidade.');
         await register({ email, password, confirmPassword: password, name: name || email.split('@')[0], usageIntent: 'crewcheck-premium' }) as any;
         if (terms) await acceptCurrentTerms(terms).catch(() => undefined);
         toast.success('Cadastro concluído.');
@@ -74,7 +79,7 @@ export default function AuthPage() {
 
   const title = mode === 'login' ? 'Bem-vindo de volta.' : mode === 'register' ? 'Criar conta CrewCheck.' : mode === 'recover' ? 'Recuperar acesso.' : 'Definir nova senha.';
 
-  return <main className="cz-auth" data-version="13.9.0">
+  return <main className="cz-auth" data-version="14.0.2" lang="pt-BR">
     <div className="cz-wallpaper"/>
     <section className="cz-auth-brand"><span><Plane/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div><p><em>Premium</em><b>Beta</b></p></section>
     <section className="cz-login-card">
@@ -82,21 +87,21 @@ export default function AuthPage() {
       <small style={{ color:'#5b21b6', opacity:1 }}>Acesso protegido</small>
       <h1>{title}</h1>
       <p>{mode === 'recover' || mode === 'reset' ? 'Receba um código temporário por e-mail, Telegram ou ligação via Telegram.' : 'Entre para carregar sua escala e continuar de onde parou.'}</p>
-      {mode === 'register' && <label><span/> Nome completo<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome"/></label>}
-      <label><Mail/> E-mail cadastrado *<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.email@exemplo.com"/></label>
+      {mode === 'register' && <label><span/> Nome completo<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoComplete="name"/></label>}
+      <label><Mail/> E-mail cadastrado *<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.email@exemplo.com" autoComplete="email"/></label>
       {mode === 'recover' && <label><Send/> Canal
         <select value={delivery} onChange={(event) => setDelivery(event.target.value as Delivery)}>
           <option value="both">E-mail + Telegram</option><option value="email">Somente e-mail</option><option value="telegram">Somente Telegram</option><option value="telegram-call">Telegram + ligação com o código</option>
         </select>
         <small>A ligação usa a mesma franquia mensal do Despertador, inclusive no plano gratuito.</small>
       </label>}
-      {mode === 'reset' && <label><ShieldCheck/> Código temporário *<input inputMode="numeric" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000"/></label>}
-      {(mode === 'login' || mode === 'register' || mode === 'reset') && <label><Lock/> {mode === 'reset' ? 'Nova senha' : 'Senha'} *<div><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="mínimo 8 caracteres"/><Eye/></div></label>}
-      {mode === 'register' && <label className="cz-auth-terms"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)}/><span>Li e aceito os <a href="/terms" target="_blank" rel="noreferrer">Termos de Uso e Privacidade</a>{terms ? `, versão ${terms.version}` : ''}.</span></label>}
+      {mode === 'reset' && <label><ShieldCheck/> Código temporário *<input inputMode="numeric" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" autoComplete="one-time-code"/></label>}
+      {(mode === 'login' || mode === 'register' || mode === 'reset') && <label><Lock/> {mode === 'reset' ? 'Nova senha' : 'Senha'} *<div><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="mínimo 8 caracteres" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/><Eye/></div></label>}
+      {mode === 'register' && <label className="cz-auth-terms"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)}/><span>Li, compreendi e aceito os <a href="/terms" target="_blank" rel="noreferrer">Termos de Uso</a> e a <a href="/privacy" target="_blank" rel="noreferrer">Política de Privacidade</a>{terms ? `, versão ${terms.version}` : ''}. As integrações opcionais, como Google Calendar e localização, serão solicitadas separadamente quando eu decidir utilizá-las.</span></label>}
       <button className="cz-primary" onClick={submit} disabled={busy || (mode === 'register' && !termsAccepted)}>{busy ? 'Aguarde...' : mode === 'login' ? 'Entrar no CrewCheck' : mode === 'register' ? 'Criar cadastro' : mode === 'recover' ? 'Enviar código temporário' : 'Atualizar senha'} <span>→</span></button>
       {mode === 'login' && <button className="cz-secondary" onClick={demo}><Sparkles/> Ver modo demonstração</button>}
       <footer><a onClick={() => setMode('recover')}>Esqueci minha senha</a><a onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Criar conta' : 'Voltar ao login'}</a></footer>
     </section>
-    <div className="cz-auth-footer"><ShieldCheck/> CREWCHECK V13.9.0 • PREMIUM BETA</div>
+    <div className="cz-auth-footer"><ShieldCheck/> CREWCHECK V14.0.2 • PREMIUM BETA</div>
   </main>;
 }
