@@ -32,8 +32,8 @@ assert.match(regulation, /Tabela B\.1/, 'Simulador deve informar a tabela aplica
 assert.match(regulation, /não é autorização automática/i, 'Extensão deve preservar aviso operacional.');
 assert.match(regulationCss, /@media \(min-width:1024px\)/, 'A melhoria do menu deve ser exclusiva do desktop.');
 assert.match(regulationCss, /1180px/, 'Menu desktop deve aproveitar uma área maior.');
-assert.match(manifest, /"version": "(?:13\.9\.\d+|14\.0\.0)"/, 'Manifesto PWA deve publicar uma versão CrewCheck válida.');
-assert.match(androidGradle, /versionCode (?:139\d{3,4}|140000)\b/, 'Android deve avançar o versionCode para a Play Console.');
-assert.match(androidGradle, /versionName '(?:13\.9\.\d+|14\.0\.0)'/, 'Android deve gerar um AAB em versão suportada.');
+assert.match(manifest, /"version": "(?:13\.9\.\d+|14\.0\.\d+)"/, 'Manifesto PWA deve publicar uma versão CrewCheck válida.');
+assert.match(androidGradle, /versionCode (?:139\d{3,4}|140\d{3})\b/, 'Android deve avançar o versionCode para a Play Console.');
+assert.match(androidGradle, /versionName '(?:13\.9\.\d+|14\.0\.\d+)'/, 'Android deve gerar um AAB em versão suportada.');
 
 console.log('CrewCheck regression: Telegram voice, ATIS, emergency, regulation and premium system OK.');
