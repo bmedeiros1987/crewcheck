@@ -10,7 +10,7 @@ const migration = read('migrations/20260716_007_v1395_medical_emergency_care.sql
 const render = read('render.yaml');
 const metadata = JSON.parse(read('package.json'));
 
-assert.match(metadata.version, /^(?:13\.9\.\d+|14\.0\.0)$/);
+assert.match(metadata.version, /^(?:13\.9\.\d+|14\.0\.\d+)$/);
 assert.match(emergency, /ensureEmergencySchema/);
 assert.match(emergency, /CREATE TABLE IF NOT EXISTS crewcheck_platform_emergency_profiles/);
 assert.match(emergency, /CREATE TABLE IF NOT EXISTS crewcheck_platform_emergency_sessions/);
