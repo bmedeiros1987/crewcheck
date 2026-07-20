@@ -1,0 +1,716 @@
+/* CrewCheck v14.0.8 — correção estrutural dos cards do cockpit.
+   As classes são exclusivas para não herdar grids e flex legados. */
+
+html {
+  scroll-padding-top: calc(16px + env(safe-area-inset-top, 0px));
+}
+
+.cz-app {
+  padding-top: max(12px, env(safe-area-inset-top, 0px)) !important;
+}
+
+.cc1408-program-heading {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 1 !important;
+  transform: none !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 24px 0 14px !important;
+  padding: 0 2px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cc1408-program-heading h2 {
+  min-width: 0 !important;
+  margin: 0 !important;
+  font-size: clamp(1.35rem, 5vw, 1.85rem) !important;
+  line-height: 1.15 !important;
+  overflow-wrap: normal !important;
+}
+
+.cc1408-program-heading > button {
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 42px !important;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  border-radius: 13px !important;
+  white-space: nowrap !important;
+  transform: none !important;
+}
+
+/* Resumo financeiro: nenhum seletor antigo participa desta estrutura. */
+.cc1408-finance-panel,
+.cc1408-finance-panel * {
+  box-sizing: border-box;
+}
+
+.cc1408-finance-panel {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 14px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 22px 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.cc1408-finance-header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 2px !important;
+}
+
+.cc1408-finance-heading {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 3px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.cc1408-finance-heading > strong,
+.cc1408-finance-heading > small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  writing-mode: horizontal-tb !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+.cc1408-finance-heading > strong {
+  color: var(--cc-text, #f8fbff) !important;
+  font-size: clamp(1.15rem, 4.4vw, 1.45rem) !important;
+  line-height: 1.2 !important;
+}
+
+.cc1408-finance-heading > small {
+  color: var(--cc-muted, #9cb3c5) !important;
+  font-size: .84rem !important;
+  line-height: 1.35 !important;
+}
+
+.cz-app button.cc1408-finance-visibility {
+  position: static !important;
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  width: auto !important;
+  min-width: 48px !important;
+  max-width: none !important;
+  min-height: 46px !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 9px 12px !important;
+  border: 1px solid rgba(115, 191, 229, .24) !important;
+  border-radius: 15px !important;
+  background: rgba(8, 29, 48, .9) !important;
+  color: var(--cc-text, #f8fbff) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .14) !important;
+  transform: none !important;
+}
+
+.cc1408-finance-visibility > svg {
+  width: 22px !important;
+  height: 22px !important;
+  flex: 0 0 auto !important;
+}
+
+.cc1408-finance-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+  gap: 14px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.cz-app button.cc1408-finance-card {
+  appearance: none !important;
+  position: relative !important;
+  inset: auto !important;
+  display: grid !important;
+  grid-template-columns: 52px minmax(0, 1fr) 22px !important;
+  grid-template-rows: auto !important;
+  align-items: center !important;
+  align-content: center !important;
+  justify-items: stretch !important;
+  justify-content: stretch !important;
+  gap: 14px !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 154px !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 19px !important;
+  border: 1px solid rgba(111, 190, 229, .23) !important;
+  border-radius: 24px !important;
+  background: linear-gradient(145deg, rgba(12, 39, 61, .97), rgba(7, 25, 43, .97)) !important;
+  color: var(--cc-text, #f8fbff) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .2), inset 0 1px rgba(255, 255, 255, .04) !important;
+  text-align: left !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+.cz-app button.cc1408-finance-card:hover,
+.cz-app button.cc1408-finance-card:focus-visible {
+  border-color: rgba(54, 216, 235, .52) !important;
+  background: linear-gradient(145deg, rgba(15, 50, 76, .98), rgba(11, 31, 53, .98)) !important;
+  outline: 3px solid rgba(34, 211, 238, .15) !important;
+  outline-offset: 2px !important;
+}
+
+.cc1408-finance-icon {
+  position: static !important;
+  display: grid !important;
+  place-items: center !important;
+  align-self: center !important;
+  width: 52px !important;
+  min-width: 52px !important;
+  max-width: 52px !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid rgba(63, 211, 233, .22) !important;
+  border-radius: 17px !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, .34), rgba(34, 211, 238, .24)) !important;
+  color: #ecfeff !important;
+  transform: none !important;
+}
+
+.cc1408-finance-icon > svg {
+  width: 23px !important;
+  height: 23px !important;
+}
+
+.cc1408-finance-copy {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-content: center !important;
+  gap: 7px !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  writing-mode: horizontal-tb !important;
+  transform: none !important;
+}
+
+.cc1408-finance-eyebrow,
+.cc1408-finance-value,
+.cc1408-finance-detail {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  writing-mode: horizontal-tb !important;
+  word-break: normal !important;
+  transform: none !important;
+}
+
+.cc1408-finance-eyebrow {
+  color: #9db6c9 !important;
+  font-size: .83rem !important;
+  font-weight: 650 !important;
+  line-height: 1.35 !important;
+  overflow-wrap: break-word !important;
+}
+
+.cc1408-finance-value {
+  color: #ffffff !important;
+  font-size: clamp(1.65rem, 6vw, 2.45rem) !important;
+  font-weight: 900 !important;
+  line-height: 1.05 !important;
+  letter-spacing: -.03em !important;
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+}
+
+.cc1408-finance-value.masked {
+  letter-spacing: .14em !important;
+  white-space: nowrap !important;
+}
+
+.cc1408-finance-detail {
+  color: #a8bdcc !important;
+  font-size: .84rem !important;
+  font-weight: 500 !important;
+  line-height: 1.48 !important;
+  overflow-wrap: break-word !important;
+}
+
+.cc1408-finance-chevron {
+  position: static !important;
+  align-self: center !important;
+  justify-self: end !important;
+  width: 22px !important;
+  min-width: 22px !important;
+  height: 22px !important;
+  margin: 0 !important;
+  color: #b9cfdd !important;
+  transform: none !important;
+}
+
+/* Estado sem escala, com hierarquia simples e altura natural. */
+.cc1408-empty-roster {
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) !important;
+  gap: 7px 16px !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: clamp(20px, 5vw, 28px) !important;
+  overflow: hidden !important;
+}
+
+.cc1408-empty-roster > svg {
+  grid-row: 1 / span 3 !important;
+  align-self: start !important;
+  width: 52px !important;
+  height: 52px !important;
+  color: #d8f7ff !important;
+}
+
+.cc1408-empty-roster > h2,
+.cc1408-empty-roster > p {
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  text-align: left !important;
+}
+
+.cc1408-empty-roster > h2 {
+  font-size: clamp(1.45rem, 5.5vw, 2rem) !important;
+  line-height: 1.2 !important;
+}
+
+.cc1408-empty-roster > p {
+  color: #adc0ce !important;
+  font-size: .98rem !important;
+  line-height: 1.5 !important;
+}
+
+.cc1408-empty-roster > button {
+  grid-column: 2 !important;
+  justify-self: start !important;
+  width: auto !important;
+  min-height: 46px !important;
+  margin-top: 8px !important;
+}
+
+/* Importação: estrutura própria em vez de reutilizar o card de trânsito. */
+.cz-app button.cc1408-import-card {
+  appearance: none !important;
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 16px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 20px 0 0 !important;
+  padding: clamp(18px, 4.5vw, 26px) !important;
+  border: 1px solid rgba(111, 190, 229, .23) !important;
+  border-radius: 27px !important;
+  background: linear-gradient(145deg, rgba(12, 39, 61, .97), rgba(7, 25, 43, .97)) !important;
+  color: var(--cc-text, #f8fbff) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .2), inset 0 1px rgba(255, 255, 255, .04) !important;
+  text-align: left !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+.cz-app button.cc1408-import-card:hover,
+.cz-app button.cc1408-import-card:focus-visible {
+  border-color: rgba(54, 216, 235, .52) !important;
+  outline: 3px solid rgba(34, 211, 238, .15) !important;
+  outline-offset: 2px !important;
+}
+
+.cc1408-import-head {
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) 22px !important;
+  align-items: center !important;
+  gap: 14px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.cc1408-import-icon {
+  display: grid !important;
+  place-items: center !important;
+  width: 58px !important;
+  height: 58px !important;
+  border: 1px solid rgba(34, 211, 238, .35) !important;
+  border-radius: 19px !important;
+  background: linear-gradient(135deg, rgba(34, 211, 238, .2), rgba(139, 92, 246, .19)) !important;
+  color: #e8fbff !important;
+}
+
+.cc1408-import-title {
+  display: grid !important;
+  gap: 4px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.cc1408-import-title > strong,
+.cc1408-import-title > small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  writing-mode: horizontal-tb !important;
+  overflow-wrap: break-word !important;
+}
+
+.cc1408-import-title > strong {
+  color: #fff !important;
+  font-size: clamp(1.35rem, 5.2vw, 1.9rem) !important;
+  line-height: 1.15 !important;
+}
+
+.cc1408-import-title > small {
+  color: #a9bfce !important;
+  font-size: .95rem !important;
+  line-height: 1.4 !important;
+}
+
+.cc1408-import-chevron {
+  justify-self: end !important;
+  width: 22px !important;
+  height: 22px !important;
+  color: #c6dae6 !important;
+}
+
+.cc1408-import-body {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas:
+    "format badge"
+    "description description"
+    "status status" !important;
+  align-items: center !important;
+  gap: 12px 14px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: clamp(17px, 4vw, 23px) !important;
+  border: 1px solid rgba(111, 190, 229, .17) !important;
+  border-radius: 21px !important;
+  background: rgba(3, 18, 33, .5) !important;
+  overflow: hidden !important;
+}
+
+.cc1408-import-format {
+  grid-area: format !important;
+  min-width: 0 !important;
+  color: #ffffff !important;
+  font-size: clamp(3rem, 13vw, 5rem) !important;
+  font-weight: 950 !important;
+  line-height: .94 !important;
+  letter-spacing: -.04em !important;
+  white-space: nowrap !important;
+}
+
+.cc1408-import-badge {
+  grid-area: badge !important;
+  justify-self: end !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 34px !important;
+  padding: 7px 13px !important;
+  border: 1px solid rgba(45, 212, 191, .34) !important;
+  border-radius: 999px !important;
+  background: rgba(45, 212, 191, .1) !important;
+  color: #eafffb !important;
+  font-size: .78rem !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+.cc1408-import-description {
+  grid-area: description !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  color: #b0c4d2 !important;
+  font-size: 1rem !important;
+  line-height: 1.45 !important;
+  overflow-wrap: break-word !important;
+}
+
+.cc1408-import-status {
+  grid-area: status !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-top: 2px !important;
+}
+
+.cc1408-import-status > small,
+.cc1408-import-status > strong {
+  margin: 0 !important;
+  padding: 0 !important;
+  writing-mode: horizontal-tb !important;
+}
+
+.cc1408-import-status > small {
+  color: #91aabd !important;
+  font-size: .8rem !important;
+}
+
+.cc1408-import-status > strong {
+  min-width: 0 !important;
+  color: #f8fbff !important;
+  font-size: .94rem !important;
+  line-height: 1.35 !important;
+  overflow-wrap: break-word !important;
+}
+
+html[data-crew-theme="light"] .cz-app button.cc1408-finance-card,
+html[data-crew-theme="light"] .cz-app button.cc1408-import-card {
+  border-color: rgba(33, 92, 132, .18) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .99), rgba(235, 245, 252, .99)) !important;
+  color: #10243a !important;
+  box-shadow: 0 18px 42px rgba(35, 73, 100, .12) !important;
+}
+
+html[data-crew-theme="light"] :is(
+  .cc1408-finance-heading > strong,
+  .cc1408-finance-value,
+  .cc1408-import-title > strong,
+  .cc1408-import-format,
+  .cc1408-import-status > strong
+) {
+  color: #10243a !important;
+}
+
+html[data-crew-theme="light"] :is(
+  .cc1408-finance-heading > small,
+  .cc1408-finance-eyebrow,
+  .cc1408-finance-detail,
+  .cc1408-import-title > small,
+  .cc1408-import-description,
+  .cc1408-import-status > small
+) {
+  color: #526c80 !important;
+}
+
+html[data-crew-theme="light"] .cc1408-import-body {
+  border-color: rgba(33, 92, 132, .14) !important;
+  background: rgba(226, 239, 248, .76) !important;
+}
+
+html[data-crew-theme="light"] .cz-app button.cc1408-finance-visibility {
+  border-color: rgba(33, 92, 132, .2) !important;
+  background: #fff !important;
+  color: #10243a !important;
+}
+
+@media (max-width: 760px) {
+  .cc1408-finance-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cz-app button.cc1408-finance-card {
+    min-height: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .cz-app {
+    padding-inline: 12px !important;
+  }
+
+  .cc1408-program-heading {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    margin-top: 20px !important;
+  }
+
+  .cc1408-program-heading h2 {
+    font-size: 1.36rem !important;
+  }
+
+  .cc1408-program-heading > button {
+    min-height: 40px !important;
+    padding: 7px 10px !important;
+    font-size: .84rem !important;
+  }
+
+  .cc1408-finance-header {
+    align-items: start !important;
+  }
+
+  .cc1408-finance-visibility > span {
+    display: none !important;
+  }
+
+  .cz-app button.cc1408-finance-card {
+    grid-template-columns: 46px minmax(0, 1fr) 18px !important;
+    gap: 11px !important;
+    padding: 16px !important;
+    border-radius: 21px !important;
+  }
+
+  .cc1408-finance-icon {
+    width: 46px !important;
+    min-width: 46px !important;
+    max-width: 46px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    border-radius: 15px !important;
+  }
+
+  .cc1408-finance-value {
+    font-size: clamp(1.55rem, 8vw, 2.05rem) !important;
+  }
+
+  .cc1408-finance-detail {
+    font-size: .8rem !important;
+  }
+
+  .cc1408-empty-roster {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .cc1408-empty-roster > svg {
+    grid-row: auto !important;
+  }
+
+  .cc1408-empty-roster > button {
+    grid-column: auto !important;
+    width: 100% !important;
+    justify-self: stretch !important;
+  }
+
+  .cz-app button.cc1408-import-card {
+    gap: 14px !important;
+    padding: 17px !important;
+    border-radius: 23px !important;
+  }
+
+  .cc1408-import-head {
+    grid-template-columns: 52px minmax(0, 1fr) 18px !important;
+    gap: 11px !important;
+  }
+
+  .cc1408-import-icon {
+    width: 52px !important;
+    height: 52px !important;
+    border-radius: 17px !important;
+  }
+
+  .cc1408-import-title > strong {
+    font-size: 1.28rem !important;
+  }
+
+  .cc1408-import-title > small {
+    font-size: .88rem !important;
+  }
+
+  .cc1408-import-body {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    padding: 16px !important;
+  }
+
+  .cc1408-import-format {
+    font-size: clamp(2.8rem, 16vw, 4rem) !important;
+  }
+
+  .cc1408-import-status {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 3px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .cc1408-finance-header {
+    grid-template-columns: minmax(0, 1fr) 46px !important;
+  }
+
+  .cz-app button.cc1408-finance-card {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+  }
+
+  .cc1408-finance-chevron {
+    display: none !important;
+  }
+
+  .cc1408-finance-icon {
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+  }
+
+  .cc1408-import-head {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+  }
+
+  .cc1408-import-chevron {
+    display: none !important;
+  }
+
+  .cc1408-import-body {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "format"
+      "badge"
+      "description"
+      "status" !important;
+  }
+
+  .cc1408-import-badge {
+    justify-self: start !important;
+  }
+}
