@@ -1,5 +1,5 @@
-const CACHE_NAME = 'crewcheck-v12.5.78-shell';
-const RUNTIME_CACHE = 'crewcheck-v12.5.78-runtime';
+const CACHE_NAME = 'crewcheck-v14.0.5-shell';
+const RUNTIME_CACHE = 'crewcheck-v14.0.5-runtime';
 const APP_SHELL = ['/', '/index.html', '/manifest.json'];
 
 async function trimCache(cacheName, maxEntries = 120) {
@@ -16,7 +16,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
-    await Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name) && ![CACHE_NAME, RUNTIME_CACHE].includes(name)).map((name) => caches.delete(name)));  
+    await Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name) && ![CACHE_NAME, RUNTIME_CACHE].includes(name)).map((name) => caches.delete(name)));
     await self.clients.claim();
   })().catch(() => self.clients.claim()));
 });
@@ -44,7 +44,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then((response) => {
+    event.respondWith(fetch(request, { cache: 'no-store' }).then((response) => {
       const copy = response.clone();
       caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)).catch(() => undefined);
       return response;
