@@ -12,6 +12,10 @@ if (fs.existsSync(calendarPath)) {
     .replace(
       "  const embedded = isEmbeddedCrewCheckWebView();\n  const bridgeHealth = await serverGoogleCalendarHealth();\n  if (embedded || bridgeHealth.configured || hasServerGoogleCalendarMarker()) {",
       "  const embedded = isEmbeddedCrewCheckWebView();\n  if (embedded || isProductionGoogleOrigin() || hasServerGoogleCalendarMarker()) {",
+    )
+    .replace(
+      "      if (embedded || !(error instanceof GoogleCalendarBridgeError) || error.code !== 'GOOGLE_OAUTH_SERVER_NOT_CONFIGURED') throw error;",
+      "      if (embedded || isProductionGoogleOrigin() || !(error instanceof GoogleCalendarBridgeError) || error.code !== 'GOOGLE_OAUTH_SERVER_NOT_CONFIGURED') throw error;",
     );
 
   const signature = "export async function connectGoogleCalendar(prompt = 'consent select_account'): Promise<void> {";
@@ -27,4 +31,4 @@ if (fs.existsSync(calendarPath)) {
   fs.writeFileSync(calendarPath, calendar, 'utf8');
 }
 
-console.log('CrewCheck v14.0.5: popup seguro, divulgação OAuth e compatibilidade de verificação preservados.');
+console.log('CrewCheck v14.0.5: popup seguro, sem fallback Cloud Identity em produção e divulgação OAuth preservados.');
