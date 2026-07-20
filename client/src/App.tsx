@@ -63,6 +63,25 @@ function CrewCheckOpeningSplash({ label = "CrewCheck Premium" }: { label?: strin
   );
 }
 
+async function enablePartnerDemoRoster() {
+  try {
+    const response = await fetch('/api/partner/demo-profile', { cache: 'no-store', credentials: 'same-origin' });
+    if (!response.ok) return;
+    const payload = await response.json().catch(() => null);
+    if (!payload?.partner || !payload?.demoRosterEnabled) return;
+    const user = getStoredUser();
+    const accountKey = String(user?.id || user?.email || 'partner').toLowerCase();
+    const marker = `crewcheck_partner_demo_loaded:${accountKey}`;
+    if (window.localStorage.getItem(marker) === '1') return;
+    window.localStorage.setItem('crewcheck_demo_mode_seen', '1');
+    window.sessionStorage.setItem('crewcheck_demo_active', '1');
+    window.localStorage.setItem('crewcheck_partner_demo_account', accountKey);
+    window.localStorage.setItem('crewcheck_partner_name', String(payload.partnerName || 'Parceiro CrewCheck'));
+    window.localStorage.setItem(marker, '1');
+  } catch {
+  }
+}
+
 function Protected({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
   const [ready, setReady] = useState(false);
@@ -79,6 +98,7 @@ function Protected({ children }: { children: ReactNode }) {
       return;
     }
     getMe()
+      .then(() => enablePartnerDemoRoster())
       .catch(() => setLocation("/login"))
       .finally(() => mounted && setReady(true));
     return () => { mounted = false; };
