@@ -1,4 +1,4 @@
-name: CrewCheck v14.0.6 validation
+name: CrewCheck v14.0.7 validation
 
 on:
   pull_request:
@@ -11,12 +11,13 @@ on:
       - agent/v14-0-2-google-oauth-legal
       - agent/v14-0-4-telegram-intents-grammar
       - agent/v14-0-6-smart-departure-login-finance-layout
+      - agent/v14-0-7-premium-layout-audit
 
 permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-v14-0-6-${{ github.ref }}
+  group: crewcheck-v14-0-7-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,6 +47,7 @@ jobs:
       - run: node scripts/regression-v14-0-4-telegram-language.mjs
       - run: node scripts/regression-v14-0-5-google-calendar-cloud-identity.mjs
       - run: node scripts/regression-v14-0-6-smart-departure-login-finance-layout.mjs
+      - run: node scripts/regression-v14-0-7-premium-layout-audit.mjs
       - run: node test-server.mjs
 
   android:
@@ -71,7 +73,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Apply CrewCheck v14.0.6 source safeguards
+      - name: Apply CrewCheck v14.0.7 source safeguards
         run: node scripts/v139/apply.mjs
       - name: Prepare protected upload keystore
         shell: bash
@@ -110,8 +112,8 @@ jobs:
           grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           unzip -t "$source_aab" >/dev/null
-          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.0.6-production.aab"
-          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.0.6-production.aab > CrewCheck-14.0.6-production.aab.sha256)
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.0.7-production.aab"
+          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.0.7-production.aab > CrewCheck-14.0.7-production.aab.sha256)
       - name: Package official brand assets
         shell: bash
         run: |
@@ -121,10 +123,10 @@ jobs:
           file "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-14.0.6-Smart-Departure-Premium-Layout
+          name: CrewCheck-14.0.7-Premium-Layout-Audit
           path: |
-            ${{ runner.temp }}/CrewCheck-14.0.6-production.aab
-            ${{ runner.temp }}/CrewCheck-14.0.6-production.aab.sha256
+            ${{ runner.temp }}/CrewCheck-14.0.7-production.aab
+            ${{ runner.temp }}/CrewCheck-14.0.7-production.aab.sha256
             ${{ runner.temp }}/CrewCheck-Google-Play-512.png
             ${{ runner.temp }}/CrewCheck-PWA-512.png
             ${{ runner.temp }}/CrewCheck-Telegram-512.png
