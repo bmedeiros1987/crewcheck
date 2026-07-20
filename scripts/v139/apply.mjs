@@ -31,3 +31,4 @@ await import('../v1405/compatibility.mjs');
 await import('../v1405/idempotency.mjs');
 await import('../v1406/apply.mjs');
 await import('../v1407/apply.mjs');
+await import('../v1408/apply.mjs');
