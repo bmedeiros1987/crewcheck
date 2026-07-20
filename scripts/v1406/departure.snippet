@@ -1,0 +1,51 @@
+function Departure({ event }: { event: ZeroLeg }) {
+  const departureModes = [
+    { id: 'automatic', label: 'Automático', detail: 'Meio mais rápido', icon: Navigation },
+    { id: 'car-flight', label: 'Carro + voo', detail: 'Casa até o aeroporto', icon: Car },
+    { id: 'uber-flight', label: 'Uber/99 + voo', detail: 'Corrida até o aeroporto', icon: Car },
+    { id: 'transit-flight', label: 'Transporte + voo', detail: 'Etapas até o aeroporto', icon: MapIcon },
+    { id: 'driving', label: 'Carro', detail: 'Rota rodoviária', icon: Car },
+    { id: 'uber', label: 'Uber/99', detail: 'Estimativa e chamada', icon: Car },
+    { id: 'transit', label: 'Transporte público', detail: 'Itinerário detalhado', icon: MapIcon },
+  ];
+  const [mode, setMode] = useState(() => storage.get('crewcheck_departure_mode', 'automatic'));
+  const [margin, setMargin] = useState(() => Number(storage.get('crewcheck_departure_margin', '35')) || 35);
+  const [stopAlerts, setStopAlerts] = useState(() => storage.get('crewcheck_transit_stop_alerts', '0') === '1');
+  const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
+  const [routePending, setRoutePending] = useState(true);
+  const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
+  useEffect(() => {
+    setRoute(null);
+    setRoutePending(true);
+    setOriginLabel(eventRouteOriginLabel(event));
+  }, [event.id, event.origin, event.destination, event.hotel]);
+  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem, hotel, aeroporto, mapa e trânsito.</p></article></>;
+  const estimate = smartDepartureEstimate(event, route, margin);
+  const liveMinutes = routeDurationMinutes(route);
+  const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';
+  const statusLabel = liveMinutes ? 'TRÂNSITO ATUALIZADO' : routePending ? 'CALCULANDO TRÂNSITO' : 'ESTIMATIVA PROTEGIDA';
+  function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); setRoutePending(true); }
+  function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
+  return <><Brand back/><section className="cz-departure" data-departure-v1406="true">
+    <article className="cz-depart-hero">
+      <header className="cz-depart-hero-head"><span>SAÍDA PREVISTA</span><em className={`cz-depart-status ${liveMinutes ? 'ready' : 'pending'}`}>{statusLabel}</em></header>
+      <strong className="cz-depart-time">{estimate.leaveLabel}</strong>
+      <h2>{originLabel} → {event.origin}</h2>
+      <p>{modeLabel} · {estimate.travelLabel} de deslocamento · margem {estimate.marginMinutes} min · apresentação {estimate.presentationLabel}</p>
+    </article>
+    <div className="cz-depart-kpis">
+      <div><Navigation/><span>Sair às</span><strong>{estimate.leaveLabel}</strong></div>
+      <div><Clock/><span>Deslocamento</span><strong>{estimate.travelLabel}</strong></div>
+      <div><ShieldCheck/><span>Margem</span><strong>{estimate.marginMinutes} min</strong></div>
+    </div>
+    <section className="cz-toolbox">
+      <h2>Como você vai sair</h2>
+      <p>Escolha o trajeto completo. A saída nunca fica igual à apresentação: mesmo sem resposta do trânsito, o CrewCheck usa uma estimativa protegida e mantém pelo menos 45 minutos de antecedência total.</p>
+      <div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button type="button" key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>
+      {mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(change) => { setStopAlerts(change.target.checked); storage.set('crewcheck_transit_stop_alerts', change.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}
+      <div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button type="button" className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div>
+      {!liveMinutes && <p className="cz-mini-status">{routePending ? 'Buscando trânsito em tempo real. O horário exibido já usa uma estimativa segura.' : route?.message || 'O trânsito não respondeu; mantive a estimativa protegida para não deixar a saída em branco.'}</p>}
+    </section>
+    <GoogleMapsRoutePreview event={event} mode={mode} onRoute={(next) => { setRoute(next); setRoutePending(false); const minutes = routeDurationMinutes(next); if (minutes) saveDepartureTravelMinutes(event, minutes); }} onOriginLabel={setOriginLabel}/>
+  </section></>;
+}
