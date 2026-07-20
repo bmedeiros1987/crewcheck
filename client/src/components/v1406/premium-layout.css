@@ -1,0 +1,584 @@
+/* CrewCheck v14.0.6 — Smart Departure, auth and financial cockpit audit */
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.cz-app {
+  min-width: 0;
+  padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.cz-app > :not(.cz-wallpaper):not(.cz-bottom-nav):not(.cz-menu-overlay):not(.cz-busy):not(.cz-opening-video),
+.cz-app section,
+.cz-app article,
+.cz-app div,
+.cz-app button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cz-app :where(h1,h2,h3,strong,b,em,small,span,p,button) {
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  hyphens: none !important;
+}
+
+.cz-depart-hero h2,
+.cz-depart-hero p,
+.cz-route-kpis strong,
+.cz-finance-row small,
+.cz-roster-copy p,
+.cz-roster-copy small,
+.cz-money-card small {
+  overflow-wrap: anywhere !important;
+}
+
+/* Login: links and password eye are real interactive controls. */
+.cz-login-card footer {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 16px;
+}
+
+.cz-auth-link {
+  min-height: 38px !important;
+  padding: 6px 2px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #5b21b6 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  font-weight: 800 !important;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.cz-auth-link:hover,
+.cz-auth-link:focus-visible {
+  color: #c026d3 !important;
+  outline: 3px solid rgba(126, 34, 206, .18);
+  outline-offset: 3px;
+  transform: none !important;
+}
+
+.cz-password-field {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.cz-password-field input {
+  grid-column: 1 / -1;
+  width: 100%;
+  padding-right: 56px !important;
+}
+
+.cz-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  padding: 0 !important;
+  transform: translateY(-50%) !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--cc-text, #10243a) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+.cz-password-toggle:hover,
+.cz-password-toggle:focus-visible {
+  background: rgba(91, 33, 182, .1) !important;
+  outline: 2px solid rgba(91, 33, 182, .24);
+}
+
+.cz-auth-mode-feedback {
+  min-height: 22px;
+  margin: -2px 0 10px !important;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(91, 33, 182, .07);
+  color: #5b21b6 !important;
+  font-size: 12px !important;
+  font-weight: 700;
+}
+
+/* Cockpit financial privacy and real values. */
+.cz-money-panel {
+  display: grid;
+  gap: 12px;
+  margin-block: 18px;
+}
+
+.cz-money-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cz-money-panel-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.cz-money-panel-head strong {
+  color: var(--cc-text) !important;
+  font-size: clamp(1.05rem, 3.4vw, 1.35rem) !important;
+}
+
+.cz-money-panel-head small {
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-size: 12px !important;
+}
+
+.cz-money-visibility {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto !important;
+  min-width: 48px !important;
+  min-height: 44px !important;
+  padding: 8px 12px !important;
+  border: 1px solid var(--cc-line, var(--cc-border)) !important;
+  border-radius: 14px !important;
+  background: var(--cc-surface-solid, var(--cc-surface)) !important;
+  color: var(--cc-text) !important;
+  box-shadow: none !important;
+}
+
+.cz-money-row {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cz-money-card {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 112px !important;
+  padding: 16px !important;
+  border: 1px solid var(--cc-line, var(--cc-border)) !important;
+  border-radius: 22px !important;
+  background: var(--cc-surface, #fff) !important;
+  color: var(--cc-text) !important;
+  text-align: left;
+  box-shadow: var(--cc-shadow) !important;
+  overflow: hidden;
+}
+
+.cz-money-card > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--cc-violet, #8657f4) 13%, transparent);
+  color: var(--cc-violet, #8657f4);
+}
+
+.cz-money-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.cz-money-card small {
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.cz-money-card strong {
+  color: var(--cc-text) !important;
+  font-size: clamp(1.4rem, 5vw, 2.15rem) !important;
+  line-height: 1.05 !important;
+  white-space: nowrap;
+}
+
+.cz-money-card strong.masked {
+  letter-spacing: .16em;
+}
+
+.cz-money-card > svg:last-child {
+  color: var(--cc-muted, var(--cc-text-muted));
+}
+
+/* Smart Departure cockpit card: no overlapping labels. */
+.cz-smart-card {
+  overflow: hidden !important;
+}
+
+.cz-smart-content {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas:
+    "time badge"
+    "route route"
+    "meta meta";
+  align-items: center;
+  gap: 10px 14px !important;
+  min-width: 0;
+  padding: clamp(16px, 4vw, 24px) !important;
+}
+
+.cz-smart-content > strong {
+  grid-area: time;
+  min-width: 0;
+  color: var(--cc-text) !important;
+  font-size: clamp(2.7rem, 12vw, 4.8rem) !important;
+  line-height: .98 !important;
+  white-space: nowrap;
+}
+
+.cz-smart-content > em {
+  grid-area: badge;
+  justify-self: end;
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 1px solid rgba(45, 212, 191, .34);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, .1);
+  color: var(--cc-text) !important;
+  font-size: clamp(.78rem, 3vw, 1rem) !important;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cz-smart-content > p {
+  grid-area: route;
+  margin: 0 !important;
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-size: clamp(.92rem, 3.5vw, 1.15rem) !important;
+  line-height: 1.35 !important;
+}
+
+.cz-smart-content > div {
+  grid-area: meta;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-width: 0;
+}
+
+.cz-smart-content > div small,
+.cz-smart-content > div b {
+  min-width: 0;
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-size: 12px !important;
+  line-height: 1.3 !important;
+}
+
+/* Full departure screen. */
+.cz-departure {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 980px) !important;
+  padding-bottom: 28px;
+}
+
+.cz-depart-hero {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "eyebrow status"
+    "time time"
+    "route route"
+    "detail detail";
+  align-items: start;
+  gap: 10px 16px !important;
+  padding: clamp(20px, 5vw, 30px) !important;
+  overflow: hidden !important;
+}
+
+.cz-depart-hero-head {
+  display: contents;
+}
+
+.cz-depart-hero-head > span {
+  grid-area: eyebrow;
+  align-self: center;
+  color: var(--cc-text) !important;
+  font-size: clamp(.82rem, 3.2vw, 1rem) !important;
+  font-weight: 900;
+  letter-spacing: .18em;
+}
+
+.cz-depart-status {
+  grid-area: status;
+  justify-self: end;
+  align-self: center;
+  max-width: 100%;
+  padding: 8px 13px;
+  border: 1px solid rgba(45, 212, 191, .35);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, .1);
+  color: var(--cc-text) !important;
+  font-size: clamp(.72rem, 2.7vw, .9rem) !important;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cz-depart-status.pending {
+  border-color: rgba(14, 165, 233, .3);
+  background: rgba(14, 165, 233, .09);
+}
+
+.cz-depart-time {
+  grid-area: time;
+  display: block !important;
+  width: 100%;
+  color: var(--cc-text) !important;
+  font-size: clamp(3.4rem, 17vw, 6.6rem) !important;
+  font-weight: 950 !important;
+  line-height: .93 !important;
+  letter-spacing: -.055em;
+  white-space: nowrap;
+}
+
+.cz-depart-hero h2 {
+  grid-area: route;
+  margin: 0 !important;
+  color: var(--cc-text) !important;
+  font-size: clamp(1.15rem, 4.7vw, 1.75rem) !important;
+  line-height: 1.25 !important;
+  font-weight: 650 !important;
+}
+
+.cz-depart-hero > p {
+  grid-area: detail;
+  margin: 0 !important;
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-size: clamp(.9rem, 3.6vw, 1.08rem) !important;
+  line-height: 1.45 !important;
+}
+
+.cz-depart-kpis {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cz-depart-kpis > div {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 12px;
+  min-height: 116px;
+  padding: 16px !important;
+  overflow: hidden;
+}
+
+.cz-depart-kpis > div > svg {
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
+  color: var(--cc-text);
+}
+
+.cz-depart-kpis > div > span {
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-size: 13px !important;
+}
+
+.cz-depart-kpis > div > strong {
+  min-width: 0;
+  color: var(--cc-text) !important;
+  font-size: clamp(1.65rem, 6vw, 2.5rem) !important;
+  line-height: 1.05 !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.cc-departure-mode-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.cc-departure-mode-grid > button {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0 !important;
+  padding: 13px !important;
+  text-align: left;
+}
+
+.cc-departure-mode-grid > button span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cz-route-kpis {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.cz-route-kpis > div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cz-google-route-card,
+.cz-google-route-card header,
+.cz-google-route-card footer,
+.cz-google-map-preview {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.cz-google-map-preview iframe,
+.cz-google-map-preview img {
+  display: block;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* General card and finance safeguards. */
+.cz-kpi,
+.cz-kpi-card,
+.cz-finance-grid > *,
+.cz-report-grid > *,
+.cz-flight-card,
+.cz-roster-card,
+.cz-toolbox,
+.cz-panel-head {
+  overflow: hidden !important;
+}
+
+.cz-finance-grid,
+.cz-report-grid,
+.cz-kpi-row {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+}
+
+.cz-finance-row {
+  display: grid !important;
+  grid-template-columns: minmax(78px, auto) minmax(150px, .9fr) minmax(200px, 1.6fr) minmax(110px, auto) !important;
+  align-items: center;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .cz-app {
+    padding-inline: 12px !important;
+    padding-bottom: calc(126px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .cz-money-row,
+  .cz-depart-kpis {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cz-money-card {
+    min-height: 96px !important;
+  }
+
+  .cz-smart-content {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+
+  .cz-depart-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "eyebrow"
+      "status"
+      "time"
+      "route"
+      "detail";
+  }
+
+  .cz-depart-status {
+    justify-self: start;
+    white-space: normal;
+  }
+
+  .cz-depart-kpis > div {
+    min-height: 94px;
+  }
+
+  .cc-departure-mode-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cz-google-route-card header,
+  .cz-google-route-card footer {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .cz-finance-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: start;
+  }
+
+  .cz-finance-row > small {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 420px) {
+  .cz-login-card footer {
+    display: grid !important;
+    grid-template-columns: 1fr;
+  }
+
+  .cz-auth-link {
+    width: 100% !important;
+    text-align: left;
+  }
+
+  .cz-smart-content {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "time"
+      "badge"
+      "route"
+      "meta";
+  }
+
+  .cz-smart-content > em {
+    justify-self: start;
+  }
+
+  .cz-money-panel-head {
+    align-items: flex-start;
+  }
+
+  .cz-money-visibility span {
+    display: none;
+  }
+}

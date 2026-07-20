@@ -1,0 +1,20 @@
+function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
+  const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
+  const margin = Math.max(0, Number(storage.get('crewcheck_departure_margin', '35')) || 35);
+  useEffect(() => {
+    if (event.placeholder) return;
+    let alive = true;
+    setRoute(null);
+    fetchRoutePreviewInfo(eventRouteOrigin(event), eventRouteDestination(event), 'driving')
+      .then((next) => { if (alive) setRoute(next); })
+      .catch(() => { if (alive) setRoute({ ok: false, message: 'Estimativa local protegida.' }); });
+    return () => { alive = false; };
+  }, [event.id, event.origin, event.destination, event.hotel]);
+  if (event.placeholder) {
+    return <article className="cz-smart-card" onClick={() => setView('import')}><div className="cz-smart-title"><span><Upload size={26}/></span><div><h2>Importar escala real</h2><p>PDF oficial da sua programação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>PDF</strong><em>IMPORTAR</em><p>Nenhum dado fictício será usado.</p><div><small>Status</small><b>Aguardando escala</b></div></div></article>;
+  }
+  const estimate = smartDepartureEstimate(event, route, margin);
+  const liveMinutes = routeDurationMinutes(route);
+  const status = liveMinutes ? 'ATUALIZADA' : route ? 'ESTIMATIVA' : 'CALCULANDO';
+  return <article className="cz-smart-card" data-smart-departure-v1406="true" onClick={() => setView('departure')} aria-label={`Saída Inteligente prevista às ${estimate.leaveLabel}`}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Saída Inteligente</h2><p>Recomendado para sua programação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{estimate.leaveLabel}</strong><em>{status}</em><p>{eventRouteOriginLabel(event)} → {event.origin}</p><div><small>{estimate.sourceLabel}</small><b>{estimate.travelLabel} + {estimate.marginMinutes} min de margem</b></div></div></article>;
+}
