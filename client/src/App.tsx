@@ -13,6 +13,7 @@ import OAuthVerificationPage from "./pages/OAuthVerificationPage";
 import WatchPage from "./pages/WatchPage";
 import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
+import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
 import { getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import TermsGate from "./components/TermsGate";
@@ -46,7 +47,6 @@ function applyCrewThemeMode(mode: CrewThemeMode) {
     document.documentElement.classList.toggle('dark', effective === 'dark');
     document.documentElement.style.colorScheme = effective;
   } catch {
-    // Mantém tema padrão quando o navegador não permite acesso ao storage.
   }
 }
 
@@ -81,20 +81,15 @@ function Protected({ children }: { children: ReactNode }) {
     getMe()
       .catch(() => setLocation("/login"))
       .finally(() => mounted && setReady(true));
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [setLocation]);
 
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
   if (!ready) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
-
   return <TermsGate>{children}</TermsGate>;
 }
 
-function CrewCheckGlobalBottomMenu() {
-  return null;
-}
+function CrewCheckGlobalBottomMenu() { return null; }
 
 function Router() {
   return (
@@ -102,6 +97,7 @@ function Router() {
       <Route path="/login" component={AuthPage} />
       <Route path="/visitor" component={VisitorAccessPage} />
       <Route path="/share/:token">{(params) => <SharedRosterPage token={params.token} />}</Route>
+      <Route path="/admin/partners">{() => <Protected><AdminPartnerAccountsPage /></Protected>}</Route>
       <Route path="/">{() => <Protected><Home /></Protected>}</Route>
       <Route path="/app">{() => <Protected><Home /></Protected>}</Route>
       <Route path="/home">{() => <Protected><Home /></Protected>}</Route>
@@ -141,27 +137,14 @@ export default function App() {
     applyDocumentLanguage();
     installGlobalStaticTranslations();
     applySavedTheme();
-
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '14.0.2');
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations()
-          .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
-          .catch(() => undefined);
-      }
-      if ('caches' in window) {
-        caches.keys()
-          .then((names) => Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name)).map((name) => caches.delete(name))))
-          .catch(() => undefined);
-      }
-    } catch {
-      // Navegador sem storage/service worker; segue normalmente.
-    }
+      window.localStorage.setItem('crewcheck_last_loaded_version', '14.1.0');
+      if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister()))).catch(() => undefined);
+      if ('caches' in window) caches.keys().then((names) => Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name)).map((name) => caches.delete(name)))).catch(() => undefined);
+    } catch {}
 
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const handleSystemTheme = () => {
-      if (loadCrewThemeMode() === 'system') applySavedTheme();
-    };
+    const handleSystemTheme = () => { if (loadCrewThemeMode() === 'system') applySavedTheme(); };
     media?.addEventListener?.('change', handleSystemTheme);
     window.addEventListener('crewcheck:theme-change', applySavedTheme);
     window.addEventListener('storage', applySavedTheme);
@@ -175,9 +158,7 @@ export default function App() {
         document.body.classList.add('crewcheck-android-body');
       }
       setAppMode(enabled);
-    } catch {
-      setAppMode(false);
-    }
+    } catch { setAppMode(false); }
 
     return () => {
       window.clearTimeout(splashTimer);
@@ -189,12 +170,10 @@ export default function App() {
 
   useEffect(() => {
     let alive = true;
-    const loadMaintenance = () => {
-      fetch('/api/maintenance/status', { cache: 'no-store' })
-        .then((response) => response.ok ? response.json() : null)
-        .then((payload) => { if (alive && payload) setMaintenanceState(payload); })
-        .catch(() => undefined);
-    };
+    const loadMaintenance = () => fetch('/api/maintenance/status', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => { if (alive && payload) setMaintenanceState(payload); })
+      .catch(() => undefined);
     loadMaintenance();
     const timer = window.setInterval(loadMaintenance, 60_000);
     const handler = () => loadMaintenance();
@@ -214,10 +193,7 @@ export default function App() {
   if (maintenanceBlocks) return (
     <ErrorBoundary>
       <Toaster richColors position={appMode ? "top-center" : "top-right"} />
-      <MaintenanceModePage
-        state={maintenanceState || undefined}
-        onAdminAccess={() => setLocation('/login')}
-      />
+      <MaintenanceModePage state={maintenanceState || undefined} onAdminAccess={() => setLocation('/login')} />
     </ErrorBoundary>
   );
 
@@ -226,6 +202,9 @@ export default function App() {
       <Toaster richColors position={appMode ? "top-center" : "top-right"} />
       <Router />
       <CrewCheckGlobalBottomMenu />
+      {clientAdmin && currentPath !== '/admin/partners' && (
+        <a href="/admin/partners" aria-label="Gerenciar contas de parceiros" style={{ position: 'fixed', right: 18, bottom: 86, zIndex: 9999, padding: '11px 14px', borderRadius: 14, background: '#173b77', color: '#fff', fontWeight: 800, textDecoration: 'none', boxShadow: '0 12px 30px rgba(15,23,42,.28)' }}>Parceiros</a>
+      )}
     </ErrorBoundary>
   );
 }
