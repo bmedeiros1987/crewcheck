@@ -130,3 +130,26 @@ jobs:
             ${{ runner.temp }}/CrewCheck-Telegram-512.png
           if-no-files-found: error
           retention-days: 14
+
+  apply-diagnostic:
+    name: v14.0.6 apply diagnostic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Capture apply output
+        shell: bash
+        run: |
+          set +e
+          node scripts/v139/apply.mjs > "$RUNNER_TEMP/v1406-apply.txt" 2>&1
+          status=$?
+          printf '\nEXIT_STATUS=%s\n' "$status" >> "$RUNNER_TEMP/v1406-apply.txt"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v1406-apply-diagnostic
+          path: ${{ runner.temp }}/v1406-apply.txt
+          if-no-files-found: error
+          retention-days: 2
