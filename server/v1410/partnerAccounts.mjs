@@ -26,26 +26,39 @@ async function ensurePartnerTable(db) {
     partner_name VARCHAR(120) NOT NULL,
     contact_name VARCHAR(120) NOT NULL,
     notes VARCHAR(500) NULL,
+    demo_roster_enabled TINYINT(1) NOT NULL DEFAULT 1,
     created_by VARCHAR(190) NOT NULL,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  try {
+    await db.query('ALTER TABLE crewcheck_partner_accounts ADD COLUMN demo_roster_enabled TINYINT(1) NOT NULL DEFAULT 1');
+  } catch (error) {
+    if (String(error?.code) !== 'ER_DUP_FIELDNAME') throw error;
+  }
+}
+
+function requireIdentity(req) {
+  const payload = verifyJwt(requestToken(req));
+  const email = safeEmail(payload?.email);
+  if (!payload || !email) throw Object.assign(new Error('Sessão expirada.'), { status: 401 });
+  return { payload, email };
 }
 
 function requireAdmin(req) {
-  const payload = verifyJwt(requestToken(req));
-  const email = safeEmail(payload?.email);
-  if (!payload || !email || !isAdminEmail(email) || !payload.admin) {
+  const identity = requireIdentity(req);
+  if (!isAdminEmail(identity.email) || !identity.payload.admin) {
     throw Object.assign(new Error('Acesso restrito ao administrador.'), { status: 403 });
   }
-  return email;
+  return identity.email;
 }
 
 async function listPartners(res, db) {
   await ensurePartnerTable(db);
   const [rows] = await db.query(`
     SELECT p.email, p.partner_name AS partnerName, p.contact_name AS contactName,
-           p.notes, p.created_by AS createdBy, p.created_at AS createdAt,
+           p.notes, p.demo_roster_enabled AS demoRosterEnabled,
+           p.created_by AS createdBy, p.created_at AS createdAt,
            a.must_change_password AS mustChangePassword,
            pr.plan, pr.display_name AS displayName
       FROM crewcheck_partner_accounts p
@@ -56,12 +69,31 @@ async function listPartners(res, db) {
   return sendJson(res, 200, { ok: true, partners: rows });
 }
 
+async function partnerDemoProfile(req, res, db) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  const { email } = requireIdentity(req);
+  await ensurePartnerTable(db);
+  const [rows] = await db.query(
+    'SELECT partner_name, contact_name, demo_roster_enabled FROM crewcheck_partner_accounts WHERE email=? LIMIT 1',
+    [email],
+  );
+  const partner = rows[0];
+  return sendJson(res, 200, {
+    ok: true,
+    partner: Boolean(partner),
+    demoRosterEnabled: Boolean(partner?.demo_roster_enabled),
+    partnerName: partner?.partner_name || null,
+    contactName: partner?.contact_name || null,
+  });
+}
+
 async function createPartner(req, res, db, adminEmail) {
   const body = await readBody(req, 100_000);
   const email = safeEmail(body.email);
   const contactName = cleanText(body.contactName || body.name, 120);
   const partnerName = cleanText(body.partnerName || body.company, 120);
   const notes = cleanText(body.notes, 500);
+  const demoRosterEnabled = body.demoRosterEnabled !== false;
   const suppliedPassword = String(body.temporaryPassword || '');
   const temporaryPassword = suppliedPassword || generateTemporaryPassword();
 
@@ -98,10 +130,10 @@ async function createPartner(req, res, db, adminEmail) {
       [email, digest.hash, digest.salt],
     );
     await connection.query(
-      `INSERT INTO crewcheck_partner_accounts (email,partner_name,contact_name,notes,created_by)
-       VALUES(?,?,?,?,?)
-       ON DUPLICATE KEY UPDATE partner_name=VALUES(partner_name), contact_name=VALUES(contact_name), notes=VALUES(notes), created_by=VALUES(created_by)`,
-      [email, partnerName, contactName, notes || null, adminEmail],
+      `INSERT INTO crewcheck_partner_accounts (email,partner_name,contact_name,notes,demo_roster_enabled,created_by)
+       VALUES(?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE partner_name=VALUES(partner_name), contact_name=VALUES(contact_name), notes=VALUES(notes), demo_roster_enabled=VALUES(demo_roster_enabled), created_by=VALUES(created_by)`,
+      [email, partnerName, contactName, notes || null, demoRosterEnabled ? 1 : 0, adminEmail],
     );
     await connection.commit();
   } catch (error) {
@@ -113,25 +145,30 @@ async function createPartner(req, res, db, adminEmail) {
 
   return sendJson(res, 201, {
     ok: true,
-    message: 'Conta de parceiro criada com Premium e troca obrigatória de senha.',
-    account: { email, contactName, partnerName, plan: 'premium_unlimited', mustChangePassword: true },
+    message: 'Conta de parceiro criada com Premium, escala demo e troca obrigatória de senha.',
+    account: { email, contactName, partnerName, plan: 'premium_unlimited', mustChangePassword: true, demoRosterEnabled },
     temporaryPassword,
   });
 }
 
 export async function handlePartnerAccountsRoute(req, res, url) {
-  if (url.pathname !== '/api/admin/partner-accounts') return false;
+  const adminRoute = url.pathname === '/api/admin/partner-accounts';
+  const demoRoute = url.pathname === '/api/partner/demo-profile';
+  if (!adminRoute && !demoRoute) return false;
   try {
-    const adminEmail = requireAdmin(req);
     const db = await dbPool();
     if (!db) return sendJson(res, 503, { ok: false, message: 'Banco de dados indisponível.' }), true;
-    if (req.method === 'GET') await listPartners(res, db);
-    else if (req.method === 'POST') await createPartner(req, res, db, adminEmail);
-    else sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+    if (demoRoute) await partnerDemoProfile(req, res, db);
+    else {
+      const adminEmail = requireAdmin(req);
+      if (req.method === 'GET') await listPartners(res, db);
+      else if (req.method === 'POST') await createPartner(req, res, db, adminEmail);
+      else sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+    }
   } catch (error) {
     sendJson(res, Number(error?.status || 500), {
       ok: false,
-      message: Number(error?.status || 500) >= 500 ? 'Não foi possível concluir a criação da conta agora.' : error.message,
+      message: Number(error?.status || 500) >= 500 ? 'Não foi possível concluir esta operação agora.' : error.message,
     });
   }
   return true;
