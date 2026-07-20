@@ -63,14 +63,39 @@ async function readPayload(response: Response): Promise<any> {
   catch { return { message: raw }; }
 }
 
-function openAuthorizationUrl(url: string): boolean {
+function prepareBrowserPopup(): Window | null {
+  if (nativeBridge()) return null;
+  try {
+    const popup = window.open('about:blank', '_blank');
+    if (popup) {
+      try {
+        popup.opener = null;
+        popup.document.title = 'Conectando Google Calendar…';
+        popup.document.body.innerHTML = '<main style="font-family:system-ui;padding:28px;color:#071d33"><h1>Conectando ao Google Calendar…</h1><p>Aguarde a tela segura do Google.</p></main>';
+      } catch {}
+    }
+    return popup;
+  } catch {
+    return null;
+  }
+}
+
+function openAuthorizationUrl(url: string, preparedPopup: Window | null): boolean {
   const bridge = nativeBridge();
   try {
     if (bridge?.openExternal) return bridge.openExternal(url) !== false;
   } catch {}
   try {
-    const popup = window.open(url, '_blank', 'noopener,noreferrer');
-    return Boolean(popup);
+    if (preparedPopup && !preparedPopup.closed) {
+      preparedPopup.location.replace(url);
+      return true;
+    }
+    const popup = window.open(url, '_blank');
+    if (popup) {
+      try { popup.opener = null; } catch {}
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -110,14 +135,25 @@ export async function serverGoogleCalendarHealth(): Promise<{ configured: boolea
 }
 
 export async function connectGoogleCalendarViaServer(): Promise<void> {
-  const response = await fetch('/api/google-calendar/oauth/start', {
-    method: 'POST',
-    headers: crewcheckAuthHeader({ 'content-type': 'application/json' }),
-    body: '{}',
-    cache: 'no-store',
-  });
+  const preparedPopup = prepareBrowserPopup();
+  let response: Response;
+  try {
+    response = await fetch('/api/google-calendar/oauth/start', {
+      method: 'POST',
+      headers: crewcheckAuthHeader({ 'content-type': 'application/json' }),
+      body: '{}',
+      cache: 'no-store',
+    });
+  } catch (error) {
+    try { preparedPopup?.close(); } catch {}
+    throw new GoogleCalendarBridgeError(
+      error instanceof Error ? error.message : 'O servidor do CrewCheck não iniciou a autorização do Google Calendar.',
+      'GOOGLE_OAUTH_START_FAILED',
+    );
+  }
   const payload = await readPayload(response);
   if (!response.ok || payload?.ok === false || !payload?.authUrl || !payload?.state) {
+    try { preparedPopup?.close(); } catch {}
     throw new GoogleCalendarBridgeError(
       String(payload?.message || 'Não foi possível iniciar a conexão segura com o Google Calendar.'),
       String(payload?.code || (response.status === 503 ? 'GOOGLE_OAUTH_SERVER_NOT_CONFIGURED' : 'GOOGLE_OAUTH_START_FAILED')),
@@ -125,7 +161,7 @@ export async function connectGoogleCalendarViaServer(): Promise<void> {
       payload,
     );
   }
-  if (!openAuthorizationUrl(String(payload.authUrl))) {
+  if (!openAuthorizationUrl(String(payload.authUrl), preparedPopup)) {
     throw new GoogleCalendarBridgeError(
       'O navegador seguro não abriu. Permita pop-ups ou abra o CrewCheck no Chrome e tente novamente.',
       'GOOGLE_OAUTH_POPUP_BLOCKED',
@@ -138,9 +174,11 @@ export async function connectGoogleCalendarViaServer(): Promise<void> {
     const status = await bridgeStatus(String(payload.state));
     if (status?.connected || status?.state === 'connected') {
       setServerGoogleCalendarMarker(true);
+      try { if (preparedPopup && !preparedPopup.closed) preparedPopup.close(); } catch {}
       return;
     }
     if (status?.state === 'failed') {
+      try { if (preparedPopup && !preparedPopup.closed) preparedPopup.close(); } catch {}
       throw new GoogleCalendarBridgeError(
         String(status?.error || status?.message || 'O Google não concluiu a autorização.'),
         'GOOGLE_OAUTH_FAILED',
@@ -149,6 +187,7 @@ export async function connectGoogleCalendarViaServer(): Promise<void> {
       );
     }
   }
+  try { if (preparedPopup && !preparedPopup.closed) preparedPopup.close(); } catch {}
   throw new GoogleCalendarBridgeError(
     'A autorização demorou mais de dois minutos. Volte ao CrewCheck e tente novamente.',
     'GOOGLE_OAUTH_TIMEOUT',
