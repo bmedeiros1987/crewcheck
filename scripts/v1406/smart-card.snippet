@@ -11,7 +11,7 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
     return () => { alive = false; };
   }, [event.id, event.origin, event.destination, event.hotel]);
   if (event.placeholder) {
-    return <article className="cz-smart-card" onClick={() => setView('import')}><div className="cz-smart-title"><span><Upload size={26}/></span><div><h2>Importar escala real</h2><p>PDF oficial da sua programação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>PDF</strong><em>IMPORTAR</em><p>Nenhum dado fictício será usado.</p><div><small>Status</small><b>Aguardando escala</b></div></div></article>;
+    return <button type="button" className="cc1408-import-card" data-import-card-v1408="true" onClick={() => setView('import')} aria-label="Importar escala real em PDF"><span className="cc1408-import-head"><span className="cc1408-import-icon"><Upload size={26}/></span><span className="cc1408-import-title"><strong>Importar escala real</strong><small>PDF oficial da sua programação</small></span><ChevronRight className="cc1408-import-chevron"/></span><span className="cc1408-import-body"><strong className="cc1408-import-format">PDF</strong><span className="cc1408-import-badge">IMPORTAR</span><span className="cc1408-import-description">Nenhum dado fictício será usado.</span><span className="cc1408-import-status"><small>Status</small><strong>Aguardando escala</strong></span></span></button>;
   }
   const estimate = smartDepartureEstimate(event, route, margin);
   const liveMinutes = routeDurationMinutes(route);
