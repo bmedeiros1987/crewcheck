@@ -53,7 +53,7 @@ if (!home.includes('data-departure-v1406')) {
   home = replaceFunctionBlock(home, 'function Departure(', 'function MonthlyMapView', snippet('departure'), 'tela de Saída Inteligente');
 }
 
-if (!home.includes('data-finance-v1406')) {
+if (!home.includes('data-finance-v1406') && !home.includes('data-finance-v1408')) {
   home = replaceFunctionBlock(home, 'function Cockpit(', 'function rosterCode', snippet('cockpit'), 'financeiro do cockpit');
 }
 
