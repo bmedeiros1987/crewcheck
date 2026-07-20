@@ -8,13 +8,18 @@ const write = (file, content) => fs.writeFileSync(file, content, 'utf8');
 const homePath = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(homePath)) throw new Error(`CrewCheck v${VERSION}: Home.tsx não localizado.`);
 let home = read(homePath);
-const auditImport = "import '@/components/v1407/layout-audit.css';";
-if (!home.includes(auditImport)) {
+const auditImports = [
+  "import '@/components/v1407/layout-audit.css';",
+  "import '@/components/v1407/component-polish.css';",
+];
+for (const auditImport of auditImports) {
+  if (home.includes(auditImport)) continue;
   const anchors = [
+    "import '@/components/v1407/layout-audit.css';",
     "import '@/components/v1406/premium-layout.css';",
     "import '@/components/v1399/premium.css';",
   ];
-  const anchor = anchors.find((candidate) => home.includes(candidate));
+  const anchor = anchors.find((candidate) => candidate !== auditImport && home.includes(candidate));
   if (!anchor) throw new Error(`CrewCheck v${VERSION}: âncora de CSS premium não localizada.`);
   home = home.replace(anchor, `${anchor}\n${auditImport}`);
 }
