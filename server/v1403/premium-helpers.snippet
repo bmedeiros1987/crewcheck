@@ -27,7 +27,7 @@ async function conciergeIdentityFlow(text = '', profile = {}, snapshot = null) {
     const follow = premium
       ? `Eu começo usando ${preferredConciergeName(saved || snapshot || {})}. Você pode manter esse nome ou escrever “nome do concierge” seguido do novo nome.`
       : `Eu vou usar ${DEFAULT_CONCIERGE_NAME} como nome do concierge. A troca desse nome fica disponível no plano Premium.`;
-    return { handled: true, reply: `Fechado, ${proposed}. Vou chamar você assim daqui pra frente. ${follow}`, snapshot: saved || snapshot };
+    return { handled: true, reply: `Fechado, ${proposed}. Vou chamar você assim daqui para a frente. ${follow}`, snapshot: saved || snapshot };
   }
   if (asksConciergeName) {
     if (!premium) return { handled: true, reply: `Por enquanto, meu nome é ${DEFAULT_CONCIERGE_NAME}. A personalização do nome do concierge é um recurso Premium e é feita somente por texto.`, snapshot };
@@ -59,17 +59,21 @@ async function conciergeIdentityFlow(text = '', profile = {}, snapshot = null) {
   }
   if ((!preferences.preferredName || !preferences.onboardingStep) && /^\/(?:start|ajuda|help|comandos)(?:@\S+)?$/i.test(command)) {
     const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'ask-user-name', conciergeName: preferences.conciergeName || DEFAULT_CONCIERGE_NAME } });
-    return { handled: true, reply: `Oi! Eu sou ${DEFAULT_CONCIERGE_NAME}, o concierge da sua escala. Antes da gente começar: como você gostaria que eu chamasse você? Responda somente por texto com seu nome ou apelido.`, snapshot: saved || snapshot };
+    return { handled: true, reply: `Oi! Eu sou ${DEFAULT_CONCIERGE_NAME}, o concierge da sua escala. Antes de começarmos, como você gostaria que eu chamasse você? Responda somente por texto com seu nome ou apelido.`, snapshot: saved || snapshot };
   }
   return { handled: false, snapshot };
 }
 async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = {}) {
   const roster = snapshot?.roster;
-  if (!roster?.days?.length) return `${premiumGreeting(profile, snapshot || {})} ainda não tenho uma escala ativa. Envie o PDF oficial ou sincronize pelo app.`;
+  if (!roster?.days?.length) return `${premiumGreeting(profile, snapshot || {})} Ainda não tenho uma escala ativa. Envie o PDF oficial ou sincronize a escala pelo app.`;
   if (mode === 'summary') {
     const stats = conciergeRosterDiagnostics(roster);
     const next = conciergeNextProgram(roster);
-    return `${premiumGreeting(profile, snapshot)} sua escala tem ${stats.flights} pernas distribuídas em ${stats.programs} programações. ${next ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next) }) : 'Não encontrei uma programação futura confirmada.'}`;
+    const opening = `${premiumGreeting(profile, snapshot)} Sua escala tem ${stats.flights} pernas distribuídas em ${stats.programs} programações.`;
+    const nextSummary = next
+      ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next), includeGreeting: false })
+      : 'Não encontrei uma programação futura confirmada.';
+    return `${opening} ${nextSummary}`;
   }
   if (mode === 'today' || mode === 'tomorrow') {
     const offset = mode === 'tomorrow' ? 86_400_000 : 0;
@@ -77,12 +81,19 @@ async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = 
     const label = mode === 'today' ? 'Hoje' : 'Amanhã';
     const found = conciergeProgramRecords(roster).filter((record) => conciergeRecordDateKey(record) === key);
     if (!found.length) return buildBlankDaySummary({ profile, snapshot, day: conciergeDayForKey(roster, key), label });
-    return found.map((record, index) => buildProgramSummary({ profile, snapshot, record, label: index ? 'Na sequência' : label, presentationTime: conciergePresentationTime(record) })).join('\n');
+    return found.map((record, index) => buildProgramSummary({
+      profile,
+      snapshot,
+      record,
+      label: index ? 'Na sequência' : label,
+      presentationTime: conciergePresentationTime(record),
+      includeGreeting: index === 0,
+    })).join('\n');
   }
   const next = conciergeNextProgram(roster);
   return next
     ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next) })
-    : `${premiumGreeting(profile, snapshot)} não encontrei uma programação futura confirmada na escala ativa.`;
+    : `${premiumGreeting(profile, snapshot)} Não encontrei uma programação futura confirmada na escala ativa.`;
 }
 async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   const roster = snapshot?.roster;
@@ -93,16 +104,17 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   });
   if (!record) return buildDepartureSummary({ profile, snapshot });
   const presentation = conciergePresentationTime(record);
-  const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
+  const parsedPresentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
+  const presentationDate = Number.isFinite(parsedPresentationDate.getTime()) ? parsedPresentationDate : record.start;
   const origin = record.legs?.[0]?.origin || record.day?.base || '';
   const location = snapshot?.preferences?.location;
   if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
   const route = await conciergeTravelEstimate(location, origin);
   if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} você está longe de ${airportName(origin)}. Para esse deslocamento, revise a rota completa no app antes de considerar o horário da apresentação, que é às ${spokenTime(presentation)}.`;
-  const bufferMinutes = 25;
-  const leave = new Date(presentationDate.getTime() - (route.minutes + bufferMinutes) * 60_000);
-  const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(leave);
+  if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} Você está longe de ${airportName(origin)}. Revise a rota completa no app antes de considerar o horário da apresentação, que é às ${spokenTime(presentation)}.`;
+  const departureWindow = calculateDepartureWindow(presentationDate, route);
+  const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(departureWindow.leave);
+  const safeRoute = { ...route, minutes: departureWindow.routeMinutes, leadMinutes: departureWindow.leadMinutes };
   let radar = null;
   const firstLeg = record.legs?.[0];
   if (firstLeg && conciergeRecordDateKey(record) === conciergeDateKey(new Date())) {
@@ -112,5 +124,5 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
       await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'departure-radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
     }
   }
-  return buildDepartureSummary({ profile, snapshot, record, route, leaveTime, origin, radar, presentationTime: presentation });
+  return buildDepartureSummary({ profile, snapshot, record, route: safeRoute, leaveTime, origin, radar, presentationTime: presentation });
 }

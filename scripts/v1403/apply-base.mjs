@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const VERSION = '14.0.3';
+const VERSION = '14.0.4';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const write = (path, content) => fs.writeFileSync(path, content, 'utf8');
 
@@ -16,7 +16,7 @@ const files = {
   requestUser: 'server/v1403/request-user.snippet',
   helpers: 'server/v1403/premium-helpers.snippet',
   buildReply: 'server/v1403/build-reply.snippet',
-  human: 'server/v1403/telegram-human.mjs',
+  human: 'server/v1404/telegram-language.mjs',
 };
 for (const file of Object.values(files)) {
   if (!fs.existsSync(file)) throw new Error(`CrewCheck v${VERSION}: arquivo ausente — ${file}.`);
@@ -25,7 +25,9 @@ for (const file of Object.values(files)) {
 const serverPath = 'server.mjs';
 let server = read(serverPath);
 const anchor = "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';";
-const premiumImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, cleanDisplayName, isPremiumConcierge, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1403/telegram-human.mjs';";
+const previousImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, cleanDisplayName, isPremiumConcierge, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1403/telegram-human.mjs';";
+const premiumImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, calculateDepartureWindow, cleanDisplayName, isPremiumConcierge, matchesDepartureIntent, matchesNextIntent, matchesRadarIntent, matchesRosterSummaryIntent, matchesTodayIntent, matchesTomorrowIntent, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1404/telegram-language.mjs';";
+if (server.includes(previousImport)) server = server.replace(previousImport, premiumImport);
 if (!server.includes(premiumImport)) {
   if (!server.includes(anchor)) throw new Error(`CrewCheck v${VERSION}: import base não localizado.`);
   server = server.replace(anchor, `${anchor}\n${premiumImport}`);

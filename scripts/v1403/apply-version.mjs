@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
-const VERSION = '14.0.3';
-const VERSION_CODE = '140003';
+const VERSION = '14.0.4';
+const VERSION_CODE = '140004';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const write = (path, content) => fs.writeFileSync(path, content, 'utf8');
 
@@ -10,13 +10,14 @@ for (const metadataPath of ['package.json', 'package-lock.json']) {
   const metadata = JSON.parse(read(metadataPath));
   metadata.version = VERSION;
   if (metadataPath === 'package.json') {
-    metadata.name = 'crewcheck-v14-0-3-premium-human-telegram-concierge';
-    metadata.description = 'CrewCheck v14.0.3 - concierge Telegram natural, personalizado, objetivo e com navegação Premium';
+    metadata.name = 'crewcheck-v14-0-4-telegram-natural-intents-grammar';
+    metadata.description = 'CrewCheck v14.0.4 - Telegram com perguntas naturais, gramática revisada e saída inteligente protegida';
     metadata.scripts = metadata.scripts || {};
     metadata.scripts['regression:v14.0.3:telegram-human'] = 'node scripts/regression-v14-0-3-telegram-human-concierge.mjs';
+    metadata.scripts['regression:v14.0.4:telegram-language'] = 'node scripts/regression-v14-0-4-telegram-language.mjs';
   }
   if (metadata.packages?.['']) {
-    metadata.packages[''].name = 'crewcheck-v14-0-3-premium-human-telegram-concierge';
+    metadata.packages[''].name = 'crewcheck-v14-0-4-telegram-natural-intents-grammar';
     metadata.packages[''].version = VERSION;
   }
   write(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
@@ -26,7 +27,7 @@ const homePath = 'client/src/pages/Home.tsx';
 if (fs.existsSync(homePath)) {
   let home = read(homePath);
   home = home.replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`);
-  home = home.replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, "const CREWCHECK_UI_CORE_NOTE = 'v14.0.3: concierge Telegram humano, natural, personalizado e com navegação Premium';");
+  home = home.replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, "const CREWCHECK_UI_CORE_NOTE = 'v14.0.4: Telegram com linguagem natural, gramática revisada e saída inteligente protegida';");
   write(homePath, home);
 }
 
