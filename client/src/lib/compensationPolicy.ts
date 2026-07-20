@@ -17,6 +17,13 @@ export type AllowanceActivity = {
   enginesOff?: Date | null;
 };
 
+export type AllowanceStatementCycle = {
+  start: Date;
+  end: Date;
+  payment: Date;
+  label: string;
+};
+
 const WINDOWS: Record<AllowanceSlot, { start: number; end: number; label: string }> = {
   breakfast: { start: 5, end: 8, label: '05:00–08:00' },
   lunch: { start: 11, end: 13, label: '11:00–13:00' },
@@ -83,13 +90,31 @@ export function isNonPayableRosterCode(value: string): boolean {
   return /^(?:DO|DOF|DOP|DOPR|DR|OFF|VC|FOLGA|FERIAS|FÉRIAS)$/.test(String(value || '').trim().toUpperCase());
 }
 
-export function observedStatementCycle(date: Date): { start: Date; end: Date; payment: Date; label: string } {
-  const value = new Date(date); value.setHours(12, 0, 0, 0);
+export function observedStatementCycle(date: Date): AllowanceStatementCycle {
+  const value = new Date(date);
+  value.setHours(12, 0, 0, 0);
   const daysSinceWednesday = (value.getDay() - 3 + 7) % 7;
-  const start = new Date(value); start.setDate(value.getDate() - daysSinceWednesday);
-  const end = new Date(start); end.setDate(start.getDate() + 6);
-  const payment = new Date(start); payment.setDate(start.getDate() + 8);
-  return { start, end, payment, label: 'Ciclo observado no demonstrativo: quarta a terça, pagamento na quinta' };
+  const start = new Date(value);
+  start.setDate(value.getDate() - daysSinceWednesday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  const payment = new Date(start);
+  payment.setDate(start.getDate() + 8);
+  payment.setHours(0, 0, 0, 0);
+  return { start, end, payment, label: 'Ciclo previsto: quarta a terça, com pagamento na quinta-feira' };
+}
+
+export function allowanceBelongsToStatementCycle(isoOrDate: string | Date, cycle: AllowanceStatementCycle): boolean {
+  const value = isoOrDate instanceof Date ? new Date(isoOrDate) : new Date(`${String(isoOrDate).slice(0, 10)}T12:00:00`);
+  return Number.isFinite(value.getTime()) && value.getTime() >= cycle.start.getTime() && value.getTime() <= cycle.end.getTime();
+}
+
+export function allowanceCycleNote(slot: AllowanceSlot, iso: string, cycle: AllowanceStatementCycle): string {
+  const belongs = allowanceBelongsToStatementCycle(iso, cycle);
+  if (slot === 'supper' && !belongs) return 'Ceia registrada após 00:00 de quarta-feira: entra no ciclo seguinte.';
+  return belongs ? 'Item previsto no ciclo atual de quarta a terça.' : 'Item previsto em outro ciclo de pagamento.';
 }
 
 export function freeDayPostponementIndemnity(delayHours: number, exceptionalOperationalNeed = false): number {
