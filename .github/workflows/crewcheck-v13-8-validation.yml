@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: crewcheck-v14-0-6-${{ github.ref }}
@@ -31,21 +30,6 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: Capture apply output before validation
-        shell: bash
-        run: |
-          set +e
-          node scripts/v139/apply.mjs > v1406-apply.txt 2>&1
-          status=$?
-          printf '\nEXIT_STATUS=%s\n' "$status" >> v1406-apply.txt
-          tail -n 40 v1406-apply.txt > v1406-apply-tail.txt
-          exit 0
-      - name: Post apply diagnostic
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr comment "$PR_NUMBER" --body-file v1406-apply-tail.txt
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
