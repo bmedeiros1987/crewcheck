@@ -32,6 +32,20 @@ services:
         value: https://crewcheck.online
       - key: GOOGLE_MAPS_SERVER_KEY
         sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_WEB_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_WEB_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        value: https://crewcheck.online/api/google-calendar/oauth/callback
+      - key: CREWCHECK_PUBLIC_BASE_URL
+        value: https://crewcheck.online
+      - key: CREWCHECK_AUTH_SECRET
+        sync: false
+      - key: CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY
+        sync: false
       - key: UBER_CLIENT_ID
         sync: false
       - key: CREWCHECK_EMERGENCY_ENABLED
