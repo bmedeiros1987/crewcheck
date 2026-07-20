@@ -1,0 +1,539 @@
+/* CrewCheck v14.0.9 — trava final de layout mobile.
+   Este arquivo é importado diretamente pelo main.tsx, depois de todas as camadas
+   históricas. Suporta o HTML novo e o legado para impedir regressões em bundles
+   ou sessões ainda em transição. */
+
+html,
+body,
+#root {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: clip !important;
+}
+
+html body #root .cz-app,
+html body #root .cz-app > main {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+html body #root .cz-app :where(section, article, button, div, span, header, footer) {
+  box-sizing: border-box !important;
+}
+
+/* -------------------------------------------------------------------------
+   COCKPIT · CABEÇALHO DE PROGRAMAÇÃO
+   ------------------------------------------------------------------------- */
+html body #root [data-view="cockpit"] :is(.cc1408-program-heading, .cz-section-head),
+html body #root .cz-app :is(.cc1408-program-heading) {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 22px 0 12px !important;
+  padding: 0 2px !important;
+  overflow: visible !important;
+}
+
+html body #root [data-view="cockpit"] .cz-section-head > :where(h1, h2, h3),
+html body #root .cc1408-program-heading > h2 {
+  position: static !important;
+  display: block !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+html body #root [data-view="cockpit"] .cz-section-head > button,
+html body #root .cc1408-program-heading > button {
+  position: static !important;
+  inset: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 40px !important;
+  margin: 0 !important;
+  padding: 7px 10px !important;
+  transform: none !important;
+  white-space: nowrap !important;
+}
+
+/* -------------------------------------------------------------------------
+   FINANCEIRO · ESTRUTURA NOVA E LEGADA
+   ------------------------------------------------------------------------- */
+html body #root .cz-app :is(.cc1408-finance-panel, .cz-money-panel) {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 14px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 20px 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  transform: none !important;
+}
+
+html body #root .cz-app :is(.cc1408-finance-header, .cz-money-panel-head) {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 2px !important;
+  transform: none !important;
+}
+
+html body #root .cz-app :is(.cc1408-finance-heading, .cz-money-panel-head > div) {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 3px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+}
+
+html body #root .cz-app :is(.cc1408-finance-heading, .cz-money-panel-head > div) > :is(strong, small) {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+html body #root .cz-app :is(.cc1408-finance-grid, .cz-money-row) {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-auto-flow: row !important;
+  align-items: stretch !important;
+  gap: 14px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  transform: none !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) {
+  appearance: none !important;
+  position: static !important;
+  inset: auto !important;
+  display: grid !important;
+  grid-template-columns: 50px minmax(0, 1fr) !important;
+  grid-template-rows: auto !important;
+  grid-auto-flow: row !important;
+  align-items: center !important;
+  align-content: center !important;
+  justify-items: stretch !important;
+  justify-content: stretch !important;
+  gap: 13px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 128px !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 17px !important;
+  border-radius: 23px !important;
+  text-align: left !important;
+  overflow: hidden !important;
+  transform: none !important;
+  float: none !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > * {
+  position: static !important;
+  inset: auto !important;
+  float: none !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-icon, span:first-child) {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  place-items: center !important;
+  align-self: center !important;
+  justify-self: start !important;
+  flex: 0 0 50px !important;
+  width: 50px !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+  height: 50px !important;
+  min-height: 50px !important;
+  max-height: 50px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-copy, div) {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-content: center !important;
+  justify-content: stretch !important;
+  justify-items: stretch !important;
+  gap: 6px !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-copy, div) > * {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  text-align: left !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  white-space: normal !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-copy, div) > strong {
+  font-size: clamp(1.55rem, 7vw, 2.25rem) !important;
+  line-height: 1.05 !important;
+  letter-spacing: -.025em !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-copy, div) > small {
+  font-size: .82rem !important;
+  line-height: 1.42 !important;
+}
+
+html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > svg:last-child {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* -------------------------------------------------------------------------
+   SAÍDA INTELIGENTE · SEM SOBREPOSIÇÃO
+   ------------------------------------------------------------------------- */
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 20px 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-title {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) 22px !important;
+  align-items: center !important;
+  gap: 13px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 18px 18px 14px !important;
+  transform: none !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-title > * {
+  position: static !important;
+  transform: none !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-title > div {
+  display: grid !important;
+  gap: 3px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-title :is(h2, p) {
+  position: static !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto !important;
+  grid-template-areas:
+    "time"
+    "badge"
+    "route"
+    "meta" !important;
+  align-items: start !important;
+  align-content: start !important;
+  justify-items: stretch !important;
+  gap: 10px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 18px 18px !important;
+  padding: 18px !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > * {
+  position: static !important;
+  inset: auto !important;
+  float: none !important;
+  transform: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > strong {
+  grid-area: time !important;
+  display: block !important;
+  font-size: clamp(3.35rem, 16vw, 5.15rem) !important;
+  line-height: .94 !important;
+  letter-spacing: -.05em !important;
+  white-space: nowrap !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > em {
+  grid-area: badge !important;
+  justify-self: start !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  width: max-content !important;
+  max-width: 100% !important;
+  min-height: 34px !important;
+  padding: 7px 13px !important;
+  border-radius: 999px !important;
+  font-size: .78rem !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > p {
+  grid-area: route !important;
+  display: block !important;
+  font-size: 1rem !important;
+  line-height: 1.42 !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > div {
+  grid-area: meta !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 3px !important;
+  align-items: start !important;
+  justify-items: stretch !important;
+  padding-top: 2px !important;
+}
+
+html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > div > :is(small, b) {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  text-align: left !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  font-size: .86rem !important;
+  line-height: 1.38 !important;
+}
+
+/* -------------------------------------------------------------------------
+   IMPORTAÇÃO E ESTADO VAZIO
+   ------------------------------------------------------------------------- */
+html body #root .cz-app :is(button.cc1408-import-card, .cc1408-empty-roster, .cz-empty-real) {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+html body #root .cz-app button.cc1408-import-card > *,
+html body #root .cz-app button.cc1408-import-card * {
+  position: static !important;
+  float: none !important;
+  transform: none !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+}
+
+html body #root .cz-app .cc1408-import-head,
+html body #root .cz-app .cc1408-import-body {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* -------------------------------------------------------------------------
+   MOBILE
+   ------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  html body #root .cz-app :is(.cc1408-finance-grid, .cz-money-row) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) {
+    min-height: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  html body #root .cz-app {
+    padding-inline: 12px !important;
+    padding-bottom: calc(146px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) {
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    gap: 11px !important;
+    padding: 15px !important;
+    border-radius: 21px !important;
+  }
+
+  html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-icon, span:first-child) {
+    width: 46px !important;
+    min-width: 46px !important;
+    max-width: 46px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    max-height: 46px !important;
+  }
+
+  html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-title {
+    grid-template-columns: 52px minmax(0, 1fr) 18px !important;
+    gap: 11px !important;
+    padding: 16px 16px 13px !important;
+  }
+
+  html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content {
+    margin: 0 16px 16px !important;
+    padding: 16px !important;
+  }
+
+  html body #root .cz-app article.cz-smart-card[data-smart-departure-v1406="true"] .cz-smart-content > strong {
+    font-size: clamp(3.15rem, 18vw, 4.6rem) !important;
+  }
+}
+
+@media (max-width: 360px) {
+  html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-icon, span:first-child) {
+    grid-column: 1 !important;
+    justify-self: start !important;
+  }
+
+  html body #root .cz-app :is(button.cc1408-finance-card, button.cz-money-card) > :is(.cc1408-finance-copy, div) {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+  }
+}
