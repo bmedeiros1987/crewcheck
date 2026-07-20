@@ -1,0 +1,44 @@
+function Cockpit({ bundle, events, compliance, setView, onUpload, openMenu }: { bundle: BundleState; events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
+  const event = nextFlight(events);
+  const loaded = events.some((item) => !item.placeholder);
+  const alertCount = actionableComplianceAlerts(compliance).length;
+  const [showFinancial, setShowFinancial] = useState(() => storage.get('crewcheck_cockpit_finance_visible', '0') === '1');
+  const financial = useMemo(() => {
+    if (!loaded) return null;
+    return {
+      perdiem: calculatePerDiem(events, bundle.roster),
+      salary: calculateSalary(events, bundle.roster),
+    };
+  }, [bundle.roster, events, loaded]);
+  const counters = loaded && events[0]?.day ? {
+    days: new Set(events.map((item) => item.day.date)).size,
+    flights: events.filter((item) => item.kind === 'flight').length,
+    activities: events.filter((item) => item.kind !== 'flight' && item.canonical?.kind !== 'rest').length,
+    rest: events.filter((item) => item.canonical?.kind === 'rest').length,
+  } : { days: 0, flights: 0, activities: 0, rest: 0 };
+  const perDiemValue = financial
+    ? financial.perdiem.pendingCurrencies.length ? 'Câmbio pendente' : moneyBRL(financial.perdiem.weekly)
+    : '—';
+  const salaryValue = financial
+    ? financial.salary.configured ? moneyBRL(financial.salary.net || financial.salary.gross) : 'Configurar valores'
+    : '—';
+  const paymentDate = financial ? dateChip(financial.perdiem.cycle.payment) : '—';
+  const protectedValue = (value: string) => showFinancial ? value : '••••••';
+  function toggleFinancialVisibility() {
+    setShowFinancial((visible) => {
+      const next = !visible;
+      storage.set('crewcheck_cockpit_finance_visible', next ? '1' : '0');
+      return next;
+    });
+  }
+
+  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section>
+    <section className="cz-money-panel" data-finance-v1406="true">
+      <header className="cz-money-panel-head"><div><strong>Resumo financeiro</strong><small>Valores protegidos no cockpit</small></div><button type="button" className="cz-money-visibility" onClick={toggleFinancialVisibility} aria-label={showFinancial ? 'Ocultar salário e diárias' : 'Exibir salário e diárias'} aria-pressed={showFinancial}>{showFinancial ? <EyeOff/> : <Eye/>}<span>{showFinancial ? 'Ocultar' : 'Exibir'}</span></button></header>
+      <div className="cz-money-row">
+        <button type="button" className="cz-money-card" onClick={() => setView('perdiem')}><span><BriefcaseBusiness/></span><div><small>Diárias · quarta a terça</small><strong className={showFinancial ? '' : 'masked'}>{protectedValue(perDiemValue)}</strong><small>Pagamento previsto na quinta-feira, {paymentDate}. Ceia após 00:00 de quarta entra no ciclo seguinte.</small></div><ChevronRight/></button>
+        <button type="button" className="cz-money-card" onClick={() => setView('salary')}><span><DollarSign/></span><div><small>Salário líquido previsto</small><strong className={showFinancial ? '' : 'masked'}>{protectedValue(salaryValue)}</strong><small>{financial?.salary.configured ? 'Cálculo com valores configurados e produção da escala.' : 'Confirme salário-base, adicionais e descontos para exibir o valor real.'}</small></div><ChevronRight/></button>
+      </div>
+    </section>
+    <section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/></>;
+}
