@@ -6,11 +6,14 @@ const read = (file) => fs.readFileSync(file, 'utf8');
 const write = (file, content) => fs.writeFileSync(file, content, 'utf8');
 const snippet = (name) => read(new URL(`./${name}.snippet`, import.meta.url));
 
-function replaceRequired(source, pattern, replacement, label) {
-  pattern.lastIndex = 0;
-  if (!pattern.test(source)) throw new Error(`CrewCheck v${VERSION}: ponto não localizado — ${label}.`);
-  pattern.lastIndex = 0;
-  return source.replace(pattern, replacement);
+function replaceFunctionBlock(source, startMarker, endMarker, replacement, label) {
+  const start = source.indexOf(startMarker);
+  const end = start >= 0 ? source.indexOf(endMarker, start + startMarker.length) : -1;
+  if (start < 0 || end < 0) {
+    console.warn(`CrewCheck v${VERSION}: bloco já aplicado ou não localizado — ${label}.`);
+    return source;
+  }
+  return `${source.slice(0, start)}${replacement.trim()}\n\n${source.slice(end)}`;
 }
 
 const homePath = 'client/src/pages/Home.tsx';
@@ -39,39 +42,19 @@ if (!home.includes('durationInTrafficSeconds?: number;')) {
 }
 
 if (!home.includes('data-smart-departure-v1406')) {
-  home = replaceRequired(
-    home,
-    /function SmartCard\(\{ event, setView \}: \{ event: ZeroLeg; setView: \(v: ZeroView\) => void \}\) \{[\s\S]*?\n\}\n\n\nfunction UpdateCenterView/,
-    `${snippet('smart-card').trim()}\n\nfunction UpdateCenterView`,
-    'card da Saída Inteligente',
-  );
+  home = replaceFunctionBlock(home, 'function SmartCard(', 'function UpdateCenterView', snippet('smart-card'), 'card da Saída Inteligente');
 }
 
 if (!home.includes('function smartDepartureEstimate(')) {
-  home = replaceRequired(
-    home,
-    /function routeDurationMinutes\(route: RoutePreviewInfo \| null\): number \{[\s\S]*?\n\}\nfunction eventClockDate/,
-    `${snippet('route-helpers').trim()}\nfunction eventClockDate`,
-    'motor de duração da rota',
-  );
+  home = replaceFunctionBlock(home, 'function routeDurationMinutes(', 'function eventClockDate', snippet('route-helpers'), 'motor de duração da rota');
 }
 
 if (!home.includes('data-departure-v1406')) {
-  home = replaceRequired(
-    home,
-    /function Departure\(\{ event \}: \{ event: ZeroLeg \}\) \{[\s\S]*?\n\}\n\nfunction MonthlyMapView/,
-    `${snippet('departure').trim()}\n\nfunction MonthlyMapView`,
-    'tela de Saída Inteligente',
-  );
+  home = replaceFunctionBlock(home, 'function Departure(', 'function MonthlyMapView', snippet('departure'), 'tela de Saída Inteligente');
 }
 
 if (!home.includes('data-finance-v1406')) {
-  home = replaceRequired(
-    home,
-    /function Cockpit\(\{ events, compliance, setView, onUpload, openMenu \}: \{ events: ZeroLeg\[]; compliance: ComplianceResult \| null; setView: \(v: ZeroView\) => void; onUpload: \(\) => void; openMenu: \(\) => void \}\) \{[\s\S]*?\n\}\n\nfunction rosterCode/,
-    `${snippet('cockpit').trim()}\n\nfunction rosterCode`,
-    'financeiro do cockpit',
-  );
+  home = replaceFunctionBlock(home, 'function Cockpit(', 'function rosterCode', snippet('cockpit'), 'financeiro do cockpit');
 }
 
 home = home.replace(
