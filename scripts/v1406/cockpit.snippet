@@ -24,6 +24,7 @@ function Cockpit({ bundle, events, compliance, setView, onUpload, openMenu }: { 
     : '—';
   const paymentDate = financial ? dateChip(financial.perdiem.cycle.payment) : '—';
   const protectedValue = (value: string) => showFinancial ? value : '••••••';
+
   function toggleFinancialVisibility() {
     setShowFinancial((visible) => {
       const next = !visible;
@@ -32,13 +33,55 @@ function Cockpit({ bundle, events, compliance, setView, onUpload, openMenu }: { 
     });
   }
 
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section>
-    <section className="cc1408-finance-panel" data-finance-v1408="true">
-      <header className="cc1408-finance-header"><span className="cc1408-finance-heading"><strong>Resumo financeiro</strong><small>Valores protegidos no cockpit</small></span><button type="button" className="cc1408-finance-visibility" onClick={toggleFinancialVisibility} aria-label={showFinancial ? 'Ocultar salário e diárias' : 'Exibir salário e diárias'} aria-pressed={showFinancial}>{showFinancial ? <EyeOff/> : <Eye/>}<span>{showFinancial ? 'Ocultar' : 'Exibir'}</span></button></header>
+  return <>
+    <Brand onMenu={openMenu}/>
+    <section className="cz-title"><small>Cockpit</small><i/></section>
+    <section className="cz-kpi-row">
+      <KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/>
+      <KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/>
+      <KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/>
+      <KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/>
+    </section>
+    <section className="cc1408-finance-panel" data-finance-v1406="true" data-finance-v1408="true">
+      <header className="cc1408-finance-header">
+        <span className="cc1408-finance-heading"><strong>Resumo financeiro</strong><small>Valores protegidos no cockpit</small></span>
+        <button type="button" className="cc1408-finance-visibility" onClick={toggleFinancialVisibility} aria-label={showFinancial ? 'Ocultar salário e diárias' : 'Exibir salário e diárias'} aria-pressed={showFinancial}>
+          {showFinancial ? <EyeOff/> : <Eye/>}<span>{showFinancial ? 'Ocultar' : 'Exibir'}</span>
+        </button>
+      </header>
       <div className="cc1408-finance-grid">
-        <button type="button" className="cc1408-finance-card" onClick={() => setView('perdiem')}><span className="cc1408-finance-icon"><BriefcaseBusiness/></span><span className="cc1408-finance-copy"><small className="cc1408-finance-eyebrow">Diárias · quarta a terça</small><strong className={`cc1408-finance-value ${showFinancial ? '' : 'masked'}`}>{protectedValue(perDiemValue)}</strong><small className="cc1408-finance-detail">Pagamento previsto na quinta-feira, {paymentDate}. Ceia após 00:00 de quarta entra no ciclo seguinte.</small></span><ChevronRight className="cc1408-finance-chevron"/></button>
-        <button type="button" className="cc1408-finance-card" onClick={() => setView('salary')}><span className="cc1408-finance-icon"><DollarSign/></span><span className="cc1408-finance-copy"><small className="cc1408-finance-eyebrow">Salário líquido previsto</small><strong className={`cc1408-finance-value ${showFinancial ? '' : 'masked'}`}>{protectedValue(salaryValue)}</strong><small className="cc1408-finance-detail">{financial?.salary.configured ? 'Cálculo com valores configurados e produção da escala.' : 'Confirme salário-base, adicionais e descontos para exibir o valor real.'}</small></span><ChevronRight className="cc1408-finance-chevron"/></button>
+        <button type="button" className="cc1408-finance-card" onClick={() => setView('perdiem')}>
+          <span className="cc1408-finance-icon"><BriefcaseBusiness/></span>
+          <span className="cc1408-finance-copy">
+            <small className="cc1408-finance-eyebrow">Diárias · quarta a terça</small>
+            <strong className={`cc1408-finance-value ${showFinancial ? '' : 'masked'}`}>{protectedValue(perDiemValue)}</strong>
+            <small className="cc1408-finance-detail">Pagamento previsto na quinta-feira, {paymentDate}. Ceia após 00:00 de quarta entra no ciclo seguinte.</small>
+          </span>
+          <ChevronRight className="cc1408-finance-chevron"/>
+        </button>
+        <button type="button" className="cc1408-finance-card" onClick={() => setView('salary')}>
+          <span className="cc1408-finance-icon"><DollarSign/></span>
+          <span className="cc1408-finance-copy">
+            <small className="cc1408-finance-eyebrow">Salário líquido previsto</small>
+            <strong className={`cc1408-finance-value ${showFinancial ? '' : 'masked'}`}>{protectedValue(salaryValue)}</strong>
+            <small className="cc1408-finance-detail">{financial?.salary.configured ? 'Cálculo com valores configurados e produção da escala.' : 'Confirme salário-base, adicionais e descontos para exibir o valor real.'}</small>
+          </span>
+          <ChevronRight className="cc1408-finance-chevron"/>
+        </button>
       </div>
     </section>
-    <section className="cz-section-head cc1408-program-heading"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real cc1408-empty-roster"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}<SmartCard event={event} setView={setView}/>;
+    <section className="cz-section-head cc1408-program-heading">
+      <h2>Próxima Programação</h2>
+      <button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button>
+    </section>
+    {loaded && !event.placeholder
+      ? <FlightCard event={event}/>
+      : <article className="cz-empty-real cc1408-empty-roster">
+          <Upload/>
+          <h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2>
+          <p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p>
+          <button onClick={onUpload}>Importar PDF agora</button>
+        </article>}
+    <SmartCard event={event} setView={setView}/>
+  </>;
 }

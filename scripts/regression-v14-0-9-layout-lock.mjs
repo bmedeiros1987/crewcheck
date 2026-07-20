@@ -7,6 +7,9 @@ await import(`./v1409/apply.mjs?repeat=${Date.now()}`);
 const read = (file) => fs.readFileSync(file, 'utf8');
 const main = read('client/src/main.tsx');
 const css = read('client/src/components/v1409/layout-lock.css');
+const cockpitSnippet = read('scripts/v1406/cockpit.snippet');
+const cockpitApply = read('scripts/v1406/apply.mjs');
+const generatedHome = read('client/src/pages/Home.tsx');
 const metadata = JSON.parse(read('package.json'));
 const android = read('android-wrapper/app/build.gradle');
 const manifest = JSON.parse(read('client/public/manifest.json'));
@@ -32,4 +35,12 @@ assert.match(css, /position: static !important/);
 assert.match(css, /@media \(max-width: 480px\)/);
 assert.match(css, /@media \(max-width: 360px\)/);
 
-console.log('CrewCheck v14.0.9 direct layout lock regression OK.');
+assert.match(cockpitSnippet, /return <>/);
+assert.match(cockpitSnippet, /<SmartCard event=\{event\} setView=\{setView\}\/>\s*<\/>;/, 'fragmento do Cockpit deve ser fechado antes do fim da função');
+assert.doesNotMatch(cockpitSnippet, /<SmartCard event=\{event\} setView=\{setView\}\/>;\s*\n\}/, 'SmartCard não pode encerrar o retorno sem fechar o fragmento');
+assert.match(cockpitSnippet, /data-finance-v1406="true"/);
+assert.match(cockpitSnippet, /data-finance-v1408="true"/);
+assert.match(cockpitApply, /!home\.includes\('data-finance-v1406'\) && !home\.includes\('data-finance-v1408'\)/);
+assert.match(generatedHome, /<SmartCard event=\{event\} setView=\{setView\}\/>\s*<\/>;/, 'Home gerado deve conter JSX válido no Cockpit');
+
+console.log('CrewCheck v14.0.9 direct layout lock and build syntax regression OK.');
