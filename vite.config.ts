@@ -1,4 +1,3 @@
-import "./scripts/v139/apply.mjs";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
