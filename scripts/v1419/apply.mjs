@@ -21,7 +21,7 @@ update('server/v1403/telegram-human.mjs', (source) => {
   const digits = raw.match(/\\d{2,5}/)?.[0] || '';
   if (!digits) return raw || 'voo a confirmar';
   const company = airlineName(raw);
-  return company ? \\`${'${company} ${digits}'}\\` : \\`voo ${'${digits}'}\\`;
+  return company ? company + ' ' + digits : 'voo ' + digits;
 }
 
 export function localProgramDateLabel(record = {}, fallback = '') {
@@ -54,10 +54,10 @@ function crewCheckUberXUrl(origin: string, destination: string): string {
   const params = new URLSearchParams({ action: 'setPickup', pickup: origin || 'my_location', dropoff: destination, product_id: 'uberx' });
   params.set('pickup[formatted_address]', origin || 'Localização atual');
   params.set('dropoff[formatted_address]', destination);
-  return `${base}?${params.toString()}`;
+  return base + '?' + params.toString();
 }`);
     next = next.replace('<h2>{originLabel} → {event.origin}</h2>', '<h2>{originLabel} → {event.origin}</h2><p className="cc-departure-date">{crewCheckEventDateLabel(event)}</p>');
-    next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode} onRoute={(next) => { setRoute(next); setRoutePending(false); const minutes = routeDurationMinutes(next); if (minutes) saveDepartureTravelMinutes(event, minutes); }} onOriginLabel={setOriginLabel}/>', '<GoogleMapsRoutePreview event={event} mode={mode} onRoute={(next) => { setRoute(next); setRoutePending(false); const minutes = routeDurationMinutes(next); if (minutes) saveDepartureTravelMinutes(event, minutes); }} onOriginLabel={setOriginLabel}/><div className="cc-departure-actions"><a className="cc-premium-action" href={buildGoogleMapsDirectionsUrl(originLabel, event.origin, mode.includes(\'transit\') ? \'transit\' : \'driving\')} target="_blank" rel="noreferrer"><MapIcon/>Abrir rota detalhada</a>{mode.includes(\'uber\') && <a className="cc-premium-action" href={crewCheckUberXUrl(originLabel, `${event.origin} aeroporto`)} target="_blank" rel="noreferrer"><Car/>Chamar UberX</a>}</div>');
+    next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode} onRoute={(next) => { setRoute(next); setRoutePending(false); const minutes = routeDurationMinutes(next); if (minutes) saveDepartureTravelMinutes(event, minutes); }} onOriginLabel={setOriginLabel}/>', '<GoogleMapsRoutePreview event={event} mode={mode} onRoute={(next) => { setRoute(next); setRoutePending(false); const minutes = routeDurationMinutes(next); if (minutes) saveDepartureTravelMinutes(event, minutes); }} onOriginLabel={setOriginLabel}/><div className="cc-departure-actions"><a className="cc-premium-action" href={buildGoogleMapsDirectionsUrl(originLabel, event.origin, mode.includes(\'transit\') ? \'transit\' : \'driving\')} target="_blank" rel="noreferrer"><MapIcon/>Abrir rota detalhada</a>{mode.includes(\'uber\') && <a className="cc-premium-action" href={crewCheckUberXUrl(originLabel, event.origin + \' aeroporto\')} target="_blank" rel="noreferrer"><Car/>Chamar UberX</a>}</div>');
     return next;
   });
 }
