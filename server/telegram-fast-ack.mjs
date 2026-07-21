@@ -1,15 +1,17 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { dbPool, requestToken, safeEmail, verifyJwt } from './v139/common.mjs';
 import { sendTelegram, callTelegram } from './v139/delivery.mjs';
 import { buildInfobipTtsRequest, infobipPublicStatus } from './v1396/infobip.mjs';
 
 const originalCreateServer = http.createServer.bind(http);
-const RUNTIME_VERSION = '14.1.1-notifications';
+const RUNTIME_VERSION = '14.1.7-operational-intelligence';
 const INTERVAL_MS = Math.max(15_000, Number(process.env.CREWCHECK_NOTIFICATION_INTERVAL_MS || 30_000));
 let schedulerRunning = false;
 let lastCycle = null;
 let lastWebhookCheck = null;
+let lastCommuteCycle = null;
 
 function sendJson(res, status, payload) {
   if (res.headersSent || res.writableEnded) return;
@@ -68,6 +70,44 @@ async function ensureNotificationTable(db) {
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 }
 
+async function ensureCommuteTables(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_commute_monitors (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(190) NOT NULL,
+    route_key VARCHAR(80) NOT NULL,
+    origin VARCHAR(300) NOT NULL,
+    destination VARCHAR(300) NOT NULL,
+    travel_mode VARCHAR(32) NOT NULL DEFAULT 'driving',
+    presentation_at DATETIME(3) NOT NULL,
+    margin_minutes INT NOT NULL DEFAULT 25,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    next_check_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    last_duration_seconds INT NULL,
+    last_delay_seconds INT NULL,
+    last_incident_hash VARCHAR(80) NULL,
+    last_alert_at DATETIME(3) NULL,
+    last_error VARCHAR(500) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uq_commute_monitor (email, route_key),
+    KEY idx_commute_due (active, next_check_at),
+    KEY idx_commute_presentation (presentation_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_commute_samples (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(190) NOT NULL,
+    route_key VARCHAR(80) NOT NULL,
+    sampled_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    weekday TINYINT UNSIGNED NOT NULL,
+    hour_bucket TINYINT UNSIGNED NOT NULL,
+    duration_seconds INT NOT NULL,
+    delay_seconds INT NOT NULL DEFAULT 0,
+    incident_count INT NOT NULL DEFAULT 0,
+    provider VARCHAR(40) NULL,
+    KEY idx_commute_learning (email, route_key, weekday, hour_bucket, sampled_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+}
+
 async function sendInfobipPhone(phone, message) {
   const request = buildInfobipTtsRequest({ phone, text: message });
   if (!request.ok) return request;
@@ -97,6 +137,161 @@ async function deliverJob(job) {
   return { ok: false, configured: false, provider: channel, raw: 'Canal de notificação inválido.' };
 }
 
+function commuteRouteKey(origin, destination, mode) {
+  return crypto.createHash('sha256').update(`${String(origin).trim().toLowerCase()}|${String(destination).trim().toLowerCase()}|${String(mode).trim().toLowerCase()}`).digest('hex').slice(0, 64);
+}
+
+function parsedJson(value) {
+  if (value && typeof value === 'object') return value;
+  try { return JSON.parse(String(value || '{}')); } catch { return {}; }
+}
+
+async function linkedTelegramRecord(db, email) {
+  try {
+    const [rows] = await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [`link-email:${safeEmail(email)}`]);
+    return parsedJson(rows?.[0]?.payload);
+  } catch {
+    return {};
+  }
+}
+
+async function linkedTelegramChatId(db, email) {
+  return String((await linkedTelegramRecord(db, email))?.chatId || '');
+}
+
+function commuteTimeBucket(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo', weekday: 'short', hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const weekdayLabel = parts.find((part) => part.type === 'weekday')?.value || 'Sun';
+  const weekday = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(weekdayLabel);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+  return { weekday: Math.max(0, weekday), hour: Math.min(23, Math.max(0, hour)) };
+}
+
+async function learnedCommuteBaseline(db, monitor, at = new Date()) {
+  const bucket = commuteTimeBucket(at);
+  const [rows] = await db.query(`SELECT COUNT(*) AS samples, AVG(duration_seconds) AS average_seconds
+    FROM crewcheck_commute_samples
+    WHERE email=? AND route_key=? AND weekday=? AND ABS(hour_bucket - ?) <= 1
+      AND incident_count=0 AND sampled_at >= DATE_SUB(NOW(3), INTERVAL 90 DAY)`,
+    [monitor.email, monitor.route_key, bucket.weekday, bucket.hour]);
+  return { samples: Number(rows?.[0]?.samples || 0), averageSeconds: Math.round(Number(rows?.[0]?.average_seconds || 0)) };
+}
+
+async function fetchLiveCommuteRoute(monitor) {
+  const localBase = `http://127.0.0.1:${Number(process.env.PORT || 4173)}`;
+  const endpoint = new URL('/api/maps/route-preview', localBase);
+  endpoint.searchParams.set('origin', monitor.origin);
+  endpoint.searchParams.set('destination', monitor.destination);
+  endpoint.searchParams.set('mode', monitor.travel_mode || 'driving');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(endpoint, { headers: { accept: 'application/json', 'x-crewcheck-runtime': RUNTIME_VERSION }, signal: controller.signal });
+    const payload = await response.json().catch(() => null);
+    return response.ok && payload?.ok ? payload : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function incidentFingerprint(route = {}) {
+  const incidents = Array.isArray(route.incidents) ? route.incidents : [];
+  if (!incidents.length) return '';
+  return crypto.createHash('sha256').update(JSON.stringify(incidents.map((item) => [item.id, item.category, item.severity, item.delaySeconds]))).digest('hex').slice(0, 64);
+}
+
+function nextCommuteCheckMinutes(presentationAt) {
+  const remaining = new Date(presentationAt).getTime() - Date.now();
+  if (remaining <= 2 * 60 * 60_000) return 1;
+  if (remaining <= 6 * 60 * 60_000) return 2;
+  if (remaining <= 24 * 60 * 60_000) return 5;
+  return 20;
+}
+
+function clockLabel(date) {
+  try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(date); }
+  catch { return ''; }
+}
+
+function commuteAlertMessage(monitor, route, learning, reason) {
+  const durationSeconds = Number(route.durationSeconds || 0);
+  const delaySeconds = Number(route.trafficDelaySeconds || 0);
+  const leaveAt = new Date(new Date(monitor.presentation_at).getTime() - durationSeconds * 1000 - Number(monitor.margin_minutes || 25) * 60_000);
+  const incidents = (Array.isArray(route.incidents) ? route.incidents : []).slice(0, 3);
+  const incidentLines = incidents.map((item) => `• ${item.title || 'Ocorrência na rota'}${item.delayText ? ` · ${item.delayText}` : ''}`);
+  const trend = learning.samples >= 3 && learning.averageSeconds
+    ? `Tendência aprendida (${learning.samples} amostras): ${Math.round(learning.averageSeconds / 60)} min neste dia/horário.`
+    : 'O histórico desta rota ainda está sendo aprendido.';
+  return [
+    reason === 'closure' ? '🚧 ALERTA DE BLOQUEIO NA ROTA' : reason === 'incident' ? '⚠️ NOVA OCORRÊNCIA NA ROTA' : '🚗 TRÂNSITO MUDOU',
+    '',
+    `${monitor.origin} → ${monitor.destination}`,
+    `Tempo atual: ${Math.max(1, Math.round(durationSeconds / 60))} min${delaySeconds ? ` · atraso ${Math.round(delaySeconds / 60)} min` : ''}`,
+    `Saída recomendada: ${clockLabel(leaveAt)} · margem ${monitor.margin_minutes || 25} min`,
+    ...incidentLines,
+    '',
+    trend,
+    'Abra o Planejador de Saída no CrewCheck antes de iniciar o deslocamento.',
+  ].filter(Boolean).join('\n');
+}
+
+async function runCommuteMonitorCycle(db) {
+  const summary = { startedAt: new Date().toISOString(), selected: 0, sampled: 0, alerted: 0, failed: 0 };
+  try {
+    await ensureCommuteTables(db);
+    await db.query("UPDATE crewcheck_commute_monitors SET active=0 WHERE active=1 AND presentation_at < DATE_SUB(NOW(3), INTERVAL 30 MINUTE)");
+    const [rows] = await db.query("SELECT * FROM crewcheck_commute_monitors WHERE active=1 AND next_check_at <= NOW(3) AND presentation_at >= NOW(3) AND presentation_at <= DATE_ADD(NOW(3), INTERVAL 7 DAY) ORDER BY next_check_at ASC LIMIT 30");
+    summary.selected = rows.length;
+    for (const monitor of rows) {
+      try {
+        const route = await fetchLiveCommuteRoute(monitor);
+        if (!route) throw new Error('Rota ao vivo indisponível.');
+        const durationSeconds = Math.max(1, Number(route.durationSeconds || 0));
+        const delaySeconds = Math.max(0, Number(route.trafficDelaySeconds || 0));
+        const incidents = Array.isArray(route.incidents) ? route.incidents : [];
+        const bucket = commuteTimeBucket();
+        await db.query(`INSERT INTO crewcheck_commute_samples (email,route_key,weekday,hour_bucket,duration_seconds,delay_seconds,incident_count,provider)
+          VALUES(?,?,?,?,?,?,?,?)`, [monitor.email, monitor.route_key, bucket.weekday, bucket.hour, durationSeconds, delaySeconds, incidents.length, String(route.provider || '').slice(0, 40)]);
+        summary.sampled += 1;
+        const learning = await learnedCommuteBaseline(db, monitor);
+        const fingerprint = incidentFingerprint(route);
+        const newIncident = Boolean(fingerprint && fingerprint !== String(monitor.last_incident_hash || ''));
+        const closure = Boolean(route.hasRoadClosure || incidents.some((item) => item.roadClosure));
+        const previousDelay = Number(monitor.last_delay_seconds || 0);
+        const learnedDelta = learning.samples >= 3 ? durationSeconds - learning.averageSeconds : 0;
+        const materialDelay = delaySeconds >= 10 * 60 && delaySeconds >= previousDelay + 5 * 60;
+        const learnedSurprise = learning.samples >= 3 && learnedDelta >= 12 * 60;
+        const cooldownPassed = !monitor.last_alert_at || Date.now() - new Date(monitor.last_alert_at).getTime() >= 20 * 60_000;
+        const reason = closure ? 'closure' : newIncident ? 'incident' : materialDelay || learnedSurprise ? 'delay' : '';
+        let alertDelivered = false;
+        if (reason && (newIncident || cooldownPassed)) {
+          const chatId = await linkedTelegramChatId(db, monitor.email);
+          if (chatId) {
+            const delivered = await sendTelegram(chatId, commuteAlertMessage(monitor, route, learning, reason));
+            if (delivered?.ok) { summary.alerted += 1; alertDelivered = true; }
+          }
+        }
+        const nextMinutes = nextCommuteCheckMinutes(monitor.presentation_at);
+        await db.query(`UPDATE crewcheck_commute_monitors SET
+          next_check_at=DATE_ADD(NOW(3), INTERVAL ? MINUTE),last_duration_seconds=?,last_delay_seconds=?,last_incident_hash=?,
+          last_alert_at=IF(?,NOW(3),last_alert_at),last_error=NULL WHERE id=?`,
+        [nextMinutes, durationSeconds, delaySeconds, fingerprint, alertDelivered, monitor.id]);
+      } catch (error) {
+        summary.failed += 1;
+        await db.query("UPDATE crewcheck_commute_monitors SET next_check_at=DATE_ADD(NOW(3), INTERVAL 5 MINUTE),last_error=? WHERE id=?", [String(error?.message || error).slice(0, 500), monitor.id]);
+      }
+    }
+    await db.query("DELETE FROM crewcheck_commute_samples WHERE sampled_at < DATE_SUB(NOW(3), INTERVAL 120 DAY)");
+  } catch (error) {
+    summary.error = String(error?.message || error).slice(0, 500);
+  }
+  summary.finishedAt = new Date().toISOString();
+  lastCommuteCycle = summary;
+  return summary;
+}
+
 async function runSchedulerCycle() {
   if (schedulerRunning) return;
   schedulerRunning = true;
@@ -106,7 +301,7 @@ async function runSchedulerCycle() {
     if (!db) throw new Error('Banco indisponível para notificações.');
     await ensureNotificationTable(db);
     await db.query("UPDATE crewcheck_notification_jobs SET status='pending',locked_at=NULL WHERE status='processing' AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
-    const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 15 MINUTE) ORDER BY scheduled_at ASC LIMIT 50");
+    const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 24 HOUR) ORDER BY scheduled_at ASC LIMIT 50");
     summary.selected = rows.length;
     for (const job of rows) {
       const [claim] = await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3),attempts=attempts+1 WHERE id=? AND status='pending'", [job.id]);
@@ -123,6 +318,7 @@ async function runSchedulerCycle() {
         await db.query("UPDATE crewcheck_notification_jobs SET status=?,locked_at=NULL,last_error=? WHERE id=?", [retry ? 'pending' : 'failed', String(result?.raw || result?.message || 'Falha no envio').slice(0, 500), job.id]);
       }
     }
+    summary.commute = await runCommuteMonitorCycle(db);
   } catch (error) {
     summary.error = String(error?.message || error).slice(0, 500);
   } finally {
@@ -170,11 +366,14 @@ async function scheduleJob(req, res) {
   const db = await dbPool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
   await ensureNotificationTable(db);
+  const telegramLink = await linkedTelegramRecord(db, user.email);
+  const chatId = String(body.chatId || telegramLink?.chatId || '');
+  const telegramUsername = String(body.telegramUsername || telegramLink?.username || '').replace(/^@/, '');
   await db.query(`INSERT INTO crewcheck_notification_jobs (email,job_key,scheduled_at,channel,chat_id,telegram_username,phone,message,status)
     VALUES(?,?,?,?,?,?,?,?, 'pending')
     ON DUPLICATE KEY UPDATE scheduled_at=VALUES(scheduled_at),channel=VALUES(channel),chat_id=VALUES(chat_id),telegram_username=VALUES(telegram_username),phone=VALUES(phone),message=VALUES(message),status='pending',attempts=0,locked_at=NULL,sent_at=NULL,last_error=NULL`,
-    [user.email, jobKey, scheduledAt, channel, String(body.chatId || ''), String(body.telegramUsername || ''), String(body.phone || ''), message]);
-  return sendJson(res, 200, { ok: true, scheduledAt: scheduledAt.toISOString(), channel, jobKey, message: 'Despertador agendado no servidor.' });
+    [user.email, jobKey, scheduledAt, channel, chatId, telegramUsername, String(body.phone || ''), message]);
+  return sendJson(res, 200, { ok: true, scheduledAt: scheduledAt.toISOString(), channel, jobKey, telegramLinked: Boolean(chatId || telegramUsername), message: 'Despertador agendado no servidor.' });
 }
 
 async function listJobs(req, res) {
@@ -197,12 +396,72 @@ async function cancelJob(req, res) {
   return sendJson(res, 200, { ok: true, cancelled: result.affectedRows });
 }
 
+async function registerCommuteMonitor(req, res) {
+  const user = identity(req);
+  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
+  const body = await readJson(req);
+  const origin = String(body.origin || '').trim().slice(0, 300);
+  const destination = String(body.destination || '').trim().slice(0, 300);
+  const travelMode = String(body.mode || body.travelMode || 'driving').toLowerCase().slice(0, 32);
+  const presentationAt = new Date(body.presentationAt || body.presentation_at || '');
+  const marginMinutes = Math.min(120, Math.max(0, Number(body.marginMinutes || 25)));
+  if (!origin || !destination) return sendJson(res, 400, { ok: false, message: 'Origem e destino são necessários.' });
+  if (Number.isNaN(presentationAt.getTime()) || presentationAt.getTime() <= Date.now()) return sendJson(res, 400, { ok: false, message: 'A apresentação precisa estar no futuro.' });
+  if (presentationAt.getTime() > Date.now() + 7 * 86_400_000) return sendJson(res, 400, { ok: false, message: 'O monitor é ativado até sete dias antes da apresentação.' });
+  const routeKey = commuteRouteKey(origin, destination, travelMode);
+  const db = await dbPool();
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  await ensureCommuteTables(db);
+  await db.query(`INSERT INTO crewcheck_commute_monitors
+    (email,route_key,origin,destination,travel_mode,presentation_at,margin_minutes,active,next_check_at)
+    VALUES(?,?,?,?,?,?,?,1,NOW(3))
+    ON DUPLICATE KEY UPDATE origin=VALUES(origin),destination=VALUES(destination),travel_mode=VALUES(travel_mode),
+      presentation_at=VALUES(presentation_at),margin_minutes=VALUES(margin_minutes),active=1,next_check_at=LEAST(next_check_at,NOW(3)),last_error=NULL`,
+    [user.email, routeKey, origin, destination, travelMode, presentationAt, marginMinutes]);
+  const monitor = { email: user.email, route_key: routeKey };
+  const learning = await learnedCommuteBaseline(db, monitor, presentationAt);
+  const chatId = await linkedTelegramChatId(db, user.email);
+  return sendJson(res, 200, {
+    ok: true,
+    routeKey,
+    presentationAt: presentationAt.toISOString(),
+    telegramLinked: Boolean(chatId),
+    learning: { samples: learning.samples, expectedMinutes: learning.averageSeconds ? Math.round(learning.averageSeconds / 60) : null },
+    message: chatId ? 'Monitor de rota ativo no servidor e conectado ao Telegram.' : 'Monitor ativo; vincule o Telegram para receber alertas com o sistema fechado.',
+  });
+}
+
+async function listCommuteMonitors(req, res) {
+  const user = identity(req);
+  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
+  const db = await dbPool();
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  await ensureCommuteTables(db);
+  const [rows] = await db.query(`SELECT route_key AS routeKey,origin,destination,travel_mode AS travelMode,presentation_at AS presentationAt,
+    margin_minutes AS marginMinutes,active,next_check_at AS nextCheckAt,last_duration_seconds AS lastDurationSeconds,
+    last_delay_seconds AS lastDelaySeconds,last_alert_at AS lastAlertAt,last_error AS lastError
+    FROM crewcheck_commute_monitors WHERE email=? ORDER BY presentation_at DESC LIMIT 30`, [user.email]);
+  return sendJson(res, 200, { ok: true, monitors: rows });
+}
+
+async function cancelCommuteMonitor(req, res) {
+  const user = identity(req);
+  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
+  const body = await readJson(req);
+  const routeKey = String(body.routeKey || body.route_key || '').trim();
+  const db = await dbPool();
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  const [result] = await db.query('UPDATE crewcheck_commute_monitors SET active=0 WHERE email=? AND route_key=?', [user.email, routeKey]);
+  return sendJson(res, 200, { ok: true, cancelled: result.affectedRows });
+}
+
 async function runtimeHealth(_req, res) {
   let database = false;
-  try { const db = await dbPool(); if (db) { await ensureNotificationTable(db); database = true; } } catch {}
+  try { const db = await dbPool(); if (db) { await ensureNotificationTable(db); await ensureCommuteTables(db); database = true; } } catch {}
   return sendJson(res, 200, {
     ok: database && Boolean(lastWebhookCheck?.ok), version: RUNTIME_VERSION, database,
     scheduler: { running: schedulerRunning, intervalMs: INTERVAL_MS, lastCycle },
+    commute: { enabled: true, lastCycle: lastCommuteCycle, learningWindowDays: 90 },
     telegram: lastWebhookCheck,
     infobip: infobipPublicStatus(),
     message: database ? 'Runtime de notificações ativo.' : 'Runtime ativo, mas o banco está indisponível.',
@@ -220,6 +479,9 @@ http.createServer = function patchedCreateServer(...args) {
       if (path === '/api/alarm/schedule' && req.method === 'POST') return scheduleJob(req, res);
       if (path === '/api/alarm/scheduled' && req.method === 'GET') return listJobs(req, res);
       if (path === '/api/alarm/cancel' && req.method === 'POST') return cancelJob(req, res);
+      if (path === '/api/commute/monitor' && req.method === 'POST') return registerCommuteMonitor(req, res);
+      if (path === '/api/commute/monitors' && req.method === 'GET') return listCommuteMonitors(req, res);
+      if (path === '/api/commute/cancel' && req.method === 'POST') return cancelCommuteMonitor(req, res);
       return listener(req, res);
     } catch (error) {
       return sendJson(res, 500, { ok: false, message: String(error?.message || 'Falha no runtime de notificações.').slice(0, 300) });
