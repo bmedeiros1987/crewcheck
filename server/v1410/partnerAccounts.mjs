@@ -73,7 +73,15 @@ async function deliverInvitation({ db, email, contactName, partnerName, temporar
   const subject = cleanText(templateText(emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
   const text = templateText(emailBody || defaultBody, values).slice(0, 20_000);
   const signedText = `${text}\n\n${values.assinatura}`;
-  const result = await sendThroughPasswordResetServer({ to: email, subject, text: signedText, html: `${textToHtml(text)}${textToHtml(values.assinatura)}` });
+  const result = await sendSystemEmail({
+    to: email,
+    subject,
+    text: signedText,
+    html: `${textToHtml(text)}${textToHtml(values.assinatura)}`,
+    appendSignature: false,
+    bcc: false,
+    replyTo: false,
+  });
   const error = deliveryError(result);
   if (result.ok && copyMe) await sendSystemEmail({ to: 'bmedeiros1987@gmail.com', subject: `[Cópia] ${subject}`, text: `Convite enviado para ${email}.\n\n${text}`, html: textToHtml(`Convite enviado para ${email}.\n\n${text}`), appendSignature: true, bcc: false, replyTo: false });
   await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_error=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, error, result.ok ? new Date() : null, email]);
