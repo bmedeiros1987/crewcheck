@@ -9,6 +9,17 @@ import {
 } from '../v139/common.mjs';
 import { sendSystemEmail } from '../v139/delivery.mjs';
 
+// Preserve compatibility with older Render variable names previously used by CrewCheck.
+for (const [canonical, legacy] of [
+  ['SMTP_USER', 'SMTP_USERNAME'],
+  ['SMTP_PASS', 'SMTP_PASSWORD'],
+  ['SMTP_FROM', 'SMTP_FROM_EMAIL'],
+]) {
+  if (!String(process.env[canonical] || '').trim() && String(process.env[legacy] || '').trim()) {
+    process.env[canonical] = process.env[legacy];
+  }
+}
+
 function maskEmail(value = '') {
   const email = safeEmail(value);
   if (!email) return '';
