@@ -35,3 +35,4 @@ await import('../v1408/apply.mjs');
 await import('../v1409/apply.mjs');
 await import('../v1410/apply.mjs');
 await import('../v1411/apply.mjs');
+await import('../v1412/apply.mjs');
