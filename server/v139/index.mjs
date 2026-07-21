@@ -38,8 +38,14 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
     const update = updateOrMessage?.callback_query || updateOrMessage?.message || updateOrMessage?.edited_message
       ? updateOrMessage
       : { message: updateOrMessage };
-    if (await handleEmergencyTelegram(update, sendTelegram)) return true;
     const message = update?.message || update?.edited_message || updateOrMessage || {};
+    const isLiveLocation = Boolean(message?.location && (message.location.live_period || update?.edited_message));
+
+    // Localização em tempo real pertence ao fluxo operacional (Saída Inteligente).
+    // O Telegram envia atualizações sucessivas como edited_message; encaminhar cada uma
+    // para a Central de Emergência fazia a sessão pendente ser reprocessada em loop.
+    if (!isLiveLocation && await handleEmergencyTelegram(update, sendTelegram)) return true;
+
     return await handleCrewLockTelegram(message, sendTelegram);
   } catch {
     return false;
