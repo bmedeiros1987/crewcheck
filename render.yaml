@@ -18,6 +18,8 @@ services:
         value: true
       - key: CREWCHECK_EMAIL_PROVIDER
         value: mailersend
+      - key: CREWCHECK_EMAIL_FROM_LOCK
+        value: contato@crewcheck.com.br
       - key: MAILERSEND_API_KEY
         sync: false
       - key: MAILERSEND_FROM
