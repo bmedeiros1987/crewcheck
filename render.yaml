@@ -16,6 +16,8 @@ services:
         value: true
       - key: CREWCHECK_AUTH_REQUIRED
         value: true
+      - key: CREWCHECK_EMAIL_PROVIDER
+        value: mailersend
       - key: MAILERSEND_API_KEY
         sync: false
       - key: MAILERSEND_FROM
