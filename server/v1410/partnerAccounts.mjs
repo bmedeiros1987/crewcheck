@@ -7,13 +7,22 @@ function generateTemporaryPassword() { return `Crew#${crypto.randomBytes(9).toSt
 function escapeHtml(value) { return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
 function templateText(template, values) { return String(template || '').replace(/{{\s*(nome|empresa|email|senha_temporaria|url_acesso|assinatura)\s*}}/gi, (_, key) => values[key.toLowerCase()] || ''); }
 function textToHtml(text) { return `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.7;color:#152238;white-space:pre-wrap">${escapeHtml(text)}</div>`; }
+function deliveryError(result) {
+  if (result?.ok) return null;
+  const raw = String(result?.raw || '').trim().slice(0, 500);
+  if (raw) return raw;
+  if (result?.status) return `HTTP ${result.status}`;
+  if (result?.configured === false) return 'Provedor de e-mail não configurado.';
+  return 'Falha não detalhada pelo provedor.';
+}
 
 async function ensurePartnerTable(db) {
-  await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_partner_accounts (email VARCHAR(190) PRIMARY KEY, partner_name VARCHAR(120) NOT NULL, contact_name VARCHAR(120) NOT NULL, notes VARCHAR(500) NULL, demo_roster_enabled TINYINT(1) NOT NULL DEFAULT 1, invitation_status VARCHAR(40) NULL, invitation_provider VARCHAR(40) NULL, invitation_sent_at TIMESTAMP(3) NULL, created_by VARCHAR(190) NOT NULL, created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_partner_accounts (email VARCHAR(190) PRIMARY KEY, partner_name VARCHAR(120) NOT NULL, contact_name VARCHAR(120) NOT NULL, notes VARCHAR(500) NULL, demo_roster_enabled TINYINT(1) NOT NULL DEFAULT 1, invitation_status VARCHAR(40) NULL, invitation_provider VARCHAR(40) NULL, invitation_error VARCHAR(500) NULL, invitation_sent_at TIMESTAMP(3) NULL, created_by VARCHAR(190) NOT NULL, created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   for (const sql of [
     'ALTER TABLE crewcheck_partner_accounts ADD COLUMN demo_roster_enabled TINYINT(1) NOT NULL DEFAULT 1',
     'ALTER TABLE crewcheck_partner_accounts ADD COLUMN invitation_status VARCHAR(40) NULL',
     'ALTER TABLE crewcheck_partner_accounts ADD COLUMN invitation_provider VARCHAR(40) NULL',
+    'ALTER TABLE crewcheck_partner_accounts ADD COLUMN invitation_error VARCHAR(500) NULL',
     'ALTER TABLE crewcheck_partner_accounts ADD COLUMN invitation_sent_at TIMESTAMP(3) NULL',
   ]) { try { await db.query(sql); } catch (error) { if (String(error?.code) !== 'ER_DUP_FIELDNAME') throw error; } }
 }
@@ -22,7 +31,7 @@ function requireAdmin(req) { const identity = requireIdentity(req); if (!isAdmin
 
 async function listPartners(res, db) {
   await ensurePartnerTable(db);
-  const [rows] = await db.query(`SELECT p.email,p.partner_name AS partnerName,p.contact_name AS contactName,p.notes,p.demo_roster_enabled AS demoRosterEnabled,p.invitation_status AS invitationStatus,p.invitation_provider AS invitationProvider,p.invitation_sent_at AS invitationSentAt,p.created_by AS createdBy,p.created_at AS createdAt,a.must_change_password AS mustChangePassword,pr.plan,pr.display_name AS displayName FROM crewcheck_partner_accounts p LEFT JOIN crewcheck_platform_accounts a ON a.email=p.email LEFT JOIN crewcheck_platform_profiles pr ON pr.email=p.email ORDER BY p.created_at DESC LIMIT 200`);
+  const [rows] = await db.query(`SELECT p.email,p.partner_name AS partnerName,p.contact_name AS contactName,p.notes,p.demo_roster_enabled AS demoRosterEnabled,p.invitation_status AS invitationStatus,p.invitation_provider AS invitationProvider,p.invitation_error AS invitationError,p.invitation_sent_at AS invitationSentAt,p.created_by AS createdBy,p.created_at AS createdAt,a.must_change_password AS mustChangePassword,pr.plan,pr.display_name AS displayName FROM crewcheck_partner_accounts p LEFT JOIN crewcheck_platform_accounts a ON a.email=p.email LEFT JOIN crewcheck_platform_profiles pr ON pr.email=p.email ORDER BY p.created_at DESC LIMIT 200`);
   return sendJson(res, 200, { ok: true, partners: rows });
 }
 async function partnerDemoProfile(req, res, db) {
@@ -50,18 +59,35 @@ async function createPartner(req, res, db, adminEmail) {
     await connection.commit();
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
 
-  let invitation = { requested: Boolean(body.sendInvitation), ok: false, provider: null };
+  let invitation = { requested: Boolean(body.sendInvitation), ok: false, provider: null, error: null };
   if (body.sendInvitation) {
     const values = { nome: contactName, empresa: partnerName, email, senha_temporaria: temporaryPassword, url_acesso: 'https://crewcheck.online', assinatura: 'Bruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck' };
     const defaultSubject = 'Seu acesso de demonstração ao CrewCheck';
-    const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,\n\n{{assinatura}}';
+    const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,';
     const subject = cleanText(templateText(body.emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
     const text = templateText(body.emailBody || defaultBody, values).slice(0, 20_000);
-    const result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), bcc: body.copyMe === false ? '' : 'bmedeiros1987@gmail.com', replyTo: 'partnerships@crewcheck.online', appendSignature: true });
-    invitation = { requested: true, ok: Boolean(result.ok), provider: result.provider || null };
-    await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, result.ok ? new Date() : null, email]);
+
+    // Mantém exatamente o mesmo caminho mínimo já validado pela recuperação de senha.
+    // Campos opcionais como BCC e Reply-To não seguem no envio principal, pois alguns
+    // gateways compatíveis com EmailSender rejeitam esses atributos extras.
+    const result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true });
+    const error = deliveryError(result);
+    invitation = { requested: true, ok: Boolean(result.ok), provider: result.provider || null, error };
+
+    // A cópia administrativa é enviada separadamente, sem comprometer o convite principal.
+    if (result.ok && body.copyMe !== false) {
+      await sendSystemEmail({
+        to: 'bmedeiros1987@gmail.com',
+        subject: `[Cópia] ${subject}`,
+        text: `Convite enviado para ${email}.\n\n${text}`,
+        html: textToHtml(`Convite enviado para ${email}.\n\n${text}`),
+        appendSignature: true,
+      });
+    }
+
+    await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_error=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, error, result.ok ? new Date() : null, email]);
   }
-  return sendJson(res, 201, { ok: true, message: invitation.requested ? (invitation.ok ? 'Conta criada e convite enviado com sucesso.' : 'Conta criada, mas o convite não pôde ser enviado agora.') : 'Conta de parceiro criada com Premium, escala demo e troca obrigatória de senha.', account: { email, contactName, partnerName, plan: 'premium_unlimited', mustChangePassword: true, demoRosterEnabled }, temporaryPassword, invitation });
+  return sendJson(res, 201, { ok: true, message: invitation.requested ? (invitation.ok ? 'Conta criada e convite enviado com sucesso.' : `Conta criada, mas o convite não pôde ser enviado agora${invitation.error ? `: ${invitation.error}` : '.'}`) : 'Conta de parceiro criada com Premium, escala demo e troca obrigatória de senha.', account: { email, contactName, partnerName, plan: 'premium_unlimited', mustChangePassword: true, demoRosterEnabled }, temporaryPassword, invitation });
 }
 
 export async function handlePartnerAccountsRoute(req, res, url) {
