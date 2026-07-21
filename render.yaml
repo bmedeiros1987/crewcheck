@@ -20,8 +20,30 @@ services:
         sync: false
       - key: MAILERSEND_FROM
         sync: false
+      - key: MAILERSEND_FROM_NAME
+        value: CrewCheck
+      - key: MAILERSEND_WEBHOOK_SECRET
+        sync: false
       - key: EMAIL_FROM_NAME
         value: CrewCheck
+      - key: CREWCHECK_EMAIL_REPLY_TO
+        sync: false
+      - key: CREWCHECK_EMAIL_BCC
+        sync: false
+      - key: CREWCHECK_EMAIL_FALLBACK_ENABLED
+        value: true
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 465
+      - key: SMTP_SECURE
+        value: true
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_BOT_USERNAME
