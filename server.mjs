@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
@@ -369,7 +370,11 @@ function handleRadarHealth(req, res) {
 function mapsServerKey() {
   return envAny(['GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);
 }
+function tomtomServerKey() {
+  return envAny(['TOMTOM_API_KEY', 'CREWCHECK_TOMTOM_API_KEY']);
+}
 const reverseGeocodeCache = new Map();
+const routeLocationCache = new Map();
 function formatMeters(value) {
   const n = Number(value || 0);
   if (!n) return '';
@@ -384,16 +389,177 @@ function formatDuration(value) {
   const m = minutes % 60;
   return `${h}h${String(m).padStart(2, '0')}`;
 }
-async function handleRoutePreview(req, res, url) {
-  const key = mapsServerKey();
-  const origin = url.searchParams.get('origin') || '';
-  const destination = url.searchParams.get('destination') || '';
-  const requestedMode = String(url.searchParams.get('mode') || 'driving').toLowerCase();
-  const travelMode = requestedMode === 'transit' ? 'TRANSIT' : 'DRIVE';
-  if (!origin || !destination) return sendJson(res, 400, { ok: false, message: 'Origem e destino são necessários.' });
-  if (!key) return sendJson(res, 200, { ok: false, configured: false, message: 'Mapa real configurável. Abra no Google Maps para ver rota e trânsito.' });
+function routeDurationSeconds(value) {
+  return Math.max(0, Math.round(Number(String(value || '0').replace(/[^\d.]/g, '')) || 0));
+}
+function routeCoordinate(value) {
+  const match = String(value || '').trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return { latitude, longitude };
+}
+async function fetchRouteJson(endpoint, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    const response = await fetch(endpoint, { ...options, signal: controller.signal });
+    const payload = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, payload };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function tomtomResolvePoint(value, key) {
+  const coordinate = routeCoordinate(value);
+  if (coordinate) return coordinate;
+  const cacheKey = String(value || '').trim().toLocaleLowerCase('pt-BR');
+  const cached = routeLocationCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < 24 * 60 * 60_000) return cached.point;
+  const endpoint = new URL(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(String(value || '').trim())}.json`);
+  endpoint.searchParams.set('key', key);
+  endpoint.searchParams.set('limit', '1');
+  endpoint.searchParams.set('language', 'pt-BR');
+  endpoint.searchParams.set('countrySet', 'BR');
+  const result = await fetchRouteJson(endpoint);
+  const position = result.payload?.results?.[0]?.position;
+  if (!result.ok || !Number.isFinite(Number(position?.lat)) || !Number.isFinite(Number(position?.lon))) return null;
+  const point = { latitude: Number(position.lat), longitude: Number(position.lon) };
+  routeLocationCache.set(cacheKey, { point, cachedAt: Date.now() });
+  return point;
+}
+function tomtomTrafficEvents(route = {}) {
+  const sections = (route.sections || []).filter((section) => {
+    const label = `${section.sectionType || ''} ${section.simpleCategory || ''}`;
+    return /traffic|road.clos|accident|jam|road.work|incident|block/i.test(label) || Number(section.magnitudeOfDelay || 0) > 0;
+  });
+  return sections.slice(0, 12).map((section, index) => {
+    const category = String(section.simpleCategory || section.sectionType || 'TRAFFIC').toUpperCase();
+    const delaySeconds = Math.max(0, Number(section.delayInSeconds || 0));
+    const roadClosure = Number(section.magnitudeOfDelay || 0) >= 4 || /CLOS|BLOCK|IMPASS/i.test(category);
+    const accident = /ACCIDENT|COLLISION/i.test(category);
+    return {
+      id: String(section.eventId || `${category}-${section.startPointIndex || index}-${section.endPointIndex || index}`),
+      category: roadClosure ? 'road_closure' : accident ? 'accident' : /WORK/i.test(category) ? 'road_works' : 'traffic',
+      title: roadClosure ? 'Via bloqueada ou fechada' : accident ? 'Acidente na rota' : /WORK/i.test(category) ? 'Obra na rota' : 'Retenção na rota',
+      delaySeconds,
+      delayText: delaySeconds ? formatDuration(`${delaySeconds}s`) : '',
+      severity: roadClosure ? 'critical' : delaySeconds >= 600 ? 'warning' : 'info',
+      roadClosure,
+      startPointIndex: Number(section.startPointIndex || 0),
+      endPointIndex: Number(section.endPointIndex || 0),
+    };
+  });
+}
+function routePointDistanceMeters(left, right) {
+  const radians = (value) => Number(value) * Math.PI / 180;
+  const dLat = radians(right.latitude - left.latitude);
+  const dLon = radians(right.longitude - left.longitude);
+  const value = Math.sin(dLat / 2) ** 2 + Math.cos(radians(left.latitude)) * Math.cos(radians(right.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(value));
+}
+function incidentGeometryPoints(geometry = {}) {
+  const coordinates = geometry.coordinates;
+  if (!Array.isArray(coordinates)) return [];
+  const values = geometry.type === 'Point' ? [coordinates] : coordinates;
+  return values.filter((point) => Array.isArray(point) && point.length >= 2).map((point) => ({ longitude: Number(point[0]), latitude: Number(point[1]) })).filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
+}
+async function tomtomIncidentDetails(route, key) {
+  const routePoints = (route.legs || []).flatMap((leg) => leg.points || []).filter((point) => Number.isFinite(Number(point?.latitude)) && Number.isFinite(Number(point?.longitude))).map((point) => ({ latitude: Number(point.latitude), longitude: Number(point.longitude) }));
+  if (routePoints.length < 2) return [];
+  const latitudes = routePoints.map((point) => point.latitude);
+  const longitudes = routePoints.map((point) => point.longitude);
+  const padding = 0.025;
+  const minLat = Math.min(...latitudes) - padding;
+  const maxLat = Math.max(...latitudes) + padding;
+  const minLon = Math.min(...longitudes) - padding;
+  const maxLon = Math.max(...longitudes) + padding;
+  if (maxLat - minLat > 3 || maxLon - minLon > 3) return [];
+  const endpoint = new URL('https://api.tomtom.com/traffic/services/5/incidentDetails');
+  endpoint.searchParams.set('key', key);
+  endpoint.searchParams.set('bbox', `${minLon},${minLat},${maxLon},${maxLat}`);
+  endpoint.searchParams.set('language', 'pt-PT');
+  endpoint.searchParams.set('timeValidityFilter', 'present');
+  endpoint.searchParams.set('categoryFilter', 'Accident,LaneClosed,RoadClosed,RoadWorks,BrokenDownVehicle');
+  endpoint.searchParams.set('fields', '{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,code,iconCategory},startTime,endTime,from,to,length,delay,roadNumbers,timeValidity,probabilityOfOccurrence,lastReportTime}}}');
+  const result = await fetchRouteJson(endpoint, {}, 7000);
+  if (!result.ok || !Array.isArray(result.payload?.incidents)) return [];
+  const categoryMeta = {
+    1: { category: 'accident', title: 'Acidente na rota', severity: 'critical' },
+    7: { category: 'lane_closed', title: 'Faixa fechada na rota', severity: 'warning' },
+    8: { category: 'road_closure', title: 'Rodovia ou via fechada', severity: 'critical' },
+    9: { category: 'road_works', title: 'Obra na rota', severity: 'warning' },
+    14: { category: 'broken_down_vehicle', title: 'Veículo parado na rota', severity: 'warning' },
+  };
+  return result.payload.incidents.flatMap((incident) => {
+    const properties = incident?.properties || {};
+    const meta = categoryMeta[Number(properties.iconCategory)] || null;
+    if (!meta) return [];
+    const geometryPoints = incidentGeometryPoints(incident.geometry);
+    const nearRoute = geometryPoints.some((incidentPoint) => routePoints.some((routePoint) => routePointDistanceMeters(incidentPoint, routePoint) <= 3500));
+    if (!nearRoute) return [];
+    const delaySeconds = Math.max(0, Number(properties.delay || 0));
+    return [{
+      id: String(properties.id || `${meta.category}-${properties.from || ''}-${properties.to || ''}`),
+      category: meta.category,
+      title: String(properties.events?.[0]?.description || meta.title),
+      delaySeconds,
+      delayText: delaySeconds ? formatDuration(`${delaySeconds}s`) : '',
+      severity: meta.severity,
+      roadClosure: Number(properties.iconCategory) === 8,
+      roadNumbers: Array.isArray(properties.roadNumbers) ? properties.roadNumbers.slice(0, 4) : [],
+      from: String(properties.from || ''),
+      to: String(properties.to || ''),
+      lastReportTime: String(properties.lastReportTime || ''),
+    }];
+  }).slice(0, 12);
+}
+async function tomtomRoutePreview(origin, destination, key) {
+  const [from, to] = await Promise.all([tomtomResolvePoint(origin, key), tomtomResolvePoint(destination, key)]);
+  if (!from || !to) return null;
+  const endpoint = new URL(`https://api.tomtom.com/routing/1/calculateRoute/${from.latitude},${from.longitude}:${to.latitude},${to.longitude}/json`);
+  endpoint.searchParams.set('key', key);
+  endpoint.searchParams.set('routeType', 'fastest');
+  endpoint.searchParams.set('traffic', 'true');
+  endpoint.searchParams.set('travelMode', 'car');
+  endpoint.searchParams.set('computeTravelTimeFor', 'all');
+  endpoint.searchParams.set('departAt', 'now');
+  endpoint.searchParams.append('sectionType', 'traffic');
+  const result = await fetchRouteJson(endpoint);
+  const route = result.payload?.routes?.[0];
+  if (!result.ok || !route?.summary) return null;
+  const summary = route.summary;
+  const durationSeconds = Number(summary.travelTimeInSeconds || 0);
+  const baselineDurationSeconds = Number(summary.noTrafficTravelTimeInSeconds || summary.historicTrafficTravelTimeInSeconds || 0);
+  const trafficDelaySeconds = Number(summary.trafficDelayInSeconds || Math.max(0, durationSeconds - baselineDurationSeconds) || 0);
+  const routeEvents = tomtomTrafficEvents(route);
+  const detailedEvents = await tomtomIncidentDetails(route, key).catch(() => []);
+  const incidents = [...new Map([...detailedEvents, ...routeEvents].map((incident) => [incident.id || `${incident.category}:${incident.title}`, incident])).values()].slice(0, 12);
+  return {
+    ok: true,
+    configured: true,
+    provider: 'TomTom',
+    liveTraffic: true,
+    trafficAware: true,
+    distanceMeters: Number(summary.lengthInMeters || 0),
+    distanceText: formatMeters(summary.lengthInMeters),
+    durationSeconds,
+    durationText: formatDuration(`${durationSeconds}s`),
+    durationInTrafficText: formatDuration(`${durationSeconds}s`),
+    baselineDurationSeconds,
+    trafficDelaySeconds,
+    trafficDelayText: trafficDelaySeconds ? formatDuration(`${trafficDelaySeconds}s`) : 'Sem atraso relevante',
+    incidents,
+    hasRoadClosure: incidents.some((incident) => incident.roadClosure),
+    updatedAt: new Date().toISOString(),
+    refreshAfterSeconds: 60,
+    message: incidents.length ? 'Trânsito ao vivo atualizado; há ocorrências no trajeto.' : 'Trânsito ao vivo atualizado pela TomTom.',
+  };
+}
+async function googleRoutePreview(origin, destination, requestedMode, key) {
+  const travelMode = requestedMode === 'transit' ? 'TRANSIT' : 'DRIVE';
+  const result = await fetchRouteJson('https://routes.googleapis.com/directions/v2:computeRoutes', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -410,22 +576,49 @@ async function handleRoutePreview(req, res, url) {
         units: 'METRIC',
       }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) return sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
-    const route = payload?.routes?.[0] || {};
-    sendJson(res, 200, {
+  const route = result.payload?.routes?.[0];
+  if (!result.ok || !route) return null;
+  const durationSeconds = routeDurationSeconds(route.duration);
+  const baselineDurationSeconds = routeDurationSeconds(route.staticDuration);
+  const trafficDelaySeconds = Math.max(0, durationSeconds - baselineDurationSeconds);
+  return {
       ok: true,
       configured: true,
+      provider: 'Google Routes',
+      liveTraffic: travelMode === 'DRIVE',
       trafficAware: travelMode === 'DRIVE',
       distanceMeters: route.distanceMeters || 0,
       distanceText: route.localizedValues?.distance?.text || formatMeters(route.distanceMeters),
       durationText: route.localizedValues?.duration?.text || formatDuration(route.duration),
       durationInTrafficText: route.localizedValues?.duration?.text || formatDuration(route.duration),
+      durationSeconds,
+      baselineDurationSeconds,
+      trafficDelaySeconds,
+      trafficDelayText: trafficDelaySeconds ? formatDuration(`${trafficDelaySeconds}s`) : 'Sem atraso relevante',
+      incidents: [],
+      hasRoadClosure: false,
       polyline: route.polyline?.encodedPolyline || '',
+      updatedAt: new Date().toISOString(),
+      refreshAfterSeconds: 60,
       message: travelMode === 'DRIVE' ? 'Rota calculada com trânsito quando disponível.' : 'Rota de transporte público calculada dentro do CrewCheck.',
-    });
+  };
+}
+async function handleRoutePreview(req, res, url) {
+  const googleKey = mapsServerKey();
+  const tomtomKey = tomtomServerKey();
+  const origin = String(url.searchParams.get('origin') || '').trim();
+  const destination = String(url.searchParams.get('destination') || '').trim();
+  const requestedMode = String(url.searchParams.get('mode') || 'driving').toLowerCase();
+  if (!origin || !destination) return sendJson(res, 400, { ok: false, message: 'Origem e destino são necessários.' });
+  if (!googleKey && !tomtomKey) return sendJson(res, 200, { ok: false, configured: false, message: 'Rota ao vivo aguarda uma chave TomTom ou Google Routes.' });
+  try {
+    let route = null;
+    if (requestedMode !== 'transit' && tomtomKey) route = await tomtomRoutePreview(origin, destination, tomtomKey);
+    if (!route && googleKey) route = await googleRoutePreview(origin, destination, requestedMode, googleKey);
+    if (!route) return sendJson(res, 200, { ok: false, configured: true, message: 'Rota ao vivo indisponível agora. Use Abrir no Google Maps.' });
+    return sendJson(res, 200, { ...route, learningEligible: requestedMode !== 'transit' });
   } catch {
-    sendJson(res, 200, { ok: false, configured: true, message: 'Rota real indisponível agora. Use Abrir no Google Maps.' });
+    return sendJson(res, 200, { ok: false, configured: true, message: 'Rota ao vivo indisponível agora. Use Abrir no Google Maps.' });
   }
 }
 async function handleReverseGeocode(req, res, url) {
@@ -1665,7 +1858,7 @@ async function handleTtsHealth(req, res) {
 function handleTtsProviderHealth(req, res) {
   return sendJson(res, 200, {
     ok: effectiveTtsProvider() === 'elevenlabs',
-    version:'13.9.9',
+    version:'14.1.7',
     ...ttsPolicySnapshot(),
     message: effectiveTtsProvider() === 'elevenlabs'
       ? 'ElevenLabs é o provedor efetivo de voz.'
@@ -2121,7 +2314,7 @@ function conciergeHelp(name = 'Tripulante') {
     '/escala — resumo da escala ativa',
     '/portao LA3730 — portão e terminal',
     '/radar LA3730 — status ao vivo',
-    '/saida — Saída Inteligente',
+    '/saida — Planejador de Saída',
     '/metar SBBR raw — METAR original',
     '/metar SBBR decodificado — leitura acessível',
     '/taf SBGR raw|decodificado — previsão do aeródromo',
@@ -2299,13 +2492,13 @@ async function conciergeDepartureReply(snapshot) {
   const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
   const location = snapshot?.preferences?.location;
   if (!location) {
-    return `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}\nApresentação ${presentation || 'a confirmar'} em ${record.legs?.[0]?.origin || record.day?.base || 'local a confirmar'}.\n\nEnvie sua localização pelo Telegram para calcular a Saída Inteligente com mapa, distância e trânsito.`;
+    return `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}\nApresentação ${presentation || 'a confirmar'} em ${record.legs?.[0]?.origin || record.day?.base || 'local a confirmar'}.\n\nEnvie sua localização pelo Telegram para usar o Planejador de Saída com mapa, distância e trânsito.`;
   }
   const origin = record.legs?.[0]?.origin || record.day?.base || '';
   const route = await conciergeTravelEstimate(location, origin);
-  if (!route) return `Apresentação ${presentation || 'a confirmar'} em ${origin || 'local a confirmar'}. Não tenho coordenadas suficientes para calcular a rota; abra Saída Inteligente no app para ver a prévia do mapa.`;
+  if (!route) return `Apresentação ${presentation || 'a confirmar'} em ${origin || 'local a confirmar'}. Não tenho coordenadas suficientes para calcular a rota; abra o Planejador de Saída no app para ver a prévia do mapa.`;
   if (route.distanceKm > 250) {
-    return [`Automático · longa distância`, `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}`, `Você está distante do aeroporto de origem ${origin}. Planeje o deslocamento até o aeroporto e o voo publicado na escala.`, `Apresentação ${presentation || 'a confirmar'} · distância de referência ${route.distanceText}.`, 'Abra Saída Inteligente no app para revisar cada trecho no mapa.'].join('\n');
+    return [`Automático · longa distância`, `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}`, `Você está distante do aeroporto de origem ${origin}. Planeje o deslocamento até o aeroporto e o voo publicado na escala.`, `Apresentação ${presentation || 'a confirmar'} · distância de referência ${route.distanceText}.`, 'Abra o Planejador de Saída no app para revisar cada trecho no mapa.'].join('\n');
   }
   const bufferMinutes = 25;
   const leave = new Date(presentationDate.getTime() - (route.minutes + bufferMinutes) * 60_000);
@@ -2430,7 +2623,7 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   if (/^\/rotina(?:@\S+)?\b/i.test(value) || /\b(rotina|recupera[cç][aã]o|treino hoje)\b/i.test(lower)) return conciergeRoutineReply(snapshot);
   if (/^\/diarias?(?:@\S+)?\b/i.test(value) || /\bdi[aá]rias?\b/i.test(lower)) return conciergePerDiemReply(snapshot);
   if (/^\/conformidade(?:@\S+)?\b/i.test(value) || /\b(rbac|act|irregularidade|conformidade)\b/i.test(lower)) return conciergeComplianceReply(snapshot);
-  if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'Localização recebida. Use /academias, /hoteis ou /saida para consultar perto de você.' : 'Envie sua localização pelo clipe do Telegram para ativar busca próxima e Saída Inteligente.';
+  if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'Localização recebida. Use /academias, /hoteis ou /saida para consultar perto de você.' : 'Envie sua localização pelo clipe do Telegram para ativar busca próxima e Planejador de Saída.';
   return `Entendi sua mensagem, mas preciso de um comando operacional mais específico.\n\n${conciergeHelp(profile.name)}`;
 }
 async function handleParsePdfApi(req, res) {
@@ -2707,7 +2900,7 @@ async function telegramTryBindFromWebhook(message = {}, text = '') {
   await sendTelegramMessage(chatId, [
     'Telegram vinculado ao CrewCheck.',
     '',
-    'Você já pode enviar o PDF da escala aqui e consultar programação, radar, meteorologia, hotéis, academias, rotina e Saída Inteligente.',
+    'Você já pode enviar o PDF da escala aqui e consultar programação, radar, meteorologia, hotéis, academias, rotina e Planejador de Saída.',
     '',
     'Use /ajuda para ver os comandos antigos restaurados. Para testar alertas, volte ao CrewCheck e use Despertador > Testar canal.'
   ].join('\n'), { reply_markup: conciergeKeyboard });
@@ -2960,7 +3153,7 @@ async function configureTelegramBotMenu() {
     { command: 'hoje', description: 'Programação de hoje' },
     { command: 'escala', description: 'Resumo da escala ativa' },
     { command: 'radar', description: 'Portão, terminal e status' },
-    { command: 'saida', description: 'Saída Inteligente' },
+    { command: 'saida', description: 'Planejador de Saída' },
     { command: 'metar', description: 'METAR bruto ou decodificado' },
     { command: 'taf', description: 'TAF bruto ou decodificado' },
     { command: 'atis', description: 'ATIS meteorológico em voz' },
@@ -3072,24 +3265,19 @@ async function handleTelegramCallCallback(update = {}) {
   return true;
 }
 
-async function handleTelegramWebhook(req, res) {
-  const secret = envAny(['TELEGRAM_WEBHOOK_SECRET']);
-  if (secret) {
-    const received = String(req.headers['x-telegram-bot-api-secret-token'] || '');
-    if (received !== secret) return sendJson(res, 403, { ok: false, message: 'Webhook não autorizado.' });
-  }
-  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
-  const update = await readJsonBody(req);
-  if (await handleTelegramWeatherCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'weather-button' });
-  if (await handleTelegramCallCallback(update)) return sendJson(res, 200, { ok: true, handled: true, channel: 'call-button' });
-  if (update?.callback_query && await handleV139Telegram(update, sendTelegramMessage)) return sendJson(res, 200, { ok: true, handled: true, channel: 'crewcheck-button' });
+async function processTelegramUpdate(update = {}) {
+  if (await handleTelegramWeatherCallback(update)) return true;
+  if (await handleTelegramCallCallback(update)) return true;
+  if (update?.callback_query && await handleV139Telegram(update, sendTelegramMessage)) return true;
   const message = update?.message || update?.edited_message || {};
   const chatId = message?.chat?.id;
   const text = String(message?.text || message?.caption || '').trim();
-  if (chatId && text && await handlePlatformVisitorTelegram(message, text, sendTelegramMessage)) return sendJson(res, 200, { ok: true, visitor: true, message: 'Comando de visitante processado.' });
-  if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });
-  if (chatId && message?.document && await handleV139Telegram(message, sendTelegramMessage)) return sendJson(res, 200, { ok: true, crewlock: true, message: 'Solicitação CrewLock processada.' });
-  if (chatId && await handleV139Telegram(update, sendTelegramMessage)) return sendJson(res, 200, { ok: true, handled: true, channel: 'crewcheck-v139', message: 'Solicitação CrewCheck processada.' });
+  if (chatId && text && await handlePlatformVisitorTelegram(message, text, sendTelegramMessage)) return true;
+  if (chatId && text && await telegramTryBindFromWebhook(message, text)) return true;
+  if (chatId && message?.document && await handleV139Telegram(message, sendTelegramMessage)) return true;
+  // Ordinary text must reach the Concierge. Only live-location updates retain
+  // priority in the auxiliary handler.
+  if (chatId && message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true;
   if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
   else if (chatId && message?.location) await handleTelegramLocation(message);
   else if (chatId && text) {
@@ -3109,7 +3297,26 @@ async function handleTelegramWebhook(req, res) {
       if (/^\/atis(?:@\S+)?\b/i.test(normalizedText)) await sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply));
     }
   } else if (chatId && (message?.voice || message?.audio || message?.document?.mime_type?.startsWith?.('audio/'))) await handleTelegramVoiceMessage(message);
-  return sendJson(res, 200, { ok: true, received: true, message: 'Evento recebido.' });
+  return true;
+}
+
+async function handleTelegramWebhook(req, res) {
+  const secret = envAny(['TELEGRAM_WEBHOOK_SECRET']);
+  if (secret) {
+    const received = String(req.headers['x-telegram-bot-api-secret-token'] || '');
+    if (received !== secret) return sendJson(res, 403, { ok: false, message: 'Webhook não autorizado.' });
+  }
+  if (req.method !== 'POST') return sendJson(res, 200, { ok: true, message: 'Concierge pronto para receber eventos.' });
+  const update = await readJsonBody(req);
+
+  // Telegram retries and queues updates when the HTTP acknowledgement is slow.
+  // Acknowledge immediately and finish the operational work asynchronously.
+  sendJson(res, 200, { ok: true, queued: true, message: 'Evento recebido.' });
+  setImmediate(() => {
+    processTelegramUpdate(update).catch((error) => {
+      console.error('[telegram] queued update failed:', String(error?.message || error).slice(0, 400));
+    });
+  });
 }
 
 function conciergeWeatherCandidates(snapshot = {}, now = new Date()) {
@@ -3486,16 +3693,16 @@ function reliabilityEnvItems() {
 }
 function handleReliabilityEnv(req, res) {
   const items = reliabilityEnvItems();
-  return sendJson(res, 200, { ok:true, version:'13.9.9', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
+  return sendJson(res, 200, { ok:true, version:'14.1.7', items, summary:{ configured:items.filter(i=>i.configured).length, pending:items.filter(i=>!i.configured).length, total:items.length }, message:'Variáveis avaliadas sem expor segredos.' });
 }
 function handleReliabilityHealth(req, res) {
   const critical = ['auth','maps','radar','telegram','wakeup'];
   const modules = reliabilityEnvItems().map((item) => ({ ...item, ok:item.configured || !critical.includes(item.id), message:item.configured ? item.message : critical.includes(item.id) ? item.message : 'Opcional.' }));
   const ok = modules.filter((m)=>critical.includes(m.id)).every((m)=>m.ok);
-return sendJson(res, 200, { ok, app:'CrewCheck', version:'13.9.9', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
+return sendJson(res, 200, { ok, app:'CrewCheck', version:'14.1.7', mode:process.env.NODE_ENV || 'production', uptimeSeconds:Math.round(process.uptime()), modules, apiRoutes:['/api/health','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/radar-health','/api/telegram/health','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/parse-pdf','/api/places/search','/api/alarm/health','/api/email/health','/api/email/share','/api/osm/health','/api/aviation-weather'], cache:{ noStoreApi:true, spaFallback:true }, message: ok ? 'Núcleo operacional configurado.' : 'Sistema operacional com pendências de configuração.' });
 }
 function handleReliabilitySelfTest(req, res) {
-  return sendJson(res, 200, { ok:true, version:'13.9.9', expectedRoutes:['/api/platform/emergency/profile','/api/platform/emergency/send','/api/platform/emergency/assisted','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
+  return sendJson(res, 200, { ok:true, version:'14.1.7', expectedRoutes:['/api/platform/emergency/profile','/api/platform/emergency/send','/api/platform/emergency/assisted','/api/auth/config','/api/platform/catalog','/api/platform/database/health','/api/platform/profile','/api/platform/billing/status','/api/platform/billing/google-play/verify','/api/platform/billing/google-play/rtdn','/api/platform/billing/asaas/webhook','/api/platform/billing/cancel','/api/platform/rosters/sync','/api/platform/hotels/stays','/api/platform/visitors','/api/platform/visitor/chat','/api/platform/shares','/api/platform/connections','/api/platform/chat','/api/platform/gyms/checkins','/api/platform/parking','/api/platform/account/delete','/api/platform/terms/current','/api/platform/terms/accept','/api/platform/admin/terms','/api/platform/admin/unlimited','/api/platform/health/amil','/api/platform/health/amil/search','/api/parse-pdf','/api/weather/airport','/api/aviation-weather','/api/maps/route-preview','/api/maps/reverse-geocode','/api/places/search','/api/places/fitness','/api/osm/health','/api/osm/route-preview','/api/telegram/health','/api/telegram/diagnostic','/api/telegram/webhook','/api/telegram/roster-sync','/api/telegram/concierge/ask','/api/telegram/send','/api/telegram/setup-webhook','/api/alarm/health','/api/alarm/preview','/api/alarm/test','/api/email/health','/api/email/share','/api/radar-flight','/api/radar-health'], apiFallbackJson:true, secretsExposed:false, message:'Autoteste estrutural concluído. Rotas críticas registradas em JSON.' });
 }
 
 
@@ -3628,6 +3835,11 @@ function serveStatic(req, res, url) {
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const incomingHost = String(req.headers.host || '').split(':')[0].toLowerCase();
+  if (incomingHost === 'crewcheck.com.br' || incomingHost === 'www.crewcheck.com.br') {
+    res.writeHead(308, { location: `https://crewcheck.online${url.pathname}${url.search}`, 'cache-control': 'public, max-age=3600' });
+    return res.end();
+  }
   if (await handleV139Route(req, res, url)) return;
   if (['/crewcheck-repair','/repair','/safe-start','/emergency'].includes(url.pathname) || /^\/__crewcheck_boot_rescue_\d+\.html$/.test(url.pathname)) return handleCrewCheckStaticShell(req, res);
 
@@ -3637,7 +3849,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/admin/runtime-patch/current') return handleRuntimePatchCurrent(req, res);
   if (url.pathname === '/api/admin/runtime-patch') return handleRuntimePatchApply(req, res);
   if (url.pathname === '/api/admin/runtime-patch/clear') return handleRuntimePatchClear(req, res);
-  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version:'13.9.9', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
+  if (url.pathname === '/api/auth/diagnostic') return sendJson(res, 200, { ok: true, version:'14.1.7', authHandler: typeof handleAuthConfig1371 === 'function', authSecretConfigured: Boolean(envAny(['CREWCHECK_AUTH_SECRET'])), authRequired: cc1371AuthRequired(), message: 'Auth API rebind ativo.' });
   if (url.pathname === '/api/auth/config') return handleAuthConfig1371(req, res);
   if (url.pathname === '/api/auth/login') return handleAuthLogin1371(req, res);
   if (url.pathname === '/api/auth/register') return handleAuthRegister1371(req, res);
@@ -3676,7 +3888,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
-  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version:'13.9.9', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version:'14.1.7', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
