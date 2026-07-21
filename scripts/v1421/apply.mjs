@@ -32,28 +32,25 @@ patchFile('server/v139/delivery.mjs', (source) => {
 
   next = next.replace("const defaultBcc = 'bmedeiros1987@gmail.com';", "const defaultBcc = '';");
 
-  const oldNormalize = `function normalizeMessage(message) {
-  const replyTo = optionalEmail(message, 'replyTo', env('CREWCHECK_EMAIL_REPLY_TO', env('EMAIL_FROM')));
-  const bcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));
-  const appendSignature = message.appendSignature !== false;
-  const html = appendSignature ? \`${'${message.html || `<div style="white-space:pre-wrap">${escapeHtml(message.text)}</div>`}${crewCheckEmailSignature()}'}\` : message.html;
-  const text = appendSignature ? \`${"${message.text || ''}\\n\\nBruno Saraiva de Medeiros\\nFounder & CEO | Bruno Medeiros Tecnologia\\nCrewCheck — Inteligência Operacional para Profissionais da Aviação\\nhttps://crewcheck.online"}\` : message.text;
-  return { ...message, html, text, replyTo, bcc };
-}`;
-
-  const newNormalize = `function normalizeMessage(message) {
+  const functionAnchor = `function normalizeMessage(message) {
+  const replyTo = optionalEmail(message, 'replyTo', env('CREWCHECK_EMAIL_REPLY_TO', env('EMAIL_FROM')));`;
+  const functionReplacement = `function normalizeMessage(message) {
   const to = safeEmail(message.to);
-  const replyTo = optionalEmail(message, 'replyTo', env('CREWCHECK_EMAIL_REPLY_TO', env('EMAIL_FROM')));
-  const requestedBcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));
-  const bcc = requestedBcc && requestedBcc !== to ? requestedBcc : '';
-  const appendSignature = message.appendSignature !== false;
-  const html = appendSignature ? \`${'${message.html || `<div style="white-space:pre-wrap">${escapeHtml(message.text)}</div>`}${crewCheckEmailSignature()}'}\` : message.html;
-  const text = appendSignature ? \`${"${message.text || ''}\\n\\nBruno Saraiva de Medeiros\\nFounder & CEO | Bruno Medeiros Tecnologia\\nCrewCheck — Inteligência Operacional para Profissionais da Aviação\\nhttps://crewcheck.online"}\` : message.text;
-  return { ...message, to, html, text, replyTo, bcc };
-}`;
+  const replyTo = optionalEmail(message, 'replyTo', env('CREWCHECK_EMAIL_REPLY_TO', env('EMAIL_FROM')));`;
+  if (next.includes(functionAnchor)) next = next.replace(functionAnchor, functionReplacement);
+  else if (!next.includes('const to = safeEmail(message.to);')) throw new Error('[v1421] Âncora do destinatário não encontrada.');
 
-  if (next.includes(oldNormalize)) next = next.replace(oldNormalize, newNormalize);
-  else if (!next.includes('const requestedBcc = optionalEmail')) throw new Error('[v1421] Âncora de normalização de e-mail não encontrada.');
+  const bccAnchor = `  const bcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));`;
+  const bccReplacement = `  const requestedBcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));
+  const bcc = requestedBcc && requestedBcc !== to ? requestedBcc : '';`;
+  if (next.includes(bccAnchor)) next = next.replace(bccAnchor, bccReplacement);
+  else if (!next.includes('const requestedBcc = optionalEmail')) throw new Error('[v1421] Âncora do BCC não encontrada.');
+
+  next = next.replace(
+    '  return { ...message, html, text, replyTo, bcc };',
+    '  return { ...message, to, html, text, replyTo, bcc };',
+  );
+  if (!next.includes('return { ...message, to, html, text, replyTo, bcc };')) throw new Error('[v1421] Retorno normalizado não encontrado.');
 
   return next;
 });
