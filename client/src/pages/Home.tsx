@@ -135,8 +135,8 @@ type QuickActions = {
   replayIntro: () => void;
 };
 
-const DEFAULT_VERSION = '13.9.9';
-const CREWCHECK_UI_CORE_NOTE = 'v13.9.9: mês isolado, diárias na base corrigidas, menu premium e saúde Admin';
+const DEFAULT_VERSION = '14.1.7';
+const CREWCHECK_UI_CORE_NOTE = 'v14.1.7: notificações persistentes, Telegram em fila, meteorologia legível e rota ao vivo';
 const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
@@ -416,10 +416,21 @@ function weatherTemperatureText(value?: number) {
 type RoutePreviewInfo = {
   ok?: boolean;
   configured?: boolean;
+  provider?: string;
+  liveTraffic?: boolean;
   distanceText?: string;
   durationText?: string;
   durationInTrafficText?: string;
+  durationSeconds?: number;
+  baselineDurationSeconds?: number;
+  trafficDelaySeconds?: number;
+  trafficDelayText?: string;
   trafficAware?: boolean;
+  incidents?: Array<{ id?: string; category?: string; title?: string; delaySeconds?: number; delayText?: string; severity?: string; roadClosure?: boolean }>;
+  hasRoadClosure?: boolean;
+  updatedAt?: string;
+  refreshAfterSeconds?: number;
+  learningEligible?: boolean;
   message?: string;
   polyline?: string;
   distanceMeters?: number;
@@ -1283,19 +1294,50 @@ function RouteVisual({ event, compact = false }: { event: ZeroLeg; compact?: boo
 }
 
 
-function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute, onOriginLabel }: { event: ZeroLeg; mode?: string; onRoute?: (route: RoutePreviewInfo | null) => void; onOriginLabel?: (label: string) => void }) {
+function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute, onOriginLabel }: { event: ZeroLeg; mode?: string; margin?: number; onRoute?: (route: RoutePreviewInfo | null) => void; onOriginLabel?: (label: string) => void }) {
   const [origin, setOrigin] = useState(() => eventRouteOrigin(event));
   const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
+  const [monitor, setMonitor] = useState<{ message?: string; telegramLinked?: boolean; learning?: { samples?: number; expectedMinutes?: number | null } } | null>(null);
+  const incidentFingerprintRef = useRef('');
   const destination = eventRouteDestination(event);
   const mapsMode = mode.includes('transit') ? 'transit' : 'driving';
   const routeModeLabel = mode === 'automatic' ? 'mais rápido' : mode.includes('transit') ? 'transporte público' : mode.includes('uber') ? 'Uber/99' : mode.includes('flight') ? 'carro + voo' : 'carro';
   const embedUrl = buildGoogleMapsEmbedDirectionsUrl(origin, destination, mapsMode);
   useEffect(() => {
     let alive = true;
-    fetchRoutePreviewInfo(origin, destination, mapsMode).then((info) => { if (alive) { setRoute(info); onRoute?.(info); } });
+    const refresh = () => fetchRoutePreviewInfo(origin, destination, mapsMode).then((info) => {
+      if (!alive) return;
+      setRoute(info);
+      onRoute?.(info);
+    });
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [origin, destination, mapsMode]);
+  useEffect(() => {
+    if (mapsMode !== 'driving') { setMonitor(null); return; }
+    const presentationAt = eventClockDate(event, event.presentation);
+    if (presentationAt.getTime() <= Date.now() || presentationAt.getTime() > Date.now() + 7 * 86_400_000) return;
+    let alive = true;
+    authFetch<any>('/api/commute/monitor', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ origin, destination, mode: mapsMode, presentationAt: presentationAt.toISOString(), marginMinutes: margin }),
+    }).then((payload) => { if (alive) setMonitor(payload); }).catch(() => { if (alive) setMonitor(null); });
     return () => { alive = false; };
-  }, [origin, destination, mode]);
+  }, [event.id, event.presentation, origin, destination, mapsMode, margin]);
+  useEffect(() => {
+    const incidents = route?.incidents || [];
+    const fingerprint = incidents.map((item) => `${item.id || item.title}:${item.severity}:${item.delaySeconds || 0}`).join('|');
+    if (!fingerprint || fingerprint === incidentFingerprintRef.current) return;
+    incidentFingerprintRef.current = fingerprint;
+    const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');
+    const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';
+    const body = (critical || incidents[0])?.title || 'Revise o trajeto antes de sair.';
+    notifyCrewCheck(title, body);
+    toast.warning(title, { description: body });
+  }, [route?.updatedAt]);
   useEffect(() => {
     const pair = coordinatePair(origin);
     if (!pair) {
@@ -1337,6 +1379,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute, onOriginLabe
   const mapsUrl = buildGoogleMapsDirectionsUrl(origin, destination, mapsMode);
   const staticRouteUrl = buildGoogleStaticRouteMapUrl(origin, destination, route);
   const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';
+  const updatedLabel = route?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(route.updatedAt)) : 'aguardando';
   const distanceKm = Number(route?.distanceMeters || 0) / 1000;
   const uberReference = distanceKm > 0 ? `R$ ${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ ${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}` : '';
   function openUber() {
@@ -1345,18 +1388,22 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', onRoute, onOriginLabe
     window.open(`https://m.uber.com/ul/?${params.toString()}`, '_blank', 'noopener,noreferrer');
   }
   return <article className="cz-google-route-card">
-    <header><div><b>Rota inteligente</b><span>Prévia do mapa · {routeModeLabel} · ponto A → ponto B</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
+    <header><div><b>Rota ao vivo</b><span>{routeModeLabel} · atualização automática a cada minuto · {route?.provider || 'melhor fonte disponível'}</span></div><button onClick={refreshLocation}><Radar/> Atualizar localização</button></header>
     <div className="cz-route-kpis">
       <div><small>Origem</small><strong>{originLabel}</strong></div>
       <div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>
       <div><small>Distância</small><strong>{route?.distanceText || 'Abrir Maps'}</strong></div>
-      <div><small>Trânsito/Maps</small><strong>{trafficText}</strong></div>
+      <div><small>Tempo com trânsito</small><strong>{trafficText}</strong></div>
+      <div><small>Atraso do trânsito</small><strong>{route?.trafficDelayText || 'Calculando'}</strong></div>
+      <div><small>Última leitura</small><strong>{updatedLabel}</strong></div>
       {mode.includes('uber') && <div><small>Uber/99 estimado</small><strong>{uberReference || 'Calcular rota'}</strong></div>}
     </div>
+    {!!route?.incidents?.length && <section className={`cc-route-incidents ${route.hasRoadClosure ? 'critical' : ''}`}><AlertTriangle/><div><strong>{route.hasRoadClosure ? 'Bloqueio detectado no trajeto' : `${route.incidents.length} ocorrência(s) no trajeto`}</strong>{route.incidents.slice(0, 3).map((incident) => <span key={incident.id || incident.title}>{incident.title}{incident.delayText ? ` · ${incident.delayText}` : ''}</span>)}</div></section>}
+    {monitor && <section className="cc-route-monitor"><Bell/><div><strong>{monitor.telegramLinked ? 'Monitoramento em segundo plano ativo' : 'Monitoramento do servidor ativo'}</strong><span>{monitor.message}</span>{Number(monitor.learning?.samples || 0) >= 3 && <small>Tendência aprendida: cerca de {monitor.learning?.expectedMinutes} min neste dia e horário.</small>}</div></section>}
     <div className="cz-google-map-preview">
       {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
     </div>
-    {route?.message && <p className="cz-mini-status">{route.message}</p>}
+    {route?.message && <p className="cz-mini-status">{route.message} O horário de saída se ajusta sozinho enquanto esta tela estiver aberta; com Telegram vinculado, o servidor continua monitorando.</p>}
     <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{mode.includes('uber') && <button onClick={openUber}><Car/> Chamar Uber</button>}<button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); setOriginLabel(manual.trim()); onOriginLabel?.(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
   </article>;
 }
@@ -1580,7 +1627,7 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
   if (event.placeholder) {
     return <article className="cz-smart-card" onClick={() => setView('import')}><div className="cz-smart-title"><span><Upload size={26}/></span><div><h2>Importar escala real</h2><p>PDF oficial de julho</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>PDF</strong><em>REAL</em><p>Nenhum dado fictício será usado.</p><div><small>Status</small><b>Aguardando escala</b></div></div></article>;
   }
-  return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Saída Inteligente</h2><p>Recomendado para sua programação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>Trânsito</b></div></div></article>;
+  return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Planejador de Saída</h2><p>Calcula quando sair usando trânsito, margem e apresentação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>Trânsito</b></div></div></article>;
 }
 
 
@@ -1730,7 +1777,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
   function openProfile() { setView('settings'); close(); }
   if (!open) return null;
   const nav: Array<[ZeroView, string, string, any]> = [
-    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['bids','BIDS','Preferências para a próxima escala',CalendarDays], ['alerts','Irregularidades','Alertas confirmados',AlertTriangle], ['regulation','Regulamentação','RBAC 117, ACT e limites',ShieldCheck], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Saída Inteligente','Rota/hotel',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
+    ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['bids','BIDS','Preferências para a próxima escala',CalendarDays], ['alerts','Irregularidades','Alertas confirmados',AlertTriangle], ['regulation','Regulamentação','RBAC 117, ACT e limites',ShieldCheck], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Planejador de Saída','Quando sair, rota e trânsito',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Locais próximos','Academias, saúde e serviços',MapIcon], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
     ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Escalas salvas',Database], ['settings','Configurações','Perfil e preferências',Settings],
@@ -2259,7 +2306,7 @@ function Departure({ event }: { event: ZeroLeg }) {
   const [stopAlerts, setStopAlerts] = useState(() => storage.get('crewcheck_transit_stop_alerts', '0') === '1');
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
-  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Saída Inteligente aguardando escala real</h2><p>Importe o PDF para calcular saída com origem/hotel, aeroporto, mapa e trânsito.</p></article></>;
+  if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Planejador de Saída aguardando a escala</h2><p>Importe o PDF para calcular quando sair usando sua origem, apresentação, margem e trânsito ao vivo.</p></article></>;
   const travelMinutes = routeDurationMinutes(route);
   const presentationDate = eventClockDate(event, event.presentation);
   const leaveDate = travelMinutes ? new Date(presentationDate.getTime() - (travelMinutes + margin) * 60000) : null;
@@ -2267,7 +2314,7 @@ function Departure({ event }: { event: ZeroLeg }) {
   const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';
   function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); }
   function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
-  return <><Brand back/><section className="cz-departure"><article className="cz-depart-hero"><span>SAÍDA PREVISTA</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{originLabel} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} onRoute={setRoute} onOriginLabel={setOriginLabel}/></section></>;
+  return <><Brand back/><section className="cz-departure"><section className="cc-departure-explainer"><Navigation/><div><h1>Planejador de Saída</h1><p>Combina a apresentação, o trânsito ao vivo e sua margem. Se o trânsito mudar, a hora recomendada muda também.</p></div></section><article className="cz-depart-hero"><span>HORA RECOMENDADA PARA SAIR</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{originLabel} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} margin={margin} onRoute={setRoute} onOriginLabel={setOriginLabel}/></section></>;
 }
 
 function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
@@ -2357,7 +2404,7 @@ function CarView({ event }: { event: ZeroLeg }) {
     <article className="cz-car-card cz-parking-editor"><header><span className="cz-card-icon"><Car/></span><div><small>MARCAÇÃO DE ESTACIONAMENTO</small><h2>{parking ? 'Carro marcado' : 'Onde você estacionou?'}</h2><p>{parking ? `Marcado em ${savedDate}${parking.localOnly ? ' · salvo localmente' : ' · sincronizado'}` : 'Preencha os detalhes e use sua localização atual.'}</p></div></header><div className="cz-parking-form"><label><span>Nível / piso</span><input value={details.level} onChange={(e) => setDetails({ ...details, level: e.target.value })} placeholder="Ex.: G2"/></label><label><span>Vaga</span><input value={details.spot} onChange={(e) => setDetails({ ...details, spot: e.target.value })} placeholder="Ex.: B-214"/></label><label className="wide"><span>Ponto de referência</span><input value={details.reference} onChange={(e) => setDetails({ ...details, reference: e.target.value })} placeholder="Ex.: próximo ao elevador azul"/></label><label className="wide"><span>Observações</span><textarea value={details.notes} onChange={(e) => setDetails({ ...details, notes: e.target.value })} placeholder="Setor, entrada, foto mental ou outra indicação" rows={3}/></label></div><div className="cz-tool-actions cz-parking-primary-actions"><button className="primary" onClick={markCar} disabled={busy}><LocateFixed/> {busy ? 'Obtendo localização…' : parking ? 'Atualizar marcação' : 'Marcar localização do carro'}</button>{parking && <button className="danger" onClick={resetCar}><Trash2/> Apagar marcação</button>}</div></article>
     {parking && <article className="cz-car-card cz-parking-map-card"><header><div><Navigation/><span><small>ROTA A PÉ</small><h2>Voltar ao carro</h2></span></div><strong>{parking.accuracy ? `Precisão ~${Math.round(parking.accuracy)} m` : 'Ponto salvo'}</strong></header><div className="cz-google-map-preview cz-parking-map">{mapUrl ? <iframe title="Rota a pé até o carro" loading="lazy" src={mapUrl} referrerPolicy="no-referrer-when-downgrade"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa interno</strong><span>Atualize sua localização para traçar a rota a pé.</span></div>}</div><div className="cz-parking-data"><span><b>Nível</b>{safe(parking.level, 'Não informado')}</span><span><b>Vaga</b>{safe(parking.spot, 'Não informada')}</span><span><b>Referência</b>{safe(parking.reference || parking.label, 'Sem referência')}</span><span><b>Coordenadas</b>{destination}</span></div><div className="cz-tool-actions"><button className="primary" onClick={updateWalkingOrigin}><Navigation/> Atualizar rota a pé</button><button onClick={() => window.open(buildGoogleMapsWalkingDestinationUrl(parking.lat, parking.lng), '_blank', 'noopener,noreferrer')}><MapIcon/> Google Maps</button></div></article>}
     {parking && <article className="cz-car-card cz-parking-share"><Share2/><h2>Compartilhar marcação</h2><p>Envie a localização com vaga e referência para quem você escolher.</p><div className="cz-tool-actions"><button onClick={shareParkingWhatsApp}><Share2/> WhatsApp</button><button onClick={shareParkingTelegram}><Send/> Telegram</button><button onClick={shareParkingNative}><Share2/> Outros apps</button></div></article>}
-    <article className="cz-car-card"><ShieldCheck/><h2>Privacidade</h2><p>A marcação é local-first e o CrewCheck não rastreia você em segundo plano. A sincronização usa somente o ponto salvo e os detalhes informados.</p><small>A permissão de localização é solicitada apenas ao marcar ou atualizar a rota.</small></article><article className="cz-car-card"><Plane/><h2>Operação</h2><p>{event.placeholder ? 'Aguardando escala real para integrar aeroporto/hotel.' : `Próxima origem: ${event.origin} · ${city(event.origin)}`}</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Saída Inteligente</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></div></article></section></>;
+    <article className="cz-car-card"><ShieldCheck/><h2>Privacidade</h2><p>A marcação é local-first e o CrewCheck não rastreia você em segundo plano. A sincronização usa somente o ponto salvo e os detalhes informados.</p><small>A permissão de localização é solicitada apenas ao marcar ou atualizar a rota.</small></article><article className="cz-car-card"><Plane/><h2>Operação</h2><p>{event.placeholder ? 'Aguardando escala real para integrar aeroporto/hotel.' : `Próxima origem: ${event.origin} · ${city(event.origin)}`}</p><div className="cz-tool-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'departure' }))}><Car/> Planejador de Saída</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><Globe2/> Mapa do mês</button></div></article></section></>;
 }
 
 function IFlightPushView({ actions }: { actions: QuickActions }) {
@@ -2723,7 +2770,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
 function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: BundleState; events: ZeroLeg[]; setBundle: (b: BundleState) => void; setView: (v: ZeroView) => void; actions: QuickActions }) {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Operação, finanças, serviços próximos, mapas e histórico em uma experiência integrada. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('compare')}><GitCompareArrows/><strong>Planejado x atual</strong><small>Mudanças, folgas e valores</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Navigation/><strong>Saída Inteligente</strong><small>Horário previsto e trânsito</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Vaga, mapa e compartilhamento</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><MapIcon/><strong>Locais próximos</strong><small>Academias, saúde e serviços</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Rotina:</strong> {gym.length}</p></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Central funcional</h1><p>Operação, finanças, serviços próximos, mapas e histórico em uma experiência integrada. Versão {DEFAULT_VERSION}.</p></section><section className="cz-feature-grid"><button onClick={actions.upload}><Upload/><strong>Importar escala</strong><small>PDF AIMS / CrewRoster</small></button><button onClick={() => setView('roster')}><CalendarDays/><strong>Escala completa</strong><small>{events.length} eventos detectados</small></button><button onClick={() => setView('compare')}><GitCompareArrows/><strong>Planejado x atual</strong><small>Mudanças, folgas e valores</small></button><button onClick={() => setView('alerts')}><AlertTriangle/><strong>Irregularidades</strong><small>{actionableComplianceAlerts(compliance).length} alertas</small></button><button onClick={() => setView('load')}><BriefcaseBusiness/><strong>Carga</strong><small>Jornada e limites</small></button><button onClick={() => setView('departure')}><Navigation/><strong>Planejador de Saída</strong><small>Horário previsto e trânsito</small></button><button onClick={() => setView('mycar')}><Car/><strong>Meu carro</strong><small>Vaga, mapa e compartilhamento</small></button><button onClick={() => setView('iflight')}><Upload/><strong>Push iFlight</strong><small>Importação assistida</small></button><button onClick={() => setView('wakeup')}><Bell/><strong>Despertador Inteligente</strong><small>Antes da apresentação</small></button><button onClick={() => setView('radar')}><Radar/><strong>Radar de voos</strong><small>Portão e status</small></button><button onClick={() => setView('weather')}><CloudSun/><strong>Meteorologia</strong><small>METAR/TAF e Defesa Civil</small></button><button onClick={() => setView('perdiem')}><BriefcaseBusiness/><strong>Diárias</strong><small>Semanal e mensal</small></button><button onClick={() => setView('salary')}><DollarSign/><strong>Salário</strong><small>Chefe/instrutor/ganhos</small></button><button onClick={() => setView('routine')}><ShieldCheck/><strong>Rotina</strong><small>Academia e descanso</small></button><button onClick={() => setView('hotels')}><Hotel/><strong>Hotéis</strong><small>Pernoite e entorno</small></button><button onClick={() => setView('gyms')}><MapIcon/><strong>Locais próximos</strong><small>Academias, saúde e serviços</small></button><button onClick={() => setView('map')}><MapIcon/><strong>Mapa do mês</strong><small>Destinos da escala</small></button><button onClick={() => setView('crew')}><UserRound/><strong>Crew / Chefe</strong><small>Tripulação e adicional</small></button><button onClick={() => setView('calendar')}><CalendarDays/><strong>Calendário</strong><small>Google Calendar / ICS</small></button><button onClick={() => setView('exports')}><FileText/><strong>Exportar</strong><small>PDF, WhatsApp, e-mail</small></button><button onClick={() => setView('settings')}><Settings/><strong>Configurações</strong><small>Perfil completo</small></button><button onClick={() => setView('database')}><Database/><strong>Histórico</strong><small>Sincronização e offline</small></button></section><section className="cz-toolbox"><h2>Ações rápidas</h2><div className="cz-tool-actions"><button onClick={actions.pdf}>Gerar PDF</button><button onClick={actions.ics}>Gerar ICS</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.email}>E-mail</button><button onClick={actions.copy}>Copiar resumo</button><button onClick={actions.google}>Google Calendar</button><button onClick={actions.save}>Salvar histórico</button><button onClick={actions.openActive}>Abrir ativa</button></div></section><section className="cz-mini-status"><p><strong>Fonte:</strong> {bundle.source}</p><p><strong>Eventos:</strong> {events.length} · <strong>Alertas:</strong> {actionableComplianceAlerts(compliance).length} · <strong>Rotina:</strong> {gym.length}</p></section></>;
 }
 
 
@@ -2792,7 +2839,7 @@ function WeatherView({ event }: { event: ZeroLeg }) {
   const scheduled = [event.origin, event.destination].filter(Boolean).join(', ');
   const [query, setQuery] = useState(scheduled || 'SBBR');
   const [activeQuery, setActiveQuery] = useState(scheduled || 'SBBR');
-  const [mode, setMode] = useState<WeatherDisplayMode>('both');
+  const [mode, setMode] = useState<WeatherDisplayMode>('decoded');
   const [weather, setWeather] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
@@ -2822,14 +2869,14 @@ function WeatherView({ event }: { event: ZeroLeg }) {
     setActiveQuery(normalized);
   };
   return <><Brand back/>
-    <section className="cz-panel-head cc-weather-heading"><div><h1>Meteorologia</h1><p>METAR/SPECI oficial brasileiro com contingência internacional, TAF e leitura acessível.</p></div><span><ShieldCheck/> Consulta protegida no servidor</span></section>
+    <section className="cz-panel-head cc-weather-heading"><div><h1>Meteorologia</h1><p>Comece pela leitura fácil. O código METAR/TAF original continua disponível quando você precisar.</p></div><span><ShieldCheck/> Atualização operacional</span></section>
     <section className="cc-weather-console">
       <form onSubmit={search} className="cc-weather-search"><label><span>Aeroporto(s)</span><div><Search/><input value={query} onChange={(change) => setQuery(change.target.value.toUpperCase())} placeholder="Ex.: BSB, GRU ou SBBR"/><button type="submit" disabled={loading}>{loading ? 'Consultando…' : 'Pesquisar'}</button></div></label></form>
       <div className="cc-weather-mode" role="group" aria-label="Formato da meteorologia">
         <span>Exibição</span>
-        <button className={mode === 'raw' ? 'active' : ''} onClick={() => setMode('raw')}>Bruto</button>
-        <button className={mode === 'decoded' ? 'active' : ''} onClick={() => setMode('decoded')}>Decodificado</button>
-        <button className={mode === 'both' ? 'active' : ''} onClick={() => setMode('both')}>Ambos</button>
+        <button className={mode === 'decoded' ? 'active' : ''} onClick={() => setMode('decoded')}>Leitura fácil</button>
+        <button className={mode === 'raw' ? 'active' : ''} onClick={() => setMode('raw')}>Código original</button>
+        <button className={mode === 'both' ? 'active' : ''} onClick={() => setMode('both')}>Os dois</button>
       </div>
       {scheduled && <div className="cc-weather-flight-window"><Plane/><div><strong>Ligado à próxima etapa</strong><span>{event.origin} {safe(event.departure, 'horário a confirmar')} → {event.destination} {safe(event.arrival, 'horário a confirmar')}</span></div><small>Origem: 3 h antes da partida · destino: 2 h antes da chegada</small></div>}
     </section>
@@ -3573,27 +3620,48 @@ function WakeupView({ event }: { event: ZeroLeg }) {
     }
   }
 
-  function activateLocalReminder() {
+  async function activateServerReminder() {
     savePrefs();
-    if (!planned) { toast.info('Importe uma escala para ativar o lembrete.'); return; }
-    const delay = planned.getTime() - Date.now();
+    const scheduled = wakeupDateForEvent(event);
+    if (!scheduled) { toast.info('Importe uma escala para ativar o lembrete.'); return; }
+    const delay = scheduled.getTime() - Date.now();
     if (delay <= 0) { toast.message('O horário calculado já passou para esta programação.'); return; }
     try {
+      const serverChannel = channel === 'telegram-call' ? 'telegram-call' : channel === 'ligacao' ? 'phone' : channel === 'ambos' ? 'both' : 'telegram';
+      const payload = await postCrewCheckJson('/api/alarm/schedule', {
+        scheduledAt: scheduled.toISOString(),
+        channel: serverChannel,
+        chatId,
+        phone: admin ? phone : '',
+        jobKey: `wakeup:${event.id}:${scheduled.toISOString()}:${serverChannel}`,
+        message: `Despertador CrewCheck: prepare-se para ${rosterEventTitle(event)}. Apresentação ${presentation}.`,
+      });
       if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
       window.setTimeout(() => notifyCrewCheck('Despertador CrewCheck', `Hora de se preparar para ${rosterEventTitle(event)}. Apresentação ${presentation}.`), Math.min(delay, 2147483647));
-      toast.success('Lembrete local ativado neste dispositivo.');
-    } catch {
-      toast.message('Preferência salva. Use Telegram/ligação quando o canal estiver configurado.');
+      toast.success(payload?.telegramLinked || serverChannel === 'phone' ? 'Despertador ativado no servidor.' : 'Despertador salvo; vincule o Telegram para receber com o app fechado.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui ativar o despertador no servidor.');
     }
   }
 
-  function snoozeTelegram() {
+  async function snoozeTelegram() {
     const next = new Date(Date.now() + 10 * 60000);
-    toast.success(`Soneca local de 10 min ativada até ${wakeupDateLabel(next)}.`);
-    window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
+    try {
+      await postCrewCheckJson('/api/alarm/schedule', {
+        scheduledAt: next.toISOString(),
+        channel: 'telegram',
+        chatId,
+        jobKey: `snooze:${event.id}:${next.toISOString()}`,
+        message: 'Soneca CrewCheck encerrada. Confira sua apresentação e o Planejador de Saída.',
+      });
+      window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
+      toast.success(`Soneca no servidor ativada até ${wakeupDateLabel(next)}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui ativar a soneca.');
+    }
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={(channel.includes('liga') || channel === 'ambos') ? (health?.phoneCallMessage || 'Verificando Infobip') : (health?.message || 'Verificando configuração')}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais da Infobip no servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica Premium</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Testar Infobip Premium'}</button>}<button onClick={activateLocalReminder}><Bell/> Ativar lembrete local</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div>{admin && <p><small>{health?.phoneCallMessage || 'Verificando a integração de ligação Premium…'}</small></p>}</section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? `${health?.phoneProvider?.selected === 'infobip' ? 'Infobip' : 'Ligação admin'} configurada` : (health?.phoneCallMessage || 'Ligação admin aguardando canal')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={(channel.includes('liga') || channel === 'ambos') ? (health?.phoneCallMessage || 'Verificando Infobip') : (health?.message || 'Verificando configuração')}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais da Infobip no servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica Premium</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Testar Infobip Premium'}</button>}<button onClick={activateServerReminder}><Bell/> Ativar no servidor</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div>{admin && <p><small>{health?.phoneCallMessage || 'Verificando a integração de ligação Premium…'}</small></p>}</section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? `${health?.phoneProvider?.selected === 'infobip' ? 'Infobip' : 'Ligação admin'} configurada` : (health?.phoneCallMessage || 'Ligação admin aguardando canal')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
 }
 
 function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
@@ -3728,7 +3796,7 @@ function RoutineView({ bundle }: { bundle: BundleState }) {
   const hoursUntil = next ? Math.max(0, (eventStartDateTime(next).getTime() - Date.now()) / 36e5) : 0;
   const intensity = !next ? 'Aguardando' : hoursUntil <= 12 ? 'Recuperação' : hoursUntil <= 24 ? 'Leve' : 'Moderada';
   const nextDuty = next ? durationHours(next) : 0;
-  return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Saída Inteligente.</p><div className="cz-tool-actions"><button onClick={() => openNearbyPlaces('gym', next ? hotelSearchLocation(next) : '')}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Rotina inteligente</h1><p>Academia, recuperação, alimentação e descanso em função da carga real e da próxima apresentação.</p></section><section className="cz-finance-grid"><KpiCard icon={Dumbbell} title="Treino sugerido" value={intensity} detail={next ? `${Math.round(hoursUntil)} h até a programação` : 'Importe a escala'}/><KpiCard icon={Clock} title="Próxima jornada" value={next ? `${nextDuty.toFixed(1).replace('.', ',')} h` : '—'} detail={next ? `${rosterEventTitle(next)} · ${next.presentation}` : 'Sem programação'}/><KpiCard icon={Moon} title="Prioridade" value={hoursUntil <= 12 && next ? 'Sono' : 'Equilíbrio'} detail="sem competir com a escala"/></section><section className="cz-toolbox"><h2>Ações conectadas</h2><p>A rotina usa a mesma próxima programação do Radar, Despertador e Planejador de Saída.</p><div className="cz-tool-actions"><button onClick={() => openNearbyPlaces('gym', next ? hotelSearchLocation(next) : '')}><Dumbbell/> Academias próximas</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Ajustar despertador</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><section className="cz-stack-list">{suggestions.length ? suggestions.map((s:any, i:number) => <article className="cz-roster-card" key={i}><div className="cz-roster-main"><span className="cz-roster-icon"><ShieldCheck/></span><div className="cz-roster-copy"><h3>{s.title || s.activity || 'Sugestão de rotina'}</h3><p>{s.reason || s.description || 'Ajustado pela escala.'}</p></div></div><strong className="cz-roster-time">{s.suggestedTime || s.duration || '—'}</strong></article>) : <article className="cz-roster-card"><div className="cz-roster-copy"><h3>Rotina aguardando escala</h3><p>Carregue uma escala para receber recomendações sem dados fictícios.</p></div></article>}</section></>;
 }
 
 function BidsView({ events }: { events: ZeroLeg[] }) {
@@ -4029,7 +4097,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     ['/proximo', 'Próxima programação'],
     ['/hoje', 'Programação de hoje'],
     ['/radar', 'Radar do próximo voo'],
-    ['/saida', 'Saída Inteligente'],
+    ['/saida', 'Planejador de Saída'],
     ['/metar', 'METAR da origem'],
     ['/hoteis', 'Hotéis e pernoites'],
     ['/academias', 'Academias próximas'],
