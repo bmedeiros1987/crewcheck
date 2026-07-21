@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { cleanText, dbPool, ensureProfile, isAdminEmail, readBody, requestToken, safeEmail, sendJson, verifyJwt } from '../v139/common.mjs';
+import { cleanText, dbPool, ensureProfile, env, isAdminEmail, readBody, requestToken, safeEmail, sendJson, verifyJwt } from '../v139/common.mjs';
 import { sendSystemEmail } from '../v139/delivery.mjs';
 
 function passwordDigest(password, salt = crypto.randomBytes(16).toString('hex')) { return { salt, hash: crypto.scryptSync(String(password), salt, 64).toString('hex') }; }
@@ -17,6 +17,28 @@ function deliveryError(result) {
   if (result?.status) return `HTTP ${result.status}`;
   if (result?.configured === false) return 'Provedor de e-mail não configurado.';
   return 'Falha não detalhada pelo provedor.';
+}
+
+async function sendThroughPasswordResetServer({ to, subject, text, html }) {
+  const apiUrl = env('EMAILSENDER_API_URL');
+  const apiKey = env('EMAILSENDER_API_KEY', env('EMAIL_SENDER_API_KEY'));
+  const fromEmail = env('EMAILSENDER_FROM', env('EMAIL_FROM'));
+  const fromName = env('EMAILSENDER_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
+  if (!apiUrl || !apiKey || !fromEmail) return { ok: false, configured: false, provider: 'emailsender-api', raw: 'Servidor usado na redefinição de senha não está configurado.' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ from: { email: fromEmail, name: fromName }, to: [{ email: to }], subject, text, html }),
+    });
+    const raw = await response.text().catch(() => '');
+    return { ok: response.ok, configured: true, provider: 'emailsender-api', status: response.status, raw };
+  } catch (error) {
+    return { ok: false, configured: true, provider: 'emailsender-api', status: 0, raw: cleanText(error?.name === 'AbortError' ? 'Tempo limite no servidor de redefinição de senha.' : error?.message || 'Falha ao acessar o servidor de redefinição de senha.', 500) };
+  } finally { clearTimeout(timer); }
 }
 
 async function ensurePartnerTable(db) {
@@ -50,9 +72,8 @@ async function deliverInvitation({ db, email, contactName, partnerName, temporar
   const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,';
   const subject = cleanText(templateText(emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
   const text = templateText(emailBody || defaultBody, values).slice(0, 20_000);
-  const deliveryOptions = { bcc: false, replyTo: false };
-  let result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true, ...deliveryOptions });
-  if (!result.ok) result = await sendSystemEmail({ to: email, subject, text: `${text}\n\n${values.assinatura}`, appendSignature: false, ...deliveryOptions });
+  const signedText = `${text}\n\n${values.assinatura}`;
+  const result = await sendThroughPasswordResetServer({ to: email, subject, text: signedText, html: `${textToHtml(text)}${textToHtml(values.assinatura)}` });
   const error = deliveryError(result);
   if (result.ok && copyMe) await sendSystemEmail({ to: 'bmedeiros1987@gmail.com', subject: `[Cópia] ${subject}`, text: `Convite enviado para ${email}.\n\n${text}`, html: textToHtml(`Convite enviado para ${email}.\n\n${text}`), appendSignature: true, bcc: false, replyTo: false });
   await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_error=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, error, result.ok ? new Date() : null, email]);
