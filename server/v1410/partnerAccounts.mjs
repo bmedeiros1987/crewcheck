@@ -67,21 +67,31 @@ async function createPartner(req, res, db, adminEmail) {
     const subject = cleanText(templateText(body.emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
     const text = templateText(body.emailBody || defaultBody, values).slice(0, 20_000);
 
-    // Mantém exatamente o mesmo caminho mínimo já validado pela recuperação de senha.
-    // Campos opcionais como BCC e Reply-To não seguem no envio principal, pois alguns
-    // gateways compatíveis com EmailSender rejeitam esses atributos extras.
-    const result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true });
+    let result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true });
+
+    // Caso o provedor rejeite o HTML rico/assinatura, repete pelo mesmo caminho mínimo
+    // usado pelo e-mail de código temporário, garantindo que o acesso seja entregue.
+    if (!result.ok) {
+      const fallbackText = `${text}\n\nBruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck\nhttps://crewcheck.online`;
+      result = await sendSystemEmail({
+        to: email,
+        subject,
+        text: fallbackText,
+        html: `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px;line-height:1.7;color:#152238;white-space:pre-wrap">${escapeHtml(fallbackText)}</div>`,
+        appendSignature: false,
+      });
+    }
+
     const error = deliveryError(result);
     invitation = { requested: true, ok: Boolean(result.ok), provider: result.provider || null, error };
 
-    // A cópia administrativa é enviada separadamente, sem comprometer o convite principal.
     if (result.ok && body.copyMe !== false) {
       await sendSystemEmail({
         to: 'bmedeiros1987@gmail.com',
         subject: `[Cópia] ${subject}`,
         text: `Convite enviado para ${email}.\n\n${text}`,
         html: textToHtml(`Convite enviado para ${email}.\n\n${text}`),
-        appendSignature: true,
+        appendSignature: false,
       });
     }
 
