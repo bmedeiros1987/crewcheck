@@ -48,7 +48,17 @@ if (fs.existsSync(runtimePath)) {
   };
 }
 `;
-  source = source.replace(/async function deliverJob\(job\) \{[\s\S]*?\n\}\n\nasync function runSchedulerCycle/, `${delivery}\nasync function runSchedulerCycle`);
+  // Preserve helpers added between deliverJob and runSchedulerCycle by newer
+  // releases (notably the v14.1.7 commute monitor). The previous expression
+  // consumed that entire interval and left an orphaned function call at runtime.
+  source = source.replace(
+    /async function deliverJob\(job\) \{[\s\S]*?\n\}\n(?=\n(?:function commuteRouteKey|async function runSchedulerCycle))/,
+    delivery.trimEnd()
+  );
+
+  if (source.includes('summary.commute = await runCommuteMonitorCycle(db);') && !source.includes('async function runCommuteMonitorCycle(db)')) {
+    throw new Error('[v1414] Monitor de deslocamento ficou sem implementação após atualizar deliverJob.');
+  }
 
   const schedule = `async function scheduleJob(req, res) {
   const user = identity(req);

@@ -32,6 +32,9 @@ update('server.mjs', (source) => {
   return next;
 });
 
+update('server/telegram-fast-ack.mjs', (source) => source
+  .replace(/const RUNTIME_VERSION = '[^']+';/, "const RUNTIME_VERSION = '14.1.7-operational-intelligence';"));
+
 update('client/src/main.tsx', (source) => source.includes('v1417/operational-intelligence.css')
   ? source
   : source.replace('import "./components/v1409/layout-lock.css";', 'import "./components/v1409/layout-lock.css";\nimport "./components/v1417/operational-intelligence.css";'));
@@ -63,6 +66,19 @@ for (const path of ['android-wrapper/app/build.gradle', 'android/app/build.gradl
   update(path, (source) => source
     .replace(/versionCode\s+\d+/, 'versionCode 14107')
     .replace(/versionName\s+"[^"]+"/, `versionName "${VERSION}"`));
+}
+
+if (fs.existsSync('server/telegram-fast-ack.mjs')) {
+  const runtime = fs.readFileSync('server/telegram-fast-ack.mjs', 'utf8');
+  const runtimeMarkers = [
+    "const RUNTIME_VERSION = '14.1.7-operational-intelligence';",
+    'async function runCommuteMonitorCycle(db)',
+    'summary.commute = await runCommuteMonitorCycle(db);',
+    "path === '/api/commute/monitor'",
+  ];
+  for (const marker of runtimeMarkers) {
+    if (!runtime.includes(marker)) throw new Error(`[v1417] Runtime incompleto após a cadeia de patches: ${marker}`);
+  }
 }
 
 console.log(`[v1417] CrewCheck ${VERSION}: runtime persistente, Telegram rápido, rota ao vivo e meteorologia acessível.`);
