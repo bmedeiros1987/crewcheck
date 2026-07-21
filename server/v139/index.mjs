@@ -9,9 +9,11 @@ import { handleRoutineRoute } from './routine.mjs';
 import { handleEmergencyRoute, handleEmergencyTelegram } from '../v1391/emergency.mjs';
 import { handleStayProfileRoute } from '../v1391/stayProfile.mjs';
 import { handlePartnerAccountsRoute } from '../v1410/partnerAccounts.mjs';
+import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
 
 export async function handleV139Route(req, res, url) {
   try {
+    if (await handleMailerSendWebhook(req, res, url)) return true;
     if (await handleAuthRoute(req, res, url)) return true;
     if (await handlePartnerAccountsRoute(req, res, url)) return true;
     if (await handleEmergencyRoute(req, res, url)) return true;
@@ -28,7 +30,7 @@ export async function handleV139Route(req, res, url) {
     sendJson(res, status >= 400 && status < 600 ? status : 500, {
       ok: false,
       code: error?.code || 'V1391_ERROR',
-      message: status >= 500 ? 'O CrewCheck não conseguiu concluir esta operação agora.' : error?.message || 'Solicitação inválida.',
+      message: status >= 500 ? 'O CrewCheck não conseguiu concluir esta operação agora.' : error.message || 'Solicitação inválida.',
     });
     return true;
   }
@@ -42,9 +44,6 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
     const message = update?.message || update?.edited_message || updateOrMessage || {};
     const isLiveLocation = Boolean(message?.location && (message.location.live_period || update?.edited_message));
 
-    // Localização em tempo real pertence ao fluxo operacional (Saída Inteligente).
-    // O Telegram envia atualizações sucessivas como edited_message; encaminhar cada uma
-    // para a Central de Emergência fazia a sessão pendente ser reprocessada em loop.
     if (!isLiveLocation && await handleEmergencyTelegram(update, sendTelegram)) return true;
 
     return await handleCrewLockTelegram(message, sendTelegram);
@@ -54,6 +53,6 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 }
 
 export const crewCheckV139 = {
-  version: '14.1.1',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime'],
+  version: '14.1.2',
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook'],
 };
