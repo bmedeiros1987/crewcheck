@@ -9,6 +9,12 @@ function requireMarker(path, marker) {
   const source = read(path);
   if (!source.includes(marker)) throw new Error(`v${VERSION}: marcador ausente em ${path}: ${marker}`);
 }
+function requireAnyMarker(path, markers) {
+  const source = read(path);
+  if (!markers.some((marker) => source.includes(marker))) {
+    throw new Error(`v${VERSION}: nenhum marcador compatível encontrado em ${path}: ${markers.join(' | ')}`);
+  }
+}
 
 for (const path of ['package.json', 'package-lock.json']) {
   if (!fs.existsSync(path)) continue;
@@ -52,7 +58,13 @@ if (fs.existsSync('android-wrapper/app/build.gradle')) {
 
 requireMarker('server.mjs', "from './server/v1396/infobip.mjs'");
 requireMarker('server.mjs', 'phoneProviderStatus');
-requireMarker('server.mjs', 'chatId && await handleV139Telegram(update, sendTelegramMessage)');
+// v14.1.6+ deliberately removed the broad auxiliary route because it swallowed
+// ordinary Concierge text. Accept either the historical integration marker or
+// the current location-only route, while still proving that v139 is connected.
+requireAnyMarker('server.mjs', [
+  'chatId && await handleV139Telegram(update, sendTelegramMessage)',
+  'message?.location && await handleV139Telegram(update, sendTelegramMessage)',
+]);
 requireMarker('server/v1396/infobip.mjs', 'INFOBIP_PHONE_FROM');
 requireMarker('render.yaml', 'value: infobip');
 
