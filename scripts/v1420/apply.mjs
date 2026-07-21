@@ -16,7 +16,7 @@ function insertBefore(source, anchor, content) {
 
 update('server/v1403/premium-helpers.snippet', (source) => {
   let next = source;
-  next = insertBefore(next, 'async function conciergeIdentityFlow', `function conciergeOnboardingIsOperationalCommand(command = '') {
+  next = insertBefore(next, 'async function conciergeIdentityFlow', String.raw`function conciergeOnboardingIsOperationalCommand(command = '') {
   const value = normalizeConciergeButtonText(command);
   return /^\/(?:hoje|amanha|amanhã|proximo|próximo|escala|radar|portao|portão|saida|metar|taf|atis|hoteis|hotéis|hospitais|farmacias|farmácias|academias|rotina|diarias|diárias|conformidade|emergencia|emergência|ligacao|ligação|menu|ajuda)(?:@\S+)?(?:\s|$)/i.test(value)
     || matchesTodayIntent(value) || matchesTomorrowIntent(value) || matchesNextIntent(value)
@@ -51,7 +51,7 @@ function conciergeRestAfterLastProgram(roster = {}, now = new Date()) {
   const location = String(day?.location || day?.base || day?.airport || completed.legs?.at(-1)?.destination || '').trim();
   const until = day?.restEnd || day?.offEnd || day?.folgaEnd || day?.dutyReport || day?.startTime || '';
   const kind = /PERNOITE|HOTEL/.test(code) || hotel ? 'Pernoite' : 'Descanso';
-  return [kind, location && `em ${location}`, hotel && `no ${hotel}`, until && `até ${conciergeTime(until, until)}`].filter(Boolean).join(' ');
+  return [kind, location && ('em ' + location), hotel && ('no ' + hotel), until && ('até ' + conciergeTime(until, until))].filter(Boolean).join(' ');
 }`);
 
   next = next.replace(
