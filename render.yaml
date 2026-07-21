@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci && npm run build
-    startCommand: node server.mjs
+    startCommand: npm start
     envVars:
       - key: NODE_VERSION
         value: 22.13.0
@@ -32,6 +32,10 @@ services:
         value: https://crewcheck.online
       - key: GOOGLE_MAPS_SERVER_KEY
         sync: false
+      - key: TOMTOM_API_KEY
+        sync: false
+      - key: CREWCHECK_NOTIFICATION_INTERVAL_MS
+        value: 30000
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_OAUTH_WEB_CLIENT_ID
