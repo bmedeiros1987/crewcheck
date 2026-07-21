@@ -41,6 +41,20 @@ async function partnerDemoProfile(req, res, db) {
   return sendJson(res, 200, { ok: true, partner: Boolean(partner), demoRosterEnabled: Boolean(partner?.demo_roster_enabled), partnerName: partner?.partner_name || null, contactName: partner?.contact_name || null });
 }
 
+async function deliverInvitation({ db, email, contactName, partnerName, temporaryPassword, emailSubject, emailBody, copyMe = true }) {
+  const values = { nome: contactName, empresa: partnerName, email, senha_temporaria: temporaryPassword, url_acesso: 'https://crewcheck.online', assinatura: 'Bruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck' };
+  const defaultSubject = 'Seu acesso de demonstração ao CrewCheck';
+  const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,';
+  const subject = cleanText(templateText(emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
+  const text = templateText(emailBody || defaultBody, values).slice(0, 20_000);
+  let result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true });
+  if (!result.ok) result = await sendSystemEmail({ to: email, subject, text: `${text}\n\n${values.assinatura}`, appendSignature: false });
+  const error = deliveryError(result);
+  if (result.ok && copyMe) await sendSystemEmail({ to: 'bmedeiros1987@gmail.com', subject: `[Cópia] ${subject}`, text: `Convite enviado para ${email}.\n\n${text}`, html: textToHtml(`Convite enviado para ${email}.\n\n${text}`), appendSignature: true });
+  await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_error=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, error, result.ok ? new Date() : null, email]);
+  return { requested: true, ok: Boolean(result.ok), provider: result.provider || null, error };
+}
+
 async function createPartner(req, res, db, adminEmail) {
   const body = await readBody(req, 150_000);
   const email = safeEmail(body.email); const contactName = cleanText(body.contactName || body.name, 120); const partnerName = cleanText(body.partnerName || body.company, 120); const notes = cleanText(body.notes, 500); const demoRosterEnabled = body.demoRosterEnabled !== false; const suppliedPassword = String(body.temporaryPassword || ''); const temporaryPassword = suppliedPassword || generateTemporaryPassword();
@@ -58,51 +72,26 @@ async function createPartner(req, res, db, adminEmail) {
     await connection.query(`INSERT INTO crewcheck_partner_accounts (email,partner_name,contact_name,notes,demo_roster_enabled,created_by) VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE partner_name=VALUES(partner_name),contact_name=VALUES(contact_name),notes=VALUES(notes),demo_roster_enabled=VALUES(demo_roster_enabled),created_by=VALUES(created_by)`, [email, partnerName, contactName, notes || null, demoRosterEnabled ? 1 : 0, adminEmail]);
     await connection.commit();
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
-
-  let invitation = { requested: Boolean(body.sendInvitation), ok: false, provider: null, error: null };
-  if (body.sendInvitation) {
-    const values = { nome: contactName, empresa: partnerName, email, senha_temporaria: temporaryPassword, url_acesso: 'https://crewcheck.online', assinatura: 'Bruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck' };
-    const defaultSubject = 'Seu acesso de demonstração ao CrewCheck';
-    const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,';
-    const subject = cleanText(templateText(body.emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
-    const text = templateText(body.emailBody || defaultBody, values).slice(0, 20_000);
-
-    let result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true });
-
-    // Caso o provedor rejeite o HTML rico/assinatura, repete pelo mesmo caminho mínimo
-    // usado pelo e-mail de código temporário, garantindo que o acesso seja entregue.
-    if (!result.ok) {
-      const fallbackText = `${text}\n\nBruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck\nhttps://crewcheck.online`;
-      result = await sendSystemEmail({
-        to: email,
-        subject,
-        text: fallbackText,
-        html: `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px;line-height:1.7;color:#152238;white-space:pre-wrap">${escapeHtml(fallbackText)}</div>`,
-        appendSignature: false,
-      });
-    }
-
-    const error = deliveryError(result);
-    invitation = { requested: true, ok: Boolean(result.ok), provider: result.provider || null, error };
-
-    if (result.ok && body.copyMe !== false) {
-      await sendSystemEmail({
-        to: 'bmedeiros1987@gmail.com',
-        subject: `[Cópia] ${subject}`,
-        text: `Convite enviado para ${email}.\n\n${text}`,
-        html: textToHtml(`Convite enviado para ${email}.\n\n${text}`),
-        appendSignature: false,
-      });
-    }
-
-    await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_error=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, error, result.ok ? new Date() : null, email]);
-  }
+  const invitation = body.sendInvitation ? await deliverInvitation({ db, email, contactName, partnerName, temporaryPassword, emailSubject: body.emailSubject, emailBody: body.emailBody, copyMe: body.copyMe !== false }) : { requested: false, ok: false, provider: null, error: null };
   return sendJson(res, 201, { ok: true, message: invitation.requested ? (invitation.ok ? 'Conta criada e convite enviado com sucesso.' : `Conta criada, mas o convite não pôde ser enviado agora${invitation.error ? `: ${invitation.error}` : '.'}`) : 'Conta de parceiro criada com Premium, escala demo e troca obrigatória de senha.', account: { email, contactName, partnerName, plan: 'premium_unlimited', mustChangePassword: true, demoRosterEnabled }, temporaryPassword, invitation });
 }
 
+async function resendInvitation(req, res, db) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  const body = await readBody(req, 100_000); const email = safeEmail(body.email);
+  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  await ensurePartnerTable(db);
+  const [rows] = await db.query('SELECT email,partner_name,contact_name FROM crewcheck_partner_accounts WHERE email=? LIMIT 1', [email]); const partner = rows[0];
+  if (!partner) return sendJson(res, 404, { ok: false, message: 'Conta de parceiro não localizada.' });
+  const temporaryPassword = generateTemporaryPassword(); const digest = passwordDigest(temporaryPassword);
+  await db.query('UPDATE crewcheck_platform_accounts SET password_hash=?,password_salt=?,must_change_password=1 WHERE email=?', [digest.hash, digest.salt, email]);
+  const invitation = await deliverInvitation({ db, email, contactName: partner.contact_name, partnerName: partner.partner_name, temporaryPassword, copyMe: body.copyMe !== false });
+  return sendJson(res, invitation.ok ? 200 : 502, { ok: invitation.ok, message: invitation.ok ? 'Convite reenviado com nova senha temporária.' : `Não foi possível reenviar o convite${invitation.error ? `: ${invitation.error}` : '.'}`, temporaryPassword, invitation });
+}
+
 export async function handlePartnerAccountsRoute(req, res, url) {
-  const adminRoute = url.pathname === '/api/admin/partner-accounts'; const demoRoute = url.pathname === '/api/partner/demo-profile'; if (!adminRoute && !demoRoute) return false;
-  try { const db = await dbPool(); if (!db) return sendJson(res, 503, { ok: false, message: 'Banco de dados indisponível.' }), true; if (demoRoute) await partnerDemoProfile(req, res, db); else { const adminEmail = requireAdmin(req); if (req.method === 'GET') await listPartners(res, db); else if (req.method === 'POST') await createPartner(req, res, db, adminEmail); else sendJson(res, 405, { ok: false, message: 'Método não permitido.' }); } }
+  const adminRoute = url.pathname === '/api/admin/partner-accounts'; const resendRoute = url.pathname === '/api/admin/partner-accounts/resend'; const demoRoute = url.pathname === '/api/partner/demo-profile'; if (!adminRoute && !resendRoute && !demoRoute) return false;
+  try { const db = await dbPool(); if (!db) return sendJson(res, 503, { ok: false, message: 'Banco de dados indisponível.' }), true; if (demoRoute) await partnerDemoProfile(req, res, db); else { requireAdmin(req); if (resendRoute) await resendInvitation(req, res, db); else if (req.method === 'GET') await listPartners(res, db); else if (req.method === 'POST') await createPartner(req, res, db, requireAdmin(req)); else sendJson(res, 405, { ok: false, message: 'Método não permitido.' }); } }
   catch (error) { sendJson(res, Number(error?.status || 500), { ok: false, message: Number(error?.status || 500) >= 500 ? 'Não foi possível concluir esta operação agora.' : error.message }); }
   return true;
 }
