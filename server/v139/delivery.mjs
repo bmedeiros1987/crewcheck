@@ -9,8 +9,9 @@ async function postJson(url, apiKey, payload, timeoutMs = 12_000) {
     const response = await fetch(url, { method: 'POST', signal: controller.signal, headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(payload) });
     const raw = await response.text().catch(() => '');
     return { ok: response.ok, status: response.status, raw };
-  } catch { return { ok: false, status: 0, raw: '' }; }
-  finally { clearTimeout(timer); }
+  } catch (error) {
+    return { ok: false, status: 0, raw: cleanText(error?.name === 'AbortError' ? 'Tempo limite ao acessar o provedor de e-mail.' : error?.message || 'Falha de conexão com o provedor de e-mail.', 500) };
+  } finally { clearTimeout(timer); }
 }
 
 const defaultLogoUrl = 'https://crewcheck.online/favicon-512x512.png';
@@ -25,9 +26,14 @@ export function crewCheckEmailSignature() {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;overflow:hidden;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px;border-bottom:1px solid rgba(255,255,255,.14)"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="CrewCheck" style="display:block;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1">CrewCheck</div><div style="margin-top:8px;font-size:12px;letter-spacing:2px;color:#eb4ab3">INTELIGÊNCIA OPERACIONAL PARA PROFISSIONAIS DA AVIAÇÃO</div></td></tr></table></td></tr><tr><td style="padding:22px 24px"><div style="font-size:18px;font-weight:800">Bruno Saraiva de Medeiros</div><div style="margin-top:4px;color:#5fd4ff;font-weight:700">Founder &amp; CEO</div><div style="margin-top:14px;font-size:14px;line-height:1.7;color:#dbe7f5">Bruno Medeiros Tecnologia<br><a href="https://crewcheck.online" style="color:#5fd4ff;text-decoration:none">crewcheck.online</a><br>Brasília – DF | Brasil</div><div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14);font-size:12px;letter-spacing:1.2px;color:#d6b1ff">TRANSFORMANDO COMPLEXIDADE OPERACIONAL EM DECISÕES INTELIGENTES.</div></td></tr></table>`;
 }
 
+function optionalEmail(message, key, fallback) {
+  if (Object.hasOwn(message, key) && (message[key] === false || message[key] === null || message[key] === '')) return '';
+  return safeEmail(Object.hasOwn(message, key) ? message[key] : fallback);
+}
+
 function normalizeMessage(message) {
-  const replyTo = safeEmail(message.replyTo || env('CREWCHECK_EMAIL_REPLY_TO', env('EMAIL_FROM')));
-  const bcc = safeEmail(message.bcc || env('CREWCHECK_EMAIL_BCC', defaultBcc));
+  const replyTo = optionalEmail(message, 'replyTo', env('CREWCHECK_EMAIL_REPLY_TO', env('EMAIL_FROM')));
+  const bcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));
   const appendSignature = message.appendSignature !== false;
   const html = appendSignature ? `${message.html || `<div style="white-space:pre-wrap">${escapeHtml(message.text)}</div>`}${crewCheckEmailSignature()}` : message.html;
   const text = appendSignature ? `${message.text || ''}\n\nBruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck — Inteligência Operacional para Profissionais da Aviação\nhttps://crewcheck.online` : message.text;
@@ -40,7 +46,7 @@ async function sendEmailSenderApi(message) {
   const apiKey = env('EMAILSENDER_API_KEY', env('EMAIL_SENDER_API_KEY'));
   const fromEmail = env('EMAILSENDER_FROM', env('EMAIL_FROM', env('MAILERSEND_FROM')));
   const fromName = env('EMAILSENDER_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
-  if (!apiUrl || !apiKey || !fromEmail) return { ok: false, configured: false, provider: 'emailsender-api' };
+  if (!apiUrl || !apiKey || !fromEmail) return { ok: false, configured: false, provider: 'emailsender-api', raw: 'EMAILSENDER_API_URL, chave ou remetente não configurado.' };
   const payload = { from: { email: fromEmail, name: fromName }, to: [{ email: to }], subject, text, html };
   if (replyTo) payload.reply_to = { email: replyTo };
   if (bcc) payload.bcc = [{ email: bcc }];
@@ -53,7 +59,7 @@ async function sendMailerSend(message) {
   const apiKey = env('MAILERSEND_API_KEY');
   const fromEmail = env('MAILERSEND_FROM', env('EMAIL_FROM'));
   const fromName = env('MAILERSEND_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
-  if (!apiKey || !fromEmail) return { ok: false, configured: false, provider: 'mailersend' };
+  if (!apiKey || !fromEmail) return { ok: false, configured: false, provider: 'mailersend', raw: 'MAILERSEND_API_KEY ou remetente não configurado.' };
   const payload = { from: { email: fromEmail, name: fromName }, to: [{ email: to }], subject, text, html };
   if (replyTo) payload.reply_to = { email: replyTo };
   if (bcc) payload.bcc = [{ email: bcc }];
@@ -68,7 +74,7 @@ function smtpResponseReader(socket) {
     const deadline = Date.now() + timeoutMs;
     while (true) {
       const finalIndex = queue.findIndex((line) => /^\d{3} /.test(line));
-      if (finalIndex >= 0) { const lines = queue.splice(0, finalIndex + 1); const code = Number(lines.at(-1)?.slice(0, 3)); if (!expected.includes(code)) throw new Error(`SMTP ${code}`); return lines.join('\n'); }
+      if (finalIndex >= 0) { const lines = queue.splice(0, finalIndex + 1); const response = lines.join('\n'); const code = Number(lines.at(-1)?.slice(0, 3)); if (!expected.includes(code)) throw new Error(response || `SMTP ${code}`); return response; }
       const remaining = deadline - Date.now(); if (remaining <= 0) throw new Error('SMTP timeout');
       await new Promise((resolve, reject) => { const timer = setTimeout(() => { if (wake === wrapped) wake = null; reject(new Error('SMTP timeout')); }, remaining); const wrapped = () => { clearTimeout(timer); resolve(); }; wake = wrapped; });
     }
@@ -81,7 +87,7 @@ function smtpPlainMessage({ fromEmail, fromName, to, bcc, replyTo, subject, text
 }
 async function sendSmtp(message) {
   const host = env('SMTP_HOST'); const user = env('SMTP_USER'); const pass = env('SMTP_PASS'); const port = Number(env('SMTP_PORT', '587')); const secure = flag('SMTP_SECURE', port === 465); const fromEmail = safeEmail(env('SMTP_FROM', env('EMAIL_FROM', user))); const fromName = env('SMTP_FROM_NAME', env('EMAIL_FROM_NAME', 'CrewCheck'));
-  if (!host || !user || !pass || !fromEmail || flag('CREWCHECK_EMAIL_DISABLE_SMTP', false)) return { ok: false, configured: false, provider: 'smtp' };
+  if (!host || !user || !pass || !fromEmail || flag('CREWCHECK_EMAIL_DISABLE_SMTP', false)) return { ok: false, configured: false, provider: 'smtp', raw: 'SMTP não configurado ou desativado.' };
   let socket;
   try {
     socket = secure ? tls.connect({ host, port, servername: host, rejectUnauthorized: !flag('SMTP_ALLOW_SELF_SIGNED', false) }) : net.createConnection({ host, port });
@@ -89,14 +95,24 @@ async function sendSmtp(message) {
     let read = smtpResponseReader(socket); await read([220]); await smtpCommand(socket, read, `EHLO ${env('SMTP_HELO_NAME', 'crewcheck.online')}`, [250]);
     if (!secure && !flag('SMTP_SKIP_STARTTLS', false)) { await smtpCommand(socket, read, 'STARTTLS', [220]); socket = tls.connect({ socket, servername: host, rejectUnauthorized: !flag('SMTP_ALLOW_SELF_SIGNED', false) }); await new Promise((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject); }); read = smtpResponseReader(socket); await smtpCommand(socket, read, `EHLO ${env('SMTP_HELO_NAME', 'crewcheck.online')}`, [250]); }
     await smtpCommand(socket, read, 'AUTH LOGIN', [334]); await smtpCommand(socket, read, Buffer.from(user).toString('base64'), [334]); await smtpCommand(socket, read, Buffer.from(pass).toString('base64'), [235]); await smtpCommand(socket, read, `MAIL FROM:<${fromEmail}>`, [250]); await smtpCommand(socket, read, `RCPT TO:<${message.to}>`, [250, 251]); if (message.bcc) await smtpCommand(socket, read, `RCPT TO:<${message.bcc}>`, [250, 251]); await smtpCommand(socket, read, 'DATA', [354]); socket.write(`${smtpPlainMessage({ ...message, fromEmail, fromName })}\r\n.\r\n`); await read([250]); socket.write('QUIT\r\n'); socket.end(); return { ok: true, configured: true, provider: 'smtp' };
-  } catch { try { socket?.destroy(); } catch {} return { ok: false, configured: true, provider: 'smtp' }; }
+  } catch (error) { try { socket?.destroy(); } catch {} return { ok: false, configured: true, provider: 'smtp', raw: cleanText(error?.message || 'Falha SMTP.', 500) }; }
 }
 
 export async function sendSystemEmail(message) {
   const normalized = normalizeMessage(message);
-  for (const provider of [sendEmailSenderApi, sendMailerSend]) { const result = await provider(normalized); if (result.ok) return result; }
-  if (flag('CREWCHECK_EMAIL_FALLBACK_ENABLED', true)) return sendSmtp(normalized);
-  return { ok: false, configured: false, provider: 'none' };
+  const attempts = [];
+  for (const provider of [sendEmailSenderApi, sendMailerSend]) {
+    const result = await provider(normalized);
+    attempts.push(result);
+    if (result.ok) return { ...result, attempts };
+  }
+  if (flag('CREWCHECK_EMAIL_FALLBACK_ENABLED', true)) {
+    const result = await sendSmtp(normalized);
+    attempts.push(result);
+    if (result.ok) return { ...result, attempts };
+  }
+  const failed = [...attempts].reverse().find((item) => item.configured && (item.raw || item.status)) || [...attempts].reverse().find((item) => item.raw) || attempts.at(-1) || { provider: 'none', configured: false };
+  return { ...failed, ok: false, attempts };
 }
 
 export function telegramToken() { return env('TELEGRAM_BOT_TOKEN', env('CREWCHECK_TELEGRAM_BOT_TOKEN')); }
