@@ -44,4 +44,30 @@ patchFile('server/v1412/emailHealth.mjs', (source) => {
   return source.replace(anchor, replacement);
 });
 
-console.log('[v1422] MailerSend travado como provedor transacional exclusivo.');
+patchFile('server/v139/auth.mjs', (source) => {
+  let next = source.replace(
+    "'Código temporário CrewCheck', '', `Código: ${code}`, `Validade: ${minutes} minutos}`, '',",
+    "'Código temporário CrewCheck', '', `Código: ${code}`, `Validade: ${minutes} minutos`, '',",
+  );
+
+  const anchor = `    channels.email = mail.ok;`;
+  const replacement = `    channels.email = mail.ok;
+    console.info('[crewcheck:password-reset-email]', JSON.stringify({
+      ok: Boolean(mail.ok),
+      accepted: Boolean(mail.accepted),
+      provider: mail.provider || 'none',
+      status: Number(mail.status || 0),
+      sendPaused: Boolean(mail.sendPaused),
+      messageId: cleanText(mail.messageId || '', 180),
+      recipientDomain: email.split('@')[1] || '',
+    }));`;
+
+  if (next.includes(anchor)) next = next.replace(anchor, replacement);
+  else if (!next.includes("'[crewcheck:password-reset-email]'")) {
+    throw new Error('[v1422] Registro de entrega da recuperação não encontrado.');
+  }
+
+  return next;
+});
+
+console.log('[v1422] MailerSend travado como provedor transacional exclusivo e auditável.');
