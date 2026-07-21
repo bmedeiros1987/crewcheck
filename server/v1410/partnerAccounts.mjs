@@ -11,6 +11,9 @@ function deliveryError(result) {
   if (result?.ok) return null;
   const raw = String(result?.raw || '').trim().slice(0, 500);
   if (raw) return raw;
+  const attempts = Array.isArray(result?.attempts) ? result.attempts : [];
+  const details = attempts.map((item) => `${item.provider || 'provedor'}: ${String(item.raw || (item.status ? `HTTP ${item.status}` : item.configured === false ? 'não configurado' : 'falha sem detalhe')).slice(0, 180)}`).join(' | ').slice(0, 500);
+  if (details) return details;
   if (result?.status) return `HTTP ${result.status}`;
   if (result?.configured === false) return 'Provedor de e-mail não configurado.';
   return 'Falha não detalhada pelo provedor.';
@@ -47,10 +50,11 @@ async function deliverInvitation({ db, email, contactName, partnerName, temporar
   const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,';
   const subject = cleanText(templateText(emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
   const text = templateText(emailBody || defaultBody, values).slice(0, 20_000);
-  let result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true });
-  if (!result.ok) result = await sendSystemEmail({ to: email, subject, text: `${text}\n\n${values.assinatura}`, appendSignature: false });
+  const deliveryOptions = { bcc: false, replyTo: false };
+  let result = await sendSystemEmail({ to: email, subject, text, html: textToHtml(text), appendSignature: true, ...deliveryOptions });
+  if (!result.ok) result = await sendSystemEmail({ to: email, subject, text: `${text}\n\n${values.assinatura}`, appendSignature: false, ...deliveryOptions });
   const error = deliveryError(result);
-  if (result.ok && copyMe) await sendSystemEmail({ to: 'bmedeiros1987@gmail.com', subject: `[Cópia] ${subject}`, text: `Convite enviado para ${email}.\n\n${text}`, html: textToHtml(`Convite enviado para ${email}.\n\n${text}`), appendSignature: true });
+  if (result.ok && copyMe) await sendSystemEmail({ to: 'bmedeiros1987@gmail.com', subject: `[Cópia] ${subject}`, text: `Convite enviado para ${email}.\n\n${text}`, html: textToHtml(`Convite enviado para ${email}.\n\n${text}`), appendSignature: true, bcc: false, replyTo: false });
   await db.query('UPDATE crewcheck_partner_accounts SET invitation_status=?,invitation_provider=?,invitation_error=?,invitation_sent_at=? WHERE email=?', [result.ok ? 'sent' : 'failed', result.provider || null, error, result.ok ? new Date() : null, email]);
   return { requested: true, ok: Boolean(result.ok), provider: result.provider || null, error };
 }
