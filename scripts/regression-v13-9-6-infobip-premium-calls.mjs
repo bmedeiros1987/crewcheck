@@ -56,11 +56,15 @@ assert.match(server, /buildInfobipTtsRequest/);
 assert.match(server, /phoneCallMessage/);
 assert.match(server, /conectado para ligações Premium/);
 assert.match(server, /update\?\.callback_query && await handleV139Telegram\(update, sendTelegramMessage\)/);
-assert.match(server, /chatId && await handleV139Telegram\(update, sendTelegramMessage\)/);
-assert.doesNotMatch(server, /message\?\.document && await handleV139Telegram\(message/);
+assert.match(server, /message\?\.document && await handleV139Telegram\(message, sendTelegramMessage\)/);
+assert.match(server, /message\?\.location && await handleV139Telegram\(update, sendTelegramMessage\)/);
+assert.match(server, /async function processTelegramUpdate/);
+assert.doesNotMatch(server, /if \(chatId && await handleV139Telegram\(update, sendTelegramMessage\)/);
 assert.match(render, /CREWCHECK_WAKEUP_CALL_PROVIDER\s*\n\s*value: infobip/);
 assert.match(render, /key: INFOBIP_PHONE_FROM/);
 assert.match(example, /CREWCHECK_WAKEUP_CALL_PROVIDER=infobip/);
+assert.match(safeguards, /requireAnyMarker/);
+assert.match(safeguards, /message\?\.location/);
 assert.match(safeguards, /versionCode\\s\+\\d\+\\b/);
 assert.match(safeguards, /manifest\.version = VERSION/);
 
