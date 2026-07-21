@@ -1,3 +1,4 @@
+import '../../server/telegram-fast-ack.mjs';
 import { handleAuthRoute } from './auth.mjs';
 import { handleBidsCore } from './bidsCore.mjs';
 import { handleBidsCalendar } from './bidsCalendar.mjs';
@@ -53,6 +54,6 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 }
 
 export const crewCheckV139 = {
-  version: '14.1.0',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts'],
+  version: '14.1.1',
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime'],
 };
