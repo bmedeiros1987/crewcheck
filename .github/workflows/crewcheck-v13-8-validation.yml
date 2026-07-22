@@ -1,4 +1,4 @@
-name: CrewCheck v14.0.9 validation
+name: CrewCheck v14.3.3 validation
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-v14-0-9-${{ github.ref }}
+  group: crewcheck-v14-3-3-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,6 +38,7 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-v14-3-3-release-recovery.mjs
       - run: node scripts/regression-v13-9-1-launch.mjs
       - run: npm run regression:v13.9.2:telegram-atis-regulation
       - run: npm run regression:v13.9.4:telegram-layout-amil
@@ -77,7 +78,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Apply CrewCheck v14.0.9 source safeguards
+      - name: Apply CrewCheck v14.3.3 source safeguards
         run: node scripts/v139/apply.mjs
       - name: Prepare protected upload keystore
         shell: bash
@@ -116,8 +117,8 @@ jobs:
           grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           unzip -t "$source_aab" >/dev/null
-          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.0.9-production.aab"
-          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.0.9-production.aab > CrewCheck-14.0.9-production.aab.sha256)
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.3.3-production.aab"
+          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.3.3-production.aab > CrewCheck-14.3.3-production.aab.sha256)
       - name: Package official brand assets
         shell: bash
         run: |
@@ -127,10 +128,10 @@ jobs:
           file "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-14.0.9-Direct-Layout-Lock
+          name: CrewCheck-14.3.3-Release-Recovery
           path: |
-            ${{ runner.temp }}/CrewCheck-14.0.9-production.aab
-            ${{ runner.temp }}/CrewCheck-14.0.9-production.aab.sha256
+            ${{ runner.temp }}/CrewCheck-14.3.3-production.aab
+            ${{ runner.temp }}/CrewCheck-14.3.3-production.aab.sha256
             ${{ runner.temp }}/CrewCheck-Google-Play-512.png
             ${{ runner.temp }}/CrewCheck-PWA-512.png
             ${{ runner.temp }}/CrewCheck-Telegram-512.png
