@@ -97,6 +97,23 @@ update('server/platform.mjs', (source) => {
   return next.replace(/const APP_VERSION = '\d+\.\d+\.\d+';/, `const APP_VERSION = '${VERSION}';`);
 }, { optional: true });
 
+update('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt', (source) => {
+  let next = source;
+  if (!next.includes('import android.webkit.JavascriptInterface')) {
+    next = next.replace('import android.webkit.WebView\n', 'import android.webkit.JavascriptInterface\nimport android.webkit.WebView\n');
+  }
+  if (!next.includes('@JavascriptInterface\n    fun postMessage(raw: String?)')) {
+    const installPattern = /    \/\*\* Deve ser chamado antes de WebView\.loadUrl\(\)\. \*\/\n    fun install\(\): Boolean \{[\s\S]*?\n    \}\n\n    private fun isTrustedOrigin/;
+    if (!installPattern.test(next)) throw new Error('[v1436] Bloco install da ponte Health Connect não encontrado.');
+    const replacement = `    /** Deve ser chamado antes de WebView.loadUrl(). */\n    fun install(): Boolean {\n        if (installed) return true\n        webView.addJavascriptInterface(this, JS_OBJECT_NAME)\n        installed = true\n        return true\n    }\n\n    @JavascriptInterface\n    fun postMessage(raw: String?) {\n        val currentUrl = webView.url ?: return\n        val currentOrigin = try { Uri.parse(currentUrl) } catch (_: Exception) { return }\n        if (!isTrustedOrigin(currentOrigin)) return\n        handleMessage(raw)\n    }\n\n    private fun isTrustedOrigin`;
+    next = next.replace(installPattern, replacement);
+  }
+  if (!next.includes('@JavascriptInterface') || !next.includes('webView.addJavascriptInterface(this, JS_OBJECT_NAME)')) {
+    throw new Error('[v1436] Ponte Health Connect JavaScript não foi aplicada.');
+  }
+  return next;
+}, { optional: true });
+
 update('server.mjs', (source) => source.replace(/version\s*:\s*'\d+\.\d+\.\d+'/g, `version: '${VERSION}'`).replace(/v=\d+\.\d+\.\d+/g, `v=${VERSION}`).replace(/static-shell-\d+\.\d+\.\d+/g, `static-shell-${VERSION}`), { optional: true });
 update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCode\s+\d+/, 'versionCode 140306').replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
 update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - visitor invite resend, loading contrast and CrewLocker offline`; data.scripts ||= {}; data.scripts['regression:v14.3.6'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-3-6-visitor-loading.mjs'; return `${JSON.stringify(data, null, 2)}\n`; });
