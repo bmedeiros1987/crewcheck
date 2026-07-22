@@ -34,10 +34,19 @@ home = home
   .replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`)
   .replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, "const CREWCHECK_UI_CORE_NOTE = 'v14.0.6: Saída Inteligente resiliente, login funcional, financeiro protegido e auditoria responsiva';");
 
-if (!home.includes('durationInTrafficSeconds?: number;')) {
+const routeFields = [
+  ['durationSeconds', '  durationSeconds?: number;'],
+  ['durationInTrafficSeconds', '  durationInTrafficSeconds?: number;'],
+  ['durationMinutes', '  durationMinutes?: number;'],
+  ['durationInTrafficMinutes', '  durationInTrafficMinutes?: number;'],
+];
+const missingRouteFields = routeFields
+  .filter(([name]) => !new RegExp(`\\b${name}\\?: number;`).test(home))
+  .map(([, declaration]) => declaration);
+if (missingRouteFields.length) {
   home = home.replace(
     '  distanceMeters?: number;\n};',
-    '  distanceMeters?: number;\n  durationSeconds?: number;\n  durationInTrafficSeconds?: number;\n  durationMinutes?: number;\n  durationInTrafficMinutes?: number;\n};',
+    `  distanceMeters?: number;\n${missingRouteFields.join('\n')}\n};`,
   );
 }
 
