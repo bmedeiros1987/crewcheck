@@ -30,13 +30,25 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
           cache: npm
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
 
       - name: Install web dependencies
         run: npm ci || npm install
@@ -46,101 +58,24 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/v139/apply.mjs
-          node scripts/v1424/apply.mjs
-
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('android-wrapper/build.gradle')
-          source = path.read_text(encoding='utf-8')
-          source = re.sub(
-              r"id 'com\.android\.application' version '[^']+' apply false",
-              "id 'com.android.application' version '8.7.3' apply false",
-              source,
-              count=1,
-          )
-          source = re.sub(
-              r"\n\s*id 'org\.jetbrains\.kotlin\.android' version '[^']+' apply false",
-              '',
-              source,
-          )
-          path.write_text(source, encoding='utf-8')
-          PY
-
-          grep -Fq "id 'com.android.application' version '8.7.3' apply false" android-wrapper/build.gradle
-          if grep -Fq "id 'org.jetbrains.kotlin.android'" android-wrapper/build.gradle; then
-            echo '::error::Plugin Kotlin deveria estar ausente antes do patch v1434.'
-            exit 1
-          fi
-
-          node scripts/v1433/apply.mjs
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt')
-          source = path.read_text(encoding='utf-8')
-
-          if 'import android.webkit.JavascriptInterface' not in source:
-              source = source.replace(
-                  'import android.webkit.WebView\n',
-                  'import android.webkit.JavascriptInterface\nimport android.webkit.WebView\n',
-                  1,
-              )
-
-          old_install = '''    /** Deve ser chamado antes de WebView.loadUrl(). */
-          fun install(): Boolean {
-              if (installed) return true
-              if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return false
-              WebViewCompat.addWebMessageListener(webView, JS_OBJECT_NAME, TRUSTED_ORIGINS) {
-                      _, message, sourceOrigin, isMainFrame, _ ->
-                  if (!isMainFrame || !isTrustedOrigin(sourceOrigin)) return@addWebMessageListener
-                  handleMessage(message.data)
-              }
-              installed = true
-              return true
-          }
-          '''
-          new_install = '''    /** Deve ser chamado antes de WebView.loadUrl(). */
-          fun install(): Boolean {
-              if (installed) return true
-              webView.addJavascriptInterface(this, JS_OBJECT_NAME)
-              installed = true
-              return true
-          }
-
-          @JavascriptInterface
-          fun postMessage(raw: String?) {
-              val currentUrl = webView.url ?: return
-              val currentOrigin = try { Uri.parse(currentUrl) } catch (_: Exception) { return }
-              if (!isTrustedOrigin(currentOrigin)) return
-              handleMessage(raw)
-          }
-          '''
-          if old_install in source:
-              source = source.replace(old_install, new_install, 1)
-          elif '@JavascriptInterface\n    fun postMessage(raw: String?)' not in source:
-              raise SystemExit('Health Connect bridge install block not found')
-
-          path.write_text(source, encoding='utf-8')
-          PY
 
           sed -i "s/id 'com.android.application' version '[^']*'/id 'com.android.application' version '8.11.1'/" android-wrapper/build.gradle
           sed -i -E 's/compileSdk[[:space:]]+[0-9]+/compileSdk 36/' android-wrapper/app/build.gradle
 
           wrapper_properties='android-wrapper/gradle/wrapper/gradle-wrapper.properties'
-          if [[ ! -f "$wrapper_properties" ]]; then
-            echo '::error::Gradle wrapper properties não foi gerado pelos patches.'
-            exit 1
+          if [[ ! -f "$wrapper_properties" || ! -f android-wrapper/gradlew || ! -f android-wrapper/gradle/wrapper/gradle-wrapper.jar ]]; then
+            echo 'Gradle wrapper ausente ou incompleto; gerando wrapper 8.13.'
+            (cd android-wrapper && gradle wrapper --gradle-version 8.13 --distribution-type bin)
           fi
-          sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
+
+          sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
           chmod +x android-wrapper/gradlew
 
           grep -Fq "id 'com.android.application' version '8.11.1'" android-wrapper/build.gradle
           grep -Fq "id 'org.jetbrains.kotlin.android' version '2.0.21'" android-wrapper/build.gradle
           grep -Eq 'compileSdk[[:space:]]+36' android-wrapper/app/build.gradle
           grep -Fq 'gradle-8.13-bin.zip' "$wrapper_properties"
+          test -s android-wrapper/gradle/wrapper/gradle-wrapper.jar
           grep -Fq 'private CrewCheckHealthBridge healthBridge;' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'healthBridge.install();' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq '@JavascriptInterface' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
@@ -164,13 +99,6 @@ jobs:
       - name: Run final release regression
         run: node scripts/regression-v14-3-6-visitor-loading.mjs
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -180,11 +108,6 @@ jobs:
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;35.0.0"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
 
       - name: Validate mandatory Play Console signing
         shell: bash
@@ -208,10 +131,7 @@ jobs:
           printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
           test -s "$CREWCHECK_STORE_FILE"
           chmod 600 "$CREWCHECK_STORE_FILE"
-          keytool -list \
-            -keystore "$CREWCHECK_STORE_FILE" \
-            -storepass "$STORE_PASSWORD" \
-            -alias "$KEY_ALIAS" >/dev/null
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
 
       - name: Build signed release APK and AAB
         working-directory: android-wrapper
@@ -246,10 +166,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/crewcheck-play"
           cp "$apk" "$RUNNER_TEMP/crewcheck-play/CrewCheck-signed-release.apk"
           cp "$aab" "$RUNNER_TEMP/crewcheck-play/CrewCheck-Play-Console.aab"
-          (
-            cd "$RUNNER_TEMP/crewcheck-play"
-            sha256sum CrewCheck-signed-release.apk CrewCheck-Play-Console.aab > SHA256SUMS.txt
-          )
+          (cd "$RUNNER_TEMP/crewcheck-play" && sha256sum CrewCheck-signed-release.apk CrewCheck-Play-Console.aab > SHA256SUMS.txt)
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
