@@ -139,14 +139,15 @@ function crewcheckLiveLocationDecision(message = {}, edited = false) {
   );
 
   if (!next.includes('crewcheckTelegramUpdateClaim(update)')) {
-    next = replaceRequired(
-      next,
-      '  const update = await readJsonBody(req);\n\n  // Telegram retries and queues updates when the HTTP acknowledgement is slow.',
-      "  const update = await readJsonBody(req);\n  if (!crewcheckTelegramUpdateClaim(update)) return sendJson(res, 200, { ok: true, duplicate: true, message: 'Evento já processado.' });\n\n  // Telegram retries and queues updates when the HTTP acknowledgement is slow.",
-      'deduplicação do webhook',
+    const readUpdateAnchor = '  const update = await readJsonBody(req);';
+    if (!next.includes(readUpdateAnchor)) throw new Error('[v1424] Leitura do update do webhook não encontrada.');
+    next = next.replace(
+      readUpdateAnchor,
+      `${readUpdateAnchor}\n  if (!crewcheckTelegramUpdateClaim(update)) return sendJson(res, 200, { ok: true, duplicate: true, message: 'Evento já processado.' });`,
     );
   }
 
+  if (!next.includes('crewcheckTelegramUpdateClaim(update)')) throw new Error('[v1424] Deduplicação do webhook não aplicada.');
   if (!next.includes('if (!message?.crewcheckSilentLocation) await sendTelegramMessage')) throw new Error('[v1424] Resposta silenciosa de localização não aplicada.');
   return next;
 });
