@@ -31,3 +31,4 @@ if (fs.existsSync(serverPath)) {
 }
 
 console.log('[v1426] Atalhos flutuantes removidos na origem e bloqueados no HTML legado.');
+await import('../v1427/apply.mjs');
