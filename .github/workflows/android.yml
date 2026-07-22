@@ -1,4 +1,4 @@
-name: Android AAB
+name: Android APK and AAB
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
       - name: Build web
         run: npm run build
 
-      - name: Run CrewCheck v14.3.3 release recovery regression
+      - name: Run release recovery regression
         run: node scripts/regression-v14-3-3-release-recovery.mjs
 
       - name: Setup Java 17
@@ -56,44 +56,98 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Validate Android signing secrets
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for value in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!value}" ]; then
+              echo "Missing secret: $value"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -eq 0 ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "Release artifacts will be generated unsigned."
+          fi
+
       - name: Decode upload keystore
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
         env:
           ANDROID_KEYSTORE_BASE64_VALUE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "${ANDROID_KEYSTORE_BASE64_VALUE}" ]; then
-            echo "${ANDROID_KEYSTORE_BASE64_VALUE}" | base64 --decode > android-wrapper/app/upload-keystore.jks
-            echo "Upload keystore decoded"
-          else
-            echo "ANDROID_KEYSTORE_BASE64 not configured; building unsigned release artifact."
-          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64_VALUE" | base64 --decode > android-wrapper/app/upload-keystore.jks
+          test -s android-wrapper/app/upload-keystore.jks
+          echo "Upload keystore decoded successfully."
 
-      - name: Build release AAB
+      - name: Build release APK
         working-directory: android-wrapper
         env:
-          CREWCHECK_STORE_FILE: app/upload-keystore.jks
+          CREWCHECK_STORE_FILE: upload-keystore.jks
           CREWCHECK_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           gradle --version
-          gradle --no-daemon clean :app:bundleRelease --stacktrace
+          gradle --no-daemon clean :app:assembleRelease --stacktrace
 
-      - name: Build release APK fallback
+      - name: Build debug APK
         if: always()
         working-directory: android-wrapper
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Build release AAB
+        if: success()
+        working-directory: android-wrapper
         env:
-          CREWCHECK_STORE_FILE: app/upload-keystore.jks
+          CREWCHECK_STORE_FILE: upload-keystore.jks
           CREWCHECK_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          gradle --no-daemon :app:assembleRelease --stacktrace || true
+        run: gradle --no-daemon :app:bundleRelease --stacktrace
 
-      - name: Upload Android artifacts
+      - name: List Android outputs
+        if: always()
+        shell: bash
+        run: |
+          echo "APK outputs:"
+          find android-wrapper/app/build/outputs/apk -type f 2>/dev/null || true
+          echo "AAB outputs:"
+          find android-wrapper/app/build/outputs/bundle -type f 2>/dev/null || true
+
+      - name: Upload release APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-v14.3.3-android
-          path: |
-            android-wrapper/app/build/outputs/bundle/release/*.aab
-            android-wrapper/app/build/outputs/apk/release/*.apk
+          name: CrewCheck-release-apk
+          path: android-wrapper/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-debug-apk
+          path: android-wrapper/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload release AAB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-release-aab
+          path: android-wrapper/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
+          retention-days: 14
