@@ -86,3 +86,4 @@ update('package.json', (source) => {
 
 console.log(`[v1435] CrewCheck ${VERSION}: CrewLocker criptografado, armazenamento persistente e documentos disponíveis offline.`);
 await import('../v1436/apply.mjs');
+await import('../v1437/apply.mjs');
