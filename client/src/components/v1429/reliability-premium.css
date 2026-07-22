@@ -1,0 +1,22 @@
+/* CrewCheck v14.2.9 — Premium reliability hardening */
+.cz-app,.cz-app *{box-sizing:border-box}
+.cz-panel-head,.cz-flight-card,.cz-smart-card,.cz-toolbox,.cz-roster-card,.cz-finance-grid>*,.cz-info-duo>*,.cz-time-trio>*{min-width:0}
+.cz-panel-head h1,.cz-panel-head p,.cz-flight-card h1,.cz-flight-card h2,.cz-flight-card h3,.cz-flight-card p,.cz-flight-card small,.cz-smart-card h1,.cz-smart-card h2,.cz-smart-card p,.cz-toolbox h1,.cz-toolbox h2,.cz-toolbox p,.cz-roster-copy h3,.cz-roster-copy p,.cz-roster-copy small{overflow-wrap:anywhere;word-break:normal;white-space:normal}
+.cz-smart-content,.cz-flight-card,.cz-roster-card,.cz-toolbox{height:auto!important;min-height:0!important;overflow:visible!important}
+.cz-smart-content>*{position:static!important;transform:none!important;inset:auto!important}
+.cz-smart-content{display:grid!important;gap:10px!important;align-content:start!important}
+.cz-smart-content>strong{font-size:clamp(2.2rem,12vw,4.2rem)!important;line-height:.95!important;margin:0!important}
+.cz-smart-content>p{margin:0!important;line-height:1.45!important;max-width:100%!important}
+.cz-time-trio{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important}
+.cz-time-trio>div{min-width:0!important;height:auto!important;padding:16px!important}
+.cz-time-trio strong{font-size:clamp(1.65rem,7vw,2.65rem)!important;line-height:1!important;overflow-wrap:anywhere}
+.cz-route{display:grid!important;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)!important;gap:12px!important;align-items:center!important}
+.cz-route>div{min-width:0}.cz-route strong{font-size:clamp(1.8rem,8vw,3.25rem)!important;overflow-wrap:anywhere}
+.cz-flight-pills{display:flex!important;flex-wrap:wrap!important;gap:9px!important}.cz-flight-pills>span{min-width:0!important;max-width:100%!important;white-space:normal!important}
+.cz-info-duo{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}.cz-info-duo>div{height:auto!important;min-height:120px!important}
+.cc-live-route-grid,.cz-departure-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))!important;gap:14px!important}
+.cc-live-route-grid>*{min-width:0!important;height:auto!important;overflow:hidden!important}
+.cc-live-route-grid strong,.cc-live-route-grid b{overflow-wrap:anywhere;white-space:normal!important}
+.cz-bottom-nav{z-index:80!important}.cz-app{padding-bottom:calc(108px + env(safe-area-inset-bottom,0px))!important}
+.cc-alert-engine-live{display:grid;gap:10px;padding:18px;border:1px solid rgba(61,213,194,.45);background:linear-gradient(145deg,rgba(12,47,63,.96),rgba(7,25,45,.98));border-radius:22px}.cc-alert-engine-live header{display:flex;gap:12px;align-items:center}.cc-alert-engine-live strong{font-size:1.1rem}.cc-alert-engine-live small{color:#b8cadb}.cc-alert-engine-live .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.cc-alert-engine-live .metrics span{padding:12px;border-radius:15px;background:rgba(255,255,255,.06);display:grid;gap:3px}
+@media(max-width:640px){.cz-time-trio,.cz-info-duo{grid-template-columns:1fr!important}.cz-route{grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr)!important}.cz-route strong{font-size:clamp(1.55rem,10vw,2.5rem)!important}.cz-smart-content>strong{font-size:clamp(2.15rem,16vw,3.8rem)!important}.cz-panel-head{padding-inline:18px!important}.cc-email-quota{grid-template-columns:1fr!important}.cc-email-quota div:nth-child(2){text-align:left!important}}
