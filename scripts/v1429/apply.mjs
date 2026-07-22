@@ -106,3 +106,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1429] CrewCheck ${VERSION}: premium preservado, sobreposições bloqueadas, franquia de e-mail visível e reenvio protegido.`);
+await import('../v1430/apply.mjs');
