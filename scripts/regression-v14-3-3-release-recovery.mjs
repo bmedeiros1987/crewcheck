@@ -18,7 +18,7 @@ function check(label, condition) {
   console.log(`✓ ${label}`);
 }
 
-check('versão pública 14.3.3', packageJson.version === '14.3.3' && server.includes("version: '14.3.3'"));
+check('versão pública 14.3.6', packageJson.version === '14.3.6' && server.includes("version: '14.3.6'"));
 check('v1424 aceita variantes da rota Telegram', v1424.includes('locationRoutePattern') && v1424.includes('originalRoute.replace'));
 check('v1424 possui ponto seguro de instalação', v1424.includes('reliabilityAnchor') && v1424.includes('improvedThrottle'));
 check('v1432 preserva intenções existentes', v1432.includes('complianceIntentPattern') && v1432.includes('complianceIntent, `${regulationIntent}\\n${complianceIntent}`'));
@@ -39,4 +39,4 @@ check('pop-up Google preservado com COOP', server.includes("Cross-Origin-Opener-
 check('proteções HTTP restantes', server.includes("X-Frame-Options', 'DENY'") && server.includes("X-Content-Type-Options', 'nosniff'"));
 check('script de regressão registrado', packageJson.scripts?.['regression:v14.3.3']?.includes('regression-v14-3-3-release-recovery.mjs'));
 
-console.log(`CrewCheck v14.3.3: ${passed} verificações de recuperação aprovadas.`);
+console.log(`CrewCheck v14.3.6: ${passed} verificações de recuperação aprovadas.`);
