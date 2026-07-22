@@ -105,6 +105,7 @@ update('android-wrapper/app/build.gradle', (source) => {
       'dependências Health Connect');
   }
   return next
+    .replace(/org\.jetbrains\.kotlin:kotlin-bom:[^"']+/, 'org.jetbrains.kotlin:kotlin-bom:2.0.21')
     .replace(/versionCode\s+\d+/, 'versionCode 140304')
     .replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`);
 }, { optional: true });
