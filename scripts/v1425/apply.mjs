@@ -166,3 +166,4 @@ export default function TelegramConnectPage() {`,
 });
 
 console.log('[v1425] Username Telegram restaurado no status e CallMeBot com atualização automática.');
+await import('../v1426/apply.mjs');
