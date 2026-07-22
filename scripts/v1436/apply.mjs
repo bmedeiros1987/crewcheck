@@ -57,9 +57,38 @@ update('server/platform.mjs', (source) => {
     "  [/^\\/api\\/platform\\/visitors\\/[^/]+\\/revoke$/, ['POST']],",
     "  [/^\\/api\\/platform\\/visitors\\/[^/]+\\/revoke$/, ['POST']],\n  [/^\\/api\\/platform\\/visitors\\/[^/]+\\/resend$/, ['POST']],",
   );
+
+  const visitorHandler = [
+    'async function handleVisitorResend(req, res, id) {',
+    '  const context = await requireMain(req, res);',
+    '  if (!context) return;',
+    "  if (!await requirePremium(context, res, 'Modo visitante')) return;",
+    '  const visitorId = normalizeText(id, 80);',
+    '  const found = await context.db.query("SELECT id,email,display_name,telegram,permissions,status FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status<>\'revoked\' LIMIT 1", [visitorId, context.identity.email]);',
+    '  const visitor = found.rows[0];',
+    "  if (!visitor) return sendJson(res, 404, { ok: false, message: 'Visitante não localizado ou revogado.' });",
+    "  const token = crypto.randomBytes(32).toString('base64url');",
+    "  const telegramToken = crypto.randomBytes(32).toString('base64url');",
+    '  const password = temporaryPassword();',
+    '  await context.db.query("UPDATE crewcheck_platform_visitors SET password_hash=$3,invite_token_hash=$4,telegram_token_hash=$5,status=\'invited\',must_change_password=TRUE,updated_at=NOW() WHERE id=$1 AND owner_email=$2", [visitorId, context.identity.email, passwordHash(password), sha256(token), sha256(telegramToken)]);',
+    "  const link = publicBaseUrl(req) + '/visitor?token=' + encodeURIComponent(token);",
+    "  const bot = env('TELEGRAM_BOT_USERNAME', env('CREWCHECK_TELEGRAM_BOT_USERNAME', 'crewchecknotify_bot')).replace(/^@/, '');",
+    "  const telegramLink = 'https://t.me/' + bot + '?start=visitor_' + telegramToken;",
+    '  const mail = await sendSystemEmail({',
+    '    to: visitor.email,',
+    "    subject: context.profile.display_name + ' reenviou seu convite do CrewCheck',",
+    "    text: 'Seu convite CrewCheck foi renovado.\\n\\nLink: ' + link + '\\nSenha temporária: ' + password + '\\n\\nA senha anterior deixou de funcionar. No primeiro acesso, defina uma nova senha.\\nTelegram: ' + telegramLink,",
+    "    html: '<div style=\"font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px\"><h1>Convite CrewCheck renovado</h1><p><b>' + escapeHtml(context.profile.display_name) + '</b> reenviou seu acesso de visitante.</p><p><a href=\"' + escapeHtml(link) + '\" style=\"display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold\">Aceitar convite</a></p><p>Nova senha temporária: <b>' + escapeHtml(password) + '</b></p><p>A senha temporária anterior foi invalidada.</p><p><a href=\"' + escapeHtml(telegramLink) + '\">Vincular Telegram</a></p></div>',",
+    '  });',
+    "  return sendJson(res, 200, { ok: true, id: visitorId, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions: allowedPermissions(visitor.permissions), message: mail.ok ? 'Convite reenviado com uma nova senha temporária.' : 'Convite renovado. Como o e-mail não foi entregue, compartilhe o novo link e a nova senha exibidos agora.' });",
+    '}',
+    '',
+    'async function handleVisitorRevoke(req, res, id) {',
+  ].join('\n');
+
   if (!next.includes('async function handleVisitorResend')) next = next.replace(
     'async function handleVisitorRevoke(req, res, id) {',
-    `async function handleVisitorResend(req, res, id) {\n  const context = await requireMain(req, res);\n  if (!context) return;\n  if (!await requirePremium(context, res, 'Modo visitante')) return;\n  const visitorId = normalizeText(id, 80);\n  const found = await context.db.query("SELECT id,email,display_name,telegram,permissions,status FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status<>'revoked' LIMIT 1", [visitorId, context.identity.email]);\n  const visitor = found.rows[0];\n  if (!visitor) return sendJson(res, 404, { ok: false, message: 'Visitante não localizado ou revogado.' });\n  const token = crypto.randomBytes(32).toString('base64url');\n  const telegramToken = crypto.randomBytes(32).toString('base64url');\n  const password = temporaryPassword();\n  await context.db.query("UPDATE crewcheck_platform_visitors SET password_hash=$3,invite_token_hash=$4,telegram_token_hash=$5,status='invited',must_change_password=TRUE,updated_at=NOW() WHERE id=$1 AND owner_email=$2", [visitorId, context.identity.email, passwordHash(password), sha256(token), sha256(telegramToken)]);\n  const link = \\`${'${publicBaseUrl(req)}'}/visitor?token=${'${encodeURIComponent(token)}'}\\`;\n  const bot = env('TELEGRAM_BOT_USERNAME', env('CREWCHECK_TELEGRAM_BOT_USERNAME', 'crewchecknotify_bot')).replace(/^@/, '');\n  const telegramLink = \\`https://t.me/${'${bot}'}?start=visitor_${'${telegramToken}'}\\`;\n  const mail = await sendSystemEmail({\n    to: visitor.email,\n    subject: \\`${'${context.profile.display_name}'} reenviou seu convite do CrewCheck\\`,\n    text: \\`Seu convite CrewCheck foi renovado.\\n\\nLink: ${'${link}'}\\nSenha temporária: ${'${password}'}\\n\\nA senha anterior deixou de funcionar. No primeiro acesso, defina uma nova senha.\\nTelegram: ${'${telegramLink}'}\\`,\n    html: \\`<div style=\"font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px\"><h1>Convite CrewCheck renovado</h1><p><b>${'${escapeHtml(context.profile.display_name)}'}</b> reenviou seu acesso de visitante.</p><p><a href=\"${'${escapeHtml(link)}'}\" style=\"display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold\">Aceitar convite</a></p><p>Nova senha temporária: <b>${'${escapeHtml(password)}'}</b></p><p>A senha temporária anterior foi invalidada.</p><p><a href=\"${'${escapeHtml(telegramLink)}'}\">Vincular Telegram</a></p></div>\\`,\n  });\n  return sendJson(res, 200, { ok: true, id: visitorId, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions: allowedPermissions(visitor.permissions), message: mail.ok ? 'Convite reenviado com uma nova senha temporária.' : 'Convite renovado. Como o e-mail não foi entregue, compartilhe o novo link e a nova senha exibidos agora.' });\n}\n\nasync function handleVisitorRevoke(req, res, id) {`,
+    visitorHandler,
   );
   next = next.replace(
     "    const visitorRevoke = url.pathname.match(/^\\/api\\/platform\\/visitors\\/([^/]+)\\/revoke$/);",
