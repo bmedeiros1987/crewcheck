@@ -125,22 +125,34 @@ function crewcheckLiveLocationDecision(message = {}, edited = false) {
   if (throttleStart >= 0 && throttleEnd > throttleStart) {
     next = `${next.slice(0, throttleStart)}${improvedThrottle}${next.slice(throttleEnd)}`;
   } else if (!next.includes('const crewcheckTelegramUpdateClaims = new Map();')) {
-    throw new Error('[v1424] Controle de localização ao vivo não encontrado.');
+    const reliabilityAnchor = '// CrewCheck Reliability crash guard';
+    if (!next.includes(reliabilityAnchor)) throw new Error('[v1424] Controle de localização ao vivo não encontrou ponto seguro de instalação.');
+    next = next.replace(reliabilityAnchor, `${improvedThrottle}\n\n${reliabilityAnchor}`);
   }
 
   next = next.replace(
     'const locationDecision = crewcheckLiveLocationDecision(message);',
     'const locationDecision = crewcheckLiveLocationDecision(message, Boolean(update?.edited_message));',
   );
+  next = next.replace(
+    'else if (chatId && message?.location) await handleTelegramLocation(message);',
+    `else if (chatId && message?.location) {
+    const locationDecision = crewcheckLiveLocationDecision(message, Boolean(update?.edited_message));
+    if (locationDecision.process) await handleTelegramLocation({ ...message, crewcheckSilentLocation: !locationDecision.announce });
+  }`,
+  );
 
-  const locationRouteAnchor = '  if (chatId && message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true;';
-  const silentLocationRoute = `  const crewcheckLocationReplySender = update?.edited_message
-    ? async () => ({ ok: true, silent: true })
-    : sendTelegramMessage;
-  if (chatId && message?.location && await handleV139Telegram(update, crewcheckLocationReplySender)) return true;`;
+  const locationRoutePattern = /^(\s*)if \(chatId && message\?\.location && await handleV139Telegram\(update, sendTelegramMessage\)\)([^\n]*)$/m;
   if (!next.includes('handleV139Telegram(update, crewcheckLocationReplySender)')) {
-    if (!next.includes(locationRouteAnchor)) throw new Error('[v1424] Rota de localização do Telegram não encontrada.');
-    next = next.replace(locationRouteAnchor, silentLocationRoute);
+    const routeMatch = next.match(locationRoutePattern);
+    if (!routeMatch) throw new Error('[v1424] Rota de localização do Telegram não encontrada.');
+    const indent = routeMatch[1] || '';
+    const originalRoute = routeMatch[0];
+    const silentLocationRoute = `${indent}const crewcheckLocationReplySender = update?.edited_message
+${indent}  ? async () => ({ ok: true, silent: true })
+${indent}  : sendTelegramMessage;
+${originalRoute.replace('sendTelegramMessage', 'crewcheckLocationReplySender')}`;
+    next = next.replace(originalRoute, silentLocationRoute);
   }
 
   next = next.replace(
