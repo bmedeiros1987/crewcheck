@@ -21,33 +21,62 @@ function required(source, before, after, label) {
 
 update('client/src/pages/Home.tsx', (source) => {
   let next = source;
-  next = required(next,
-    '  BriefcaseBusiness,\n  CalendarDays,',
-    '  BriefcaseBusiness,\n  BookOpen,\n  CalendarDays,\n  HeartPulse,',
-    'ícones Life e manual');
-  next = required(next,
-    "import FirstAccessTour from '@/components/v1432/FirstAccessTour';",
-    "import FirstAccessTour from '@/components/v1432/FirstAccessTour';\nimport CrewCheckLifeView from '@/components/v1434/CrewCheckLifeView';\nimport ManualCenterView from '@/components/v1434/ManualCenterView';",
-    'componentes CrewCheck Life e manual');
-  next = required(next,
-    "| 'compare' | 'regulation' | 'bids' | 'admin';",
-    "| 'compare' | 'regulation' | 'bids' | 'life' | 'manual' | 'admin';",
-    'views Life e manual');
-  next = required(next,
-    "['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe'",
-    "['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['life','CrewCheck Life','Sono, rotina e bem-estar',HeartPulse], ['manual','Manual CrewCheck','Ajuda, PDFs e tutorial',BookOpen], ['crew','Crew / Chefe'",
-    'itens Life e manual no menu');
-  next = required(next,
-    "if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';",
-    "if (value === 'life' || value === 'crewcheck-life' || value === 'saude' || value === 'saúde' || value === 'bem-estar') return 'life';\n  if (value === 'manual' || value === 'ajuda' || value === 'guia') return 'manual';\n  if (value === 'departure' || value === 'smartDeparture') return 'departure';",
-    'normalização de rotas Life e manual');
-  next = required(next,
-    "{view === 'routine' && <RoutineView bundle={bundle}/>}",
-    "{view === 'routine' && <RoutineView bundle={bundle}/>}\n    {view === 'life' && <CrewCheckLifeView nextProgram={event ? { title: event.title, date: event.day?.date, presentation: event.presentation, departure: event.departure, kind: event.kind } : null}/>}\n    {view === 'manual' && <ManualCenterView/>}",
-    'renderização CrewCheck Life e manual');
+
+  if (!next.includes('  BookOpen,') || !next.includes('  HeartPulse,')) {
+    const iconAnchor = '  BriefcaseBusiness,\n';
+    if (!next.includes(iconAnchor)) throw new Error('[v1434] Âncora não encontrada: ícones Life e manual');
+    const icons = `${next.includes('  BookOpen,') ? '' : '  BookOpen,\n'}${next.includes('  HeartPulse,') ? '' : '  HeartPulse,\n'}`;
+    next = next.replace(iconAnchor, `${iconAnchor}${icons}`);
+  }
+
+  if (!next.includes("import CrewCheckLifeView from '@/components/v1434/CrewCheckLifeView';")) {
+    const importAnchor = "import FirstAccessTour from '@/components/v1432/FirstAccessTour';";
+    if (!next.includes(importAnchor)) throw new Error('[v1434] Âncora não encontrada: componentes CrewCheck Life e manual');
+    next = next.replace(importAnchor, `${importAnchor}\nimport CrewCheckLifeView from '@/components/v1434/CrewCheckLifeView';\nimport ManualCenterView from '@/components/v1434/ManualCenterView';`);
+  } else if (!next.includes("import ManualCenterView from '@/components/v1434/ManualCenterView';")) {
+    next = next.replace("import CrewCheckLifeView from '@/components/v1434/CrewCheckLifeView';", "import CrewCheckLifeView from '@/components/v1434/CrewCheckLifeView';\nimport ManualCenterView from '@/components/v1434/ManualCenterView';");
+  }
+
+  if (!/\| 'life'\b/.test(next) || !/\| 'manual'\b/.test(next)) {
+    const adminTail = /\| 'admin';/;
+    if (!adminTail.test(next)) throw new Error('[v1434] Âncora não encontrada: views Life e manual');
+    const additions = `${/\| 'life'\b/.test(next) ? '' : "| 'life' "}${/\| 'manual'\b/.test(next) ? '' : "| 'manual' "}`;
+    next = next.replace(adminTail, `${additions}| 'admin';`);
+  }
+
+  if (!next.includes("['life','CrewCheck Life'")) {
+    const menuAnchor = "['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck],";
+    if (!next.includes(menuAnchor)) throw new Error('[v1434] Âncora não encontrada: itens Life e manual no menu');
+    next = next.replace(menuAnchor, `${menuAnchor} ['life','CrewCheck Life','Sono, rotina e bem-estar',HeartPulse], ['manual','Manual CrewCheck','Ajuda, PDFs e tutorial',BookOpen],`);
+  } else if (!next.includes("['manual','Manual CrewCheck'")) {
+    next = next.replace("['life','CrewCheck Life','Sono, rotina e bem-estar',HeartPulse],", "['life','CrewCheck Life','Sono, rotina e bem-estar',HeartPulse], ['manual','Manual CrewCheck','Ajuda, PDFs e tutorial',BookOpen],");
+  }
+
+  if (!next.includes("return 'life';")) {
+    const routeAnchor = "if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';";
+    if (next.includes(routeAnchor)) {
+      next = next.replace(routeAnchor, "if (value === 'life' || value === 'crewcheck-life' || value === 'saude' || value === 'saúde' || value === 'bem-estar') return 'life';\n  if (value === 'manual' || value === 'ajuda' || value === 'guia') return 'manual';\n  if (value === 'departure' || value === 'smartDeparture') return 'departure';");
+    } else {
+      const departureAnchor = "if (value === 'departure' || value === 'smartDeparture') return 'departure';";
+      if (!next.includes(departureAnchor)) throw new Error('[v1434] Âncora não encontrada: normalização de rotas Life e manual');
+      next = next.replace(departureAnchor, "if (value === 'life' || value === 'crewcheck-life' || value === 'saude' || value === 'saúde' || value === 'bem-estar') return 'life';\n  if (value === 'manual' || value === 'ajuda' || value === 'guia') return 'manual';\n  " + departureAnchor);
+    }
+  }
+
+  if (!next.includes("view === 'life'")) {
+    const renderAnchor = "{view === 'routine' && <RoutineView bundle={bundle}/>}";
+    if (!next.includes(renderAnchor)) throw new Error('[v1434] Âncora não encontrada: renderização CrewCheck Life e manual');
+    next = next.replace(renderAnchor, `${renderAnchor}\n    {view === 'life' && <CrewCheckLifeView nextProgram={event ? { title: event.title, date: event.day?.date, presentation: event.presentation, departure: event.departure, kind: event.kind } : null}/>}\n    {view === 'manual' && <ManualCenterView/>}`);
+  } else if (!next.includes("view === 'manual'")) {
+    const lifeRender = "{view === 'life' && <CrewCheckLifeView nextProgram={event ? { title: event.title, date: event.day?.date, presentation: event.presentation, departure: event.departure, kind: event.kind } : null}/>}";
+    if (!next.includes(lifeRender)) throw new Error('[v1434] Âncora não encontrada: renderização Manual Center');
+    next = next.replace(lifeRender, `${lifeRender}\n    {view === 'manual' && <ManualCenterView/>}`);
+  }
+
   next = next
     .replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`)
     .replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, `const CREWCHECK_UI_CORE_NOTE = 'v${VERSION}: CrewCheck Life opcional, Health Connect local, manual incorporado e tutorial ampliado';`);
+
   if (!next.includes("['life','CrewCheck Life'") || !next.includes("view === 'manual'") || !next.includes("return 'life';")) {
     throw new Error('[v1434] Home não recebeu CrewCheck Life e Manual Center.');
   }
@@ -145,22 +174,30 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
   let next = source.replace(
     '        healthBridge = new CrewCheckHealthBridge(this, webView);\n        webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth");',
     '        healthBridge = new CrewCheckHealthBridge(this, webView);\n        healthBridge.install();');
-  next = required(next,
-    '    private CrewCheckBillingBridge billingBridge;',
-    '    private CrewCheckBillingBridge billingBridge;\n    private CrewCheckHealthBridge healthBridge;',
-    'campo da ponte Health Connect');
-  next = required(next,
-    '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
-    '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        healthBridge = new CrewCheckHealthBridge(this, webView);\n        healthBridge.install();\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
-    'registro da ponte Health Connect');
-  next = required(next,
-    '        super.onActivityResult(requestCode, resultCode, data);\n        if (requestCode == FILE_CHOOSER_REQUEST_CODE)',
-    '        super.onActivityResult(requestCode, resultCode, data);\n        if (healthBridge != null && healthBridge.handleActivityResult(requestCode, resultCode, data)) return;\n        if (requestCode == FILE_CHOOSER_REQUEST_CODE)',
-    'resultado de permissões Health Connect');
-  next = required(next,
-    '        if (billingBridge != null) {\n            billingBridge.destroy();\n            billingBridge = null;\n        }\n        if (webView != null)',
-    '        if (billingBridge != null) {\n            billingBridge.destroy();\n            billingBridge = null;\n        }\n        if (healthBridge != null) {\n            healthBridge.destroy();\n            healthBridge = null;\n        }\n        if (webView != null)',
-    'limpeza da ponte Health Connect');
+  if (!next.includes('private CrewCheckHealthBridge healthBridge;')) {
+    next = required(next,
+      '    private CrewCheckBillingBridge billingBridge;',
+      '    private CrewCheckBillingBridge billingBridge;\n    private CrewCheckHealthBridge healthBridge;',
+      'campo da ponte Health Connect');
+  }
+  if (!next.includes('healthBridge.install();')) {
+    next = required(next,
+      '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
+      '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        healthBridge = new CrewCheckHealthBridge(this, webView);\n        healthBridge.install();\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
+      'registro da ponte Health Connect');
+  }
+  if (!next.includes('healthBridge.handleActivityResult')) {
+    next = required(next,
+      '        super.onActivityResult(requestCode, resultCode, data);\n        if (requestCode == FILE_CHOOSER_REQUEST_CODE)',
+      '        super.onActivityResult(requestCode, resultCode, data);\n        if (healthBridge != null && healthBridge.handleActivityResult(requestCode, resultCode, data)) return;\n        if (requestCode == FILE_CHOOSER_REQUEST_CODE)',
+      'resultado de permissões Health Connect');
+  }
+  if (!next.includes('healthBridge.destroy();')) {
+    next = required(next,
+      '        if (billingBridge != null) {\n            billingBridge.destroy();\n            billingBridge = null;\n        }\n        if (webView != null)',
+      '        if (billingBridge != null) {\n            billingBridge.destroy();\n            billingBridge = null;\n        }\n        if (healthBridge != null) {\n            healthBridge.destroy();\n            healthBridge = null;\n        }\n        if (webView != null)',
+      'limpeza da ponte Health Connect');
+  }
   return next;
 }, { optional: true });
 
