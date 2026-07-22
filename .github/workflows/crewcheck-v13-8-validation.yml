@@ -1,4 +1,4 @@
-name: CrewCheck v14.3.3 validation
+name: CrewCheck v14.3.6 validation
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-v14-3-3-${{ github.ref }}
+  group: crewcheck-v14-3-6-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,8 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -70,18 +70,18 @@ jobs:
       CREWCHECK_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS || vars.CREWCHECK_KEY_ALIAS }}
       CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD || vars.CREWCHECK_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: "8.9"
-      - name: Apply CrewCheck v14.3.3 source safeguards
+          gradle-version: "8.13"
+      - name: Apply CrewCheck v14.3.6 source safeguards
         run: node scripts/v139/apply.mjs
       - name: Prepare protected upload keystore
         shell: bash
@@ -102,7 +102,14 @@ jobs:
           keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$CREWCHECK_STORE_PASSWORD" -alias "$CREWCHECK_KEY_ALIAS" >/dev/null
       - name: Compile APK and signed AAB
         working-directory: android-wrapper
-        run: gradle --no-daemon :app:assembleDebug :app:bundleRelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip#' gradle/wrapper/gradle-wrapper.properties
+          grep -Fq 'gradle-8.13-bin.zip' gradle/wrapper/gradle-wrapper.properties
+          chmod +x gradlew
+          ./gradlew --version
+          ./gradlew --no-daemon :app:assembleDebug :app:bundleRelease
       - name: Verify AAB signature
         shell: bash
         run: |
@@ -120,8 +127,8 @@ jobs:
           grep -Fqi "jar verified" "$RUNNER_TEMP/jarsigner-verification.txt"
           ! grep -Fqi "jar is unsigned" "$RUNNER_TEMP/jarsigner-verification.txt"
           unzip -t "$source_aab" >/dev/null
-          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.3.3-production.aab"
-          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.3.3-production.aab > CrewCheck-14.3.3-production.aab.sha256)
+          cp "$source_aab" "$RUNNER_TEMP/CrewCheck-14.3.6-production.aab"
+          (cd "$RUNNER_TEMP" && sha256sum CrewCheck-14.3.6-production.aab > CrewCheck-14.3.6-production.aab.sha256)
       - name: Package official brand assets
         shell: bash
         run: |
@@ -131,10 +138,10 @@ jobs:
           file "$RUNNER_TEMP/CrewCheck-Google-Play-512.png"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-14.3.3-Release-Recovery
+          name: CrewCheck-14.3.6-Release-Recovery
           path: |
-            ${{ runner.temp }}/CrewCheck-14.3.3-production.aab
-            ${{ runner.temp }}/CrewCheck-14.3.3-production.aab.sha256
+            ${{ runner.temp }}/CrewCheck-14.3.6-production.aab
+            ${{ runner.temp }}/CrewCheck-14.3.6-production.aab.sha256
             ${{ runner.temp }}/CrewCheck-Google-Play-512.png
             ${{ runner.temp }}/CrewCheck-PWA-512.png
             ${{ runner.temp }}/CrewCheck-Telegram-512.png
