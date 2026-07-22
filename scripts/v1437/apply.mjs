@@ -24,7 +24,7 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
     next = replaceRequired(
       next,
       '    public class CrewCheckNativeBridge {\n',
-      `    public class CrewCheckNativeBridge {\n        @JavascriptInterface\n        public String healthBridgePing() {\n            try {\n                return healthBridge != null ? healthBridge.ping() : \"\";\n            } catch (Exception ignored) {\n                return \"\";\n            }\n        }\n\n        @JavascriptInterface\n        public boolean healthBridgePostMessage(final String raw) {\n            try {\n                if (healthBridge == null) return false;\n                healthBridge.postMessage(raw);\n                return true;\n            } catch (Exception ignored) {\n                return false;\n            }\n        }\n`,
+      `    public class CrewCheckNativeBridge {\n        @JavascriptInterface\n        public String healthBridgePing() {\n            try {\n                return healthBridge != null ? healthBridge.ping() : "";\n            } catch (Exception ignored) {\n                return "";\n            }\n        }\n\n        @JavascriptInterface\n        public boolean healthBridgePostMessage(final String raw) {\n            try {\n                if (healthBridge == null) return false;\n                healthBridge.postMessage(raw);\n                return true;\n            } catch (Exception ignored) {\n                return false;\n            }\n        }\n`,
       'fallback Health Connect dentro da ponte nativa já estável',
     );
   }
@@ -78,3 +78,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1437] CrewCheck ${VERSION}: fallback Health Connect pela ponte nativa principal e diagnóstico PWA/APK.`);
+await import('../v1438/apply.mjs');
