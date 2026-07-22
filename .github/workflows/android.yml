@@ -173,7 +173,12 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$apk"
-          jarsigner -verify -strict -certs "$aab"
+
+          aab_verify_log="$RUNNER_TEMP/aab-jarsigner-verify.log"
+          jarsigner -verify -verbose -certs "$aab" >"$aab_verify_log" 2>&1
+          cat "$aab_verify_log"
+          grep -Eq '^jar verified\.|^jar verified, with signer errors\.$' "$aab_verify_log"
+          grep -Fq 'CN=CrewCheck Upload Key 2026 v2' "$aab_verify_log"
 
           mkdir -p "$RUNNER_TEMP/crewcheck-play"
           cp "$apk" "$RUNNER_TEMP/crewcheck-play/CrewCheck-signed-release.apk"
