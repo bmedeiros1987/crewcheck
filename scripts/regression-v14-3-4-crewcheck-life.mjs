@@ -43,6 +43,7 @@ if (exists('android-wrapper/app/src/main/AndroidManifest.xml')) {
   const gradle = read('android-wrapper/app/build.gradle');
   const bridge = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt');
   check('Health Connect estável instalado', gradle.includes('connect-client:1.1.0'));
+  check('Kotlin e BOM alinhados', gradle.includes('kotlin-bom:2.0.21'));
   check('permissões mínimas declaradas', manifest.includes('READ_SLEEP') && manifest.includes('READ_STEPS') && manifest.includes('READ_EXERCISE'));
   check('sem permissão clínica ou de histórico amplo', !/READ_(?:BLOOD|GLUCOSE|WEIGHT|BODY|MEDICAL)/.test(manifest) && !manifest.includes('READ_HEALTH_DATA_HISTORY'));
   check('política Health Connect declarada', manifest.includes('ACTION_SHOW_PERMISSIONS_RATIONALE') && manifest.includes('VIEW_PERMISSION_USAGE'));
