@@ -63,14 +63,19 @@ update('client/src/pages/Home.tsx', (source) => {
     }
   }
 
-  if (!next.includes("view === 'life'")) {
-    const renderAnchor = "{view === 'routine' && <RoutineView bundle={bundle}/>}";
-    if (!next.includes(renderAnchor)) throw new Error('[v1434] Âncora não encontrada: renderização CrewCheck Life e manual');
-    next = next.replace(renderAnchor, `${renderAnchor}\n    {view === 'life' && <CrewCheckLifeView nextProgram={event ? { title: event.title, date: event.day?.date, presentation: event.presentation, departure: event.departure, kind: event.kind } : null}/>}\n    {view === 'manual' && <ManualCenterView/>}`);
-  } else if (!next.includes("view === 'manual'")) {
-    const lifeRender = "{view === 'life' && <CrewCheckLifeView nextProgram={event ? { title: event.title, date: event.day?.date, presentation: event.presentation, departure: event.departure, kind: event.kind } : null}/>}";
-    if (!next.includes(lifeRender)) throw new Error('[v1434] Âncora não encontrada: renderização Manual Center');
-    next = next.replace(lifeRender, `${lifeRender}\n    {view === 'manual' && <ManualCenterView/>}`);
+  const lifeRender = "    {view === 'life' && <CrewCheckLifeView nextProgram={event ? { title: event.title, date: event.day?.date, presentation: event.presentation, departure: event.departure, kind: event.kind } : null}/>}";
+  const manualRender = "    {view === 'manual' && <ManualCenterView/>}";
+  const missingRenders = `${next.includes("view === 'life'") ? '' : `${lifeRender}\n`}${next.includes("view === 'manual'") ? '' : `${manualRender}\n`}`;
+  if (missingRenders) {
+    const routinePattern = /^(\s*)\{view\s*===\s*['"]routine['"]\s*&&\s*<RoutineView\s+bundle=\{bundle\}\s*\/?>\s*\}\s*$/m;
+    const bottomNavPattern = /^(\s*)<BottomNav\b/m;
+    if (routinePattern.test(next)) {
+      next = next.replace(routinePattern, (match) => `${match}\n${missingRenders.trimEnd()}`);
+    } else if (bottomNavPattern.test(next)) {
+      next = next.replace(bottomNavPattern, (_match, indent) => `${missingRenders}${indent}<BottomNav`);
+    } else {
+      throw new Error('[v1434] Âncora não encontrada: área de renderização principal');
+    }
   }
 
   next = next
