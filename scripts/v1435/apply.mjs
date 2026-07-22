@@ -24,10 +24,12 @@ update('client/src/pages/Home.tsx', (source) => {
     "import ManualCenterView from '@/components/v1434/ManualCenterView';",
     "import CrewLockerView from '@/components/v1435/CrewLockerView';",
     'import CrewLocker');
-  next = next.replace(
-    "| 'compare' | 'regulation' | 'bids' | 'life' | 'manual' | 'admin';",
-    "| 'compare' | 'regulation' | 'bids' | 'life' | 'manual' | 'crewlocker' | 'admin';",
-  );
+  if (!/type ZeroView[\s\S]*?\| 'crewlocker'/.test(next)) {
+    next = next.replace(
+      /(type ZeroView[\s\S]*?)(\| 'admin';)/,
+      "$1| 'crewlocker' $2",
+    );
+  }
   if (!next.includes("['crewlocker','CrewLocker'")) {
     next = next.replace(
       "['life','CrewCheck Life','Sono, rotina e bem-estar',HeartPulse], ['manual','Manual CrewCheck','Ajuda, PDFs e tutorial',BookOpen],",
@@ -46,6 +48,7 @@ update('client/src/pages/Home.tsx', (source) => {
       "{view === 'manual' && <ManualCenterView/>}\n    {view === 'crewlocker' && <CrewLockerView/>}",
     );
   }
+  if (!/type ZeroView[\s\S]*?\| 'crewlocker'/.test(next)) throw new Error('[v1435] CrewLocker não foi incluído em ZeroView.');
   return next
     .replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`)
     .replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, `const CREWCHECK_UI_CORE_NOTE = 'v${VERSION}: CrewLocker criptografado offline, validade documental e base Guardian';`);
