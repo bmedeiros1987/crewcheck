@@ -29,3 +29,4 @@ if (fs.existsSync(appPath)) {
 }
 
 console.log('[v1427] Release 14.2.7 identificável por /api/release e /api/health.');
+await import('../v1428/apply.mjs');
