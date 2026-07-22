@@ -22,8 +22,8 @@ update('client/src/components/platform/PlatformCenter.tsx', (source) => {
   let next = source;
   next = next.replace('  revokeVisitor,\n', '  revokeVisitor,\n  resendVisitorInvite,\n');
   if (!next.includes("const [resendingVisitorId")) next = next.replace(
-    "  const [busy, setBusy] = useState(false);\n  async function load()",
-    "  const [busy, setBusy] = useState(false);\n  const [resendingVisitorId, setResendingVisitorId] = useState('');\n  async function load()",
+    "  const [editingPermissions, setEditingPermissions] = useState<PlatformPermissions>(defaultVisitorPermissions);\n  const [busy, setBusy] = useState(false);",
+    "  const [editingPermissions, setEditingPermissions] = useState<PlatformPermissions>(defaultVisitorPermissions);\n  const [busy, setBusy] = useState(false);\n  const [resendingVisitorId, setResendingVisitorId] = useState('');",
   );
   if (!next.includes('async function resendInvite')) next = next.replace(
     "  async function remove(id: string) { try { await revokeVisitor(id); await load(); toast.success('Visitante revogado.'); } catch { toast.error('Não consegui revogar.'); } }",
@@ -33,7 +33,7 @@ update('client/src/components/platform/PlatformCenter.tsx', (source) => {
     "{visitor.status === 'active' && visitor.permissions?.chat && <button onClick={() => openChat(visitor.id)}><MessageCircle/> Chat</button>}{visitor.status !== 'revoked' && <button onClick={() => edit(visitor)}><ShieldCheck/> Permissões</button>}",
     "{visitor.status === 'active' && visitor.permissions?.chat && <button onClick={() => openChat(visitor.id)}><MessageCircle/> Chat</button>}{visitor.status !== 'revoked' && <button onClick={() => resendInvite(visitor)} disabled={resendingVisitorId === visitor.id}>{resendingVisitorId === visitor.id ? <Loader2 className=\"cp-spin\"/> : <Mail/>} Reenviar convite</button>}{visitor.status !== 'revoked' && <button onClick={() => edit(visitor)}><ShieldCheck/> Permissões</button>}",
   );
-  if (!next.includes('resendVisitorInvite')) throw new Error('[v1436] UI de reenvio não aplicada.');
+  if (!next.includes('resendVisitorInvite') || !next.includes('const [resendingVisitorId, setResendingVisitorId]')) throw new Error('[v1436] UI de reenvio não aplicada por completo.');
   return next;
 });
 
