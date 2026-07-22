@@ -131,10 +131,13 @@ update('server.mjs', (source) => {
     "  if (normalized.includes('atis')) return '/metar';",
     "  if (normalized.includes('atis')) return '/metar';\n  if (normalized.includes('regulament')) return '/regulamentacao';",
     'atalho do teclado para regulamentação');
-  next = required(next,
-    "  if (/^\\/conformidade(?:@\\S+)?\\b/i.test(value) || /\\b(rbac|act|irregularidade|conformidade)\\b/i.test(lower)) return conciergeComplianceReply(snapshot);",
-    "  if (/^\\/(?:regulamentacao|regulamentação|regulacao|regulação)(?:@\\S+)?\\b/i.test(value) || /\\b(at[eé] que horas (?:vai|vai minha|termina).{0,24}regulamenta[cç][aã]o|hor[aá]rio do corte|fim da jornada)\\b/i.test(lower)) return conciergeRegulationReply(snapshot);\n  if (/^\\/conformidade(?:@\\S+)?\\b/i.test(value) || /\\b(rbac|act|irregularidade|conformidade)\\b/i.test(lower)) return conciergeComplianceReply(snapshot);",
-    'intenção natural de regulamentação');
+  if (!next.includes('return conciergeRegulationReply(snapshot);')) {
+    const complianceIntentPattern = /^\s*if \([^\n]*return conciergeComplianceReply\(snapshot\);$/m;
+    const complianceIntent = next.match(complianceIntentPattern)?.[0];
+    if (!complianceIntent) throw new Error('[v1432] Âncora não encontrada: intenção natural de regulamentação');
+    const regulationIntent = "  if (/^\\/(?:regulamentacao|regulamentação|regulacao|regulação)(?:@\\S+)?\\b/i.test(value) || /\\b(at[eé] que horas (?:vai|vai minha|termina).{0,24}regulamenta[cç][aã]o|hor[aá]rio do corte|fim da jornada)\\b/i.test(lower)) return conciergeRegulationReply(snapshot);";
+    next = next.replace(complianceIntent, `${regulationIntent}\n${complianceIntent}`);
+  }
   next = next.replace(
     "'/diarias','/conformidade']",
     "'/diarias','/regulamentacao','/conformidade']");
@@ -166,3 +169,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1432] CrewCheck ${VERSION}: ${MARKER}, rodapé iPad estável, contraste unificado, tutorial e regulamentação diária.`);
+await import('../v1433/apply.mjs');
