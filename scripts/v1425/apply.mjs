@@ -55,7 +55,7 @@ async function refreshLinkedTelegramUsername(linked = null, data = null) {
     conciergeDbPut('link-chat:' + String(linked.chatId), updated),
   ];
   if (linked.code) writes.push(conciergeDbPut('link-code:' + linked.code, updated));
-  await Promise.all(writes);
+  try { await Promise.all(writes); } catch {}
   Object.assign(linked, updated);
   return discovered;
 }
@@ -137,7 +137,7 @@ export default function TelegramConnectPage() {`,
       const payload = await authFetch<LinkPayload>('/api/telegram/link/status');
       setStatus(payload || {});
       const refreshedUsername = String(payload?.username || payload?.telegramUsername || '').replace(/^@/, '');
-      const target = buildCallMeBotUrl(refreshedUsername);
+      const target = callMeBotUrl || buildCallMeBotUrl(refreshedUsername);
       if (!target) {
         setError(payload?.callMeBotMessage || 'O CallMeBot exige um @usuário público. No Telegram, abra Configurações > Nome de usuário, crie seu @usuário e depois toque novamente em Conectar CallMeBot.');
         return;
