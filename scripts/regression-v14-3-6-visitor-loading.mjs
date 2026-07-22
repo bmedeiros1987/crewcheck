@@ -1,0 +1,22 @@
+import fs from 'node:fs';
+const read = (path) => fs.readFileSync(path, 'utf8');
+let passed = 0;
+function check(label, condition) { if (!condition) throw new Error(`[v14.3.6] Reprovado: ${label}`); passed += 1; console.log(`✓ ${label}`); }
+const client = read('client/src/lib/platformClient.ts');
+const center = read('client/src/components/platform/PlatformCenter.tsx');
+const server = read('server/platform.mjs');
+const app = read('client/src/App.tsx');
+const css = read('client/src/components/v1436/loading-contrast.css');
+const pkg = JSON.parse(read('package.json'));
+check('versão 14.3.6', pkg.version === '14.3.6');
+check('cliente possui reenvio', client.includes('resendVisitorInvite') && client.includes('/resend'));
+check('botão de reenviar está na lista', center.includes('Reenviar convite') && center.includes('resendingVisitorId'));
+check('fallback manual preservado', center.includes('setFallback(result)') && center.includes('Senha temporária'));
+check('rota aceita somente POST', server.includes("visitors\\/[^/]+\\/resend") && server.includes("['POST']"));
+check('backend renova token e senha', server.includes('handleVisitorResend') && server.includes('temporaryPassword()') && server.includes('invite_token_hash'));
+check('senha anterior é invalidada', server.includes('A senha temporária anterior foi invalidada'));
+check('visitante revogado não recebe convite', server.includes("status<>'revoked'"));
+check('logo real no carregamento', app.includes('/icons/crewcheck-icon-v2.png?v=1436'));
+check('contraste reforçado', css.includes('brightness(1.18)') && css.includes('background:#f8fafc'));
+check('tema claro contemplado', css.includes('html[data-crew-theme="light"]'));
+console.log(`CrewCheck v14.3.6: ${passed} verificações aprovadas.`);
