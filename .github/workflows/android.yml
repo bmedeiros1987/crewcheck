@@ -77,7 +77,7 @@ jobs:
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "Release artifacts will be generated unsigned."
+            echo "Signed release artifacts will be skipped; debug APK will still be published."
           fi
 
       - name: Decode upload keystore
@@ -86,28 +86,47 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64_VALUE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$ANDROID_KEYSTORE_BASE64_VALUE" | base64 --decode > android-wrapper/app/upload-keystore.jks
+          printf '%s' "$ANDROID_KEYSTORE_BASE64_VALUE" | tr -d '\r\n ' | base64 --decode > android-wrapper/app/upload-keystore.jks
           test -s android-wrapper/app/upload-keystore.jks
-          echo "Upload keystore decoded successfully."
+          chmod 600 android-wrapper/app/upload-keystore.jks
 
-      - name: Build release APK
+      - name: Build installable debug APK
+        working-directory: android-wrapper
+        run: gradle --no-daemon clean :app:assembleDebug --stacktrace
+
+      - name: Stage installable APK artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="android-wrapper/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$source_apk"
+          mkdir -p "$RUNNER_TEMP/crewcheck-android"
+          cp "$source_apk" "$RUNNER_TEMP/crewcheck-android/CrewCheck-installable.apk"
+          sha256sum "$RUNNER_TEMP/crewcheck-android/CrewCheck-installable.apk" > "$RUNNER_TEMP/crewcheck-android/CrewCheck-installable.apk.sha256"
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.signed == 'true'
         working-directory: android-wrapper
         env:
           CREWCHECK_STORE_FILE: upload-keystore.jks
           CREWCHECK_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease --stacktrace
+
+      - name: Stage signed release APK artifact
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
         run: |
-          gradle --version
-          gradle --no-daemon clean :app:assembleRelease --stacktrace
+          set -euo pipefail
+          source_apk="android-wrapper/app/build/outputs/apk/release/app-release.apk"
+          test -s "$source_apk"
+          mkdir -p "$RUNNER_TEMP/crewcheck-android"
+          cp "$source_apk" "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.apk"
+          sha256sum "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.apk" > "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.apk.sha256"
 
-      - name: Build debug APK
-        if: always()
-        working-directory: android-wrapper
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
-
-      - name: Build release AAB
-        if: success()
+      - name: Build signed release AAB
+        if: steps.signing.outputs.signed == 'true'
         working-directory: android-wrapper
         env:
           CREWCHECK_STORE_FILE: upload-keystore.jks
@@ -116,38 +135,52 @@ jobs:
           CREWCHECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle --no-daemon :app:bundleRelease --stacktrace
 
+      - name: Stage signed release AAB artifact
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_aab="android-wrapper/app/build/outputs/bundle/release/app-release.aab"
+          test -s "$source_aab"
+          mkdir -p "$RUNNER_TEMP/crewcheck-android"
+          cp "$source_aab" "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.aab"
+          sha256sum "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.aab" > "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.aab.sha256"
+
       - name: List Android outputs
         if: always()
         shell: bash
         run: |
-          echo "APK outputs:"
-          find android-wrapper/app/build/outputs/apk -type f 2>/dev/null || true
-          echo "AAB outputs:"
-          find android-wrapper/app/build/outputs/bundle -type f 2>/dev/null || true
+          find android-wrapper/app/build/outputs -type f 2>/dev/null || true
+          find "$RUNNER_TEMP/crewcheck-android" -type f 2>/dev/null || true
 
-      - name: Upload release APK
-        if: always()
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-release-apk
-          path: android-wrapper/app/build/outputs/apk/release/*.apk
+          name: CrewCheck-installable-apk
+          path: |
+            ${{ runner.temp }}/crewcheck-android/CrewCheck-installable.apk
+            ${{ runner.temp }}/crewcheck-android/CrewCheck-installable.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload debug APK
-        if: always()
+      - name: Upload signed release APK
+        if: steps.signing.outputs.signed == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-debug-apk
-          path: android-wrapper/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
-          retention-days: 7
+          name: CrewCheck-release-apk
+          path: |
+            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.apk
+            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Upload release AAB
-        if: always()
+      - name: Upload signed release AAB
+        if: steps.signing.outputs.signed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: CrewCheck-release-aab
-          path: android-wrapper/app/build/outputs/bundle/release/*.aab
-          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.aab
+            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.aab.sha256
+          if-no-files-found: error
           retention-days: 14
