@@ -1,0 +1,19 @@
+function handleRouteHealth(req, res) {
+  const googleConfigured = Boolean(mapsServerKey());
+  const tomtomConfigured = Boolean(tomtomServerKey());
+  return sendJson(res, 200, {
+    ok: googleConfigured || tomtomConfigured || osmEnabled(),
+    configured: googleConfigured || tomtomConfigured,
+    googleConfigured,
+    tomtomConfigured,
+    trafficAware: googleConfigured || tomtomConfigured,
+    incidentsConfigured: tomtomConfigured,
+    providerFallback: true,
+    coordinateInput: true,
+    addressInput: true,
+    refreshAfterSeconds: 60,
+    learningWindowDays: 90,
+    message: googleConfigured || tomtomConfigured ? 'Rota ao vivo configurada com recuperação automática.' : 'Rota ao vivo aguardando configuração; mapa de referência disponível.',
+  });
+}
+
