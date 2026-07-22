@@ -133,6 +133,16 @@ function crewcheckLiveLocationDecision(message = {}, edited = false) {
     'const locationDecision = crewcheckLiveLocationDecision(message, Boolean(update?.edited_message));',
   );
 
+  const locationRouteAnchor = '  if (chatId && message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true;';
+  const silentLocationRoute = `  const crewcheckLocationReplySender = update?.edited_message
+    ? async () => ({ ok: true, silent: true })
+    : sendTelegramMessage;
+  if (chatId && message?.location && await handleV139Telegram(update, crewcheckLocationReplySender)) return true;`;
+  if (!next.includes('handleV139Telegram(update, crewcheckLocationReplySender)')) {
+    if (!next.includes(locationRouteAnchor)) throw new Error('[v1424] Rota de localização do Telegram não encontrada.');
+    next = next.replace(locationRouteAnchor, silentLocationRoute);
+  }
+
   next = next.replace(
     "  await sendTelegramMessage(chatId, 'Localização atualizada. Agora posso calcular /saida e procurar /hospitais, /farmacias ou /academias perto de você.', { reply_markup: conciergeKeyboard });",
     "  if (!message?.crewcheckSilentLocation) await sendTelegramMessage(chatId, 'Localização atualizada. Agora posso calcular /saida e procurar /hospitais, /farmacias ou /academias perto de você.', { reply_markup: conciergeKeyboard });",
@@ -148,7 +158,7 @@ function crewcheckLiveLocationDecision(message = {}, edited = false) {
   }
 
   if (!next.includes('crewcheckTelegramUpdateClaim(update)')) throw new Error('[v1424] Deduplicação do webhook não aplicada.');
-  if (!next.includes('if (!message?.crewcheckSilentLocation) await sendTelegramMessage')) throw new Error('[v1424] Resposta silenciosa de localização não aplicada.');
+  if (!next.includes('handleV139Telegram(update, crewcheckLocationReplySender)')) throw new Error('[v1424] Rota silenciosa da localização ao vivo não aplicada.');
   return next;
 });
 
