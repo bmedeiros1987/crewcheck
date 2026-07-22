@@ -35,15 +35,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
-      - run: npm run check
-      - run: npm run build
-      - run: node scripts/v139/apply.mjs
+      - name: Prepare CrewCheck sources once
+        run: node scripts/v139/apply.mjs
+      - name: TypeScript check on prepared sources
+        run: npx tsc --noEmit
+      - name: Build prepared sources
+        run: npx vite build
       - run: node scripts/regression-v14-3-3-release-recovery.mjs
       - run: node scripts/regression-v13-9-1-launch.mjs
-      - run: npm run regression:v13.9.2:telegram-atis-regulation
-      - run: npm run regression:v13.9.4:telegram-layout-amil
-      - run: npm run regression:v13.9.5:medical-emergency
-      - run: npm run regression:v13.8.0:platform
+      - run: node scripts/regression-v13-9-2-telegram-atis-regulation.mjs
+      - run: node scripts/regression-v13-9-4-telegram-layout-amil-network.mjs
+      - run: node scripts/regression-v13-9-5-medical-emergency-care.mjs
+      - run: node scripts/regression-v13-8-0-platform.mjs
       - run: node scripts/regression-v14-0-1-telegram-voice-policy.mjs
       - run: node scripts/regression-v14-0-2-google-oauth-legal.mjs
       - run: node scripts/regression-v14-0-3-telegram-human-concierge.mjs
