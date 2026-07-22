@@ -78,8 +78,12 @@ jobs:
           test -s android-wrapper/gradle/wrapper/gradle-wrapper.jar
           grep -Fq 'private CrewCheckHealthBridge healthBridge;' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'healthBridge.install();' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          grep -Fq 'webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth");' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq '@JavascriptInterface' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'fun ping(): String = "crewcheck-health-v1"' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'fun postMessage(raw: String?)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'function getAndroidBridge()' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'window.setInterval' client/src/components/v1434/CrewCheckLifeView.tsx
 
       - name: Verify public version before build
         shell: bash
@@ -143,6 +147,23 @@ jobs:
           set -euo pipefail
           ./gradlew --version
           ./gradlew --no-daemon clean :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Inspect Health Connect bridge inside compiled APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          test -s "$apk"
+          inspect_dir="$RUNNER_TEMP/crewcheck-apk-inspect"
+          rm -rf "$inspect_dir"
+          mkdir -p "$inspect_dir"
+          unzip -q "$apk" 'classes*.dex' -d "$inspect_dir"
+          find "$inspect_dir" -name 'classes*.dex' -type f -print0 | xargs -0 strings > "$inspect_dir/dex-strings.txt"
+          grep -Fq 'AndroidCrewCheckHealth' "$inspect_dir/dex-strings.txt"
+          grep -Fq 'CrewCheckHealthBridge' "$inspect_dir/dex-strings.txt"
+          grep -Fq 'crewcheck-health-v1' "$inspect_dir/dex-strings.txt"
+          grep -Fq 'postMessage' "$inspect_dir/dex-strings.txt"
+          echo 'Health Connect bridge encontrada dentro do APK Release.'
 
       - name: Verify and stage signed artifacts
         shell: bash
