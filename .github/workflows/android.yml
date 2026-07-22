@@ -53,10 +53,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const p=require('./package.json'); if(p.version!=='14.3.3') throw new Error('Expected package version 14.3.3, got '+p.version)"
-          grep -Fq "version: '14.3.3'" server.mjs
-          grep -Fq 'versionName "14.3.3"' android-wrapper/app/build.gradle
-          grep -Fq 'versionCode 140303' android-wrapper/app/build.gradle
+          node -e "const p=require('./package.json'); if(p.version!=='14.3.6') throw new Error('Expected package version 14.3.6, got '+p.version)"
+          grep -Fq "version: '14.3.6'" server.mjs
+          grep -Fq 'versionName "14.3.6"' android-wrapper/app/build.gradle
+          grep -Fq 'versionCode 140306' android-wrapper/app/build.gradle
           grep -Fq 'crewcheckLocationReplySender' server.mjs
           grep -Fq 'crewcheckSilentLocation' server.mjs
           grep -Fq 'crewcheckTelegramUpdateClaim(update)' server.mjs
@@ -64,8 +64,8 @@ jobs:
       - name: Build prepared web sources
         run: npx vite build
 
-      - name: Run release recovery regression
-        run: node scripts/regression-v14-3-3-release-recovery.mjs
+      - name: Run final release regression
+        run: node scripts/regression-v14-3-6-visitor-loading.mjs
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
