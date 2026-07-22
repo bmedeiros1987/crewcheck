@@ -59,6 +59,14 @@ function patchRegulationServer(source) {
       '  const startText = conciergePresentationTime(record) || record.startTime;',
       '  const startText = conciergePresentationTime(record);',
     )
+    .replace(
+      '  if (!firstDeparture) return record.startTime;',
+      "  if (!firstDeparture) return '';",
+    )
+    .replace(
+      '  const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);',
+      "  if (!presentation) return `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}\\nApresentação a confirmar. A saída inteligente será calculada assim que a escala publicar o horário.`;\n  const presentationDate = conciergeProgramDate(record.day, presentation);",
+    )
     .replace(oldNatural, newNatural);
 }
 
@@ -120,7 +128,7 @@ update('server.mjs', (source) => {
   if (!next.includes('crewcheckLocationReplySender') || !next.includes('crewcheckSilentLocation')) {
     throw new Error('[v1433] Localização silenciosa e idempotente do Telegram não está presente.');
   }
-  if (!next.includes('same-origin-allow-popups') || next.includes('conciergePresentationTime(record) || record.startTime')) {
+  if (!next.includes('same-origin-allow-popups') || next.includes('conciergePresentationTime(record) || record.startTime') || next.includes('if (!firstDeparture) return record.startTime;')) {
     throw new Error('[v1433] Servidor não recebeu CSP/Telegram/regulamentação final.');
   }
   return next;
