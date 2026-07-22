@@ -105,11 +105,51 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridg
   if (!next.includes('@JavascriptInterface\n    fun postMessage(raw: String?)')) {
     const installPattern = /    \/\*\* Deve ser chamado antes de WebView\.loadUrl\(\)\. \*\/\n    fun install\(\): Boolean \{[\s\S]*?\n    \}\n\n    private fun isTrustedOrigin/;
     if (!installPattern.test(next)) throw new Error('[v1436] Bloco install da ponte Health Connect não encontrado.');
-    const replacement = `    /** Deve ser chamado antes de WebView.loadUrl(). */\n    fun install(): Boolean {\n        if (installed) return true\n        webView.addJavascriptInterface(this, JS_OBJECT_NAME)\n        installed = true\n        return true\n    }\n\n    @JavascriptInterface\n    fun postMessage(raw: String?) {\n        val currentUrl = webView.url ?: return\n        val currentOrigin = try { Uri.parse(currentUrl) } catch (_: Exception) { return }\n        if (!isTrustedOrigin(currentOrigin)) return\n        handleMessage(raw)\n    }\n\n    private fun isTrustedOrigin`;
+    const replacement = `    /** Deve ser chamado antes de WebView.loadUrl(). */\n    fun install(): Boolean {\n        if (installed) return true\n        webView.addJavascriptInterface(this, JS_OBJECT_NAME)\n        installed = true\n        return true\n    }\n\n    @JavascriptInterface\n    fun ping(): String = \"crewcheck-health-v1\"\n\n    @JavascriptInterface\n    fun postMessage(raw: String?) {\n        val currentUrl = webView.url ?: return\n        val currentOrigin = try { Uri.parse(currentUrl) } catch (_: Exception) { return }\n        if (!isTrustedOrigin(currentOrigin)) return\n        handleMessage(raw)\n    }\n\n    private fun isTrustedOrigin`;
     next = next.replace(installPattern, replacement);
+  } else if (!next.includes('fun ping(): String')) {
+    next = next.replace('@JavascriptInterface\n    fun postMessage(raw: String?)', '@JavascriptInterface\n    fun ping(): String = "crewcheck-health-v1"\n\n    @JavascriptInterface\n    fun postMessage(raw: String?)');
   }
-  if (!next.includes('@JavascriptInterface') || !next.includes('webView.addJavascriptInterface(this, JS_OBJECT_NAME)')) {
+  if (!next.includes('@JavascriptInterface') || !next.includes('webView.addJavascriptInterface(this, JS_OBJECT_NAME)') || !next.includes('fun ping(): String')) {
     throw new Error('[v1436] Ponte Health Connect JavaScript não foi aplicada.');
+  }
+  return next;
+}, { optional: true });
+
+update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', (source) => {
+  let next = source;
+  const oldRegistration = '        healthBridge = new CrewCheckHealthBridge(this, webView);\n        healthBridge.install();';
+  const directRegistration = '        healthBridge = new CrewCheckHealthBridge(this, webView);\n        webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth");\n        healthBridge.install();';
+  if (next.includes(oldRegistration) && !next.includes('webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth")')) {
+    next = next.replace(oldRegistration, directRegistration);
+  }
+  if (!next.includes('healthBridge = new CrewCheckHealthBridge(this, webView);')) {
+    const anchor = '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");';
+    if (!next.includes(anchor)) throw new Error('[v1436] Âncora da ponte nativa não encontrada.');
+    next = next.replace(anchor, `${anchor}\n${directRegistration}`);
+  }
+  if (!next.includes('webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth")')) throw new Error('[v1436] Registro direto Health Connect ausente.');
+  return next;
+}, { optional: true });
+
+update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
+  let next = source;
+  next = next.replace(
+    "  const androidBridge = (window as any).AndroidCrewCheckHealth;\n  const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;",
+    "  const [androidBridgeReady, setAndroidBridgeReady] = useState(false);\n  const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;\n\n  function getAndroidBridge() {\n    return (window as any).AndroidCrewCheckHealth;\n  }",
+  );
+  next = next.replace(
+    "    if (!androidBridge?.postMessage) return false;\n    try {\n      androidBridge.postMessage(JSON.stringify({ action, ...payload }));",
+    "    const bridge = getAndroidBridge();\n    if (!bridge || typeof bridge.postMessage !== 'function') return false;\n    try {\n      bridge.postMessage(JSON.stringify({ action, ...payload }));",
+  );
+  next = next.replace(
+    "    if (consent.active && androidBridge?.postMessage) postAndroid('status');\n    return () => {",
+    "    let attempts = 0;\n    const probe = () => {\n      const bridge = getAndroidBridge();\n      const ready = !!bridge && typeof bridge.postMessage === 'function';\n      setAndroidBridgeReady(ready);\n      if (ready && consent.active) postAndroid('status');\n      attempts += 1;\n      return ready || attempts >= 20;\n    };\n    probe();\n    const timer = window.setInterval(() => { if (probe()) window.clearInterval(timer); }, 500);\n    return () => {\n      window.clearInterval(timer);",
+  );
+  next = next.replace('  }, [consent.active, androidBridge]);', '  }, [consent.active]);');
+  next = next.replace("    setNativeStatus({ availability: androidBridge?.postMessage ? 'permission_required' : 'unavailable' });", "    setNativeStatus({ availability: getAndroidBridge()?.postMessage ? 'permission_required' : 'unavailable' });");
+  if (!next.includes('function getAndroidBridge()') || !next.includes('androidBridgeReady') || !next.includes('window.setInterval')) {
+    throw new Error('[v1436] Detecção dinâmica da ponte Health Connect não foi aplicada.');
   }
   return next;
 }, { optional: true });
@@ -118,4 +158,4 @@ update('server.mjs', (source) => source.replace(/version\s*:\s*'\d+\.\d+\.\d+'/g
 update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCode\s+\d+/, 'versionCode 140306').replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
 update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - visitor invite resend, loading contrast and CrewLocker offline`; data.scripts ||= {}; data.scripts['regression:v14.3.6'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-3-6-visitor-loading.mjs'; return `${JSON.stringify(data, null, 2)}\n`; });
 
-console.log(`[v1436] CrewCheck ${VERSION}: reenvio seguro de convite, nova senha temporária e carregamento com alto contraste.`);
+console.log(`[v1436] CrewCheck ${VERSION}: reenvio seguro, carregamento com alto contraste e ponte Health Connect dinâmica.`);
