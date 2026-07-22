@@ -21,6 +21,12 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
 
     steps:
       - name: Checkout
@@ -56,131 +62,89 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Validate Android signing secrets
-        id: signing
+      - name: Validate mandatory Play Console signing
         shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          missing=0
-          for value in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [ -z "${!value}" ]; then
-              echo "Missing secret: $value"
-              missing=1
-            fi
-          done
-
-          if [ "$missing" -eq 0 ]; then
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "Signed release artifacts will be skipped; debug APK will still be published."
+          set -euo pipefail
+          missing=()
+          [[ -n "${KEYSTORE_BASE64:-}" ]] || missing+=("keystore base64")
+          [[ -n "${STORE_PASSWORD:-}" ]] || missing+=("store password")
+          [[ -n "${KEY_ALIAS:-}" ]] || missing+=("key alias")
+          [[ -n "${KEY_PASSWORD:-}" ]] || missing+=("key password")
+          if (( ${#missing[@]} )); then
+            printf '::error::Assinatura obrigatória ausente: %s\n' "$(IFS=', '; echo "${missing[*]}")"
+            exit 1
           fi
 
-      - name: Decode upload keystore
-        if: steps.signing.outputs.signed == 'true'
-        shell: bash
-        env:
-          ANDROID_KEYSTORE_BASE64_VALUE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          printf '%s' "$ANDROID_KEYSTORE_BASE64_VALUE" | tr -d '\r\n ' | base64 --decode > android-wrapper/app/upload-keystore.jks
-          test -s android-wrapper/app/upload-keystore.jks
-          chmod 600 android-wrapper/app/upload-keystore.jks
-
-      - name: Build installable debug APK
-        working-directory: android-wrapper
-        run: gradle --no-daemon clean :app:assembleDebug --stacktrace
-
-      - name: Stage installable APK artifact
+      - name: Decode and validate upload keystore
         shell: bash
         run: |
           set -euo pipefail
-          source_apk="android-wrapper/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$source_apk"
-          mkdir -p "$RUNNER_TEMP/crewcheck-android"
-          cp "$source_apk" "$RUNNER_TEMP/crewcheck-android/CrewCheck-installable.apk"
-          sha256sum "$RUNNER_TEMP/crewcheck-android/CrewCheck-installable.apk" > "$RUNNER_TEMP/crewcheck-android/CrewCheck-installable.apk.sha256"
+          encoded="${KEYSTORE_BASE64#base64:}"
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          test -s "$CREWCHECK_STORE_FILE"
+          chmod 600 "$CREWCHECK_STORE_FILE"
+          keytool -list \
+            -keystore "$CREWCHECK_STORE_FILE" \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
 
-      - name: Build signed release APK
-        if: steps.signing.outputs.signed == 'true'
+      - name: Build signed release APK and AAB
         working-directory: android-wrapper
         env:
-          CREWCHECK_STORE_FILE: upload-keystore.jks
-          CREWCHECK_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          CREWCHECK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          CREWCHECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle --no-daemon :app:assembleRelease --stacktrace
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle --version
+          gradle --no-daemon clean :app:assembleRelease :app:bundleRelease --stacktrace
 
-      - name: Stage signed release APK artifact
-        if: steps.signing.outputs.signed == 'true'
+      - name: Verify and stage signed artifacts
         shell: bash
         run: |
           set -euo pipefail
-          source_apk="android-wrapper/app/build/outputs/apk/release/app-release.apk"
-          test -s "$source_apk"
-          mkdir -p "$RUNNER_TEMP/crewcheck-android"
-          cp "$source_apk" "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.apk"
-          sha256sum "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.apk" > "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.apk.sha256"
+          apk="android-wrapper/app/build/outputs/apk/release/app-release.apk"
+          aab="android-wrapper/app/build/outputs/bundle/release/app-release.aab"
+          test -s "$apk"
+          test -s "$aab"
 
-      - name: Build signed release AAB
-        if: steps.signing.outputs.signed == 'true'
-        working-directory: android-wrapper
-        env:
-          CREWCHECK_STORE_FILE: upload-keystore.jks
-          CREWCHECK_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          CREWCHECK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          CREWCHECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle --no-daemon :app:bundleRelease --stacktrace
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$apk"
+          jarsigner -verify -strict -certs "$aab"
 
-      - name: Stage signed release AAB artifact
-        if: steps.signing.outputs.signed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          source_aab="android-wrapper/app/build/outputs/bundle/release/app-release.aab"
-          test -s "$source_aab"
-          mkdir -p "$RUNNER_TEMP/crewcheck-android"
-          cp "$source_aab" "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.aab"
-          sha256sum "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.aab" > "$RUNNER_TEMP/crewcheck-android/CrewCheck-release.aab.sha256"
+          mkdir -p "$RUNNER_TEMP/crewcheck-play"
+          cp "$apk" "$RUNNER_TEMP/crewcheck-play/CrewCheck-signed-release.apk"
+          cp "$aab" "$RUNNER_TEMP/crewcheck-play/CrewCheck-Play-Console.aab"
+          (
+            cd "$RUNNER_TEMP/crewcheck-play"
+            sha256sum CrewCheck-signed-release.apk CrewCheck-Play-Console.aab > SHA256SUMS.txt
+          )
 
-      - name: List Android outputs
-        if: always()
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-signed-release-apk
+          path: |
+            ${{ runner.temp }}/crewcheck-play/CrewCheck-signed-release.apk
+            ${{ runner.temp }}/crewcheck-play/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload signed Play Console AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-signed-play-console-aab
+          path: |
+            ${{ runner.temp }}/crewcheck-play/CrewCheck-Play-Console.aab
+            ${{ runner.temp }}/crewcheck-play/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: List Android outputs on failure
+        if: failure()
         shell: bash
         run: |
           find android-wrapper/app/build/outputs -type f 2>/dev/null || true
-          find "$RUNNER_TEMP/crewcheck-android" -type f 2>/dev/null || true
-
-      - name: Upload installable APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CrewCheck-installable-apk
-          path: |
-            ${{ runner.temp }}/crewcheck-android/CrewCheck-installable.apk
-            ${{ runner.temp }}/crewcheck-android/CrewCheck-installable.apk.sha256
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload signed release APK
-        if: steps.signing.outputs.signed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: CrewCheck-release-apk
-          path: |
-            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.apk
-            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.apk.sha256
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload signed release AAB
-        if: steps.signing.outputs.signed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: CrewCheck-release-aab
-          path: |
-            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.aab
-            ${{ runner.temp }}/crewcheck-android/CrewCheck-release.aab.sha256
-          if-no-files-found: error
-          retention-days: 14
+          find "$RUNNER_TEMP/crewcheck-play" -type f 2>/dev/null || true
