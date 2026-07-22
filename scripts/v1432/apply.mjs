@@ -149,7 +149,7 @@ update('server.mjs', (source) => {
     'resposta legada de regulamentação');
   if (!next.includes('regulationSupported: true') || !next.includes("command: 'regulamentacao'") || !next.includes("X-Frame-Options', 'DENY") || !next.includes("url.pathname === '/api/maps/route-health'")) throw new Error('[v1432] Servidor não recebeu a homologação completa.');
   next = next
-    .replace(/version:'\d+\.\d+\.\d+'/g, `version:'${VERSION}'`)
+    .replace(/version\s*:\s*'\d+\.\d+\.\d+'/g, `version: '${VERSION}'`)
     .replaceAll('CrewCheck 13.9.0 - Safe Shell', `CrewCheck ${VERSION} - Safe Shell`)
     .replaceAll('v=13.9.0', `v=${VERSION}`)
     .replaceAll('static-shell-13.9.0', `static-shell-${VERSION}`);
