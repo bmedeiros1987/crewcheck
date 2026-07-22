@@ -84,6 +84,14 @@ function Protected({ children }: { children: ReactNode }) {
   return <TermsGate>{children}</TermsGate>;
 }
 
+function AdminOnly({ children }: { children: ReactNode }) {
+  const user = getStoredUser();
+  const role = String((user as any)?.role || window.localStorage.getItem('crewcheck_role') || '').toLowerCase();
+  const email = String(user?.email || '').toLowerCase();
+  const admin = role.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(email);
+  return admin ? <>{children}</> : <NotFound />;
+}
+
 function CrewCheckGlobalBottomMenu() { return null; }
 
 function Router() {
@@ -91,7 +99,7 @@ function Router() {
     <Route path="/login" component={AuthPage} />
     <Route path="/visitor" component={VisitorAccessPage} />
     <Route path="/share/:token">{(params) => <SharedRosterPage token={params.token} />}</Route>
-    <Route path="/admin/partners">{() => <Protected><AdminPartnerAccountsPage /></Protected>}</Route>
+    <Route path="/admin/partners">{() => <Protected><AdminOnly><AdminPartnerAccountsPage /></AdminOnly></Protected>}</Route>
     <Route path="/telegram">{() => <Protected><TelegramConnectPage /></Protected>}</Route>
     <Route path="/sobre" component={AboutUsPage} />
     <Route path="/about" component={AboutUsPage} />
@@ -131,7 +139,7 @@ export default function App() {
     const applySavedTheme = () => applyCrewThemeMode(loadCrewThemeMode());
     applyDocumentLanguage(); installGlobalStaticTranslations(); applySavedTheme();
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '14.1.1');
+      window.localStorage.setItem('crewcheck_last_loaded_version', '14.2.6');
       if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister()))).catch(() => undefined);
       if ('caches' in window) caches.keys().then((names) => Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name)).map((name) => caches.delete(name)))).catch(() => undefined);
     } catch {}
@@ -173,7 +181,5 @@ export default function App() {
   return <ErrorBoundary>
     <Toaster richColors position={appMode ? "top-center" : "top-right"} />
     <Router /><CrewCheckGlobalBottomMenu />
-    {isAuthenticated() && currentPath !== '/telegram' && <a href="/telegram" aria-label="Conectar Telegram" style={{ position:'fixed', right:18, bottom:28, zIndex:9998, padding:'11px 14px', borderRadius:14, background:'linear-gradient(90deg,#f33aa7,#4acaf2)', color:'#fff', fontWeight:800, textDecoration:'none', boxShadow:'0 12px 30px rgba(15,23,42,.28)' }}>Telegram</a>}
-    {clientAdmin && currentPath !== '/admin/partners' && <a href="/admin/partners" aria-label="Gerenciar contas de parceiros" style={{ position:'fixed', right:18, bottom:86, zIndex:9999, padding:'11px 14px', borderRadius:14, background:'#173b77', color:'#fff', fontWeight:800, textDecoration:'none', boxShadow:'0 12px 30px rgba(15,23,42,.28)' }}>Parceiros</a>}
   </ErrorBoundary>;
 }
