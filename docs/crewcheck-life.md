@@ -6,6 +6,22 @@ O CrewCheck Life é um assistente de rotina para tripulantes. Ele organiza desca
 
 Não é um produto médico. Não diagnostica, não determina aptidão, não substitui avaliação profissional e não substitui os canais oficiais de reporte de fadiga.
 
+## Implementação v14.3.4
+
+A primeira entrega funcional inclui:
+
+1. ativação voluntária com consentimento explícito;
+2. objetivos pessoais de sono, estudo e atividade;
+3. entrada manual que funciona no navegador, Android, iPhone e iPad;
+4. recomendações explicáveis ligadas à próxima programação;
+5. ponte nativa Android para Health Connect;
+6. Samsung Health e Galaxy Watch por meio da sincronização oficial com Health Connect;
+7. interface web preparada para o futuro adaptador Apple HealthKit;
+8. pausa, revogação e exclusão dos dados locais;
+9. manual incorporado ao sistema e tutorial de primeiro acesso ampliado.
+
+Na v14.3.4, o resumo lido do Health Connect permanece no aparelho e **não é enviado ao servidor**. A sincronização futura de qualquer resumo dependerá de finalidade documentada e de um novo consentimento específico.
+
 ## Princípios obrigatórios
 
 1. **Adesão voluntária:** o módulo só é ativado após consentimento explícito.
@@ -26,15 +42,17 @@ Na primeira apresentação do módulo:
 > O recurso é opcional. As informações utilizadas servem exclusivamente para gerar orientações pessoais para você. Não realizamos diagnósticos, publicidade, estatísticas coletivas ou comparação entre usuários.
 
 Ações:
-- Ativar CrewCheck Life
-- Agora não
-- Ler como seus dados são usados
 
-Nenhuma permissão de saúde deve ser solicitada antes da ativação voluntária.
+- Ativar CrewCheck Life;
+- Agora não;
+- Ler como seus dados são usados.
+
+Nenhuma permissão de saúde deve ser solicitada antes da ativação voluntária. O tutorial apenas apresenta a ferramenta e nunca abre a autorização do sistema.
 
 ## Áreas opcionais
 
 O usuário escolhe individualmente:
+
 - descanso e sono;
 - estudos;
 - academia e esportes;
@@ -49,6 +67,7 @@ O usuário escolhe individualmente:
 Somente quando úteis e autorizados:
 
 ### Operacionais
+
 - apresentação e encerramento;
 - quantidade de etapas;
 - atividade na madrugada;
@@ -57,6 +76,7 @@ Somente quando úteis e autorizados:
 - próxima programação.
 
 ### Rotina pessoal
+
 - meta pessoal de sono;
 - tempo para adormecer;
 - tempo de preparação;
@@ -65,43 +85,83 @@ Somente quando úteis e autorizados:
 - compromissos pessoais informados.
 
 ### Integrações de saúde
+
 - sessões e duração do sono;
 - horário de dormir e acordar;
 - cochilos e interrupções;
-- estágios ou pontuação de sono, quando disponíveis;
-- indicador de recuperação fornecido pelo dispositivo;
-- atividade física recente, duração e intensidade aproximada;
+- estágios de sono, quando disponíveis, somente para calcular o resumo;
+- atividade física recente e duração;
+- passos e distância agregados;
 - tendência pessoal de frequência cardíaca de repouso, sem exposição de série bruta.
 
-Não solicitar dados clínicos, diagnósticos, medicamentos, exames, fertilidade, peso, pressão arterial ou outros tipos sem relação direta com o planejamento de rotina.
+Não solicitar dados clínicos, diagnósticos, medicamentos, exames, fertilidade, peso, pressão arterial, glicose ou prontuários.
 
 ## Plataformas
 
 ### Android
-1. Health Connect como integração padrão.
-2. Samsung Health Data SDK como aprimoramento em aparelhos compatíveis.
-3. Entrada manual como fallback completo.
+
+1. Health Connect é a integração padrão, usando a versão estável `androidx.health.connect:connect-client:1.1.0`.
+2. Samsung Health sincroniza sono, atividade e outros dados autorizados com Health Connect. Isso também cobre dados trazidos pelo Galaxy Watch para o Samsung Health.
+3. O usuário escolhe os tipos de dados na tela oficial do Android.
+4. O CrewCheck confere novamente as permissões antes de cada leitura.
+5. A entrada manual permanece como fallback completo.
+6. A comunicação WebView usa o AndroidX WebKit estável `1.14.0`, compatível com o `compileSdk 35` do aplicativo, com `WebViewCompat.addWebMessageListener`; aceita somente `https://crewcheck.online`/`https://www.crewcheck.online` e rejeita mensagens de iframes.
+
+O manifesto solicita somente leitura de sono, passos, distância, exercícios e frequência cardíaca de repouso. Não solicita escrita, histórico ampliado nem leitura em segundo plano nesta primeira entrega.
+
+Antes de publicar o novo AAB, os mesmos tipos precisam ser declarados no formulário de permissões de saúde do Google Play Console e a política mostrada pelo app precisa corresponder à política cadastrada na loja.
+
+Referências oficiais:
+
+- [Health Connect: começar](https://developer.android.com/health-and-fitness/health-connect/get-started)
+- [Health Connect: versões Jetpack](https://developer.android.com/jetpack/androidx/releases/health-connect)
+- [Samsung Health via Health Connect](https://developer.samsung.com/health/health-connect-faq.html)
+- [Ponte JavaScript moderna e restrição por origem](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge)
+- [Riscos da interface WebView legada](https://developer.android.com/privacy-and-security/risks/insecure-webview-native-bridges)
 
 ### iOS
-1. HealthKit.
-2. Entrada manual como fallback completo.
 
-O PWA não deve prometer acesso direto aos repositórios de saúde. A leitura completa depende do aplicativo nativo e das permissões do sistema operacional.
+1. A interface web reconhece o handler nativo `CrewCheckHealthKit`.
+2. O adaptador HealthKit será ativado no aplicativo iOS quando o projeto Xcode, a conta Apple Developer e a capability HealthKit estiverem disponíveis.
+3. O iOS deverá pedir autorização em contexto e somente para sono, passos, distância, atividade e tendência resumida de frequência em repouso.
+4. A entrada manual funciona enquanto o app iOS não for publicado.
+
+Detalhes: [crewcheck-life-ios-healthkit.md](./crewcheck-life-ios-healthkit.md).
+
+O PWA não promete acesso direto aos repositórios de saúde. A leitura completa depende do aplicativo nativo e das permissões do sistema operacional.
+
+## Contrato da ponte nativa
+
+Eventos emitidos para a interface web:
+
+- `crewcheck:health-status`: disponibilidade e quantidade de permissões autorizadas;
+- `crewcheck:health-summary`: resumo agregado local de até 30 dias.
+
+O objeto `AndroidCrewCheckHealth` é instalado antes do carregamento da página por `addWebMessageListener`. A interface web envia JSON por `postMessage`, somente a partir do frame principal e das origens permitidas:
+
+- `{ "action": "status" }`;
+- `{ "action": "requestPermissions", "consentVersion": "1.0", "consentAccepted": true }`;
+- `{ "action": "readSummary", "days": 7, "consentVersion": "1.0", "consentAccepted": true }`;
+- `{ "action": "revokePermissions" }`.
+
+A versão e a confirmação do consentimento são obrigatórias para abrir a autorização e para ler o resumo. O bridge rejeita mensagens maiores que 2 KB, ações desconhecidas, origens não permitidas e qualquer chamada feita por iframe.
 
 ## Motor de rotina
 
 Ordem de prioridade:
+
 1. programação operacional;
 2. deslocamento e preparação;
 3. descanso pessoal desejado;
 4. alimentação;
 5. estudo, atividade física e lazer.
 
-O motor deve buscar janelas úteis sem sacrificar o descanso necessário. Quando não houver janela adequada, deve recomendar não encaixar atividades adicionais.
+O motor deve buscar janelas úteis sem sacrificar o descanso desejado. Quando não houver janela adequada, deve recomendar não encaixar atividades adicionais.
 
 ## Linguagem permitida
 
 Usar:
+
 - rotina favorável;
 - preserve seu descanso;
 - descanso prioritário;
@@ -111,6 +171,7 @@ Usar:
 - sem dados suficientes.
 
 Não usar:
+
 - diagnóstico;
 - apto ou inapto;
 - fadiga clínica;
@@ -120,28 +181,21 @@ Não usar:
 
 ## Transparência da recomendação
 
-Cada orientação deve permitir abrir “Por que estou vendo isso?”, mostrando apenas os fatores utilizados, por exemplo:
+Cada orientação oferece “Por que estou vendo isso?”, mostrando apenas os fatores utilizados, por exemplo:
+
 - apresentação às 05:20;
-- três etapas previstas;
 - meta pessoal de 7h30 de sono;
-- 40 minutos de deslocamento;
-- preferência de estudo após acordar.
+- atividade recente resumida;
+- preferência de estudo;
+- ausência de um horário completo na escala.
 
 ## Exclusão e retenção
 
-- permitir apagar todo o histórico do CrewCheck Life;
-- permitir apagar somente sono, estudos, treinos ou preferências;
+- pausar o CrewCheck Life sem apagar objetivos;
+- revogar as permissões nativas;
+- apagar o resumo trazido do repositório de saúde;
+- apagar todo o consentimento, objetivos e lançamentos locais;
 - não reutilizar dados para publicidade, vendas, estatísticas ou treinamento genérico;
-- dados brutos de saúde devem permanecer no aparelho sempre que tecnicamente possível;
-- o servidor deve receber apenas resumos indispensáveis e autorizados.
+- não copiar dados brutos de saúde para o servidor.
 
-## Primeira entrega funcional
-
-1. consentimento e tela de privacidade;
-2. perfil de rotina e objetivos;
-3. planejamento manual de sono, estudos e treino;
-4. recomendações explicáveis usando escala;
-5. interface de conexão com Health Connect, Samsung Health e Apple Health;
-6. adaptadores nativos separados por plataforma;
-7. exclusão e revogação completas;
-8. testes de regressão para garantir que o CrewCheck funcione sem o módulo ativado.
+O CrewCheck principal continua funcionando normalmente quando o CrewCheck Life está desativado.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, CloudSun, Plane, X } from 'lucide-react';
+import { Bell, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, CloudSun, HeartPulse, Plane, X } from 'lucide-react';
 
 type TourStep = {
   view: string;
@@ -10,14 +10,14 @@ type TourStep = {
   icon: typeof Plane;
 };
 
-const TOUR_SEEN_KEY = 'crewcheck:first-access-tour:v1432:disabled';
-const TOUR_SESSION_KEY = 'crewcheck:first-access-tour:v1432:dismissed';
+const TOUR_SEEN_KEY = 'crewcheck:first-access-tour:v1434:disabled';
+const TOUR_SESSION_KEY = 'crewcheck:first-access-tour:v1434:dismissed';
 
 const STEPS: TourStep[] = [
   {
     view: 'cockpit',
     target: '.cz-brand-row',
-    eyebrow: 'PASSO 1 DE 5',
+    eyebrow: 'PASSO 1 DE 7',
     title: 'Seu cockpit operacional',
     description: 'Aqui você acompanha a próxima programação, alertas, valores e os atalhos que mais usa antes de cada jornada.',
     icon: Plane,
@@ -25,7 +25,7 @@ const STEPS: TourStep[] = [
   {
     view: 'roster',
     target: '.cz-roster-date, .cz-empty-real',
-    eyebrow: 'PASSO 2 DE 5',
+    eyebrow: 'PASSO 2 DE 7',
     title: 'Escala conectada',
     description: 'Importe o PDF oficial para liberar horários, regulamentação, mudanças, diárias, meteorologia e alertas automáticos.',
     icon: CalendarDays,
@@ -33,7 +33,7 @@ const STEPS: TourStep[] = [
   {
     view: 'regulation',
     target: '.cz-regulation-heading',
-    eyebrow: 'PASSO 3 DE 5',
+    eyebrow: 'PASSO 3 DE 7',
     title: 'Corte e fim da jornada',
     description: 'O cálculo usa a programação do dia, mostra o horário do corte e o fim da jornada 30 minutos depois. Todos os campos continuam editáveis.',
     icon: Clock3,
@@ -41,15 +41,31 @@ const STEPS: TourStep[] = [
   {
     view: 'weather',
     target: '.cc-meteo-follow, .cz-panel-head',
-    eyebrow: 'PASSO 4 DE 5',
+    eyebrow: 'PASSO 4 DE 7',
     title: 'Meteorologia acompanhada',
     description: 'Consulte origem e destino e ative acompanhamento. O CrewCheck prioriza mudanças novas e relevantes para evitar excesso de avisos.',
     icon: CloudSun,
   },
   {
+    view: 'life',
+    target: '.cc-life-hero',
+    eyebrow: 'PASSO 5 DE 7',
+    title: 'CrewCheck Life é opcional',
+    description: 'Organize descanso, estudos, atividade física e tempo pessoal. O recurso só é ativado com seu consentimento e não pede permissões de saúde durante o tutorial.',
+    icon: HeartPulse,
+  },
+  {
+    view: 'manual',
+    target: '.cc-manual-center',
+    eyebrow: 'PASSO 6 DE 7',
+    title: 'Manual sempre dentro do sistema',
+    description: 'Consulte o manual completo, abra os PDFs, veja as principais funcionalidades e reinicie este tutorial quando quiser.',
+    icon: BookOpen,
+  },
+  {
     view: 'cockpit',
     target: '.cz-bottom-nav',
-    eyebrow: 'PASSO 5 DE 5',
+    eyebrow: 'PASSO 7 DE 7',
     title: 'Navegação sempre disponível',
     description: 'Use o rodapé para voltar ao cockpit, abrir a escala, revisar alertas, conferir carga ou acessar o menu completo.',
     icon: Bell,

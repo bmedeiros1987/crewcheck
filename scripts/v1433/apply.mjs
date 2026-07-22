@@ -179,3 +179,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1433] CrewCheck ${VERSION}: ${MARKER}, build limpo recuperado, Asaas compatível, CSP Google segura e regulamentação sem horário inventado.`);
+await import('../v1434/apply.mjs');
