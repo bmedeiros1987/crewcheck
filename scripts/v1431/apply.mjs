@@ -94,3 +94,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1431] CrewCheck ${VERSION}: plano gratuito confiável, 1 convidado e Premium com capacidade/automação ampliadas.`);
+await import('../v1432/apply.mjs');
