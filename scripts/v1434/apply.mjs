@@ -216,3 +216,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1434] CrewCheck ${VERSION}: ${MARKER}, Life local-first, Health Connect, manual incorporado e tutorial ampliado.`);
+await import('../v1435/apply.mjs');
