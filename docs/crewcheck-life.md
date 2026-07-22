@@ -105,6 +105,7 @@ Não solicitar dados clínicos, diagnósticos, medicamentos, exames, fertilidade
 3. O usuário escolhe os tipos de dados na tela oficial do Android.
 4. O CrewCheck confere novamente as permissões antes de cada leitura.
 5. A entrada manual permanece como fallback completo.
+6. A comunicação WebView usa o AndroidX WebKit estável `1.14.0`, compatível com o `compileSdk 35` do aplicativo, com `WebViewCompat.addWebMessageListener`; aceita somente `https://crewcheck.online`/`https://www.crewcheck.online` e rejeita mensagens de iframes.
 
 O manifesto solicita somente leitura de sono, passos, distância, exercícios e frequência cardíaca de repouso. Não solicita escrita, histórico ampliado nem leitura em segundo plano nesta primeira entrega.
 
@@ -115,6 +116,8 @@ Referências oficiais:
 - [Health Connect: começar](https://developer.android.com/health-and-fitness/health-connect/get-started)
 - [Health Connect: versões Jetpack](https://developer.android.com/jetpack/androidx/releases/health-connect)
 - [Samsung Health via Health Connect](https://developer.samsung.com/health/health-connect-faq.html)
+- [Ponte JavaScript moderna e restrição por origem](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge)
+- [Riscos da interface WebView legada](https://developer.android.com/privacy-and-security/risks/insecure-webview-native-bridges)
 
 ### iOS
 
@@ -134,15 +137,14 @@ Eventos emitidos para a interface web:
 - `crewcheck:health-status`: disponibilidade e quantidade de permissões autorizadas;
 - `crewcheck:health-summary`: resumo agregado local de até 30 dias.
 
-Métodos Android expostos somente no WebView oficial:
+O objeto `AndroidCrewCheckHealth` é instalado antes do carregamento da página por `addWebMessageListener`. A interface web envia JSON por `postMessage`, somente a partir do frame principal e das origens permitidas:
 
-- `status()`;
-- `refreshStatus()`;
-- `requestPermissions("1.0")`;
-- `readSummary("7", "1.0")`;
-- `revokePermissions()`.
+- `{ "action": "status" }`;
+- `{ "action": "requestPermissions", "consentVersion": "1.0", "consentAccepted": true }`;
+- `{ "action": "readSummary", "days": 7, "consentVersion": "1.0", "consentAccepted": true }`;
+- `{ "action": "revokePermissions" }`.
 
-A versão do consentimento é obrigatória para abrir a autorização e para ler o resumo.
+A versão e a confirmação do consentimento são obrigatórias para abrir a autorização e para ler o resumo. O bridge rejeita mensagens maiores que 2 KB, ações desconhecidas, origens não permitidas e qualquer chamada feita por iframe.
 
 ## Motor de rotina
 

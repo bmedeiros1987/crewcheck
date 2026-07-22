@@ -162,6 +162,16 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const androidBridge = (window as any).AndroidCrewCheckHealth;
   const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;
 
+  function postAndroid(action: string, payload: Record<string, unknown> = {}): boolean {
+    if (!androidBridge?.postMessage) return false;
+    try {
+      androidBridge.postMessage(JSON.stringify({ action, ...payload }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   useEffect(() => {
     const onStatus = (event: Event) => setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
     const onSummary = (event: Event) => {
@@ -171,12 +181,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     };
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
-    if (consent.active && androidBridge) {
-      try {
-        setNativeStatus(parseNativePayload(androidBridge.status?.()) as NativeHealthStatus);
-        androidBridge.refreshStatus?.();
-      } catch {}
-    }
+    if (consent.active && androidBridge?.postMessage) postAndroid('status');
     return () => {
       window.removeEventListener('crewcheck:health-status', onStatus);
       window.removeEventListener('crewcheck:health-summary', onSummary);
@@ -260,21 +265,15 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function connectAndroid() {
-    if (!androidBridge) {
+    if (!postAndroid('requestPermissions', { consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('Abra esta opção no aplicativo Android CrewCheck. No navegador, use o lançamento manual.');
-      return;
-    }
-    try {
-      const accepted = androidBridge.requestPermissions?.('1.0');
-      if (accepted === false) toast.info('O Health Connect precisa estar instalado ou atualizado.');
-    } catch {
-      toast.error('Não consegui abrir a autorização do Health Connect.');
     }
   }
 
   function refreshAndroid() {
-    if (!androidBridge) return toast.info('A atualização automática está disponível no aplicativo Android.');
-    try { androidBridge.readSummary?.('7', '1.0'); } catch { toast.error('Não consegui atualizar o resumo agora.'); }
+    if (!postAndroid('readSummary', { days: 7, consentVersion: '1.0', consentAccepted: consent.active })) {
+      toast.info('A atualização automática está disponível no aplicativo Android.');
+    }
   }
 
   function connectApple() {
@@ -286,10 +285,10 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function revokeNative() {
-    try { androidBridge?.revokePermissions?.(); } catch {}
+    postAndroid('revokePermissions');
     try { appleBridge?.postMessage({ action: 'revokeOrOpenSettings' }); } catch {}
     setNativeSummary({});
-    setNativeStatus({ availability: androidBridge ? 'permission_required' : 'unavailable' });
+    setNativeStatus({ availability: androidBridge?.postMessage ? 'permission_required' : 'unavailable' });
     try { localStorage.removeItem(KEYS.nativeSummary); } catch {}
     toast.success('Resumo local removido. A revogação do sistema foi solicitada quando disponível.');
   }
@@ -303,7 +302,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
   function deleteLife() {
     if (!window.confirm('Apagar consentimento, objetivos e todos os resumos locais do CrewCheck Life neste aparelho?')) return;
-    try { androidBridge?.revokePermissions?.(); } catch {}
+    postAndroid('revokePermissions');
     Object.values(KEYS).forEach((key) => { try { localStorage.removeItem(key); } catch {} });
     setConsent({ active: false, acceptedAt: '', policyVersion: '1.0' });
     setProfile(DEFAULT_PROFILE);

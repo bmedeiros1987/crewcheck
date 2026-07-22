@@ -43,16 +43,19 @@ if (exists('android-wrapper/app/src/main/AndroidManifest.xml')) {
   const gradle = read('android-wrapper/app/build.gradle');
   const bridge = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt');
   check('Health Connect estável instalado', gradle.includes('connect-client:1.1.0'));
+  check('AndroidX WebKit compatível com compileSdk 35 instalado', gradle.includes('androidx.webkit:webkit:1.14.0'));
   check('Kotlin e BOM alinhados', gradle.includes('kotlin-bom:2.0.21'));
   check('permissões mínimas declaradas', manifest.includes('READ_SLEEP') && manifest.includes('READ_STEPS') && manifest.includes('READ_EXERCISE'));
   check('sem permissão clínica ou de histórico amplo', !/READ_(?:BLOOD|GLUCOSE|WEIGHT|BODY|MEDICAL)/.test(manifest) && !manifest.includes('READ_HEALTH_DATA_HISTORY'));
   check('política Health Connect declarada', manifest.includes('ACTION_SHOW_PERMISSIONS_RATIONALE') && manifest.includes('VIEW_PERMISSION_USAGE'));
-  check('ponte nativa possui interface controlada', bridge.includes('@JavascriptInterface') && bridge.includes('CONSENT_VERSION'));
-  check('resumo sem série bruta', bridge.includes('restingHeartRateAverage') && !bridge.includes('heartRateSamples'));
+  check('ponte nativa possui origem restrita', bridge.includes('WebViewCompat.addWebMessageListener') && bridge.includes('TRUSTED_ORIGINS') && bridge.includes('isMainFrame') && !bridge.includes('@JavascriptInterface'));
+  check('consentimento também é validado no Android', bridge.includes('CONSENT_VERSION') && bridge.includes('consentAccepted'));
+  check('resumo sem série bruta', bridge.includes('RestingHeartRateRecord.BPM_AVG') && !bridge.includes('heartRateSamples'));
+  check('constantes estáveis de sono', bridge.includes('STAGE_TYPE_OUT_OF_BED') && !bridge.includes('STAGE_TYPE_AWAKE_OUT_OF_BED'));
 }
 if (exists('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java')) {
   const activity = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
-  check('ponte registrada somente no app nativo', activity.includes('AndroidCrewCheckHealth') && activity.includes('healthBridge.handleActivityResult'));
+  check('ponte registrada somente no app nativo', activity.includes('healthBridge.install()') && activity.includes('healthBridge.handleActivityResult') && !activity.includes('addJavascriptInterface(healthBridge'));
 }
 
 console.log(`CrewCheck v14.3.4: ${passed} verificações do CrewCheck Life aprovadas.`);

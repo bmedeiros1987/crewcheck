@@ -3,7 +3,6 @@ package com.crewcheck.app
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
@@ -16,6 +15,8 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,13 +27,12 @@ import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import kotlin.math.roundToInt
 
 /**
  * Ponte local-first do CrewCheck Life.
  *
- * Lê somente resumos autorizados do Health Connect. Nenhum registro bruto é enviado ao servidor,
- * e a autorização só pode ser aberta depois que a interface web informa a versão do consentimento.
+ * Usa WebMessageListener com allowlist de origem e rejeita mensagens de iframes. Lê somente
+ * resumos autorizados do Health Connect; nenhum registro bruto é enviado ao servidor.
  */
 class CrewCheckHealthBridge(
     private val activity: Activity,
@@ -40,11 +40,14 @@ class CrewCheckHealthBridge(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val permissionContract by lazy { PermissionController.createRequestPermissionResultContract() }
+    private var installed = false
 
     companion object {
         const val REQUEST_CODE = 4747
         private const val CONSENT_VERSION = "1.0"
         private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
+        private const val JS_OBJECT_NAME = "AndroidCrewCheckHealth"
+        private val TRUSTED_ORIGINS = setOf("https://crewcheck.online", "https://www.crewcheck.online")
 
         private val PERMISSIONS = setOf(
             HealthPermission.getReadPermission(SleepSessionRecord::class),
@@ -54,6 +57,47 @@ class CrewCheckHealthBridge(
             HealthPermission.getReadPermission(RestingHeartRateRecord::class),
         )
     }
+
+    /** Deve ser chamado antes de WebView.loadUrl(). */
+    fun install(): Boolean {
+        if (installed) return true
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return false
+        WebViewCompat.addWebMessageListener(webView, JS_OBJECT_NAME, TRUSTED_ORIGINS) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+            if (!isMainFrame || !isTrustedOrigin(sourceOrigin)) return@addWebMessageListener
+            handleMessage(message.data)
+        }
+        installed = true
+        return true
+    }
+
+    private fun isTrustedOrigin(origin: Uri): Boolean {
+        if (!origin.scheme.equals("https", ignoreCase = true)) return false
+        if (origin.port != -1 && origin.port != 443) return false
+        return when (origin.host?.lowercase()) {
+            "crewcheck.online", "www.crewcheck.online" -> true
+            else -> false
+        }
+    }
+
+    private fun handleMessage(raw: String?) {
+        if (raw.isNullOrBlank() || raw.length > 2048) return
+        try {
+            val request = JSONObject(raw)
+            when (request.optString("action")) {
+                "status" -> refreshStatus()
+                "requestPermissions" -> requestPermissions(request)
+                "readSummary" -> readSummary(request)
+                "revokePermissions" -> revokePermissions()
+                else -> dispatchError("Ação Health Connect não reconhecida.")
+            }
+        } catch (_: Exception) {
+            dispatchError("Mensagem Health Connect inválida.")
+        }
+    }
+
+    private fun hasCurrentConsent(request: JSONObject): Boolean =
+        request.optString("consentVersion") == CONSENT_VERSION && request.optBoolean("consentAccepted", false)
 
     private fun clientOrNull(): HealthConnectClient? =
         if (HealthConnectClient.getSdkStatus(activity) == HealthConnectClient.SDK_AVAILABLE) {
@@ -74,6 +118,7 @@ class CrewCheckHealthBridge(
             .put("requiredCount", PERMISSIONS.size)
             .put("samsungViaHealthConnect", true)
             .put("localOnly", true)
+            .put("originRestricted", true)
             .put("message", when (availability) {
                 "available" -> "Health Connect disponível. Permissões ainda precisam ser conferidas."
                 "update_required" -> "Instale ou atualize o Health Connect para continuar."
@@ -81,29 +126,24 @@ class CrewCheckHealthBridge(
             })
     }
 
-    @JavascriptInterface
-    fun status(): String = availabilityJson().toString()
-
-    @JavascriptInterface
-    fun refreshStatus(): Boolean {
-        val client = clientOrNull() ?: run {
+    private fun refreshStatus() {
+        val client = clientOrNull()
+        if (client == null) {
             dispatch("crewcheck:health-status", availabilityJson())
-            return false
+            return
         }
         scope.launch { dispatchPermissionStatus(client) }
-        return true
     }
 
-    @JavascriptInterface
-    fun requestPermissions(consentVersion: String): Boolean {
-        if (consentVersion != CONSENT_VERSION) {
+    private fun requestPermissions(request: JSONObject) {
+        if (!hasCurrentConsent(request)) {
             dispatch("crewcheck:health-status", availabilityJson().put("ok", false).put("message", "Ative o CrewCheck Life antes de autorizar dados."))
-            return false
+            return
         }
         if (clientOrNull() == null) {
             openProviderUpdateIfNeeded()
             dispatch("crewcheck:health-status", availabilityJson())
-            return false
+            return
         }
         activity.runOnUiThread {
             try {
@@ -113,21 +153,17 @@ class CrewCheckHealthBridge(
                 dispatch("crewcheck:health-status", availabilityJson().put("ok", false).put("message", error.message ?: "Não foi possível abrir as permissões."))
             }
         }
-        return true
     }
 
-    @JavascriptInterface
-    fun readSummary(daysText: String, consentVersion: String): Boolean {
-        if (consentVersion != CONSENT_VERSION) return false
-        val client = clientOrNull() ?: return false
-        val days = daysText.toIntOrNull()?.coerceIn(1, 30) ?: 7
+    private fun readSummary(request: JSONObject) {
+        if (!hasCurrentConsent(request)) return
+        val client = clientOrNull() ?: return
+        val days = request.optInt("days", 7).coerceIn(1, 30)
         scope.launch { readSummaryInternal(client, days) }
-        return true
     }
 
-    @JavascriptInterface
-    fun revokePermissions(): Boolean {
-        val client = clientOrNull() ?: return false
+    private fun revokePermissions() {
+        val client = clientOrNull() ?: return
         scope.launch {
             try {
                 client.permissionController.revokeAllPermissions()
@@ -136,7 +172,6 @@ class CrewCheckHealthBridge(
                 dispatchError("Não foi possível revogar as permissões: ${error.message ?: "erro desconhecido"}")
             }
         }
-        return true
     }
 
     fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
@@ -184,6 +219,7 @@ class CrewCheckHealthBridge(
                 .put("periodDays", days)
                 .put("capturedAt", end.toString())
                 .put("localOnly", true)
+                .put("originRestricted", true)
                 .put("samsungViaHealthConnect", true)
 
             if (granted.contains(HealthPermission.getReadPermission(StepsRecord::class))) {
@@ -213,7 +249,7 @@ class CrewCheckHealthBridge(
                     val awakeTypes = setOf(
                         SleepSessionRecord.STAGE_TYPE_AWAKE,
                         SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED,
-                        SleepSessionRecord.STAGE_TYPE_AWAKE_OUT_OF_BED,
+                        SleepSessionRecord.STAGE_TYPE_OUT_OF_BED,
                     )
                     val totalMinutes = Duration.between(latest.startTime, latest.endTime).toMinutes()
                     val awakeMinutes = latest.stages
@@ -228,18 +264,12 @@ class CrewCheckHealthBridge(
             }
 
             if (granted.contains(HealthPermission.getReadPermission(RestingHeartRateRecord::class))) {
-                val response = client.readRecords(ReadRecordsRequest(
-                    recordType = RestingHeartRateRecord::class,
-                    timeRangeFilter = range,
-                    ascendingOrder = false,
-                    pageSize = 100,
-                ))
-                val values = response.records.map { it.beatsPerMinute.toDouble() }.filter { it > 0 }
-                summary.put("restingHeartRateAverage", if (values.isEmpty()) JSONObject.NULL else values.average().roundToInt())
+                val response = client.aggregate(AggregateRequest(setOf(RestingHeartRateRecord.BPM_AVG), range))
+                summary.put("restingHeartRateAverage", response[RestingHeartRateRecord.BPM_AVG] ?: JSONObject.NULL)
             }
 
             dispatch("crewcheck:health-summary", summary)
-        } catch (security: SecurityException) {
+        } catch (_: SecurityException) {
             dispatch("crewcheck:health-status", availabilityJson().put("availability", "permission_required").put("message", "Uma permissão foi revogada. Revise o Health Connect."))
         } catch (error: Exception) {
             dispatchError("Não foi possível atualizar o resumo local: ${error.message ?: "erro desconhecido"}")
@@ -269,7 +299,9 @@ class CrewCheckHealthBridge(
     private fun dispatch(eventName: String, payload: JSONObject) {
         val script = "(function(){try{var detail=${payload};window.__crewcheckHealth=detail;window.dispatchEvent(new CustomEvent(${JSONObject.quote(eventName)},{detail:detail}));}catch(e){}})();"
         activity.runOnUiThread {
-            try { if (!activity.isFinishing) webView.evaluateJavascript(script, null) } catch (_: Exception) {}
+            try {
+                if (!activity.isFinishing && !activity.isDestroyed) webView.evaluateJavascript(script, null)
+            } catch (_: Exception) {}
         }
     }
 

@@ -101,8 +101,15 @@ update('android-wrapper/app/build.gradle', (source) => {
   if (!next.includes('androidx.health.connect:connect-client:1.1.0')) {
     next = required(next,
       '    implementation "com.android.billingclient:billing:$billing_version"',
-      '    implementation "com.android.billingclient:billing:$billing_version"\n    implementation "androidx.health.connect:connect-client:1.1.0"\n    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"',
+      '    implementation "com.android.billingclient:billing:$billing_version"\n    implementation "androidx.health.connect:connect-client:1.1.0"\n    implementation "androidx.webkit:webkit:1.14.0"\n    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"',
       'dependências Health Connect');
+  }
+  next = next.replace(/androidx\.webkit:webkit:1\.16\.0/g, 'androidx.webkit:webkit:1.14.0');
+  if (!next.includes('androidx.webkit:webkit:1.14.0')) {
+    next = required(next,
+      '    implementation "androidx.health.connect:connect-client:1.1.0"',
+      '    implementation "androidx.health.connect:connect-client:1.1.0"\n    implementation "androidx.webkit:webkit:1.14.0"',
+      'ponte WebView com allowlist de origem');
   }
   return next
     .replace(/org\.jetbrains\.kotlin:kotlin-bom:[^"']+/, 'org.jetbrains.kotlin:kotlin-bom:2.0.21')
@@ -135,14 +142,16 @@ update('android-wrapper/app/src/main/AndroidManifest.xml', (source) => {
 }, { optional: true });
 
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', (source) => {
-  let next = source;
+  let next = source.replace(
+    '        healthBridge = new CrewCheckHealthBridge(this, webView);\n        webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth");',
+    '        healthBridge = new CrewCheckHealthBridge(this, webView);\n        healthBridge.install();');
   next = required(next,
     '    private CrewCheckBillingBridge billingBridge;',
     '    private CrewCheckBillingBridge billingBridge;\n    private CrewCheckHealthBridge healthBridge;',
     'campo da ponte Health Connect');
   next = required(next,
     '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
-    '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        healthBridge = new CrewCheckHealthBridge(this, webView);\n        webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth");\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
+    '        webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");\n        healthBridge = new CrewCheckHealthBridge(this, webView);\n        healthBridge.install();\n        billingBridge = new CrewCheckBillingBridge(this, webView);',
     'registro da ponte Health Connect');
   next = required(next,
     '        super.onActivityResult(requestCode, resultCode, data);\n        if (requestCode == FILE_CHOOSER_REQUEST_CODE)',
