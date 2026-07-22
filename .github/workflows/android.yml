@@ -79,23 +79,26 @@ jobs:
           grep -Fq 'private CrewCheckHealthBridge healthBridge;' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'healthBridge.install();' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'webView.addJavascriptInterface(healthBridge, "AndroidCrewCheckHealth");' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          grep -Fq 'public String appVersion()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'public String healthBridgePing()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'public boolean healthBridgePostMessage(final String raw)' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          grep -Fq 'window.CrewCheckHealth={' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq '@JavascriptInterface' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'fun ping(): String = "crewcheck-health-v1"' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'fun postMessage(raw: String?)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'function getAndroidBridge()' client/src/components/v1434/CrewCheckLifeView.tsx
-          grep -Fq 'native.healthBridgePostMessage' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'const stable = (window as any).CrewCheckHealth' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'native.healthBridgePing()' client/src/components/v1434/CrewCheckLifeView.tsx
           grep -Fq 'window.setInterval' client/src/components/v1434/CrewCheckLifeView.tsx
 
       - name: Verify public version before build
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const p=require('./package.json'); if(p.version!=='14.3.7') throw new Error('Expected package version 14.3.7, got '+p.version)"
-          grep -Fq "version: '14.3.7'" server.mjs
-          grep -Fq 'versionName "14.3.7"' android-wrapper/app/build.gradle
-          grep -Fq 'versionCode 140307' android-wrapper/app/build.gradle
+          node -e "const p=require('./package.json'); if(p.version!=='14.3.8') throw new Error('Expected package version 14.3.8, got '+p.version)"
+          grep -Fq "version: '14.3.8'" server.mjs
+          grep -Fq 'versionName "14.3.8"' android-wrapper/app/build.gradle
+          grep -Fq 'versionCode 140308' android-wrapper/app/build.gradle
           grep -Fq 'crewcheckLocationReplySender' server.mjs
           grep -Fq 'crewcheckSilentLocation' server.mjs
           grep -Fq 'crewcheckTelegramUpdateClaim(update)' server.mjs
@@ -104,7 +107,7 @@ jobs:
         run: npx vite build
 
       - name: Run final release regression
-        run: node scripts/regression-v14-3-7-health-bridge-fallback.mjs
+        run: node scripts/regression-v14-3-8-health-webview-facade.mjs
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -166,8 +169,9 @@ jobs:
           grep -Fq 'CrewCheckHealthBridge' "$inspect_dir/dex-strings.txt"
           grep -Fq 'crewcheck-health-v1' "$inspect_dir/dex-strings.txt"
           grep -Fq 'healthBridgePostMessage' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'postMessage' "$inspect_dir/dex-strings.txt"
-          echo 'Health Connect direta e fallback encontradas dentro do APK Release.'
+          grep -Fq 'window.CrewCheckHealth' "$inspect_dir/dex-strings.txt"
+          grep -Fq 'appVersion' "$inspect_dir/dex-strings.txt"
+          echo 'Health Connect direta, fallback e fachada JavaScript encontradas dentro do APK Release.'
 
       - name: Verify and stage signed artifacts
         shell: bash
