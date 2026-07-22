@@ -47,8 +47,26 @@ jobs:
           set -euo pipefail
           node scripts/v139/apply.mjs
           node scripts/v1424/apply.mjs
-          sed -i "s/version '8.7.3'/version '8.11.1'/g" scripts/v1434/apply.mjs
           node scripts/v1433/apply.mjs
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('android-wrapper/build.gradle')
+          text = root.read_text(encoding='utf-8')
+          import re
+          text = re.sub(
+              r"id 'com\.android\.application' version '[^']+' apply false",
+              "id 'com.android.application' version '8.11.1' apply false",
+              text,
+              count=1,
+          )
+          root.write_text(text, encoding='utf-8')
+
+          app = Path('android-wrapper/app/build.gradle')
+          text = app.read_text(encoding='utf-8')
+          text = re.sub(r'compileSdk\s+\d+', 'compileSdk 36', text, count=1)
+          app.write_text(text, encoding='utf-8')
+          PY
 
       - name: Verify public version before build
         shell: bash
@@ -58,6 +76,8 @@ jobs:
           grep -Fq "version: '14.3.6'" server.mjs
           grep -Fq 'versionName "14.3.6"' android-wrapper/app/build.gradle
           grep -Fq 'versionCode 140306' android-wrapper/app/build.gradle
+          grep -Fq "id 'com.android.application' version '8.11.1' apply false" android-wrapper/build.gradle
+          grep -Eq '^\s*compileSdk 36$' android-wrapper/app/build.gradle
           grep -Fq 'crewcheckLocationReplySender' server.mjs
           grep -Fq 'crewcheckSilentLocation' server.mjs
           grep -Fq 'crewcheckTelegramUpdateClaim(update)' server.mjs
