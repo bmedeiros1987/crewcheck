@@ -1,0 +1,78 @@
+const conciergeRegulationB1 = [
+  { from: 360, to: 419, duty: [11, 11, 10, 9, 9], flight: [9, 9, 8, 8, 8] },
+  { from: 420, to: 479, duty: [13, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
+  { from: 480, to: 719, duty: [13, 13, 12, 11, 10], flight: [10, 9.5, 9, 9, 8] },
+  { from: 720, to: 839, duty: [12, 12, 11, 10, 9], flight: [9.5, 9, 9, 8, 8] },
+  { from: 840, to: 959, duty: [11, 11, 10, 9, 9], flight: [9, 9, 8, 8, 8] },
+  { from: 960, to: 1079, duty: [10, 10, 9, 9, 9], flight: [8, 8, 8, 8, 8] },
+  { from: 1080, to: 1799, duty: [9, 9, 9, 9, 9], flight: [8, 8, 7, 7, 7] },
+];
+function conciergeRegulationSectorIndex(sectors = 1) {
+  if (sectors <= 2) return 0;
+  if (sectors <= 4) return 1;
+  if (sectors === 5) return 2;
+  if (sectors === 6) return 3;
+  return 4;
+}
+function conciergeRegulationClock(startMinutes, elapsedMinutes) {
+  const total = startMinutes + elapsedMinutes;
+  const day = Math.floor(total / 1440);
+  const minuteOfDay = ((total % 1440) + 1440) % 1440;
+  const value = `${String(Math.floor(minuteOfDay / 60)).padStart(2, '0')}:${String(minuteOfDay % 60).padStart(2, '0')}`;
+  return day ? `${value} +${day}d` : value;
+}
+function conciergeRegulationForRecord(record) {
+  if (!record) return { status: 'invalid', message: 'Programação não localizada.' };
+  const code = String(record.code || record.day?.pairingCode || record.day?.type || '').toUpperCase();
+  const sectors = Math.max(1, Math.min(9, Number(record.legs?.length || 1)));
+  if (/^(ASB|RES|RSV|HSB|HSBE)$/.test(code) && !record.legs?.length) {
+    return { status: 'waiting', code, sectors, message: 'Aguardando acionamento' };
+  }
+  const startText = conciergePresentationTime(record) || record.startTime;
+  const match = String(startText || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return { status: 'invalid', code, sectors, message: 'Apresentação a confirmar.' };
+  const startMinutes = Number(match[1]) * 60 + Number(match[2]);
+  const normalizedStart = startMinutes < 360 ? startMinutes + 1440 : startMinutes;
+  const row = conciergeRegulationB1.find((item) => normalizedStart >= item.from && normalizedStart <= item.to);
+  if (!row) return { status: 'invalid', code, sectors, message: 'Limite a confirmar.' };
+  const index = conciergeRegulationSectorIndex(sectors);
+  const dutyLimitMinutes = row.duty[index] * 60;
+  return {
+    status: 'ready',
+    code,
+    sectors,
+    startText,
+    dutyLimitMinutes,
+    flightLimitMinutes: row.flight[index] * 60,
+    cutoffTime: conciergeRegulationClock(startMinutes, dutyLimitMinutes - 30),
+    dutyEndTime: conciergeRegulationClock(startMinutes, dutyLimitMinutes),
+  };
+}
+function conciergeRegulationReply(snapshot) {
+  const roster = snapshot?.roster;
+  if (!roster?.days?.length) return 'Ainda não tenho uma escala ativa. Envie o PDF ou sincronize a escala pelo CrewCheck para calcular a regulamentação do dia.';
+  const todayKey = conciergeDateKey(new Date());
+  const records = conciergeProgramRecords(roster).filter((record) => conciergeRecordDateKey(record) === todayKey);
+  if (!records.length) return 'Regulamentação de hoje: nenhuma programação publicada. Abra o cálculo manual no CrewCheck para simular outra data.';
+  const lines = ['Regulamentação de hoje'];
+  for (const record of records) {
+    const result = conciergeRegulationForRecord(record);
+    lines.push('', `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}`);
+    if (result.status === 'waiting') {
+      lines.push('Aguardando acionamento.', 'O corte e o fim da jornada serão calculados quando o início operacional for confirmado.');
+      continue;
+    }
+    if (result.status !== 'ready') {
+      lines.push(result.message || 'Não há dados suficientes para calcular agora.');
+      continue;
+    }
+    lines.push(
+      `Apresentação: ${result.startText} · ${result.sectors} etapa(s)`,
+      `Horário do corte: ${result.cutoffTime}`,
+      `Fim da jornada: ${result.dutyEndTime} (30 min após o corte)`,
+      `Limite calculado de jornada: ${Math.floor(result.dutyLimitMinutes / 60)}h${String(result.dutyLimitMinutes % 60).padStart(2, '0')}`,
+    );
+  }
+  lines.push('', 'Premissa automática: Tabela B.1, tripulação mínima/simples e tripulante aclimatizado. Se o estado de aclimatação for desconhecido, reduza 1 hora. Confirme ACT/CCT, RBAC 117, SGRF/manual aprovado e os dados efetivamente realizados.');
+  return lines.join('\n');
+}
