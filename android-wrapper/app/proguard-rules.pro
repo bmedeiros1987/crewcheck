@@ -12,6 +12,7 @@
 -keep class com.crewcheck.app.MainActivity$CrewCheckIFlightBridge { *; }
 -keep class com.crewcheck.app.MainActivity$CrewCheckNativeBridge { *; }
 -keep class com.crewcheck.app.MainActivity$CrewCheckIFlightPortalBridge { *; }
+-keep class com.crewcheck.app.CrewCheckHealthBridge { *; }
 
 # Componentes Android declarados no Manifest.
 -keep class com.crewcheck.app.MainActivity { *; }
