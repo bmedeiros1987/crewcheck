@@ -22,6 +22,7 @@ const regulation = read('client/src/components/v1432/ManualRegulationView.tsx');
 const partners = read('client/src/pages/AdminPartnerAccountsPage.tsx');
 const app = read('client/src/App.tsx');
 const auth = read('client/src/pages/AuthPage.tsx');
+const apply1432 = read('scripts/v1432/apply.mjs');
 
 check('rodapé fora do contêiner rolável', home.includes('createPortal(<nav className="cz-bottom-nav"') && home.includes('</nav>, document.body)'));
 check('rodapé iPad sem translate horizontal', css.includes('@media (max-width:1180px)') && css.includes('body > .cz-bottom-nav') && css.includes('transform: none !important'));
@@ -36,7 +37,8 @@ check('foco de teclado visível', css.includes(':focus-visible'));
 check('modo demonstração com escala fictícia', home.includes('function buildCrewCheckDemoRoster') && home.includes('ESCALA FICTÍCIA CREWCHECK'));
 check('demonstração separada da escala real', home.includes("sessionStorage.getItem('crewcheck_demo_active')") && home.includes("source: 'Demonstração fictícia CrewCheck'"));
 check('versão visual unificada', app.includes("crewcheck_last_loaded_version', '14.3.2'") && auth.includes('data-version="14.3.2"') && auth.includes('CREWCHECK V14.3.2'));
-check('versão do backend unificada', server.includes("version:'14.3.2'") && !server.includes("version:'14.1.7'"));
+check('versão do backend unificada', server.includes("version: '14.3.2'") && !server.includes("version:'14.1.7'") && !server.includes("version: '14.2.7'"));
+check('preparador substitui versão com ou sem espaços', apply1432.includes("version\\s*:\\s*'\\d+\\.\\d+\\.\\d+'"));
 
 check('tutorial de primeiro acesso instalado', home.includes('<FirstAccessTour') && main.includes('v1432/homologation.css'));
 check('tutorial não bloqueante', css.includes('pointer-events: none') && tour.includes('Explorar depois'));
