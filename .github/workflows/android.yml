@@ -48,21 +48,31 @@ jobs:
           node scripts/v139/apply.mjs
           node scripts/v1424/apply.mjs
 
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = 'scripts/v1434/apply.mjs';
-          let source = fs.readFileSync(path, 'utf8');
-          const oldBlock = /update\('android-wrapper\/build\.gradle',[\s\S]*?'plugin Kotlin Android'\), \{ optional: true \}\);/;
-          const newBlock = `update('android-wrapper/build.gradle', (source) => {
-            if (source.includes("id 'org.jetbrains.kotlin.android'")) return source;
-            const androidPlugin = /^(\\s*)id 'com\\.android\\.application' version '[^']+' apply false\\s*$/m;
-            if (!androidPlugin.test(source)) throw new Error('[v1434] Âncora não encontrada: plugin Android base');
-            return source.replace(androidPlugin, (line, indent) => \`${'${line}'}\\n${'${indent}'}id 'org.jetbrains.kotlin.android' version '2.0.21' apply false\`);
-          }, { optional: true });`;
-          if (!oldBlock.test(source)) throw new Error('Bloco legado do plugin Kotlin não encontrado em scripts/v1434/apply.mjs');
-          source = source.replace(oldBlock, newBlock);
-          fs.writeFileSync(path, source, 'utf8');
-          NODE
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('android-wrapper/build.gradle')
+          source = path.read_text(encoding='utf-8')
+          source = re.sub(
+              r"id 'com\.android\.application' version '[^']+' apply false",
+              "id 'com.android.application' version '8.7.3' apply false",
+              source,
+              count=1,
+          )
+          source = re.sub(
+              r"\n\s*id 'org\.jetbrains\.kotlin\.android' version '[^']+' apply false",
+              '',
+              source,
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          grep -Fq "id 'com.android.application' version '8.7.3' apply false" android-wrapper/build.gradle
+          if grep -Fq "id 'org.jetbrains.kotlin.android'" android-wrapper/build.gradle; then
+            echo '::error::Plugin Kotlin deveria estar ausente antes do patch v1434.'
+            exit 1
+          fi
 
           node scripts/v1433/apply.mjs
 
