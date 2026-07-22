@@ -41,8 +41,13 @@ jobs:
       - name: Install web dependencies
         run: npm ci || npm install
 
-      - name: Apply CrewCheck v14.3.3 release recovery
-        run: node scripts/v1433/apply.mjs
+      - name: Prepare canonical CrewCheck sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs
+          node scripts/v1424/apply.mjs
+          node scripts/v1433/apply.mjs
 
       - name: Verify public version before build
         shell: bash
@@ -52,6 +57,9 @@ jobs:
           grep -Fq "version: '14.3.3'" server.mjs
           grep -Fq 'versionName "14.3.3"' android-wrapper/app/build.gradle
           grep -Fq 'versionCode 140303' android-wrapper/app/build.gradle
+          grep -Fq 'crewcheckLocationReplySender' server.mjs
+          grep -Fq 'crewcheckSilentLocation' server.mjs
+          grep -Fq 'crewcheckTelegramUpdateClaim(update)' server.mjs
 
       - name: Build prepared web sources
         run: npx vite build
