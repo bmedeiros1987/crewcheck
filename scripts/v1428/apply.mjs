@@ -78,7 +78,7 @@ export default function Home() {`,
       let auditImport = false;
       if (!decision.ok) {
         const adminAudit = crewcheckAdminAuditAllowed() && window.confirm(
-          \`${'${decision.toastText || "A escala não corresponde ao perfil ativo."}'}\\n\\nImportar somente em Modo Auditoria? Nenhum alerta, Telegram, calendário, despertador ou sincronização será disparado.\`,
+          \`${'${decision.toastText || "A escala não corresponde ao perfil ativo."}'}\n\nImportar somente em Modo Auditoria? Nenhum alerta, Telegram, calendário, despertador ou sincronização será disparado.\`,
         );
         if (!adminAudit) {
           toast.message(decision.toastText || 'Importação cancelada.');
@@ -135,3 +135,4 @@ update('package.json', (source) => {
 });
 
 console.log('[v1428] Protected admin roster audit mode enabled.');
+await import('../v1429/apply.mjs');
