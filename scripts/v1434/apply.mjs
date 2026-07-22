@@ -115,10 +115,12 @@ update('server.mjs', (source) => source
   .replace(/v=\d+\.\d+\.\d+/g, `v=${VERSION}`)
   .replace(/static-shell-\d+\.\d+\.\d+/g, `static-shell-${VERSION}`));
 
-update('android-wrapper/build.gradle', (source) => required(source,
-  "id 'com.android.application' version '8.7.3' apply false",
-  "id 'com.android.application' version '8.7.3' apply false\n    id 'org.jetbrains.kotlin.android' version '2.0.21' apply false",
-  'plugin Kotlin Android'), { optional: true });
+update('android-wrapper/build.gradle', (source) => {
+  if (source.includes("id 'org.jetbrains.kotlin.android'")) return source;
+  const androidPlugin = /^(\s*)id 'com\.android\.application' version '[^']+' apply false\s*$/m;
+  if (!androidPlugin.test(source)) throw new Error('[v1434] Âncora não encontrada: plugin Android base');
+  return source.replace(androidPlugin, (line, indent) => `${line}\n${indent}id 'org.jetbrains.kotlin.android' version '2.0.21' apply false`);
+}, { optional: true });
 
 update('android-wrapper/app/build.gradle', (source) => {
   let next = source;
