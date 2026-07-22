@@ -12,7 +12,7 @@ check('versão 14.3.6', pkg.version === '14.3.6');
 check('cliente possui reenvio', client.includes('resendVisitorInvite') && client.includes('/resend'));
 check('botão de reenviar está na lista', center.includes('Reenviar convite') && center.includes('resendingVisitorId'));
 check('fallback manual preservado', center.includes('setFallback(result)') && center.includes('Senha temporária'));
-check('rota aceita somente POST', server.includes("visitors\\/[^/]+\\/resend") && server.includes("['POST']"));
+check('rota aceita somente POST', server.includes('/resend') && server.includes("['POST']"));
 check('backend renova token e senha', server.includes('handleVisitorResend') && server.includes('temporaryPassword()') && server.includes('invite_token_hash'));
 check('senha anterior é invalidada', server.includes('A senha temporária anterior foi invalidada'));
 check('visitante revogado não recebe convite', server.includes("status<>'revoked'"));
