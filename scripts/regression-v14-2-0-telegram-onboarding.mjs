@@ -9,11 +9,14 @@ function check(condition, message) {
 }
 
 check(server.includes('conciergeOnboardingIsOperationalCommand'), 'Onboarding guard not applied to server.');
+check(server.includes('conciergeOnboardingLooksLikeName'), 'Plausible-name guard not applied.');
+check(server.includes("return conciergeCancelOnboarding(profile, snapshot, '', false)"), 'First operational command must fall through without requiring repetition.');
 check(server.includes('conciergeOnboardingExpired'), 'Onboarding expiration not applied.');
 check(server.includes('A configuração de nomes expirou'), 'Expiration response missing.');
 check(server.includes('Todas as etapas previstas foram concluídas'), 'Post-duty rest response missing.');
 check(server.includes('conciergeRestAfterLastProgram'), 'Rest resolver missing.');
 check(server.includes("/^\\/(?:cancelar|sair)"), 'Explicit cancel command missing.');
+check(server.includes("/[?¿]|\\b(?:qual|quando|onde|como|quanto|quantos|que horas"), 'Natural-language and voice-transcription guard missing.');
 check(helpers.includes('conciergeIdentityFlow'), 'Premium helpers source missing.');
 check(human.includes('/cancelar'), 'Concierge settings guidance missing cancel command.');
-console.log('CrewCheck v14.2.0 — Telegram onboarding guard and post-duty rest: OK');
+console.log('CrewCheck v14.2.0 — Telegram onboarding guard, first-command fallthrough and post-duty rest: OK');
