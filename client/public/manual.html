@@ -4,45 +4,55 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Manual CrewCheck v11</title>
+  <title>Manual CrewCheck v14.3.4</title>
   <style>
-    :root{color-scheme:light dark;--bg:#061426;--card:#0b2038;--ink:#f8fafc;--muted:#cbd5e1;--cyan:#67e8f9;--blue:#38bdf8;--violet:#c4b5fd;--emerald:#86efac;--line:#27415f}
-    *{box-sizing:border-box}body{font-family:Inter,Arial,sans-serif;margin:0;background:radial-gradient(circle at 15% 0%,rgba(56,189,248,.22),transparent 28%),linear-gradient(180deg,#061426,#081c32);color:var(--ink)}
+    :root{color-scheme:light dark;--bg:#061426;--card:#0b2038;--ink:#f8fafc;--muted:#cbd5e1;--cyan:#67e8f9;--blue:#60a5fa;--violet:#c4b5fd;--emerald:#86efac;--amber:#fde68a;--line:#294866}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{font-family:Inter,system-ui,Arial,sans-serif;margin:0;background:radial-gradient(circle at 15% 0%,rgba(56,189,248,.22),transparent 28%),linear-gradient(180deg,#061426,#081c32);color:var(--ink)}
     main{max-width:1080px;margin:auto;padding:32px 20px 72px}.hero{border:1px solid var(--line);border-radius:30px;background:linear-gradient(135deg,#0b2038,#081827);padding:30px;box-shadow:0 18px 48px rgba(0,0,0,.25)}
-    h1{font-size:clamp(34px,5vw,58px);line-height:1.02;margin:12px 0}h2{font-size:24px;margin:0 0 10px}h3{font-size:18px;margin:0 0 8px}p,li{line-height:1.65;color:var(--muted)}section{background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:24px;padding:22px;margin:16px 0}.tag{display:inline-block;background:var(--cyan);color:#061426;border-radius:999px;padding:7px 12px;font-weight:900;font-size:12px}.btn{display:inline-block;border-radius:16px;padding:13px 18px;margin:6px 8px 6px 0;font-weight:900;text-decoration:none}.cyan{background:var(--cyan);color:#061426}.violet{background:var(--violet);color:#061426}.emerald{background:var(--emerald);color:#061426}.ghost{border:1px solid var(--line);color:var(--ink)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{border:1px solid var(--line);border-radius:20px;padding:18px;background:rgba(255,255,255,.04)}.small{font-size:13px;color:#94a3b8}.warn{border-color:#fbbf24;background:rgba(251,191,36,.09)}
+    h1{font-size:clamp(34px,5vw,58px);line-height:1.02;margin:12px 0}h2{font-size:24px;margin:0 0 10px;color:var(--ink)}h3{font-size:18px;margin:0 0 8px;color:var(--ink)}p,li{line-height:1.65;color:var(--muted)}section{background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:24px;padding:22px;margin:16px 0;scroll-margin-top:18px}.tag{display:inline-block;background:var(--cyan);color:#061426;border-radius:999px;padding:7px 12px;font-weight:900;font-size:12px}.btn{display:inline-flex;align-items:center;border-radius:16px;padding:13px 18px;margin:6px 8px 6px 0;font-weight:900;text-decoration:none}.cyan{background:var(--cyan);color:#061426}.violet{background:var(--violet);color:#061426}.emerald{background:var(--emerald);color:#061426}.ghost{border:1px solid var(--line);color:var(--ink)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{border:1px solid var(--line);border-radius:20px;padding:18px;background:rgba(255,255,255,.04)}.small{font-size:13px;color:#9fb0c2}.warn{border-color:#d7a82f;background:rgba(251,191,36,.09)}.good{border-color:rgba(134,239,172,.55)}nav{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}nav a{color:var(--cyan);border:1px solid var(--line);border-radius:999px;padding:8px 12px;text-decoration:none;font-weight:800}.steps{counter-reset:item;padding-left:0}.steps li{list-style:none;position:relative;padding-left:38px;margin:10px 0}.steps li:before{counter-increment:item;content:counter(item);position:absolute;left:0;top:1px;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--cyan);color:#061426;font-weight:900}
+    @media(prefers-color-scheme:light){:root{--bg:#edf6ff;--card:#fff;--ink:#08243e;--muted:#405b74;--cyan:#0e7490;--blue:#1d4ed8;--violet:#6d28d9;--emerald:#047857;--line:#b8cad9}body{background:#edf6ff}.hero{background:#fff}.tag{color:#fff}.cyan{color:#fff}.card,section{background:#fff}}
+    @media(max-width:560px){main{padding:12px 10px 48px}.hero,section{padding:19px;border-radius:21px}.btn{width:100%;justify-content:center}}
   </style>
 </head>
 <body>
 <main>
   <div class="hero">
-    <span class="tag">CrewCheck v11.0.20</span>
-    <h1>Manual Completo CrewCheck</h1>
-    <p>Guia web atualizável com as principais telas, permissões, planos e boas práticas. O CrewCheck é uma ferramenta independente de apoio pessoal; sempre confirme dados operacionais nos canais oficiais.</p>
-    <a class="btn cyan" href="/manuals/manual-completo-crewcheck-premium-v1.pdf" target="_blank" rel="noreferrer">Baixar manual completo PDF</a>
-    <a class="btn violet" href="/manuals/crewcheck-novas-funcionalidades-v11.pdf" target="_blank" rel="noreferrer">Baixar novas funcionalidades</a>
-    <a class="btn ghost" href="/manuals/crewcheck-sincronizacao-calendario.pdf" target="_blank" rel="noreferrer">Guia de calendário</a>
+    <span class="tag">CrewCheck v14.3.4</span>
+    <h1>Manual CrewCheck</h1>
+    <p>Guia incorporado ao sistema com as principais telas, integrações, permissões e boas práticas. O CrewCheck é uma ferramenta independente de apoio pessoal; confirme dados operacionais nos canais oficiais.</p>
+    <a class="btn cyan" href="/manuals/Manual_Completo_CrewCheck_v14.3.4.pdf" target="_blank" rel="noreferrer">Baixar manual completo PDF</a>
+    <a class="btn violet" href="/manuals/Guia_Principais_Funcionalidades_CrewCheck_v14.3.4.pdf" target="_blank" rel="noreferrer">Principais funcionalidades</a>
   </div>
 
-  <section><h2>1. Cadastro sem CPF inicial</h2><p>No plano gratuito, o CrewCheck não solicita CPF. O CPF aparece somente se o usuário decidir iniciar teste grátis, assinar ou regularizar cobrança. O cadastro pede nome, sobrenome, e-mail pessoal, confirmação de e-mail e senha.</p></section>
-  <section><h2>2. Modo demonstração</h2><p>O modo demonstração usa escala fictícia, sem dados pessoais. Ele serve para conhecer o sistema antes de importar a primeira escala real. Após a primeira importação, o modo demonstração é desativado.</p></section>
-  <section><h2>3. Escala e Cockpit</h2><p>A tela inicial mostra a programação a seguir e deve avançar conforme o andamento do dia. A escala abre no dia correspondente quando houver programação atual ou futura.</p></section>
-  <section><h2>4. Diárias, ceia e salário</h2><p>O cálculo considera voo, reserva, pernoite/inativo fora da base contratual e permanência fora de base. Base virtual e pernoite dirigido não geram diária automática. A ceia depende de jornada ativa entre 00:00 e 01:00. Em Salário, use a expressão bonificação de chefe de cabine.</p></section>
-  <section><h2>5. Saída Inteligente</h2><p>Ajuda a decidir quando sair para cumprir a programação. Em deslocamentos longos, pode trabalhar com carro + voo, Uber/99 + voo, moto + voo ou transporte público + voo.</p></section>
-  <section><h2>6. Radar e relatórios</h2><p>O radar fica separado da escala e pode ser filtrado por manhã, tarde e noite. O relatório de bordo usa a escala para sugerir o voo atual e pode lembrar MAAS/WCH no destino quando houver permissão.</p></section>
-  <section><h2>7. Agenda</h2><p>O usuário escolhe se quer incluir diárias e ganhos nas observações do calendário em Configurações &gt; Agenda. A exportação ICS permanece disponível.</p></section>
+  <nav aria-label="Índice"><a href="#primeiros-passos">Primeiros passos</a><a href="#escala">Escala</a><a href="#regulamentacao">Regulamentação</a><a href="#saida">Planejador de saída</a><a href="#meteo">Meteorologia</a><a href="#crewcheck-life">CrewCheck Life</a><a href="#confiabilidade">Confiabilidade</a></nav>
 
-  <section>
-    <h2>8. Planos em linguagem simples</h2>
+  <section id="primeiros-passos"><h2>1. Primeiro acesso e tutorial</h2><ol class="steps"><li>Entre ou crie sua conta.</li><li>Siga o tutorial interativo pelas telas principais.</li><li>Importe o PDF oficial da escala ou use a demonstração fictícia.</li><li>Ative notificações e segundo plano no aplicativo quando quiser receber alertas fora da tela.</li><li>Reinicie o tutorial a qualquer momento em Menu &gt; Manual CrewCheck.</li></ol></section>
+
+  <section id="escala"><h2>2. Escala, Cockpit e comparação</h2><p>O Cockpit mostra a próxima programação real. A escala completa organiza voos e atividades por dia. Planejado x atual destaca mudanças quando um novo PDF do mesmo período é importado. Dados ausentes permanecem como “a confirmar”; o CrewCheck não deve inventar horários.</p></section>
+
+  <section id="regulamentacao"><h2>3. Regulamentação</h2><p>O cálculo manual usa a programação do dia quando disponível e continua editável. Ele apresenta o horário do corte e o fim da jornada 30 minutos depois. No Telegram, use <strong>/regulamentacao</strong> ou pergunte “Até que horas vai minha regulamentação?”. Confirme a composição completa da jornada e a regra aplicável.</p></section>
+
+  <section id="saida"><h2>4. Planejador de Saída</h2><p>É o nome mais direto para a antiga “Saída Inteligente”. A ferramenta estima quando sair considerando apresentação, preparação, rota e trânsito. Incidentes e bloqueios dependem das APIs configuradas. Quando não houver horário ou provedor em tempo real, o sistema deve informar a limitação.</p></section>
+
+  <section id="meteo"><h2>5. Meteorologia operacional</h2><p>Consulte METAR/TAF da origem e do destino, favoritos e acompanhamento de novas emissões. Cores e textos seguem superfícies legíveis nos temas claro e escuro. Informações meteorológicas do CrewCheck apoiam a consulta, mas não substituem fontes e procedimentos oficiais.</p></section>
+
+  <section><h2>6. Telegram, despertador e notificações</h2><p>Vincule o Telegram pelo menu e use os comandos apresentados pelo bot. Notificações automáticas dependem da permissão do aparelho, funcionamento em segundo plano e canais externos configurados no servidor. No Android, confira também a otimização de bateria.</p></section>
+
+  <section id="crewcheck-life" class="good"><h2>7. CrewCheck Life</h2><p>O CrewCheck Life organiza descanso, estudos, atividade física, alimentação e lazer ao redor da escala. É opcional, não faz diagnóstico, não determina aptidão e não substitui avaliação profissional ou canais oficiais de fadiga.</p>
     <div class="grid">
-      <div class="card"><h3>Gratuito</h3><p>Importação PDF, escala, Cockpit, cálculos locais, rotina, moedas, estacionamento, relatório manual, legenda e manual.</p></div>
-      <div class="card"><h3>Premium mensal</h3><p>Inclui suporte, radar atualizado quando disponível, sincronizações, alertas avançados e manutenção da estrutura do projeto.</p></div>
-      <div class="card"><h3>Premium anual</h3><p>Inclui o Premium mensal com desconto anual, menos renovações durante o ano e prioridade em melhorias.</p></div>
-      <div class="card"><h3>Premium Unlimited</h3><p>Plano especial preservado para contas autorizadas e apoiadores iniciais. Obrigado pelo apoio ao CrewCheck.</p></div>
+      <div class="card"><h3>Entrada manual</h3><p>Informe sono, passos, atividade, estudo e lazer sem conectar nenhuma conta. Funciona na web, Android, iPhone e iPad.</p></div>
+      <div class="card"><h3>Android e Samsung</h3><p>No app Android, o Health Connect pode trazer resumos autorizados. O Samsung Health e o Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.</p></div>
+      <div class="card"><h3>Apple Health</h3><p>A interface está preparada, mas a leitura depende do futuro aplicativo iOS com HealthKit. Safari/PWA não têm acesso direto.</p></div>
+      <div class="card"><h3>Recomendação explicável</h3><p>Abra “Por que estou vendo isso?” para conferir a próxima programação, sua meta e os resumos considerados.</p></div>
     </div>
+    <h3 id="crewcheck-life-privacidade">Privacidade e controle</h3><ul><li>Nenhuma permissão de saúde é pedida durante o tutorial ou antes da ativação.</li><li>A primeira entrega mantém o resumo no aparelho e não envia dados de saúde ao servidor.</li><li>Não são solicitados pressão, glicose, peso, medicamentos, exames, diagnósticos, fertilidade ou prontuários.</li><li>Você pode pausar o Life, revogar a conexão e apagar todos os dados locais.</li></ul>
   </section>
 
-  <section class="warn"><h2>9. Permissões e segundo plano</h2><p>Ative notificações, localização e funcionamento em segundo plano em Configurações &gt; Permissões. Em alguns Androids, a economia de bateria pode limitar alertas; liberar segundo plano melhora a entrega.</p></section>
-  <p class="small">Última revisão: CrewCheck v11.0.20. Este manual pode ser atualizado a cada melhoria do sistema.</p>
+  <section><h2>8. Manual dentro do sistema</h2><p>Abra Menu &gt; Manual CrewCheck para consultar esta versão web, baixar os dois PDFs e reiniciar o tutorial. Os arquivos mostram a versão correspondente à entrega do sistema.</p></section>
+
+  <section id="confiabilidade" class="warn"><h2>9. Uso confiável</h2><ul><li>Confirme escala, portão, meteorologia e dados de jornada nos canais oficiais.</li><li>Permita notificações e segundo plano somente quando desejar alertas automáticos.</li><li>Uma integração “indisponível” ou “a confirmar” não deve ser tratada como dado real.</li><li>O CrewCheck Life é planejamento pessoal, não ferramenta médica ou de aptidão.</li><li>Em emergência, use os canais oficiais e serviços adequados.</li></ul></section>
+
+  <p class="small">Última revisão: CrewCheck v14.3.4 · 22/07/2026. Este manual acompanha a versão publicada do sistema.</p>
 </main>
 </body>
 </html>
