@@ -20,7 +20,17 @@ update('server/v1403/premium-helpers.snippet', (source) => {
   const value = normalizeConciergeButtonText(command);
   return /^\/(?:hoje|amanha|amanhã|proximo|próximo|escala|radar|portao|portão|saida|metar|taf|atis|hoteis|hotéis|hospitais|farmacias|farmácias|academias|rotina|diarias|diárias|conformidade|emergencia|emergência|ligacao|ligação|menu|ajuda)(?:@\S+)?(?:\s|$)/i.test(value)
     || matchesTodayIntent(value) || matchesTomorrowIntent(value) || matchesNextIntent(value)
-    || matchesRosterSummaryIntent(value) || matchesRadarIntent(value) || matchesDepartureIntent(value);
+    || matchesRosterSummaryIntent(value) || matchesRadarIntent(value) || matchesDepartureIntent(value)
+    || /[?¿]|\b(?:qual|quando|onde|como|quanto|quantos|que horas|me diga|mostre|consulte|verifique|tenho|tenho voo|voo|escala|programa[cç][aã]o|port[aã]o|sa[ií]da|hotel|tempo|metar|taf|atis|academia|di[aá]ria|rbac|repouso|jornada|hoje|amanh[aã]|pr[oó]xim[oa])\b/i.test(value);
+}
+
+function conciergeOnboardingLooksLikeName(command = '') {
+  const value = normalizeConciergeButtonText(command).trim();
+  if (!value || value.startsWith('/') || value.length > 48 || /[?¿!]|\d|https?:|@/.test(value)) return false;
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 4) return false;
+  if (conciergeOnboardingIsOperationalCommand(value)) return false;
+  return words.every((word) => /^[A-Za-zÀ-ÖØ-öø-ÿ'’-]{2,24}$/.test(word));
 }
 
 function conciergeOnboardingExpired(preferences = {}) {
@@ -28,9 +38,9 @@ function conciergeOnboardingExpired(preferences = {}) {
   return !Number.isFinite(startedAt) || !startedAt || Date.now() - startedAt > 15 * 60_000;
 }
 
-async function conciergeCancelOnboarding(profile = {}, snapshot = null, message = 'Configuração de nomes cancelada. Você pode continuar usando o Concierge normalmente.') {
+async function conciergeCancelOnboarding(profile = {}, snapshot = null, message = 'Configuração de nomes cancelada. Você pode continuar usando o Concierge normalmente.', handled = true) {
   const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { onboardingStep: 'complete', onboardingStartedAt: '', onboardingCancelledAt: new Date().toISOString() } });
-  return { handled: true, reply: message, snapshot: saved || snapshot };
+  return { handled, reply: message, snapshot: saved || snapshot };
 }
 
 function conciergeRestAfterLastProgram(roster = {}, now = new Date()) {
@@ -56,7 +66,7 @@ function conciergeRestAfterLastProgram(roster = {}, now = new Date()) {
 
   next = next.replace(
     "  const command = String(value || '').trim();",
-    "  const command = String(value || '').trim();\n  if (/^\\/(?:cancelar|sair)(?:@\\S+)?$/i.test(command) && /^ask-/.test(String(preferences.onboardingStep || ''))) return conciergeCancelOnboarding(profile, snapshot);\n  if (/^ask-/.test(String(preferences.onboardingStep || '')) && conciergeOnboardingExpired(preferences)) return conciergeCancelOnboarding(profile, snapshot, 'A configuração de nomes expirou para não interpretar suas perguntas como nomes. Use /meunome quando quiser configurar novamente.');\n  if (/^ask-/.test(String(preferences.onboardingStep || '')) && conciergeOnboardingIsOperationalCommand(command)) return conciergeCancelOnboarding(profile, snapshot, 'Entendi que isso é uma consulta operacional, não um nome. Cancelei a configuração e vou responder normalmente; envie a pergunta mais uma vez.');"
+    "  const command = String(value || '').trim();\n  if (/^\\/(?:cancelar|sair)(?:@\\S+)?$/i.test(command) && /^ask-/.test(String(preferences.onboardingStep || ''))) return conciergeCancelOnboarding(profile, snapshot);\n  if (/^ask-/.test(String(preferences.onboardingStep || '')) && conciergeOnboardingExpired(preferences)) return conciergeCancelOnboarding(profile, snapshot, 'A configuração de nomes expirou para não interpretar suas perguntas como nomes. Use /meunome quando quiser configurar novamente.');\n  if (/^ask-/.test(String(preferences.onboardingStep || '')) && !conciergeOnboardingLooksLikeName(command)) return conciergeCancelOnboarding(profile, snapshot, '', false);"
   );
 
   next = next.replaceAll(
