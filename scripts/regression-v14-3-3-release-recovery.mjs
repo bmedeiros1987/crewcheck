@@ -8,6 +8,7 @@ const securitySnippet = read('scripts/v1432/security-headers.snippet');
 const regulationSnippet = read('scripts/v1432/server-regulation.snippet');
 const v1424 = read('scripts/v1424/apply.mjs');
 const v1432 = read('scripts/v1432/apply.mjs');
+const workflow = read('.github/workflows/crewcheck-v13-8-validation.yml');
 const packageJson = JSON.parse(read('package.json'));
 
 let passed = 0;
@@ -27,6 +28,9 @@ check('apresentação ausente não vira 08:00', regulation.includes("return minu
 check('fim ausente permanece desconhecido', regulation.includes("return minutes === null ? '' : simpleClock(minutes + 30)") && !regulation.includes('minutes === null ? DEFAULT_FORM.plannedEndTime'));
 check('mudança de horário reidrata o formulário', regulation.includes('JSON.stringify([scheduleDay?.date') && regulation.includes('leg.departureTime'));
 check('Telegram não usa início sintético', !server.includes('conciergePresentationTime(record) || record.startTime') && !regulationSnippet.includes('conciergePresentationTime(record) || record.startTime'));
+check('atividade sem horário preserva apresentação ausente', server.includes("if (!firstDeparture) return '';") && !server.includes('if (!firstDeparture) return record.startTime;'));
+check('saída inteligente aguarda horário publicado', server.includes('A saída inteligente será calculada assim que a escala publicar o horário.') && server.includes('conciergeProgramDate(record.day, presentation)'));
+check('workflow prepara fontes uma única vez', (workflow.match(/node scripts\/v139\/apply\.mjs/g) || []).length === 2 && !workflow.includes('npm run check') && !workflow.includes('npm run build') && !workflow.includes('npm run regression:v13.9'));
 check('pergunta natural de limite regulatório', server.includes('que horas termina (?:minha )?jornada') && server.includes('limite (?:de )?regulamenta'));
 check('alias exato configurado no Asaas', platform.includes("url.pathname === '/api/webhooks/asaas'"));
 check('alias preserva autenticação do handler', platform.includes('await handleAsaasWebhook(req, res)') && platform.includes("req.headers['asaas-access-token']"));
