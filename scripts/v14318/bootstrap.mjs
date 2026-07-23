@@ -23,17 +23,13 @@ source = source.replace(
 );
 
 source = source.replace(
-  `  if (next.includes("const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));") && !next.includes('const [locationVersion, setLocationVersion]')) {
-    next = next.replace("const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));", "const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));\\n  const [locationVersion, setLocationVersion] = useState(0);");
-  }`,
+  /  if \(next\.includes\("const \[originLabel, setOriginLabel\][\s\S]*?\n  \}/,
   '',
 );
 source = source.replace('      setLocationVersion((value) => value + 1);\n', '');
 source = source.replace(
-  `  if (next.includes('const [locationVersion, setLocationVersion]')) {
-    next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode}', '<GoogleMapsRoutePreview key={\`${'${event.id}-${locationVersion}'}\`} event={event} mode={mode}');
-  }`,
-  `  next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode}', '<GoogleMapsRoutePreview key={\`${'${event.id}-${originLabel}'}\`} event={event} mode={mode}');`,
+  /  if \(next\.includes\('const \[locationVersion, setLocationVersion\]'\)\) \{[\s\S]*?\n  \}/,
+  `  next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode}', "<GoogleMapsRoutePreview key={event.id + '-' + originLabel} event={event} mode={mode}");`,
 );
 
 if (!source.includes('const anchor = "    const message = update?.message || update?.edited_message || updateOrMessage || {};"')) {
