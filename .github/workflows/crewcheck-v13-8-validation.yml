@@ -49,6 +49,8 @@ jobs:
         run: node scripts/regression-v14-3-16-control-center.mjs
       - name: Validate theme, contrast and responsive layout
         run: node scripts/regression-v14-3-17-theme-layout.mjs
+      - name: Validate structural layout and institutional menu
+        run: node scripts/regression-v14-3-19-layout-structure.mjs
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
