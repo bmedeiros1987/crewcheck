@@ -74,7 +74,7 @@ check(home.includes("kind: 'route_calculation'"), 'cálculo de rota registra ape
 check(visitor.includes('.filter(visitorRealDay)') && visitor.includes('visitorDayTitle(day)'), 'portal visitante filtra programação real');
 check(!visitor.includes("day.type || day.pairingCode || 'Programação'"), 'portal visitante não inventa título Programação');
 check(read('server/v1403/premium-helpers.snippet').includes('conciergeLayoverAwareReply'), 'Concierge reconhece pernoite inativo/publicado');
-check(about.includes('CREWCHECK_FOUNDER_PHOTO') && about.includes('Quem constrói o CrewCheck'), 'página institucional possui foto e seção do fundador');
+check(about.includes('CREWCHECK_FOUNDER_PHOTO') && /quem constrói o crewcheck/i.test(about), 'página institucional possui foto e seção do fundador');
 check(manual.includes('id="guardian"') && manual.includes('id="suporte"'), 'manual web contém Guardian e Suporte');
 check(fs.existsSync('migrations/20260723_014_v14316_guardian_support_metrics.sql'), 'migração v14.3.16 está presente');
 
