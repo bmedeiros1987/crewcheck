@@ -37,3 +37,4 @@ if (!source.includes('AdminControlView/><')) {
 
 fs.writeFileSync(path, source, 'utf8');
 await import('./apply.mjs');
+await import('./hardening.mjs');
