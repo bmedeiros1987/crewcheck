@@ -1,4 +1,25 @@
 import fs from 'node:fs';
+import path from 'node:path';
+
+function persistPreparationFailure(error) {
+  const message = error instanceof Error ? `${error.stack || error.message}` : String(error || 'Erro desconhecido na preparação canônica.');
+  console.error('[crewcheck:source-prepare-failure]', message);
+  const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
+  if (!runnerTemp) return;
+  try {
+    fs.writeFileSync(path.join(runnerTemp, 'android-build.log'), `[CrewCheck source preparation]\n${message}\n`, 'utf8');
+    fs.writeFileSync(path.join(runnerTemp, 'android-build-tail.log'), `[CrewCheck source preparation]\n${message}\n`, 'utf8');
+  } catch {}
+}
+
+process.once('uncaughtException', (error) => {
+  persistPreparationFailure(error);
+  process.exitCode = 1;
+});
+process.once('unhandledRejection', (reason) => {
+  persistPreparationFailure(reason);
+  process.exitCode = 1;
+});
 
 const authClientPath = 'client/src/lib/authClient.ts';
 const deliveryMarker = "delivery: 'email' | 'telegram' | 'both' | 'telegram-call'";
