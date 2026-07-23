@@ -3,37 +3,44 @@ import fs from 'node:fs';
 const path = new URL('./apply.mjs', import.meta.url);
 let source = fs.readFileSync(path, 'utf8');
 
-const oldBlock = `  if (!next.includes('await handleTelegramLocationAndPlaces(update)')) {
-    const block = "  const update = (messageOrUpdate?.message || messageOrUpdate?.edited_message) ? messageOrUpdate : { message: messageOrUpdate };\n  if (await handleTelegramLocationAndPlaces(update)) return true;";
-    next = insertAfter(next, 'export async function handleV139Telegram(messageOrUpdate, sendTelegram) {', block, 'Telegram localização');
-  }`;
-
-const newBlock = `  if (!next.includes('await handleTelegramLocationAndPlaces(update)')) {
+source = source.replace(
+  /  if \(!next\.includes\('await handleTelegramLocationAndPlaces\(update\)'\)\) \{[\s\S]*?\n  \}/,
+  `  if (!next.includes('await handleTelegramLocationAndPlaces(update)')) {
     const anchor = "    const message = update?.message || update?.edited_message || updateOrMessage || {};";
     next = insertAfter(next, anchor, '    if (await handleTelegramLocationAndPlaces(update)) return true;', 'Telegram localização');
-  }`;
+  }`,
+);
 
-if (source.includes(oldBlock)) source = source.replace(oldBlock, newBlock);
 source = source.replace(
   `    const anchor = "import ManualRegulationView from '@/components/v1392/ManualRegulationView';";`,
   `    const anchor = "import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';";`,
 );
-source = source.replace('      setLocationVersion((value) => value + 1);\n', '');
-source = source.replace('${locationVersion}', '${originLabel}');
+
 source = source.replace(
   `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");`,
   `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");
     else if (next.includes("{view === 'admin' && <AdminControlView/>}")) next = next.replace("{view === 'admin' && <AdminControlView/>}", "{view === 'admin' && <><AdminControlCenter/><AdminControlView/></>}");`,
 );
 
-if (!source.includes("const anchor = \"    const message = update?.message || update?.edited_message || updateOrMessage || {};\"")) {
-  throw new Error('[v14318-bootstrap] Não foi possível adaptar o handler Telegram atual.');
+source = source.replace(
+  `  if (next.includes("const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));") && !next.includes('const [locationVersion, setLocationVersion]')) {
+    next = next.replace("const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));", "const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));\\n  const [locationVersion, setLocationVersion] = useState(0);");
+  }`,
+  '',
+);
+source = source.replace('      setLocationVersion((value) => value + 1);\n', '');
+source = source.replace(
+  `  if (next.includes('const [locationVersion, setLocationVersion]')) {
+    next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode}', '<GoogleMapsRoutePreview key={\`${'${event.id}-${locationVersion}'}\`} event={event} mode={mode}');
+  }`,
+  `  next = next.replace('<GoogleMapsRoutePreview event={event} mode={mode}', '<GoogleMapsRoutePreview key={\`${'${event.id}-${originLabel}'}\`} event={event} mode={mode}');`,
+);
+
+if (!source.includes('const anchor = "    const message = update?.message || update?.edited_message || updateOrMessage || {};"')) {
+  throw new Error('[v14318-bootstrap] Handler Telegram atual não foi preparado.');
 }
-if (!source.includes("const anchor = \"import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';\"")) {
-  throw new Error('[v14318-bootstrap] Não foi possível adaptar os imports do Home.');
-}
-if (!source.includes('AdminControlView/><')) {
-  throw new Error('[v14318-bootstrap] Não foi possível adaptar o painel Admin atual.');
+if (!source.includes("import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';")) {
+  throw new Error('[v14318-bootstrap] Import atual do Home não foi preparado.');
 }
 
 fs.writeFileSync(path, source, 'utf8');
