@@ -87,3 +87,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1438] CrewCheck ${VERSION}: fachada JS estável elimina falso negativo de métodos Java no WebView.`);
+await import('../v1439/apply.mjs');
