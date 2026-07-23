@@ -76,3 +76,4 @@ update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCo
 update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - visitante de teste, guia diário e termos legais UTF-8`; return `${JSON.stringify(data, null, 2)}\n`; });
 
 console.log('[v14316-hotfix] Visitante Premium de teste e normalização UTF-8 dos termos aplicados sobre a 14.3.15.');
+await import('../v14318/apply.mjs');
