@@ -4,7 +4,7 @@ const path = new URL('./apply.mjs', import.meta.url);
 let source = fs.readFileSync(path, 'utf8');
 
 const oldBlock = `  if (!next.includes('await handleTelegramLocationAndPlaces(update)')) {
-    const block = "  const update = (messageOrUpdate?.message || messageOrUpdate?.edited_message) ? messageOrUpdate : { message: messageOrUpdate };\\n  if (await handleTelegramLocationAndPlaces(update)) return true;";
+    const block = "  const update = (messageOrUpdate?.message || messageOrUpdate?.edited_message) ? messageOrUpdate : { message: messageOrUpdate };\n  if (await handleTelegramLocationAndPlaces(update)) return true;";
     next = insertAfter(next, 'export async function handleV139Telegram(messageOrUpdate, sendTelegram) {', block, 'Telegram localização');
   }`;
 
@@ -22,7 +22,8 @@ source = source.replace('      setLocationVersion((value) => value + 1);\n', '')
 source = source.replace('${locationVersion}', '${originLabel}');
 source = source.replace(
   `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");`,
-  `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");\n    else if (next.includes("{view === 'admin' && <AdminControlView/>}")) next = next.replace("{view === 'admin' && <AdminControlView/>}", "{view === 'admin' && <><AdminControlCenter/><AdminControlView/></>}");`,
+  `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");
+    else if (next.includes("{view === 'admin' && <AdminControlView/>}")) next = next.replace("{view === 'admin' && <AdminControlView/>}", "{view === 'admin' && <><AdminControlCenter/><AdminControlView/></>}");`,
 );
 
 if (!source.includes("const anchor = \"    const message = update?.message || update?.edited_message || updateOrMessage || {};\"")) {
@@ -38,3 +39,4 @@ if (!source.includes('AdminControlView/><')) {
 fs.writeFileSync(path, source, 'utf8');
 await import('./apply.mjs');
 await import('./hardening.mjs');
+await import('../v14319/apply.mjs');
