@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Manual CrewCheck v14.3.4</title>
+  <title>Manual CrewCheck v14.3.16</title>
   <style>
     :root{color-scheme:light dark;--bg:#061426;--card:#0b2038;--ink:#f8fafc;--muted:#cbd5e1;--cyan:#67e8f9;--blue:#60a5fa;--violet:#c4b5fd;--emerald:#86efac;--amber:#fde68a;--line:#294866}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{font-family:Inter,system-ui,Arial,sans-serif;margin:0;background:radial-gradient(circle at 15% 0%,rgba(56,189,248,.22),transparent 28%),linear-gradient(180deg,#061426,#081c32);color:var(--ink)}
@@ -17,42 +17,48 @@
 <body>
 <main>
   <div class="hero">
-    <span class="tag">CrewCheck v14.3.4</span>
+    <span class="tag">CrewCheck v14.3.16</span>
     <h1>Manual CrewCheck</h1>
-    <p>Guia incorporado ao sistema com as principais telas, integrações, permissões e boas práticas. O CrewCheck é uma ferramenta independente de apoio pessoal; confirme dados operacionais nos canais oficiais.</p>
+    <p>Guia incorporado ao sistema com as principais telas, integrações, permissões, Guardian, visitante, suporte e boas práticas. O CrewCheck é uma ferramenta independente de apoio pessoal; confirme dados operacionais nos canais oficiais.</p>
     <a class="btn cyan" href="/manuals/Manual_Completo_CrewCheck_v14.3.4.pdf" target="_blank" rel="noreferrer">Baixar manual completo PDF</a>
     <a class="btn violet" href="/manuals/Guia_Principais_Funcionalidades_CrewCheck_v14.3.4.pdf" target="_blank" rel="noreferrer">Principais funcionalidades</a>
   </div>
 
-  <nav aria-label="Índice"><a href="#primeiros-passos">Primeiros passos</a><a href="#escala">Escala</a><a href="#regulamentacao">Regulamentação</a><a href="#saida">Planejador de saída</a><a href="#meteo">Meteorologia</a><a href="#crewcheck-life">CrewCheck Life</a><a href="#confiabilidade">Confiabilidade</a></nav>
+  <nav aria-label="Índice"><a href="#primeiros-passos">Primeiros passos</a><a href="#escala">Escala</a><a href="#regulamentacao">Regulamentação</a><a href="#saida">Saída</a><a href="#meteo">Meteorologia</a><a href="#crewcheck-life">Life</a><a href="#guardian">Guardian</a><a href="#visitante">Visitante</a><a href="#telegram">Telegram</a><a href="#suporte">Suporte</a><a href="#privacidade">Privacidade</a></nav>
 
-  <section id="primeiros-passos"><h2>1. Primeiro acesso e tutorial</h2><ol class="steps"><li>Entre ou crie sua conta.</li><li>Siga o tutorial interativo pelas telas principais.</li><li>Importe o PDF oficial da escala ou use a demonstração fictícia.</li><li>Ative notificações e segundo plano no aplicativo quando quiser receber alertas fora da tela.</li><li>Reinicie o tutorial a qualquer momento em Menu &gt; Manual CrewCheck.</li></ol></section>
+  <section id="primeiros-passos"><h2>1. Primeiro acesso e tutorial</h2><ol class="steps"><li>Entre ou crie sua conta.</li><li>Siga o tutorial interativo pelas telas principais.</li><li>Importe o PDF oficial da escala.</li><li>Ative somente as integrações e permissões que desejar.</li><li>Reinicie o tutorial em Menu &gt; Manual CrewCheck.</li></ol></section>
 
-  <section id="escala"><h2>2. Escala, Cockpit e comparação</h2><p>O Cockpit mostra a próxima programação real. A escala completa organiza voos e atividades por dia. Planejado x atual destaca mudanças quando um novo PDF do mesmo período é importado. Dados ausentes permanecem como “a confirmar”; o CrewCheck não deve inventar horários.</p></section>
+  <section id="escala"><h2>2. Escala, Cockpit e comparação</h2><p>O Cockpit mostra a próxima programação real. A escala completa organiza voos e atividades por dia. Planejado x atual destaca mudanças quando um novo PDF do mesmo período é importado. Dados ausentes permanecem como “a confirmar”; o CrewCheck não deve criar datas, voos ou programações para preencher lacunas.</p></section>
 
-  <section id="regulamentacao"><h2>3. Regulamentação</h2><p>O cálculo manual usa a programação do dia quando disponível e continua editável. Ele apresenta o horário do corte e o fim da jornada 30 minutos depois. No Telegram, use <strong>/regulamentacao</strong> ou pergunte “Até que horas vai minha regulamentação?”. Confirme a composição completa da jornada e a regra aplicável.</p></section>
+  <section id="regulamentacao"><h2>3. Regulamentação</h2><p>O cálculo usa a programação real quando disponível e permanece conferível. No Telegram, use <strong>/regulamentacao</strong> ou pergunte “Até que horas vai minha regulamentação?”. Confirme a composição completa da jornada e a regra aplicável.</p></section>
 
-  <section id="saida"><h2>4. Planejador de Saída</h2><p>É o nome mais direto para a antiga “Saída Inteligente”. A ferramenta estima quando sair considerando apresentação, preparação, rota e trânsito. Incidentes e bloqueios dependem das APIs configuradas. Quando não houver horário ou provedor em tempo real, o sistema deve informar a limitação.</p></section>
+  <section id="saida"><h2>4. Saída Inteligente</h2><p>Ao abrir o card ou a tela, o aplicativo solicita a localização atual, calcula a rota até o aeroporto e considera trânsito, apresentação e margem operacional. Caso a localização seja recusada ou a rota não responda, o sistema informa que está usando a última posição ou uma estimativa protegida.</p></section>
 
-  <section id="meteo"><h2>5. Meteorologia operacional</h2><p>Consulte METAR/TAF da origem e do destino, favoritos e acompanhamento de novas emissões. Cores e textos seguem superfícies legíveis nos temas claro e escuro. Informações meteorológicas do CrewCheck apoiam a consulta, mas não substituem fontes e procedimentos oficiais.</p></section>
+  <section id="meteo"><h2>5. Meteorologia operacional</h2><p>Consulte METAR/TAF da origem e do destino, favoritos e novas emissões. Informações meteorológicas do CrewCheck apoiam a consulta, mas não substituem fontes e procedimentos oficiais.</p></section>
 
-  <section><h2>6. Telegram, despertador e notificações</h2><p>Vincule o Telegram pelo menu e use os comandos apresentados pelo bot. Notificações automáticas dependem da permissão do aparelho, funcionamento em segundo plano e canais externos configurados no servidor. No Android, confira também a otimização de bateria.</p></section>
+  <section id="telegram"><h2>6. Telegram, localização e notificações</h2><p>O bot aceita localização comum e localização em tempo real. As atualizações de uma localização ao vivo são processadas silenciosamente; a posição mais recente é usada somente quando um comando exige proximidade, como academias ou rotas. A lista de academias é ordenada pela distância e possui botões para abrir cada opção no Google Maps.</p></section>
 
   <section id="crewcheck-life" class="good"><h2>7. CrewCheck Life</h2><p>O CrewCheck Life organiza descanso, estudos, atividade física, alimentação e lazer ao redor da escala. É opcional, não faz diagnóstico, não determina aptidão e não substitui avaliação profissional ou canais oficiais de fadiga.</p>
     <div class="grid">
-      <div class="card"><h3>Entrada manual</h3><p>Informe sono, passos, atividade, estudo e lazer sem conectar nenhuma conta. Funciona na web, Android, iPhone e iPad.</p></div>
-      <div class="card"><h3>Android e Samsung</h3><p>No app Android, o Health Connect pode trazer resumos autorizados. O Samsung Health e o Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.</p></div>
-      <div class="card"><h3>Apple Health</h3><p>A interface está preparada, mas a leitura depende do futuro aplicativo iOS com HealthKit. Safari/PWA não têm acesso direto.</p></div>
-      <div class="card"><h3>Recomendação explicável</h3><p>Abra “Por que estou vendo isso?” para conferir a próxima programação, sua meta e os resumos considerados.</p></div>
+      <div class="card"><h3>Sincronização automática</h3><p>Com consentimento ativo, o Android atualiza o resumo ao abrir ou retornar ao aplicativo, ao recuperar conexão e a cada minuto enquanto a tela estiver em uso.</p></div>
+      <div class="card"><h3>Android e Samsung</h3><p>O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.</p></div>
+      <div class="card"><h3>Dados concisos</h3><p>O painel mostra horário da última atualização, sono, passos, atividade e tendências úteis, sem expor séries clínicas brutas.</p></div>
+      <div class="card"><h3>Recomendação explicável</h3><p>Abra “Por que estou vendo isso?” para conferir a escala, meta e resumos considerados.</p></div>
     </div>
-    <h3 id="crewcheck-life-privacidade">Privacidade e controle</h3><ul><li>Nenhuma permissão de saúde é pedida durante o tutorial ou antes da ativação.</li><li>A primeira entrega mantém o resumo no aparelho e não envia dados de saúde ao servidor.</li><li>No Android, a ponte de saúde aceita mensagens somente do domínio CrewCheck e do frame principal.</li><li>Não são solicitados pressão, glicose, peso, medicamentos, exames, diagnósticos, fertilidade ou prontuários.</li><li>Você pode pausar o Life, revogar a conexão e apagar todos os dados locais.</li></ul>
+    <h3>Privacidade e controle</h3><ul><li>Nenhuma permissão de saúde é pedida antes da ativação voluntária.</li><li>O resumo de saúde permanece local no aparelho.</li><li>Você pode pausar o Life, revogar a conexão e apagar os dados locais.</li><li>Atualização em segundo plano depende de permissão Android específica; sem ela, a atualização ocorre com o aplicativo aberto ou retomado.</li></ul>
   </section>
 
-  <section><h2>8. Manual dentro do sistema</h2><p>Abra Menu &gt; Manual CrewCheck para consultar esta versão web, baixar os dois PDFs e reiniciar o tutorial. Os arquivos mostram a versão correspondente à entrega do sistema.</p></section>
+  <section id="guardian" class="good"><h2>8. CrewCheck Guardian</h2><p>Menu &gt; Guardian cria um QR Code temporário e revogável. O titular escolhe os campos de emergência. O conteúdo fica criptografado, o token não revela informações e a página pública é somente leitura. Gere um novo QR quando necessário e revogue imediatamente se não quiser mais disponibilizá-lo.</p></section>
 
-  <section id="confiabilidade" class="warn"><h2>9. Uso confiável</h2><ul><li>Confirme escala, portão, meteorologia e dados de jornada nos canais oficiais.</li><li>Permita notificações e segundo plano somente quando desejar alertas automáticos.</li><li>Uma integração “indisponível” ou “a confirmar” não deve ser tratada como dado real.</li><li>O CrewCheck Life é planejamento pessoal, não ferramenta médica ou de aptidão.</li><li>Em emergência, use os canais oficiais e serviços adequados.</li></ul></section>
+  <section id="visitante"><h2>9. Acesso de visitante</h2><p>O visitante enxerga somente as permissões concedidas. A escala compartilhada utiliza os dias e atividades efetivamente existentes no registro importado. Dias sem data válida ou sem atividade real não são fabricados. Pernoites são exibidos como pernoite quando houver hotel ou marcação correspondente.</p></section>
 
-  <p class="small">Última revisão: CrewCheck v14.3.4 · 22/07/2026. Este manual acompanha a versão publicada do sistema.</p>
+  <section id="suporte"><h2>10. Suporte por ticket</h2><p>Abra Menu &gt; Suporte para relatar problema ou sugestão. O sistema gera um número de chamado, envia o conteúdo em formato estruturado e utiliza o endereço público <strong>suporte@crewcheck.com.br</strong>. O diagnóstico automático contém apenas versão, plataforma, tela e estado da conexão; não inclui escala, localização, saúde, senha ou dados pessoais do usuário.</p></section>
+
+  <section id="privacidade"><h2>11. Administração e LGPD</h2><p>A dashboard administrativa apresenta números agregados: usuários cadastrados, escalas, acessos, entregas de e-mail, tickets, QR ativos, tamanho do banco e tendências. Ela não abre nomes, endereços de e-mail, conteúdo de escalas, localização, dados de saúde ou mensagens. O conteúdo individual só é acessado em fluxos específicos autorizados, como um ticket de suporte.</p></section>
+
+  <section id="confiabilidade" class="warn"><h2>12. Uso confiável</h2><ul><li>Confirme escala, portão, meteorologia e dados de jornada nos canais oficiais.</li><li>Uma integração “indisponível” ou “a confirmar” não deve ser tratada como dado real.</li><li>O CrewCheck Life é planejamento pessoal, não ferramenta médica ou de aptidão.</li><li>O Guardian não substitui identificação oficial, prontuário ou atendimento de emergência.</li><li>Em emergência, use os canais oficiais e serviços adequados.</li></ul></section>
+
+  <p class="small">Última revisão: CrewCheck v14.3.16 · 23/07/2026. Os PDFs existentes continuam disponíveis; esta versão web contém as atualizações mais recentes.</p>
 </main>
 </body>
 </html>
