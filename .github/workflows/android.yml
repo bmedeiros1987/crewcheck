@@ -58,7 +58,7 @@ jobs:
       - name: Install web dependencies
         run: npm ci || npm install
 
-      - name: Prepare CrewCheck 14.3.12 sources
+      - name: Prepare CrewCheck 14.3.13 sources
         shell: bash
         run: |
           set -euo pipefail
@@ -75,37 +75,43 @@ jobs:
           sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
           chmod +x android-wrapper/gradlew
 
-      - name: Verify safe Health Connect management flow
+      - name: Verify adaptive Life Concierge and Health Connect flow
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const p=require('./package.json'); if(p.version!=='14.3.12') throw new Error('Expected 14.3.12, got '+p.version)"
-          grep -Fq "version: '14.3.12'" server.mjs
-          grep -Fq 'versionName "14.3.12"' android-wrapper/app/build.gradle
-          grep -Fq 'versionCode 140312' android-wrapper/app/build.gradle
+          node -e "const p=require('./package.json'); if(p.version!=='14.3.13') throw new Error('Expected 14.3.13, got '+p.version)"
+          grep -Fq "version: '14.3.13'" server.mjs
+          grep -Fq 'versionName "14.3.13"' android-wrapper/app/build.gradle
+          grep -Fq 'versionCode 140313' android-wrapper/app/build.gradle
           grep -Fq "id 'com.android.application' version '8.11.1'" android-wrapper/build.gradle
           grep -Fq "id 'org.jetbrains.kotlin.android' version '2.0.21'" android-wrapper/build.gradle
           grep -Eq 'compileSdk[[:space:]]+36' android-wrapper/app/build.gradle
           grep -Fq 'androidx.health.connect:connect-client:1.1.0' android-wrapper/app/build.gradle
           grep -Fq 'crewcheck.onrender.com' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'fun requestPermissionsFromHost(): Boolean' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'fun openSettingsFromHost(): Boolean' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'HealthConnectClient.getHealthConnectManageDataIntent(activity, HEALTH_CONNECT_PACKAGE)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           ! grep -Fq 'android.health.connect.action.MANAGE_HEALTH_PERMISSIONS' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'crewcheck:health-action-message' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'public boolean openHealthConnect()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'public boolean openHealthConnectSettings()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
-          grep -Fq 'healthBridge.requestPermissionsFromHost()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
-          grep -Fq "callNativeHealth('openHealthConnect')" client/src/components/v1434/CrewCheckLifeView.tsx
-          grep -Fq "callNativeHealth('openHealthConnectSettings')" client/src/components/v1434/CrewCheckLifeView.tsx
-          grep -Fq "window.addEventListener('crewcheck:health-action-message'" client/src/components/v1434/CrewCheckLifeView.tsx
+          test -s client/src/lib/lifeConcierge.ts
+          test -s client/src/components/v14313/LifeConciergePanel.tsx
+          test -s client/src/components/v14313/life-concierge.css
+          grep -Fq 'export function getLifeRoutineContext' client/src/lib/lifeConcierge.ts
+          grep -Fq 'export function buildLifeConciergeRecommendation' client/src/lib/lifeConcierge.ts
+          grep -Fq 'if (Array.isArray(fallback))' client/src/lib/lifeConcierge.ts
+          grep -Fq 'isLifeQuietTime(item.time, preferences)' client/src/lib/lifeConcierge.ts
+          grep -Fq 'CHECK-IN COMPARTILHADO' client/src/components/v14313/LifeConciergePanel.tsx
+          grep -Fq '<LifeConciergePanel nextProgram={nextProgram} healthSummary={nativeSummary} profile={profile}/>' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'ingestHealthSummary(detail)' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'applyLifeAdaptiveContext(applyPremiumRoutineReliability' client/src/lib/routinePlanner.ts
+          grep -Fq 'sono recente abaixo da meta: treino forte rebaixado' client/src/lib/routinePlanner.ts
+          ! grep -Eq 'fetch\(|authFetch|/api/' client/src/lib/lifeConcierge.ts
 
       - name: Build web client
         run: npx vite build
 
-      - name: Run v14.3.12 regression
-        run: node scripts/regression-v14-3-12-health-manage-access.mjs
+      - name: Run v14.3.13 regression
+        run: node scripts/regression-v14-3-13-life-concierge.mjs
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
