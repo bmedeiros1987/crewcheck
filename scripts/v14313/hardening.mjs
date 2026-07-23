@@ -84,3 +84,4 @@ update('client/src/components/v14313/LifeConciergePanel.tsx', (source) => {
 
 console.log('[v14313-hardening] Arrays preservados, snapshot tipado, silêncio respeitado e check-in sem duplicidade.');
 await import('../v14314/apply.mjs');
+await import('../v14314/platform-humanization.mjs');
