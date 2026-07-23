@@ -40,6 +40,18 @@ if (!source.includes("import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } 
 }
 
 fs.writeFileSync(path, source, 'utf8');
+
+const themePath = new URL('../v14319/apply.mjs', import.meta.url);
+let themeSource = fs.readFileSync(themePath, 'utf8');
+themeSource = themeSource.replace(
+  "    control.setAttribute('title', `${label(preference)}. Toque para alterar.`);",
+  "    control.setAttribute('title', label(preference) + '. Toque para alterar.');",
+);
+if (themeSource.includes("`${label(preference)}. Toque para alterar.`")) {
+  throw new Error('[v14318-bootstrap] Runtime de aparência ainda contém template literal aninhado.');
+}
+fs.writeFileSync(themePath, themeSource, 'utf8');
+
 await import('./apply.mjs');
 await import('./hardening.mjs');
 await import('../v14319/apply.mjs');
