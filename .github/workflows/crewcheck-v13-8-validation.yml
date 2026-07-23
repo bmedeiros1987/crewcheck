@@ -41,7 +41,7 @@ jobs:
         run: npx tsc --noEmit
       - name: Build web client
         run: npx vite build
-      - name: Validate safe Health Connect manage-access flow
-        run: node scripts/regression-v14-3-12-health-manage-access.mjs
+      - name: Validate adaptive Life Concierge
+        run: node scripts/regression-v14-3-13-life-concierge.mjs
       - name: Test server
         run: node test-server.mjs
