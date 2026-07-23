@@ -123,3 +123,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v14312] CrewCheck ${VERSION}: gerenciamento do Health Connect pela API Jetpack oficial, fallback seguro e erro amigável.`);
+await import('../v14313/apply.mjs');
