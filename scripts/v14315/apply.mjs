@@ -121,3 +121,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v14315] CrewCheck ${VERSION}: guia diário automático, locais reais, café 09:30, descanso e conexões em um toque.`);
+await import('../v14316/apply.mjs');
