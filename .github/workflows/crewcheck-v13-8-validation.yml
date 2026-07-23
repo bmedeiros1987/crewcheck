@@ -41,7 +41,9 @@ jobs:
         run: npx tsc --noEmit
       - name: Build web client
         run: npx vite build
-      - name: Validate adaptive Life Concierge
-        run: node scripts/regression-v14-3-13-life-concierge.mjs
+      - name: Validate aviation language and family concierge
+        run: node scripts/regression-v14-3-14-aviation-family.mjs
+      - name: Validate adaptive daily guide
+        run: node scripts/regression-v14-3-15-daily-guide.mjs
       - name: Test server
         run: node test-server.mjs
