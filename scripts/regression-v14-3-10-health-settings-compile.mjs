@@ -22,10 +22,11 @@ const pkg = JSON.parse(read('package.json'));
 
 requireText(bridge, 'fun postMessage(raw: String?): Boolean', 'retorno real da ponte Kotlin');
 requireText(bridge, '"openSettings" -> openHealthConnectSettings()', 'ação de gerenciamento');
-requireText(bridge, 'HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS', 'ação oficial Kotlin do Health Connect');
-requireText(bridge, 'val intents = listOfNotNull(', 'coleção não anulável de intents');
-requireText(bridge, 'getLaunchIntentForPackage(HEALTH_CONNECT_PACKAGE)', 'fallback Android 13');
+requireText(bridge, 'val primary = Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)', 'ação oficial Kotlin do Health Connect');
+requireText(bridge, 'primary.resolveActivity(activity.packageManager)', 'validação do destino do intent');
+requireText(bridge, 'getLaunchIntentForPackage(HEALTH_CONNECT_PACKAGE) ?: return false', 'fallback Android 13 sem nulo');
 forbidText(bridge, 'val intents = listOf(', 'coleção anulável de intents');
+forbidText(bridge, 'val intents = listOfNotNull(', 'implementação antiga por lista');
 forbidText(bridge, 'HealthConnectClient.getHealthConnectSettingsAction()', 'getter Java usado como função Kotlin');
 forbidText(bridge, 'HealthConnectClient.getHealthConnectManageDataIntent(activity)', 'sobrecarga incompatível de gerenciamento');
 requireText(activity, 'return healthBridge.postMessage(raw);', 'retorno nativo não mascarado');
@@ -39,4 +40,4 @@ requireText(gradle, 'versionName "14.3.10"', 'versionName 14.3.10');
 requireText(gradle, 'versionCode 140310', 'versionCode 140310');
 if (pkg.version !== '14.3.10') throw new Error(`[v14.3.10-settings] package.json em ${pkg.version}`);
 
-console.log('[v14.3.10-settings] Regressão aprovada: intents não anuláveis, API Kotlin compilável e acesso ao Health Connect.');
+console.log('[v14.3.10-settings] Regressão aprovada: abertura simples, API Kotlin compilável e acesso ao Health Connect.');
