@@ -18,6 +18,8 @@ source = source.replace(
   `    const anchor = "import ManualRegulationView from '@/components/v1392/ManualRegulationView';";`,
   `    const anchor = "import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';";`,
 );
+source = source.replace('      setLocationVersion((value) => value + 1);\n', '');
+source = source.replace('${locationVersion}', '${originLabel}');
 
 if (!source.includes("const anchor = \"    const message = update?.message || update?.edited_message || updateOrMessage || {};\"")) {
   throw new Error('[v14318-bootstrap] Não foi possível adaptar o handler Telegram atual.');
