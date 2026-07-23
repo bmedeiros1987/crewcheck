@@ -23,6 +23,18 @@ const placesSearchSource = placesSearchStart >= 0
   ? server.slice(placesSearchStart, placesSearchEnd > placesSearchStart ? placesSearchEnd : placesSearchStart + 12_000)
   : '';
 
+function versionAtLeast(value, minimum) {
+  const parts = String(value || '').split('.').map((item) => Number(item) || 0);
+  const floor = String(minimum || '').split('.').map((item) => Number(item) || 0);
+  for (let index = 0; index < Math.max(parts.length, floor.length); index += 1) {
+    const current = parts[index] || 0;
+    const required = floor[index] || 0;
+    if (current > required) return true;
+    if (current < required) return false;
+  }
+  return true;
+}
+
 function persist(message) {
   const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
   if (!runnerTemp) return;
@@ -58,9 +70,9 @@ const checks = [
   ['meta pessoal substitui sono fixo', routine.includes('getLifeRoutineContext().sleep.targetMinutes') && routine.includes('plan.sleepHours')],
   ['design responsivo', guideCss.includes('.cc-life-day-shell') && guideCss.includes('@media(max-width:700px)')],
   ['Health Connect continua local-first', health.includes('localOnly') && life.includes('getLifeRoutineContext')],
-  ['versionName 14.3.15', gradle.includes('versionName "14.3.15"')],
-  ['versionCode 140315', gradle.includes('versionCode 140315')],
-  ['package 14.3.15', pkg.version === '14.3.15'],
+  ['versionName preserva 14.3.15 ou posterior', /versionName\s+["']([^"']+)["']/.test(gradle) && versionAtLeast(gradle.match(/versionName\s+["']([^"']+)["']/)?.[1], '14.3.15')],
+  ['versionCode preserva 140315 ou posterior', Number(gradle.match(/versionCode\s+(\d+)/)?.[1] || 0) >= 140315],
+  ['package preserva 14.3.15 ou posterior', versionAtLeast(pkg.version, '14.3.15')],
 ];
 
 for (const [label, ok] of checks) {
