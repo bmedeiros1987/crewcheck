@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, CalendarDays, Car, ChevronRight, Clock, Menu, Plane, Radar, Save, ShieldCheck, Wifi } from 'lucide-react';
 import { getToken } from '@/lib/authClient';
-import { BottomNav } from '@/components/premium/SideDrawer';
+import { CanonicalBottomNav } from '@/components/premium/CanonicalBottomNav';
 
 interface DashboardProps {
   user: { name: string; company: string; avatar?: string; base?: string; requiresDeparture?: boolean };
@@ -103,7 +103,7 @@ export default function Dashboard({ user, nextEvent, onNavigate, onOpenMenu, onT
         <button onClick={() => onNavigate('perdiem')}><CalendarDays/><strong>Diárias</strong><small>Escalas e lançamentos</small><ChevronRight/></button>
         <button onClick={() => onNavigate('salary')}><Clock/><strong>Salário</strong><small>Resumo de pagamentos</small><ChevronRight/></button>
       </section>
-      <BottomNav
+      <CanonicalBottomNav
         activeView="home"
         errorsCount={alertsCount}
         onMenuOpen={() => onOpenMenu?.()}
