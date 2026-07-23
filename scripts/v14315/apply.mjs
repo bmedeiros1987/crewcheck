@@ -14,6 +14,16 @@ function update(path, transform, { optional = false } = {}) {
 
 update('server.mjs', (source) => {
   let next = source;
+  if (!next.includes('function placesServerKey()')) {
+    const anchor = `function mapsServerKey() {
+  return envAny(['GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);
+}`;
+    if (!next.includes(anchor)) throw new Error('[v14315] Função de chave de mapas não encontrada.');
+    next = next.replace(anchor, `${anchor}
+function placesServerKey() {
+  return envAny(['GOOGLE_PLACES_API_KEY', 'GOOGLE_PLACES_SERVER_KEY', 'GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);
+}`);
+  }
   const categoryPattern = /const PLACE_CATEGORY_CONFIG = \{[\s\S]*?\n\};\n\nasync function handlePlacesSearch/;
   if (!categoryPattern.test(next)) throw new Error('[v14315] Catálogo de categorias de locais não encontrado.');
   next = next.replace(categoryPattern, `const PLACE_CATEGORY_CONFIG = {
@@ -44,13 +54,17 @@ update('server.mjs', (source) => {
 async function handlePlacesSearch`);
 
   next = next.replace(
+    "async function handlePlacesSearch(req, res, url, forcedCategory = '') {\n  const key = mapsServerKey();",
+    "async function handlePlacesSearch(req, res, url, forcedCategory = '') {\n  const key = placesServerKey();",
+  );
+  next = next.replace(
     "'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.googleMapsUri,places.currentOpeningHours.openNow,places.regularOpeningHours.weekdayDescriptions,places.location,places.nationalPhoneNumber,places.websiteUri',",
     "'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.primaryType,places.googleMapsUri,places.currentOpeningHours.openNow,places.regularOpeningHours.weekdayDescriptions,places.location,places.nationalPhoneNumber,places.websiteUri',",
   );
   next = next.replace("        regionCode: 'BR',\n", '');
   next = next.replace('        ...(center ? { locationBias: { circle: { center, radius: 12_000 } } } : {}),', '        ...(center ? { locationBias: { circle: { center, radius: Number(config.radius || 12_000) } } } : {}),');
   next = next.replace('        rating: Number(place.rating) || undefined,', '        rating: Number(place.rating) || undefined,\n        userRatingCount: Number(place.userRatingCount) || undefined,\n        primaryType: place.primaryType || \'\',');
-  if (!next.includes("crossfit: { label: 'boxes de CrossFit'") || !next.includes('radius: Number(config.radius || 12_000)') || !next.includes('userRatingCount')) {
+  if (!next.includes("crossfit: { label: 'boxes de CrossFit'") || !next.includes('radius: Number(config.radius || 12_000)') || !next.includes('userRatingCount') || !next.includes('const key = placesServerKey();')) {
     throw new Error('[v14315] Busca mundial de modalidades, lazer e folgas não foi aplicada por completo.');
   }
   return next;
