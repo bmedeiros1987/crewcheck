@@ -17,6 +17,15 @@ function check(condition, message) {
   persist(error);
   throw new Error(error);
 }
+function versionAtLeast(value, minimum) {
+  const current = String(value || '').split('.').map((item) => Number(item) || 0);
+  const floor = String(minimum || '').split('.').map((item) => Number(item) || 0);
+  for (let index = 0; index < Math.max(current.length, floor.length); index += 1) {
+    if ((current[index] || 0) > (floor[index] || 0)) return true;
+    if ((current[index] || 0) < (floor[index] || 0)) return false;
+  }
+  return true;
+}
 
 const pkg = JSON.parse(read('package.json'));
 const serverIndex = read('server/v139/index.mjs');
@@ -35,9 +44,11 @@ const manual = read('client/public/manual.html');
 const bridge = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt');
 const activity = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const gradle = read('android-wrapper/app/build.gradle');
+const androidVersion = gradle.match(/versionName\s+["']([^"']+)["']/)?.[1] || '';
+const androidCode = Number(gradle.match(/versionCode\s+(\d+)/)?.[1] || 0);
 
-check(pkg.version === '14.3.16', `versão preparada é 14.3.16; encontrada ${pkg.version}`);
-check(gradle.includes('versionName "14.3.16"') && gradle.includes('versionCode 140316'), 'versão Android preparada é 14.3.16/140316');
+check(versionAtLeast(pkg.version, '14.3.16'), `versão preparada é 14.3.16 ou posterior; encontrada ${pkg.version}`);
+check(versionAtLeast(androidVersion, '14.3.16') && androidCode >= 140316, `versão Android é 14.3.16/140316 ou posterior; encontrada ${androidVersion}/${androidCode}`);
 check(serverIndex.includes('handleV14316ControlRoute') && serverIndex.includes('handleTelegramLocationAndPlaces'), 'rotas v14.3.16 estão integradas ao servidor');
 check(control.includes("'/api/guardian/card'") && control.includes("'/api/support/tickets'") && control.includes("'/api/admin/overview'"), 'Guardian, suporte e dashboard possuem rotas');
 check(control.includes('aes-256-gcm') && control.includes('token_hash') && control.includes('expires_at') && control.includes('revoked_at'), 'Guardian possui criptografia, token, expiração e revogação');
@@ -64,7 +75,7 @@ check(visitor.includes('.filter(visitorRealDay)') && visitor.includes('visitorDa
 check(!visitor.includes("day.type || day.pairingCode || 'Programação'"), 'portal visitante não inventa título Programação');
 check(read('server/v1403/premium-helpers.snippet').includes('conciergeLayoverAwareReply'), 'Concierge reconhece pernoite inativo/publicado');
 check(about.includes('CREWCHECK_FOUNDER_PHOTO') && about.includes('Quem constrói o CrewCheck'), 'página institucional possui foto e seção do fundador');
-check(manual.includes('CrewCheck v14.3.16') && manual.includes('id="guardian"') && manual.includes('id="suporte"'), 'manual web contém Guardian e Suporte');
+check(manual.includes('id="guardian"') && manual.includes('id="suporte"'), 'manual web contém Guardian e Suporte');
 check(fs.existsSync('migrations/20260723_014_v14316_guardian_support_metrics.sql'), 'migração v14.3.16 está presente');
 
-console.log('CrewCheck v14.3.16 — Guardian, Life, Telegram, visitante, saída, suporte e Admin: OK');
+console.log(`CrewCheck ${pkg.version} — recursos do Control Center 14.3.16 preservados: OK`);
