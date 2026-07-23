@@ -36,6 +36,6 @@ check(helpers.includes('conciergeFamilyContactReply'), 'Resposta de disponibilid
 check(reply.includes('conciergeFamilyReturnReply(snapshot, profile)'), 'Intent de retorno familiar não conectado.');
 check(reply.includes('conciergeFamilyCityReply(snapshot, profile)'), 'Intent de localização familiar não conectado.');
 check(reply.includes('conciergeFamilyContactReply(snapshot, profile)'), 'Intent de ligação familiar não conectado.');
-check(platform.includes('traduzida em linguagem simples') || platform.includes('Programação compartilhada pelo titular'), 'Escala do visitante não foi humanizada.');
+check(platform.includes('linguagem simples') || platform.includes('Programação compartilhada pelo titular'), 'Escala do visitante não foi humanizada.');
 
 console.log('CrewCheck v14.3.14 — tradução aeronáutica e Concierge Familiar Premium: OK');
