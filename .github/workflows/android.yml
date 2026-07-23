@@ -10,6 +10,7 @@ on:
       - 'server.mjs'
       - 'server/**'
       - 'scripts/**'
+      - 'migrations/**'
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.*'
@@ -58,11 +59,11 @@ jobs:
       - name: Install web dependencies
         run: npm ci || npm install
 
-      - name: Prepare CrewCheck 14.3.15 sources
+      - name: Prepare CrewCheck 14.3.16 sources
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/v139/apply.mjs
+          node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
 
           sed -i "s/id 'com.android.application' version '[^']*'/id 'com.android.application' version '8.11.1'/" android-wrapper/build.gradle
           sed -i -E 's/compileSdk[[:space:]]+[0-9]+/compileSdk 36/' android-wrapper/app/build.gradle
@@ -75,56 +76,58 @@ jobs:
           sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
           chmod +x android-wrapper/gradlew
 
-      - name: Verify Life, locations, Concierge and Health Connect flow
+      - name: Verify Control Center, Life and Health Connect flow
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const p=require('./package.json'); if(p.version!=='14.3.15') throw new Error('Expected 14.3.15, got '+p.version)"
-          grep -Fq "version: '14.3.15'" server.mjs
-          grep -Fq 'versionName "14.3.15"' android-wrapper/app/build.gradle
-          grep -Fq 'versionCode 140315' android-wrapper/app/build.gradle
+          node -e "const p=require('./package.json'); if(p.version!=='14.3.16') throw new Error('Expected 14.3.16, got '+p.version)"
+          grep -Fq "version: '14.3.16'" server.mjs
+          grep -Fq 'versionName "14.3.16"' android-wrapper/app/build.gradle
+          grep -Fq 'versionCode 140316' android-wrapper/app/build.gradle
           grep -Fq "id 'com.android.application' version '8.11.1'" android-wrapper/build.gradle
           grep -Fq "id 'org.jetbrains.kotlin.android' version '2.0.21'" android-wrapper/build.gradle
           grep -Eq 'compileSdk[[:space:]]+36' android-wrapper/app/build.gradle
           grep -Fq 'androidx.health.connect:connect-client:1.1.0' android-wrapper/app/build.gradle
-          grep -Fq 'crewcheck.onrender.com' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'HealthConnectClient.getHealthConnectManageDataIntent(activity, HEALTH_CONNECT_PACKAGE)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'fun refreshFromHost()' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'healthBridge.refreshFromHost()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           ! grep -Fq 'android.health.connect.action.MANAGE_HEALTH_PERMISSIONS' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'public boolean openHealthConnect()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
-          grep -Fq 'public boolean openHealthConnectSettings()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
-          test -s client/src/lib/lifeConcierge.ts
-          test -s client/src/lib/lifePlaces.ts
-          test -s client/src/components/v14313/LifeConciergePanel.tsx
-          test -s client/src/components/v14314/RoutineDailyConcierge.tsx
-          test -s client/src/components/v14314/routine-daily-concierge.css
-          grep -Fq 'export function getLifeRoutineContext' client/src/lib/lifeConcierge.ts
-          grep -Fq 'export async function requestLifeLocation' client/src/lib/lifePlaces.ts
-          grep -Fq 'searchLifePlaceSet' client/src/lib/lifePlaces.ts
-          grep -Fq "breakfastTime: '09:30'" client/src/components/v14314/RoutineDailyConcierge.tsx
-          grep -Fq 'RECUPERAÇÃO REFORÇADA' client/src/components/v14314/RoutineDailyConcierge.tsx
-          grep -Fq 'CONEXÕES EM UM TOQUE' client/src/components/v14314/RoutineDailyConcierge.tsx
-          grep -Fq 'tg://resolve' client/src/components/v14314/RoutineDailyConcierge.tsx
-          grep -Fq 'recordGymCheckIn(place.name' client/src/components/v14314/RoutineDailyConcierge.tsx
-          grep -Fq '<RoutineDailyConcierge events={events}/>' client/src/components/v139/RoutineIntelligenceView.tsx
-          grep -Fq 'getLifeRoutineContext().sleep.targetMinutes' client/src/components/v139/RoutineIntelligenceView.tsx
-          grep -Fq "crossfit: { label: 'boxes de CrossFit'" server.mjs
-          grep -Fq "trip: { label: 'passeios para folga'" server.mjs
-          grep -Fq 'radius: Number(config.radius || 12_000)' server.mjs
-          ! grep -Fq "regionCode: 'BR'" server.mjs
-          grep -Fq 'translatedAirportName' server/v1404/telegram-language.mjs
-          grep -Fq 'translatedActivityLabel' server/v1404/telegram-language.mjs
-          grep -Fq 'conciergeFamilyReturnReply' server/v1403/premium-helpers.snippet
-          ! grep -Eq 'fetch\(|authFetch|/api/' client/src/lib/lifeConcierge.ts
+
+          test -s server/v14316/controlCenter.mjs
+          test -s server/v14316/telegramLocation.mjs
+          test -s client/src/components/v14316/GuardianCenterView.tsx
+          test -s client/src/components/v14316/SupportCenterView.tsx
+          test -s client/src/components/v14316/AdminControlCenter.tsx
+          test -s client/src/pages/GuardianPublicPage.tsx
+          test -s migrations/20260723_014_v14316_guardian_support_metrics.sql
+
+          grep -Fq 'aes-256-gcm' server/v14316/controlCenter.mjs
+          grep -Fq 'CREWCHECK_SUPPORT_TICKET_V1' server/v14316/controlCenter.mjs
+          grep -Fq "privacyMode: 'aggregate-only'" server/v14316/controlCenter.mjs
+          grep -Fq "rankPreference: 'DISTANCE'" server/v14316/telegramLocation.mjs
+          grep -Fq 'request_location: true' server/v14316/telegramLocation.mjs
+          grep -Fq 'data-health-sync="continuous"' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'window.setInterval(refresh, 60_000)' client/src/components/v1434/CrewCheckLifeView.tsx
+          grep -Fq 'refreshSmartDepartureLocation' client/src/pages/Home.tsx
+          grep -Fq '.filter(visitorRealDay)' client/src/pages/VisitorAccessPage.tsx
+          grep -Fq 'conciergeLayoverAwareReply' server/v1403/premium-helpers.snippet
+          grep -Fq 'CREWCHECK_FOUNDER_PHOTO' client/src/pages/AboutUsPage.tsx
+          grep -Fq 'CrewCheck v14.3.16' client/public/manual.html
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
 
       - name: Build web client
         run: npx vite build
 
-      - name: Run v14.3.14 aviation/family regression
+      - name: Run aviation and family regression
         run: node scripts/regression-v14-3-14-aviation-family.mjs
 
-      - name: Run v14.3.15 daily guide regression
+      - name: Run daily guide regression
         run: node scripts/regression-v14-3-15-daily-guide.mjs
+
+      - name: Run Control Center regression
+        run: node scripts/regression-v14-3-16-control-center.mjs
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -187,6 +190,7 @@ jobs:
         with:
           name: CrewCheck-android-build-diagnostics
           path: |
+            ${{ runner.temp }}/crewcheck-prepare.log
             ${{ runner.temp }}/android-build.log
             ${{ runner.temp }}/android-build-tail.log
           if-no-files-found: ignore
@@ -206,9 +210,8 @@ jobs:
           grep -Fq 'CrewCheckHealthBridge' "$inspect_dir/dex-strings.txt"
           grep -Fq 'crewcheck-health-v1' "$inspect_dir/dex-strings.txt"
           grep -Fq 'openHealthConnect' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'requestPermissionsFromHost' "$inspect_dir/dex-strings.txt"
+          grep -Fq 'refreshFromHost' "$inspect_dir/dex-strings.txt"
           grep -Fq 'getHealthConnectManageDataIntent' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'crewcheck:health-action-message' "$inspect_dir/dex-strings.txt"
           ! grep -Fq 'MANAGE_HEALTH_PERMISSIONS' "$inspect_dir/dex-strings.txt"
 
       - name: Verify and stage signed artifacts
