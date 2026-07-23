@@ -20,12 +20,19 @@ source = source.replace(
 );
 source = source.replace('      setLocationVersion((value) => value + 1);\n', '');
 source = source.replace('${locationVersion}', '${originLabel}');
+source = source.replace(
+  `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");`,
+  `    else if (next.includes("{view === 'admin' && <Admin/>}")) next = next.replace("{view === 'admin' && <Admin/>}", "{view === 'admin' && <><AdminControlCenter/><Admin/></>}");\n    else if (next.includes("{view === 'admin' && <AdminControlView/>}")) next = next.replace("{view === 'admin' && <AdminControlView/>}", "{view === 'admin' && <><AdminControlCenter/><AdminControlView/></>}");`,
+);
 
 if (!source.includes("const anchor = \"    const message = update?.message || update?.edited_message || updateOrMessage || {};\"")) {
   throw new Error('[v14318-bootstrap] Não foi possível adaptar o handler Telegram atual.');
 }
 if (!source.includes("const anchor = \"import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';\"")) {
   throw new Error('[v14318-bootstrap] Não foi possível adaptar os imports do Home.');
+}
+if (!source.includes('AdminControlView/><')) {
+  throw new Error('[v14318-bootstrap] Não foi possível adaptar o painel Admin atual.');
 }
 
 fs.writeFileSync(path, source, 'utf8');
