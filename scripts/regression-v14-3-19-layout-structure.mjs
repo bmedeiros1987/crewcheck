@@ -23,6 +23,12 @@ function versionAtLeast(value, minimum) {
   }
   return true;
 }
+function androidVersionCode(value) {
+  const parsed = parseVersion(value);
+  if (!parsed) return 0;
+  const [major, minor, patch] = parsed;
+  return (major * 10_000) + (minor * 100) + patch;
+}
 
 const pkg = JSON.parse(read('package.json'));
 const css = read('client/src/theme-v14-3-19.css');
@@ -34,7 +40,7 @@ const gradle = read('android-wrapper/app/build.gradle');
 
 const versionName = gradle.match(/versionName\s+["']([^"']+)["']/)?.[1];
 const versionCode = Number(gradle.match(/versionCode\s+(\d+)/)?.[1] || 0);
-const expectedCode = Number(String(pkg.version).replace(/\D/g, ''));
+const expectedCode = androidVersionCode(pkg.version);
 
 check(versionAtLeast(pkg.version, '14.3.19'), `package preparado em versão 14.3.19 ou posterior; encontrado ${pkg.version}`);
 check(versionName === pkg.version, `Android sincronizado com package.json (${pkg.version})`);
