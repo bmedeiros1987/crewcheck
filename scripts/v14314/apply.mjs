@@ -54,7 +54,7 @@ const DIGIT_WORDS =`);
   const minute = Number(match[2]);
   if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23) return fallback;
   const hourText = CREWCHECK_HOUR_WORDS[hour];
-  return minute ? \`${'${hourText}'} e ${'${minute}'} ${'${minute === 1 ? "minuto" : "minutos"}'}\` : hourText;
+  return minute ? hourText + ' e ' + minute + ' ' + (minute === 1 ? 'minuto' : 'minutos') : hourText;
 }`);
   next = next.replace(/function shortAirportName\(code = ''\) \{[\s\S]*?\n\}/, `function shortAirportName(code = '') {
   return translatedAirportName(code);
@@ -76,38 +76,46 @@ update('server/v1403/premium-helpers.snippet', (source) => {
   return 'a pessoa';
 }
 
+function conciergeFamilyCapitalizedSubject(profile = {}, snapshot = {}) {
+  const subject = conciergeFamilySubject(profile, snapshot);
+  return subject.charAt(0).toUpperCase() + subject.slice(1);
+}
+
 function conciergeFamilyReturnReply(snapshot = {}, profile = {}) {
   const subject = conciergeFamilySubject(profile, snapshot);
+  const subjectTitle = conciergeFamilyCapitalizedSubject(profile, snapshot);
   const records = conciergeProgramRecords(snapshot?.roster || {}).filter((record) => record.end > new Date());
   const base = String(snapshot?.preferences?.base || profile?.base || snapshot?.roster?.base || '').toUpperCase();
   const returnRecord = records.find((record) => String(record.legs?.at(-1)?.destination || '').toUpperCase() === base) || records.at(-1);
   if (!returnRecord) return 'Não encontrei um retorno confirmado na escala compartilhada.';
   const place = translatedAirportName(returnRecord.legs?.at(-1)?.destination || base);
   const arrival = spokenTime(returnRecord.legs?.at(-1)?.arrivalTime || returnRecord.endTime);
-  return `${subject[0].toUpperCase() + subject.slice(1)} deve retornar por ${place}, com chegada prevista para ${arrival}. O horário pode mudar conforme a operação.`;
+  return subjectTitle + ' deve retornar por ' + place + ', com chegada prevista para ' + arrival + '. O horário pode mudar conforme a operação.';
 }
 
 function conciergeFamilyCityReply(snapshot = {}, profile = {}) {
   const subject = conciergeFamilySubject(profile, snapshot);
+  const subjectTitle = conciergeFamilyCapitalizedSubject(profile, snapshot);
   const shared = snapshot?.preferences?.location || snapshot?.location;
-  if (shared?.city) return `${subject[0].toUpperCase() + subject.slice(1)} está em ${shared.city}. Essa informação foi compartilhada pelo titular.`;
+  if (shared?.city) return subjectTitle + ' está em ' + shared.city + '. Essa informação foi compartilhada pelo titular.';
   const current = conciergeProgramRecords(snapshot?.roster || {}).find((record) => record.start <= new Date() && record.end >= new Date());
   const code = current?.legs?.at(-1)?.destination || current?.legs?.[0]?.origin || current?.day?.location || '';
-  return code ? `${subject[0].toUpperCase() + subject.slice(1)} está com programação em ${translatedAirportName(code)}. A localização exata não foi compartilhada.` : 'A cidade atual não está disponível nas permissões compartilhadas.';
+  return code ? subjectTitle + ' está com programação em ' + translatedAirportName(code) + '. A localização exata não foi compartilhada.' : 'A cidade atual não está disponível nas permissões compartilhadas.';
 }
 
 function conciergeFamilyContactReply(snapshot = {}, profile = {}) {
   const subject = conciergeFamilySubject(profile, snapshot);
+  const subjectTitle = conciergeFamilyCapitalizedSubject(profile, snapshot);
   const current = conciergeProgramRecords(snapshot?.roster || {}).find((record) => record.start <= new Date() && record.end >= new Date());
-  if (!current) return `Não há atividade operacional confirmada agora. Ainda assim, não consigo garantir que ${subject} esteja disponível para atender.`;
+  if (!current) return 'Não há atividade operacional confirmada agora. Ainda assim, não consigo garantir que ' + subject + ' esteja disponível para atender.';
   const code = String(current.code || '').toUpperCase();
-  if (current.legs?.length) return `${subject[0].toUpperCase() + subject.slice(1)} está em uma programação de voo. É melhor aguardar o término previsto para ${spokenTime(current.endTime)}.`;
-  if (/PERNOITE|HOTEL|DESCANSO|REPOUSO/.test(code)) return `${subject[0].toUpperCase() + subject.slice(1)} está em período de descanso. Prefira enviar uma mensagem e aguardar a resposta.`;
-  return `${subject[0].toUpperCase() + subject.slice(1)} está em ${translatedActivityLabel(code)} até ${spokenTime(current.endTime)} e pode não conseguir atender agora.`;
+  if (current.legs?.length) return subjectTitle + ' está em uma programação de voo. É melhor aguardar o término previsto para ' + spokenTime(current.endTime) + '.';
+  if (/PERNOITE|HOTEL|DESCANSO|REPOUSO/.test(code)) return subjectTitle + ' está em período de descanso. Prefira enviar uma mensagem e aguardar a resposta.';
+  return subjectTitle + ' está em ' + translatedActivityLabel(code) + ' até ' + spokenTime(current.endTime) + ' e pode não conseguir atender agora.';
 }
 
 `;
-  return source.replace(anchor, `${block}${anchor}`);
+  return source.replace(anchor, block + anchor);
 });
 
 update('server/v1403/build-reply.snippet', (source) => {
