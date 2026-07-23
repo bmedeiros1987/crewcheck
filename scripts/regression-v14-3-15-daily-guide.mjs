@@ -1,8 +1,9 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
-const read = (path) => {
-  if (!fs.existsSync(path)) throw new Error(`[v14.3.15] Arquivo ausente: ${path}`);
-  return fs.readFileSync(path, 'utf8');
+const read = (file) => {
+  if (!fs.existsSync(file)) throw new Error(`[v14.3.15] Arquivo ausente: ${file}`);
+  return fs.readFileSync(file, 'utf8');
 };
 
 const server = read('server.mjs');
@@ -16,6 +17,16 @@ const gradle = read('android-wrapper/app/build.gradle');
 const chain = read('scripts/v14312/apply.mjs');
 const aviationFamily = read('scripts/v14314/apply.mjs');
 const pkg = JSON.parse(read('package.json'));
+
+function persist(message) {
+  const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
+  if (!runnerTemp) return;
+  try {
+    const content = `[CrewCheck v14.3.15 regression]\n${message}\n`;
+    fs.writeFileSync(path.join(runnerTemp, 'android-build.log'), content, 'utf8');
+    fs.writeFileSync(path.join(runnerTemp, 'android-build-tail.log'), content, 'utf8');
+  } catch {}
+}
 
 const checks = [
   ['cadeia preserva 14.3.14 e aplica 14.3.15', chain.includes("await import('../v14314/apply.mjs')") && chain.includes("await import('../v14315/apply.mjs')")],
@@ -48,16 +59,24 @@ const checks = [
 ];
 
 for (const [label, ok] of checks) {
-  if (!ok) throw new Error(`[v14.3.15] Reprovado: ${label}`);
+  if (!ok) {
+    const message = `[v14.3.15] Reprovado: ${label}`;
+    persist(message);
+    throw new Error(message);
+  }
   console.log(`✓ ${label}`);
 }
 
 if (/diagnostica|apto|inapto|risco cardíaco/i.test(guide)) {
-  throw new Error('[v14.3.15] O guia diário não pode apresentar avaliação clínica ou aptidão.');
+  const message = '[v14.3.15] O guia diário não pode apresentar avaliação clínica ou aptidão.';
+  persist(message);
+  throw new Error(message);
 }
 
 if (/fetch\([^)]*health|\/api\/life\/health/i.test(life)) {
-  throw new Error('[v14.3.15] O motor adaptativo não pode enviar resumos de saúde ao servidor.');
+  const message = '[v14.3.15] O motor adaptativo não pode enviar resumos de saúde ao servidor.';
+  persist(message);
+  throw new Error(message);
 }
 
 console.log(`[v14.3.15] ${checks.length} verificações aprovadas: escala, recuperação, café, localização, esportes, lazer, folga e conexões rápidas.`);
