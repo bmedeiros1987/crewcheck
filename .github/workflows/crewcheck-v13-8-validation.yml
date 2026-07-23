@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: '22'
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
@@ -41,7 +41,7 @@ jobs:
         run: npx tsc --noEmit
       - name: Build web client
         run: npx vite build
-      - name: Validate current Android bridge sources
-        run: node scripts/regression-v14-3-10-health-settings-compile.mjs
+      - name: Validate native Health Connect host flow
+        run: node scripts/regression-v14-3-11-health-native-host.mjs
       - name: Test server
         run: node test-server.mjs
