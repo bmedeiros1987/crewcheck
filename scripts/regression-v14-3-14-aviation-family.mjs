@@ -1,12 +1,27 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 const language = fs.readFileSync('server/v1404/telegram-language.mjs', 'utf8');
 const helpers = fs.readFileSync('server/v1403/premium-helpers.snippet', 'utf8');
 const reply = fs.readFileSync('server/v1403/build-reply.snippet', 'utf8');
 const platform = fs.readFileSync('client/src/components/platform/PlatformCenter.tsx', 'utf8');
 
+function persist(message) {
+  const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
+  if (!runnerTemp) return;
+  try {
+    const content = `[CrewCheck v14.3.14 regression]\n${message}\n`;
+    fs.writeFileSync(path.join(runnerTemp, 'android-build.log'), content, 'utf8');
+    fs.writeFileSync(path.join(runnerTemp, 'android-build-tail.log'), content, 'utf8');
+  } catch {}
+}
+
 function check(condition, message) {
-  if (!condition) throw new Error(message);
+  if (!condition) {
+    persist(message);
+    throw new Error(message);
+  }
+  console.log(`✓ ${message}`);
 }
 
 check(language.includes('translatedAirportName'), 'Tradução IATA/ICAO ausente.');
