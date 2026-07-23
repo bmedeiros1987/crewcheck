@@ -10,6 +10,7 @@ const v1424 = read('scripts/v1424/apply.mjs');
 const v1432 = read('scripts/v1432/apply.mjs');
 const workflow = read('.github/workflows/crewcheck-v13-8-validation.yml');
 const packageJson = JSON.parse(read('package.json'));
+const publicVersion = String(packageJson.version || '');
 
 let passed = 0;
 function check(label, condition) {
@@ -18,10 +19,10 @@ function check(label, condition) {
   console.log(`✓ ${label}`);
 }
 
-check('versão pública 14.3.6', packageJson.version === '14.3.6' && server.includes("version: '14.3.6'"));
+check(`versão pública ${publicVersion}`, /^\d+\.\d+\.\d+$/.test(publicVersion) && server.includes(`version: '${publicVersion}'`));
 check('v1424 aceita variantes da rota Telegram', v1424.includes('locationRoutePattern') && v1424.includes('originalRoute.replace'));
 check('v1424 possui ponto seguro de instalação', v1424.includes('reliabilityAnchor') && v1424.includes('improvedThrottle'));
-check('v1432 preserva intenções existentes', v1432.includes('complianceIntentPattern') && v1432.includes('complianceIntent, `${regulationIntent}\\n${complianceIntent}`'));
+check('v1432 preserva intenções existentes', v1432.includes('complianceIntentPattern') && v1432.includes('complianceIntent, `${regulationIntent}\n${complianceIntent}`'));
 check('deduplicação Telegram', server.includes('crewcheckTelegramUpdateClaim(update)'));
 check('edição de localização silenciosa', server.includes('crewcheckLocationReplySender') && server.includes('crewcheckSilentLocation'));
 check('apresentação ausente não vira 08:00', regulation.includes("return minutes === null ? '' : simpleClock(minutes - 60)") && !regulation.includes('minutes === null ? DEFAULT_FORM.startTime'));
@@ -39,4 +40,4 @@ check('pop-up Google preservado com COOP', server.includes("Cross-Origin-Opener-
 check('proteções HTTP restantes', server.includes("X-Frame-Options', 'DENY'") && server.includes("X-Content-Type-Options', 'nosniff'"));
 check('script de regressão registrado', packageJson.scripts?.['regression:v14.3.3']?.includes('regression-v14-3-3-release-recovery.mjs'));
 
-console.log(`CrewCheck v14.3.6: ${passed} verificações de recuperação aprovadas.`);
+console.log(`CrewCheck v${publicVersion}: ${passed} verificações de recuperação aprovadas.`);
