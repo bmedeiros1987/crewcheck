@@ -15,6 +15,7 @@ import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
 import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
 import AboutUsPage from "./pages/AboutUsPage";
+import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
 import { getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
@@ -103,6 +104,8 @@ function Router() {
     <Route path="/telegram">{() => <Protected><TelegramConnectPage /></Protected>}</Route>
     <Route path="/sobre" component={AboutUsPage} />
     <Route path="/about" component={AboutUsPage} />
+    <Route path="/status" component={SystemStatusPage} />
+    <Route path="/system-status" component={SystemStatusPage} />
     <Route path="/">{() => <Protected><Home /></Protected>}</Route>
     <Route path="/app">{() => <Protected><Home /></Protected>}</Route>
     <Route path="/home">{() => <Protected><Home /></Protected>}</Route>
@@ -131,7 +134,7 @@ function Router() {
 export default function App() {
   const [, setLocation] = useLocation();
   const [appMode, setAppMode] = useState(false);
-  const [maintenanceState, setMaintenanceState] = useState<{ enabled?: boolean; message?: string; title?: string; status?: string; adminBypass?: boolean } | null>(null);
+  const [maintenanceState, setMaintenanceState] = useState<{ enabled?: boolean; message?: string; title?: string; status?: string; adminBypass?: boolean; updatedAt?: string | null; estimatedReturnAt?: string | null; etaMinutes?: number | null } | null>(null);
   const [bootSplashDone, setBootSplashDone] = useState(true);
 
   useEffect(() => {
@@ -172,7 +175,7 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const publicPaths = ['/privacy', '/terms', '/about', '/sobre', '/oauth-verification', '/google-calendar', '/delete-account', '/visitor', '/share/'];
+  const publicPaths = ['/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/visitor', '/share/'];
   const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !publicPaths.some((path) => currentPath.startsWith(path)));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
