@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, BriefcaseBusiness, CalendarDays, Car, ChevronRight, Clock, Home, Map, Menu, Moon, Plane, Radar, Save, ShieldCheck, Sun, UserRound, Wifi } from 'lucide-react';
+import { Bell, CalendarDays, Car, ChevronRight, Clock, Menu, Plane, Radar, Save, ShieldCheck, Wifi } from 'lucide-react';
 import { getToken } from '@/lib/authClient';
+import { BottomNav } from '@/components/premium/SideDrawer';
 
 interface DashboardProps {
   user: { name: string; company: string; avatar?: string; base?: string; requiresDeparture?: boolean };
@@ -53,11 +54,6 @@ function leaveTime(evt?: DashboardProps['nextEvent']) {
   const d = new Date(); d.setHours(h, m, 0, 0); d.setMinutes(d.getMinutes()-90); return d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
 }
 
-function BottomNav({ active, onNavigate, alertsCount = 0 }: { active: string; onNavigate: (view: string) => void; alertsCount?: number }) {
-  const items = [ ['Cockpit', 'home', Home], ['Roster', 'roster', CalendarDays], ['Alerts', 'alerts', Bell], ['Carga', 'perdiem', BriefcaseBusiness], ['Menu', 'more', Menu] ] as const;
-  return <nav className="cc1267-bottom-nav">{items.map(([label, view, Icon]) => <button key={view} onClick={() => onNavigate(view)} className={active === view ? 'is-active' : ''}><Icon size={23}/><span>{label}</span>{view === 'alerts' && alertsCount > 0 && <b>{alertsCount}</b>}</button>)}</nav>;
-}
-
 export default function Dashboard({ user, nextEvent, onNavigate, onOpenMenu, onToggleTheme, perDiemForecastLabel = '—', weeklyDutyLabel = '—', alertsCount = 0, canAccessC32FAcademy = false }: DashboardProps) {
   const route = useMemo(() => routeParts(nextEvent), [nextEvent]);
   const flight = flightNumber(nextEvent);
@@ -107,7 +103,13 @@ export default function Dashboard({ user, nextEvent, onNavigate, onOpenMenu, onT
         <button onClick={() => onNavigate('perdiem')}><CalendarDays/><strong>Diárias</strong><small>Escalas e lançamentos</small><ChevronRight/></button>
         <button onClick={() => onNavigate('salary')}><Clock/><strong>Salário</strong><small>Resumo de pagamentos</small><ChevronRight/></button>
       </section>
-      <BottomNav active="home" onNavigate={onNavigate} alertsCount={alertsCount} />
+      <BottomNav
+        activeView="home"
+        errorsCount={alertsCount}
+        onMenuOpen={() => onOpenMenu?.()}
+        onChange={onNavigate}
+        onOpenHomeView={onNavigate}
+      />
     </main>
   );
 }
