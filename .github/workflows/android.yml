@@ -59,7 +59,7 @@ jobs:
       - name: Install web dependencies
         run: npm ci || npm install
 
-      - name: Prepare CrewCheck 14.3.16 sources
+      - name: Prepare CrewCheck 14.3.17 sources
         shell: bash
         run: |
           set -euo pipefail
@@ -76,14 +76,14 @@ jobs:
           sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
           chmod +x android-wrapper/gradlew
 
-      - name: Verify Control Center, Life and Health Connect flow
+      - name: Verify Control Center, Life, theme and Health Connect flow
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const p=require('./package.json'); if(p.version!=='14.3.16') throw new Error('Expected 14.3.16, got '+p.version)"
-          grep -Fq "version: '14.3.16'" server.mjs
-          grep -Fq 'versionName "14.3.16"' android-wrapper/app/build.gradle
-          grep -Fq 'versionCode 140316' android-wrapper/app/build.gradle
+          node -e "const p=require('./package.json'); if(p.version!=='14.3.17') throw new Error('Expected 14.3.17, got '+p.version)"
+          grep -Fq "version: '14.3.17'" server.mjs
+          grep -Fq 'versionName "14.3.17"' android-wrapper/app/build.gradle
+          grep -Fq 'versionCode 140317' android-wrapper/app/build.gradle
           grep -Fq "id 'com.android.application' version '8.11.1'" android-wrapper/build.gradle
           grep -Fq "id 'org.jetbrains.kotlin.android' version '2.0.21'" android-wrapper/build.gradle
           grep -Eq 'compileSdk[[:space:]]+36' android-wrapper/app/build.gradle
@@ -99,6 +99,8 @@ jobs:
           test -s client/src/components/v14316/SupportCenterView.tsx
           test -s client/src/components/v14316/AdminControlCenter.tsx
           test -s client/src/pages/GuardianPublicPage.tsx
+          test -s client/src/lib/themeRuntime.ts
+          test -s client/src/theme-v14-3-17.css
           test -s migrations/20260723_014_v14316_guardian_support_metrics.sql
 
           grep -Fq 'aes-256-gcm' server/v14316/controlCenter.mjs
@@ -113,6 +115,9 @@ jobs:
           grep -Fq 'conciergeLayoverAwareReply' server/v1403/premium-helpers.snippet
           grep -Fq 'CREWCHECK_FOUNDER_PHOTO' client/src/pages/AboutUsPage.tsx
           grep -Fq 'CrewCheck v14.3.16' client/public/manual.html
+          grep -Fq "ORDER: CrewCheckThemePreference[] = ['system', 'light', 'dark']" client/src/lib/themeRuntime.ts
+          grep -Fq 'Aparência: Automático' client/src/theme-v14-3-17.css
+          ! grep -Eq ',[[:space:]]*@media' client/src/theme-v14-3-17.css
 
       - name: TypeScript check
         run: npx tsc --noEmit
@@ -128,6 +133,9 @@ jobs:
 
       - name: Run Control Center regression
         run: node scripts/regression-v14-3-16-control-center.mjs
+
+      - name: Run theme and layout regression
+        run: node scripts/regression-v14-3-17-theme-layout.mjs
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
