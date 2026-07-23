@@ -48,3 +48,4 @@ if (!after.includes('getLaunchIntentForPackage(HEALTH_CONNECT_PACKAGE) ?: return
 
 if (after !== before) fs.writeFileSync(path, after, 'utf8');
 console.log('[v14.3.10-fix] Abertura do Health Connect simplificada e compilável.');
+await import('./v14311/apply.mjs');
