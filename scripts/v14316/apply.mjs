@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const VERSION = '14.3.16';
+const VERSION = '14.3.15';
 function update(path, transform, { optional = false } = {}) {
   if (!fs.existsSync(path)) { if (optional) return; throw new Error(`[v14316] Arquivo ausente: ${path}`); }
   const before = fs.readFileSync(path, 'utf8');
@@ -72,7 +72,7 @@ update('client/src/pages/AuthPage.tsx', (source) => source.replace(/crewcheck_la
 update('client/src/pages/Home.tsx', (source) => source.replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`), { optional: true });
 update('server/platform.mjs', (source) => source.replace(/const APP_VERSION = '\d+\.\d+\.\d+';/, `const APP_VERSION = '${VERSION}';`), { optional: true });
 update('server.mjs', (source) => source.replace(/version\s*:\s*'\d+\.\d+\.\d+'/g, `version: '${VERSION}'`).replace(/v=\d+\.\d+\.\d+/g, `v=${VERSION}`).replace(/static-shell-\d+\.\d+\.\d+/g, `static-shell-${VERSION}`), { optional: true });
-update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCode\s+\d+/, 'versionCode 140316').replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
-update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - visitante de teste e termos legais UTF-8`; return `${JSON.stringify(data, null, 2)}\n`; });
+update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCode\s+\d+/, 'versionCode 140315').replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
+update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - visitante de teste, guia diário e termos legais UTF-8`; return `${JSON.stringify(data, null, 2)}\n`; });
 
-console.log(`[v14316] CrewCheck ${VERSION}: visitante Premium de teste e normalização UTF-8 dos termos.`);
+console.log('[v14316-hotfix] Visitante Premium de teste e normalização UTF-8 dos termos aplicados sobre a 14.3.15.');
