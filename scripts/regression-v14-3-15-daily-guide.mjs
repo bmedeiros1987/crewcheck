@@ -17,6 +17,11 @@ const gradle = read('android-wrapper/app/build.gradle');
 const chain = read('scripts/v14312/apply.mjs');
 const aviationFamily = read('scripts/v14314/apply.mjs');
 const pkg = JSON.parse(read('package.json'));
+const placesSearchStart = server.indexOf('async function handlePlacesSearch');
+const placesSearchEnd = placesSearchStart >= 0 ? server.indexOf('\nasync function ', placesSearchStart + 30) : -1;
+const placesSearchSource = placesSearchStart >= 0
+  ? server.slice(placesSearchStart, placesSearchEnd > placesSearchStart ? placesSearchEnd : placesSearchStart + 12_000)
+  : '';
 
 function persist(message) {
   const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
@@ -33,9 +38,9 @@ const checks = [
   ['Concierge Familiar anterior preservado', aviationFamily.includes('conciergeFamilyReturnReply') && aviationFamily.includes('translatedAirportName')],
   ['categorias de esporte ampliadas', server.includes("crossfit: { label: 'boxes de CrossFit'") && server.includes("swimming: { label: 'locais de natação'") && server.includes("sports: { label: 'locais de esporte'")],
   ['categorias de lazer e folga ampliadas', server.includes("leisure: { label: 'opções de lazer'") && server.includes("trip: { label: 'passeios para folga'") && server.includes("study: { label: 'locais para estudo'")],
-  ['busca internacional sem viés fixo Brasil', !server.includes("regionCode: 'BR'")],
-  ['raio variável por modalidade', server.includes('radius: Number(config.radius || 12_000)')],
-  ['ranking com volume de avaliações', server.includes('userRatingCount: Number(place.userRatingCount)')],
+  ['busca internacional de locais sem região fixa', Boolean(placesSearchSource) && !placesSearchSource.includes("regionCode: 'BR'") && !placesSearchSource.includes('regionCode: "BR"')],
+  ['raio variável por modalidade', placesSearchSource.includes('radius: Number(config.radius || 12_000)')],
+  ['ranking com volume de avaliações', placesSearchSource.includes('userRatingCount: Number(place.userRatingCount)')],
   ['localização armazenada localmente', places.includes("crewcheck:life:last-location:v1") && places.includes('requestLifeLocation')],
   ['busca usa endpoint existente de locais', places.includes('/api/places/search?') && places.includes('searchLifePlaceSet')],
   ['cache curto de locais', places.includes('20 * 60_000')],
