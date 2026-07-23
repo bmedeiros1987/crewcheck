@@ -67,3 +67,4 @@ update('package.json', (source) => {
 });
 
 console.log(`[v1439] CrewCheck ${VERSION}: diagnóstico nativo sem BuildConfig e ponte Health Connect preservada.`);
+await import('../v14310/apply.mjs');
