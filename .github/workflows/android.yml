@@ -89,8 +89,11 @@ jobs:
           grep -Fq 'fun ping(): String = "crewcheck-health-v1"' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'fun postMessage(raw: String?): Boolean' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'openHealthConnectSettings()' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
-          grep -Fq 'getLaunchIntentForPackage(HEALTH_CONNECT_PACKAGE)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'val primary = Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'primary.resolveActivity(activity.packageManager)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          grep -Fq 'getLaunchIntentForPackage(HEALTH_CONNECT_PACKAGE) ?: return false' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          ! grep -Fq 'val intents = listOf(' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
+          ! grep -Fq 'val intents = listOfNotNull(' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           ! grep -Fq 'HealthConnectClient.getHealthConnectSettingsAction()' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           ! grep -Fq 'HealthConnectClient.getHealthConnectManageDataIntent(activity)' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
           grep -Fq 'availability", "requesting"' android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt
@@ -159,10 +162,31 @@ jobs:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           ./gradlew --version
-          ./gradlew --no-daemon clean :app:assembleRelease :app:bundleRelease --stacktrace
+          set +e
+          ./gradlew --no-daemon --console=plain clean :app:assembleRelease :app:bundleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/android-build.log"
+          build_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$build_status" -ne 0 ]]; then
+            tail -n 240 "$RUNNER_TEMP/android-build.log" > "$RUNNER_TEMP/android-build-tail.log"
+            first_error="$(grep -m1 -E '^e: |^error:|FAILURE:|\* What went wrong:' "$RUNNER_TEMP/android-build.log" || true)"
+            echo "::error title=Android release build failed::${first_error:-Consulte o artefato CrewCheck-android-build-diagnostics.}"
+            exit "$build_status"
+          fi
+
+      - name: Upload Android build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-android-build-diagnostics
+          path: |
+            ${{ runner.temp }}/android-build.log
+            ${{ runner.temp }}/android-build-tail.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Inspect Health Connect bridge inside compiled APK
         shell: bash
