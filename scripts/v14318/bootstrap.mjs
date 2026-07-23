@@ -14,8 +14,16 @@ const newBlock = `  if (!next.includes('await handleTelegramLocationAndPlaces(up
   }`;
 
 if (source.includes(oldBlock)) source = source.replace(oldBlock, newBlock);
+source = source.replace(
+  `    const anchor = "import ManualRegulationView from '@/components/v1392/ManualRegulationView';";`,
+  `    const anchor = "import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';";`,
+);
+
 if (!source.includes("const anchor = \"    const message = update?.message || update?.edited_message || updateOrMessage || {};\"")) {
   throw new Error('[v14318-bootstrap] Não foi possível adaptar o handler Telegram atual.');
+}
+if (!source.includes("const anchor = \"import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';\"")) {
+  throw new Error('[v14318-bootstrap] Não foi possível adaptar os imports do Home.');
 }
 
 fs.writeFileSync(path, source, 'utf8');
