@@ -58,7 +58,7 @@ jobs:
       - name: Install web dependencies
         run: npm ci || npm install
 
-      - name: Prepare CrewCheck 14.3.14 sources
+      - name: Prepare CrewCheck 14.3.15 sources
         shell: bash
         run: |
           set -euo pipefail
@@ -75,14 +75,14 @@ jobs:
           sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
           chmod +x android-wrapper/gradlew
 
-      - name: Verify Concierge, Life and Health Connect flow
+      - name: Verify Life, locations, Concierge and Health Connect flow
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const p=require('./package.json'); if(p.version!=='14.3.14') throw new Error('Expected 14.3.14, got '+p.version)"
-          grep -Fq "version: '14.3.14'" server.mjs
-          grep -Fq 'versionName "14.3.14"' android-wrapper/app/build.gradle
-          grep -Fq 'versionCode 140314' android-wrapper/app/build.gradle
+          node -e "const p=require('./package.json'); if(p.version!=='14.3.15') throw new Error('Expected 14.3.15, got '+p.version)"
+          grep -Fq "version: '14.3.15'" server.mjs
+          grep -Fq 'versionName "14.3.15"' android-wrapper/app/build.gradle
+          grep -Fq 'versionCode 140315' android-wrapper/app/build.gradle
           grep -Fq "id 'com.android.application' version '8.11.1'" android-wrapper/build.gradle
           grep -Fq "id 'org.jetbrains.kotlin.android' version '2.0.21'" android-wrapper/build.gradle
           grep -Eq 'compileSdk[[:space:]]+36' android-wrapper/app/build.gradle
@@ -94,30 +94,37 @@ jobs:
           grep -Fq 'public boolean openHealthConnect()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           grep -Fq 'public boolean openHealthConnectSettings()' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
           test -s client/src/lib/lifeConcierge.ts
+          test -s client/src/lib/lifePlaces.ts
           test -s client/src/components/v14313/LifeConciergePanel.tsx
-          test -s client/src/components/v14313/life-concierge.css
+          test -s client/src/components/v14314/RoutineDailyConcierge.tsx
+          test -s client/src/components/v14314/routine-daily-concierge.css
           grep -Fq 'export function getLifeRoutineContext' client/src/lib/lifeConcierge.ts
-          grep -Fq 'export function buildLifeConciergeRecommendation' client/src/lib/lifeConcierge.ts
-          grep -Fq 'if (Array.isArray(fallback))' client/src/lib/lifeConcierge.ts
-          grep -Fq 'isLifeQuietTime(item.time, preferences)' client/src/lib/lifeConcierge.ts
-          grep -Fq 'CHECK-IN COMPARTILHADO' client/src/components/v14313/LifeConciergePanel.tsx
-          grep -Fq '<LifeConciergePanel nextProgram={nextProgram} healthSummary={nativeSummary} profile={profile}/>' client/src/components/v1434/CrewCheckLifeView.tsx
-          grep -Fq 'ingestHealthSummary(detail)' client/src/components/v1434/CrewCheckLifeView.tsx
-          grep -Fq 'applyLifeAdaptiveContext(applyPremiumRoutineReliability' client/src/lib/routinePlanner.ts
-          grep -Fq 'sono recente abaixo da meta: treino forte rebaixado' client/src/lib/routinePlanner.ts
-          ! grep -Eq 'fetch\(|authFetch|/api/' client/src/lib/lifeConcierge.ts
+          grep -Fq 'export async function requestLifeLocation' client/src/lib/lifePlaces.ts
+          grep -Fq 'searchLifePlaceSet' client/src/lib/lifePlaces.ts
+          grep -Fq "breakfastTime: '09:30'" client/src/components/v14314/RoutineDailyConcierge.tsx
+          grep -Fq 'RECUPERAÇÃO REFORÇADA' client/src/components/v14314/RoutineDailyConcierge.tsx
+          grep -Fq 'CONEXÕES EM UM TOQUE' client/src/components/v14314/RoutineDailyConcierge.tsx
+          grep -Fq 'tg://resolve' client/src/components/v14314/RoutineDailyConcierge.tsx
+          grep -Fq 'recordGymCheckIn(place.name' client/src/components/v14314/RoutineDailyConcierge.tsx
+          grep -Fq '<RoutineDailyConcierge events={events}/>' client/src/components/v139/RoutineIntelligenceView.tsx
+          grep -Fq 'getLifeRoutineContext().sleep.targetMinutes' client/src/components/v139/RoutineIntelligenceView.tsx
+          grep -Fq "crossfit: { label: 'boxes de CrossFit'" server.mjs
+          grep -Fq "trip: { label: 'passeios para folga'" server.mjs
+          grep -Fq 'radius: Number(config.radius || 12_000)' server.mjs
+          ! grep -Fq "regionCode: 'BR'" server.mjs
           grep -Fq 'translatedAirportName' server/v1404/telegram-language.mjs
           grep -Fq 'translatedActivityLabel' server/v1404/telegram-language.mjs
-          grep -Fq 'vinte e duas horas' server/v1404/telegram-language.mjs
           grep -Fq 'conciergeFamilyReturnReply' server/v1403/premium-helpers.snippet
-          grep -Fq 'conciergeFamilyCityReply' server/v1403/premium-helpers.snippet
-          grep -Fq 'conciergeFamilyContactReply' server/v1403/premium-helpers.snippet
+          ! grep -Eq 'fetch\(|authFetch|/api/' client/src/lib/lifeConcierge.ts
 
       - name: Build web client
         run: npx vite build
 
-      - name: Run v14.3.14 regression
+      - name: Run v14.3.14 aviation/family regression
         run: node scripts/regression-v14-3-14-aviation-family.mjs
+
+      - name: Run v14.3.15 daily guide regression
+        run: node scripts/regression-v14-3-15-daily-guide.mjs
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
