@@ -36,11 +36,11 @@ jobs:
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
       - name: Prepare current CrewCheck sources
-        run: node scripts/v139/apply.mjs
+        run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
       - name: TypeScript check
-        run: npx tsc --noEmit
+        run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/typescript.log"
       - name: Build web client
-        run: npx vite build
+        run: npx vite build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
       - name: Validate aviation language and family concierge
         run: node scripts/regression-v14-3-14-aviation-family.mjs
       - name: Validate adaptive daily guide
@@ -49,3 +49,14 @@ jobs:
         run: node scripts/regression-v14-3-16-control-center.mjs
       - name: Test server
         run: node test-server.mjs
+      - name: Upload web diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-web-diagnostics
+          path: |
+            ${{ runner.temp }}/crewcheck-prepare.log
+            ${{ runner.temp }}/typescript.log
+            ${{ runner.temp }}/vite-build.log
+          if-no-files-found: ignore
+          retention-days: 7
