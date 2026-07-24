@@ -72,4 +72,15 @@ await import('../v1424/apply.mjs');
 await import('../v1425/apply.mjs');
 await import('../v14312/apply.mjs');
 await import('../v14322/apply.mjs');
-await import('../v14323/apply.mjs');
+
+const serverPath = 'server.mjs';
+const serverSource = fs.existsSync(serverPath) ? fs.readFileSync(serverPath, 'utf8') : '';
+const conciergeContextAlreadyApplied = serverSource.includes('function conciergeStayRecords(')
+  && serverSource.includes('function conciergeContextualRoutineReply(')
+  && serverSource.includes('async function conciergeHospitalsReply(');
+
+if (!conciergeContextAlreadyApplied) {
+  await import('../v14323/apply.mjs');
+} else {
+  console.log('[crewcheck:prepare] v14.3.23 já aplicado; repetição segura ignorada.');
+}
