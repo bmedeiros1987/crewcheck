@@ -74,3 +74,4 @@ if (!conciergeContextAlreadyApplied) await import('../v14323/apply.mjs');
 else console.log('[crewcheck:prepare] v14.3.23 já aplicado; repetição segura ignorada.');
 
 await import('../v14325/apply.mjs');
+await import('../v14326/apply.mjs');
