@@ -64,6 +64,7 @@ await import('../v1424/apply.mjs');
 await import('../v1425/apply.mjs');
 await import('../v14312/apply.mjs');
 await import('../v14322/apply.mjs');
+await import('../v14322-render-hotfix/apply.mjs');
 
 const serverPath = 'server.mjs';
 const serverSource = fs.existsSync(serverPath) ? fs.readFileSync(serverPath, 'utf8') : '';
