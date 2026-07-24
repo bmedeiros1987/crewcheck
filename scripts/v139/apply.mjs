@@ -12,22 +12,14 @@ function persistPreparationFailure(error) {
   } catch {}
 }
 
-process.once('uncaughtException', (error) => {
-  persistPreparationFailure(error);
-  process.exitCode = 1;
-});
-process.once('unhandledRejection', (reason) => {
-  persistPreparationFailure(reason);
-  process.exitCode = 1;
-});
+process.once('uncaughtException', (error) => { persistPreparationFailure(error); process.exitCode = 1; });
+process.once('unhandledRejection', (reason) => { persistPreparationFailure(reason); process.exitCode = 1; });
 
 const authClientPath = 'client/src/lib/authClient.ts';
 const deliveryMarker = "delivery: 'email' | 'telegram' | 'both' | 'telegram-call'";
 if (fs.existsSync(authClientPath)) {
   const source = fs.readFileSync(authClientPath, 'utf8');
-  if (source.includes('PasswordResetDelivery') && !source.includes(deliveryMarker)) {
-    fs.writeFileSync(authClientPath, `${source.trimEnd()}\n// ${deliveryMarker}\n`, 'utf8');
-  }
+  if (source.includes('PasswordResetDelivery') && !source.includes(deliveryMarker)) fs.writeFileSync(authClientPath, `${source.trimEnd()}\n// ${deliveryMarker}\n`, 'utf8');
 }
 
 await import('./apply-core.mjs');
@@ -78,9 +70,8 @@ const serverSource = fs.existsSync(serverPath) ? fs.readFileSync(serverPath, 'ut
 const conciergeContextAlreadyApplied = serverSource.includes('function conciergeStayRecords(')
   && serverSource.includes('function conciergeContextualRoutineReply(')
   && serverSource.includes('async function conciergeHospitalsReply(');
+if (!conciergeContextAlreadyApplied) await import('../v14323/apply.mjs');
+else console.log('[crewcheck:prepare] v14.3.23 já aplicado; repetição segura ignorada.');
 
-if (!conciergeContextAlreadyApplied) {
-  await import('../v14323/apply.mjs');
-} else {
-  console.log('[crewcheck:prepare] v14.3.23 já aplicado; repetição segura ignorada.');
-}
+await import('../v14325/apply.mjs');
+await import('../v14326/apply.mjs');
