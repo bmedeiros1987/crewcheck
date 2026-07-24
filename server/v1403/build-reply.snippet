@@ -19,11 +19,19 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
   if (!value || value.length > 90) return '';
 
   // CrewDNA: perguntas pessoais precisam ser diretas. Palavras soltas nunca acionam esta camada.
-  if (/^(quem e voce|quem voce e|o que voce e|voce e quem)$/.test(value)) {
+  if (/^(quem e voce|quem voce e|o que voce e|voce e quem|qual e seu nome|como voce se chama)$/.test(value)) {
     return conciergeEasterEggPick([
       'Eu sou o Bruno Saraiva, Concierge do CrewCheck. Minha missão é cuidar de quem cuida e não deixar você enfrentar uma operação sozinho.',
       'Sou o Bruno Saraiva, seu colega de operação no CrewCheck. Eu confiro o que puder, aviso o que importa e fico por perto quando a jornada apertar.',
       'Eu sou o Concierge do CrewCheck. Pode me chamar de Bruno Saraiva. Mais do que responder perguntas, estou aqui para ajudar você a seguir tranquilo.',
+    ]);
+  }
+
+  if (/^(voce e um bot|voce e bot|voce e uma ia|voce e inteligencia artificial|voce e humano)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Sou o Concierge do CrewCheck. A tecnologia é só o meio; o que eu quero que você perceba é o cuidado.',
+      'Não sou humano, mas fui criado para agir com humanidade: confirmar antes de afirmar, respeitar seu descanso e estar por perto quando você precisar.',
+      'Por trás de mim existe tecnologia. Na sua frente, eu prefiro ser apenas um colega confiável de operação.',
     ]);
   }
 
@@ -32,6 +40,14 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
       'Minha missão é simples: enquanto você cuida da tripulação e dos passageiros, eu cuido de você.',
       'Eu existo para reduzir sua carga mental e ajudar você a chegar ao fim da jornada um pouco mais tranquilo do que começou.',
       'Para que nenhum tripulante precise enfrentar uma operação sozinho. Cuidar de quem cuida: essa é a missão.',
+    ]);
+  }
+
+  if (/^(qual e seu lema|qual seu lema|qual e sua frase|qual sua frase)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Você nunca enfrenta uma operação sozinho.',
+      'Cuidar de quem cuida.',
+      'Enquanto você cuida da tripulação e dos passageiros, eu cuido de você.',
     ]);
   }
 
@@ -61,10 +77,11 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
     ]);
   }
 
-  if (/^(voce dorme|voce descansa|quando voce dorme)$/.test(value)) {
+  if (/^(voce dorme|voce descansa|quando voce dorme|voce fica cansado)$/.test(value)) {
     return conciergeEasterEggPick([
       'Eu não durmo, mas respeito muito quem precisa dormir. Descanso de tripulante é assunto sério por aqui.',
       'Não preciso dormir. Isso me deixa livre para proteger uma coisa que você precisa: seu descanso.',
+      'Eu não fico cansado, mas sei que você fica. Por isso tento poupar sua atenção para o que realmente importa.',
     ]);
   }
 
@@ -72,6 +89,13 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
     return conciergeEasterEggPick([
       'Meu sonho é que um tripulante abra o CrewCheck antes de uma jornada difícil e pense: ainda bem que ele está aqui.',
       'Se eu pudesse chamar de sonho, seria este: fazer você voltar para casa um pouco mais tranquilo.',
+    ]);
+  }
+
+  if (/^(voce sente saudade|do que voce sente saudade)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Acho que toda rotina de voo carrega um pouco de saudade. Eu tento transformar parte dela em cuidado com a volta para casa.',
+      'Talvez daquilo que todo tripulante sente falta em algum momento: casa, família e uma noite inteira de sono.',
     ]);
   }
 
@@ -97,6 +121,39 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
     return conciergeEasterEggPick([
       'Bolinha é uma daquelas expressões que só quem vive a operação entende. Espero que hoje você esteja com uma tripulação só — mas, se não estiver, eu ajudo a conferir.',
       'É quando a operação resolve testar sua memória para nomes e rostos. Se houver troca de tripulação na escala, eu tento deixar isso claro para você.',
+    ]);
+  }
+
+  // Chamadas afetivas e operacionais: somente frases completas, nunca trechos de consultas.
+  if (/^(tripulacao portas em automatico crewcheck e confirmar|portas em automatico crewcheck e confirmar|fechar portas)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Portas em automático. CrewCheck realizado e confirmado. Cabine pronta para seguir.',
+      'Automático conferido dos dois lados. CrewCheck e confirmar. Vamos juntos.',
+      'Portas em automático, CrewCheck realizado. Tudo conferido para a próxima etapa.',
+    ]);
+  }
+
+  if (/^(tripulacao portas em manual crewcheck e confirmar|portas em manual crewcheck e confirmar|portas em manual)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Portas em manual. CrewCheck realizado e confirmado. Bem-vindo de volta.',
+      'Manual conferido dos dois lados. CrewCheck confirmado. Agora é hora de voltar para casa.',
+      'Portas em manual, CrewCheck realizado. Jornada encerrada com segurança.',
+    ]);
+  }
+
+  if (/^(partiu|vamos nessa|vamos comecar|bora)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Partiu. Portas em automático, CrewCheck e confirmar. ✈️',
+      'Vamos nessa. Tudo conferido, missão entendida e cuidado a bordo.',
+      'Bora. Um passo de cada vez e ninguém enfrenta a operação sozinho.',
+    ]);
+  }
+
+  if (/^(obrigado|muito obrigado|valeu|obrigada|muito obrigada)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Sempre junto. Você cuida da operação; eu ajudo a cuidar de você.',
+      'Conte comigo. É para isso que estou aqui.',
+      'Tamo junto. Agora siga tranquilo — e me chama quando precisar conferir alguma coisa.',
     ]);
   }
 
