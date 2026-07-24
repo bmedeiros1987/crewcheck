@@ -90,6 +90,55 @@ Informações temporais ou operacionais devem usar um destes estados:
 
 Nunca usar apenas cor para transmitir esses estados.
 
+## Linguagem por público
+
+### Visitantes — “terráqueos”
+
+A experiência do visitante deve ser completamente compreensível por alguém que não trabalha na aviação.
+
+- nunca mostrar códigos IATA ou ICAO isolados;
+- nunca mostrar siglas de escala, atividade, regulamentação ou operação sem tradução;
+- nunca usar termos como perna, chave, apresentação, sobreaviso, reserva, extra, deadhead ou pernoite sem explicação simples;
+- mostrar cidade, aeroporto ou lugar por extenso;
+- explicar horários pelo significado humano: início do trabalho, horário previsto de chegada, período de descanso ou retorno para casa;
+- não expor METAR, TAF, RBAC, ACT ou nomenclaturas internas ao visitante;
+- não permitir que mensagens do chat automático reintroduzam códigos técnicos.
+
+Exemplos:
+
+- `BSB → GRU` torna-se `Brasília → São Paulo — Guarulhos`;
+- `SBBR → SBGR` torna-se `Brasília → São Paulo — Guarulhos`;
+- `RES` torna-se `período em que pode ser chamado para trabalhar`;
+- `HSB` torna-se `período de disponibilidade em casa`;
+- `PS` ou `EXTRA` torna-se `deslocamento como passageiro`;
+- `DO`, `DOF`, `DOP` ou `OFF` torna-se `folga`;
+- `apresentação 08:00` torna-se `início previsto do trabalho às 08:00`.
+
+Na interface do visitante, até os nomes dos menus devem ser humanos:
+
+- `Escala` → `Programação`;
+- `Apresentação` → `Início do trabalho`;
+- `Radar` → `Situação do voo`;
+- `Mapa da escala` → `Cidades e deslocamentos`.
+
+### Tripulantes
+
+A interface do tripulante também deve priorizar nomes humanos.
+
+- cidade ou nome do aeroporto é o rótulo principal;
+- códigos IATA ou ICAO são detalhes opcionais, nunca o conteúdo principal;
+- em cards compactos, usar `Brasília`, `Guarulhos`, `Galeão`, `Santos Dumont`, `Confins` e equivalentes;
+- quando houver mais de um aeroporto na cidade, distinguir pelo nome do aeroporto;
+- códigos podem permanecer em detalhes técnicos de pilotos, pesquisa de METAR/TAF, documentos oficiais, importação e diagnóstico administrativo;
+- em listas de voos, evitar duplicar nome e código quando isso não acrescentar informação.
+
+Ordem recomendada:
+
+1. `São Paulo — Guarulhos`;
+2. opcionalmente, em detalhe: `GRU / SBGR`.
+
+Nunca usar apenas `GRU` ou `SBGR` como destino visível quando o nome conhecido estiver disponível.
+
 ## Linguagem por contexto
 
 ### Escala
@@ -118,6 +167,8 @@ Nunca inventar portão, terminal ou status.
 
 Para comissários, traduzir primeiro e oferecer o boletim técnico como detalhe. Para pilotos, preservar METAR/TAF e marcar horário de emissão.
 
+Para visitantes, mostrar somente a condição compreensível e relevante, como chuva, temperatura, vento forte ou possibilidade de atraso, sem boletim técnico.
+
 ### Concierge
 
 O Concierge não diz apenas “não entendi”. Ele orienta com no máximo três caminhos relevantes ao contexto.
@@ -142,6 +193,13 @@ Salvo em telas administrativas ou diagnóstico autorizado:
 - fallback
 - token expirado
 
+Para visitantes, também são proibidos sem tradução:
+
+- códigos IATA e ICAO;
+- siglas de escala;
+- METAR, TAF, RBAC e ACT;
+- termos internos de jornada e operação.
+
 Traduções recomendadas:
 
 - `serviço temporariamente indisponível`;
@@ -159,6 +217,20 @@ Traduções recomendadas:
 - não vibrar por confirmações triviais;
 - sons e vibrações apenas quando adicionarem informação real.
 
+## Sequência de aplicação
+
+1. camada compartilhada de tradução de aeroportos, cidades e atividades;
+2. portal e Concierge de visitantes;
+3. tela inicial e próxima programação;
+4. escala e detalhes da jornada;
+5. Saída Inteligente;
+6. Radar;
+7. Meteorologia;
+8. notificações, Telegram, voz e documentos compartilhados;
+9. regressão global para impedir retorno de códigos e siglas.
+
+A tradução deve ser centralizada. Nenhuma tela deve manter mapas próprios divergentes de aeroportos ou atividades.
+
 ## Checklist Guardião da Confiança
 
 Antes de aprovar uma mensagem:
@@ -169,4 +241,6 @@ Antes de aprovar uma mensagem:
 - O texto evita culpar o usuário?
 - O sistema está admitindo incerteza quando necessário?
 - O humor está fora de situações operacionais, falhas e descanso?
+- Um visitante compreenderia a informação sem conhecer aviação?
+- A cidade ou o lugar aparece antes de qualquer código?
 - A mensagem merece a confiança do tripulante?
