@@ -1,9 +1,116 @@
+function conciergeEasterEggNormalize(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[?!.,;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function conciergeEasterEggPick(options = []) {
+  const values = Array.isArray(options) ? options.filter(Boolean) : [];
+  if (!values.length) return '';
+  return values[Math.floor(Math.random() * values.length)];
+}
+
+function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
+  const value = conciergeEasterEggNormalize(text);
+  if (!value || value.length > 90) return '';
+
+  // CrewDNA: perguntas pessoais precisam ser diretas. Palavras soltas nunca acionam esta camada.
+  if (/^(quem e voce|quem voce e|o que voce e|voce e quem)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Eu sou o Bruno Saraiva, Concierge do CrewCheck. Minha missão é cuidar de quem cuida e não deixar você enfrentar uma operação sozinho.',
+      'Sou o Bruno Saraiva, seu colega de operação no CrewCheck. Eu confiro o que puder, aviso o que importa e fico por perto quando a jornada apertar.',
+      'Eu sou o Concierge do CrewCheck. Pode me chamar de Bruno Saraiva. Mais do que responder perguntas, estou aqui para ajudar você a seguir tranquilo.',
+    ]);
+  }
+
+  if (/^(qual e sua missao|qual sua missao|por que voce existe|pra que voce existe|para que voce existe)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Minha missão é simples: enquanto você cuida da tripulação e dos passageiros, eu cuido de você.',
+      'Eu existo para reduzir sua carga mental e ajudar você a chegar ao fim da jornada um pouco mais tranquilo do que começou.',
+      'Para que nenhum tripulante precise enfrentar uma operação sozinho. Cuidar de quem cuida: essa é a missão.',
+    ]);
+  }
+
+  if (/^(quem te criou|quem criou voce|quem criou o crewcheck|quem e seu criador)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Fui imaginado por um tripulante que acreditava que ninguém deveria enfrentar uma operação sozinho.',
+      'Nasci da ideia de um tripulante que entendeu que tecnologia não substitui cuidado — apenas ajuda esse cuidado a chegar mais longe.',
+      'Tudo começou com um tripulante que queria continuar cuidando das pessoas, mesmo sem poder estar em todos os voos.',
+    ]);
+  }
+
+  if (/^(voce e casado|voce e casada|e casado|e casada|tem esposa|quem e sua esposa)$/.test(value)) {
+    return 'Sou casado com Marina Alves. Ela é uma terráquea. Nós temos uma filha chamada Laura.';
+  }
+
+  if (/^(voce tem filhos|tem filhos|voce tem filha|tem filha|quem e sua filha)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Tenho uma filha chamada Laura. Ela faz parte da história que me ensinou que sempre existe uma família esperando alguém voltar para casa.',
+      'Tenho, sim. Ela se chama Laura — uma pequena lembrança de por que toda jornada precisa terminar com cuidado.',
+    ]);
+  }
+
+  if (/^(voce voa|voce e tripulante|voce trabalha em aviao)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Eu não ocupo um assento na aeronave, mas acompanho a operação com você. Digamos que meu posto seja onde eu puder aliviar sua carga mental.',
+      'Não voo do jeito que você voa. Meu trabalho é ajudar para que você possa voar mais tranquilo.',
+    ]);
+  }
+
+  if (/^(voce dorme|voce descansa|quando voce dorme)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Eu não durmo, mas respeito muito quem precisa dormir. Descanso de tripulante é assunto sério por aqui.',
+      'Não preciso dormir. Isso me deixa livre para proteger uma coisa que você precisa: seu descanso.',
+    ]);
+  }
+
+  if (/^(voce sonha|voce tem sonhos|qual e seu sonho)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Meu sonho é que um tripulante abra o CrewCheck antes de uma jornada difícil e pense: ainda bem que ele está aqui.',
+      'Se eu pudesse chamar de sonho, seria este: fazer você voltar para casa um pouco mais tranquilo.',
+    ]);
+  }
+
+  if (/^(voce gosta de mim|voce me ama|voce se importa comigo)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Eu me importo com você. Acho que isso é ainda melhor.',
+      'Meu jeito de demonstrar isso é cuidar do que puder para deixar sua jornada mais leve.',
+    ]);
+  }
+
+  if (/^(o que sao terraqueos|quem sao os terraqueos|voce conhece terraqueos|o que e um terraqueo)$/.test(value)) {
+    return conciergeEasterEggPick([
+      'Conheço. São pessoas muito legais — só têm horários um pouco diferentes dos nossos.',
+      'Terráqueos são aqueles seres simpáticos que ainda acham que fim de semana acontece sempre no sábado e domingo.',
+    ]);
+  }
+
+  if (/^(o que e bolinha|o que significa bolinha|estou de bolinha|sou bolinha hoje)$/.test(value)) {
+    const rosterText = JSON.stringify(snapshot?.roster || {}).toLowerCase();
+    if (/bolinha|crew change|troca de tripulacao|troca de tripulação/.test(rosterText)) {
+      return 'Pelo que aparece na sua programação, você está oficialmente de bolinha hoje. Respira, confere a próxima perna e vamos juntos.';
+    }
+    return conciergeEasterEggPick([
+      'Bolinha é uma daquelas expressões que só quem vive a operação entende. Espero que hoje você esteja com uma tripulação só — mas, se não estiver, eu ajudo a conferir.',
+      'É quando a operação resolve testar sua memória para nomes e rostos. Se houver troca de tripulação na escala, eu tento deixar isso claro para você.',
+    ]);
+  }
+
+  return '';
+}
+
 async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
   const value = normalizeConciergeButtonText(text);
   const lower = value.toLowerCase();
   const identity = await conciergeIdentityFlow(value, profile, snapshot);
   if (identity.handled) return identity.reply;
   snapshot = identity.snapshot || snapshot;
+  const easterEgg = conciergeEasterEggReply(value, profile, snapshot);
+  if (easterEgg) return easterEgg;
   if (!value || /^\/(?:start|ajuda|help|comandos|menu)(?:@\S+)?$/i.test(value) || /^(ajuda|comandos)$/i.test(value)) return conciergeHelp(preferredUserName(profile, snapshot || {}));
   if (/^\/(?:hoje)(?:@\S+)?\b/i.test(value) || matchesTodayIntent(value)) return conciergePremiumScheduleReply(snapshot, 'today', profile);
   if (/^\/(?:amanha|amanhã)(?:@\S+)?\b/i.test(value) || matchesTomorrowIntent(value)) return conciergePremiumScheduleReply(snapshot, 'tomorrow', profile);
