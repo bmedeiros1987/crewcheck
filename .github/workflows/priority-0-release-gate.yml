@@ -1,0 +1,116 @@
+name: CrewCheck Priority 0 Release Gate
+
+on:
+  workflow_run:
+    workflows: ["Android APK and AAB"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID opcional da execução Android a validar"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: crewcheck-priority-0-release-gate
+  cancel-in-progress: true
+
+jobs:
+  verify-signed-release:
+    name: Verify signed APK and AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+      EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      MANUAL_RUN_ID: ${{ inputs.run_id }}
+
+    steps:
+      - name: Resolve Android workflow run
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_id="${MANUAL_RUN_ID:-${EVENT_RUN_ID:-}}"
+          if [[ -z "$run_id" ]]; then
+            run_id="$(gh api "/repos/${REPOSITORY}/actions/workflows/android.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // empty')"
+          fi
+
+          if [[ -z "$run_id" ]]; then
+            echo '::error title=Prioridade 0 sem execução Android::Nenhuma execução concluída do workflow Android foi encontrada.'
+            exit 1
+          fi
+
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Validando execução Android $run_id"
+
+      - name: Confirm Android workflow succeeded
+        id: run
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.resolve.outputs.run_id }}'
+          conclusion="$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.conclusion // empty')"
+          html_url="$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.html_url // empty')"
+          head_sha="$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.head_sha // empty')"
+
+          echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+          echo "html_url=$html_url" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+          if [[ "$conclusion" != 'success' ]]; then
+            echo "::error title=Build Android bloqueado::A execução ${run_id} terminou como '${conclusion:-desconhecido}'. Abra os logs, corrija a primeira etapa vermelha e execute novamente o workflow Android."
+            exit 1
+          fi
+
+      - name: Verify signed artifact pair
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.resolve.outputs.run_id }}'
+          artifacts_json="$(gh api --paginate "/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")"
+
+          apk_id="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-release-apk")][0].id // empty' <<< "$artifacts_json")"
+          aab_id="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-play-console-aab")][0].id // empty' <<< "$artifacts_json")"
+          apk_size="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-release-apk")][0].size_in_bytes // 0' <<< "$artifacts_json")"
+          aab_size="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-play-console-aab")][0].size_in_bytes // 0' <<< "$artifacts_json")"
+
+          missing=()
+          [[ -n "$apk_id" && "$apk_size" -gt 0 ]] || missing+=("APK assinado")
+          [[ -n "$aab_id" && "$aab_size" -gt 0 ]] || missing+=("AAB assinado")
+
+          if (( ${#missing[@]} )); then
+            printf '::error title=Artefatos da Prioridade 0 ausentes::Faltando: %s. Confirme as etapas Verify and stage signed artifacts e Upload signed APK/AAB no workflow Android.\n' "$(IFS=', '; echo "${missing[*]}")"
+            exit 1
+          fi
+
+          echo "apk_id=$apk_id" >> "$GITHUB_OUTPUT"
+          echo "aab_id=$aab_id" >> "$GITHUB_OUTPUT"
+          echo "apk_size=$apk_size" >> "$GITHUB_OUTPUT"
+          echo "aab_size=$aab_size" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Priority 0 proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '# ✅ CrewCheck — Prioridade 0 concluída'
+            echo
+            echo '| Prova | Estado |'
+            echo '|---|---|'
+            echo '| Workflow Android | Sucesso |'
+            echo '| APK assinado | Presente e não vazio |'
+            echo '| AAB Play Console assinado | Presente e não vazio |'
+            echo '| Commit validado | `${{ steps.run.outputs.head_sha }}` |'
+            echo '| Execução Android | ${{ steps.run.outputs.html_url }} |'
+            echo
+            echo 'O gate somente fica verde quando os dois artefatos assinados existem na mesma execução Android.'
+          } >> "$GITHUB_STEP_SUMMARY"
