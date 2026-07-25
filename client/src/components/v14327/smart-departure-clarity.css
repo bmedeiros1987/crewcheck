@@ -1,0 +1,81 @@
+/* CrewCheck v14.3.27 — Saída Inteligente clara e responsiva */
+.cz-depart-when {
+  grid-area: time;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cz-depart-when > span {
+  color: var(--cc-muted, var(--cc-text-muted));
+  font-size: clamp(.82rem, 3vw, 1rem);
+  font-weight: 800;
+  line-height: 1.3;
+  text-transform: capitalize;
+}
+
+.cz-depart-detail {
+  grid-area: detail;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cz-depart-detail > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--cc-line, var(--cc-border));
+  border-radius: 999px;
+  color: var(--cc-muted, var(--cc-text-muted));
+  font-size: clamp(.78rem, 3vw, .94rem);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cz-depart-warning {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, .42);
+  border-radius: 14px;
+  background: rgba(245, 158, 11, .1);
+  color: var(--cc-text);
+  font-size: .9rem;
+  line-height: 1.45;
+}
+
+.cz-depart-hero h2,
+.cz-depart-detail,
+.cz-depart-warning {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 720px) {
+  .cz-depart-hero {
+    gap: 14px !important;
+  }
+
+  .cz-depart-time {
+    font-size: clamp(3rem, 17vw, 5rem) !important;
+  }
+
+  .cz-depart-detail {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .cz-depart-detail > span {
+    border-radius: 12px;
+    white-space: normal;
+  }
+
+  .cz-depart-kpis > div > span {
+    line-height: 1.3 !important;
+    white-space: normal !important;
+  }
+}
