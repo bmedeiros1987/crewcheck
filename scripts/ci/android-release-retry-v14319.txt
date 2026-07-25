@@ -1,0 +1,4 @@
+CrewCheck Android signed release retry marker.
+
+Purpose: trigger a fresh Android APK/AAB workflow on main after the source-preparation hotfix was merged.
+This file does not alter application runtime, the canonical roster engine, signing configuration, or release contents.
