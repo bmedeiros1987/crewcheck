@@ -34,6 +34,15 @@ function smartDepartureEstimate(event: unknown, route: unknown, margin: number) 
   const source: SmartDepartureEstimate['source'] = liveMinutes ? 'live' : cachedMinutes ? 'cached' : 'estimated';
   return { source, travelMinutes, leaveDate: new Date(), leaveLabel: '10:00', travelLabel: '45 min', marginMinutes: margin, presentationLabel: '11:20' };
 }
+function SmartCard({ event }: { event: any }) {
+  const route = null;
+  const margin = 35;
+  const estimate = smartDepartureEstimate(event, route, margin);
+  const rawLiveMinutes = routeDurationMinutes(route);
+  const liveMinutes = rawLiveMinutes >= 5 && rawLiveMinutes <= 300 ? rawLiveMinutes : 0;
+  const leaveDayLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(estimate.leaveDate);
+  return <span>{leaveDayLabel}{liveMinutes}</span>;
+}
 function Departure({ event }: { event: any }) {
   const route = null;
   const margin = 35;
@@ -64,9 +73,16 @@ try {
   assert.equal(first.status, 0, first.stderr || first.stdout || 'primeira execução falhou');
 
   const prepared = fs.readFileSync(homePath, 'utf8');
+  const departureStart = prepared.indexOf('function Departure(');
+  const departureEnd = prepared.indexOf('function MonthlyMapView', departureStart);
+  assert.ok(departureStart >= 0 && departureEnd > departureStart, 'bloco Departure preparado ausente');
+  const preparedDeparture = prepared.slice(departureStart, departureEnd);
+
   assert.ok(prepared.includes("import '@/components/v14327/smart-departure-clarity.css';"), 'CSS v14.3.27 não importado');
   assert.ok(prepared.includes('rawLiveMinutes >= 5 && rawLiveMinutes <= 300'), 'limite de rota incompatível ausente');
-  assert.ok(prepared.includes("weekday: 'long'"), 'dia da saída ausente');
+  assert.ok(preparedDeparture.includes('const rawLiveMinutes = routeDurationMinutes(route);'), 'rawLiveMinutes deve ser declarado dentro de Departure');
+  assert.ok(preparedDeparture.includes("const leaveDayLabel = new Intl.DateTimeFormat('pt-BR'"), 'leaveDayLabel deve ser declarado dentro de Departure');
+  assert.ok(preparedDeparture.includes("weekday: 'long'"), 'dia da saída ausente dentro de Departure');
   assert.equal((prepared.match(/className="cz-depart-when"/g) || []).length, 1, 'hero novo deve existir uma vez');
   assert.equal((prepared.match(/className="cz-depart-detail"/g) || []).length, 1, 'detalhes separados devem existir uma vez');
   assert.ok(prepared.includes('className="cz-depart-warning"'), 'aviso de rota incompatível ausente');
@@ -82,4 +98,4 @@ try {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
-console.log('v14.3.27 structural smart departure regression: OK');
+console.log('v14.3.27 structural smart departure regression with duplicate timing anchor: OK');
