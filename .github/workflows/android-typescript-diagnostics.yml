@@ -1,0 +1,97 @@
+name: Android TypeScript diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/android-typescript-diagnostics
+    paths:
+      - '.github/workflows/android-typescript-diagnostics.yml'
+      - 'client/**'
+      - 'server.mjs'
+      - 'server/**'
+      - 'shared/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-typescript-diagnostics.yml'
+      - 'client/**'
+      - 'server.mjs'
+      - 'server/**'
+      - 'shared/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Prepare CrewCheck sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
+
+      - name: Run TypeScript check with complete diagnostics
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx tsc --noEmit --pretty false 2>&1 | tee "$RUNNER_TEMP/typescript-check.log"
+
+      - name: Collect prepared source diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crewcheck-typescript-diagnostics"
+          cp "$RUNNER_TEMP/crewcheck-prepare.log" "$RUNNER_TEMP/crewcheck-typescript-diagnostics/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/typescript-check.log" "$RUNNER_TEMP/crewcheck-typescript-diagnostics/" 2>/dev/null || true
+          cp client/src/pages/Home.tsx "$RUNNER_TEMP/crewcheck-typescript-diagnostics/Home.prepared.tsx"
+          cp server.mjs "$RUNNER_TEMP/crewcheck-typescript-diagnostics/server.prepared.mjs"
+          cp package.json "$RUNNER_TEMP/crewcheck-typescript-diagnostics/package.json"
+          cp tsconfig.json "$RUNNER_TEMP/crewcheck-typescript-diagnostics/tsconfig.json"
+          if [[ -s "$RUNNER_TEMP/typescript-check.log" ]]; then
+            tail -n 400 "$RUNNER_TEMP/typescript-check.log" > "$RUNNER_TEMP/crewcheck-typescript-diagnostics/typescript-check-tail.log"
+            grep -m1 -E 'error TS[0-9]+:' "$RUNNER_TEMP/typescript-check.log" > "$RUNNER_TEMP/crewcheck-typescript-diagnostics/first-typescript-error.txt" || true
+          fi
+
+      - name: Upload TypeScript diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-android-typescript-diagnostics
+          path: ${{ runner.temp }}/crewcheck-typescript-diagnostics
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve TypeScript failure status
+        if: steps.typecheck.outcome == 'failure'
+        shell: bash
+        run: |
+          first_error="$(cat "$RUNNER_TEMP/crewcheck-typescript-diagnostics/first-typescript-error.txt" 2>/dev/null || true)"
+          echo "::error title=TypeScript check failed::${first_error:-Consulte o artefato CrewCheck-android-typescript-diagnostics.}"
+          exit 1
