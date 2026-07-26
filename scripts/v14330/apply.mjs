@@ -30,7 +30,8 @@ if (!source.includes(implementationMarker)) {
   console.log('[v14.3.30] continuação multijornada do CrewRosterReport já aplicada.');
 }
 
-const pipelineMarker = 'const daysWithGroundActivities = rescueCrewRosterOffsetGroundActivities(';nconst oldPipeline = /  const days = applyGenericTripulationRecordsToDays\(normalizeCrewRosterReportContinuationDays\(rescuedDays, header\.month, header\.year, header\.base\), crewRecords, header\.crewName\);/g;
+const pipelineMarker = 'const daysWithGroundActivities = rescueCrewRosterOffsetGroundActivities(';
+const oldPipeline = /  const days = applyGenericTripulationRecordsToDays\(normalizeCrewRosterReportContinuationDays\(rescuedDays, header\.month, header\.year, header\.base\), crewRecords, header\.crewName\);/g;
 
 if (!source.includes(pipelineMarker)) {
   const matches = [...source.matchAll(oldPipeline)];
