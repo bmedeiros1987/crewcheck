@@ -12,16 +12,12 @@ function findNextTopLevelFunction(sourceText, fromIndex) {
   return match ? fromIndex + match.index : -1;
 }
 
-function normalizeDispatchLine(sourceText, { call, canonical, appliedMarker, label }) {
-  if (sourceText.includes(appliedMarker)) {
-    console.log(`[v14.3.23-preflight] ${label} já aplicado.`);
-    return { source: sourceText, changed: false };
-  }
-
+function normalizeDispatchLine(sourceText, { call, canonical, appliedMarker, extraGuard, label }) {
   const lines = sourceText.split('\n');
   const matches = [];
   for (let index = 0; index < lines.length; index += 1) {
     const trimmed = lines[index].trim();
+    if (extraGuard && lines[index] === extraGuard) continue;
     if (trimmed.startsWith('if (') && trimmed.includes(`return ${call}(snapshot);`)) matches.push(index);
   }
 
@@ -33,14 +29,58 @@ function normalizeDispatchLine(sourceText, { call, canonical, appliedMarker, lab
     throw new Error(`[v14.3.23-preflight] ${label} não reconhecido com segurança. Ocorrências: ${matches.length}. Contexto: ${diagnostic}`);
   }
 
-  const lineIndex = matches[0];
-  if (lines[lineIndex] === canonical) {
+  let lineIndex = matches[0];
+  let localChanged = false;
+
+  if (!sourceText.includes(appliedMarker) && lines[lineIndex] !== canonical) {
+    lines[lineIndex] = canonical;
+    localChanged = true;
+    console.log(`[v14.3.23-preflight] ${label} normalizado para o patch legado.`);
+  } else {
     console.log(`[v14.3.23-preflight] ${label} preservado e reconhecido.`);
+  }
+
+  if (extraGuard && !lines.includes(extraGuard)) {
+    lines.splice(lineIndex, 0, extraGuard);
+    lineIndex += 1;
+    localChanged = true;
+    console.log(`[v14.3.23-preflight] linguagem natural adicional preservada em ${label}.`);
+  }
+
+  return { source: lines.join('\n'), changed: localChanged };
+}
+
+function normalizeFallbackLine(sourceText) {
+  const appliedMarker = 'Posso conversar sobre sua escala de forma mais natural.';
+  if (sourceText.includes(appliedMarker)) {
+    console.log('[v14.3.23-preflight] fallback conversacional já aplicado.');
     return { source: sourceText, changed: false };
   }
 
-  lines[lineIndex] = canonical;
-  console.log(`[v14.3.23-preflight] ${label} normalizado para o patch legado.`);
+  const canonical = "  return `Entendi sua mensagem, mas preciso de um comando operacional mais específico.\\n\\n${conciergeHelp(profile.name)}`;";
+  if (sourceText.includes(canonical)) {
+    console.log('[v14.3.23-preflight] fallback conversacional preservado e reconhecido.');
+    return { source: sourceText, changed: false };
+  }
+
+  const lines = sourceText.split('\n');
+  const matches = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    if (!trimmed.startsWith('return ')) continue;
+    if (trimmed.includes('Não entendi exatamente o que você quer consultar') || trimmed.includes('Entendi sua mensagem, mas preciso de um comando operacional mais específico')) matches.push(index);
+  }
+
+  if (matches.length !== 1) {
+    const phraseIndex = sourceText.search(/Não entendi exatamente|Entendi sua mensagem, mas preciso/);
+    const diagnostic = phraseIndex >= 0
+      ? sourceText.slice(Math.max(0, phraseIndex - 120), Math.min(sourceText.length, phraseIndex + 360)).replace(/\s+/g, ' ')
+      : 'retorno conversacional ausente';
+    throw new Error(`[v14.3.23-preflight] fallback conversacional não reconhecido com segurança. Ocorrências: ${matches.length}. Contexto: ${diagnostic}`);
+  }
+
+  lines[matches[0]] = canonical;
+  console.log('[v14.3.23-preflight] fallback conversacional normalizado para o patch legado.');
   return { source: lines.join('\n'), changed: true };
 }
 
@@ -106,24 +146,30 @@ if (!contextAlreadyComplete) {
 const hotelDispatchAnchor = String.raw`  if (/^\/(?:hoteis|hotéis|hotel)(?:@\S+)?\b/i.test(value) || /\b(hotel|hot[eé]is|pernoite)\b/i.test(lower)) return conciergeHotelsReply(snapshot);`;
 const gymDispatchAnchor = String.raw`  if (/^\/academias?(?:@\S+)?\b/i.test(value) || /\b(academia|wellhub|gympass|smart fit|treino perto)\b/i.test(lower)) return conciergeGymsReply(snapshot);`;
 const routineDispatchAnchor = String.raw`  if (/^\/rotina(?:@\S+)?\b/i.test(value) || /\b(rotina|recupera[cç][aã]o|treino hoje)\b/i.test(lower)) return conciergeRoutineReply(snapshot);`;
+const hotelExtraGuard = String.raw`  if (/\b(onde vou dormir|onde fico hoje)\b/i.test(lower)) return conciergeHotelsReply(snapshot);`;
+const gymExtraGuard = String.raw`  if (/\bonde treinar\b/i.test(lower)) return conciergeGymsReply(snapshot);`;
+const routineExtraGuard = String.raw`  if (/\bcomo organizar meu dia\b/i.test(lower)) return conciergeRoutineReply(snapshot);`;
 
 for (const config of [
   {
     call: 'conciergeHotelsReply',
     canonical: hotelDispatchAnchor,
     appliedMarker: 'return conciergeStayReply(snapshot);',
+    extraGuard: hotelExtraGuard,
     label: 'intenção de pernoite',
   },
   {
     call: 'conciergeGymsReply',
     canonical: gymDispatchAnchor,
     appliedMarker: 'return conciergeHospitalsReply(snapshot);',
+    extraGuard: gymExtraGuard,
     label: 'intenção de hospitais',
   },
   {
     call: 'conciergeRoutineReply',
     canonical: routineDispatchAnchor,
     appliedMarker: 'posso treinar',
+    extraGuard: routineExtraGuard,
     label: 'perguntas naturais de rotina',
   },
 ]) {
@@ -131,5 +177,9 @@ for (const config of [
   source = result.source;
   changed = changed || result.changed;
 }
+
+const fallbackResult = normalizeFallbackLine(source);
+source = fallbackResult.source;
+changed = changed || fallbackResult.changed;
 
 if (changed) fs.writeFileSync(serverPath, source, 'utf8');
