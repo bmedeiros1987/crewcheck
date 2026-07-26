@@ -48,13 +48,34 @@ const contextAlreadyComplete = source.includes('function conciergeStayRecords(')
 if (!contextAlreadyComplete) {
   const canonicalRoutineStart = "function conciergeRoutineReply(snapshot) {\n  const next = conciergeNextProgram(snapshot?.roster);";
   if (!source.includes(canonicalRoutineStart)) {
-    const routineStartPattern = /(?:async\s+)?function\s+conciergeRoutineReply\s*\(\s*snapshot\s*(?:=\s*[^)]*)?\)\s*\{\s*const\s+next\s*=\s*conciergeNextProgram\(\s*snapshot\?\.roster\s*\)\s*;/m;
-    if (!routineStartPattern.test(source)) {
-      throw new Error('[v14.3.23-preflight] assinatura ou início de conciergeRoutineReply não reconhecido com segurança.');
+    const declarationPattern = /(?:async\s+)?function\s+conciergeRoutineReply\s*\(\s*snapshot\s*(?:=\s*[^)]*)?\)\s*\{/m;
+    const declarationMatch = declarationPattern.exec(source);
+    if (!declarationMatch) {
+      throw new Error('[v14.3.23-preflight] declaração de conciergeRoutineReply não reconhecida com segurança.');
     }
-    source = source.replace(routineStartPattern, canonicalRoutineStart);
+
+    const declarationStart = declarationMatch.index;
+    const bodyStart = declarationStart + declarationMatch[0].length;
+    const nextPattern = /const\s+next\s*=\s*conciergeNextProgram\(\s*snapshot\?\.roster\s*\)\s*;/m;
+    const nearbyBody = source.slice(bodyStart, bodyStart + 1200);
+    const nextMatch = nextPattern.exec(nearbyBody);
+    if (!nextMatch) {
+      throw new Error('[v14.3.23-preflight] início funcional de conciergeRoutineReply não reconhecido com segurança.');
+    }
+
+    const prefix = nearbyBody.slice(0, nextMatch.index);
+    const commentsRemoved = prefix
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*(?:\n|$)/g, '')
+      .trim();
+    if (commentsRemoved) {
+      throw new Error('[v14.3.23-preflight] conciergeRoutineReply contém lógica antes de conciergeNextProgram; normalização automática recusada.');
+    }
+
+    const replaceEnd = bodyStart + nextMatch.index + nextMatch[0].length;
+    source = `${source.slice(0, declarationStart)}${canonicalRoutineStart}${source.slice(replaceEnd)}`;
     changed = true;
-    console.log('[v14.3.23-preflight] início de conciergeRoutineReply normalizado antes da inserção contextual.');
+    console.log('[v14.3.23-preflight] declaração e início de conciergeRoutineReply normalizados antes da inserção contextual.');
   } else {
     console.log('[v14.3.23-preflight] início de conciergeRoutineReply já está no formato canônico.');
   }
