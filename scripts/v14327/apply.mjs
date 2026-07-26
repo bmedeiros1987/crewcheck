@@ -16,6 +16,15 @@ function departureBounds(source) {
   return { start, end };
 }
 
+function replaceInsideDeparture(source, before, after, label) {
+  const { start, end } = departureBounds(source);
+  const block = source.slice(start, end);
+  if (block.includes(after)) return source;
+  if (!block.includes(before)) throw new Error(`v14.3.27: ponto estrutural não localizado — ${label}`);
+  const patched = block.replace(before, after);
+  return `${source.slice(0, start)}${patched}${source.slice(end)}`;
+}
+
 function replaceHeroStructurally(source) {
   const { start, end } = departureBounds(source);
   const block = source.slice(start, end);
@@ -75,11 +84,11 @@ home = replaceOnce(
   'proteção contra rota terrestre intermunicipal',
 );
 
-home = replaceOnce(
+home = replaceInsideDeparture(
   home,
   "  const estimate = smartDepartureEstimate(event, route, margin);\n  const liveMinutes = routeDurationMinutes(route);",
   "  const estimate = smartDepartureEstimate(event, route, margin);\n  const rawLiveMinutes = routeDurationMinutes(route);\n  const liveMinutes = rawLiveMinutes >= 5 && rawLiveMinutes <= 300 ? rawLiveMinutes : 0;\n  const leaveDayLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(estimate.leaveDate);",
-  'data da saída na tela completa',
+  'variáveis de data e rota dentro de Departure',
 );
 
 home = replaceHeroStructurally(home);
