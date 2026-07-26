@@ -27,15 +27,15 @@ if (start >= 0) {
       'function conciergePlaceLines(places = []) {',
       '  return places.map((place, index) => {',
       "    const distance = Number.isFinite(place.distanceKm) ? ` · ${place.distanceKm < 1 ? `${Math.round(place.distanceKm * 1000)} m` : `${place.distanceKm.toFixed(1).replace(`.`, `,`)} km`}` : '';",
-      "    return `${index + 1}. ${place.name}${distance}${place.rating ? ` · nota ${place.rating}` : ``}${place.openNow === true ? ` · aberto agora` : place.openNow === false ? ` · fechado agora` : ``}\n${place.address || place.mapsUrl || ``}`;",
-      "  }).join('\n\n');",
+      "    return `${index + 1}. ${place.name}${distance}${place.rating ? ` · nota ${place.rating}` : ``}${place.openNow === true ? ` · aberto agora` : place.openNow === false ? ` · fechado agora` : ``}\\n${place.address || place.mapsUrl || ``}`;",
+      "  }).join('\\n\\n');",
       '}',
     ].join('\n');
 
     if (currentBlock !== canonicalBlock) {
       source = `${source.slice(0, start)}${canonicalBlock}${source.slice(end)}`;
       changed = true;
-      console.log('[v14.3.23-preflight] conciergePlaceLines normalizado sem remover funções seguintes.');
+      console.log('[v14.3.23-preflight] conciergePlaceLines normalizado com escapes preservados e sem remover funções seguintes.');
     } else {
       console.log('[v14.3.23-preflight] conciergePlaceLines já está no formato canônico.');
     }
