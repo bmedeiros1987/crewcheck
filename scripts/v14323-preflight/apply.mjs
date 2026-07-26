@@ -4,6 +4,8 @@ const serverPath = 'server.mjs';
 if (!fs.existsSync(serverPath)) throw new Error('[v14.3.23-preflight] server.mjs ausente.');
 
 let source = fs.readFileSync(serverPath, 'utf8');
+let changed = false;
+
 const startMarker = 'function conciergePlaceLines(places = []) {';
 const start = source.indexOf(startMarker);
 
@@ -27,14 +29,37 @@ if (start >= 0) {
 
     if (currentBlock !== canonicalBlock) {
       source = `${source.slice(0, start)}${canonicalBlock}${source.slice(end + 2)}`;
-      fs.writeFileSync(serverPath, source, 'utf8');
+      changed = true;
       console.log('[v14.3.23-preflight] conciergePlaceLines normalizado semanticamente antes do patch legado.');
     } else {
       console.log('[v14.3.23-preflight] conciergePlaceLines já está no formato canônico.');
     }
   } else {
-    console.log('[v14.3.23-preflight] formato legado preservado para aplicação normal do v14.3.23.');
+    console.log('[v14.3.23-preflight] formato legado de locais preservado para aplicação normal do v14.3.23.');
   }
 } else {
   console.log('[v14.3.23-preflight] conciergePlaceLines ainda não existe; aplicação normal do v14.3.23 continuará.');
 }
+
+const contextAlreadyComplete = source.includes('function conciergeStayRecords(')
+  && source.includes('function conciergeContextualRoutineReply(')
+  && source.includes('async function conciergeHospitalsReply(');
+
+if (!contextAlreadyComplete) {
+  const canonicalRoutineStart = "function conciergeRoutineReply(snapshot) {\n  const next = conciergeNextProgram(snapshot?.roster);";
+  if (!source.includes(canonicalRoutineStart)) {
+    const routineStartPattern = /(?:async\s+)?function\s+conciergeRoutineReply\s*\(\s*snapshot\s*(?:=\s*[^)]*)?\)\s*\{\s*const\s+next\s*=\s*conciergeNextProgram\(\s*snapshot\?\.roster\s*\)\s*;/m;
+    if (!routineStartPattern.test(source)) {
+      throw new Error('[v14.3.23-preflight] assinatura ou início de conciergeRoutineReply não reconhecido com segurança.');
+    }
+    source = source.replace(routineStartPattern, canonicalRoutineStart);
+    changed = true;
+    console.log('[v14.3.23-preflight] início de conciergeRoutineReply normalizado antes da inserção contextual.');
+  } else {
+    console.log('[v14.3.23-preflight] início de conciergeRoutineReply já está no formato canônico.');
+  }
+} else {
+  console.log('[v14.3.23-preflight] contexto de rotina e hospitais já está completo.');
+}
+
+if (changed) fs.writeFileSync(serverPath, source, 'utf8');
