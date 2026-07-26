@@ -12,6 +12,38 @@ function findNextTopLevelFunction(sourceText, fromIndex) {
   return match ? fromIndex + match.index : -1;
 }
 
+function normalizeDispatchLine(sourceText, { call, canonical, appliedMarker, label }) {
+  if (sourceText.includes(appliedMarker)) {
+    console.log(`[v14.3.23-preflight] ${label} já aplicado.`);
+    return { source: sourceText, changed: false };
+  }
+
+  const lines = sourceText.split('\n');
+  const matches = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    if (trimmed.startsWith('if (') && trimmed.includes(`return ${call}(snapshot);`)) matches.push(index);
+  }
+
+  if (matches.length !== 1) {
+    const symbolIndex = sourceText.indexOf(call);
+    const diagnostic = symbolIndex >= 0
+      ? sourceText.slice(Math.max(0, symbolIndex - 140), Math.min(sourceText.length, symbolIndex + 320)).replace(/\s+/g, ' ')
+      : `${call} ausente`;
+    throw new Error(`[v14.3.23-preflight] ${label} não reconhecido com segurança. Ocorrências: ${matches.length}. Contexto: ${diagnostic}`);
+  }
+
+  const lineIndex = matches[0];
+  if (lines[lineIndex] === canonical) {
+    console.log(`[v14.3.23-preflight] ${label} preservado e reconhecido.`);
+    return { source: sourceText, changed: false };
+  }
+
+  lines[lineIndex] = canonical;
+  console.log(`[v14.3.23-preflight] ${label} normalizado para o patch legado.`);
+  return { source: lines.join('\n'), changed: true };
+}
+
 const startMarker = 'function conciergePlaceLines(places = []) {';
 const start = source.indexOf(startMarker);
 
@@ -69,6 +101,35 @@ if (!contextAlreadyComplete) {
   }
 } else {
   console.log('[v14.3.23-preflight] contexto de rotina e hospitais já está completo.');
+}
+
+const hotelDispatchAnchor = String.raw`  if (/^\/(?:hoteis|hotéis|hotel)(?:@\S+)?\b/i.test(value) || /\b(hotel|hot[eé]is|pernoite)\b/i.test(lower)) return conciergeHotelsReply(snapshot);`;
+const gymDispatchAnchor = String.raw`  if (/^\/academias?(?:@\S+)?\b/i.test(value) || /\b(academia|wellhub|gympass|smart fit|treino perto)\b/i.test(lower)) return conciergeGymsReply(snapshot);`;
+const routineDispatchAnchor = String.raw`  if (/^\/rotina(?:@\S+)?\b/i.test(value) || /\b(rotina|recupera[cç][aã]o|treino hoje)\b/i.test(lower)) return conciergeRoutineReply(snapshot);`;
+
+for (const config of [
+  {
+    call: 'conciergeHotelsReply',
+    canonical: hotelDispatchAnchor,
+    appliedMarker: 'return conciergeStayReply(snapshot);',
+    label: 'intenção de pernoite',
+  },
+  {
+    call: 'conciergeGymsReply',
+    canonical: gymDispatchAnchor,
+    appliedMarker: 'return conciergeHospitalsReply(snapshot);',
+    label: 'intenção de hospitais',
+  },
+  {
+    call: 'conciergeRoutineReply',
+    canonical: routineDispatchAnchor,
+    appliedMarker: 'posso treinar',
+    label: 'perguntas naturais de rotina',
+  },
+]) {
+  const result = normalizeDispatchLine(source, config);
+  source = result.source;
+  changed = changed || result.changed;
 }
 
 if (changed) fs.writeFileSync(serverPath, source, 'utf8');
