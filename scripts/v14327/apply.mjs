@@ -9,6 +9,55 @@ function replaceOnce(source, before, after, label) {
   return source.replace(before, after);
 }
 
+function departureBounds(source) {
+  const start = source.indexOf('function Departure(');
+  const end = start >= 0 ? source.indexOf('function MonthlyMapView', start) : -1;
+  if (start < 0 || end < 0) throw new Error('v14.3.27: bloco estrutural da Saída Inteligente não localizado');
+  return { start, end };
+}
+
+function replaceHeroStructurally(source) {
+  const { start, end } = departureBounds(source);
+  const block = source.slice(start, end);
+  if (block.includes('className="cz-depart-when"') && block.includes('className="cz-depart-detail"')) return source;
+
+  const matches = [...block.matchAll(/<article className="cz-depart-hero">[\s\S]*?<\/article>/g)];
+  if (matches.length !== 1) throw new Error(`v14.3.27: hero da Saída Inteligente ambíguo — ocorrências ${matches.length}`);
+
+  const current = matches[0][0];
+  for (const marker of ['estimate.leaveLabel', 'originLabel', 'event.origin', 'modeLabel']) {
+    if (!current.includes(marker)) throw new Error(`v14.3.27: hero sem marcador seguro — ${marker}`);
+  }
+
+  const replacement = [
+    '    <article className="cz-depart-hero">',
+    '      <header className="cz-depart-hero-head"><span>SAÍDA PREVISTA</span><em className={`cz-depart-status ${liveMinutes ? \'ready\' : \'pending\'}`}>{statusLabel}</em></header>',
+    '      <div className="cz-depart-when"><span>Sair em {leaveDayLabel}</span><strong className="cz-depart-time">{estimate.leaveLabel}</strong></div>',
+    '      <h2>{originLabel} → {event.origin}</h2>',
+    '      <div className="cz-depart-detail"><span>{modeLabel}</span><span>{estimate.travelLabel} de deslocamento</span><span>margem {estimate.marginMinutes} min</span><span>apresentação {estimate.presentationLabel}</span></div>',
+    '      {rawLiveMinutes > 300 && <p className="cz-depart-warning">A rota terrestre encontrada não combina com esta programação. Mantive uma estimativa local protegida e não usei o trajeto de {Math.floor(rawLiveMinutes / 60)} horas.</p>}',
+    '    </article>',
+  ].join('\n');
+
+  const absoluteStart = start + (matches[0].index || 0);
+  return `${source.slice(0, absoluteStart)}${replacement}${source.slice(absoluteStart + current.length)}`;
+}
+
+function replaceDepartureKpiStructurally(source) {
+  const { start, end } = departureBounds(source);
+  const block = source.slice(start, end);
+  if (block.includes('<span>Sair em {leaveDayLabel}</span><strong>{estimate.leaveLabel}</strong>')) return source;
+
+  const pattern = /<div>\s*<Navigation\/>\s*<span>Sair às<\/span>\s*<strong>\{estimate\.leaveLabel\}<\/strong>\s*<\/div>/g;
+  const matches = [...block.matchAll(pattern)];
+  if (matches.length !== 1) throw new Error(`v14.3.27: KPI de saída ambíguo — ocorrências ${matches.length}`);
+
+  const current = matches[0][0];
+  const replacement = '<div><Navigation/><span>Sair em {leaveDayLabel}</span><strong>{estimate.leaveLabel}</strong></div>';
+  const absoluteStart = start + (matches[0].index || 0);
+  return `${source.slice(0, absoluteStart)}${replacement}${source.slice(absoluteStart + current.length)}`;
+}
+
 let home = fs.readFileSync(homePath, 'utf8');
 if (!home.includes(cssImport)) {
   home = replaceOnce(
@@ -33,20 +82,9 @@ home = replaceOnce(
   'data da saída na tela completa',
 );
 
-home = replaceOnce(
-  home,
-  "      <strong className=\"cz-depart-time\">{estimate.leaveLabel}</strong>\n      <h2>{originLabel} → {event.origin}</h2>\n      <p>{modeLabel} · {estimate.travelLabel} de deslocamento · margem {estimate.marginMinutes} min · apresentação {estimate.presentationLabel}</p>",
-  "      <div className=\"cz-depart-when\"><span>Sair em {leaveDayLabel}</span><strong className=\"cz-depart-time\">{estimate.leaveLabel}</strong></div>\n      <h2>{originLabel} → {event.origin}</h2>\n      <div className=\"cz-depart-detail\"><span>{modeLabel}</span><span>{estimate.travelLabel} de deslocamento</span><span>margem {estimate.marginMinutes} min</span><span>apresentação {estimate.presentationLabel}</span></div>\n      {rawLiveMinutes > 300 && <p className=\"cz-depart-warning\">A rota terrestre encontrada não combina com esta programação. Mantive uma estimativa local protegida e não usei o trajeto de {Math.floor(rawLiveMinutes / 60)} horas.</p>}",
-  'hero sem sobreposição',
-);
-
-home = replaceOnce(
-  home,
-  "<div><Navigation/><span>Sair às</span><strong>{estimate.leaveLabel}</strong></div>",
-  "<div><Navigation/><span>Sair em {leaveDayLabel}</span><strong>{estimate.leaveLabel}</strong></div>",
-  'data no KPI de saída',
-);
+home = replaceHeroStructurally(home);
+home = replaceDepartureKpiStructurally(home);
 
 home = home.replace('data-departure-v1406="true"', 'data-departure-v1406="true" data-departure-v14327="true"');
 fs.writeFileSync(homePath, home, 'utf8');
-console.log('CrewCheck v14.3.27: Saída Inteligente com data explícita, layout protegido e bloqueio de rotas incompatíveis.');
+console.log('CrewCheck v14.3.27: Saída Inteligente com data explícita, layout protegido, patch estrutural idempotente e bloqueio de rotas incompatíveis.');
