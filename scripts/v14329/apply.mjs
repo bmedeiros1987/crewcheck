@@ -2,7 +2,6 @@ import fs from 'node:fs';
 
 const VERSION = '14.3.29';
 const VERSION_DIGITS = VERSION.replace(/\./g, '');
-const VERSION_CODE = '140329';
 
 function update(path, transform, { optional = false } = {}) {
   if (!fs.existsSync(path)) {
@@ -82,17 +81,6 @@ update('client/src/pages/Home.tsx', (source) => {
 
 update('client/src/App.tsx', (source) => source.replace(/crewcheck_last_loaded_version', '[^']+'/g, `crewcheck_last_loaded_version', '${VERSION}'`), { optional: true });
 update('client/src/pages/AuthPage.tsx', (source) => source.replace(/crewcheck_last_loaded_version', '[^']+'/g, `crewcheck_last_loaded_version', '${VERSION}'`).replace(/data-version="[^"]+"/g, `data-version="${VERSION}"`), { optional: true });
-update('server/platform.mjs', (source) => source.replace(/const APP_VERSION = '\d+\.\d+\.\d+';/, `const APP_VERSION = '${VERSION}';`), { optional: true });
-update('server.mjs', (source) => source.replace(/version\s*:\s*'\d+\.\d+\.\d+'/g, `version: '${VERSION}'`).replace(/v=\d+\.\d+\.\d+/g, `v=${VERSION}`).replace(/static-shell-\d+\.\d+\.\d+/g, `static-shell-${VERSION}`), { optional: true });
-update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCode\s+\d+/, `versionCode ${VERSION_CODE}`).replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
-update('package.json', (source) => {
-  const data = JSON.parse(source);
-  data.version = VERSION;
-  data.description = `CrewCheck v${VERSION} - Smart Departure arrival margin and verifiable automatic client updates`;
-  data.scripts ||= {};
-  data.scripts['regression:v14.3.29'] = 'node scripts/regression-v14-3-29-smart-departure-client-update.mjs';
-  return `${JSON.stringify(data, null, 2)}\n`;
-});
 
 update('client/index.html', (source) => {
   let next = source
@@ -113,10 +101,10 @@ update('client/index.html', (source) => {
       '        if (checking) return;',
       '        checking = true;',
       '        try {',
-      "          var response = await fetch('/api/release?ts=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' });",
+      "          var response = await fetch('/release.json?ts=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' });",
       '          if (!response.ok) return;',
       '          var payload = await response.json().catch(function () { return {}; });',
-      "          var serverRelease = String(payload.version || payload.release || payload.appVersion || '');",
+      "          var serverRelease = String(payload.version || '');",
       '          if (!serverRelease || serverRelease === currentRelease) return;',
       "          var reloadKey = 'crewcheck-release-reload:' + serverRelease;",
       "          if (window.sessionStorage && window.sessionStorage.getItem(reloadKey) === 'done') return;",
@@ -149,4 +137,6 @@ update('client/public/sw.js', (source) => source
   .replace(/const CACHE_NAME = '[^']+';/, `const CACHE_NAME = 'crewcheck-v${VERSION}-shell';`)
   .replace(/const RUNTIME_CACHE = '[^']+';/, `const RUNTIME_CACHE = 'crewcheck-v${VERSION}-runtime';`));
 
-console.log(`[v14329] CrewCheck ${VERSION}: margem de chegada corrigida, identidade de release atualizada e verificação automática do cliente ativada.`);
+fs.writeFileSync('client/public/release.json', `${JSON.stringify({ version: VERSION, channel: 'web', updatePolicy: 'automatic' }, null, 2)}\n`, 'utf8');
+
+console.log(`[v14329] CrewCheck Web ${VERSION}: margem de chegada corrigida, identidade do cliente atualizada e verificação automática ativada sem alterar a versão nativa do AAB.`);
