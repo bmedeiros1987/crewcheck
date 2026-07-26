@@ -48,16 +48,34 @@ const contextAlreadyComplete = source.includes('function conciergeStayRecords(')
 if (!contextAlreadyComplete) {
   const canonicalRoutineStart = "function conciergeRoutineReply(snapshot) {\n  const next = conciergeNextProgram(snapshot?.roster);";
   if (!source.includes(canonicalRoutineStart)) {
-    const declarationPattern = /(?:async\s+)?function\s+conciergeRoutineReply\s*\(\s*snapshot\s*(?:=\s*[^)]*)?\)\s*\{/m;
-    const declarationMatch = declarationPattern.exec(source);
+    const declarationPatterns = [
+      /(?:async\s+)?function\s+conciergeRoutineReply\s*\(([^)]*)\)\s*\{/m,
+      /(?:const|let|var)\s+conciergeRoutineReply\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*\{/m,
+      /(?:const|let|var)\s+conciergeRoutineReply\s*=\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*\{/m,
+    ];
+
+    let declarationMatch = null;
+    for (const pattern of declarationPatterns) {
+      const candidate = pattern.exec(source);
+      if (!candidate) continue;
+      const params = String(candidate[1] || '');
+      if (!/\bsnapshot\b/.test(params)) continue;
+      declarationMatch = candidate;
+      break;
+    }
+
     if (!declarationMatch) {
-      throw new Error('[v14.3.23-preflight] declaração de conciergeRoutineReply não reconhecida com segurança.');
+      const nearby = source.indexOf('conciergeRoutineReply');
+      const diagnostic = nearby >= 0
+        ? source.slice(Math.max(0, nearby - 80), nearby + 240).replace(/\s+/g, ' ').slice(0, 300)
+        : 'símbolo ausente';
+      throw new Error(`[v14.3.23-preflight] declaração de conciergeRoutineReply não reconhecida com segurança. Contexto: ${diagnostic}`);
     }
 
     const declarationStart = declarationMatch.index;
     const bodyStart = declarationStart + declarationMatch[0].length;
-    const nextPattern = /const\s+next\s*=\s*conciergeNextProgram\(\s*snapshot\?\.roster\s*\)\s*;/m;
-    const nearbyBody = source.slice(bodyStart, bodyStart + 1200);
+    const nextPattern = /(?:const|let)\s+next\s*=\s*conciergeNextProgram\(\s*snapshot\?\.roster\s*(?:,\s*[^)]*)?\)\s*;/m;
+    const nearbyBody = source.slice(bodyStart, bodyStart + 1800);
     const nextMatch = nextPattern.exec(nearbyBody);
     if (!nextMatch) {
       throw new Error('[v14.3.23-preflight] início funcional de conciergeRoutineReply não reconhecido com segurança.');
