@@ -25,6 +25,12 @@ function conciergeRoutineReply(snapshot) {
 function conciergeRegulationReply() {
   return 'preservada';
 }
+async function buildTelegramConciergeReply(value, lower, snapshot) {
+  if (/hotel|pernoite/i.test(lower)) return conciergeHotelsReply(snapshot);
+  if (/academia|wellhub/i.test(lower)) return conciergeGymsReply(snapshot);
+  if (/rotina|treino/i.test(lower)) return conciergeRoutineReply(snapshot);
+  return 'ok';
+}
 `;
 
 const expectedPlaceLines = [
@@ -36,6 +42,10 @@ const expectedPlaceLines = [
   '}',
 ].join('\n');
 
+const expectedHotelDispatch = String.raw`  if (/^\/(?:hoteis|hotéis|hotel)(?:@\S+)?\b/i.test(value) || /\b(hotel|hot[eé]is|pernoite)\b/i.test(lower)) return conciergeHotelsReply(snapshot);`;
+const expectedGymDispatch = String.raw`  if (/^\/academias?(?:@\S+)?\b/i.test(value) || /\b(academia|wellhub|gympass|smart fit|treino perto)\b/i.test(lower)) return conciergeGymsReply(snapshot);`;
+const expectedRoutineDispatch = String.raw`  if (/^\/rotina(?:@\S+)?\b/i.test(value) || /\b(rotina|recupera[cç][aã]o|treino hoje)\b/i.test(lower)) return conciergeRoutineReply(snapshot);`;
+
 try {
   fs.writeFileSync(serverPath, fixture, 'utf8');
 
@@ -46,6 +56,9 @@ try {
   assert.ok(prepared.includes(expectedPlaceLines), 'bloco normalizado deve coincidir com o formato esperado pelo patch v14.3.23');
   assert.ok(prepared.includes('function conciergeRoutineReply(snapshot) {'), 'rotina não pode ser removida');
   assert.ok(prepared.includes('function conciergeRegulationReply() {'), 'funções seguintes não podem ser removidas');
+  assert.ok(prepared.includes(expectedHotelDispatch), 'intenção de pernoite deve coincidir com o anchor legado');
+  assert.ok(prepared.includes(expectedGymDispatch), 'intenção de hospitais deve partir do anchor de academias esperado');
+  assert.ok(prepared.includes(expectedRoutineDispatch), 'perguntas naturais de rotina devem partir do anchor esperado');
   assert.ok(!prepared.includes(".join('\n\n');"), 'o código gerado não pode conter quebras reais dentro da string de join');
 
   const syntax = spawnSync(process.execPath, ['--check', serverPath], { encoding: 'utf8' });
@@ -58,4 +71,4 @@ try {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
-console.log('v14.3.23 escaped-newline structural preflight regression: OK');
+console.log('v14.3.23 dispatch-anchor and escaped-newline preflight regression: OK');
