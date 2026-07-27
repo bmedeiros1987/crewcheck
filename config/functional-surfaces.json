@@ -51,7 +51,7 @@
   ],
   "publicRoutes": [
     { "id": "login", "path": "/login", "marker": "path=\"/login\"", "critical": true },
-    { "id": "register", "path": "/register", "marker": "path=\"/register\"", "critical": true },
+    { "id": "register", "path": "/login (cadastro)", "marker": "component={AuthPage}", "critical": true },
     { "id": "guardian-public", "path": "/guardian", "marker": "path=\"/guardian\"", "critical": false },
     { "id": "visitor", "path": "/visitor", "marker": "path=\"/visitor\"", "critical": false },
     { "id": "about", "path": "/sobre", "marker": "path=\"/sobre\"", "critical": false },
