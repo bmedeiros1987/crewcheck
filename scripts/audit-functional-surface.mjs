@@ -29,18 +29,26 @@ const css = read('client/src/index.css');
 const manifest = fs.existsSync(path.join(root, 'android-wrapper/app/src/main/AndroidManifest.xml'))
   ? read('android-wrapper/app/src/main/AndroidManifest.xml')
   : '';
+const semanticSources = [
+  'server/v14338/concierge-semantic.mjs',
+  'server/v14341/concierge-semantic.mjs',
+].filter((relativePath) => fs.existsSync(path.join(root, relativePath))).map(read).join('\n');
 
 const typeBlock = home.match(/type\s+ZeroView\s*=([\s\S]*?);/)?.[1] || '';
 const typedViews = unique([...typeBlock.matchAll(/'([a-z][a-z0-9-]*)'/g)].map((match) => match[1]));
 const renderedViews = unique([...home.matchAll(/view\s*===\s*'([a-z][a-z0-9-]*)'/g)].map((match) => match[1]));
 const menuStart = home.indexOf('function MenuDrawer(');
 const menuEnd = menuStart >= 0 ? home.indexOf('function Cockpit(', menuStart) : -1;
+const menuNavigationSource = menuStart >= 0 && menuEnd > menuStart ? home.slice(menuStart, menuEnd) : '';
 const bottomStart = home.indexOf('function BottomNav(');
 const bottomEnd = bottomStart >= 0 ? home.indexOf('function KpiCard(', bottomStart) : -1;
-const navigationSource = [
-  menuStart >= 0 && menuEnd > menuStart ? home.slice(menuStart, menuEnd) : '',
-  bottomStart >= 0 && bottomEnd > bottomStart ? home.slice(bottomStart, bottomEnd) : '',
-].join('\n');
+const bottomBlock = bottomStart >= 0 && bottomEnd > bottomStart ? home.slice(bottomStart, bottomEnd) : '';
+const bottomItemsStart = bottomBlock.indexOf('const items:');
+const bottomItemsEnd = bottomItemsStart >= 0 ? bottomBlock.indexOf('const menuViews:', bottomItemsStart) : -1;
+const bottomNavigationSource = bottomItemsStart >= 0 && bottomItemsEnd > bottomItemsStart
+  ? bottomBlock.slice(bottomItemsStart, bottomItemsEnd)
+  : bottomBlock;
+const navigationSource = [menuNavigationSource, bottomNavigationSource].join('\n');
 const navigationViews = unique([...navigationSource.matchAll(/\['([a-z][a-z0-9-]*)'\s*,\s*'[^']+'/g)].map((match) => match[1]));
 
 const errors = [];
@@ -84,7 +92,7 @@ const criticalMarkers = [
   ['fallback não oculta erro de importação', home.includes('sanitizePdfImportError')],
   ['servidor de Radar presente', server.includes('/api/radar-flight')],
   ['Concierge operacional presente', server.includes('/api/telegram/concierge/ask')],
-  ['CSS do menu rolável presente', css.includes('.cz-menu-panel') && css.includes('overflow-y')),
+  ['CSS do menu rolável presente', css.includes('.cz-menu-panel') && css.includes('overflow-y')],
 ];
 for (const [label, ok] of criticalMarkers) if (!ok) errors.push(`marcador crítico ausente: ${label}`);
 
@@ -94,13 +102,21 @@ const publicRouteResults = config.publicRoutes.map((route) => {
   return { ...route, present, status: present ? 'OK' : route.critical ? 'FAIL' : 'WARN' };
 });
 
+const forbiddenContextFields = ['originalText', 'transcript', 'rawText', 'message'];
 const securityChecks = [
   { id: 'health-read-only', ok: !manifest || !/android\.permission\.health\.WRITE_/i.test(manifest), detail: 'Manifest não solicita escrita no Health Connect' },
-  { id: 'no-raw-conversation-context', ok: !server.includes('conciergeConversation: { originalText') && !server.includes('conciergeConversation: { transcript'), detail: 'Contexto do Concierge não contém texto bruto' },
+  {
+    id: 'no-raw-conversation-context',
+    ok: forbiddenContextFields.every((field) => !new RegExp(`conciergeConversation\\s*:\\s*\\{[\\s\\S]{0,240}\\b${field}\\b`).test(server))
+      && !semanticSources.includes('storesRawConversation: true'),
+    detail: 'Contexto do Concierge não contém texto bruto',
+  },
   { id: 'admin-conditional-menu', ok: home.includes('if (admin) groups.push') || home.includes('if (admin) nav.push'), detail: 'Itens administrativos permanecem condicionais' },
 ];
 for (const check of securityChecks) if (!check.ok) errors.push(`segurança: ${check.detail}`);
 
+const uniqueErrors = unique(errors);
+const uniqueWarnings = unique(warnings);
 const report = {
   generatedAt: new Date().toISOString(),
   schemaVersion: config.schemaVersion,
@@ -108,14 +124,14 @@ const report = {
   summary: {
     surfaces: surfaceResults.length,
     ok: surfaceResults.filter((item) => item.status === 'OK').length,
-    warnings: surfaceResults.filter((item) => item.status === 'WARN').length + warnings.length,
-    failures: surfaceResults.filter((item) => item.status === 'FAIL').length + errors.length,
+    warnings: uniqueWarnings.length,
+    failures: uniqueErrors.length,
     typedViews: typedViews.length,
     renderedViews: renderedViews.length,
     navigationViews: navigationViews.length,
   },
-  errors: unique(errors),
-  warnings: unique(warnings),
+  errors: uniqueErrors,
+  warnings: uniqueWarnings,
   criticalMarkers: criticalMarkers.map(([label, ok]) => ({ label, ok })),
   securityChecks,
   publicRoutes: publicRouteResults,
