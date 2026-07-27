@@ -19,6 +19,16 @@ const AIRPORT_ALIASES = Object.freeze({
   madrid: 'MAD', madri: 'MAD', barcelona: 'BCN', londres: 'LHR', heathrow: 'LHR', paris: 'CDG',
   roma: 'FCO', frankfurt: 'FRA', dubai: 'DXB', 'nova york': 'JFK', toquio: 'HND', tóquio: 'HND',
 });
+const SUPPORTED_FLIGHT_PREFIXES = Object.freeze(['LA','JJ','LAN','TAM','G3','AD','AZU','TP','IB','UX','AA','DL','UA','AC','AF','KL','LH','EK','QR']);
+const RESERVED_AIRPORT_TOKENS = new Set([
+  'METAR','TAF','ATIS','QUAL','COMO','ONDE','QUEM','HOJE','BASE','CASA','TEMPO','CLIMA','PARA','VOO','ROTA','SAIR','PORTAO','STATUS','AERO',
+]);
+const KNOWN_AIRPORT_CODES = new Set([
+  ...Object.values(AIRPORT_ALIASES),
+  'SBBR','SBGR','SBSP','SBKP','SBGL','SBRJ','SBCF','SBCT','SBPA','SBSV','SBRF','SBFZ','SBBE','SBEG','SBMO','SBSL','SBPJ','SBRP',
+  'BSB','GRU','CGH','VCP','GIG','SDU','CNF','CWB','POA','SSA','REC','FOR','BEL','MAO','MAB','SLZ','NAT','MCZ','AJU','PMW','THE','VIX','GYN','CGB','CGR','BVB','MCP','RBR','PVH','IOS','JPA','RAO','CXJ','IGU','NVT','JOI','LDB','MGF','UDI','SJP','PNZ','STM','IMP','BPS','AQA','BAU',
+  'KMIA','KJFK','EGLL','LFPG','LEMD','LEBL','LPPT','LIRF','EDDF','RJTT','OMDB','MIA','JFK','LHR','CDG','MAD','BCN','LIS','FCO','FRA','HND','DXB',
+]);
 
 function localParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -33,6 +43,10 @@ function dateKeyFromParts(year, month, day) {
 function addLocalDays(parts, amount) {
   const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + amount, 12, 0, 0));
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), weekday: date.getUTCDay() };
+}
+function dateKeyAfterLocalDays(parts, amount) {
+  const next = addLocalDays(parts, amount);
+  return dateKeyFromParts(next.year, next.month, next.day);
 }
 function validDateParts(year, month, day) {
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -58,10 +72,10 @@ export function isConciergeContextFreshV14338(context = null, now = new Date()) 
 export function parseConciergeNaturalDateV14338(text = '', now = new Date()) {
   const normalized = normalizeConciergeNaturalTextV14338(text);
   const today = localParts(now);
-  if (/\bdepois de amanha\b/.test(normalized)) return dateKeyFromParts(...Object.values(addLocalDays(today, 2)).slice(0, 3));
-  if (/\bamanha\b/.test(normalized)) return dateKeyFromParts(...Object.values(addLocalDays(today, 1)).slice(0, 3));
+  if (/\bdepois de amanha\b/.test(normalized)) return dateKeyAfterLocalDays(today, 2);
+  if (/\bamanha\b/.test(normalized)) return dateKeyAfterLocalDays(today, 1);
   if (/\bhoje\b/.test(normalized)) return dateKeyFromParts(today.year, today.month, today.day);
-  if (/\bontem\b/.test(normalized)) return dateKeyFromParts(...Object.values(addLocalDays(today, -1)).slice(0, 3));
+  if (/\bontem\b/.test(normalized)) return dateKeyAfterLocalDays(today, -1);
 
   const numeric = normalized.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/);
   if (numeric) {
@@ -98,26 +112,45 @@ export function parseConciergeNaturalDateV14338(text = '', now = new Date()) {
     if (!new RegExp(`\\b${label.replace('-', '[ -]?')}\\b`).test(normalized)) continue;
     let delta = (target - today.weekday + 7) % 7;
     if (delta === 0 && /\bproxim[oa]\b/.test(normalized)) delta = 7;
-    const parts = addLocalDays(today, delta);
-    return dateKeyFromParts(parts.year, parts.month, parts.day);
+    return dateKeyAfterLocalDays(today, delta);
   }
   return '';
 }
 
 function extractFlight(text, normalized, context) {
-  const direct = String(text || '').toUpperCase().match(/\b(?:LA|JJ|LAN|TAM)\s*[- ]?(\d{3,4})\b/);
+  const upper = String(text || '').toUpperCase();
+  const prefixPattern = SUPPORTED_FLIGHT_PREFIXES.join('|');
+  const direct = upper.match(new RegExp(`\\b(${prefixPattern})\\s*[- ]?(\\d{3,4})\\b`));
   if (direct) {
-    const prefix = direct[0].replace(/\s|-/g, '').replace(/^LAN/, 'LA').replace(/^TAM/, 'JJ').replace(/\d+$/, '');
-    return `${prefix}${direct[1]}`;
+    const prefix = direct[1].replace(/^LAN$/, 'LA').replace(/^TAM$/, 'JJ');
+    return `${prefix}${direct[2]}`;
   }
   const bare = normalized.match(/\b(\d{3,4})\b/);
-  if (bare && /\b(voo|portao|terminal|radar|status|atras|cancel|embarque|chegada|partida)\b/.test(normalized)) return `LA${bare[1]}`;
+  if (bare && /\b(voo|portao|terminal|radar|status|atras|cancel|embarque|chegada|partida)\b/.test(normalized)) {
+    const previous = String(context?.flight || '').toUpperCase();
+    if (previous.endsWith(bare[1])) return previous;
+    return `LA${bare[1]}`;
+  }
   if (/\b(esse voo|este voo|dele|desse voo|o mesmo voo|e o portao|e o status|e a chegada)\b/.test(normalized)) return String(context?.flight || '');
   return '';
 }
+function airportTokenCandidate(raw = '') {
+  const token = String(raw || '').trim();
+  const code = token.toUpperCase();
+  if (RESERVED_AIRPORT_TOKENS.has(code)) return '';
+  if (KNOWN_AIRPORT_CODES.has(code)) return code;
+  const typedUppercase = token === code;
+  if (typedUppercase && /^[A-Z]{3}$/.test(code)) return code;
+  if (/^(?:SB|SD|SN|SW|SS|SI|SJ)[A-Z]{2}$/.test(code)) return code;
+  if (typedUppercase && /^(?:K|C|M|L|E|O|R|U|Z)[A-Z]{3}$/.test(code)) return code;
+  return '';
+}
 function extractAirport(text, normalized, context) {
-  const explicit = String(text || '').toUpperCase().match(/\b[A-Z]{4}\b|\b[A-Z]{3}\b/);
-  if (explicit && !['METAR', 'TAF', 'ATIS'].includes(explicit[0])) return explicit[0];
+  const tokens = String(text || '').match(/\b[A-Za-z]{3,4}\b/g) || [];
+  for (const token of tokens) {
+    const candidate = airportTokenCandidate(token);
+    if (candidate) return candidate;
+  }
   for (const [label, code] of Object.entries(AIRPORT_ALIASES)) if (normalized.includes(label.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) return code;
   if (/\b(destino|la|ali|esse aeroporto|nesse aeroporto)\b/.test(normalized)) return String(context?.airport || '');
   return '';
