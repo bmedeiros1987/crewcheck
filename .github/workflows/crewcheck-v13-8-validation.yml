@@ -59,6 +59,8 @@ jobs:
         run: node scripts/regression-v14-3-29-smart-departure-client-update.mjs
       - name: Validate canonical Smart Departure selection and route safety
         run: node scripts/regression-v14-3-31-smart-departure-canonical.mjs
+      - name: Validate cache-first positioning flight search
+        run: node scripts/regression-v14-3-34-positioning-radar-cache.mjs 2>&1 | tee "$RUNNER_TEMP/positioning-radar-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
@@ -71,5 +73,6 @@ jobs:
             ${{ runner.temp }}/typescript.log
             ${{ runner.temp }}/vite-build.log
             ${{ runner.temp }}/official-roster-regression.log
+            ${{ runner.temp }}/positioning-radar-regression.log
           if-no-files-found: ignore
           retention-days: 7

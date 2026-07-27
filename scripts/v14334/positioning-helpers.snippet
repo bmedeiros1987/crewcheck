@@ -1,0 +1,200 @@
+type PositioningFlightRecord = {
+  eventId: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  departureAt: string;
+  arrivalAt: string;
+  status: string;
+  source: string;
+  confirmed: boolean;
+  checkedAt: string;
+  expiresAt: string;
+};
+type PositioningSearchState = {
+  eventId: string;
+  status: 'checking' | 'found' | 'none' | 'error';
+  checkedAt: string;
+  expiresAt: string;
+  message: string;
+  source?: string;
+};
+const POSITIONING_SEARCH_WINDOW_MS = 72 * 60 * 60 * 1000;
+const POSITIONING_SEARCH_CACHE_MS = 3 * 60 * 60 * 1000;
+const POSITIONING_ERROR_CACHE_MS = 30 * 60 * 1000;
+const POSITIONING_MIN_ARRIVAL_BUFFER_MS = 60 * 60 * 1000;
+const POSITIONING_MAX_STATUS_LOOKUPS = 4;
+function positioningEventKey(event: ZeroLeg): string {
+  return `crewcheck_positioning_flight:${event.id}`;
+}
+function positioningSearchKey(event: ZeroLeg): string {
+  return `crewcheck_positioning_search:${event.id}`;
+}
+function positioningLocalIsoDate(value: Date): string {
+  return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+}
+function positioningRecordMatchesEvent(record: any, event: ZeroLeg): boolean {
+  if (!record || typeof record !== 'object') return false;
+  const eventId = String(record.eventId || '').trim();
+  if (eventId && eventId !== String(event.id || '')) return false;
+  const destination = String(record.destination || record.arrivalAirport || '').trim().toUpperCase();
+  if (destination && destination !== String(event.origin || '').trim().toUpperCase()) return false;
+  const expiresAt = new Date(record.expiresAt || '').getTime();
+  if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return false;
+  return true;
+}
+function readPositioningSearch(event: ZeroLeg): PositioningSearchState | null {
+  try {
+    const parsed = JSON.parse(storage.get(positioningSearchKey(event), 'null')) as PositioningSearchState | null;
+    if (!parsed || parsed.eventId !== String(event.id || '')) return null;
+    const expiresAt = new Date(parsed.expiresAt || '').getTime();
+    return Number.isFinite(expiresAt) && expiresAt > Date.now() ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+function writePositioningSearch(event: ZeroLeg, state: Omit<PositioningSearchState, 'eventId'>): PositioningSearchState {
+  const value = { ...state, eventId: String(event.id || '') };
+  storage.set(positioningSearchKey(event), JSON.stringify(value));
+  return value;
+}
+function savePositioningFlight(event: ZeroLeg, record: PositioningFlightRecord): PositioningFlightRecord {
+  storage.set(positioningEventKey(event), JSON.stringify(record));
+  storage.set('crewcheck_selected_positioning_flight', JSON.stringify(record));
+  window.dispatchEvent(new CustomEvent('crewcheck:positioning-updated', { detail: { eventId: event.id, record } }));
+  return record;
+}
+function positioningFlightNumber(row: any): string {
+  return String(row?.flightNumber || row?.flight || row?.iata || row?.number || row?.designator || '').replace(/\s+/g, '').toUpperCase();
+}
+function positioningDestination(row: any): string {
+  return String(row?.destination || row?.arrivalAirport || row?.arrival?.iata || row?.route?.destination || '').trim().toUpperCase().slice(0, 3);
+}
+function positioningStatus(row: any): string {
+  return String(row?.status || row?.flightStatus || row?.movementStatus || 'Programado').trim();
+}
+function positioningCancelled(row: any): boolean {
+  return /(CANCEL|CANCELADO|CANCELED|DIVERT|DESVIADO)/i.test(positioningStatus(row));
+}
+function positioningDateTime(date: string, value: any): Date | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const direct = new Date(raw);
+  if (/\d{4}-\d{2}-\d{2}/.test(raw) && Number.isFinite(direct.getTime())) return direct;
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const parsed = new Date(`${date}T${pad2(Number(match[1]))}:${match[2]}:00`);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+function positioningBoardRows(payload: any): any[] {
+  return Array.isArray(payload?.rows) ? payload.rows : Array.isArray(payload?.flights) ? payload.flights : [];
+}
+function positioningDepartureAt(row: any, date: string): Date | null {
+  return positioningDateTime(date, row?.departureAt || row?.scheduledDeparture || row?.departureDateTime || row?.confirmedTime || row?.scheduledTime || row?.departureTime || row?.time);
+}
+function positioningArrivalAt(row: any, status: any, date: string): Date | null {
+  return positioningDateTime(date,
+    status?.arrivalAt || status?.scheduledArrival || status?.arrivalDateTime || status?.confirmedArrivalTime || status?.arrivalTime
+    || row?.arrivalAt || row?.scheduledArrival || row?.arrivalDateTime || row?.confirmedArrivalTime || row?.arrivalTime
+    || status?.confirmedTime || status?.scheduledTime,
+  );
+}
+function positioningRecordLabel(record: PositioningFlightRecord | null): string {
+  if (!record) return '';
+  const arrival = new Date(record.arrivalAt);
+  const clock = Number.isFinite(arrival.getTime()) ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(arrival) : 'horário a confirmar';
+  return `${record.flightNumber} · ${record.origin} → ${record.destination} · chegada ${clock}`;
+}
+async function discoverSameDayPositioningFlight(event: ZeroLeg, originAirport: string, destinationAirport: string): Promise<PositioningFlightRecord | null> {
+  const origin = String(originAirport || '').trim().toUpperCase().slice(0, 3);
+  const destination = String(destinationAirport || '').trim().toUpperCase().slice(0, 3);
+  if (!origin || !destination || origin === destination) return null;
+  const presentationAt = departurePresentationDateTime(event);
+  if (!Number.isFinite(presentationAt.getTime())) return null;
+  const now = Date.now();
+  const untilPresentation = presentationAt.getTime() - now;
+  if (untilPresentation < -2 * 60 * 60 * 1000 || untilPresentation > POSITIONING_SEARCH_WINDOW_MS) return null;
+  const currentRecord = departurePositioningRecord(event) as PositioningFlightRecord | null;
+  if (currentRecord && departureConfirmedSameDayPositioning(event)) return currentRecord;
+  const cachedSearch = readPositioningSearch(event);
+  if (cachedSearch?.status === 'found') return departurePositioningRecord(event) as PositioningFlightRecord | null;
+  if (cachedSearch && ['checking', 'none', 'error'].includes(cachedSearch.status)) return null;
+
+  const checkedAt = new Date();
+  writePositioningSearch(event, {
+    status: 'checking',
+    checkedAt: checkedAt.toISOString(),
+    expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
+    message: 'Consultando primeiro o cache econômico do Radar.',
+  });
+
+  try {
+    const date = positioningLocalIsoDate(presentationAt);
+    const boardParams = new URLSearchParams({ airport: origin, type: 'departure', limit: '100' });
+    const boardResponse = await fetch(`/api/airport-board?${boardParams.toString()}`, { cache: 'no-store' });
+    const board = await boardResponse.json().catch(() => null);
+    const candidates = positioningBoardRows(board)
+      .filter((row) => !positioningCancelled(row) && positioningDestination(row) === destination && /\d/.test(positioningFlightNumber(row)))
+      .map((row) => ({ row, departureAt: positioningDepartureAt(row, date) }))
+      .filter((item) => item.departureAt && item.departureAt.getTime() < presentationAt.getTime() && item.departureAt.getTime() > now - 60 * 60 * 1000)
+      .sort((a, b) => b.departureAt!.getTime() - a.departureAt!.getTime())
+      .slice(0, POSITIONING_MAX_STATUS_LOOKUPS);
+
+    const safeOptions: PositioningFlightRecord[] = [];
+    for (const candidate of candidates) {
+      const flightNumber = positioningFlightNumber(candidate.row);
+      const statusParams = new URLSearchParams({ flightNumber, destination, airport: destination, date });
+      const response = await fetch(`/api/flight-status?${statusParams.toString()}`, { cache: 'no-store' });
+      const status = await response.json().catch(() => null);
+      if (positioningCancelled(status || candidate.row)) continue;
+      const arrivalAt = positioningArrivalAt(candidate.row, status, date);
+      if (!arrivalAt || positioningLocalIsoDate(arrivalAt) !== date) continue;
+      if (arrivalAt.getTime() > presentationAt.getTime() - POSITIONING_MIN_ARRIVAL_BUFFER_MS) continue;
+      const departureAt = candidate.departureAt!;
+      if (departureAt.getTime() >= arrivalAt.getTime()) continue;
+      safeOptions.push({
+        eventId: String(event.id || ''),
+        flightNumber,
+        origin,
+        destination,
+        departureAt: departureAt.toISOString(),
+        arrivalAt: arrivalAt.toISOString(),
+        status: positioningStatus(status || candidate.row),
+        source: String(status?.source || board?.source || 'Radar CrewCheck'),
+        confirmed: true,
+        checkedAt: checkedAt.toISOString(),
+        expiresAt: new Date(presentationAt.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+      });
+    }
+
+    const selected = safeOptions.sort((a, b) => new Date(b.arrivalAt).getTime() - new Date(a.arrivalAt).getTime())[0] || null;
+    if (selected) {
+      savePositioningFlight(event, selected);
+      writePositioningSearch(event, {
+        status: 'found',
+        checkedAt: checkedAt.toISOString(),
+        expiresAt: new Date(Math.min(presentationAt.getTime(), now + POSITIONING_SEARCH_CACHE_MS)).toISOString(),
+        message: positioningRecordLabel(selected),
+        source: selected.source,
+      });
+      return selected;
+    }
+
+    writePositioningSearch(event, {
+      status: 'none',
+      checkedAt: checkedAt.toISOString(),
+      expiresAt: new Date(now + POSITIONING_SEARCH_CACHE_MS).toISOString(),
+      message: 'Nenhum voo direto no mesmo dia chegou com antecedência segura. Mantido o posicionamento no dia anterior.',
+      source: String(board?.source || 'Radar CrewCheck'),
+    });
+    return null;
+  } catch {
+    writePositioningSearch(event, {
+      status: 'error',
+      checkedAt: checkedAt.toISOString(),
+      expiresAt: new Date(now + POSITIONING_ERROR_CACHE_MS).toISOString(),
+      message: 'Radar temporariamente indisponível. Mantido o planejamento seguro no dia anterior.',
+    });
+    return null;
+  }
+}
