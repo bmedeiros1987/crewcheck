@@ -26,6 +26,10 @@ const bottomStart = homeBefore.indexOf('function BottomNav(');
 const bottomEnd = homeBefore.indexOf('function KpiCard(', bottomStart);
 assert.ok(bottomStart >= 0 && bottomEnd > bottomStart, 'bloco da navegação inferior não localizado');
 const bottomBlock = homeBefore.slice(bottomStart, bottomEnd);
+const itemsStart = bottomBlock.indexOf('const items:');
+const itemsEnd = bottomBlock.indexOf('const menuViews:', itemsStart);
+assert.ok(itemsStart >= 0 && itemsEnd > itemsStart, 'array de destinos inferiores não localizado');
+const bottomItemsBlock = bottomBlock.slice(itemsStart, itemsEnd);
 const expectedBottom = [
   "['cockpit','FlyDeck',HomeIcon]",
   "['roster','Escala',CalendarDays]",
@@ -33,11 +37,13 @@ const expectedBottom = [
   "['alerts','Alertas',Bell]",
   "['settings','Menu',Menu]",
 ];
-for (const marker of expectedBottom) assert.ok(bottomBlock.includes(marker), `destino inferior ausente: ${marker}`);
-const bottomItems = [...bottomBlock.matchAll(/\['(cockpit|roster|departure|alerts|settings)','([^']+)',/g)];
+for (const marker of expectedBottom) assert.ok(bottomItemsBlock.includes(marker), `destino inferior ausente: ${marker}`);
+const bottomItems = [...bottomItemsBlock.matchAll(/\['(cockpit|roster|departure|alerts|settings)','([^']+)',/g)];
 assert.equal(bottomItems.length, 5, 'navegação inferior deve ter exatamente cinco destinos persistentes');
-assert.ok(!bottomBlock.includes("['load','Carga'"), 'Carga não deve competir com a sequência principal na barra inferior');
-for (const preservedView of ['life','manual','guardian','support']) assert.ok(bottomBlock.includes(`'${preservedView}'`), `${preservedView} deve manter o Menu ativo na barra inferior`);
+assert.ok(!bottomItemsBlock.includes("['load','Carga'"), 'Carga não deve competir com a sequência principal na barra inferior');
+assert.ok(bottomBlock.includes('createPortal(<nav className="cz-bottom-nav"'), 'rodapé deve permanecer portaled fora do contêiner rolável');
+assert.ok(bottomBlock.includes('</nav>, document.body);'), 'rodapé deve continuar montado diretamente no document.body');
+for (const preservedView of ['life','manual','guardian','support','crewlock','emergency','crewlocker']) assert.ok(bottomBlock.includes(`'${preservedView}'`), `${preservedView} deve manter o Menu ativo na barra inferior`);
 
 const menuStart = homeBefore.indexOf('function MenuDrawer(');
 const menuEnd = homeBefore.indexOf('function Cockpit(', menuStart);
@@ -48,9 +54,9 @@ for (const title of groupTitles) assert.ok(menuBlock.includes(`title: '${title}'
 
 const expectedRoutes = [
   'cockpit','roster','compare','departure','wakeup','weather','presentation','mycar',
-  'radar','alerts','regulation','load','import','iflight','bids','map','database',
+  'radar','alerts','regulation','load','emergency','import','iflight','bids','map','database','crewlocker',
   'perdiem','salary','crew','concierge','hotels','gyms','routine','community','life',
-  'reports','calendar','exports','plans','settings','manual','guardian','support',
+  'reports','calendar','exports','plans','settings','manual','guardian','support','crewlock',
   'updates','maintenance','admin',
 ];
 for (const route of expectedRoutes) {
@@ -103,4 +109,4 @@ assert.equal(compatibility.status, 0, compatibility.stderr || compatibility.stdo
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch FlyDeck deve ser idempotente no Home');
 assert.equal(fs.readFileSync(cssPath, 'utf8'), cssBefore, 'patch FlyDeck deve ser idempotente no CSS');
 
-console.log('v14.3.37 FlyDeck/navigation/brand: chronology, grouped menu, preserved control-center routes, five-item bottom nav, protected engine and canonical mark validated.');
+console.log('v14.3.37 FlyDeck/navigation/brand: chronology, portal footer, complete grouped menu, five-item bottom nav, protected engine and canonical mark validated.');
