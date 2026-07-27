@@ -1,2 +1,2 @@
-await import('./parser.mjs');
+await import('./parser-loader.mjs');
 await import('./ui.mjs');
