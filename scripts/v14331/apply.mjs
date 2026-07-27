@@ -191,7 +191,9 @@ update('client/src/pages/Home.tsx', (source) => {
     if (!patched.includes('margin={margin} onRoute=')) {
       patched = patched.replace('event={event} mode={mode} onRoute=', 'event={event} mode={mode} margin={margin} onRoute=');
     }
-    patched = patched.replace('data-departure-v14327="true"', 'data-departure-v14327="true" data-departure-v14331="true"');
+    if (!patched.includes('data-departure-v14331="true"')) {
+      patched = patched.replace('data-departure-v14327="true"', 'data-departure-v14327="true" data-departure-v14331="true"');
+    }
     return patched;
   });
 
