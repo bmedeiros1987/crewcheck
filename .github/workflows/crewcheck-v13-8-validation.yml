@@ -79,6 +79,16 @@ jobs:
         run: node scripts/audit-functional-surface.mjs --strict --write 2>&1 | tee "$RUNNER_TEMP/functional-surface-audit.log"
       - name: Test server
         run: node test-server.mjs
+      - name: Publish functional audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-functional-audit
+          path: |
+            ${{ runner.temp }}/functional-surface-audit.log
+            ${{ runner.temp }}/crewcheck-functional-audit
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload web diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
