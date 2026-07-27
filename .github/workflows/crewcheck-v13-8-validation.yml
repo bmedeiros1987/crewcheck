@@ -47,6 +47,8 @@ jobs:
         run: node scripts/regression-v14-3-15-daily-guide.mjs
       - name: Validate Guardian, Life, Telegram, visitor, support and Admin
         run: node scripts/regression-v14-3-16-control-center.mjs
+      - name: Validate active-roster visitor scope
+        run: node scripts/regression-v14-3-32-visitor-active-roster-scope.mjs
       - name: Validate theme, contrast and responsive layout
         run: node scripts/regression-v14-3-17-theme-layout.mjs
       - name: Validate structural layout and institutional menu
