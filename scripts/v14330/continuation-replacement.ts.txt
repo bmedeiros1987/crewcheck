@@ -46,7 +46,7 @@ function crewRosterRawLegTimings(raw: string, legs: FlightLeg[]): Array<{
       arrivalOffset,
       departureAbsolute: departureOffset * 1440 + timeToMinutes(departureTime),
       arrivalAbsolute: arrivalOffset * 1440 + timeToMinutes(arrivalTime),
-      report: null,
+      report: null as string | null,
     };
   }).sort((a, b) => {
     const ai = a.sourceIndex >= 0 ? a.sourceIndex : Number.MAX_SAFE_INTEGER - a.index;
