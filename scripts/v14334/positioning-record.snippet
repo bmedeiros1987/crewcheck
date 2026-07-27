@@ -1,11 +1,11 @@
-function departurePositioningRecord(event: ZeroLeg): PositioningFlightRecord | null {
+function departurePositioningRecord(event: ZeroLeg): any | null {
   const inline = (event as any).positioningFlight || (event.day as any)?.positioningFlight;
-  if (positioningRecordMatchesEvent(inline, event)) return inline as PositioningFlightRecord;
+  if (positioningRecordMatchesEvent(inline, event)) return inline;
   const keys = [positioningEventKey(event), 'crewcheck_selected_positioning_flight'];
   for (const key of keys) {
     try {
       const parsed = JSON.parse(storage.get(key, 'null'));
-      if (positioningRecordMatchesEvent(parsed, event)) return parsed as PositioningFlightRecord;
+      if (positioningRecordMatchesEvent(parsed, event)) return parsed;
     } catch {}
   }
   return null;
