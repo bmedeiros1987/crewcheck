@@ -69,6 +69,8 @@ jobs:
         run: node scripts/regression-v14-3-37-flydeck-navigation-brand.mjs 2>&1 | tee "$RUNNER_TEMP/flydeck-navigation-regression.log"
       - name: Validate roster history and departure layout audit
         run: node scripts/regression-v14-3-38-roster-history-layout-audit.mjs 2>&1 | tee "$RUNNER_TEMP/roster-history-layout-regression.log"
+      - name: Validate chronological roster history UI
+        run: node scripts/regression-v14-3-39-history-chronological-ui.mjs 2>&1 | tee "$RUNNER_TEMP/history-chronological-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
@@ -86,5 +88,6 @@ jobs:
             ${{ runner.temp }}/concierge-personality-regression.log
             ${{ runner.temp }}/flydeck-navigation-regression.log
             ${{ runner.temp }}/roster-history-layout-regression.log
+            ${{ runner.temp }}/history-chronological-regression.log
           if-no-files-found: ignore
           retention-days: 7
