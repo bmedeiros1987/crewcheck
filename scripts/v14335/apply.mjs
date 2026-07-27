@@ -39,6 +39,12 @@ function replaceRequired(source, before, after, label) {
   return source.replace(before, after);
 }
 
+function replacePatternRequired(source, pattern, after, label) {
+  if (source.includes(after)) return source;
+  if (!pattern.test(source)) throw new Error(`[v14335] Padrão de aplicação não localizado: ${label}`);
+  return source.replace(pattern, after);
+}
+
 function replaceBlock(source, startMarker, endMarker, replacement, label) {
   if (source.includes(replacement.trim())) return source;
   const start = source.indexOf(startMarker);
@@ -72,9 +78,9 @@ update('server.mjs', (source) => {
   const pharmacyDispatch = "  if (/^\\/(?:farmacia|farmacias|farmácia|farmácias)(?:@\\S+)?\\b/i.test(value) || /\\b(farm[aá]cia|drogaria|remédio perto|remedio perto)\\b/i.test(lower)) return conciergePharmaciesReply(snapshot);";
   next = insertAfterRequired(next, hospitalDispatch, pharmacyDispatch, 'intenção de farmácias');
 
-  const oldLocationIntent = "  if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'Localização recebida. Use /academias, /hoteis ou /saida para consultar perto de você.' : 'Envie sua localização pelo clipe do Telegram para ativar busca próxima e Planejador de Saída.';";
   const newLocationIntent = "  if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) { const state = conciergeLocationContextV14335(snapshot); return state.fresh ? `${state.message} Use /farmacias, /hospitais, /academias, /hoteis ou /saida.` : state.message; }";
-  next = replaceRequired(next, oldLocationIntent, newLocationIntent, 'resposta de localização usada');
+  const locationIntentPattern = /^  if \(\/onde\.\*\(estou\|localiza\)\|perto de mim\/i\.test\(lower\)\) return .*;$/m;
+  next = replacePatternRequired(next, locationIntentPattern, newLocationIntent, 'resposta de localização usada');
 
   next = next.replace('locationSupported: true, voiceSupported:', 'locationSupported: true, locationMaxAgeHours: 6, locationCityLabel: true, voiceSupported:');
   return next;
