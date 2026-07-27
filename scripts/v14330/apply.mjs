@@ -83,6 +83,7 @@ updateTextFile('client/index.html', (value) => value
 updateTextFile('client/public/sw.js', (value) => value
   .replace(/const CACHE_NAME = '[^']+';/, `const CACHE_NAME = 'crewcheck-v${WEB_VERSION}-shell';`)
   .replace(/const RUNTIME_CACHE = '[^']+';/, `const RUNTIME_CACHE = 'crewcheck-v${WEB_VERSION}-runtime';`), { optional: true });
+fs.mkdirSync('client/public', { recursive: true });
 fs.writeFileSync('client/public/release.json', `${JSON.stringify({ version: WEB_VERSION, channel: 'web', updatePolicy: 'automatic' }, null, 2)}\n`, 'utf8');
 
 console.log('CrewCheck v14.3.30: pairings de vários dias, viradas, apresentações reais e MCK reconhecidos por data civil; atualização web automática publicada.');
