@@ -95,3 +95,4 @@ await import('../v14338/apply.mjs');
 await import('../v14339/apply.mjs');
 await import('../v14340/apply.mjs');
 await import('../v14341/apply.mjs');
+await import('../v14341/compatibility.mjs');
