@@ -47,6 +47,9 @@ const mainEnv = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 const mysqlMigration = fs.readFileSync(path.join(root, 'migrations/20260715_003_aiven_mysql_full_platform.sql'), 'utf8');
 assert.ok(mainEnv.includes('CREWCHECK_DATABASE_PROVIDER=aiven-mysql'), 'a fundação atual deve permanecer em Aiven MySQL');
 assert.ok(mainEnv.includes('GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL='), 'template deve usar a variável RTDN que o servidor realmente lê');
+assert.ok(mainEnv.includes('FLIGHTAWARE_AEROAPI_KEY='), 'template deve usar a variável FlightAware principal lida pelo servidor');
+assert.ok(mainEnv.includes('AEROAPI_KEY='), 'template deve documentar o alias AEROAPI_KEY aceito pelo servidor');
+assert.ok(!/^FLIGHTAWARE_API_KEY=/m.test(mainEnv), 'template não pode anunciar variável FlightAware ignorada pelo backend');
 assert.ok(mysqlMigration.includes('Banco oficial e exclusivo: Aiven MySQL'), 'migration MySQL atual não pode ser substituída pela migration PostgreSQL antiga');
 
-console.log('v14.3.32 visitor active-roster scope, manual stay date boundary and Aiven MySQL regression: OK');
+console.log('v14.3.32 visitor scope, manual stay boundary, Aiven MySQL and production env regression: OK');
