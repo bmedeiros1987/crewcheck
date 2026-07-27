@@ -29,18 +29,20 @@ const pipelineEnd = pipelineStart >= 0 ? prepared.indexOf('  return next;', pipe
 if (pipelineStart < 0 || pipelineEnd < 0) throw new Error(`[v14340-loader] Pipeline do cliente não localizado. start=${pipelineStart} end=${pipelineEnd}`);
 const robustPipeline = [
   "  if (!next.includes('const visuallyRescuedDays = rescueFlightsFromVisualRows(')) {",
-  "    const modern = `  const continuationDays = normalizeCrewRosterReportContinuationDays(rescuedDays, header.month, header.year, header.base);`;",
-  "    const modernReplacement = `  const visuallyRescuedDays = rescueFlightsFromVisualRows(rescuedDays, rows, header.month, header.year, header.base);\\n  const continuationDays = normalizeCrewRosterReportContinuationDays(visuallyRescuedDays, header.month, header.year, header.base);`;",
-  "    const legacy = `  const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);\\n  const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);\\n  const days = applyGenericTripulationRecordsToDays(normalizeCrewRosterReportContinuationDays(rescuedDays, header.month, header.year, header.base), crewRecords, header.crewName);`;",
-  "    const legacyReplacement = `  const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);\\n  const visuallyRescuedDays = rescueFlightsFromVisualRows(rescuedDays, rows, header.month, header.year, header.base);\\n  const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);\\n  const days = applyGenericTripulationRecordsToDays(normalizeCrewRosterReportContinuationDays(visuallyRescuedDays, header.month, header.year, header.base), crewRecords, header.crewName);`;",
-  "    if (next.includes(modern)) next = next.replace(modern, modernReplacement);",
-  "    else if (next.includes(legacy)) next = next.replace(legacy, legacyReplacement);",
-  "    else throw new Error('[v14340] Pipeline compatível do resgate visual não localizado.');",
+  "    const declaration = `  const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);`;",
+  "    const visualDeclaration = `${declaration}\\n  const visuallyRescuedDays = rescueFlightsFromVisualRows(rescuedDays, rows, header.month, header.year, header.base);`;",
+  "    if (!next.includes(declaration)) throw new Error('[v14340] Declaração do resgate textual não localizada.');",
+  "    next = next.replace(declaration, visualDeclaration);",
+  "    const continuation = 'normalizeCrewRosterReportContinuationDays(rescuedDays,';",
+  "    const ground = 'rescueCrewRosterOffsetGroundActivities(rescuedDays,';",
+  "    if (next.includes(continuation)) next = next.replace(continuation, 'normalizeCrewRosterReportContinuationDays(visuallyRescuedDays,');",
+  "    else if (next.includes(ground)) next = next.replace(ground, 'rescueCrewRosterOffsetGroundActivities(visuallyRescuedDays,');",
+  "    else throw new Error('[v14340] Consumo downstream do resgate textual não localizado.');",
   "  }",
 ].join('\n') + '\n';
 prepared = `${prepared.slice(0, pipelineStart)}${robustPipeline}${prepared.slice(pipelineEnd)}`;
 
-if (!prepared.includes('Âncora compatível do resgate visual') || !prepared.includes('Pipeline compatível do resgate visual')) {
+if (!prepared.includes('Âncora compatível do resgate visual') || !prepared.includes('Consumo downstream do resgate textual')) {
   throw new Error('[v14340-loader] Compatibilidade integral do parser não aplicada.');
 }
 const runtimePath = path.join(os.tmpdir(), `crewcheck-v14340-parser-${process.pid}.mjs`);
