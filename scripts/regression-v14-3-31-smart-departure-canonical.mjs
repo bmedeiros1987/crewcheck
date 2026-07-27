@@ -34,7 +34,7 @@ function eventRouteOrigin(_event: any) { return '-27.6705,-48.5525'; }
 function airportPoint(code: string) { return code === 'FLN' ? { code, lat: -27.6705, lon: -48.5525 } : code === 'BSB' ? { code, lat: -15.8711, lon: -47.9186 } : null; }
 function routeDistanceKm(a: any, b: any) { const dy = (a.lat - b.lat) * 111; const dx = (a.lon - b.lon) * 98; return Math.sqrt(dx * dx + dy * dy); }
 function eventRouteDestination(event: any) { return event.origin; }
-function monthlyMapDestinations(_events: any[]) { return []; }
+function monthlyMapDestinations(events: ZeroLeg[]) { return []; }
 function routeDurationMinutes(route: any) { return Number(route?.durationMinutes || 0); }
 function saveDepartureTravelMinutes() {}
 function readDepartureTravelMinutes() { return 35; }
