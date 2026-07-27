@@ -31,6 +31,16 @@ assert.equal(gate.intent, 'radar', 'continuação curta deve manter intenção d
 assert.equal(gate.flight, 'LA3730', 'continuação deve recuperar o voo anterior');
 assert.match(gate.rewrite, /\/radar LA3730/, 'continuação deve ser roteada para o radar existente');
 
+const golGate = interpretConciergeNaturalTextV14341('qual o portão do G3 1234?', null, fixedNow);
+assert.equal(golGate.intent, 'radar');
+assert.equal(golGate.flight, 'G31234', 'consulta natural deve preservar o designador G3');
+assert.match(golGate.rewrite, /\/radar G31234/);
+const azulStatus = interpretConciergeNaturalTextV14341('status do voo AD 4040', null, fixedNow);
+assert.equal(azulStatus.flight, 'AD4040', 'consulta natural deve preservar o designador AD');
+assert.match(azulStatus.rewrite, /\/radar AD4040/);
+const azulIcaoStatus = interpretConciergeNaturalTextV14341('o AZU 4001 atrasou?', null, fixedNow);
+assert.equal(azulIcaoStatus.flight, 'AZU4001', 'designador ICAO AZU deve ser preservado');
+
 const after = interpretConciergeNaturalTextV14341('e depois desse voo?', previous, new Date(fixedNow.getTime() + 20 * 60_000));
 assert.equal(after.intent, 'next_after_context', 'referência “depois desse voo” deve usar contexto');
 const presentation = interpretConciergeNaturalTextV14341('que horas me apresento?', previous, fixedNow);
@@ -46,6 +56,12 @@ assert.equal(dateQuery.dateKey, '2026-07-31');
 const uppercaseWeather = interpretConciergeNaturalTextV14341('QUAL O TEMPO NO AEROPORTO?', previous, fixedNow);
 assert.equal(uppercaseWeather.intent, 'weather');
 assert.notEqual(uppercaseWeather.airport, 'QUAL', 'palavra comum em caixa alta nunca pode virar aeroporto');
+const requestedWeather = interpretConciergeNaturalTextV14341('como está o METAR em SBGR?', null, fixedNow);
+assert.equal(requestedWeather.intent, 'weather');
+assert.equal(requestedWeather.airport, 'SBGR', 'scanner deve continuar até o ICAO solicitado');
+assert.match(requestedWeather.rewrite, /\/metar SBGR decodificado/);
+const lowercaseWeather = interpretConciergeNaturalTextV14341('metar sbbr', null, fixedNow);
+assert.equal(lowercaseWeather.airport, 'SBBR', 'ICAO brasileiro em minúsculas deve ser aceito');
 
 const expired = { ...previous, updatedAt: new Date(fixedNow.getTime() - 7 * 60 * 60_000).toISOString() };
 assert.equal(isConciergeContextFreshV14341(expired, fixedNow), false, 'contexto deve expirar após seis horas');
@@ -109,4 +125,4 @@ assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'patch semântic
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch semântico deve ser idempotente na interface');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch semântico deve ser idempotente no release');
 
-console.log('v14.3.41 Concierge semantic context: natural dates, follow-ups, safe memory, canonical routing, UI and idempotency validated.');
+console.log('v14.3.41 Concierge semantic context: natural dates, carriers, requested ICAO, follow-ups, safe memory, canonical routing, UI and idempotency validated.');
