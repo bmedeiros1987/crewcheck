@@ -6,6 +6,17 @@ import { pathToFileURL } from 'node:url';
 const sourcePath = 'scripts/v14340/parser.mjs';
 let prepared = fs.readFileSync(sourcePath, 'utf8');
 
+const integrityStart = prepared.indexOf("  next = replaceBlock(next, 'function assertCrewRosterReportIntegrity('");
+const integrityEnd = integrityStart >= 0 ? prepared.indexOf("  if (!next.includes('function rescueFlightsFromVisualRows(')) {", integrityStart) : -1;
+if (integrityStart < 0 || integrityEnd < 0) throw new Error(`[v14340-loader] Bloco de integridade não localizado. start=${integrityStart} end=${integrityEnd}`);
+const robustIntegrity = [
+  "  const blockingIntegrity = `  throw new Error('A escala oficial contém voos, mas nenhuma etapa foi reconhecida. A importação foi bloqueada para não salvar uma escala incompleta. Reprocesse o mesmo CrewRosterReport após atualizar o CrewCheck.');`;",
+  "  const warningIntegrity = `  console.warn('[CrewCheck] CrewRosterReport com voos ainda sem etapas no primeiro passe; importação seguirá e o fallback visual do servidor será acionado.');`;",
+  "  if (next.includes(blockingIntegrity)) next = next.replace(blockingIntegrity, warningIntegrity);",
+  "  else if (!next.includes('importação seguirá e o fallback visual do servidor')) console.warn('[v14340] Barreira local já ausente ou em formato alternativo.');",
+].join('\n') + '\n';
+prepared = `${prepared.slice(0, integrityStart)}${robustIntegrity}${prepared.slice(integrityEnd)}`;
+
 const anchorStart = prepared.indexOf("  if (!next.includes('function rescueFlightsFromVisualRows(')) {");
 const anchorEnd = anchorStart >= 0 ? prepared.indexOf('  next = replaceRequired(', anchorStart) : -1;
 if (anchorStart < 0 || anchorEnd < 0) throw new Error(`[v14340-loader] Bloco de âncora não localizado. start=${anchorStart} end=${anchorEnd}`);
