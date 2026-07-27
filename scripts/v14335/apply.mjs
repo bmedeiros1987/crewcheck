@@ -5,7 +5,10 @@ const VERSION_DIGITS = VERSION.replace(/\./g, '');
 const locationContextSnippet = fs.readFileSync('scripts/v14335/location-context.snippet', 'utf8').trim();
 const searchPlacesSnippet = fs.readFileSync('scripts/v14335/search-places.snippet', 'utf8').trim();
 const departureReplySnippet = fs.readFileSync('scripts/v14335/departure-reply.snippet', 'utf8').trim();
-const nearbyRepliesSnippet = fs.readFileSync('scripts/v14335/nearby-replies.snippet', 'utf8').trim();
+const hotelsReplySnippet = fs.readFileSync('scripts/v14335/hotels-reply.snippet', 'utf8').trim();
+const gymsReplySnippet = fs.readFileSync('scripts/v14335/gyms-reply.snippet', 'utf8').trim();
+const hospitalsReplySnippet = fs.readFileSync('scripts/v14335/hospitals-reply.snippet', 'utf8').trim();
+const pharmaciesReplySnippet = fs.readFileSync('scripts/v14335/pharmacies-reply.snippet', 'utf8').trim();
 const locationHandlerSnippet = fs.readFileSync('scripts/v14335/location-handler.snippet', 'utf8').trim();
 
 function update(path, transform, { optional = false } = {}) {
@@ -59,7 +62,10 @@ update('server.mjs', (source) => {
   next = insertBeforeRequired(next, 'async function conciergeSearchPlaces(', locationContextSnippet, 'contexto de localização recente');
   next = replaceBlock(next, 'async function conciergeDepartureReply(', 'async function conciergeSearchPlaces(', departureReplySnippet, 'Planejador de Saída no Telegram');
   next = replaceBlock(next, 'async function conciergeSearchPlaces(', 'function conciergePlaceLines(', searchPlacesSnippet, 'busca de locais por coordenadas');
-  next = replaceBlock(next, 'async function conciergeHotelsReply(', 'function conciergeRoutineReply(', nearbyRepliesSnippet, 'hotéis, academias, hospitais e farmácias');
+  next = replaceBlock(next, 'async function conciergeHotelsReply(', 'async function conciergeGymsReply(', hotelsReplySnippet, 'sugestões de hotéis');
+  next = replaceBlock(next, 'async function conciergeGymsReply(', 'async function conciergeHospitalsReply(', gymsReplySnippet, 'busca de academias');
+  next = replaceBlock(next, 'async function conciergeHospitalsReply(', 'function conciergeStayReply(', hospitalsReplySnippet, 'busca de hospitais');
+  next = insertBeforeRequired(next, 'function conciergeStayReply(', pharmaciesReplySnippet, 'busca de farmácias');
   next = replaceBlock(next, 'async function handleTelegramLocation(', '// CrewCheck v13.7.15 — Telegram Link backend.', locationHandlerSnippet, 'recebimento de localização do Telegram');
 
   const hospitalDispatch = "  if (/^\\/(?:hospital|hospitais|prontoatendimento)(?:@\\S+)?\\b/i.test(value) || /\\b(hospital|pronto atendimento|pronto-socorro|emergência médica|upa)\\b/i.test(lower)) return conciergeHospitalsReply(snapshot);";
