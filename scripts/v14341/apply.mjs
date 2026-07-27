@@ -30,11 +30,11 @@ update('server.mjs', (source) => {
   let next = source;
   const importAnchor = "} from './server/v14336/concierge-personality.mjs';";
   const semanticImport = `import {
-  normalizeConciergeNaturalTextV14338,
-  interpretConciergeNaturalTextV14338,
-  buildConciergeContextV14338,
-  isConciergeContextFreshV14338,
-} from './server/v14338/concierge-semantic.mjs';`;
+  normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
+  interpretConciergeNaturalTextV14341 as interpretConciergeNaturalTextV14338,
+  buildConciergeContextV14341 as buildConciergeContextV14338,
+  isConciergeContextFreshV14341 as isConciergeContextFreshV14338,
+} from './server/v14341/concierge-semantic.mjs';`;
   next = insertAfterRequired(next, importAnchor, semanticImport, 'import do interpretador semântico');
   next = replaceBlock(next, 'async function buildTelegramConciergeReply(', 'async function buildTelegramConciergeReplyCore(', wrapperSnippet, 'wrapper contextual do Concierge');
   next = next.replace(
@@ -46,7 +46,7 @@ update('server.mjs', (source) => {
     "commandsRestored: true, conciergeModes: ['formal','comic'], conciergeVoiceOptions: conciergeVoiceOptionsV14336(), safeHumor: true,",
     "commandsRestored: true, conciergeModes: ['formal','comic'], conciergeVoiceOptions: conciergeVoiceOptionsV14336(), safeHumor: true, semanticConversation: true, semanticContextTtlHours: 6,",
   );
-  if (!next.includes('interpretConciergeNaturalTextV14338') || !next.includes('conciergeSemanticScheduleDateReplyV14338') || !next.includes('semanticConversation: true')) {
+  if (!next.includes("from './server/v14341/concierge-semantic.mjs'") || !next.includes('conciergeSemanticScheduleDateReplyV14338') || !next.includes('semanticConversation: true')) {
     throw new Error('[v14341] Integração semântica incompleta no servidor.');
   }
   return next;
