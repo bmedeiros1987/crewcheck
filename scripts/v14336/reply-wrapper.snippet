@@ -1,0 +1,19 @@
+async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
+  const command = await conciergePreferenceCommandV14336(text, profile, snapshot);
+  if (command.handled) return command.reply;
+  const rawReply = await buildTelegramConciergeReplyCore(text, profile, command.snapshot || snapshot);
+  const currentSnapshot = command.snapshot || snapshot;
+  const decorated = decorateConciergeReplyV14336(rawReply, {
+    preferences: conciergePreferencesV14336(currentSnapshot),
+    roster: currentSnapshot?.roster || {},
+  });
+  if (decorated.humorApplied) {
+    await conciergeSaveSnapshotAsync(profile, null, {
+      preferences: {
+        lastHumorAt: new Date().toISOString(),
+        lastHumorKey: decorated.humorKey,
+      },
+    });
+  }
+  return decorated.reply;
+}
