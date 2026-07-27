@@ -1,0 +1,13 @@
+function conciergeLocationContextV14335(snapshot = null) {
+  return conciergeLocationStateV14335(snapshot?.preferences?.location, { airportPoints: WEATHER_AIRPORT_POINTS });
+}
+function conciergeLocationLineV14335(snapshot = null) {
+  const state = conciergeLocationContextV14335(snapshot);
+  if (!state.fresh) return state.message;
+  const age = Number.isFinite(state.ageMinutes) ? ` · atualizada há ${state.ageMinutes < 2 ? 'menos de 2 min' : `${state.ageMinutes} min`}` : '';
+  return `Localização usada: ${state.label}${age}.`;
+}
+function conciergeFreshLocationV14335(snapshot = null) {
+  const state = conciergeLocationContextV14335(snapshot);
+  return state.fresh ? state.location : null;
+}
