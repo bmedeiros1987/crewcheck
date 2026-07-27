@@ -73,6 +73,8 @@ jobs:
         run: node scripts/regression-v14-3-39-history-chronological-ui.mjs 2>&1 | tee "$RUNNER_TEMP/history-chronological-regression.log"
       - name: Validate permissive import, rotated Jasper and canonical logo
         run: node scripts/regression-v14-3-40-import-permissive-brand.mjs 2>&1 | tee "$RUNNER_TEMP/import-brand-regression.log"
+      - name: Validate semantic Concierge and short conversational context
+        run: node scripts/regression-v14-3-41-concierge-semantic-context.mjs 2>&1 | tee "$RUNNER_TEMP/concierge-semantic-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
@@ -92,5 +94,6 @@ jobs:
             ${{ runner.temp }}/roster-history-layout-regression.log
             ${{ runner.temp }}/history-chronological-regression.log
             ${{ runner.temp }}/import-brand-regression.log
+            ${{ runner.temp }}/concierge-semantic-regression.log
           if-no-files-found: ignore
           retention-days: 7
