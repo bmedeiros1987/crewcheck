@@ -59,9 +59,9 @@ update('server.mjs', (source) => {
 } from './server/v14335/concierge-location.mjs';`;
   next = insertAfterRequired(next, importAnchor, locationImport, 'import da política de localização');
 
-  next = insertBeforeRequired(next, 'async function conciergeSearchPlaces(', locationContextSnippet, 'contexto de localização recente');
   next = replaceBlock(next, 'async function conciergeDepartureReply(', 'async function conciergeSearchPlaces(', departureReplySnippet, 'Planejador de Saída no Telegram');
   next = replaceBlock(next, 'async function conciergeSearchPlaces(', 'function conciergePlaceLines(', searchPlacesSnippet, 'busca de locais por coordenadas');
+  next = insertBeforeRequired(next, 'async function conciergeSearchPlaces(', locationContextSnippet, 'contexto de localização recente');
   next = replaceBlock(next, 'async function conciergeHotelsReply(', 'async function conciergeGymsReply(', hotelsReplySnippet, 'sugestões de hotéis');
   next = replaceBlock(next, 'async function conciergeGymsReply(', 'async function conciergeHospitalsReply(', gymsReplySnippet, 'busca de academias');
   next = replaceBlock(next, 'async function conciergeHospitalsReply(', 'function conciergeStayReply(', hospitalsReplySnippet, 'busca de hospitais');
