@@ -32,19 +32,29 @@ function conciergeSemanticRecordKeyV14338(record = null) {
 function conciergeSemanticFindRecordV14338(snapshot = null, semantic = {}, previousContext = null) {
   const roster = snapshot?.roster || {};
   const records = conciergeProgramRecords(roster);
-  const flight = String(semantic?.flight || previousContext?.flight || '').trim();
-  if (flight) {
-    const info = conciergeFindFlight(roster, flight);
+  const semanticFlight = String(semantic?.flight || '').trim();
+  if (semanticFlight) {
+    const info = conciergeFindFlight(roster, semanticFlight);
     if (info?.record) return { record: info.record, leg: info.leg };
+  }
+  const semanticDate = String(semantic?.dateKey || '').trim();
+  if (semanticDate) {
+    const record = records.find((item) => conciergeRecordDateKey(item) === semanticDate);
+    if (record) return { record, leg: record.legs?.[0] || null };
   }
   const recordKey = String(previousContext?.recordKey || '').trim();
   if (recordKey) {
     const record = records.find((item) => conciergeSemanticRecordKeyV14338(item) === recordKey);
     if (record) return { record, leg: record.legs?.[0] || null };
   }
-  const dateKey = String(semantic?.dateKey || previousContext?.dateKey || '').trim();
-  if (dateKey) {
-    const record = records.find((item) => conciergeRecordDateKey(item) === dateKey);
+  const previousFlight = String(previousContext?.flight || '').trim();
+  if (previousFlight) {
+    const info = conciergeFindFlight(roster, previousFlight);
+    if (info?.record) return { record: info.record, leg: info.leg };
+  }
+  const previousDate = String(previousContext?.dateKey || '').trim();
+  if (previousDate) {
+    const record = records.find((item) => conciergeRecordDateKey(item) === previousDate);
     if (record) return { record, leg: record.legs?.[0] || null };
   }
   const record = conciergeNextProgram(roster);
