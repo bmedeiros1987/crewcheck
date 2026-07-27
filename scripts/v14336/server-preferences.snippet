@@ -1,0 +1,46 @@
+function conciergePreferencesV14336(snapshot = null) {
+  return normalizeConciergePreferencesV14336(snapshot?.preferences || {}, snapshot?.preferences || {}, process.env);
+}
+function conciergeVoiceOptionsV14336() {
+  return publicConciergeVoiceCatalogV14336(process.env);
+}
+function conciergeVoiceIdForSnapshotV14336(snapshot = null) {
+  return conciergeVoiceIdForPreferencesV14336(conciergePreferencesV14336(snapshot), process.env);
+}
+function conciergePreferenceSummaryV14336(snapshot = null) {
+  const preferences = conciergePreferencesV14336(snapshot);
+  const mode = preferences.mode === 'comic' ? 'Cômico leve (impessoal)' : 'Formal (profissional)';
+  const voice = conciergeVoiceOptionsV14336().find((item) => item.id === preferences.voiceProfile)?.label || 'Padrão do CrewCheck';
+  return `Modo: ${mode}\nVoz para respostas de áudio: ${voice}\nTexto recebido continua respondendo por texto; áudio recebido responde por áudio quando a política operacional permitir.`;
+}
+async function conciergePreferenceCommandV14336(text = '', profile = {}, snapshot = null) {
+  const value = String(text || '').trim();
+  const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const current = conciergePreferencesV14336(snapshot);
+  let next = null;
+  let message = '';
+  if (/^\/(?:modo|personalidade)(?:@\S+)?\s+(formal|profissional)\b/i.test(value) || /modo\s+formal|modo\s+profissional/i.test(normalized)) {
+    next = normalizeConciergePreferencesV14336({ mode: 'formal' }, current, process.env);
+    message = 'Modo formal ativado. As respostas ficam profissionais, diretas e sem apelidos.';
+  } else if (/^\/(?:modo|personalidade)(?:@\S+)?\s+(comico|cômico|humor)\b/i.test(value) || /modo\s+comico|modo\s+humor/i.test(normalized)) {
+    next = normalizeConciergePreferencesV14336({ mode: 'comic' }, current, process.env);
+    message = 'Modo cômico leve ativado. O humor será impessoal, ocasional e nunca mudará voo, aeroporto, horário, regulamentação ou orientação de segurança.';
+  } else {
+    const voiceMatch = value.match(/^\/(?:voz|voice)(?:@\S+)?\s+([\p{L}\d_-]+)\b/iu) || value.match(/(?:usar|mudar para|selecionar)\s+voz\s+([\p{L}\d_-]+)/iu);
+    if (voiceMatch) {
+      const requested = normalizeConciergeVoiceProfileV14336(voiceMatch[1]);
+      const option = conciergeVoiceOptionsV14336().find((item) => item.id === requested);
+      if (!option) return { handled: true, snapshot, reply: `Essa voz não está liberada. Opções disponíveis: ${conciergeVoiceOptionsV14336().map((item) => item.label).join(', ')}.` };
+      next = normalizeConciergePreferencesV14336({ voiceProfile: requested }, current, process.env);
+      message = `Voz selecionada: ${option.label}. A escolha vale somente para respostas de áudio.`;
+    }
+  }
+  if (next) {
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: next });
+    return { handled: true, snapshot: saved || snapshot, reply: `${message}\n\n${conciergePreferenceSummaryV14336(saved || { preferences: next })}` };
+  }
+  if (/^\/(?:preferencias|preferências|configuracoes|configurações)(?:@\S+)?\b/i.test(value)) {
+    return { handled: true, snapshot, reply: conciergePreferenceSummaryV14336(snapshot) };
+  }
+  return { handled: false, snapshot, reply: '' };
+}
