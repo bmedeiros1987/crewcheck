@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-      - feat/v14338-concierge-semantic-context
       - agent/v14-premium-system-audit
       - agent/v14-0-1-telegram-voice-policy
       - agent/v14-0-2-google-oauth-legal
