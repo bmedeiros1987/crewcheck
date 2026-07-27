@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - feat/v14338-concierge-semantic-context
+      - brand/v14342-exact-menu-identity
       - agent/v14-premium-system-audit
       - agent/v14-0-1-telegram-voice-policy
       - agent/v14-0-2-google-oauth-legal
@@ -76,6 +77,19 @@ jobs:
         run: node scripts/regression-v14-3-40-import-permissive-brand.mjs 2>&1 | tee "$RUNNER_TEMP/import-brand-regression.log"
       - name: Validate semantic Concierge and short conversational context
         run: node scripts/regression-v14-3-41-concierge-semantic-context.mjs 2>&1 | tee "$RUNNER_TEMP/concierge-semantic-regression.log"
+      - name: Validate exact approved menu brand across every channel
+        run: node scripts/regression-v14-3-42-exact-menu-brand.mjs 2>&1 | tee "$RUNNER_TEMP/exact-brand-regression.log"
+      - name: Upload Play Store brand package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-Play-Store-Brand
+          path: |
+            client/public/icons/crewcheck-play-store-512.png
+            client/public/icons/crewcheck-brand-512.png
+            client/public/brand/crewcheck-play-store-source.svg
+            client/public/brand/crewcheck-brand-metadata.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
@@ -96,5 +110,6 @@ jobs:
             ${{ runner.temp }}/history-chronological-regression.log
             ${{ runner.temp }}/import-brand-regression.log
             ${{ runner.temp }}/concierge-semantic-regression.log
+            ${{ runner.temp }}/exact-brand-regression.log
           if-no-files-found: ignore
           retention-days: 7
