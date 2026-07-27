@@ -3,7 +3,7 @@ async function conciergeDepartureReply(snapshot) {
   const record = conciergeProgramRecords(roster).find((item) => {
     if (item.end < new Date()) return false;
     if (item.legs?.length) return true;
-    return !conciergeRemoteCodes.has(item.code) && ['ASB', 'HSB', 'HSBE', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
+    return ['ASB', 'HSB', 'HSBE', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
   });
   if (!record) return 'Não encontrei uma próxima programação presencial que exija saída. Folga, EAD e períodos de descanso não geram rota.';
   const presentation = conciergePresentationTime(record);
