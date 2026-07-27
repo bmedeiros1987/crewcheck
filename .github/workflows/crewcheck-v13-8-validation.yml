@@ -63,6 +63,8 @@ jobs:
         run: node scripts/regression-v14-3-34-positioning-radar-cache.mjs 2>&1 | tee "$RUNNER_TEMP/positioning-radar-regression.log"
       - name: Validate real Telegram location
         run: node scripts/regression-v14-3-35-telegram-real-location.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-location-regression.log"
+      - name: Validate Concierge personality and voice safety
+        run: node scripts/regression-v14-3-36-concierge-personality-voice.mjs 2>&1 | tee "$RUNNER_TEMP/concierge-personality-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
@@ -77,5 +79,6 @@ jobs:
             ${{ runner.temp }}/official-roster-regression.log
             ${{ runner.temp }}/positioning-radar-regression.log
             ${{ runner.temp }}/telegram-location-regression.log
+            ${{ runner.temp }}/concierge-personality-regression.log
           if-no-files-found: ignore
           retention-days: 7
