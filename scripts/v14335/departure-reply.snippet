@@ -1,0 +1,38 @@
+async function conciergeDepartureReply(snapshot) {
+  const roster = snapshot?.roster;
+  const record = conciergeProgramRecords(roster).find((item) => {
+    if (item.end < new Date()) return false;
+    if (item.legs?.length) return true;
+    return ['ASB', 'HSB', 'HSBE', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
+  });
+  if (!record) return 'Não encontrei uma próxima programação presencial que exija saída. Folga, EAD e períodos de descanso não geram rota.';
+  const presentation = conciergePresentationTime(record);
+  const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
+  const locationState = conciergeLocationContextV14335(snapshot);
+  if (!locationState.fresh) {
+    return `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}\nApresentação ${presentation || 'a confirmar'} em ${record.legs?.[0]?.origin || record.day?.base || 'local a confirmar'}.\n\n${locationState.message}`;
+  }
+  const location = locationState.location;
+  const origin = record.legs?.[0]?.origin || record.day?.base || '';
+  const route = await conciergeTravelEstimate(location, origin);
+  if (!route) return `Apresentação ${presentation || 'a confirmar'} em ${origin || 'local a confirmar'}. ${conciergeLocationLineV14335(snapshot)} Não consegui calcular a rota agora; abra o Planejador de Saída no app.`;
+  if (route.distanceKm > 250) {
+    return [
+      'Automático · posicionamento aéreo necessário',
+      `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}`,
+      conciergeLocationLineV14335(snapshot),
+      `A base de apresentação ${origin} está a ${route.distanceText} de referência. O CrewCheck deve buscar voo seguro no mesmo dia e, sem opção válida, manter o posicionamento no dia anterior.`,
+      `Apresentação ${presentation || 'a confirmar'}.`,
+      'Abra o Planejador de Saída no app para revisar o voo selecionado e cada trecho.',
+    ].join('\n');
+  }
+  const bufferMinutes = 25;
+  const leave = new Date(presentationDate.getTime() - (route.minutes + bufferMinutes) * 60_000);
+  return [
+    conciergeLeaveDateLabel(leave),
+    `${conciergeProgramTitle(record)} · apresentação ${presentation} em ${origin}`,
+    conciergeLocationLineV14335(snapshot),
+    `Deslocamento: ${route.durationText || `${route.minutes} min`} · ${route.distanceText} · margem ${bufferMinutes} min`,
+    route.trafficAware ? 'Rota calculada com trânsito disponível.' : 'Tempo estimado; confirme o trânsito na prévia do mapa do app.',
+  ].join('\n');
+}

@@ -1,0 +1,36 @@
+async function handleTelegramLocation(message = {}) {
+  const chatId = message?.chat?.id;
+  const location = message?.location;
+  if (!chatId || !location) return false;
+  const profile = await telegramProfileForChatAsync(message);
+  const receivedAt = new Date();
+  const rawLocation = {
+    latitude: Number(location.latitude),
+    longitude: Number(location.longitude),
+    accuracy: Number(location.horizontal_accuracy || 0),
+    source: 'telegram',
+    updatedAt: receivedAt.toISOString(),
+  };
+  const resolved = await resolveConciergeLocationLabelV14335(rawLocation, {
+    apiKey: mapsServerKey(),
+    airportPoints: WEATHER_AIRPORT_POINTS,
+  });
+  const normalized = normalizeConciergeLocationV14335({
+    ...rawLocation,
+    label: resolved.label,
+    city: resolved.city || '',
+    state: resolved.state || '',
+    nearestAirport: resolved.airport || '',
+  }, { now: receivedAt, airportPoints: WEATHER_AIRPORT_POINTS });
+  if (!normalized) {
+    await sendTelegramMessage(chatId, 'Não consegui validar estas coordenadas. Compartilhe novamente sua localização atual pelo clipe do Telegram.', { reply_markup: conciergeKeyboard });
+    return true;
+  }
+  await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: normalized } });
+  await sendTelegramMessage(chatId, [
+    `Localização atualizada: ${normalized.label}.`,
+    'Vou priorizar estas coordenadas por até 6 horas para /saida, /hospitais, /farmacias e /academias.',
+    'Depois desse período pedirei um novo compartilhamento para não pesquisar na cidade errada.',
+  ].join('\n'), { reply_markup: conciergeKeyboard });
+  return true;
+}
