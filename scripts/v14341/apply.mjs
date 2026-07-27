@@ -42,10 +42,12 @@ update('server.mjs', (source) => {
     "    modes: [{ id: 'formal', label: 'Formal (profissional)' }, { id: 'comic', label: 'Cômico leve (impessoal)' }],\n    naturalLanguage: true,\n    shortContext: true,\n    contextTtlHours: 6,\n    message: 'Concierge pronto para perguntas naturais com contexto curto.',",
   );
   next = next.replace("    message: 'Resposta operacional gerada.',", "    message: 'Resposta operacional contextual gerada.',");
-  next = next.replace(
-    "commandsRestored: true, conciergeModes: ['formal','comic'], conciergeVoiceOptions: conciergeVoiceOptionsV14336(), safeHumor: true,",
-    "commandsRestored: true, conciergeModes: ['formal','comic'], conciergeVoiceOptions: conciergeVoiceOptionsV14336(), safeHumor: true, semanticConversation: true, semanticContextTtlHours: 6,",
-  );
+  if (!next.includes('semanticConversation: true')) {
+    next = next.replace(
+      "commandsRestored: true, conciergeModes: ['formal','comic'], conciergeVoiceOptions: conciergeVoiceOptionsV14336(), safeHumor: true,",
+      "commandsRestored: true, conciergeModes: ['formal','comic'], conciergeVoiceOptions: conciergeVoiceOptionsV14336(), safeHumor: true, semanticConversation: true, semanticContextTtlHours: 6,",
+    );
+  }
   if (!next.includes("from './server/v14341/concierge-semantic.mjs'") || !next.includes('conciergeSemanticScheduleDateReplyV14338') || !next.includes('semanticConversation: true')) {
     throw new Error('[v14341] Integração semântica incompleta no servidor.');
   }
