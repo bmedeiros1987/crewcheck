@@ -91,8 +91,10 @@ const homeBefore = fs.readFileSync(homePath, 'utf8');
 const releaseBefore = fs.readFileSync(releasePath, 'utf8');
 const engineSource = fs.readFileSync(path.join(root, 'server/v14338/concierge-semantic.mjs'), 'utf8');
 const applySource = fs.readFileSync(path.join(root, 'scripts/v14341/apply.mjs'), 'utf8');
+const compatibilityPath = path.join(root, 'scripts/v14341/compatibility.mjs');
 
-assert.ok(chain.includes("await import('../v14341/apply.mjs');"), 'v14.3.41 deve encerrar a preparação canônica');
+assert.ok(chain.includes("await import('../v14341/apply.mjs');"), 'v14.3.41 deve integrar o interpretador semântico');
+assert.ok(chain.includes("await import('../v14341/compatibility.mjs');"), 'v14.3.41 deve encerrar descartando contexto expirado');
 for (const marker of [
   "from './server/v14341/concierge-semantic.mjs'",
   'async function buildTelegramConciergeReplyCore(',
@@ -103,7 +105,9 @@ for (const marker of [
   'conciergeConversation: conversation',
   'semanticConversation: true',
   'semanticContextTtlHours: 6',
+  "if (!isConciergeContextFreshV14338(previous)) return null;",
 ]) assert.ok(serverBefore.includes(marker), `servidor preparado sem marcador: ${marker}`);
+assert.ok(!serverBefore.includes("if (!isConciergeContextFreshV14338(previous)) return previous;"), 'contexto vencido não pode alcançar busca por recordKey, voo ou data');
 for (const marker of [
   "const DEFAULT_VERSION = '14.3.41';",
   'data-concierge-semantic="v14.3.41"',
@@ -121,8 +125,10 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts','server/rosterParser.
 
 const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14341/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(second.status, 0, second.stderr || second.stdout || 'segunda aplicação v14.3.41 falhou');
+const compatibility = spawnSync(process.execPath, [compatibilityPath], { cwd: root, encoding: 'utf8' });
+assert.equal(compatibility.status, 0, compatibility.stderr || compatibility.stdout || 'segunda compatibilidade v14.3.41 falhou');
 assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'patch semântico deve ser idempotente no servidor');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch semântico deve ser idempotente na interface');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch semântico deve ser idempotente no release');
 
-console.log('v14.3.41 Concierge semantic context: natural dates, carriers, requested ICAO, follow-ups, safe memory, canonical routing, UI and idempotency validated.');
+console.log('v14.3.41 Concierge semantic context: natural dates, carriers, requested ICAO, follow-ups, expired-context isolation, safe memory, canonical routing, UI and idempotency validated.');
