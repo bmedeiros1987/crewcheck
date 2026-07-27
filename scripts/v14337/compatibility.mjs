@@ -45,9 +45,16 @@ if (!source.includes(newDocuments)) {
   source = source.replace(oldDocuments, newDocuments);
 }
 
-for (const marker of ["['life','CrewCheck Life'", "['manual','Manual CrewCheck'", "['guardian','Guardian'", "['support','Suporte'"]) {
-  if (!source.includes(marker)) throw new Error(`[v14337-compat] Rota preservada ausente: ${marker}`);
+const oldCockpitSignature = "function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {";
+const compatibleCockpitSignature = "function Cockpit({ events, compliance, setView, onUpload, openMenu }: { bundle?: BundleState; events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {";
+if (!source.includes(compatibleCockpitSignature)) {
+  if (!source.includes(oldCockpitSignature)) throw new Error('[v14337-compat] Contrato do Cockpit/FlyDeck não localizado.');
+  source = source.replace(oldCockpitSignature, compatibleCockpitSignature);
+}
+
+for (const marker of ["['life','CrewCheck Life'", "['manual','Manual CrewCheck'", "['guardian','Guardian'", "['support','Suporte'", 'bundle?: BundleState']) {
+  if (!source.includes(marker)) throw new Error(`[v14337-compat] Contrato preservado ausente: ${marker}`);
 }
 
 fs.writeFileSync(homePath, source, 'utf8');
-console.log('[v14337-compat] Life, Manual, Guardian e Suporte preservados na navegação agrupada.');
+console.log('[v14337-compat] Life, Manual, Guardian, Suporte e contrato bundle do FlyDeck preservados.');
