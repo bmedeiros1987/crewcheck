@@ -1,0 +1,179 @@
+function conciergeSemanticCommandIntentV14338(text = '') {
+  const value = String(text || '').trim().toLowerCase();
+  if (/^\/(?:hoje|amanha|amanhã)\b/.test(value)) return 'schedule_date';
+  if (/^\/(?:proximo|próximo)\b/.test(value)) return 'next';
+  if (/^\/escala\b/.test(value)) return 'summary';
+  if (/^\/(?:portao|portão|radar)\b/.test(value)) return 'radar';
+  if (/^\/(?:metar|taf|atis)\b/.test(value)) return 'weather';
+  if (/^\/saida\b/.test(value)) return 'departure';
+  if (/^\/(?:pernoite|descanso)\b/.test(value)) return 'stay';
+  if (/^\/(?:hotel|hoteis|hotéis)\b/.test(value)) return 'hotel';
+  if (/^\/academias?\b/.test(value)) return 'gym';
+  if (/^\/(?:hospital|hospitais|prontoatendimento)\b/.test(value)) return 'hospital';
+  if (/^\/(?:farmacia|farmacias|farmácias)\b/.test(value)) return 'pharmacy';
+  if (/^\/rotina\b/.test(value)) return 'routine';
+  if (/^\/diarias?\b/.test(value)) return 'perdiem';
+  if (/^\/(?:conformidade|regulamentacao|regulamentação)\b/.test(value)) return 'compliance';
+  return 'explicit_command';
+}
+function conciergeSemanticInputContextV14338(text = '', snapshot = null) {
+  const previous = snapshot?.preferences?.conciergeConversation || null;
+  if (!isConciergeContextFreshV14338(previous)) return previous;
+  const normalized = normalizeConciergeNaturalTextV14338(text);
+  if (/\borigem\b/.test(normalized) && previous?.origin) return { ...previous, airport: previous.origin };
+  if (/\bdestino\b/.test(normalized) && previous?.destination) return { ...previous, airport: previous.destination };
+  return previous;
+}
+function conciergeSemanticRecordKeyV14338(record = null) {
+  if (!record) return '';
+  const first = String(record.legs?.[0]?.flightNumber || record.code || '').trim().toUpperCase();
+  return `${conciergeRecordDateKey(record)}:${first}:${record.startTime || ''}`;
+}
+function conciergeSemanticFindRecordV14338(snapshot = null, semantic = {}, previousContext = null) {
+  const roster = snapshot?.roster || {};
+  const records = conciergeProgramRecords(roster);
+  const flight = String(semantic?.flight || previousContext?.flight || '').trim();
+  if (flight) {
+    const info = conciergeFindFlight(roster, flight);
+    if (info?.record) return { record: info.record, leg: info.leg };
+  }
+  const recordKey = String(previousContext?.recordKey || '').trim();
+  if (recordKey) {
+    const record = records.find((item) => conciergeSemanticRecordKeyV14338(item) === recordKey);
+    if (record) return { record, leg: record.legs?.[0] || null };
+  }
+  const dateKey = String(semantic?.dateKey || previousContext?.dateKey || '').trim();
+  if (dateKey) {
+    const record = records.find((item) => conciergeRecordDateKey(item) === dateKey);
+    if (record) return { record, leg: record.legs?.[0] || null };
+  }
+  const record = conciergeNextProgram(roster);
+  return record ? { record, leg: record.legs?.[0] || null } : null;
+}
+function conciergeSemanticRecordExtraV14338(info = null) {
+  const record = info?.record || null;
+  const selectedLeg = info?.leg || record?.legs?.[0] || null;
+  const firstLeg = record?.legs?.[0] || null;
+  const lastLeg = record?.legs?.at(-1) || null;
+  const origin = String(firstLeg?.origin || record?.day?.base || '').trim().toUpperCase();
+  const destination = String(lastLeg?.destination || origin || '').trim().toUpperCase();
+  return {
+    recordKey: conciergeSemanticRecordKeyV14338(record),
+    dateKey: record ? conciergeRecordDateKey(record) : '',
+    flight: String(selectedLeg?.flightNumber || firstLeg?.flightNumber || '').trim().toUpperCase(),
+    origin,
+    destination,
+    airport: destination || origin,
+  };
+}
+function conciergeSemanticDateLabelV14338(dateKey = '') {
+  const match = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return dateKey || 'data informada';
+  const date = new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00-03:00`);
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+}
+function conciergeSemanticInactiveDayLabelV14338(day = null) {
+  const code = String(day?.pairingCode || day?.type || '').trim().toUpperCase();
+  const labels = { DO: 'Folga', DOF: 'Folga', DOP: 'Folga programada', OFF: 'Folga', FERIAS: 'Férias', 'FÉRIAS': 'Férias', HSB: 'Sobreaviso', SA: 'Sobreaviso', EAD: 'Treinamento a distância' };
+  return labels[code] || code || '';
+}
+function conciergeSemanticScheduleDateReplyV14338(snapshot = null, dateKey = '') {
+  const roster = snapshot?.roster || {};
+  if (!roster?.days?.length) return 'Ainda não tenho uma escala ativa. Envie o PDF oficial ou sincronize a escala pelo app.';
+  const records = conciergeProgramRecords(roster).filter((record) => conciergeRecordDateKey(record) === dateKey);
+  if (records.length) return [`Programação de ${conciergeSemanticDateLabelV14338(dateKey)}`, '', ...records.map((record) => conciergeFormatProgram(record))].join('\n\n');
+  const day = (roster.days || []).find((item) => {
+    const parts = conciergeRosterDayParts(item || {});
+    return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` === dateKey;
+  });
+  const inactive = conciergeSemanticInactiveDayLabelV14338(day);
+  if (inactive) return `${conciergeSemanticDateLabelV14338(dateKey)}: ${inactive}.`;
+  return `${conciergeSemanticDateLabelV14338(dateKey)}: nenhuma programação publicada foi encontrada na escala ativa.`;
+}
+function conciergeSemanticPresentationReplyV14338(snapshot = null, semantic = {}, previousContext = null) {
+  const info = conciergeSemanticFindRecordV14338(snapshot, semantic, previousContext);
+  const record = info?.record;
+  if (!record) return 'Não encontrei uma programação para consultar a apresentação. Sincronize a escala oficial ou informe o voo/data.';
+  const presentation = conciergePresentationTime(record) || 'a confirmar';
+  const place = String(record.legs?.[0]?.origin || record.day?.base || 'local a confirmar').toUpperCase();
+  return [`Apresentação`, `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}`, `Você se apresenta às ${presentation} em ${place}.`, `Término publicado: ${record.endTime || 'a confirmar'}.`, 'Confirme sempre a escala oficial antes da programação.'].join('\n');
+}
+function conciergeSemanticReturnBaseReplyV14338(snapshot = null) {
+  const roster = snapshot?.roster || {};
+  const base = String(roster.base || '').trim().toUpperCase();
+  if (!base) return 'Sua base contratual não está disponível no perfil ou na escala ativa.';
+  const now = new Date();
+  const records = conciergeProgramRecords(roster).filter((record) => record.end >= now);
+  const returnInfo = records.map((record) => ({ record, leg: record.legs?.at(-1) || null })).find((item) => String(item.leg?.destination || item.record.day?.base || '').trim().toUpperCase() === base);
+  if (!returnInfo?.record) return `Não encontrei um retorno confirmado para ${base} na escala ativa. Confira o período publicado e a escala oficial.`;
+  const arrival = conciergeTime(returnInfo.leg?.arrivalTime || returnInfo.record.endTime, returnInfo.record.endTime || 'a confirmar');
+  const flight = String(returnInfo.leg?.flightNumber || conciergeProgramTitle(returnInfo.record));
+  return [`Retorno à base ${base}`, `${conciergeDateLabel(returnInfo.record)} · ${flight}`, `Chegada prevista às ${arrival}.`, 'O horário pode mudar conforme a operação; confirme no Radar e na escala oficial.'].join('\n');
+}
+function conciergeSemanticNextAfterReplyV14338(snapshot = null, semantic = {}, previousContext = null) {
+  const roster = snapshot?.roster || {};
+  const records = conciergeProgramRecords(roster);
+  const current = conciergeSemanticFindRecordV14338(snapshot, semantic, previousContext)?.record;
+  if (!current) return conciergeScheduleReply(snapshot, 'next');
+  const index = records.findIndex((record) => conciergeSemanticRecordKeyV14338(record) === conciergeSemanticRecordKeyV14338(current));
+  const next = index >= 0 ? records[index + 1] : null;
+  return next ? `Depois dessa programação:\n\n${conciergeFormatProgram(next)}` : 'Não encontrei outra programação depois dessa no período publicado.';
+}
+function conciergeSemanticClarificationV14338(semantic = {}, previousContext = null) {
+  if (!semantic?.followUp || !isConciergeContextFreshV14338(previousContext)) return '';
+  const intent = String(previousContext?.lastIntent || '');
+  if (intent === 'radar') return 'Você quer consultar o portão, o status, a partida ou a chegada desse voo?';
+  if (['next','schedule_date','summary'].includes(intent)) return 'Você quer a apresentação, a Saída Inteligente ou a programação seguinte?';
+  if (['stay','hotel'].includes(intent)) return 'Você quer o hotel, a próxima apresentação ou locais próximos ao pernoite?';
+  return 'Não identifiquei qual detalhe você quer continuar. Diga apenas o dado: apresentação, saída, portão, hotel, meteorologia ou próxima programação.';
+}
+async function conciergeSemanticResolveV14338(semantic = {}, profile = {}, snapshot = null, previousContext = null) {
+  if (semantic.intent === 'schedule_date' && semantic.dateKey && !semantic.rewrite) return { handled: true, reply: conciergeSemanticScheduleDateReplyV14338(snapshot, semantic.dateKey) };
+  if (semantic.intent === 'presentation') return { handled: true, reply: conciergeSemanticPresentationReplyV14338(snapshot, semantic, previousContext) };
+  if (semantic.intent === 'return_base') return { handled: true, reply: conciergeSemanticReturnBaseReplyV14338(snapshot) };
+  if (semantic.intent === 'next_after_context') return { handled: true, reply: conciergeSemanticNextAfterReplyV14338(snapshot, semantic, previousContext) };
+  if (semantic.intent === 'unknown') {
+    const clarification = conciergeSemanticClarificationV14338(semantic, previousContext);
+    if (clarification) return { handled: true, reply: clarification };
+  }
+  return { handled: false, reply: '', rewrite: semantic.rewrite || semantic.originalText || '' };
+}
+
+async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
+  const command = await conciergePreferenceCommandV14336(text, profile, snapshot);
+  if (command.handled) return command.reply;
+  let currentSnapshot = command.snapshot || snapshot;
+  const inputContext = conciergeSemanticInputContextV14338(text, currentSnapshot);
+  const semantic = interpretConciergeNaturalTextV14338(text, inputContext);
+  if (semantic.intent === 'explicit_command') semantic.intent = conciergeSemanticCommandIntentV14338(text);
+  const resolved = await conciergeSemanticResolveV14338(semantic, profile, currentSnapshot, inputContext);
+  const rawReply = resolved.handled
+    ? resolved.reply
+    : await buildTelegramConciergeReplyCore(resolved.rewrite || semantic.rewrite || text, profile, currentSnapshot);
+
+  const info = conciergeSemanticFindRecordV14338(currentSnapshot, semantic, inputContext);
+  const extra = conciergeSemanticRecordExtraV14338(info);
+  const contextIntent = semantic.intent === 'unknown' ? String(inputContext?.lastIntent || 'unknown') : semantic.intent;
+  const conversation = {
+    ...buildConciergeContextV14338({ ...semantic, intent: contextIntent }, inputContext, new Date(), extra),
+    origin: extra.origin || String(inputContext?.origin || ''),
+    destination: extra.destination || String(inputContext?.destination || ''),
+  };
+  if (profile?.email || profile?.chatId) {
+    currentSnapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeConversation: conversation } }) || currentSnapshot;
+  }
+
+  const decorated = decorateConciergeReplyV14336(rawReply, {
+    preferences: conciergePreferencesV14336(currentSnapshot),
+    roster: currentSnapshot?.roster || {},
+  });
+  if (decorated.humorApplied) {
+    await conciergeSaveSnapshotAsync(profile, null, {
+      preferences: {
+        lastHumorAt: new Date().toISOString(),
+        lastHumorKey: decorated.humorKey,
+      },
+    });
+  }
+  return decorated.reply;
+}
