@@ -71,6 +71,8 @@ jobs:
         run: node scripts/regression-v14-3-38-roster-history-layout-audit.mjs 2>&1 | tee "$RUNNER_TEMP/roster-history-layout-regression.log"
       - name: Validate chronological roster history UI
         run: node scripts/regression-v14-3-39-history-chronological-ui.mjs 2>&1 | tee "$RUNNER_TEMP/history-chronological-regression.log"
+      - name: Validate permissive import, rotated Jasper and canonical logo
+        run: node scripts/regression-v14-3-40-import-permissive-brand.mjs 2>&1 | tee "$RUNNER_TEMP/import-brand-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Upload web diagnostics
@@ -89,5 +91,6 @@ jobs:
             ${{ runner.temp }}/flydeck-navigation-regression.log
             ${{ runner.temp }}/roster-history-layout-regression.log
             ${{ runner.temp }}/history-chronological-regression.log
+            ${{ runner.temp }}/import-brand-regression.log
           if-no-files-found: ignore
           retention-days: 7
