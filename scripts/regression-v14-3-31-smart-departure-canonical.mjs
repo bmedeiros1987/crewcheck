@@ -22,7 +22,10 @@ const CREWCHECK_UI_CORE_NOTE = 'legado';
 type ZeroLeg = any;
 type RoutePreviewInfo = any;
 type AirportMapPoint = { code: string; lat: number; lon: number };
-const storage = { get() { return ''; }, set() {} };
+const memory = new Map<string, string>();
+const storage = { get(key: string, fallback = '') { return memory.get(key) ?? fallback; }, set(key: string, value: string) { memory.set(key, value); } };
+function dateChip(value: Date) { return value.toISOString().slice(0, 10); }
+function coordsLabel(lat: number, lng: number) { return lat + ',' + lng; }
 function eventStartDateTime(event: any) { return new Date(event.canonical?.startDateTime || event.date); }
 function noFutureLeg(events: any[]) { return events[0] || { placeholder: true }; }
 function eventClockDate(event: any, clock: string) { const value = new Date(event.date); const [h,m] = String(clock || '00:00').split(':').map(Number); value.setHours(h || 0, m || 0, 0, 0); return value; }
@@ -30,8 +33,14 @@ function nextFlight(events: any[]) { return events[0]; }
 function nextRealFlight(events: any[]) { return nextFlight(events); }
 function currentDayAnchor(events: ZeroLeg[]) { return nextFlight(events); }
 function coordinatePair(value = '') { const m = String(value).match(/^(-?\\d+(?:\\.\\d+)?),(-?\\d+(?:\\.\\d+)?)$/); return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null; }
+function loadNearbyAddress() { return null; }
 function eventRouteOrigin(_event: any) { return '-27.6705,-48.5525'; }
-function airportPoint(code: string) { return code === 'FLN' ? { code, lat: -27.6705, lon: -48.5525 } : code === 'BSB' ? { code, lat: -15.8711, lon: -47.9186 } : null; }
+const AIRPORT_MAP_POINTS: Record<string, AirportMapPoint> = {
+  FLN: { code: 'FLN', lat: -27.6705, lon: -48.5525 },
+  BSB: { code: 'BSB', lat: -15.8711, lon: -47.9186 },
+  CWB: { code: 'CWB', lat: -25.5317, lon: -49.1761 },
+};
+function airportPoint(code: string) { return AIRPORT_MAP_POINTS[code] || null; }
 function routeDistanceKm(a: any, b: any) { const dy = (a.lat - b.lat) * 111; const dx = (a.lon - b.lon) * 98; return Math.sqrt(dx * dx + dy * dy); }
 function eventRouteDestination(event: any) { return event.origin; }
 function monthlyMapDestinations(events: ZeroLeg[]) { return []; }
@@ -55,11 +64,22 @@ function smartDepartureEstimate(event: any, route: any, margin: number) {
   return { source, travelMinutes, marginMinutes: margin, leaveLabel: '13:10', presentationLabel: '14:00', travelLabel: '35 min', leaveDate: presentationDate };
 }
 function eventClockDateLegacy() { return null; }
+function SmartCard({ event, setView }: any) {
+  const [route, setRoute] = useState(null);
+  const margin = 15;
+  const estimate = smartDepartureEstimate(event, route, margin);
+  const liveMinutes = routeDurationMinutes(route);
+  const status = liveMinutes ? 'ATUALIZADA' : route ? 'ESTIMATIVA' : 'CALCULANDO';
+  return <article onClick={() => setView('departure')}><strong>{estimate.leaveLabel}</strong><em>{status}</em><p>{eventRouteOriginLabel(event)} → {event.origin}</p></article>;
+}
+function UpdateCenterView() { return null; }
+function eventRouteOriginLabel() { return 'Localização atual'; }
 function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25 }: any) {
   const origin = eventRouteOrigin(event);
+  const route = null;
   const destination = eventRouteDestination(event);
   const mapsMode = mode.includes('transit') ? 'transit' : 'driving';
-  const route = null;
+  const routeModeLabel = mode === 'automatic' ? 'mais rápido' : mode.includes('transit') ? 'transporte público' : mode.includes('uber') ? 'Uber/99' : mode.includes('flight') ? 'carro + voo' : 'carro';
   let monitor: any = null;
   function setMonitor(value: any) { monitor = value; }
   useEffect(() => {
@@ -68,8 +88,9 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25 }: any) {
     if (presentationAt.getTime() <= Date.now() || presentationAt.getTime() > Date.now() + 7 * 86_400_000) return;
     return () => undefined;
   }, [event.id, event.presentation, origin, destination, mapsMode, margin]);
-  return monitor;
+  return <div>{routeModeLabel}<div><small>Destino</small><strong>{safe(event.origin || event.destination, 'Aeroporto')}</strong></div>{monitor}</div>;
 }
+function safe(value: any, fallback: string) { return value || fallback; }
 function isAdmin() { return false; }
 function Departure({ event }: { event: any }) {
   const mode = 'automatic';
@@ -130,14 +151,16 @@ try {
   const prepared = fs.readFileSync(path.join(tempDir, 'client/src/pages/Home.tsx'), 'utf8');
 
   for (const marker of [
-    'function nextDepartureEvent(',
-    'event.canonical?.showPresentation !== false',
-    'function departureRouteMismatch(',
-    'localDistance > 350',
-    "routeMismatch ? 'REVISAR PROGRAMAÇÃO'",
-    'aeroporto de apresentação {event.origin}',
-    "`${event.flightNumber} · ${event.origin} → ${event.destination}`",
-    'O cálculo de saída e os alertas automáticos foram pausados',
+    'const SMART_DEPARTURE_FLIGHT_THRESHOLD_KM = 250;',
+    'function isDepartureRestEvent(',
+    "return event.kind === 'duty'",
+    'function departurePositioningPlan(',
+    'distanceKm > SMART_DEPARTURE_FLIGHT_THRESHOLD_KM',
+    'travelDate.setDate(travelDate.getDate() - 1)',
+    "'PLANEJAR VOO NO DIA ANTERIOR'",
+    'Nenhum voo de posicionamento no mesmo dia foi confirmado',
+    'function departureGroundRouteDestination(',
+    "positioningPlan.sameDayConfirmed ? 'VOO CONFIRMADO' : 'VOO NECESSÁRIO'",
     '<Departure event={departureEvent}/>',
     '<SmartCard event={departureEvent} setView={setView}/>',
     'margin={margin} onRoute=',
@@ -145,6 +168,7 @@ try {
   ]) assert.ok(prepared.includes(marker), `marcador obrigatório ausente: ${marker}`);
 
   assert.ok(!prepared.includes('Mantive uma estimativa local protegida e não usei o trajeto'), 'fallback silencioso antigo não pode permanecer');
+  assert.ok(!prepared.includes("if (/(SOBREAVISO|HSB)/.test(code)"), 'sobreaviso não pode ser excluído da Saída Inteligente');
   assert.ok(prepared.includes("const DEFAULT_VERSION = '14.3.31';"), 'versão web não atualizada');
   assert.ok(fs.readFileSync(path.join(tempDir, 'client/public/release.json'), 'utf8').includes('14.3.31'), 'release.json não atualizado');
 
@@ -156,9 +180,11 @@ try {
 }
 
 function chooseDeparture(events, now) {
+  const rest = /(^|\s)(DO|DOF|DOP|DOPR|DR|OFF|FOLGA|FERIAS|FÉRIAS|VC|DESCANSO|REPOUSO|REST)(\s|$)/;
   const eligible = events.filter((event) => !event.placeholder
     && event.kind !== 'stay'
     && event.kind !== 'rest'
+    && !rest.test(String(event.code || '').toUpperCase())
     && (event.kind !== 'flight' || event.showPresentation !== false));
   return eligible
     .filter((event) => event.presentationAt > now)
@@ -166,15 +192,32 @@ function chooseDeparture(events, now) {
 }
 
 const aug17 = new Date(2026, 7, 17, 14, 0).getTime();
-const selected = chooseDeparture([
+const standbySelected = chooseDeparture([
+  { kind: 'rest', presentationAt: aug17 - 120_000, code: 'OFF' },
   { kind: 'stay', presentationAt: aug17 - 60_000, code: 'HOTEL' },
+  { kind: 'duty', presentationAt: aug17, origin: 'BSB', code: 'HSB SOBREAVISO' },
+  { kind: 'flight', showPresentation: true, presentationAt: aug17 + 3_600_000, origin: 'BSB', destination: 'CWB', code: 'LA0003' },
+], aug17 - 3_600_000);
+assert.equal(standbySelected?.code, 'HSB SOBREAVISO', 'sobreaviso na base deve entrar na Saída Inteligente');
+
+const selectedFlight = chooseDeparture([
   { kind: 'flight', showPresentation: false, presentationAt: aug17 - 30_000, origin: 'GRU', destination: 'BSB', code: 'LA0002' },
   { kind: 'flight', showPresentation: true, presentationAt: aug17, origin: 'FLN', destination: 'GRU', code: 'LA0001' },
   { kind: 'flight', showPresentation: true, presentationAt: aug17 + 3_600_000, origin: 'BSB', destination: 'CWB', code: 'LA0003' },
 ], aug17 - 3_600_000);
-assert.equal(selected?.origin, 'FLN', 'Saída deve usar a origem da primeira perna real');
-assert.equal(selected?.destination, 'GRU', 'destino aéreo deve permanecer separado do destino terrestre');
-assert.equal(new Date(selected.presentationAt).getDate(), 17, 'data civil de 17/08/2026 deve ser preservada');
+assert.equal(selectedFlight?.origin, 'FLN', 'Saída deve usar a origem da primeira perna real');
+assert.equal(selectedFlight?.destination, 'GRU', 'destino aéreo deve permanecer separado do destino terrestre');
+assert.equal(new Date(selectedFlight.presentationAt).getDate(), 17, 'data civil de 17/08/2026 deve ser preservada');
+
+function positioningDate(presentationAt, distanceKm, sameDayConfirmed) {
+  const value = new Date(presentationAt);
+  if (distanceKm > 250 && !sameDayConfirmed) value.setDate(value.getDate() - 1);
+  return value;
+}
+assert.equal(positioningDate(aug17, 249.9, false).getDate(), 17, 'até 250 km permanece deslocamento terrestre');
+assert.equal(positioningDate(aug17, 250, false).getDate(), 17, '250 km exatos permanecem terrestres');
+assert.equal(positioningDate(aug17, 250.1, false).getDate(), 16, 'acima de 250 km sem voo no mesmo dia deve posicionar no dia anterior');
+assert.equal(positioningDate(aug17, 900, true).getDate(), 17, 'voo no mesmo dia confirmado pode manter o dia da apresentação');
 
 function approximateKm(a, b) {
   const dy = (a.lat - b.lat) * 111;
@@ -183,7 +226,9 @@ function approximateKm(a, b) {
 }
 const fln = { lat: -27.6705, lon: -48.5525 };
 const bsb = { lat: -15.8711, lon: -47.9186 };
-assert.ok(approximateKm(fln, fln) < 1, 'localização em Florianópolis deve combinar com FLN');
-assert.ok(approximateKm(fln, bsb) > 350, 'FLN para BSB deve bloquear cálculo terrestre local');
+const cwb = { lat: -25.5317, lon: -49.1761 };
+assert.ok(approximateKm(fln, fln) < 1, 'localização próxima ao aeroporto não exige voo');
+assert.ok(approximateKm(fln, bsb) > 250, 'FLN para BSB deve exigir posicionamento aéreo');
+assert.ok(approximateKm(cwb, bsb) > 250, 'a regra de 250 km deve ser geral e não limitada a FLN/BSB');
 
-console.log('v14.3.31 canonical Smart Departure selection, civil date and route safety regression: OK');
+console.log('v14.3.31 Smart Departure geral: sobreaviso incluído, descansos excluídos e posicionamento aéreo acima de 250 km validado.');
