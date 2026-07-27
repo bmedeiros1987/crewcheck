@@ -50,7 +50,7 @@ jobs:
       - name: Validate active-roster visitor scope
         run: node scripts/regression-v14-3-32-visitor-active-roster-scope.mjs
       - name: Validate official CrewRosterReport flight integrity
-        run: node scripts/regression-v14-3-33-official-roster-flight-integrity.mjs
+        run: node scripts/regression-v14-3-33-official-roster-flight-integrity.mjs 2>&1 | tee "$RUNNER_TEMP/official-roster-regression.log"
       - name: Validate theme, contrast and responsive layout
         run: node scripts/regression-v14-3-17-theme-layout.mjs
       - name: Validate structural layout and institutional menu
@@ -70,5 +70,6 @@ jobs:
             ${{ runner.temp }}/crewcheck-prepare.log
             ${{ runner.temp }}/typescript.log
             ${{ runner.temp }}/vite-build.log
+            ${{ runner.temp }}/official-roster-regression.log
           if-no-files-found: ignore
           retention-days: 7
