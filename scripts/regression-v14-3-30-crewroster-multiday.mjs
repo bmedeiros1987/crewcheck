@@ -8,10 +8,13 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const applyPath = path.join(root, 'scripts/v14330/apply.mjs');
 const preparedParserPath = path.join(root, 'client/src/lib/pdfParser.ts');
-
+const applySource = fs.readFileSync(applyPath, 'utf8');
 const preparedParser = fs.readFileSync(preparedParserPath, 'utf8');
+
 for (const [marker, label] of [
-  ['function crewRosterRawLegTiming(', 'leitura dos offsets por perna'],
+  ['function crewRosterRawLegTimings(', 'leitura ordenada dos offsets por perna'],
+  ['const usedIndexes = new Set<number>();', 'consumo único de ocorrências repetidas'],
+  ['const between = raw.slice(previousMatchEnd, timing.sourceIndex);', 'apresentação isolada do trecho anterior'],
   ['const explicitNewPresentation = Boolean(timing.report);', 'separação por nova apresentação'],
   ['const longRest = groundGap >= 12 * 60;', 'separação por repouso'],
   ['function rescueCrewRosterOffsetGroundActivities(', 'resgate de MCK'],
@@ -20,8 +23,11 @@ for (const [marker, label] of [
 ]) {
   assert.ok(preparedParser.includes(marker), `v14.3.30: ausente ${label}`);
 }
+assert.ok(!preparedParser.includes('if (segments.length <= 1)'), 'jornada única também precisa recalcular offsets relativos');
 assert.ok(!preparedParser.includes('const isSingleConnectedDuty ='), 'atalho antigo não pode juntar todo pairing conectado em um único dia');
 assert.ok(!preparedParser.includes('target.isNextDay = offset > 0'), 'offset absoluto não pode virar isNextDay depois da troca de data');
+assert.ok(applySource.includes("const WEB_VERSION = '14.3.30';"), 'release web 14.3.30 deve ser publicada');
+assert.ok(applySource.includes("var currentRelease = '${WEB_VERSION}';"), 'watcher do cliente deve acompanhar a versão nova');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-v14330-'));
 const parserDir = path.join(tempDir, 'client/src/lib');
@@ -53,10 +59,11 @@ try {
   const first = spawnSync(process.execPath, [applyPath], { cwd: tempDir, encoding: 'utf8' });
   assert.equal(first.status, 0, first.stderr || first.stdout || 'primeira aplicação v14.3.30 falhou');
   const patched = fs.readFileSync(parserPath, 'utf8');
-  assert.ok(patched.includes('function crewRosterRawLegTiming('), 'implementação estrutural não foi inserida');
+  assert.ok(patched.includes('function crewRosterRawLegTimings('), 'implementação estrutural não foi inserida');
   assert.ok(patched.includes('const daysWithGroundActivities = rescueCrewRosterOffsetGroundActivities('), 'pipeline de MCK não foi inserido');
   assert.ok(patched.includes('type GenericTripulationRecord ='), 'função seguinte deve ser preservada');
   assert.ok(!patched.includes('const isSingleConnectedDuty ='), 'atalho legado deve ser removido');
+  assert.ok(fs.readFileSync(path.join(tempDir, 'client/public/release.json'), 'utf8').includes('14.3.30'), 'release.json deve forçar atualização do cliente');
 
   const second = spawnSync(process.execPath, [applyPath], { cwd: tempDir, encoding: 'utf8' });
   assert.equal(second.status, 0, second.stderr || second.stdout || 'segunda aplicação v14.3.30 falhou');
@@ -113,6 +120,37 @@ const overnightConnection = [
 ];
 assert.deepEqual(segmentOffsets(overnightConnection), [0], 'conexão após meia-noite sem nova apresentação deve continuar na mesma jornada');
 
+function reportBetweenFlights(raw, firstPattern, secondPattern) {
+  const first = firstPattern.exec(raw);
+  const second = secondPattern.exec(raw);
+  assert.ok(first && second, 'voos de teste devem ser encontrados');
+  const between = raw.slice(first.index + first[0].length, second.index);
+  return between.match(/(?:^|\s)(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s*$/)?.[1] || null;
+}
+const flightOne = /LA100 OP BSB 23:00 GRU 00:15\(\+1\)/;
+const flightTwo = /LA200 OP GRU 01:10\(\+1\) REC 02:30\(\+1\)/;
+assert.equal(reportBetweenFlights('LA100 OP BSB 23:00 GRU 00:15(+1) LA200 OP GRU 01:10(+1) REC 02:30(+1)', flightOne, flightTwo), null, 'chegada anterior não pode virar nova apresentação');
+assert.equal(reportBetweenFlights('LA100 OP BSB 23:00 GRU 00:15(+1) 12:55(+1) LA200 OP GRU 13:25(+1) REC 16:45(+1)', flightOne, /LA200 OP GRU 13:25\(\+1\) REC 16:45\(\+1\)/), '12:55(+1)', 'apresentação explícita entre voos deve ser reconhecida');
+
+function durationMinutes(rawDeparture, rawArrival) {
+  const clean = (value) => value.replace(/\(\+\d+\)/g, '');
+  const offset = (value) => Number(value.match(/\(\+(\d+)\)/)?.[1] || 0);
+  const minutes = (value) => Number(clean(value).split(':')[0]) * 60 + Number(clean(value).split(':')[1]);
+  let arrivalOffset = offset(rawArrival);
+  const departureOffset = offset(rawDeparture);
+  if (arrivalOffset < departureOffset) arrivalOffset = departureOffset;
+  if (arrivalOffset === departureOffset && minutes(rawArrival) < minutes(rawDeparture)) arrivalOffset += 1;
+  return arrivalOffset * 1440 + minutes(rawArrival) - (departureOffset * 1440 + minutes(rawDeparture));
+}
+assert.equal(durationMinutes('01:10(+1)', '02:30(+1)'), 80, 'segunda perna da mesma madrugada deve durar 1h20, não 25h20');
+
+const repeatedRaw = 'LA3308 OP GRU 22:40(+1) FLN 23:55(+1) LA3308 OP GRU 22:40(+2) FLN 23:55(+2)';
+const repeated = Array.from(repeatedRaw.matchAll(/LA3308 OP GRU (\d{2}:\d{2}\(\+\d+\)) FLN (\d{2}:\d{2}\(\+\d+\))/g));
+assert.equal(repeated.length, 2, 'voo repetido deve manter duas ocorrências');
+assert.notEqual(repeated[0].index, repeated[1].index, 'cada ocorrência repetida precisa de posição própria');
+assert.equal(repeated[0][1], '22:40(+1)');
+assert.equal(repeated[1][1], '22:40(+2)');
+
 const mckPattern = /(?:(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+)?\b(MCK(?:320|_SS)?)\b\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/i;
 const mckMorning = '09:00(+1) MCK CGH 09:00(+1) CGH 13:00(+1)'.match(mckPattern);
 assert.ok(mckMorning, 'MCK matinal deve ser reconhecido');
@@ -122,4 +160,4 @@ assert.equal(mckMorning[6], '13:00(+1)');
 const mckAfternoon = 'MCK CGH 14:00(+1) CGH 18:00(+1)'.match(mckPattern);
 assert.ok(mckAfternoon, 'segundo MCK sem apresentação repetida deve ser reconhecido');
 
-console.log('v14.3.30 CrewRosterReport multiday pairing and MCK regression: OK');
+console.log('v14.3.30 CrewRosterReport multiday pairing, timing and MCK regression: OK');

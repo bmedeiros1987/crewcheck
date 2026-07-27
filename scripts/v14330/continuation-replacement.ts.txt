@@ -1,5 +1,8 @@
-function crewRosterRawLegTiming(raw: string, leg: FlightLeg): {
+function crewRosterRawLegTimings(raw: string, legs: FlightLeg[]): Array<{
+  leg: FlightLeg;
+  index: number;
   sourceIndex: number;
+  matchEnd: number;
   rawDeparture: string;
   rawArrival: string;
   departureOffset: number;
@@ -7,35 +10,60 @@ function crewRosterRawLegTiming(raw: string, leg: FlightLeg): {
   departureAbsolute: number;
   arrivalAbsolute: number;
   report: string | null;
-} {
-  const safeFlight = escapeColumnarRegExp(String(leg.flightNumber || '').replace(/[^A-Z0-9]/gi, ''));
-  const safeOrigin = escapeColumnarRegExp(String(leg.origin || '').toUpperCase());
-  const safeDestination = escapeColumnarRegExp(String(leg.destination || '').toUpperCase());
-  const pattern = new RegExp(`\\b${safeFlight}\\b\\s+(?:(?:CC|CP|FO|CM)\\s+)?(?:(?:OP|PS|DH)\\s+)?${safeOrigin}\\s+(\\d{1,2}:\\d{2}(?:\\(\\+\\d+\\))?)\\s+${safeDestination}\\s+(\\d{1,2}:\\d{2}(?:\\(\\+\\d+\\))?)`, 'i');
-  const match = pattern.exec(raw);
-  const sourceIndex = match?.index ?? raw.toUpperCase().indexOf(String(leg.flightNumber || '').toUpperCase());
-  const rawDeparture = match?.[1] || leg.departureTime;
-  const rawArrival = match?.[2] || leg.arrivalTime;
-  const departureOffset = dayOffsetFromTime(rawDeparture);
-  let arrivalOffset = dayOffsetFromTime(rawArrival);
-  const departureTime = cleanTime(rawDeparture);
-  const arrivalTime = cleanTime(rawArrival);
-  if (arrivalOffset < departureOffset) arrivalOffset = departureOffset;
-  if (arrivalOffset === departureOffset && timeToMinutes(arrivalTime) < timeToMinutes(departureTime)) arrivalOffset += 1;
-  const before = sourceIndex >= 0 ? raw.slice(0, sourceIndex) : '';
-  const reportMatch = before.match(/(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s*$/);
-  const rawReport = reportMatch?.[1] || null;
-  const report = rawReport && dayOffsetFromTime(rawReport) === departureOffset ? cleanTime(rawReport) : null;
-  return {
-    sourceIndex,
-    rawDeparture,
-    rawArrival,
-    departureOffset,
-    arrivalOffset,
-    departureAbsolute: departureOffset * 1440 + timeToMinutes(departureTime),
-    arrivalAbsolute: arrivalOffset * 1440 + timeToMinutes(arrivalTime),
-    report,
-  };
+}> {
+  const usedIndexes = new Set<number>();
+  const assignments = (legs || []).map((leg, index) => {
+    const safeFlight = escapeColumnarRegExp(String(leg.flightNumber || '').replace(/[^A-Z0-9]/gi, ''));
+    const safeOrigin = escapeColumnarRegExp(String(leg.origin || '').toUpperCase());
+    const safeDestination = escapeColumnarRegExp(String(leg.destination || '').toUpperCase());
+    const pattern = new RegExp(`\\b${safeFlight}\\b\\s+(?:(?:CC|CP|FO|CM)\\s+)?(?:(?:OP|PS|DH)\\s+)?${safeOrigin}\\s+(\\d{1,2}:\\d{2}(?:\\(\\+\\d+\\))?)\\s+${safeDestination}\\s+(\\d{1,2}:\\d{2}(?:\\(\\+\\d+\\))?)`, 'gi');
+    const candidates = Array.from(raw.matchAll(pattern))
+      .map((match) => ({ match, sourceIndex: match.index ?? -1 }))
+      .filter((candidate) => candidate.sourceIndex >= 0 && !usedIndexes.has(candidate.sourceIndex));
+    const expectedDeparture = cleanTime(leg.departureTime);
+    const expectedArrival = cleanTime(leg.arrivalTime);
+    const exact = candidates.find((candidate) => cleanTime(candidate.match[1]) === expectedDeparture && cleanTime(candidate.match[2]) === expectedArrival);
+    const departureMatch = candidates.find((candidate) => cleanTime(candidate.match[1]) === expectedDeparture);
+    const chosen = exact || departureMatch || candidates[0] || null;
+    const sourceIndex = chosen?.sourceIndex ?? -1;
+    if (sourceIndex >= 0) usedIndexes.add(sourceIndex);
+    const rawDeparture = chosen?.match[1] || leg.departureTime;
+    const rawArrival = chosen?.match[2] || leg.arrivalTime;
+    const departureOffset = dayOffsetFromTime(rawDeparture);
+    let arrivalOffset = dayOffsetFromTime(rawArrival);
+    const departureTime = cleanTime(rawDeparture);
+    const arrivalTime = cleanTime(rawArrival);
+    if (arrivalOffset < departureOffset) arrivalOffset = departureOffset;
+    if (arrivalOffset === departureOffset && timeToMinutes(arrivalTime) < timeToMinutes(departureTime)) arrivalOffset += 1;
+    return {
+      leg,
+      index,
+      sourceIndex,
+      matchEnd: sourceIndex >= 0 ? sourceIndex + (chosen?.match[0]?.length || 0) : -1,
+      rawDeparture,
+      rawArrival,
+      departureOffset,
+      arrivalOffset,
+      departureAbsolute: departureOffset * 1440 + timeToMinutes(departureTime),
+      arrivalAbsolute: arrivalOffset * 1440 + timeToMinutes(arrivalTime),
+      report: null as string | null,
+    };
+  }).sort((a, b) => {
+    const ai = a.sourceIndex >= 0 ? a.sourceIndex : Number.MAX_SAFE_INTEGER - a.index;
+    const bi = b.sourceIndex >= 0 ? b.sourceIndex : Number.MAX_SAFE_INTEGER - b.index;
+    return ai - bi;
+  });
+
+  let previousMatchEnd = 0;
+  for (const timing of assignments) {
+    if (timing.sourceIndex < 0) continue;
+    const between = raw.slice(previousMatchEnd, timing.sourceIndex);
+    const reportMatch = between.match(/(?:^|\s)(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s*$/);
+    const rawReport = reportMatch?.[1] || null;
+    timing.report = rawReport && dayOffsetFromTime(rawReport) === timing.departureOffset ? cleanTime(rawReport) : null;
+    previousMatchEnd = Math.max(previousMatchEnd, timing.matchEnd);
+  }
+  return assignments;
 }
 
 function normalizeCrewRosterReportContinuationDays(days: RosterDay[], referenceMonth: number, referenceYear: number, base: string): RosterDay[] {
@@ -47,14 +75,7 @@ function normalizeCrewRosterReportContinuationDays(days: RosterDay[], referenceM
     }
 
     const raw = day.rawText || '';
-    const timings = day.legs
-      .map((leg, index) => ({ leg, index, ...crewRosterRawLegTiming(raw, leg) }))
-      .sort((a, b) => {
-        const ai = a.sourceIndex >= 0 ? a.sourceIndex : Number.MAX_SAFE_INTEGER - a.index;
-        const bi = b.sourceIndex >= 0 ? b.sourceIndex : Number.MAX_SAFE_INTEGER - b.index;
-        return ai - bi;
-      });
-
+    const timings = crewRosterRawLegTimings(raw, day.legs);
     const segments: Array<{ startOffset: number; report: string | null; timings: typeof timings }> = [];
     for (const timing of timings) {
       const current = segments[segments.length - 1];
@@ -76,11 +97,6 @@ function normalizeCrewRosterReportContinuationDays(days: RosterDay[], referenceM
       } else {
         current.timings.push(timing);
       }
-    }
-
-    if (segments.length <= 1) {
-      output.push(day);
-      continue;
     }
 
     for (const segment of segments) {
@@ -157,4 +173,3 @@ function rescueCrewRosterOffsetGroundActivities(days: RosterDay[], fullText: str
     return (a.dutyReport ? timeToMinutes(a.dutyReport) : 9999) - (b.dutyReport ? timeToMinutes(b.dutyReport) : 9999);
   });
 }
-
