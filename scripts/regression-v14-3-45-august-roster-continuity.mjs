@@ -38,7 +38,7 @@ for (const marker of [
   'function rebuildServerCrewRosterOffsetDays(',
   'function serverCrewRosterMckDays(',
   'function serverCrewRosterLegIdentity(',
-  'const authoritativeIdentities = new Set(',
+  'function serverCrewRosterReplacementKeys(',
   'rebuildServerCrewRosterOffsetDays(roster.days, fullText,',
   "'FH','MCK','MCK320'",
   'const fh=fullText.match(',
