@@ -57,9 +57,11 @@ update('client/src/pages/Home.tsx', (source) => {
     .replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, `const CREWCHECK_UI_CORE_NOTE = 'v${VERSION}: Google Maps principal, controle mensal e TomTom automático';`);
 
   if (!next.includes('mapsBudget?: {')) {
-    const marker = '  distanceMeters?: number;\n};';
-    if (!next.includes(marker)) throw new Error('[v14342] Tipo RoutePreviewInfo não localizado.');
-    next = next.replace(marker, `  distanceMeters?: number;\n  fallback?: boolean;\n  fallbackReason?: string;\n  mapsBudget?: { monthKey?: string; used?: number; limit?: number; remaining?: number; percent?: number; blocked?: boolean; fallbackActive?: boolean; provider?: string; resetAt?: string; persistence?: string };\n};`);
+    const typeStart = next.indexOf('type RoutePreviewInfo = {');
+    const typeEnd = typeStart >= 0 ? next.indexOf('\n};', typeStart) : -1;
+    if (typeStart < 0 || typeEnd < 0) throw new Error(`[v14342] Tipo RoutePreviewInfo não localizado. start=${typeStart} end=${typeEnd}`);
+    const fields = `\n  fallback?: boolean;\n  fallbackReason?: string;\n  mapsBudget?: { monthKey?: string; used?: number; limit?: number; remaining?: number; percent?: number; blocked?: boolean; fallbackActive?: boolean; provider?: string; resetAt?: string; persistence?: string };`;
+    next = `${next.slice(0, typeEnd)}${fields}${next.slice(typeEnd)}`;
   }
   return next;
 });
