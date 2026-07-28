@@ -25,7 +25,7 @@ for (const marker of [
   'function rebuildCrewRosterOffsetDays(',
   'function crewRosterOffsetMckDays(',
   'function crewRosterOffsetLegIdentity(',
-  'const authoritativeIdentities = new Set(',
+  'function crewRosterOffsetReplacementKeys(',
   'const offsetAwareDays = rebuildCrewRosterOffsetDays(',
   'const continuationDays = offsetAwareDays;',
   'const flightHours = compactText.match(',
