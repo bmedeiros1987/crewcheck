@@ -54,6 +54,13 @@ update('client/src/pages/Home.tsx', (source) => {
     `      const stored = coordinatePair(storage.get('crewcheck_last_geo', ''));`,
     `      const stored = loadFreshCurrentGeo();`,
   );
+  next = next.replace(
+    `      setOriginLabel('Localização atual');
+      onOriginLabel?.('Localização atual');`,
+    `      const currentLabel = String(detail.label || 'Localização atual');
+      setOriginLabel(currentLabel);
+      onOriginLabel?.(currentLabel);`,
+  );
 
   next = replaceRequired(
     next,
