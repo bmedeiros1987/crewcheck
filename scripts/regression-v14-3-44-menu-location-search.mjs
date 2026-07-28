@@ -49,11 +49,12 @@ assert.ok(departureStart >= 0 && departureEnd > departureStart, 'Saída Intelige
 assert.ok(!departure.includes('<CrewLocationAccess/>'), 'Saída Inteligente deve usar o botão contextual da rota, sem duplicar o painel global de permissão');
 assert.ok(departure.includes('<GoogleMapsRoutePreview'), 'prévia de rota deve permanecer disponível na Saída Inteligente');
 
-const migratedSearchFields = before.home.match(/<label className="cc-search-field">/g) || [];
+const migratedSearchFields = before.home.match(/<(?:label|div) className="cc-search-field">/g) || [];
 const endSearchIcons = before.home.match(/<Search className="cc-search-icon-end" aria-hidden="true"\/>/g) || [];
-assert.ok(migratedSearchFields.length >= 2, 'campos de pesquisa de locais e hotéis devem ser padronizados');
+assert.ok(migratedSearchFields.length >= 3, 'campos de pesquisa de locais, hotéis e meteorologia devem ser padronizados');
 assert.equal(endSearchIcons.length, migratedSearchFields.length, 'cada campo padronizado deve possuir uma lupa ao final');
-assert.ok(!before.home.includes('<label><Search/><input'), 'nenhuma lupa pode reaparecer antes do texto');
+assert.ok(!before.home.includes('<label><Search/><input'), 'nenhuma lupa em label pode reaparecer antes do texto');
+assert.ok(!before.home.includes('<div><Search/><input'), 'nenhuma lupa em div pode reaparecer antes do texto');
 
 const placesSearchStart = before.home.indexOf('className="cz-place-query-row"');
 const placesSearchEnd = before.home.indexOf('</div>', placesSearchStart);
@@ -67,7 +68,17 @@ const hotelSearch = before.home.slice(hotelSearchStart, hotelSearchEnd);
 assert.ok(hotelSearchStart >= 0, 'campo de pesquisa de hotéis não localizado');
 assert.ok(hotelSearch.includes('className="cc-search-field"'), 'campo de hotéis deve usar o mesmo padrão');
 assert.ok(hotelSearch.indexOf('<input') < hotelSearch.indexOf('<Search className="cc-search-icon-end"'), 'campo de hotéis deve mostrar o input antes da lupa');
-assert.ok(applySource.includes('function moveLeadingSearchIconsToEnd('), 'preparação deve migrar callbacks JSX sem depender de regex limitada por >');
+
+const weatherStart = before.home.indexOf('function WeatherView(');
+const weatherEnd = before.home.indexOf('\nfunction ', weatherStart + 'function WeatherView('.length);
+const weather = before.home.slice(weatherStart, weatherEnd);
+assert.ok(weatherStart >= 0 && weatherEnd > weatherStart, 'WeatherView não localizada');
+assert.ok(weather.includes('<div className="cc-search-field"><input'), 'busca meteorológica deve usar wrapper padronizado');
+assert.ok(weather.indexOf('<input') < weather.indexOf('<Search className="cc-search-icon-end"'), 'Meteorologia deve mostrar o input antes da lupa');
+
+assert.ok(applySource.includes('function moveSearchIconPattern('), 'preparação deve migrar wrappers distintos sem regex frágil');
+assert.ok(applySource.includes("moveSearchIconPattern(source, 'label')"), 'preparação deve migrar buscas dentro de label');
+assert.ok(applySource.includes("moveSearchIconPattern(labelMigration.source, 'div')"), 'preparação deve migrar também a busca meteorológica dentro de div');
 assert.ok(!applySource.includes('[^>]*value=\\{searchTerm\\}'), 'padrão frágil com callbacks JSX não pode reaparecer');
 
 for (const marker of [
@@ -102,4 +113,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, full-width touch cards, centered icons, every search icon at field end, clean workflow and protected engines validated.');
+console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, full-width touch cards, centered icons, every search icon including Weather at field end, clean workflow and protected engines validated.');
