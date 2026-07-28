@@ -102,6 +102,8 @@ async function handleRoutePreview(req, res, url) {
   }
 }
 async function handleMapsProviderStatus(req, res) {
+  const identity = alarmRequestIdentity(req);
+  if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Controle mensal de mapas disponível somente no Admin.' });
   const budget = await googleMapsBudgetStatus();
   const googleConfigured = Boolean(mapsServerKey());
   const tomtomConfigured = Boolean(tomtomServerKey());
