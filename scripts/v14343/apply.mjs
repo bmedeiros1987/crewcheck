@@ -86,6 +86,14 @@ update('client/src/pages/Home.tsx', (source) => {
     return block.replace(previewPattern, '<CrewLocationAccess/><GoogleMapsRoutePreview');
   });
 
+  next = patchBlock(next, 'async function fetchRoutePreviewInfo(', 'async function fetchNearbyPlaces(', 'autenticação da prévia de rota', (block) => {
+    if (block.includes('authFetch<RoutePreviewInfo>')) return block;
+    const directFetch = "    const response = await fetch(`/api/maps/route-preview?${params.toString()}`, { cache: 'no-store' });\n    const payload = await response.json().catch(() => null);";
+    const authenticatedFetch = "    const payload = await authFetch<RoutePreviewInfo>(`/api/maps/route-preview?${params.toString()}`, { cache: 'no-store' });";
+    if (!block.includes(directFetch)) throw new Error('[v14343] Chamada direta da prévia de rota não localizada.');
+    return block.replace(directFetch, authenticatedFetch);
+  });
+
   next = next.replace(
     "      () => reject(new Error('Não consegui acessar sua localização. Ative a permissão e tente novamente.')),",
     "      (error) => reject(new Error(error?.code === 1 ? 'Localização bloqueada. No iPad, permita o acesso nos ajustes do site e tente novamente.' : 'Não consegui acessar sua localização agora. Tente novamente.')),",
