@@ -76,6 +76,8 @@ const releaseBefore = read('client/public/release.json');
 const routeSnippet = read('scripts/v14342/route-policy.snippet');
 const conciergeSnippet = read('scripts/v14342/concierge-route.snippet');
 const budgetSource = read('server/v14342/maps-budget.mjs');
+const adminControl = read('client/src/components/v14316/AdminControlCenter.tsx');
+const controlCss = read('client/src/components/v14316/control-center.css');
 const applySource = read('scripts/v14342/apply.mjs');
 const chain = read('scripts/v139/apply.mjs');
 const calendar = read('client/src/lib/googleCalendarSync.ts');
@@ -113,6 +115,20 @@ assert.ok(statusHandler.includes('if (!identity.admin)'), 'diagnóstico mensal n
 assert.ok(statusHandler.includes('sendJson(res, 403'), 'usuário comum deve receber bloqueio explícito');
 assert.ok(!statusHandler.includes('API_KEY'), 'status nunca pode serializar nomes ou valores de chaves');
 
+for (const marker of [
+  "authFetch<MapsProviderStatus>('/api/maps/provider/status'",
+  'Controle mensal do Google Maps',
+  'data-maps-budget-status=',
+  'role="progressbar"',
+  'budget.remaining.toLocaleString',
+  "budget.persistence === 'database'",
+  'TomTom ativo automaticamente',
+]) assert.ok(adminControl.includes(marker), `controle visual Admin ausente: ${marker}`);
+assert.ok(!/GOOGLE_(?:ROUTES|MAPS)_API_KEY|TOMTOM_API_KEY/.test(adminControl), 'interface Admin não pode conter nomes ou valores de segredos');
+for (const cssMarker of ['.cc-maps-budget-track', '.cc-maps-budget-facts', '@media(max-width:620px)']) {
+  assert.ok(controlCss.includes(cssMarker), `responsividade do controle de mapas ausente: ${cssMarker}`);
+}
+
 const conciergeStart = serverBefore.indexOf('async function conciergeTravelEstimate(');
 const conciergeEnd = serverBefore.indexOf('function conciergeLeaveDateLabel(', conciergeStart);
 const concierge = serverBefore.slice(conciergeStart, conciergeEnd);
@@ -149,4 +165,4 @@ assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch de mapas deve
 assert.equal(fs.readFileSync(envPath, 'utf8'), envBefore, 'patch de mapas deve ser idempotente no template de ambiente');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch de mapas deve ser idempotente no release');
 
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, serialized fail-closed persistence, cache, quota block, Google-first order, admin status, TomTom fallback, minimal Calendar scope, Render Client ID and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: monthly cap, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, Render Client ID and protected engine validated.');
