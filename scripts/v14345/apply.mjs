@@ -105,3 +105,5 @@ update('client/public/release.json', () => `${JSON.stringify({
 }, null, 2)}\n`);
 
 console.log(`[v14345] CrewCheck ${VERSION}: CrewRosterReport reconstruído por offsets explícitos, MCK múltiplo e continuidade real entre meses.`);
+
+await import('./orientation-hotfix.mjs');
