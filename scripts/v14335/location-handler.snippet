@@ -1,4 +1,4 @@
-async function handleTelegramLocation(message = {}) {
+async function handleTelegramLocation(message = {}, { silent = false } = {}) {
   const chatId = message?.chat?.id;
   const location = message?.location;
   if (!chatId || !location) return false;
@@ -27,7 +27,7 @@ async function handleTelegramLocation(message = {}) {
     return true;
   }
   await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: normalized } });
-  await sendTelegramMessage(chatId, [
+  if (!silent) await sendTelegramMessage(chatId, [
     `Localização atualizada: ${normalized.label}.`,
     'Vou priorizar estas coordenadas por até 6 horas para /saida, /hospitais, /farmacias e /academias.',
     'Depois desse período pedirei um novo compartilhamento para não pesquisar na cidade errada.',
