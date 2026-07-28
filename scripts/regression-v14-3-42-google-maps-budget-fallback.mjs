@@ -75,6 +75,7 @@ const envBefore = read('.env.example');
 const releaseBefore = read('client/public/release.json');
 const routeSnippet = read('scripts/v14342/route-policy.snippet');
 const conciergeSnippet = read('scripts/v14342/concierge-route.snippet');
+const budgetSource = read('server/v14342/maps-budget.mjs');
 const applySource = read('scripts/v14342/apply.mjs');
 const chain = read('scripts/v139/apply.mjs');
 const calendar = read('client/src/lib/googleCalendarSync.ts');
@@ -91,12 +92,23 @@ assert.ok(serverBefore.includes("fallbackFrom: 'Google Routes'"), 'fallback deve
 assert.ok(serverBefore.includes('fallbackReason: reason'), 'motivo do fallback deve ser rastreável');
 assert.ok(serverBefore.includes('await reserveGoogleMapsRequest'), 'chamada Google deve reservar cota antes da requisição');
 assert.ok(serverBefore.includes('readGoogleRouteCache'), 'rotas repetidas devem consultar cache');
+assert.ok(budgetSource.includes('INSERT IGNORE INTO crewcheck_external_api_usage'), 'primeira reserva persistente deve criar a linha antes do lock');
+assert.ok(budgetSource.includes('FOR UPDATE'), 'contador persistente deve ser serializado por competência');
+assert.ok(budgetSource.indexOf('INSERT IGNORE INTO crewcheck_external_api_usage') < budgetSource.indexOf('FOR UPDATE'), 'linha mensal deve existir antes do bloqueio transacional');
 
 const handlerStart = serverBefore.indexOf('async function handleRoutePreview(');
 const handlerEnd = serverBefore.indexOf('async function handleMapsProviderStatus(', handlerStart);
 const handler = serverBefore.slice(handlerStart, handlerEnd);
 assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, 'handler de rota preparado não localizado');
 assert.ok(handler.indexOf('await googleRoutePreview') < handler.indexOf('await tomtomRoutePreview'), 'Google deve ser tentado antes da TomTom');
+
+const statusStart = serverBefore.indexOf('async function handleMapsProviderStatus(');
+const statusEnd = serverBefore.indexOf('async function handleReverseGeocode(', statusStart);
+const statusHandler = serverBefore.slice(statusStart, statusEnd);
+assert.ok(statusHandler.includes('alarmRequestIdentity(req)'), 'diagnóstico de custo deve identificar o administrador');
+assert.ok(statusHandler.includes('if (!identity.admin)'), 'diagnóstico mensal não pode ficar público');
+assert.ok(statusHandler.includes('sendJson(res, 403'), 'usuário comum deve receber bloqueio explícito');
+assert.ok(!statusHandler.includes('API_KEY'), 'status nunca pode serializar nomes ou valores de chaves');
 
 const conciergeStart = serverBefore.indexOf('async function conciergeTravelEstimate(');
 const conciergeEnd = serverBefore.indexOf('function conciergeLeaveDateLabel(', conciergeStart);
@@ -133,4 +145,4 @@ assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch de mapas deve
 assert.equal(fs.readFileSync(envPath, 'utf8'), envBefore, 'patch de mapas deve ser idempotente no template de ambiente');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch de mapas deve ser idempotente no release');
 
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, cache, quota block, Google-first order, TomTom fallback, Render Calendar Client ID and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: monthly cap, serialized persistence, cache, quota block, Google-first order, admin status, TomTom fallback, Render Calendar Client ID and protected engine validated.');
