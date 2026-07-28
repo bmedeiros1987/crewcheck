@@ -38,6 +38,13 @@
   pointer-events: none !important;
   opacity: .76 !important;
 }
+.cc-weather-search label > .cc-weather-search-row-v14344 {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  padding-left: 0 !important;
+}
+.cc-weather-search-row-v14344 > .cc-search-field {
+  min-width: 0 !important;
+}
 
 @media (hover: hover) and (pointer: fine) {
   .cz-menu-panel {
@@ -240,5 +247,11 @@
     white-space: normal !important;
     word-break: normal !important;
     overflow-wrap: break-word !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .cc-weather-search-row-v14344 > .cc-search-field {
+    grid-column: 1 / -1 !important;
   }
 }
