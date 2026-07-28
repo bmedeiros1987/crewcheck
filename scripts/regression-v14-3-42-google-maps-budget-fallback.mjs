@@ -132,6 +132,14 @@ assert.ok(handler.includes("sendJson(res, 401"), 'rota pública sem sessão deve
 assert.ok(handler.includes("req.method !== 'GET'"), 'rota deve aceitar somente GET');
 assert.ok(handler.indexOf('await googleRoutePreview') < handler.indexOf('await tomtomRoutePreview'), 'Google deve ser tentado antes da TomTom');
 
+const routeClientStart = home.indexOf('async function fetchRoutePreviewInfo(');
+const routeClientEnd = home.indexOf('async function fetchNearbyPlaces(', routeClientStart);
+const routeClient = home.slice(routeClientStart, routeClientEnd);
+assert.ok(routeClientStart >= 0 && routeClientEnd > routeClientStart, 'cliente da prévia de rota não localizado');
+assert.ok(routeClient.includes('authFetch<RoutePreviewInfo>'), 'cliente deve enviar bearer token e cookie pela camada autenticada');
+assert.ok(!routeClient.includes('await fetch(`/api/maps/route-preview'), 'cliente não pode chamar a rota protegida por fetch cru');
+assert.ok(applySource.includes('authenticatedRouteFetch'), 'preparação deve aplicar o cliente autenticado de forma idempotente');
+
 const statusStart = server.indexOf('async function handleMapsProviderStatus(');
 const statusEnd = server.indexOf('async function handleReverseGeocode(', statusStart);
 const statusHandler = server.slice(statusStart, statusEnd);
@@ -185,4 +193,4 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
 }
 
-console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.43 chain and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.43 chain and protected engine validated.');
