@@ -55,7 +55,11 @@ update('scripts/regression-v14-3-42-google-maps-budget-fallback.mjs', (source) =
     if (!next.includes(anchor)) throw new Error('[v14345] Asserção v14.3.44 da regressão de mapas não localizada.');
     next = next.replace(anchor, `${anchor}\nassert.ok(v14345Index > v14344Index, 'v14.3.45 deve suceder v14.3.44 sem remover a política de mapas');`);
   }
-  return next.replaceAll('14.3.44', VERSION);
+  next = next
+    .replace("assert.ok(home.includes(\"const DEFAULT_VERSION = '14.3.44';\"), 'a preparação final deve terminar na versão Web/PWA 14.3.44');", "assert.ok(home.includes(\"const DEFAULT_VERSION = '14.3.45';\"), 'a preparação final deve terminar na versão Web/PWA 14.3.45');")
+    .replace("assert.ok(release.includes('14.3.44'), 'release final deve anunciar 14.3.44');", "assert.ok(release.includes('14.3.45'), 'release final deve anunciar 14.3.45');")
+    .replace('final v14.3.44 chain', 'final v14.3.45 chain');
+  return next;
 });
 
 const webMenuCss = fs.readFileSync('scripts/v14344/web-menu.css', 'utf8');
