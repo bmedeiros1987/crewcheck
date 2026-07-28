@@ -51,11 +51,12 @@ update('client/src/lib/pdfParser.ts', (source) => {
   const newTotals = `  const flightHoursMatch = compactText.match(/\\bFH\\s*:\\s*(\\d{1,3}:\\d{2})/i);\n  const dutyHoursMatch = compactText.match(/\\bDH\\s*:\\s*(\\d{1,3}:\\d{2})/i);\n  const totals = {\n    ...(flightHoursMatch ? { flightHours: timeStringToHours(flightHoursMatch[1]) } : {}),\n    ...(dutyHoursMatch ? { dutyHours: timeStringToHours(dutyHoursMatch[1]) } : {}),\n  };`;
   next = replaceRequired(next, oldTotals, newTotals, 'totais FH/DH em qualquer ordem no cliente');
 
-  next = next
-    .replace(/\b\(HSBE\|HSB\|ASB\|RCFI\|CRMBSB\|CRMB\|CRM\|C\\d\{2,3\}F\|MT\|CBF\|EMER\)\b/g, '(HSBE|HSB|ASB|RCFI|CRMBSB|CRMB|CRM|C\\d{2,3}F|MT|CBF|EMER|MCK(?:320|_SS)?)')
-    .replace("code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER'", "code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER' || /^MCK(?:320|_SS)?$/.test(code)")
-    .replace("if (/\\bCRM\\b/.test(sample)) return 'CRM';", "if (/\\b(?:CRM|MCK(?:320|_SS)?)\\b/.test(sample)) return 'CRM';")
-    .replace(/ASB\|CBF\|EMER\|MT\|C\\d\{2,3\}F/g, 'ASB|CBF|EMER|MCK(?:320|_SS)?|MT|C\\d{2,3}F');
+  const oldMckCodeExpression = "code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER'";
+  const newMckCodeExpression = "code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER' || /^MCK(?:320|_SS)?$/.test(code)";
+  next = next.replace(/\b\(HSBE\|HSB\|ASB\|RCFI\|CRMBSB\|CRMB\|CRM\|C\\d\{2,3\}F\|MT\|CBF\|EMER\)\b/g, '(HSBE|HSB|ASB|RCFI|CRMBSB|CRMB|CRM|C\\d{2,3}F|MT|CBF|EMER|MCK(?:320|_SS)?)');
+  next = replaceRequired(next, oldMckCodeExpression, newMckCodeExpression, 'classificação MCK idempotente');
+  next = next.replace("if (/\\bCRM\\b/.test(sample)) return 'CRM';", "if (/\\b(?:CRM|MCK(?:320|_SS)?)\\b/.test(sample)) return 'CRM';");
+  next = next.replace(/ASB\|CBF\|EMER\|MT\|C\\d\{2,3\}F/g, 'ASB|CBF|EMER|MCK(?:320|_SS)?|MT|C\\d{2,3}F');
   return next;
 });
 
