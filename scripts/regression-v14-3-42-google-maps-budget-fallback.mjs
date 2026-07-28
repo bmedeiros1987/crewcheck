@@ -122,6 +122,14 @@ const handlerStart = server.indexOf('async function handleRoutePreview(');
 const handlerEnd = server.indexOf('async function handleMapsProviderStatus(', handlerStart);
 const handler = server.slice(handlerStart, handlerEnd);
 assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, 'handler de rota preparado não localizado');
+const sessionCheck = handler.indexOf('cc1371Verify(cc1371RequestToken(req))');
+const authRejection = handler.indexOf('cc1371AuthRequired() && !session');
+const googleKeyRead = handler.indexOf('const googleKey = mapsServerKey()');
+const googleRouteCall = handler.indexOf('await googleRoutePreview');
+assert.ok(sessionCheck >= 0 && authRejection > sessionCheck, 'rota deve validar a sessão CrewCheck');
+assert.ok(authRejection < googleKeyRead && authRejection < googleRouteCall, 'requisição anônima deve ser rejeitada antes de ler o provedor ou consumir cota');
+assert.ok(handler.includes("sendJson(res, 401"), 'rota pública sem sessão deve receber 401 explícito');
+assert.ok(handler.includes("req.method !== 'GET'"), 'rota deve aceitar somente GET');
 assert.ok(handler.indexOf('await googleRoutePreview') < handler.indexOf('await tomtomRoutePreview'), 'Google deve ser tentado antes da TomTom');
 
 const statusStart = server.indexOf('async function handleMapsProviderStatus(');
@@ -177,4 +185,4 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
 }
 
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.43 chain and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.43 chain and protected engine validated.');
