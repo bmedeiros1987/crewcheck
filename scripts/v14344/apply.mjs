@@ -23,27 +23,47 @@ function patchBlock(source, startMarker, endMarker, label, transform) {
   return after === before ? source : `${source.slice(0, start)}${after}${source.slice(end)}`;
 }
 
-function moveSearchIconPattern(source, tag) {
-  const legacyStart = `<${tag}><Search/><input`;
-  const closeTag = `</${tag}>`;
+function moveLabelSearchIconsToEnd(source) {
+  const legacyStart = '<label><Search/><input';
+  const closeTag = '</label>';
   let next = source;
   let migrated = 0;
   while (next.includes(legacyStart)) {
     const start = next.indexOf(legacyStart);
     const contentStart = start + legacyStart.length;
     const close = next.indexOf(closeTag, contentStart);
-    if (close < 0) throw new Error(`[v14344] Campo com lupa inicial sem fechamento de ${tag}.`);
+    if (close < 0) throw new Error('[v14344] Campo com lupa inicial sem fechamento de label.');
     const inputRemainder = next.slice(contentStart, close);
-    const replacement = `<${tag} className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/>${closeTag}`;
+    const replacement = `<label className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/></label>`;
     next = `${next.slice(0, start)}${replacement}${next.slice(close + closeTag.length)}`;
     migrated += 1;
   }
   return { source: next, migrated };
 }
 
+function moveNestedDivSearchIconsToEnd(source) {
+  const legacyStart = '<div><Search/><input';
+  const closeTag = '</div>';
+  let next = source;
+  let migrated = 0;
+  while (next.includes(legacyStart)) {
+    const start = next.indexOf(legacyStart);
+    const contentStart = start + legacyStart.length;
+    const inputClose = next.indexOf('/>', contentStart);
+    const containerClose = inputClose >= 0 ? next.indexOf(closeTag, inputClose + 2) : -1;
+    if (inputClose < 0 || containerClose < 0) throw new Error('[v14344] Busca aninhada sem fechamento seguro de input/div.');
+    const inputRemainder = next.slice(contentStart, inputClose + 2);
+    const controlsAfterInput = next.slice(inputClose + 2, containerClose);
+    const replacement = `<div><span className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/></span>${controlsAfterInput}</div>`;
+    next = `${next.slice(0, start)}${replacement}${next.slice(containerClose + closeTag.length)}`;
+    migrated += 1;
+  }
+  return { source: next, migrated };
+}
+
 function moveLeadingSearchIconsToEnd(source) {
-  const labelMigration = moveSearchIconPattern(source, 'label');
-  const divMigration = moveSearchIconPattern(labelMigration.source, 'div');
+  const labelMigration = moveLabelSearchIconsToEnd(source);
+  const divMigration = moveNestedDivSearchIconsToEnd(labelMigration.source);
   const next = divMigration.source;
   if (next.includes('<label><Search/><input') || next.includes('<div><Search/><input')) {
     throw new Error('[v14344] Ainda existe lupa antes de um campo de pesquisa.');
