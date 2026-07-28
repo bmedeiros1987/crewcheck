@@ -54,7 +54,7 @@ function moveNestedDivSearchIconsToEnd(source) {
     if (inputClose < 0 || containerClose < 0) throw new Error('[v14344] Busca aninhada sem fechamento seguro de input/div.');
     const inputRemainder = next.slice(contentStart, inputClose + 2);
     const controlsAfterInput = next.slice(inputClose + 2, containerClose);
-    const replacement = `<div><span className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/></span>${controlsAfterInput}</div>`;
+    const replacement = `<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/></span>${controlsAfterInput}</div>`;
     next = `${next.slice(0, start)}${replacement}${next.slice(containerClose + closeTag.length)}`;
     migrated += 1;
   }
