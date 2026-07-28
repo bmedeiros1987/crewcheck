@@ -47,6 +47,13 @@ assert.ok(apply44.includes("const inputClose = next.indexOf('/>', contentStart);
 assert.ok(apply44.includes('const controlsAfterInput = next.slice(inputClose + 2, containerClose);'), 'botão posterior ao input deve ser preservado fora do wrapper');
 assert.ok(apply44.includes('<span className="cc-search-field">'), 'wrapper exclusivo do input deve ser um span interno');
 
+assert.ok(menuCss.includes('.cc-weather-search label > div {'), 'CSS final deve adaptar o grid externo da Meteorologia');
+assert.ok(menuCss.includes('grid-template-columns: minmax(0, 1fr) auto !important'), 'desktop/tablet deve ter coluna flexível para input e coluna automática para Pesquisar');
+assert.ok(menuCss.includes('.cc-weather-search label > div > .cc-search-field'), 'wrapper do input deve ser contido no grid meteorológico');
+assert.ok(menuCss.includes('@media (max-width: 520px)'), 'Meteorologia deve ter ajuste próprio para celular');
+assert.ok(menuCss.includes('grid-template-columns: minmax(0, 1fr) !important'), 'celular deve empilhar input e botão em uma coluna segura');
+assert.ok(menuCss.includes('grid-column: 1 / -1 !important'), 'input e botão devem ocupar toda a largura no celular');
+
 assert.ok(menuCss.includes('@media (hover: hover) and (pointer: fine)'), 'modo somente ícones deve ser definido pela capacidade do ponteiro');
 assert.ok(!menuCss.includes('@media (hover: hover) and (pointer: fine) and (min-width: 1024px)'), 'desktop com mouse em janela estreita deve continuar no modo icon-only');
 assert.ok(menuCss.includes('@media (hover: none), (pointer: coarse)'), 'touch/iPad deve manter cards completos');
@@ -79,4 +86,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `v14.3.45 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.45 hotfix: Weather input-only wrapper, external submit button, fine-pointer icon menu, coarse-pointer full cards, final-version regressions, safe update and protected engines validated.');
+console.log('v14.3.45 hotfix: Weather input-only wrapper, responsive two-column/stacked grid, external submit button, fine-pointer icon menu, coarse-pointer full cards, final-version regressions, safe update and protected engines validated.');
