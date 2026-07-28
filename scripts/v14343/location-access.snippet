@@ -78,6 +78,6 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
     <LocateFixed/>
     <div><strong>Localização da Saída Inteligente</strong><span>{status}</span></div>
     <button type="button" onClick={requestLocationAccess} disabled={busy || permissionState === 'unsupported'}>{buttonLabel}</button>
-    {permissionState === 'denied' && <small>No iPad: permita Localização nos ajustes do site e confira os Serviços de Localização do Safari.</small>}
+    {permissionState === 'denied' && <small>No iPad, confira Serviços de Localização → Sites do Safari e permita o acesso para o CrewCheck.</small>}
   </section>;
 }
