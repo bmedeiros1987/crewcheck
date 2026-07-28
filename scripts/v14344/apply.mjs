@@ -82,11 +82,16 @@ update('client/src/pages/Home.tsx', (source) => {
     throw new Error('[v14344] Cada campo de pesquisa migrado deve possuir exatamente uma lupa ao final.');
   }
 
-  next = next.replace(
-    'data-layout-v14343="premium-contained"',
-    'data-layout-v14343="premium-contained" data-layout-v14344="web-icon-menu"',
-  );
+  if (!next.includes('data-layout-v14344="web-icon-menu"')) {
+    next = next.replace(
+      'data-layout-v14343="premium-contained"',
+      'data-layout-v14343="premium-contained" data-layout-v14344="web-icon-menu"',
+    );
+  }
   if (!next.includes('data-layout-v14344="web-icon-menu"')) throw new Error('[v14344] Identificador do novo layout não foi aplicado.');
+  if ((next.match(/data-layout-v14344="web-icon-menu"/g) || []).length !== 1) {
+    throw new Error('[v14344] Identificador do layout final não pode ser duplicado.');
+  }
   if ((next.match(/<CrewLocationAccess\/>/g) || []).length !== 1) {
     throw new Error('[v14344] O controle global de localização deve existir uma única vez, dentro de Configurações.');
   }
