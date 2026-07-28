@@ -85,6 +85,8 @@ jobs:
         run: node scripts/regression-v14-3-44-menu-location-search.mjs 2>&1 | tee "$RUNNER_TEMP/menu-location-search-regression.log"
       - name: Validate August CrewRoster offsets, MCK and continuity
         run: node scripts/regression-v14-3-45-august-roster-continuity.mjs 2>&1 | tee "$RUNNER_TEMP/august-roster-continuity-regression.log"
+      - name: Validate August Jasper orientation and baseline
+        run: node scripts/regression-v14-3-45-august-roster-orientation.mjs 2>&1 | tee "$RUNNER_TEMP/august-roster-orientation-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Publish functional audit report
@@ -121,5 +123,6 @@ jobs:
             ${{ runner.temp }}/ipad-premium-stability-regression.log
             ${{ runner.temp }}/menu-location-search-regression.log
             ${{ runner.temp }}/august-roster-continuity-regression.log
+            ${{ runner.temp }}/august-roster-orientation-regression.log
           if-no-files-found: ignore
           retention-days: 7
