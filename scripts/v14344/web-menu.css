@@ -161,11 +161,84 @@
 }
 
 @media (max-width: 1023px), (hover: none), (pointer: coarse) {
+  .cz-menu-panel {
+    width: min(94vw, 520px) !important;
+    max-width: 520px !important;
+  }
+  .cz-menu-scroll {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px 14px calc(28px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+  }
+  .cz-menu-section.cz-menu-group {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 0 18px !important;
+    padding: 12px 0 0 !important;
+  }
+  .cz-menu-section.cz-menu-group > h3 {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    margin: 0 0 2px !important;
+  }
+  .cz-menu-section.cz-menu-group > button {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) 20px !important;
+    align-items: center !important;
+    gap: 12px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 72px !important;
+    max-height: none !important;
+    padding: 13px 15px !important;
+    margin: 0 !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+    text-align: left !important;
+  }
+  .cz-menu-section.cz-menu-group > button > svg:first-child {
+    width: 26px !important;
+    height: 26px !important;
+    margin: 0 !important;
+    justify-self: center !important;
+  }
+  .cz-menu-section.cz-menu-group > button > svg:last-child {
+    display: block !important;
+    width: 18px !important;
+    height: 18px !important;
+    margin: 0 !important;
+    justify-self: end !important;
+  }
   .cz-menu-section.cz-menu-group > button > span {
     position: static !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: left !important;
     opacity: 1 !important;
     visibility: visible !important;
     transform: none !important;
     pointer-events: auto !important;
+  }
+  .cz-menu-section.cz-menu-group > button > span strong,
+  .cz-menu-section.cz-menu-group > button > span small {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
   }
 }
