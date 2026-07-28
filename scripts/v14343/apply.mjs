@@ -81,9 +81,9 @@ update('client/src/pages/Home.tsx', (source) => {
 
   next = patchBlock(next, 'function Departure(', 'function MonthlyMapView', 'Saída Inteligente', (block) => {
     if (block.includes('<CrewLocationAccess/>')) return block;
-    const anchor = '<GoogleMapsRoutePreview event={event}';
-    if (!block.includes(anchor)) throw new Error('[v14343] Prévia Google Maps não localizada na Saída Inteligente.');
-    return block.replace(anchor, `<CrewLocationAccess/>${anchor}`);
+    const previewPattern = /<GoogleMapsRoutePreview\b/;
+    if (!previewPattern.test(block)) throw new Error('[v14343] Prévia Google Maps não localizada na Saída Inteligente.');
+    return block.replace(previewPattern, '<CrewLocationAccess/><GoogleMapsRoutePreview');
   });
 
   next = next.replace(
