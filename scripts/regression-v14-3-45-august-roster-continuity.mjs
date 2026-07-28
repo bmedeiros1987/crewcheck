@@ -13,7 +13,8 @@ const clientSource = read('client/src/lib/pdfParser.ts');
 const serverSource = read('server/rosterParser.mjs');
 const applySource = read('scripts/v14345/apply.mjs');
 
-assert.ok(chain.trimEnd().endsWith("await import('../v14345/apply.mjs');"), 'v14.3.45 deve encerrar a preparação canônica');
+assert.ok(chain.includes("await import('../v14345/apply.mjs');"), 'v14.3.45 deve permanecer na preparação canônica');
+assert.ok(chain.trimEnd().endsWith("await import('../v14346/apply.mjs');"), 'v14.3.46 deve encerrar a preparação canônica');
 assert.ok(!fixture.includes('BRUNO SARAIVA'), 'fixture não pode carregar nome real');
 assert.ok(!fixture.includes('04453812'), 'fixture não pode carregar BP real');
 assert.ok(fixture.includes('<== Thu LA3512/300726/'), 'fixture deve preservar a continuação anterior ao mês');
