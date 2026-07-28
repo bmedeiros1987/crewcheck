@@ -42,6 +42,14 @@ assert.ok(before.home.includes('A localização é solicitada somente por ação
 assert.ok(locationSnippet.includes("permission.addEventListener?.('change', applyPermission)"), 'mudanças da permissão devem ser acompanhadas');
 assert.ok(locationSnippet.includes("removeEventListener?.('change', applyPermission)"), 'listener de permissão deve ser removido corretamente');
 
+const routePreviewStart = before.home.indexOf('async function fetchRoutePreviewInfo(');
+const routePreviewEnd = before.home.indexOf('async function fetchNearbyPlaces(', routePreviewStart);
+const routePreview = before.home.slice(routePreviewStart, routePreviewEnd);
+assert.ok(routePreviewStart >= 0 && routePreviewEnd > routePreviewStart, 'cliente da prévia de rota não localizado');
+assert.ok(routePreview.includes('authFetch<RoutePreviewInfo>'), 'prévia protegida deve usar authFetch e enviar bearer quando não houver cookie');
+assert.ok(!routePreview.includes('await fetch(`/api/maps/route-preview'), 'prévia de rota não pode usar fetch direto sem Authorization');
+assert.ok(applySource.includes("patchBlock(next, 'async function fetchRoutePreviewInfo('"), 'preparação deve corrigir a autenticação da prévia de rota');
+
 for (const marker of [
   '.cz-menu-panel',
   'width: min(92vw, 520px) !important',
@@ -97,4 +105,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.43 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.43 iPad premium stability: one-column drawer, contained cards, explicit location, safe release reload, removed legacy PWA cleanup, preserved service worker and protected engines validated.');
+console.log('v14.3.43 iPad premium stability: one-column drawer, contained cards, explicit location, bearer-aware route preview, safe release reload, removed legacy PWA cleanup, preserved service worker and protected engines validated.');
