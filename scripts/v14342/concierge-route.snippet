@@ -1,0 +1,40 @@
+async function conciergeTravelEstimate(location, airport) {
+  const point = WEATHER_AIRPORT_POINTS[String(airport || '').toUpperCase()];
+  if (!location || !point) return null;
+  const distanceKm = conciergeHaversineKm({ lat: Number(location.latitude), lon: Number(location.longitude) }, point);
+  const origin = `${Number(location.latitude)},${Number(location.longitude)}`;
+  const destination = `${point.lat},${point.lon}`;
+  const googleKey = mapsServerKey();
+  const tomtomKey = tomtomServerKey();
+  try {
+    const google = googleKey ? await googleRoutePreview(origin, destination, 'driving', googleKey) : null;
+    if (google?.ok) return {
+      distanceKm: Number(google.distanceMeters || 0) / 1000 || distanceKm,
+      minutes: Math.max(1, Math.round(Number(google.durationSeconds || 0) / 60)),
+      trafficAware: true,
+      distanceText: google.distanceText || formatMeters(google.distanceMeters),
+      durationText: google.durationText || formatDuration(`${google.durationSeconds || 0}s`),
+      provider: 'Google Routes',
+      mapsBudget: google.mapsBudget,
+    };
+    const tomtom = tomtomKey ? await tomtomRoutePreview(origin, destination, tomtomKey) : null;
+    if (tomtom?.ok) return {
+      distanceKm: Number(tomtom.distanceMeters || 0) / 1000 || distanceKm,
+      minutes: Math.max(1, Math.round(Number(tomtom.durationSeconds || 0) / 60)),
+      trafficAware: true,
+      distanceText: tomtom.distanceText || formatMeters(tomtom.distanceMeters),
+      durationText: tomtom.durationText || formatDuration(`${tomtom.durationSeconds || 0}s`),
+      provider: 'TomTom',
+      fallback: true,
+      mapsBudget: google?.mapsBudget || await googleMapsBudgetStatus(),
+    };
+  } catch {}
+  return {
+    distanceKm,
+    minutes: Math.max(20, Math.round((distanceKm / 38) * 60 + 18)),
+    trafficAware: false,
+    distanceText: `${distanceKm.toFixed(0)} km`,
+    durationText: 'estimativa de referência',
+    provider: 'estimativa',
+  };
+}
