@@ -2,12 +2,22 @@
 
 Este roteiro complementa a auditoria estrutural automática. Ele não autoriza novas funcionalidades: cada item existente deve funcionar, ser corrigido ou ser retirado temporariamente da navegação.
 
+## Estratégia aprovada
+
+A auditoria passa a ser executada em três fases independentes:
+
+1. **Web/Render e PWA:** fonte de verdade, FlyDeck, navegação, Saída Inteligente, Concierge, Radar, Meteorologia, financeiro, conta e integrações;
+2. **Responsividade:** navegador mobile, iPad/tablet e desktop, ainda usando o cliente Web/PWA;
+3. **Android nativo:** APK/AAB assinados, launcher/adaptive icon, compartilhamento de PDF, notificações em segundo plano e publicação na Play Store.
+
+A terceira fase fica adiada até o sistema Web/PWA estar funcionalmente estável. A ausência de APK/AAB não bloqueia a correção das funções Web, mas nenhuma função será considerada concluída para Android sem teste posterior no aplicativo assinado.
+
 ## Regra de evidência
 
 Para cada teste, registrar:
 
 - versão exibida pelo cliente;
-- dispositivo, sistema e navegador/PWA/APK;
+- ambiente: navegador, PWA, tablet ou aplicativo assinado;
 - escala oficial utilizada e competência;
 - tela e ação executada;
 - resultado esperado;
@@ -19,13 +29,13 @@ Para cada teste, registrar:
 
 Não anexar credenciais, CPF, telefone, token, localização precisa, conteúdo médico ou dados completos da tripulação.
 
-## Ordem obrigatória
+## Ordem obrigatória — fase Web/PWA
 
 ### 1. Fonte de verdade
 
 1. Importar o CrewRosterReport oficial normal.
 2. Importar o CrewRosterReport rotacionado.
-3. Compartilhar o PDF diretamente com PWA/APK quando disponível.
+3. Compartilhar ou selecionar o PDF no PWA quando a plataforma permitir.
 4. Conferir competência, base, função, voos, folgas, HSB/ASB, reserva, MCK e demais atividades.
 5. Comparar FlyDeck, Escala completa, Histórico, Saída Inteligente, Radar e Concierge.
 6. Confirmar que todos apontam para a mesma próxima programação.
@@ -40,8 +50,9 @@ Não anexar credenciais, CPF, telefone, token, localização precisa, conteúdo 
 2. Conferir que o botão retorna ao FlyDeck.
 3. Abrir todos os grupos do Menu.
 4. Confirmar que não existe rota duplicada ou tela órfã.
-5. Validar o rodapé em Android pequeno, Android grande e iPad.
+5. Validar o rodapé no navegador mobile, iPad e desktop.
 6. Validar scroll do menu e ausência de sobreposição.
+7. Confirmar que uma função quebrada não permanece destacada como pronta.
 
 ### 3. Saída Inteligente
 
@@ -58,7 +69,8 @@ Para cada programação elegível, conferir:
 - margem;
 - horário final de saída;
 - posicionamento no mesmo dia ou no dia anterior;
-- atualização após mudança de trânsito/localização.
+- atualização após mudança de trânsito/localização;
+- ausência de alerta duplicado.
 
 ### 4. Concierge CrewCheck
 
@@ -89,15 +101,33 @@ Auditar Radar, Meteorologia, Despertador, Regulamentação, Carga, Diárias, Sal
 
 Cada tela deve ter ação principal funcional, estado vazio legível, erro de serviço compreensível e permissões corretas.
 
-## Matriz de dispositivos
+### 6. Conta e integrações
+
+Validar login, cadastro, recuperação de senha, Google OAuth, exclusão de conta, calendário sem duplicidade, exportações e webhook Asaas. Nenhum erro de integração pode apagar escala, preferências ou histórico local.
+
+## Matriz da fase atual
 
 | Ambiente | Largura mínima | Claro | Escuro | Scroll | Menu/voltar | Ação principal |
 |---|---:|---|---|---|---|---|
-| Android pequeno | 360 px | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Android grande | 412 px | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Navegador mobile | 360 px | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Navegador mobile grande | 412 px | ☐ | ☐ | ☐ | ☐ | ☐ |
 | iPad mini/tablet | 768 px | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Desktop | 1366×768 | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Desktop largo | 1920×1080 | ☐ | ☐ | ☐ | ☐ | ☐ |
+
+## Fase Android adiada
+
+Depois da aprovação Web/PWA, executar uma rodada separada para:
+
+- APK release assinado;
+- AAB Play Console assinado;
+- atualização automática do cliente;
+- recebimento de PDF por compartilhamento;
+- notificações em segundo plano;
+- deep links;
+- permissões;
+- ícone launcher e adaptive icon;
+- instalação, atualização e rollback seguro.
 
 ## Critério de encerramento
 
@@ -112,4 +142,4 @@ Uma superfície somente é aprovada quando:
 - possui evidência registrada;
 - possui regressão automática quando tecnicamente possível.
 
-O relatório automático `CrewCheck-functional-audit` complementa este roteiro, mas não substitui os testes nos dispositivos reais.
+O relatório automático `CrewCheck-functional-audit` complementa este roteiro, mas não substitui os testes nos ambientes reais.
