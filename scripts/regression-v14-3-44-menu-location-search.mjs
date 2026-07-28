@@ -73,10 +73,10 @@ const weatherStart = before.home.indexOf('function WeatherView(');
 const weatherEnd = before.home.indexOf('\nfunction ', weatherStart + 'function WeatherView('.length);
 const weather = before.home.slice(weatherStart, weatherEnd);
 assert.ok(weatherStart >= 0 && weatherEnd > weatherStart, 'WeatherView não localizada');
-const weatherSearchStart = weather.indexOf('<div><span className="cc-search-field"><input');
+const weatherSearchStart = weather.indexOf('<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input');
 const weatherSearchWrapperEnd = weather.indexOf('</span>', weatherSearchStart);
 const weatherSearchButton = weather.indexOf('<button', weatherSearchStart);
-assert.ok(weatherSearchStart >= 0, 'busca meteorológica deve manter o grid externo e usar wrapper exclusivo do input');
+assert.ok(weatherSearchStart >= 0, 'busca meteorológica deve manter um grid externo próprio e wrapper exclusivo do input');
 assert.ok(weatherSearchWrapperEnd > weatherSearchStart, 'wrapper posicionado da busca meteorológica deve ser fechado');
 assert.ok(weather.indexOf('<input', weatherSearchStart) < weather.indexOf('<Search className="cc-search-icon-end"', weatherSearchStart), 'Meteorologia deve mostrar o input antes da lupa');
 assert.ok(weatherSearchButton > weatherSearchWrapperEnd, 'botão de consulta meteorológica deve ficar fora do wrapper do input/lupa');
@@ -85,6 +85,7 @@ assert.ok(applySource.includes('function moveLabelSearchIconsToEnd('), 'prepara�
 assert.ok(applySource.includes('function moveNestedDivSearchIconsToEnd('), 'preparação deve tratar separadamente a estrutura aninhada de Meteorologia');
 assert.ok(applySource.includes('const inputClose = next.indexOf(\'/>\', contentStart);'), 'busca aninhada deve isolar somente o input');
 assert.ok(applySource.includes('const controlsAfterInput = next.slice(inputClose + 2, containerClose);'), 'controles após o input devem permanecer fora do wrapper posicionado');
+assert.ok(applySource.includes('className="cc-weather-search-row-v14344"'), 'grid meteorológico final deve possuir classe própria');
 assert.ok(!applySource.includes('[^>]*value=\\{searchTerm\\}'), 'padrão frágil com callbacks JSX não pode reaparecer');
 
 for (const marker of [
@@ -100,6 +101,9 @@ for (const marker of [
   '.cc-location-settings',
   '.cc-search-icon-end',
   'padding-right: 46px',
+  '.cc-weather-search label > .cc-weather-search-row-v14344',
+  'grid-template-columns: minmax(0, 1fr) auto',
+  '.cc-weather-search-row-v14344 > .cc-search-field',
 ]) assert.ok(cssSource.includes(marker), `proteção visual v14.3.44 ausente: ${marker}`);
 assert.ok(!cssSource.includes('@media (hover: hover) and (pointer: fine) and (min-width: 1024px)'), 'desktop com mouse não pode depender de largura mínima');
 assert.ok(!cssSource.includes('@media (max-width: 1023px), (hover: none), (pointer: coarse)'), 'largura estreita não pode forçar desktop com mouse para o modo touch');
@@ -121,4 +125,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location only in Settings, icon-only mode for every fine-pointer desktop width, full-width coarse-pointer cards, centered icons, input-only Weather search wrapper and every magnifier at field end validated.');
+console.log('v14.3.44 menu usability: location only in Settings, icon-only mode for every fine-pointer desktop width, full-width coarse-pointer cards, centered icons, two-column Weather input/action grid and every magnifier at field end validated.');
