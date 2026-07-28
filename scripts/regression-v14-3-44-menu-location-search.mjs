@@ -28,6 +28,7 @@ const menuEnd = before.home.indexOf('function Cockpit(', menuStart);
 const menu = before.home.slice(menuStart, menuEnd);
 assert.ok(menuStart >= 0 && menuEnd > menuStart, 'MenuDrawer não localizado');
 assert.ok(!menu.includes('<CrewLocationAccess compact/>'), 'localização não pode ocupar o topo do menu');
+assert.ok(!menu.includes('<CrewLocationAccess/>'), 'controle de localização não pode permanecer dentro do menu');
 assert.ok(menu.includes('data-menu-label={label}'), 'botões do menu devem expor o rótulo ao hover');
 assert.ok(menu.includes('data-menu-description={desc}'), 'botões do menu devem expor a descrição ao hover');
 assert.ok(menu.includes('aria-label={label}'), 'botões somente com ícone devem manter nome acessível');
@@ -39,6 +40,14 @@ const settings = before.home.slice(settingsStart, settingsEnd);
 assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, 'SettingsView não localizado');
 assert.ok(settings.includes('className="cc-location-settings"'), 'localização deve ficar em Configurações');
 assert.ok(settings.includes('<CrewLocationAccess/>'), 'Configurações deve renderizar o controle explícito de localização');
+assert.equal((before.home.match(/<CrewLocationAccess\/>/g) || []).length, 1, 'controle global de localização deve existir somente em Configurações');
+
+const departureStart = before.home.indexOf('function Departure(');
+const departureEnd = before.home.indexOf('function MonthlyMapView', departureStart);
+const departure = before.home.slice(departureStart, departureEnd);
+assert.ok(departureStart >= 0 && departureEnd > departureStart, 'Saída Inteligente não localizada');
+assert.ok(!departure.includes('<CrewLocationAccess/>'), 'Saída Inteligente deve usar o botão contextual da rota, sem duplicar o painel global de permissão');
+assert.ok(departure.includes('<GoogleMapsRoutePreview'), 'prévia de rota deve permanecer disponível na Saída Inteligente');
 
 const searchStart = before.home.indexOf('className="cz-place-query-row"');
 const searchEnd = before.home.indexOf('</div>', searchStart);
@@ -77,4 +86,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location in Settings, icon-only desktop menu with hover details, centered icons, end-positioned search icon, clean workflow and protected engines validated.');
+console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, centered icons, end-positioned search icon, clean workflow and protected engines validated.');
