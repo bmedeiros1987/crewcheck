@@ -10,6 +10,13 @@ type CrewRosterOffsetFlightMatch = {
   end: number;
   segmentEnd: number;
 };
+type CrewRosterOffsetOccurrence = {
+  occurrenceKey: string;
+  identity: string;
+  fullKey: string;
+  pairingKey: string;
+  dateValue: number;
+};
 function crewRosterRawOffset(value: string | null | undefined): number {
   const match = String(value || '').match(/\(\+(\d+)\)/);
   return match ? Number(match[1]) || 0 : 0;
@@ -24,6 +31,61 @@ function crewRosterOffsetLegKey(leg: FlightLeg): string {
 }
 function crewRosterOffsetLegIdentity(leg: FlightLeg): string {
   return `${String(leg.flightNumber || '').replace(/\s+/g, '').toUpperCase()}|${String(leg.origin || '').toUpperCase()}|${String(leg.destination || '').toUpperCase()}`;
+}
+function crewRosterOffsetPairingKey(value: unknown): string {
+  const normalized = String(value || '').toUpperCase().replace(/\s+/g, '');
+  return normalized.match(/LA\d{3,4}\/\d{6}/)?.[0] || normalized;
+}
+function crewRosterOffsetDayValue(day: RosterDay): number {
+  const [dateDay, dateMonth, dateYear] = String(day.date || '').split('/').map(Number);
+  const year = Number(day.year || dateYear || 0);
+  const month = Number(day.month || dateMonth || 0);
+  const dayNumber = Number(day.dayNumber || dateDay || 0);
+  const value = new Date(year, Math.max(0, month - 1), Math.max(1, dayNumber), 12, 0, 0, 0).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+function crewRosterOffsetReplacementKeys(days: RosterDay[], authoritative: RosterDay[]): Set<string> {
+  const originals: CrewRosterOffsetOccurrence[] = [];
+  (days || []).forEach((day, dayIndex) => {
+    (day.legs || []).forEach((leg, legIndex) => originals.push({
+      occurrenceKey: `${dayIndex}|${legIndex}`,
+      identity: crewRosterOffsetLegIdentity(leg),
+      fullKey: crewRosterOffsetLegKey(leg),
+      pairingKey: crewRosterOffsetPairingKey(day.pairingCode),
+      dateValue: crewRosterOffsetDayValue(day),
+    }));
+  });
+  const replacements = new Set<string>();
+  for (const day of authoritative || []) {
+    for (const leg of day.legs || []) {
+      const identity = crewRosterOffsetLegIdentity(leg);
+      const fullKey = crewRosterOffsetLegKey(leg);
+      const pairingKey = crewRosterOffsetPairingKey(day.pairingCode);
+      const dateValue = crewRosterOffsetDayValue(day);
+      const candidate = originals
+        .filter((item) => !replacements.has(item.occurrenceKey) && item.identity === identity)
+        .map((item) => {
+          const differenceDays = Math.abs(item.dateValue - dateValue) / 86_400_000;
+          const exactDate = differenceDays < 0.1;
+          const samePairing = Boolean(pairingKey && item.pairingKey && pairingKey === item.pairingKey);
+          const exactLeg = item.fullKey === fullKey;
+          const score = exactDate
+            ? differenceDays
+            : samePairing
+              ? 100 + differenceDays
+              : exactLeg && differenceDays <= 3
+                ? 200 + differenceDays
+                : differenceDays <= 3
+                  ? 300 + differenceDays
+                  : Number.POSITIVE_INFINITY;
+          return { item, score };
+        })
+        .filter((entry) => Number.isFinite(entry.score))
+        .sort((a, b) => a.score - b.score)[0]?.item;
+      if (candidate) replacements.add(candidate.occurrenceKey);
+    }
+  }
+  return replacements;
 }
 function crewRosterOffsetFlightMatches(text: string): CrewRosterOffsetFlightMatch[] {
   const source = normalizeSpaces(String(text || '').replace(/\bLA\s+(\d{3,4})\b/gi, 'LA$1'));
@@ -90,7 +152,7 @@ function crewRosterOffsetMckDays(blockText: string, baseDate: { day: number; mon
     const code = match[1].toUpperCase();
     const rawStart = match[3];
     const rawEnd = match[5];
-    const offset = Math.max(crewRosterRawOffset(rawStart), crewRosterRawOffset(rawEnd));
+    const offset = crewRosterRawOffset(rawStart);
     const shifted = addDaysToRosterDate(formatRosterDate(baseDate.day, baseDate.month, baseDate.year), offset);
     if (!isPublishedRosterContextMonth(shifted.month, shifted.year, referenceMonth, referenceYear)) continue;
     const day = createRosterDay(shifted.day, shifted.month, shifted.year, base);
@@ -158,19 +220,18 @@ function rebuildCrewRosterOffsetDays(days: RosterDay[], fullText: string, refere
     authoritative.push(...crewRosterOffsetMckDays(block.text, baseDate, referenceMonth, referenceYear, base));
   }
 
-  const authoritativeLegs = new Set(authoritative.flatMap((day) => day.legs || []).map(crewRosterOffsetLegKey));
-  const authoritativeIdentities = new Set(authoritative.flatMap((day) => day.legs || []).map(crewRosterOffsetLegIdentity));
+  const replacementKeys = crewRosterOffsetReplacementKeys(days, authoritative);
   const retained: RosterDay[] = [];
-  for (const original of days || []) {
-    if (/^MCK(?:320|_SS)?$/i.test(original.pairingCode || '') || (!original.legs?.length && /\bMCK(?:320|_SS)?\b/i.test(original.rawText || ''))) continue;
-    const nextLegs = (original.legs || []).filter((leg) => !authoritativeLegs.has(crewRosterOffsetLegKey(leg)) && !authoritativeIdentities.has(crewRosterOffsetLegIdentity(leg)) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.origin || '').toUpperCase()) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.destination || '').toUpperCase()));
+  (days || []).forEach((original, dayIndex) => {
+    if (/^MCK(?:320|_SS)?$/i.test(original.pairingCode || '') || (!original.legs?.length && /\bMCK(?:320|_SS)?\b/i.test(original.rawText || ''))) return;
+    const nextLegs = (original.legs || []).filter((leg, legIndex) => !replacementKeys.has(`${dayIndex}|${legIndex}`) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.origin || '').toUpperCase()) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.destination || '').toUpperCase()));
     if (original.legs?.length && nextLegs.length !== original.legs.length) {
-      if (!nextLegs.length) continue;
+      if (!nextLegs.length) return;
       const clone = { ...original, legs: nextLegs };
       finalizeRosterDay(clone);
       retained.push(clone);
     } else retained.push(original);
-  }
+  });
 
   const deduped = new Map<string, RosterDay>();
   for (const day of [...retained, ...authoritative]) {
@@ -179,10 +240,8 @@ function rebuildCrewRosterOffsetDays(days: RosterDay[], fullText: string, refere
     if (!deduped.has(key)) deduped.set(key, day);
   }
   return Array.from(deduped.values()).sort((a, b) => {
-    const [ad, am, ay] = a.date.split('/').map(Number);
-    const [bd, bm, by] = b.date.split('/').map(Number);
-    const av = new Date(ay || referenceYear, (am || referenceMonth) - 1, ad || 1).getTime();
-    const bv = new Date(by || referenceYear, (bm || referenceMonth) - 1, bd || 1).getTime();
+    const av = crewRosterOffsetDayValue(a);
+    const bv = crewRosterOffsetDayValue(b);
     if (av !== bv) return av - bv;
     return (a.dutyReport ? timeToMinutes(a.dutyReport) : 9999) - (b.dutyReport ? timeToMinutes(b.dutyReport) : 9999);
   });
