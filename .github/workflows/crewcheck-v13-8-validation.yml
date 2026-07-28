@@ -79,6 +79,8 @@ jobs:
         run: node scripts/audit-functional-surface.mjs --strict --write 2>&1 | tee "$RUNNER_TEMP/functional-surface-audit.log"
       - name: Validate Google Maps monthly budget and TomTom fallback
         run: node scripts/regression-v14-3-42-google-maps-budget-fallback.mjs 2>&1 | tee "$RUNNER_TEMP/google-maps-budget-regression.log"
+      - name: Validate iPad premium layout, location and reload stability
+        run: node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs 2>&1 | tee "$RUNNER_TEMP/ipad-premium-stability-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Publish functional audit report
@@ -112,5 +114,6 @@ jobs:
             ${{ runner.temp }}/functional-surface-audit.log
             ${{ runner.temp }}/crewcheck-functional-audit
             ${{ runner.temp }}/google-maps-budget-regression.log
+            ${{ runner.temp }}/ipad-premium-stability-regression.log
           if-no-files-found: ignore
           retention-days: 7
