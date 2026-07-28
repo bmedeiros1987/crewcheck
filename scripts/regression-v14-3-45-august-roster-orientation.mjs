@@ -20,7 +20,7 @@ const serverBefore = fs.readFileSync(serverPath, 'utf8');
 
 assert.ok(chainSource.includes("await import('../v14345/apply.mjs');"), 'v14.3.45 deve integrar a preparação canônica');
 assert.ok(applySource.includes("const VERSION = '14.3.45';"), 'release web deve avançar para 14.3.45');
-assert.ok(applySource.includes("next.replace(anchor, () =>"), 'inserção não pode interpretar $& do escape de RegExp');
+assert.ok(applySource.includes('function preferredServerRotatedDirection('), 'hotfix deve conter a escolha adaptativa no servidor');
 
 for (const [source, marker, label] of [
   [clientBefore, 'function preferredRotatedTextDirection(', 'orientação adaptativa no cliente'],
