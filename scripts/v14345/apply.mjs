@@ -49,7 +49,7 @@ update('client/src/lib/pdfParser.ts', (source) => {
 
   const oldTotals = `  const totalsMatch = compactText.match(/FH\\s*:\\s*(\\d{1,3}:\\d{2})\\s*\\|\\s*DH\\s*:\\s*(\\d{1,3}:\\d{2})/i);\n  const totals = totalsMatch\n    ? { flightHours: timeStringToHours(totalsMatch[1]), dutyHours: timeStringToHours(totalsMatch[2]) }\n    : {};`;
   const newTotals = `  const flightHoursMatch = compactText.match(/\\bFH\\s*:\\s*(\\d{1,3}:\\d{2})/i);\n  const dutyHoursMatch = compactText.match(/\\bDH\\s*:\\s*(\\d{1,3}:\\d{2})/i);\n  const totals = {\n    ...(flightHoursMatch ? { flightHours: timeStringToHours(flightHoursMatch[1]) } : {}),\n    ...(dutyHoursMatch ? { dutyHours: timeStringToHours(dutyHoursMatch[1]) } : {}),\n  };`;
-  next = replaceRequired(next, oldTotals, newTotals, 'totais FH/DH em qualquer ordem no cliente');
+  if (!next.includes('const flightHours = compactText.match(')) next = replaceRequired(next, oldTotals, newTotals, 'totais FH/DH em qualquer ordem no cliente');
 
   const oldMckCodeExpression = "code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER'";
   const newMckCodeExpression = "code === 'CRM' || code === 'RCFI' || code === 'MT' || code === 'CBF' || code === 'EMER' || /^MCK(?:320|_SS)?$/.test(code)";
