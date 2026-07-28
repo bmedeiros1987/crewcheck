@@ -1,0 +1,222 @@
+function serverCrewRosterRawOffset(value) {
+ const match = String(value || '').match(/\(\+(\d+)\)/);
+ return match ? Number(match[1]) || 0 : 0;
+}
+function serverCrewRosterCleanTime(value) {
+ return normalizeTimeToken(String(value || '').replace(/\(\+\d+\)/g, ''));
+}
+function serverCrewRosterAbsoluteMinutes(value, fallbackOffset = 0) {
+ const raw = String(value || '');
+ const explicit = /\(\+\d+\)/.test(raw);
+ return (explicit ? serverCrewRosterRawOffset(raw) : fallbackOffset) * 1440 + toMin(serverCrewRosterCleanTime(raw));
+}
+function serverCrewRosterLegKey(leg) {
+ return `${String(leg?.flightNumber || '').replace(/\s+/g, '').toUpperCase()}|${String(leg?.origin || '').toUpperCase()}|${String(leg?.destination || '').toUpperCase()}|${serverCrewRosterCleanTime(leg?.departureTime)}|${serverCrewRosterCleanTime(leg?.arrivalTime)}`;
+}
+function serverCrewRosterLegIdentity(leg) {
+ return `${String(leg?.flightNumber || '').replace(/\s+/g, '').toUpperCase()}|${String(leg?.origin || '').toUpperCase()}|${String(leg?.destination || '').toUpperCase()}`;
+}
+function serverCrewRosterPairingKey(value) {
+ const normalized = String(value || '').toUpperCase().replace(/\s+/g, '');
+ return normalized.match(/LA\d{3,4}\/\d{6}/)?.[0] || normalized;
+}
+function serverCrewRosterDayValue(day) {
+ const [dateDay, dateMonth, dateYear] = String(day?.date || '').split('/').map(Number);
+ const year = Number(day?.year || dateYear || 0);
+ const month = Number(day?.month || dateMonth || 0);
+ const dayNumber = Number(day?.dayNumber || dateDay || 0);
+ const value = new Date(year, Math.max(0, month - 1), Math.max(1, dayNumber), 12, 0, 0, 0).getTime();
+ return Number.isFinite(value) ? value : 0;
+}
+function serverCrewRosterReplacementKeys(days, authoritative) {
+ const originals = [];
+ (days || []).forEach((day, dayIndex) => {
+  (day.legs || []).forEach((leg, legIndex) => originals.push({
+   occurrenceKey: `${dayIndex}|${legIndex}`,
+   identity: serverCrewRosterLegIdentity(leg),
+   fullKey: serverCrewRosterLegKey(leg),
+   pairingKey: serverCrewRosterPairingKey(day.pairingCode),
+   dateValue: serverCrewRosterDayValue(day),
+  }));
+ });
+ const replacements = new Set();
+ for (const day of authoritative || []) {
+  for (const leg of day.legs || []) {
+   const identity = serverCrewRosterLegIdentity(leg);
+   const fullKey = serverCrewRosterLegKey(leg);
+   const pairingKey = serverCrewRosterPairingKey(day.pairingCode);
+   const dateValue = serverCrewRosterDayValue(day);
+   const candidate = originals
+    .filter((item) => !replacements.has(item.occurrenceKey) && item.identity === identity)
+    .map((item) => {
+     const differenceDays = Math.abs(item.dateValue - dateValue) / 86400000;
+     const exactDate = differenceDays < 0.1;
+     const samePairing = Boolean(pairingKey && item.pairingKey && pairingKey === item.pairingKey);
+     const exactLeg = item.fullKey === fullKey;
+     const score = exactDate
+      ? differenceDays
+      : samePairing
+       ? 100 + differenceDays
+       : exactLeg && differenceDays <= 3
+        ? 200 + differenceDays
+        : differenceDays <= 3
+         ? 300 + differenceDays
+         : Number.POSITIVE_INFINITY;
+     return { item, score };
+    })
+    .filter((entry) => Number.isFinite(entry.score))
+    .sort((a, b) => a.score - b.score)[0]?.item;
+   if (candidate) replacements.add(candidate.occurrenceKey);
+  }
+ }
+ return replacements;
+}
+function serverCrewRosterOffsetMatches(text) {
+ const source = cleanRosterLineV3(String(text || '').replace(/\bLA\s+(\d{3,4})\b/gi, 'LA$1'));
+ const regex = /\b(LA\d{3,4})\b\s+(?:(OP|PS|DH)\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s*([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/gi;
+ const rawMatches = [];
+ let match;
+ while ((match = regex.exec(source)) !== null) {
+  rawMatches.push({
+   flightNumber: match[1].replace(/\s+/g, '').toUpperCase(),
+   workType: String(match[2] || 'OP').toUpperCase(),
+   origin: match[3].toUpperCase(),
+   rawDeparture: match[4],
+   destination: match[5].toUpperCase(),
+   rawArrival: match[6],
+   index: match.index,
+   end: regex.lastIndex,
+  });
+ }
+ return rawMatches.map((item, index) => {
+  const segmentEnd = rawMatches[index + 1]?.index ?? source.length;
+  const segment = source.slice(item.end, segmentEnd);
+  const aircraftType = (segment.match(/\b(32S|31R|39R|328|319|320|321|32N)\b/gi) || []).at(-1)?.toUpperCase();
+  return { ...item, segmentEnd, aircraftType };
+ });
+}
+function serverCrewRosterReportBefore(text, first, previousEnd, offset) {
+ const prefix = String(text || '').slice(Math.max(0, previousEnd), first.index);
+ const departureAbsolute = serverCrewRosterAbsoluteMinutes(first.rawDeparture, offset);
+ const candidates = [...prefix.matchAll(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?/g)]
+  .map((match) => match[0])
+  .filter((raw) => serverCrewRosterCleanTime(raw) !== '00:00')
+  .filter((raw) => serverCrewRosterRawOffset(raw) === offset)
+  .map((raw) => ({ raw, absolute: serverCrewRosterAbsoluteMinutes(raw, offset) }))
+  .filter((candidate) => candidate.absolute <= departureAbsolute && departureAbsolute - candidate.absolute <= 240)
+  .sort((a, b) => a.absolute - b.absolute);
+ return candidates.length ? serverCrewRosterCleanTime(candidates[candidates.length - 1].raw) : null;
+}
+function serverCrewRosterDebriefAfter(text, last, offset) {
+ const segment = String(text || '').slice(last.end, last.segmentEnd);
+ const arrivalAbsolute = serverCrewRosterAbsoluteMinutes(last.rawArrival, offset);
+ for (const match of segment.matchAll(/\b\d{1,2}:\d{2}(?:\(\+\d+\))?/g)) {
+  const raw = match[0];
+  const time = serverCrewRosterCleanTime(raw);
+  if (time === '00:00') continue;
+  const explicit = /\(\+\d+\)/.test(raw);
+  const candidateOffset = explicit ? serverCrewRosterRawOffset(raw) : offset;
+  const candidateAbsolute = candidateOffset * 1440 + toMin(time);
+  if (!explicit && candidateAbsolute < arrivalAbsolute) continue;
+  const distance = candidateAbsolute - arrivalAbsolute;
+  if (distance >= 0 && distance <= 180) return { time, offset: candidateOffset };
+ }
+ return null;
+}
+function serverCrewRosterPairingCode(text, fallback) {
+ const pairing = cleanRosterLineV3(text).match(/\b(LA\d{3,4}\/\d{6}\/\s*[A-Z0-9-]+)\b/i)?.[1];
+ return pairing ? cleanRosterLineV3(pairing) : fallback;
+}
+function serverCrewRosterMckDays(blockText, baseDate, referenceMonth, referenceYear, base) {
+ const source = cleanRosterLineV3(blockText);
+ const regex = /\b(MCK(?:320|_SS)?)\b\s+([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s*([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/gi;
+ const output = [];
+ let match;
+ while ((match = regex.exec(source)) !== null) {
+  const code = match[1].toUpperCase();
+  const rawStart = match[3];
+  const rawEnd = match[5];
+  const offset = serverCrewRosterRawOffset(rawStart);
+  const shifted = addDaysToServerDate(baseDate, offset);
+  const monthDistance = Math.abs((shifted.year * 12 + shifted.month) - (referenceYear * 12 + referenceMonth));
+  if (monthDistance > 1) continue;
+  const day = makeDay(shifted.day, shifted.month, shifted.year, base);
+  day.type = 'CRM';
+  day.pairingCode = code;
+  day.dutyReport = serverCrewRosterCleanTime(rawStart);
+  day.dutyDebrief = serverCrewRosterCleanTime(rawEnd);
+  day.isNextDay = serverCrewRosterRawOffset(rawEnd) > serverCrewRosterRawOffset(rawStart) || toMin(day.dutyDebrief) < toMin(day.dutyReport);
+  day.dutyHours = diffHours(day.dutyReport, day.dutyDebrief);
+  day.flyingHours = 0;
+  day.rawText = cleanRosterLineV3(source.slice(Math.max(0, match.index - 20), Math.min(source.length, regex.lastIndex + 40)));
+  output.push(day);
+ }
+ return output;
+}
+function rebuildServerCrewRosterOffsetDays(days, fullText, referenceMonth, referenceYear, base) {
+ const authoritative = [];
+ for (const block of buildRosterDateBlocksV3(fullText)) {
+  const baseDate = { day: Number(block.dayToken), month: monthNameToNum(block.monthToken) || referenceMonth, year: Number(block.yearToken) || referenceYear };
+  const blockText = cleanRosterLineV3(block.text);
+  const matches = serverCrewRosterOffsetMatches(blockText);
+  const groups = new Map();
+  for (const flight of matches) {
+   const offset = serverCrewRosterRawOffset(flight.rawDeparture);
+   const list = groups.get(offset) || [];
+   list.push(flight);
+   groups.set(offset, list);
+  }
+  for (const [offset, flights] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+   if (!flights.length) continue;
+   const shifted = addDaysToServerDate(baseDate, offset);
+   const monthDistance = Math.abs((shifted.year * 12 + shifted.month) - (referenceYear * 12 + referenceMonth));
+   if (monthDistance > 1) continue;
+   const day = makeDay(shifted.day, shifted.month, shifted.year, base);
+   const first = flights[0];
+   const last = flights[flights.length - 1];
+   const firstGlobalIndex = matches.indexOf(first);
+   const previousEnd = firstGlobalIndex > 0 ? matches[firstGlobalIndex - 1].end : 0;
+   const report = serverCrewRosterReportBefore(blockText, first, previousEnd, offset) || serverCrewRosterCleanTime(first.rawDeparture);
+   const debrief = serverCrewRosterDebriefAfter(blockText, last, offset);
+   const groupStart = firstGlobalIndex > 0 ? matches[firstGlobalIndex - 1].end : 0;
+   day.type = 'VOO';
+   day.pairingCode = serverCrewRosterPairingCode(blockText, first.flightNumber);
+   day.dutyReport = report;
+   day.dutyDebrief = debrief?.time || (() => {
+    const total = (toMin(serverCrewRosterCleanTime(last.rawArrival)) + 30) % 1440;
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+   })();
+   day.rawText = cleanRosterLineV3(blockText.slice(groupStart, last.segmentEnd));
+   day.legs = flights.map((flight) => {
+    const departureTime = serverCrewRosterCleanTime(flight.rawDeparture);
+    const arrivalTime = serverCrewRosterCleanTime(flight.rawArrival);
+    const isNextDay = serverCrewRosterRawOffset(flight.rawArrival) > serverCrewRosterRawOffset(flight.rawDeparture) || toMin(arrivalTime) < toMin(departureTime);
+    return { flightNumber: flight.flightNumber, origin: flight.origin, destination: flight.destination, departureTime, arrivalTime, workType: flight.workType, aircraftType: flight.aircraftType, isNextDay, duration: diffHours(departureTime, arrivalTime) };
+   });
+   day.isNextDay = Boolean((debrief && debrief.offset > offset) || day.legs.some((leg) => leg.isNextDay));
+   day.flyingHours = day.legs.reduce((sum, leg) => sum + Number(leg.duration || 0), 0);
+   day.dutyHours = day.dutyReport && day.dutyDebrief ? diffHours(day.dutyReport, day.dutyDebrief) : null;
+   authoritative.push(day);
+  }
+  authoritative.push(...serverCrewRosterMckDays(blockText, baseDate, referenceMonth, referenceYear, base));
+ }
+ const replacementKeys = serverCrewRosterReplacementKeys(days, authoritative);
+ const retained = [];
+ (days || []).forEach((original, dayIndex) => {
+  if (/^MCK(?:320|_SS)?$/i.test(original.pairingCode || '') || (!original.legs?.length && /\bMCK(?:320|_SS)?\b/i.test(original.rawText || ''))) return;
+  const nextLegs = (original.legs || []).filter((leg, legIndex) => !replacementKeys.has(`${dayIndex}|${legIndex}`) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.origin || '').toUpperCase()) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.destination || '').toUpperCase()));
+  if (original.legs?.length && nextLegs.length !== original.legs.length) {
+   if (!nextLegs.length) return;
+   const clone = { ...original, legs: nextLegs };
+   clone.flyingHours = clone.legs.reduce((sum, leg) => sum + Number(leg.duration || 0), 0);
+   retained.push(clone);
+  } else retained.push(original);
+ });
+ const deduped = new Map();
+ for (const day of [...retained, ...authoritative]) {
+  const legKey = (day.legs || []).map(serverCrewRosterLegKey).join(';');
+  const key = `${day.date}|${day.type}|${day.pairingCode || ''}|${day.dutyReport || ''}|${day.dutyDebrief || ''}|${legKey}`;
+  if (!deduped.has(key)) deduped.set(key, day);
+ }
+ return [...deduped.values()];
+}
