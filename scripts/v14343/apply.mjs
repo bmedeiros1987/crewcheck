@@ -160,16 +160,25 @@ const releaseWatcher = `<script id="crewcheck-release-watch-v14343">
   </script>`;
 
 update('client/index.html', (source) => {
-  let next = source
+  let next = source;
+  const legacyCleanupMarker = "var key = 'crewcheck-cache-reset-";
+  const cleanupMarkerIndex = next.indexOf(legacyCleanupMarker);
+  if (cleanupMarkerIndex >= 0) {
+    const cleanupScriptStart = next.lastIndexOf('<script>', cleanupMarkerIndex);
+    const cleanupScriptEnd = next.indexOf('</script>', cleanupMarkerIndex);
+    if (cleanupScriptStart < 0 || cleanupScriptEnd < 0) throw new Error('[v14343] Script legado de limpeza PWA incompleto.');
+    next = `${next.slice(0, cleanupScriptStart)}${next.slice(cleanupScriptEnd + '</script>'.length)}`;
+  }
+  next = next
     .replace(/data-crewcheck-release="[^"]+"/g, `data-crewcheck-release="${VERSION}"`)
     .replace(/name="crewcheck-release" content="[^"]+"/g, `name="crewcheck-release" content="${VERSION}"`)
-    .replace(/crewcheck-cache-reset-[0-9-]+/g, `crewcheck-cache-reset-${VERSION.replace(/\./g, '-')}`)
     .replace(/manifest\.json\?v=\d+/g, `manifest.json?v=${VERSION_DIGITS}`)
     .replace(/sw\.js\?v=\d+/g, `sw.js?v=${VERSION_DIGITS}`)
     .replace(/var currentRelease = '[^']+';/g, `var currentRelease = '${VERSION}';`);
   const legacyWatcher = /<script id="crewcheck-release-watch-v14329">[\s\S]*?<\/script>/;
   if (legacyWatcher.test(next)) next = next.replace(legacyWatcher, releaseWatcher);
   else if (!next.includes('crewcheck-release-watch-v14343')) next = next.replace('</body>', `  ${releaseWatcher}\n</body>`);
+  if (next.includes('registration.unregister()') || next.includes('crewcheck-cache-reset-')) throw new Error('[v14343] Limpeza destrutiva do PWA ainda presente no HTML.');
   return next;
 });
 
