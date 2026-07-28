@@ -5,6 +5,7 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     let alive = true;
     let permission: any = null;
+    let applyPermission: (() => void) | null = null;
     const sync = async () => {
       if (!navigator.geolocation) {
         if (alive) setPermissionState('unsupported');
@@ -17,15 +18,15 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
           return;
         }
         permission = await permissions.query({ name: 'geolocation' as any });
-        const apply = () => {
+        applyPermission = () => {
           if (!alive) return;
           const next = String(permission?.state || 'prompt') as CrewLocationPermissionState;
           setPermissionState(next === 'granted' || next === 'denied' ? next : 'prompt');
           if (next === 'granted') storage.set('crewcheck_location_permission', 'granted');
           if (next === 'denied') storage.set('crewcheck_location_permission', 'denied');
         };
-        apply();
-        permission.addEventListener?.('change', apply);
+        applyPermission();
+        permission.addEventListener?.('change', applyPermission);
       } catch {
         if (alive) setPermissionState(storage.get('crewcheck_location_permission', '') === 'granted' ? 'granted' : 'prompt');
       }
@@ -33,7 +34,7 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
     void sync();
     return () => {
       alive = false;
-      try { permission?.removeEventListener?.('change', () => undefined); } catch {}
+      try { if (applyPermission) permission?.removeEventListener?.('change', applyPermission); } catch {}
     };
   }, []);
   async function requestLocationAccess() {
