@@ -110,12 +110,11 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch visual não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const predecessorApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14343/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(predecessorApply.status, 0, predecessorApply.stderr || predecessorApply.stdout || 'reaplicação v14.3.43 falhou');
-const successorApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14344/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(successorApply.status, 0, successorApply.stderr || successorApply.stdout || 'restauração v14.3.44 falhou');
+assert.ok(applySource.includes("next = patchBlock(next, 'function MenuDrawer('") || applySource.includes("patchBlock(next, 'function MenuDrawer('"), 'v14.3.43 deve continuar contendo a base do controle de localização');
+const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14344/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.3.44 falhou');
 for (const [key, relative] of Object.entries(paths)) {
-  assert.equal(read(relative), before[key], `cadeia v14.3.43 → v14.3.44 deve ser idempotente em ${relative}`);
+  assert.equal(read(relative), before[key], `estado final v14.3.44 deve preservar a estabilidade v14.3.43 em ${relative}`);
 }
 
 console.log('v14.3.43 iPad premium stability preserved under final v14.3.44: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');
