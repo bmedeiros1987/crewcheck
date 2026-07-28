@@ -42,6 +42,10 @@ assert.ok(
     || serverBefore.includes('function rescueServerOffsetGroundActivities('),
   'v14.3.45: ausente MCK por data civil no servidor',
 );
+if (clientBefore.includes('function rebuildCrewRosterOffsetDays(')) {
+  assert.ok(clientBefore.includes('const continuationDays = offsetAwareDays;'), 'offsets autoritativos do cliente não podem ser aplicados duas vezes');
+  assert.ok(!clientBefore.includes('normalizeCrewRosterReportContinuationDays(offsetAwareDays,'), 'pipeline do cliente não pode deslocar novamente (+1)/(+2)/(+3)');
+}
 assert.ok(!serverBefore.includes("function scoreServerRosterDays(');"), 'escape de RegExp do servidor não pode corromper a função seguinte');
 
 const applied = spawnSync(process.execPath, [applyPath], { cwd: root, encoding: 'utf8' });
