@@ -39,7 +39,7 @@
   opacity: .76 !important;
 }
 
-@media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+@media (hover: hover) and (pointer: fine) {
   .cz-menu-panel {
     width: min(76vw, 760px) !important;
     max-width: 760px !important;
@@ -160,7 +160,7 @@
   }
 }
 
-@media (max-width: 1023px), (hover: none), (pointer: coarse) {
+@media (hover: none), (pointer: coarse) {
   .cz-menu-panel {
     width: min(94vw, 520px) !important;
     max-width: 520px !important;
