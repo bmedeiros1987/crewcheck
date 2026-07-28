@@ -95,6 +95,9 @@ assert.ok(serverBefore.includes('readGoogleRouteCache'), 'rotas repetidas devem 
 assert.ok(budgetSource.includes('INSERT IGNORE INTO crewcheck_external_api_usage'), 'primeira reserva persistente deve criar a linha antes do lock');
 assert.ok(budgetSource.includes('FOR UPDATE'), 'contador persistente deve ser serializado por competência');
 assert.ok(budgetSource.indexOf('INSERT IGNORE INTO crewcheck_external_api_usage') < budgetSource.indexOf('FOR UPDATE'), 'linha mensal deve existir antes do bloqueio transacional');
+assert.ok(budgetSource.includes("blockMemory(monthKey, 'persistence_reservation_failure')"), 'falha transacional deve fechar a cota em vez de liberar contador local');
+assert.ok(budgetSource.includes('return { allowed: false, ...publicStatus(record, now, false) };'), 'falha persistente deve acionar TomTom');
+assert.ok(budgetSource.includes('`${safeReason}_persistence_failure`'), 'falha ao persistir 429 deve manter bloqueio local');
 
 const handlerStart = serverBefore.indexOf('async function handleRoutePreview(');
 const handlerEnd = serverBefore.indexOf('async function handleMapsProviderStatus(', handlerStart);
@@ -124,8 +127,8 @@ for (const marker of [
 ]) assert.ok(envBefore.includes(marker), `variável documentada ausente: ${marker}`);
 
 assert.ok(calendar.includes('VITE_GOOGLE_CLIENT_ID'), 'Calendar deve ler o Client ID incorporado no build');
-assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.events'), 'escopo de eventos deve permanecer');
-assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.calendarlist.readonly'), 'escopo de lista de calendários deve permanecer');
+assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.events.owned'), 'escopo mínimo de eventos próprios deve permanecer');
+assert.ok(!calendar.includes('https://www.googleapis.com/auth/calendar.calendarlist.readonly'), 'escopo amplo de lista de calendários não pode reaparecer');
 assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome público recomendado');
 assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
 assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
@@ -133,6 +136,7 @@ assert.ok(!viteConfig.includes('GOOGLE_CLIENT_SECRET'), 'segredo OAuth nunca pod
 assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.42';"), 'versão Web/PWA 14.3.42 ausente');
 assert.ok(homeBefore.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
 assert.ok(releaseBefore.includes('14.3.42'), 'release.json deve anunciar 14.3.42');
+assert.ok(applySource.includes("next.indexOf('type RoutePreviewInfo = {')"), 'patch do tipo deve usar a forma produzida pela preparação, sem depender dos últimos campos');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
@@ -145,4 +149,4 @@ assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch de mapas deve
 assert.equal(fs.readFileSync(envPath, 'utf8'), envBefore, 'patch de mapas deve ser idempotente no template de ambiente');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch de mapas deve ser idempotente no release');
 
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, serialized persistence, cache, quota block, Google-first order, admin status, TomTom fallback, Render Calendar Client ID and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: monthly cap, serialized fail-closed persistence, cache, quota block, Google-first order, admin status, TomTom fallback, minimal Calendar scope, Render Client ID and protected engine validated.');
