@@ -23,22 +23,32 @@ function patchBlock(source, startMarker, endMarker, label, transform) {
   return after === before ? source : `${source.slice(0, start)}${after}${source.slice(end)}`;
 }
 
-function moveLeadingSearchIconsToEnd(source) {
-  const legacyStart = '<label><Search/><input';
+function moveSearchIconPattern(source, tag) {
+  const legacyStart = `<${tag}><Search/><input`;
+  const closeTag = `</${tag}>`;
   let next = source;
   let migrated = 0;
   while (next.includes(legacyStart)) {
     const start = next.indexOf(legacyStart);
     const contentStart = start + legacyStart.length;
-    const close = next.indexOf('</label>', contentStart);
-    if (close < 0) throw new Error('[v14344] Campo com lupa inicial sem fechamento de label.');
+    const close = next.indexOf(closeTag, contentStart);
+    if (close < 0) throw new Error(`[v14344] Campo com lupa inicial sem fechamento de ${tag}.`);
     const inputRemainder = next.slice(contentStart, close);
-    const replacement = `<label className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/></label>`;
-    next = `${next.slice(0, start)}${replacement}${next.slice(close + '</label>'.length)}`;
+    const replacement = `<${tag} className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/>${closeTag}`;
+    next = `${next.slice(0, start)}${replacement}${next.slice(close + closeTag.length)}`;
     migrated += 1;
   }
-  if (next.includes(legacyStart)) throw new Error('[v14344] Ainda existe lupa antes de um campo de pesquisa.');
   return { source: next, migrated };
+}
+
+function moveLeadingSearchIconsToEnd(source) {
+  const labelMigration = moveSearchIconPattern(source, 'label');
+  const divMigration = moveSearchIconPattern(labelMigration.source, 'div');
+  const next = divMigration.source;
+  if (next.includes('<label><Search/><input') || next.includes('<div><Search/><input')) {
+    throw new Error('[v14344] Ainda existe lupa antes de um campo de pesquisa.');
+  }
+  return { source: next, migrated: labelMigration.migrated + divMigration.migrated };
 }
 
 update('client/src/pages/Home.tsx', (source) => {
