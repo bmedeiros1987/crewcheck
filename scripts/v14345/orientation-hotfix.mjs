@@ -338,6 +338,14 @@ update('client/src/lib/pdfParser.ts', (source) => {
     `      const pairingFlight = raw.match(/\\b(LA\\s?\\d{3,4})[/-]\\d{6}(?:\\/|\\b)/i)?.[1]?.replace(/\\s+/g, '').toUpperCase();\n      target.pairingCode = pairingFlight || day.pairingCode || segment.timings[0]?.leg.flightNumber || '';`,
     'código original do pairing no cliente',
   );
+  if (next.includes('function rebuildCrewRosterOffsetDays(')) {
+    next = replaceRequired(
+      next,
+      `  const continuationDays = normalizeCrewRosterReportContinuationDays(offsetAwareDays, header.month, header.year, header.base);`,
+      `  const continuationDays = offsetAwareDays;`,
+      'offsets autoritativos não podem ser deslocados uma segunda vez no cliente',
+    );
+  }
   return next;
 });
 
