@@ -7,8 +7,12 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
     let permission: any = null;
     let applyPermission: (() => void) | null = null;
     const sync = async () => {
-      if (!navigator.geolocation) {
+      if (!currentGeoSupported()) {
         if (alive) setPermissionState('unsupported');
+        return;
+      }
+      if (!navigator.geolocation) {
+        if (alive) setPermissionState(storage.get('crewcheck_location_permission', '') === 'granted' ? 'granted' : 'prompt');
         return;
       }
       try {
@@ -38,18 +42,20 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
     };
   }, []);
   async function requestLocationAccess() {
-    if (!navigator.geolocation) {
+    if (!currentGeoSupported()) {
       setPermissionState('unsupported');
-      toast.error('Localização não está disponível neste navegador.');
+      toast.error('Localização não está disponível neste aparelho.');
       return;
     }
     setBusy(true);
     try {
       const position = await getCurrentGeoPosition();
       storage.set('crewcheck_location_permission', 'granted');
+      storage.set('crewcheck_manual_route_origin', '');
       setPermissionState('granted');
+      const address = await reverseGeocodePosition(position.lat, position.lng);
       window.dispatchEvent(new CustomEvent('crewcheck:location-updated', { detail: { coordinates: position } }));
-      toast.success('Localização liberada e atualizada para a Saída Inteligente.');
+      toast.success(address ? `Localização atualizada: ${address.shortAddress}.` : 'Localização real atualizada para a Saída Inteligente.');
     } catch (error) {
       storage.set('crewcheck_location_permission', 'denied');
       setPermissionState('denied');
