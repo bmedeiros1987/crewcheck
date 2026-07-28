@@ -63,6 +63,16 @@ update('client/src/pages/Home.tsx', (source) => {
     const fields = `\n  fallback?: boolean;\n  fallbackReason?: string;\n  mapsBudget?: { monthKey?: string; used?: number; limit?: number; remaining?: number; percent?: number; blocked?: boolean; fallbackActive?: boolean; provider?: string; resetAt?: string; persistence?: string };`;
     next = `${next.slice(0, typeEnd)}${fields}${next.slice(typeEnd)}`;
   }
+
+  const legacyRouteFetch = `    const response = await fetch(\`/api/maps/route-preview?\${params.toString()}\`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === 'object') return payload as RoutePreviewInfo;`;
+  const authenticatedRouteFetch = `    const payload = await authFetch<RoutePreviewInfo>(\`/api/maps/route-preview?\${params.toString()}\`, { cache: 'no-store' });
+    if (payload && typeof payload === 'object') return payload;`;
+  if (!next.includes(authenticatedRouteFetch)) {
+    if (!next.includes(legacyRouteFetch)) throw new Error('[v14342] Cliente da prévia de rota não localizado para aplicar autenticação.');
+    next = next.replace(legacyRouteFetch, authenticatedRouteFetch);
+  }
   return next;
 });
 
