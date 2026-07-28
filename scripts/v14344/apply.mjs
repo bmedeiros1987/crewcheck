@@ -23,6 +23,24 @@ function patchBlock(source, startMarker, endMarker, label, transform) {
   return after === before ? source : `${source.slice(0, start)}${after}${source.slice(end)}`;
 }
 
+function moveLeadingSearchIconsToEnd(source) {
+  const legacyStart = '<label><Search/><input';
+  let next = source;
+  let migrated = 0;
+  while (next.includes(legacyStart)) {
+    const start = next.indexOf(legacyStart);
+    const contentStart = start + legacyStart.length;
+    const close = next.indexOf('</label>', contentStart);
+    if (close < 0) throw new Error('[v14344] Campo com lupa inicial sem fechamento de label.');
+    const inputRemainder = next.slice(contentStart, close);
+    const replacement = `<label className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/></label>`;
+    next = `${next.slice(0, start)}${replacement}${next.slice(close + '</label>'.length)}`;
+    migrated += 1;
+  }
+  if (next.includes(legacyStart)) throw new Error('[v14344] Ainda existe lupa antes de um campo de pesquisa.');
+  return { source: next, migrated };
+}
+
 update('client/src/pages/Home.tsx', (source) => {
   let next = source
     .replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`)
@@ -55,12 +73,14 @@ update('client/src/pages/Home.tsx', (source) => {
     return block.replace(before, after);
   });
 
-  const searchPattern = /<label><Search\/><input([^>]*value=\{searchTerm\}[^>]*)\/><\/label>/g;
-  next = next.replace(searchPattern, '<label className="cc-search-field"><input$1/><Search className="cc-search-icon-end" aria-hidden="true"/></label>');
+  const searchMigration = moveLeadingSearchIconsToEnd(next);
+  next = searchMigration.source;
   if (!next.includes('className="cc-search-field"') || !next.includes('className="cc-search-icon-end"')) {
-    throw new Error('[v14344] Campo de pesquisa com lupa ao final não foi aplicado.');
+    throw new Error('[v14344] Nenhum campo de pesquisa com lupa ao final foi localizado.');
   }
-  if (next.includes('<label><Search/><input')) throw new Error('[v14344] Lupa ainda aparece antes do campo de pesquisa.');
+  if ((next.match(/className="cc-search-field"/g) || []).length !== (next.match(/className="cc-search-icon-end"/g) || []).length) {
+    throw new Error('[v14344] Cada campo de pesquisa migrado deve possuir exatamente uma lupa ao final.');
+  }
 
   next = next.replace(
     'data-layout-v14343="premium-contained"',
@@ -93,7 +113,7 @@ update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
   channel: 'web',
   updatePolicy: 'automatic-safe',
-  notes: 'Localização centralizada em Configurações, menu Web por ícones com detalhes no hover e lupa posicionada ao final do campo.',
+  notes: 'Localização centralizada em Configurações, menu Web por ícones com detalhes no hover e lupas posicionadas ao final dos campos.',
 }, null, 2)}\n`);
 
-console.log(`[v14344] CrewCheck ${VERSION}: localização somente em Configurações, menu Web icon-first, ícones centralizados e lupa ao final do campo.`);
+console.log(`[v14344] CrewCheck ${VERSION}: localização somente em Configurações, menu Web icon-first, ícones centralizados e lupas ao final dos campos.`);
