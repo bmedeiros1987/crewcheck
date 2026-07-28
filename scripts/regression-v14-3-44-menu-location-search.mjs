@@ -49,14 +49,26 @@ assert.ok(departureStart >= 0 && departureEnd > departureStart, 'Saída Intelige
 assert.ok(!departure.includes('<CrewLocationAccess/>'), 'Saída Inteligente deve usar o botão contextual da rota, sem duplicar o painel global de permissão');
 assert.ok(departure.includes('<GoogleMapsRoutePreview'), 'prévia de rota deve permanecer disponível na Saída Inteligente');
 
-const searchStart = before.home.indexOf('className="cz-place-query-row"');
-const searchEnd = before.home.indexOf('</div>', searchStart);
-const searchField = before.home.slice(searchStart, searchEnd);
-assert.ok(searchStart >= 0, 'campo de pesquisa de locais não localizado');
-assert.ok(searchField.includes('className="cc-search-field"'), 'campo de pesquisa deve usar o invólucro padronizado');
-assert.ok(searchField.includes('className="cc-search-icon-end"'), 'lupa deve ficar no fim do campo');
-assert.ok(searchField.indexOf('<input') < searchField.indexOf('<Search className="cc-search-icon-end"'), 'input deve aparecer antes da lupa');
-assert.ok(!before.home.includes('<label><Search/><input'), 'lupa não pode reaparecer antes do texto');
+const migratedSearchFields = before.home.match(/<label className="cc-search-field">/g) || [];
+const endSearchIcons = before.home.match(/<Search className="cc-search-icon-end" aria-hidden="true"\/>/g) || [];
+assert.ok(migratedSearchFields.length >= 2, 'campos de pesquisa de locais e hotéis devem ser padronizados');
+assert.equal(endSearchIcons.length, migratedSearchFields.length, 'cada campo padronizado deve possuir uma lupa ao final');
+assert.ok(!before.home.includes('<label><Search/><input'), 'nenhuma lupa pode reaparecer antes do texto');
+
+const placesSearchStart = before.home.indexOf('className="cz-place-query-row"');
+const placesSearchEnd = before.home.indexOf('</div>', placesSearchStart);
+const placesSearch = before.home.slice(placesSearchStart, placesSearchEnd);
+assert.ok(placesSearchStart >= 0, 'campo de pesquisa de locais não localizado');
+assert.ok(placesSearch.indexOf('<input') < placesSearch.indexOf('<Search className="cc-search-icon-end"'), 'campo de locais deve mostrar o input antes da lupa');
+
+const hotelSearchStart = before.home.indexOf('className="cz-search-row"');
+const hotelSearchEnd = before.home.indexOf('</div>', hotelSearchStart);
+const hotelSearch = before.home.slice(hotelSearchStart, hotelSearchEnd);
+assert.ok(hotelSearchStart >= 0, 'campo de pesquisa de hotéis não localizado');
+assert.ok(hotelSearch.includes('className="cc-search-field"'), 'campo de hotéis deve usar o mesmo padrão');
+assert.ok(hotelSearch.indexOf('<input') < hotelSearch.indexOf('<Search className="cc-search-icon-end"'), 'campo de hotéis deve mostrar o input antes da lupa');
+assert.ok(applySource.includes('function moveLeadingSearchIconsToEnd('), 'preparação deve migrar callbacks JSX sem depender de regex limitada por >');
+assert.ok(!applySource.includes('[^>]*value=\\{searchTerm\\}'), 'padrão frágil com callbacks JSX não pode reaparecer');
 
 for (const marker of [
   '@media (hover: hover) and (pointer: fine) and (min-width: 1024px)',
@@ -86,4 +98,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, centered icons, end-positioned search icon, clean workflow and protected engines validated.');
+console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, centered icons, every search icon at field end, clean workflow and protected engines validated.');
