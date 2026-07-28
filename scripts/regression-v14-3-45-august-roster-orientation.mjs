@@ -28,10 +28,14 @@ for (const [source, marker, label] of [
   [clientBefore, 'function findColumnarDebriefForLastLeg(', 'debrief oficial no cliente'],
   [serverBefore, 'function preferredServerRotatedDirection(', 'orientação adaptativa no servidor'],
   [serverBefore, "const tolerance = axis === 'x' ? 7 : 4;", 'baseline tolerante no servidor'],
-  [serverBefore, 'const reportGap = timing.departureAbsolute - reportAbsolute;', 'apresentação plausível no servidor'],
 ]) {
   assert.ok(source.includes(marker), `v14.3.45: ausente ${label}`);
 }
+assert.ok(
+  serverBefore.includes('function serverCrewRosterReportBefore(')
+    || serverBefore.includes('const reportGap = timing.departureAbsolute - reportAbsolute;'),
+  'v14.3.45: ausente apresentação plausível no servidor',
+);
 assert.ok(
   serverBefore.includes('function rebuildServerCrewRosterOffsetDays(')
     || serverBefore.includes('function normalizeServerCrewRosterContinuationDays('),
