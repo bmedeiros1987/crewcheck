@@ -17,6 +17,7 @@ const paths = {
 const before = Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, read(value)]));
 const chain = read('scripts/v139/apply.mjs');
 const applySource = read('scripts/v14343/apply.mjs');
+const mapsApplySource = read('scripts/v14342/apply.mjs');
 const cssSource = read('scripts/v14343/premium-layout.css');
 const locationSnippet = read('scripts/v14343/location-access.snippet');
 
@@ -48,7 +49,7 @@ const routePreview = before.home.slice(routePreviewStart, routePreviewEnd);
 assert.ok(routePreviewStart >= 0 && routePreviewEnd > routePreviewStart, 'cliente da prévia de rota não localizado');
 assert.ok(routePreview.includes('authFetch<RoutePreviewInfo>'), 'prévia protegida deve usar authFetch e enviar bearer quando não houver cookie');
 assert.ok(!routePreview.includes('await fetch(`/api/maps/route-preview'), 'prévia de rota não pode usar fetch direto sem Authorization');
-assert.ok(applySource.includes("patchBlock(next, 'async function fetchRoutePreviewInfo('"), 'preparação deve corrigir a autenticação da prévia de rota');
+assert.ok(mapsApplySource.includes('authenticatedRouteFetch'), 'preparação v14.3.42 deve corrigir a autenticação da prévia de rota');
 
 for (const marker of [
   '.cz-menu-panel',
