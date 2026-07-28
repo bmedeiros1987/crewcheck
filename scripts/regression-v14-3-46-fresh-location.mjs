@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { replaceTelegramLocationDispatch } from './v14346/telegram-dispatch.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -60,6 +61,33 @@ assert.ok(!before.server.includes('message?.location && await handleV139Telegram
 assert.ok(before.serverIndex.includes('options = {}'), 'ponte Telegram deve aceitar opções');
 assert.ok(before.serverIndex.includes('silent: Boolean(options?.silentLocation)'), 'ponte Telegram deve propagar o modo silencioso');
 assert.ok(before.telegramLocation.includes('if (options.silent) return true;'), 'persistência auxiliar deve silenciar a confirmação duplicada');
+const legacyDispatchFixture = `async function processTelegramUpdate(update = {}) {
+  if (chatId && message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true;
+  if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
+  else if (chatId && message?.location) await handleTelegramLocation(message);
+  else if (chatId && text) {
+}`;
+const preparedDispatchFixture = `async function processTelegramUpdate(update = {}) {
+  const crewcheckLocationReplySender = update?.edited_message
+    ? async () => ({ ok: true, silent: true })
+    : sendTelegramMessage;
+  if (chatId && message?.location && await handleV139Telegram(update, crewcheckLocationReplySender)) return true;
+  if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
+  else if (chatId && message?.location) {
+    const locationDecision = crewcheckLiveLocationDecision(message, Boolean(update?.edited_message));
+    if (locationDecision.process) await handleTelegramLocation({ ...message, crewcheckSilentLocation: !locationDecision.announce });
+  }
+  else if (chatId && text) {
+}`;
+for (const fixture of [legacyDispatchFixture, preparedDispatchFixture, preparedDispatchFixture.replace(/\n/g, '\r\n')]) {
+  const transformed = replaceTelegramLocationDispatch(fixture);
+  assert.ok(transformed.includes('const locationDecision = crewcheckLiveLocationDecision('), 'throttle de localização ao vivo deve ser preservado');
+  assert.ok(transformed.includes('if (!locationDecision.process) return true;'), 'atualizações ao vivo redundantes devem ser ignoradas');
+  assert.ok(transformed.includes('const snapshotHandled = await handleTelegramLocation('), 'snapshot canônico deve anteceder a base auxiliar');
+  assert.ok(transformed.includes('{ silentLocation: true }'), 'base auxiliar deve permanecer silenciosa');
+  assert.ok(!transformed.includes('crewcheckLocationReplySender'), 'sender transitório antigo deve ser removido');
+  assert.equal(replaceTelegramLocationDispatch(transformed), transformed, 'transformação do despacho deve ser idempotente');
+}
 
 assert.ok(before.runtime.includes("version: '14.3.46'"), 'runtime deve anunciar v14.3.46');
 assert.ok(before.runtime.includes("localStorage.setItem('crewcheck_last_geo_meta'"), 'runtime deve registrar horário e precisão da posição');
