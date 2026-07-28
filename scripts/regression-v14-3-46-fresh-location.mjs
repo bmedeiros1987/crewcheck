@@ -49,6 +49,8 @@ for (const marker of [
 assert.ok(!before.home.includes(`const saved = storage.get('crewcheck_last_geo', '');\n  if (saved) return saved;`), 'Saída Inteligente não pode reutilizar coordenada sem validade');
 assert.ok(locationAccessSnippet.includes("storage.set('crewcheck_manual_route_origin', '')"), 'atualizar GPS deve remover origem manual antiga');
 assert.ok(locationAccessSnippet.includes('reverseGeocodePosition(position.lat, position.lng)'), 'nova posição deve atualizar também o rótulo da cidade');
+assert.ok(locationAccessSnippet.includes("label: address?.shortAddress || 'Localização atual'"), 'evento de localização deve carregar o nome real da cidade');
+assert.ok(before.home.includes("const currentLabel = String(detail.label || 'Localização atual');"), 'Saída Inteligente deve exibir o rótulo da posição recém-obtida');
 
 assert.ok(telegramHandlerSnippet.includes('{ silent = false }'), 'handler canônico deve aceitar atualização silenciosa');
 assert.ok(telegramHandlerSnippet.includes('if (!silent)'), 'edições de localização ao vivo não podem gerar spam');
