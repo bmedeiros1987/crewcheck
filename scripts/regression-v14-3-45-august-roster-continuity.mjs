@@ -28,8 +28,8 @@ for (const marker of [
   'const authoritativeIdentities = new Set(',
   'const offsetAwareDays = rebuildCrewRosterOffsetDays(',
   'const continuationDays = offsetAwareDays;',
-  'const flightHoursMatch = compactText.match(',
-  'const dutyHoursMatch = compactText.match(',
+  'const flightHours = compactText.match(',
+  'const dutyHours = compactText.match(',
 ]) assert.ok(clientSource.includes(marker), `proteção de agosto ausente no cliente: ${marker}`);
 assert.ok(!clientSource.includes('normalizeCrewRosterReportContinuationDays(offsetAwareDays,'), 'offsets autoritativos não podem ser aplicados duas vezes no cliente');
 
