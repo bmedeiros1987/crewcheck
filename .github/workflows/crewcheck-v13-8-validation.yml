@@ -81,6 +81,8 @@ jobs:
         run: node scripts/regression-v14-3-42-google-maps-budget-fallback.mjs 2>&1 | tee "$RUNNER_TEMP/google-maps-budget-regression.log"
       - name: Validate iPad premium layout, location and reload stability
         run: node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs 2>&1 | tee "$RUNNER_TEMP/ipad-premium-stability-regression.log"
+      - name: Validate menu icons, Settings location and end-positioned search
+        run: node scripts/regression-v14-3-44-menu-location-search.mjs 2>&1 | tee "$RUNNER_TEMP/menu-location-search-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Publish functional audit report
@@ -115,5 +117,6 @@ jobs:
             ${{ runner.temp }}/crewcheck-functional-audit
             ${{ runner.temp }}/google-maps-budget-regression.log
             ${{ runner.temp }}/ipad-premium-stability-regression.log
+            ${{ runner.temp }}/menu-location-search-regression.log
           if-no-files-found: ignore
           retention-days: 7
