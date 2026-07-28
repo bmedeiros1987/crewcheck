@@ -95,8 +95,10 @@ assert.doesNotThrow(() => new Function(routeSnippet), 'snippet da política de r
 assert.doesNotThrow(() => new Function(conciergeSnippet), 'snippet do Concierge deve ser JavaScript válido');
 const v14342Index = chain.indexOf("await import('../v14342/apply.mjs');");
 const v14343Index = chain.indexOf("await import('../v14343/apply.mjs');");
+const v14344Index = chain.indexOf("await import('../v14344/apply.mjs');");
 assert.ok(v14342Index >= 0, 'v14.3.42 deve participar da preparação canônica');
 assert.ok(v14343Index > v14342Index, 'v14.3.43 deve suceder v14.3.42 sem remover a política de mapas');
+assert.ok(v14344Index > v14343Index, 'v14.3.44 deve suceder v14.3.43 sem remover a política de mapas');
 assert.ok(chain.includes("await import('../v14341/compatibility.mjs');"), 'compatibilidade semântica v14.3.41 deve ser preservada');
 assert.ok(server.includes("from './server/v14342/maps-budget.mjs'"), 'servidor deve importar o controlador de cota');
 assert.ok(server.includes("if (url.pathname === '/api/maps/provider/status')"), 'status seguro de mapas deve estar registrado');
@@ -182,9 +184,9 @@ assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve ac
 assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
 assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
 assert.ok(!viteConfig.includes('GOOGLE_CLIENT_SECRET'), 'segredo OAuth nunca pode ser incorporado no bundle');
-assert.ok(home.includes("const DEFAULT_VERSION = '14.3.43';"), 'a preparação final deve terminar na versão Web/PWA 14.3.43');
+assert.ok(home.includes("const DEFAULT_VERSION = '14.3.44';"), 'a preparação final deve terminar na versão Web/PWA 14.3.44');
 assert.ok(home.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
-assert.ok(release.includes('14.3.43'), 'release final deve anunciar 14.3.43');
+assert.ok(release.includes('14.3.44'), 'release final deve anunciar 14.3.44');
 assert.ok(applySource.includes("next.indexOf('type RoutePreviewInfo = {')"), 'patch do tipo deve usar a forma produzida pela preparação, sem depender dos últimos campos');
 assert.ok(applySource.includes('if (source.includes(replacement.trim())) return source;'), 'substituições de servidor devem ser idempotentes');
 assert.ok(applySource.includes("if (!next.includes('mapsBudget?: {'))"), 'tipo de rota deve ter proteção contra duplicidade');
@@ -193,4 +195,4 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
 }
 
-console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.43 chain and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.44 chain and protected engine validated.');
