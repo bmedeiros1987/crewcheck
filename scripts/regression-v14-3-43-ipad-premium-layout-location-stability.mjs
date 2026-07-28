@@ -63,6 +63,9 @@ assert.ok(!before.app.includes('registrations.map((registration) => registration
 assert.ok(before.app.includes("const cleanupKey = 'crewcheck-client-cleanup:14.3.43'"), 'limpeza deve ocorrer uma vez por versão');
 assert.ok(before.app.includes('registration?.update()'), 'atualização deve preservar o service worker ativo');
 assert.ok(before.app.includes("!name.includes('v14.3.43')"), 'cache da versão atual não pode ser apagado no boot');
+assert.ok(!before.index.includes('registration.unregister()'), 'HTML inicial não pode desregistrar o service worker');
+assert.ok(!before.index.includes('crewcheck-cache-reset-'), 'script legado de limpeza destrutiva deve ser removido do HTML');
+assert.ok(applySource.includes('legacyCleanupMarker'), 'aplicação deve remover explicitamente a limpeza destrutiva antiga');
 
 const watcherStart = before.index.indexOf('<script id="crewcheck-release-watch-v14343">');
 const watcherEnd = watcherStart >= 0 ? before.index.indexOf('</script>', watcherStart) : -1;
@@ -94,4 +97,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.43 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.43 iPad premium stability: one-column drawer, contained cards, explicit location, safe release reload, preserved service worker and protected engines validated.');
+console.log('v14.3.43 iPad premium stability: one-column drawer, contained cards, explicit location, safe release reload, removed legacy PWA cleanup, preserved service worker and protected engines validated.');
