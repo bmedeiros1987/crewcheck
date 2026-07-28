@@ -36,6 +36,14 @@ function memoryRecord(monthKey = googleMapsMonthKey()) {
   return memory.get(monthKey);
 }
 
+function blockMemory(monthKey, reason) {
+  const record = memoryRecord(monthKey);
+  record.blocked = true;
+  record.blockedReason = String(reason || 'persistence_failure').slice(0, 180);
+  record.updatedAt = new Date().toISOString();
+  return record;
+}
+
 function databaseUrl() {
   return env('DATABASE_URL') || env('CREWCHECK_DATABASE_URL') || env('MYSQL_URL');
 }
@@ -126,7 +134,7 @@ export async function googleMapsBudgetStatus(now = new Date()) {
   try {
     return await databaseStatus(now) || publicStatus(memoryRecord(googleMapsMonthKey(now)), now, false);
   } catch {
-    return publicStatus(memoryRecord(googleMapsMonthKey(now)), now, false);
+    return publicStatus(blockMemory(googleMapsMonthKey(now), 'persistence_status_failure'), now, false);
   }
 }
 
@@ -170,12 +178,8 @@ export async function reserveGoogleMapsRequest(kind = 'routes', amount = 1, now 
   } catch (error) {
     try { await connection.rollback(); } catch {}
     console.error('[crewcheck:maps-budget-reserve]', String(error?.message || error).slice(0, 180));
-    const record = memoryRecord(monthKey);
-    if (record.blocked || record.used + safeAmount > limit) return { allowed: false, ...publicStatus(record, now, false) };
-    record.used += safeAmount;
-    record.kinds[kind] = Number(record.kinds[kind] || 0) + safeAmount;
-    record.updatedAt = new Date().toISOString();
-    return { allowed: true, ...publicStatus(record, now, false) };
+    const record = blockMemory(monthKey, 'persistence_reservation_failure');
+    return { allowed: false, ...publicStatus(record, now, false) };
   } finally {
     connection.release();
   }
@@ -185,18 +189,17 @@ export async function markGoogleMapsQuotaBlocked(reason = 'provider_quota', now 
   const monthKey = googleMapsMonthKey(now);
   const safeReason = String(reason || 'provider_quota').slice(0, 180);
   const db = await pool();
-  if (!db) {
-    const record = memoryRecord(monthKey);
-    record.blocked = true;
-    record.blockedReason = safeReason;
-    record.updatedAt = new Date().toISOString();
-    return publicStatus(record, now, false);
+  if (!db) return publicStatus(blockMemory(monthKey, safeReason), now, false);
+  try {
+    await db.query(`INSERT INTO crewcheck_external_api_usage(provider,month_key,used,blocked,blocked_reason,kind_usage)
+      VALUES(?,?,?,?,?,?)
+      ON DUPLICATE KEY UPDATE blocked=1,blocked_reason=VALUES(blocked_reason),updated_at=CURRENT_TIMESTAMP(3)`,
+    ['google_maps', monthKey, 0, 1, safeReason, JSON.stringify({})]);
+    return googleMapsBudgetStatus(now);
+  } catch (error) {
+    console.error('[crewcheck:maps-budget-block]', String(error?.message || error).slice(0, 180));
+    return publicStatus(blockMemory(monthKey, `${safeReason}_persistence_failure`), now, false);
   }
-  await db.query(`INSERT INTO crewcheck_external_api_usage(provider,month_key,used,blocked,blocked_reason,kind_usage)
-    VALUES(?,?,?,?,?,?)
-    ON DUPLICATE KEY UPDATE blocked=1,blocked_reason=VALUES(blocked_reason),updated_at=CURRENT_TIMESTAMP(3)`,
-  ['google_maps', monthKey, 0, 1, safeReason, JSON.stringify({})]);
-  return googleMapsBudgetStatus(now);
 }
 
 export function googleMapsQuotaFailure(status, payload = null) {
