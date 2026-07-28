@@ -1,4 +1,4 @@
-// CrewCheck v10.8.43 — runtime premium para permissões Android, notificações locais e radar privado.
+// CrewCheck v14.3.43 — runtime premium para permissões explícitas, notificações locais e radar privado.
 
 declare global {
   interface Window {
@@ -17,14 +17,29 @@ function bridge(): any {
   return window.CrewCheckNative || window.AndroidCrewCheckNative || null;
 }
 
+function persistLocation(lat?: number, lng?: number, accuracy?: number) {
+  try {
+    localStorage.setItem('crewcheck_location_permission', 'granted');
+    if (Number.isFinite(lat) && Number.isFinite(lng)) localStorage.setItem('crewcheck_last_geo', `${lat},${lng}`);
+    window.dispatchEvent(new CustomEvent('crewcheck:location-updated', { detail: { coordinates: { lat, lng, accuracy } } }));
+  } catch {}
+}
+
 async function requestLocation(): Promise<boolean> {
   const native = bridge();
   try {
-    if (native?.requestLocation) return Boolean(native.requestLocation());
+    if (native?.requestLocation) {
+      const allowed = Boolean(await native.requestLocation());
+      if (allowed) persistLocation();
+      else localStorage.setItem('crewcheck_location_permission', 'denied');
+      return allowed;
+    }
     if (!navigator.geolocation) return false;
-    await new Promise<void>((resolve, reject) => navigator.geolocation.getCurrentPosition(() => resolve(), reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }));
+    const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }));
+    persistLocation(Number(position.coords.latitude), Number(position.coords.longitude), Number(position.coords.accuracy || 0));
     return true;
   } catch {
+    try { localStorage.setItem('crewcheck_location_permission', 'denied'); } catch {}
     return false;
   }
 }
@@ -49,8 +64,9 @@ function permissionStatus(): { location?: boolean; notifications?: boolean } {
       if (raw && typeof raw === 'object') return raw;
     }
   } catch {}
+  const locationState = localStorage.getItem('crewcheck_location_permission');
   return {
-    location: undefined,
+    location: locationState === 'granted' ? true : locationState === 'denied' ? false : undefined,
     notifications: 'Notification' in window ? Notification.permission === 'granted' : undefined,
   };
 }
@@ -100,7 +116,7 @@ function installDelegates() {
 }
 
 window.CrewCheckPremium = {
-  version: '10.8.43',
+  version: '14.3.43',
   requestLocation,
   requestNotifications,
   permissionStatus,
@@ -136,6 +152,5 @@ function applyCrewCheckVisualColors() {
 window.addEventListener('crewcheck:visual-colors-change', applyCrewCheckVisualColors);
 window.addEventListener('storage', applyCrewCheckVisualColors);
 applyCrewCheckVisualColors();
-
 
 export {};
