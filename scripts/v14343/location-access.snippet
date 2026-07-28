@@ -1,0 +1,82 @@
+type CrewLocationPermissionState = 'checking' | 'granted' | 'prompt' | 'denied' | 'unsupported';
+function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
+  const [permissionState, setPermissionState] = useState<CrewLocationPermissionState>(() => storage.get('crewcheck_location_permission', '') === 'granted' ? 'granted' : 'checking');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    let permission: any = null;
+    const sync = async () => {
+      if (!navigator.geolocation) {
+        if (alive) setPermissionState('unsupported');
+        return;
+      }
+      try {
+        const permissions = (navigator as any).permissions;
+        if (!permissions?.query) {
+          if (alive) setPermissionState(storage.get('crewcheck_location_permission', '') === 'granted' ? 'granted' : 'prompt');
+          return;
+        }
+        permission = await permissions.query({ name: 'geolocation' as any });
+        const apply = () => {
+          if (!alive) return;
+          const next = String(permission?.state || 'prompt') as CrewLocationPermissionState;
+          setPermissionState(next === 'granted' || next === 'denied' ? next : 'prompt');
+          if (next === 'granted') storage.set('crewcheck_location_permission', 'granted');
+          if (next === 'denied') storage.set('crewcheck_location_permission', 'denied');
+        };
+        apply();
+        permission.addEventListener?.('change', apply);
+      } catch {
+        if (alive) setPermissionState(storage.get('crewcheck_location_permission', '') === 'granted' ? 'granted' : 'prompt');
+      }
+    };
+    void sync();
+    return () => {
+      alive = false;
+      try { permission?.removeEventListener?.('change', () => undefined); } catch {}
+    };
+  }, []);
+  async function requestLocationAccess() {
+    if (!navigator.geolocation) {
+      setPermissionState('unsupported');
+      toast.error('Localização não está disponível neste navegador.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const position = await getCurrentGeoPosition();
+      storage.set('crewcheck_location_permission', 'granted');
+      setPermissionState('granted');
+      window.dispatchEvent(new CustomEvent('crewcheck:location-updated', { detail: { coordinates: position } }));
+      toast.success('Localização liberada e atualizada para a Saída Inteligente.');
+    } catch (error) {
+      storage.set('crewcheck_location_permission', 'denied');
+      setPermissionState('denied');
+      toast.error(error instanceof Error ? error.message : 'Não consegui liberar sua localização.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  const status = permissionState === 'granted'
+    ? 'Permitida neste dispositivo'
+    : permissionState === 'denied'
+      ? 'Bloqueada pelo navegador ou pelo iPad'
+      : permissionState === 'unsupported'
+        ? 'Indisponível neste navegador'
+        : permissionState === 'checking'
+          ? 'Verificando permissão…'
+          : 'Necessária para rota e trânsito reais';
+  const buttonLabel = busy
+    ? 'Localizando…'
+    : permissionState === 'granted'
+      ? 'Atualizar localização'
+      : permissionState === 'denied'
+        ? 'Tentar novamente'
+        : 'Permitir localização';
+  return <section className={`cc-location-access ${compact ? 'compact' : ''} state-${permissionState}`} data-location-permission={permissionState}>
+    <LocateFixed/>
+    <div><strong>Localização da Saída Inteligente</strong><span>{status}</span></div>
+    <button type="button" onClick={requestLocationAccess} disabled={busy || permissionState === 'unsupported'}>{buttonLabel}</button>
+    {permissionState === 'denied' && <small>No iPad: abra os ajustes do site no Safari e permita Localização; nos Ajustes do sistema, confira Privacidade e Segurança → Serviços de Localização → Sites do Safari.</small>}
+  </section>;
+}
