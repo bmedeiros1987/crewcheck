@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { replaceTelegramLocationDispatch } from './telegram-dispatch.mjs';
 
 const VERSION = '14.3.46';
 const VERSION_DIGITS = VERSION.replace(/\./g, '');
@@ -119,26 +120,7 @@ update('server/v14316/telegramLocation.mjs', (source) => {
   return next;
 });
 
-update('server.mjs', (source) => {
-  let next = source;
-  const oldDispatch = `  // Ordinary text must reach the Concierge. Only live-location updates retain
-  // priority in the auxiliary handler.
-  if (chatId && message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true;
-  if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
-  else if (chatId && message?.location) await handleTelegramLocation(message);
-  else if (chatId && text) {`;
-  const newDispatch = `  // Toda posição atualiza primeiro o contexto canônico; a base auxiliar recebe
-  // a mesma coordenada sem emitir uma segunda confirmação.
-  if (chatId && message?.location) {
-    const snapshotHandled = await handleTelegramLocation(message, { silent: Boolean(update?.edited_message) });
-    const auxiliaryHandled = await handleV139Telegram(update, sendTelegramMessage, { silentLocation: true });
-    if (snapshotHandled || auxiliaryHandled) return true;
-  }
-  if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
-  else if (chatId && text) {`;
-  next = replaceRequired(next, oldDispatch, newDispatch, 'ordem canônica da localização Telegram');
-  return next;
-});
+update('server.mjs', replaceTelegramLocationDispatch);
 
 update('client/src/lib/crewcheckPremiumRuntime.ts', (source) => {
   let next = source.replace(/version:\s*'14\.3\.\d+'/, `version: '${VERSION}'`);
