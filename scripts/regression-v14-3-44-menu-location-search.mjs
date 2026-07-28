@@ -49,12 +49,13 @@ assert.ok(departureStart >= 0 && departureEnd > departureStart, 'Saída Intelige
 assert.ok(!departure.includes('<CrewLocationAccess/>'), 'Saída Inteligente deve usar o botão contextual da rota, sem duplicar o painel global de permissão');
 assert.ok(departure.includes('<GoogleMapsRoutePreview'), 'prévia de rota deve permanecer disponível na Saída Inteligente');
 
-const migratedSearchFields = before.home.match(/<(?:label|div) className="cc-search-field">/g) || [];
+const migratedSearchFields = before.home.match(/<(?:label|span) className="cc-search-field">/g) || [];
 const endSearchIcons = before.home.match(/<Search className="cc-search-icon-end" aria-hidden="true"\/>/g) || [];
 assert.ok(migratedSearchFields.length >= 3, 'campos de pesquisa de locais, hotéis e meteorologia devem ser padronizados');
 assert.equal(endSearchIcons.length, migratedSearchFields.length, 'cada campo padronizado deve possuir uma lupa ao final');
 assert.ok(!before.home.includes('<label><Search/><input'), 'nenhuma lupa em label pode reaparecer antes do texto');
 assert.ok(!before.home.includes('<div><Search/><input'), 'nenhuma lupa em div pode reaparecer antes do texto');
+assert.ok(!before.home.includes('<div className="cc-search-field"><input'), 'markup meteorológico produzido pela revisão anterior não pode permanecer');
 
 const placesSearchStart = before.home.indexOf('className="cz-place-query-row"');
 const placesSearchEnd = before.home.indexOf('</div>', placesSearchStart);
@@ -73,30 +74,61 @@ const weatherStart = before.home.indexOf('function WeatherView(');
 const weatherEnd = before.home.indexOf('\nfunction ', weatherStart + 'function WeatherView('.length);
 const weather = before.home.slice(weatherStart, weatherEnd);
 assert.ok(weatherStart >= 0 && weatherEnd > weatherStart, 'WeatherView não localizada');
-assert.ok(weather.includes('<div className="cc-search-field"><input'), 'busca meteorológica deve usar wrapper padronizado');
-assert.ok(weather.indexOf('<input') < weather.indexOf('<Search className="cc-search-icon-end"'), 'Meteorologia deve mostrar o input antes da lupa');
+const weatherSearchStart = weather.indexOf('<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input');
+const weatherSearchWrapperEnd = weather.indexOf('</span>', weatherSearchStart);
+const weatherSearchButton = weather.indexOf('<button', weatherSearchStart);
+assert.ok(weatherSearchStart >= 0, 'busca meteorológica deve manter um grid externo próprio e wrapper exclusivo do input');
+assert.ok(weatherSearchWrapperEnd > weatherSearchStart, 'wrapper posicionado da busca meteorológica deve ser fechado');
+assert.ok(weather.indexOf('<input', weatherSearchStart) < weather.indexOf('<Search className="cc-search-icon-end"', weatherSearchStart), 'Meteorologia deve mostrar o input antes da lupa');
+assert.ok(weatherSearchButton > weatherSearchWrapperEnd, 'botão de consulta meteorológica deve ficar fora do wrapper do input/lupa');
 
-assert.ok(applySource.includes('function moveSearchIconPattern('), 'preparação deve migrar wrappers distintos sem regex frágil');
-assert.ok(applySource.includes("moveSearchIconPattern(source, 'label')"), 'preparação deve migrar buscas dentro de label');
-assert.ok(applySource.includes("moveSearchIconPattern(labelMigration.source, 'div')"), 'preparação deve migrar também a busca meteorológica dentro de div');
+assert.ok(applySource.includes('export function upgradePreparedWeatherSearch('), 'preparação deve migrar o markup já produzido pela revisão anterior');
+assert.ok(applySource.indexOf('next = upgradePreparedWeatherSearch(next);') < applySource.indexOf('const searchMigration = moveLeadingSearchIconsToEnd(next);'), 'upgrade preparado deve ocorrer antes da migração do markup puro');
+assert.ok(applySource.includes('export function installWebMenuCss('), 'bloco CSS gerado deve poder ser substituído');
+assert.ok(applySource.includes("update('client/src/index.css', installWebMenuCss);"), 'instalação CSS deve substituir a versão anterior em vez de ignorá-la');
+assert.ok(applySource.includes('function moveLabelSearchIconsToEnd('), 'preparação deve migrar buscas simples dentro de label');
+assert.ok(applySource.includes('function moveNestedDivSearchIconsToEnd('), 'preparação deve tratar separadamente a estrutura aninhada de Meteorologia');
+assert.ok(applySource.includes('const inputClose = next.indexOf(\'/>\', contentStart);'), 'busca aninhada deve isolar somente o input');
+assert.ok(applySource.includes('const controlsAfterInput = next.slice(inputClose + 2, containerClose);'), 'controles após o input devem permanecer fora do wrapper posicionado');
+assert.ok(applySource.includes('className="cc-weather-search-row-v14344"'), 'grid meteorológico final deve possuir classe própria');
 assert.ok(!applySource.includes('[^>]*value=\\{searchTerm\\}'), 'padrão frágil com callbacks JSX não pode reaparecer');
 
 for (const marker of [
-  '@media (hover: hover) and (pointer: fine) and (min-width: 1024px)',
+  '@media (hover: hover) and (pointer: fine)',
   'grid-template-columns: repeat(auto-fill, 72px)',
   'place-items: center',
   '> button > svg:last-child',
   '> button:hover > span',
-  '@media (max-width: 1023px), (hover: none), (pointer: coarse)',
+  '@media (hover: none), (pointer: coarse)',
   'grid-template-columns: 42px minmax(0, 1fr) 20px',
   'max-width: none',
   'overflow-wrap: break-word',
   '.cc-location-settings',
   '.cc-search-icon-end',
   'padding-right: 46px',
+  '.cc-weather-search label > .cc-weather-search-row-v14344',
+  'grid-template-columns: minmax(0, 1fr) auto',
+  '.cc-weather-search-row-v14344 > .cc-search-field',
 ]) assert.ok(cssSource.includes(marker), `proteção visual v14.3.44 ausente: ${marker}`);
+assert.ok(!cssSource.includes('@media (hover: hover) and (pointer: fine) and (min-width: 1024px)'), 'desktop com mouse não pode depender de largura mínima');
+assert.ok(!cssSource.includes('@media (max-width: 1023px), (hover: none), (pointer: coarse)'), 'largura estreita não pode forçar desktop com mouse para o modo touch');
 assert.ok(before.css.includes('CrewCheck v14.3.44 — menu Web icon-first'), 'CSS v14.3.44 deve estar aplicado uma única vez');
 assert.equal((before.css.match(/CrewCheck v14\.3\.44 — menu Web icon-first/g) || []).length, 1, 'CSS v14.3.44 não pode duplicar');
+
+const applyModuleUrl = new URL('./v14344/apply.mjs', import.meta.url);
+const applyModule = await import(`${applyModuleUrl.href}?upgrade-test=${Date.now()}`);
+const oldPreparedWeather = '<div className="cc-search-field"><input value={query}/><button onClick={search}>Buscar</button><Search className="cc-search-icon-end" aria-hidden="true"/></div>';
+const upgradedWeather = applyModule.upgradePreparedWeatherSearch(oldPreparedWeather);
+assert.ok(upgradedWeather.includes('<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input value={query}/><Search className="cc-search-icon-end" aria-hidden="true"/></span><button onClick={search}>Buscar</button></div>'), 'workspace previamente preparado deve migrar botão, input e lupa para a estrutura final');
+assert.ok(!upgradedWeather.includes('<div className="cc-search-field"><input'), 'wrapper meteorológico antigo deve desaparecer durante o upgrade');
+
+const cssMarker = '/* CrewCheck v14.3.44 — menu Web icon-first, location in Settings and search affordance at the end */';
+const oldPreparedCss = `body { min-height: 100%; }\n\n${cssMarker}\n.old-v14344-rule { display: block; }\n`;
+const upgradedCss = applyModule.installWebMenuCss(oldPreparedCss);
+assert.ok(!upgradedCss.includes('.old-v14344-rule'), 'bloco CSS v14.3.44 previamente anexado deve ser substituído');
+assert.ok(upgradedCss.includes('.cc-weather-search label > .cc-weather-search-row-v14344'), 'upgrade CSS deve instalar a regra meteorológica atual');
+assert.ok(upgradedCss.includes('@media (hover: hover) and (pointer: fine)'), 'upgrade CSS deve instalar o modo por capacidade do ponteiro');
+assert.equal(applyModule.installWebMenuCss(upgradedCss), upgradedCss, 'substituição do bloco CSS final deve ser idempotente');
 
 assert.ok(!/^(?:<<<<<<<|=======|>>>>>>>)/m.test(workflow), 'workflow não pode conter marcadores de conflito Git');
 assert.ok(workflow.includes('Validate menu icons, Settings location and end-positioned search'), 'workflow deve executar a regressão v14.3.44');
@@ -113,4 +145,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, full-width touch cards, centered icons, every search icon including Weather at field end, clean workflow and protected engines validated.');
+console.log('v14.3.44 menu usability: clean and previously prepared workspaces converge to Settings-only location, pointer-capability menu modes, two-column Weather input/action grid, replaced CSS block and end-positioned magnifiers.');

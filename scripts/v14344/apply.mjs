@@ -3,6 +3,8 @@ import fs from 'node:fs';
 const VERSION = '14.3.44';
 const VERSION_DIGITS = VERSION.replace(/\./g, '');
 const webMenuCss = fs.readFileSync(new URL('./web-menu.css', import.meta.url), 'utf8').trim();
+const WEB_MENU_CSS_MARKER = '/* CrewCheck v14.3.44 — menu Web icon-first, location in Settings and search affordance at the end */';
+const SEARCH_ICON_END = '<Search className="cc-search-icon-end" aria-hidden="true"/>';
 
 function update(path, transform, { optional = false } = {}) {
   if (!fs.existsSync(path)) {
@@ -23,32 +25,81 @@ function patchBlock(source, startMarker, endMarker, label, transform) {
   return after === before ? source : `${source.slice(0, start)}${after}${source.slice(end)}`;
 }
 
-function moveSearchIconPattern(source, tag) {
-  const legacyStart = `<${tag}><Search/><input`;
-  const closeTag = `</${tag}>`;
+export function upgradePreparedWeatherSearch(source) {
+  const preparedStart = '<div className="cc-search-field"><input';
+  const closeTag = '</div>';
+  let next = source;
+  while (next.includes(preparedStart)) {
+    const start = next.indexOf(preparedStart);
+    const contentStart = start + preparedStart.length;
+    const inputClose = next.indexOf('/>', contentStart);
+    const containerClose = inputClose >= 0 ? next.indexOf(closeTag, inputClose + 2) : -1;
+    if (inputClose < 0 || containerClose < 0) throw new Error('[v14344] Busca meteorológica preparada sem fechamento seguro.');
+    const inputRemainder = next.slice(contentStart, inputClose + 2);
+    const preparedControls = next.slice(inputClose + 2, containerClose);
+    if (!preparedControls.includes(SEARCH_ICON_END)) throw new Error('[v14344] Busca preparada sem a lupa final esperada.');
+    const controlsAfterInput = preparedControls.replace(SEARCH_ICON_END, '');
+    const replacement = `<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input${inputRemainder}${SEARCH_ICON_END}</span>${controlsAfterInput}</div>`;
+    next = `${next.slice(0, start)}${replacement}${next.slice(containerClose + closeTag.length)}`;
+  }
+  return next;
+}
+
+function moveLabelSearchIconsToEnd(source) {
+  const legacyStart = '<label><Search/><input';
+  const closeTag = '</label>';
   let next = source;
   let migrated = 0;
   while (next.includes(legacyStart)) {
     const start = next.indexOf(legacyStart);
     const contentStart = start + legacyStart.length;
     const close = next.indexOf(closeTag, contentStart);
-    if (close < 0) throw new Error(`[v14344] Campo com lupa inicial sem fechamento de ${tag}.`);
+    if (close < 0) throw new Error('[v14344] Campo com lupa inicial sem fechamento de label.');
     const inputRemainder = next.slice(contentStart, close);
-    const replacement = `<${tag} className="cc-search-field"><input${inputRemainder}<Search className="cc-search-icon-end" aria-hidden="true"/>${closeTag}`;
+    const replacement = `<label className="cc-search-field"><input${inputRemainder}${SEARCH_ICON_END}</label>`;
     next = `${next.slice(0, start)}${replacement}${next.slice(close + closeTag.length)}`;
     migrated += 1;
   }
   return { source: next, migrated };
 }
 
+function moveNestedDivSearchIconsToEnd(source) {
+  const legacyStart = '<div><Search/><input';
+  const closeTag = '</div>';
+  let next = source;
+  let migrated = 0;
+  while (next.includes(legacyStart)) {
+    const start = next.indexOf(legacyStart);
+    const contentStart = start + legacyStart.length;
+    const inputClose = next.indexOf('/>', contentStart);
+    const containerClose = inputClose >= 0 ? next.indexOf(closeTag, inputClose + 2) : -1;
+    if (inputClose < 0 || containerClose < 0) throw new Error('[v14344] Busca aninhada sem fechamento seguro de input/div.');
+    const inputRemainder = next.slice(contentStart, inputClose + 2);
+    const controlsAfterInput = next.slice(inputClose + 2, containerClose);
+    const replacement = `<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input${inputRemainder}${SEARCH_ICON_END}</span>${controlsAfterInput}</div>`;
+    next = `${next.slice(0, start)}${replacement}${next.slice(containerClose + closeTag.length)}`;
+    migrated += 1;
+  }
+  return { source: next, migrated };
+}
+
 function moveLeadingSearchIconsToEnd(source) {
-  const labelMigration = moveSearchIconPattern(source, 'label');
-  const divMigration = moveSearchIconPattern(labelMigration.source, 'div');
+  const labelMigration = moveLabelSearchIconsToEnd(source);
+  const divMigration = moveNestedDivSearchIconsToEnd(labelMigration.source);
   const next = divMigration.source;
   if (next.includes('<label><Search/><input') || next.includes('<div><Search/><input')) {
     throw new Error('[v14344] Ainda existe lupa antes de um campo de pesquisa.');
   }
   return { source: next, migrated: labelMigration.migrated + divMigration.migrated };
+}
+
+export function installWebMenuCss(source) {
+  const markerIndex = source.indexOf(WEB_MENU_CSS_MARKER);
+  if (markerIndex < 0) return `${source.trimEnd()}\n\n${webMenuCss}\n`;
+  const nextCrewCheckMarker = source.indexOf('/* CrewCheck v', markerIndex + WEB_MENU_CSS_MARKER.length);
+  const prefix = source.slice(0, markerIndex).trimEnd();
+  const suffix = nextCrewCheckMarker >= 0 ? source.slice(nextCrewCheckMarker).trimStart() : '';
+  return `${prefix}${prefix ? '\n\n' : ''}${webMenuCss}${suffix ? `\n\n${suffix}` : '\n'}`;
 }
 
 update('client/src/pages/Home.tsx', (source) => {
@@ -83,10 +134,14 @@ update('client/src/pages/Home.tsx', (source) => {
     return block.replace(before, after);
   });
 
+  next = upgradePreparedWeatherSearch(next);
   const searchMigration = moveLeadingSearchIconsToEnd(next);
   next = searchMigration.source;
   if (!next.includes('className="cc-search-field"') || !next.includes('className="cc-search-icon-end"')) {
     throw new Error('[v14344] Nenhum campo de pesquisa com lupa ao final foi localizado.');
+  }
+  if (next.includes('<div className="cc-search-field"><input')) {
+    throw new Error('[v14344] Markup meteorológico preparado antigo ainda presente.');
   }
   if ((next.match(/className="cc-search-field"/g) || []).length !== (next.match(/className="cc-search-icon-end"/g) || []).length) {
     throw new Error('[v14344] Cada campo de pesquisa migrado deve possuir exatamente uma lupa ao final.');
@@ -123,7 +178,7 @@ update('client/index.html', (source) => source
 update('client/public/sw.js', (source) => source
   .replace(/crewcheck-v[0-9.]+-shell/g, `crewcheck-v${VERSION}-shell`)
   .replace(/crewcheck-v[0-9.]+-runtime/g, `crewcheck-v${VERSION}-runtime`), { optional: true });
-update('client/src/index.css', (source) => source.includes('CrewCheck v14.3.44 — menu Web icon-first') ? source : `${source.trimEnd()}\n\n${webMenuCss}\n`);
+update('client/src/index.css', installWebMenuCss);
 update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
   channel: 'web',

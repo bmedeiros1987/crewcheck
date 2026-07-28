@@ -38,8 +38,15 @@
   pointer-events: none !important;
   opacity: .76 !important;
 }
+.cc-weather-search label > .cc-weather-search-row-v14344 {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  padding-left: 0 !important;
+}
+.cc-weather-search-row-v14344 > .cc-search-field {
+  min-width: 0 !important;
+}
 
-@media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+@media (hover: hover) and (pointer: fine) {
   .cz-menu-panel {
     width: min(76vw, 760px) !important;
     max-width: 760px !important;
@@ -160,7 +167,7 @@
   }
 }
 
-@media (max-width: 1023px), (hover: none), (pointer: coarse) {
+@media (hover: none), (pointer: coarse) {
   .cz-menu-panel {
     width: min(94vw, 520px) !important;
     max-width: 520px !important;
@@ -240,5 +247,11 @@
     white-space: normal !important;
     word-break: normal !important;
     overflow-wrap: break-word !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .cc-weather-search-row-v14344 > .cc-search-field {
+    grid-column: 1 / -1 !important;
   }
 }
