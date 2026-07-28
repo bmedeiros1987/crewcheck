@@ -55,6 +55,7 @@ assert.ok(migratedSearchFields.length >= 3, 'campos de pesquisa de locais, hoté
 assert.equal(endSearchIcons.length, migratedSearchFields.length, 'cada campo padronizado deve possuir uma lupa ao final');
 assert.ok(!before.home.includes('<label><Search/><input'), 'nenhuma lupa em label pode reaparecer antes do texto');
 assert.ok(!before.home.includes('<div><Search/><input'), 'nenhuma lupa em div pode reaparecer antes do texto');
+assert.ok(!before.home.includes('<div className="cc-search-field"><input'), 'markup meteorológico produzido pela revisão anterior não pode permanecer');
 
 const placesSearchStart = before.home.indexOf('className="cz-place-query-row"');
 const placesSearchEnd = before.home.indexOf('</div>', placesSearchStart);
@@ -81,6 +82,10 @@ assert.ok(weatherSearchWrapperEnd > weatherSearchStart, 'wrapper posicionado da 
 assert.ok(weather.indexOf('<input', weatherSearchStart) < weather.indexOf('<Search className="cc-search-icon-end"', weatherSearchStart), 'Meteorologia deve mostrar o input antes da lupa');
 assert.ok(weatherSearchButton > weatherSearchWrapperEnd, 'botão de consulta meteorológica deve ficar fora do wrapper do input/lupa');
 
+assert.ok(applySource.includes('export function upgradePreparedWeatherSearch('), 'preparação deve migrar o markup já produzido pela revisão anterior');
+assert.ok(applySource.indexOf('next = upgradePreparedWeatherSearch(next);') < applySource.indexOf('const searchMigration = moveLeadingSearchIconsToEnd(next);'), 'upgrade preparado deve ocorrer antes da migração do markup puro');
+assert.ok(applySource.includes('export function installWebMenuCss('), 'bloco CSS gerado deve poder ser substituído');
+assert.ok(applySource.includes("update('client/src/index.css', installWebMenuCss);"), 'instalação CSS deve substituir a versão anterior em vez de ignorá-la');
 assert.ok(applySource.includes('function moveLabelSearchIconsToEnd('), 'preparação deve migrar buscas simples dentro de label');
 assert.ok(applySource.includes('function moveNestedDivSearchIconsToEnd('), 'preparação deve tratar separadamente a estrutura aninhada de Meteorologia');
 assert.ok(applySource.includes('const inputClose = next.indexOf(\'/>\', contentStart);'), 'busca aninhada deve isolar somente o input');
@@ -110,6 +115,21 @@ assert.ok(!cssSource.includes('@media (max-width: 1023px), (hover: none), (point
 assert.ok(before.css.includes('CrewCheck v14.3.44 — menu Web icon-first'), 'CSS v14.3.44 deve estar aplicado uma única vez');
 assert.equal((before.css.match(/CrewCheck v14\.3\.44 — menu Web icon-first/g) || []).length, 1, 'CSS v14.3.44 não pode duplicar');
 
+const applyModuleUrl = new URL('./v14344/apply.mjs', import.meta.url);
+const applyModule = await import(`${applyModuleUrl.href}?upgrade-test=${Date.now()}`);
+const oldPreparedWeather = '<div className="cc-search-field"><input value={query}/><button onClick={search}>Buscar</button><Search className="cc-search-icon-end" aria-hidden="true"/></div>';
+const upgradedWeather = applyModule.upgradePreparedWeatherSearch(oldPreparedWeather);
+assert.ok(upgradedWeather.includes('<div className="cc-weather-search-row-v14344"><span className="cc-search-field"><input value={query}/><Search className="cc-search-icon-end" aria-hidden="true"/></span><button onClick={search}>Buscar</button></div>'), 'workspace previamente preparado deve migrar botão, input e lupa para a estrutura final');
+assert.ok(!upgradedWeather.includes('<div className="cc-search-field"><input'), 'wrapper meteorológico antigo deve desaparecer durante o upgrade');
+
+const cssMarker = '/* CrewCheck v14.3.44 — menu Web icon-first, location in Settings and search affordance at the end */';
+const oldPreparedCss = `body { min-height: 100%; }\n\n${cssMarker}\n.old-v14344-rule { display: block; }\n`;
+const upgradedCss = applyModule.installWebMenuCss(oldPreparedCss);
+assert.ok(!upgradedCss.includes('.old-v14344-rule'), 'bloco CSS v14.3.44 previamente anexado deve ser substituído');
+assert.ok(upgradedCss.includes('.cc-weather-search label > .cc-weather-search-row-v14344'), 'upgrade CSS deve instalar a regra meteorológica atual');
+assert.ok(upgradedCss.includes('@media (hover: hover) and (pointer: fine)'), 'upgrade CSS deve instalar o modo por capacidade do ponteiro');
+assert.equal(applyModule.installWebMenuCss(upgradedCss), upgradedCss, 'substituição do bloco CSS final deve ser idempotente');
+
 assert.ok(!/^(?:<<<<<<<|=======|>>>>>>>)/m.test(workflow), 'workflow não pode conter marcadores de conflito Git');
 assert.ok(workflow.includes('Validate menu icons, Settings location and end-positioned search'), 'workflow deve executar a regressão v14.3.44');
 assert.ok(workflow.includes('menu-location-search-regression.log'), 'diagnóstico v14.3.44 deve ser publicado em caso de falha');
@@ -125,4 +145,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location only in Settings, icon-only mode for every fine-pointer desktop width, full-width coarse-pointer cards, centered icons, two-column Weather input/action grid and every magnifier at field end validated.');
+console.log('v14.3.44 menu usability: clean and previously prepared workspaces converge to Settings-only location, pointer-capability menu modes, two-column Weather input/action grid, replaced CSS block and end-positioned magnifiers.');
