@@ -31,6 +31,11 @@ update('client/src/pages/Home.tsx', (source) => {
   next = next.replace(/\s*<CrewLocationAccess compact\/>\s*/g, '\n');
   if (next.includes('<CrewLocationAccess compact/>')) throw new Error('[v14344] Localização compacta ainda aparece dentro do menu.');
 
+  next = next.replace('<CrewLocationAccess/><GoogleMapsRoutePreview', '<GoogleMapsRoutePreview');
+  if (next.includes('<CrewLocationAccess/><GoogleMapsRoutePreview')) {
+    throw new Error('[v14344] Controle global de localização ainda aparece dentro da Saída Inteligente.');
+  }
+
   next = patchBlock(next, 'function SettingsView(', 'function FeatureHub(', 'Configurações e localização', (block) => {
     if (block.includes('className="cc-location-settings"')) return block;
     const anchor = '    <PlatformPreferences/>';
@@ -62,6 +67,9 @@ update('client/src/pages/Home.tsx', (source) => {
     'data-layout-v14343="premium-contained" data-layout-v14344="web-icon-menu"',
   );
   if (!next.includes('data-layout-v14344="web-icon-menu"')) throw new Error('[v14344] Identificador do novo layout não foi aplicado.');
+  if ((next.match(/<CrewLocationAccess\/>/g) || []).length !== 1) {
+    throw new Error('[v14344] O controle global de localização deve existir uma única vez, dentro de Configurações.');
+  }
   return next;
 });
 
@@ -85,7 +93,7 @@ update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
   channel: 'web',
   updatePolicy: 'automatic-safe',
-  notes: 'Localização movida para Configurações, menu Web por ícones com detalhes no hover e lupa posicionada ao final do campo.',
+  notes: 'Localização centralizada em Configurações, menu Web por ícones com detalhes no hover e lupa posicionada ao final do campo.',
 }, null, 2)}\n`);
 
-console.log(`[v14344] CrewCheck ${VERSION}: localização em Configurações, menu Web icon-first, ícones centralizados e lupa ao final do campo.`);
+console.log(`[v14344] CrewCheck ${VERSION}: localização somente em Configurações, menu Web icon-first, ícones centralizados e lupa ao final do campo.`);
