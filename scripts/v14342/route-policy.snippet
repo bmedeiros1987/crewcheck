@@ -58,6 +58,9 @@ async function googleRoutePreview(origin, destination, requestedMode, key) {
   return value;
 }
 async function handleRoutePreview(req, res, url) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  const session = cc1371Verify(cc1371RequestToken(req));
+  if (cc1371AuthRequired() && !session) return sendJson(res, 401, { ok: false, authenticated: false, message: 'Sessão necessária para calcular a rota.' });
   const googleKey = mapsServerKey();
   const tomtomKey = tomtomServerKey();
   const origin = String(url.searchParams.get('origin') || '').trim();
