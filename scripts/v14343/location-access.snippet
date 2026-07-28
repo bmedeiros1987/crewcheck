@@ -54,7 +54,7 @@ function CrewLocationAccess({ compact = false }: { compact?: boolean }) {
       storage.set('crewcheck_manual_route_origin', '');
       setPermissionState('granted');
       const address = await reverseGeocodePosition(position.lat, position.lng);
-      window.dispatchEvent(new CustomEvent('crewcheck:location-updated', { detail: { coordinates: position } }));
+      window.dispatchEvent(new CustomEvent('crewcheck:location-updated', { detail: { coordinates: position, label: address?.shortAddress || 'Localização atual' } }));
       toast.success(address ? `Localização atualizada: ${address.shortAddress}.` : 'Localização real atualizada para a Saída Inteligente.');
     } catch (error) {
       storage.set('crewcheck_location_permission', 'denied');
