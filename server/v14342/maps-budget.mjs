@@ -146,6 +146,10 @@ export async function reserveGoogleMapsRequest(kind = 'routes', amount = 1, now 
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
+    await connection.query(
+      'INSERT IGNORE INTO crewcheck_external_api_usage(provider,month_key,used,blocked,blocked_reason,kind_usage) VALUES(?,?,?,?,?,?)',
+      ['google_maps', monthKey, 0, 0, '', JSON.stringify({})],
+    );
     const [rows] = await connection.query('SELECT used, blocked, blocked_reason, kind_usage FROM crewcheck_external_api_usage WHERE provider=? AND month_key=? FOR UPDATE', ['google_maps', monthKey]);
     const current = rows?.[0] || { used: 0, blocked: 0, blocked_reason: '', kind_usage: {} };
     let kinds = current.kind_usage || {};
@@ -157,10 +161,10 @@ export async function reserveGoogleMapsRequest(kind = 'routes', amount = 1, now 
     }
     const used = usedBefore + safeAmount;
     kinds[kind] = Number(kinds[kind] || 0) + safeAmount;
-    await connection.query(`INSERT INTO crewcheck_external_api_usage(provider,month_key,used,blocked,blocked_reason,kind_usage)
-      VALUES(?,?,?,?,?,?)
-      ON DUPLICATE KEY UPDATE used=VALUES(used),blocked=VALUES(blocked),blocked_reason=VALUES(blocked_reason),kind_usage=VALUES(kind_usage),updated_at=CURRENT_TIMESTAMP(3)`,
-    ['google_maps', monthKey, used, used >= limit ? 1 : 0, used >= limit ? 'monthly_limit' : '', JSON.stringify(kinds)]);
+    await connection.query(`UPDATE crewcheck_external_api_usage SET
+      used=?, blocked=?, blocked_reason=?, kind_usage=?, updated_at=CURRENT_TIMESTAMP(3)
+      WHERE provider=? AND month_key=?`,
+    [used, used >= limit ? 1 : 0, used >= limit ? 'monthly_limit' : '', JSON.stringify(kinds), 'google_maps', monthKey]);
     await connection.commit();
     return { allowed: true, ...publicStatus({ used, blocked: used >= limit, blockedReason: used >= limit ? 'monthly_limit' : '', kinds }, now, true) };
   } catch (error) {
@@ -170,6 +174,7 @@ export async function reserveGoogleMapsRequest(kind = 'routes', amount = 1, now 
     if (record.blocked || record.used + safeAmount > limit) return { allowed: false, ...publicStatus(record, now, false) };
     record.used += safeAmount;
     record.kinds[kind] = Number(record.kinds[kind] || 0) + safeAmount;
+    record.updatedAt = new Date().toISOString();
     return { allowed: true, ...publicStatus(record, now, false) };
   } finally {
     connection.release();
