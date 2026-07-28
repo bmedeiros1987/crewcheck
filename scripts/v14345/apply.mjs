@@ -40,7 +40,7 @@ update('client/src/lib/pdfParser.ts', (source) => {
     next = next.replace(visualDeclaration, `${visualDeclaration}\n  const offsetAwareDays = rebuildCrewRosterOffsetDays(visuallyRescuedDays, fullText, header.month, header.year, header.base);`);
   }
   next = next.replace('normalizeCrewRosterReportContinuationDays(visuallyRescuedDays,', 'normalizeCrewRosterReportContinuationDays(offsetAwareDays,');
-  if (!next.includes('normalizeCrewRosterReportContinuationDays(offsetAwareDays,')) throw new Error('[v14345] Reconstrução por offsets não foi conectada ao motor canônico do cliente.');
+  if (!next.includes('normalizeCrewRosterReportContinuationDays(offsetAwareDays,') && !next.includes('const continuationDays = offsetAwareDays;')) throw new Error('[v14345] Reconstrução por offsets não foi conectada ao motor canônico do cliente.');
 
   next = next.replace(
     "if (current && /\\b(LA\\d{3,4}|OP|PS|DH|[A-Z]{3}\\s+\\d{1,2}:\\d{2}|\\d{1,2}:\\d{2}\\(\\+\\d+\\))\\b/.test(line)) {",
