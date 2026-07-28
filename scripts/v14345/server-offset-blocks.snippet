@@ -15,6 +15,7 @@ function buildServerCrewRosterOffsetBlocks(fullText, fallbackYear) {
  const blocks = [];
  let current = null;
  for (const line of lines) {
+  if (/^Roster\s+Report\b/i.test(line)) continue;
   const marker = serverCrewRosterOffsetDateTokenFromLine(line, fallbackYear);
   const startsBlock = marker && (line.indexOf(marker.token) <= 18 || /^<==/.test(line) || /\bLA\s?\d{3,4}[/-]\d{6}\//i.test(line));
   if (startsBlock) {
