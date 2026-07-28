@@ -4,7 +4,11 @@
     "goal": "Validate, fix or temporarily remove every existing CrewCheck function before adding product scope.",
     "sourceOfTruth": "active canonical roster",
     "noNewFeatures": true,
-    "criticalFailureBlocksMerge": true
+    "criticalFailureBlocksMerge": true,
+    "currentFocus": "web-pwa",
+    "responsiveTargets": ["mobile-web", "tablet", "desktop"],
+    "androidPackagingDeferred": true,
+    "androidAuditRequiredBeforeRelease": true
   },
   "surfaces": [
     { "id": "flydeck", "view": "cockpit", "title": "FlyDeck", "group": "today", "priority": "P0", "critical": true, "navigation": true, "render": "view === 'cockpit'", "source": "canonical" },
