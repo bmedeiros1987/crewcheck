@@ -76,6 +76,10 @@ for (const marker of [
   'place-items: center',
   '> button > svg:last-child',
   '> button:hover > span',
+  '@media (max-width: 1023px), (hover: none), (pointer: coarse)',
+  'grid-template-columns: 42px minmax(0, 1fr) 20px',
+  'max-width: none',
+  'overflow-wrap: break-word',
   '.cc-location-settings',
   '.cc-search-icon-end',
   'padding-right: 46px',
@@ -98,4 +102,4 @@ for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `patch v14.3.44 deve ser idempotente em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, centered icons, every search icon at field end, clean workflow and protected engines validated.');
+console.log('v14.3.44 menu usability: location only in Settings, icon-only desktop menu with hover details, full-width touch cards, centered icons, every search icon at field end, clean workflow and protected engines validated.');
