@@ -24,6 +24,8 @@ assert.ok(fixture.includes('LA3737 OP FLN 14:40(+3) BSB 16:55(+3)'), 'fixture de
 for (const marker of [
   'function rebuildCrewRosterOffsetDays(',
   'function crewRosterOffsetMckDays(',
+  'function crewRosterOffsetLegIdentity(',
+  'const authoritativeIdentities = new Set(',
   'const offsetAwareDays = rebuildCrewRosterOffsetDays(',
   'normalizeCrewRosterReportContinuationDays(offsetAwareDays,',
   'const flightHoursMatch = compactText.match(',
@@ -34,6 +36,8 @@ for (const marker of [
   'function buildServerCrewRosterOffsetBlocks(',
   'function rebuildServerCrewRosterOffsetDays(',
   'function serverCrewRosterMckDays(',
+  'function serverCrewRosterLegIdentity(',
+  'const authoritativeIdentities = new Set(',
   'rebuildServerCrewRosterOffsetDays(roster.days, fullText,',
   "'FH','MCK','MCK320'",
   'const fh=fullText.match(',
@@ -54,6 +58,7 @@ try {
   const blocks = parser.buildServerCrewRosterOffsetBlocks(fixture, 2026);
   const julyContinuation = blocks.find((block) => block.dayToken === '30' && block.monthToken === 'Jul' && /\bLA3512\b/.test(block.text));
   assert.ok(julyContinuation, 'pairing <== deve gerar um bloco explícito de 30/07 antes da distribuição');
+  assert.equal(blocks.some((block) => /^Roster\s+Report/i.test(block.text)), false, 'cabeçalho do relatório não pode virar programação');
   assert.ok(blocks.some((block) => block.dayToken === '06' && /\bMCK\b/.test(block.text)), 'bloco de 06/08 deve carregar as duas atividades MCK');
 
   const initial = parser.parseServerRosterReport(fixture, [], 'CrewRosterReport-August-2026.pdf');
@@ -92,8 +97,8 @@ try {
 
   const totalLegs = days.reduce((sum, day) => sum + (day.legs?.length || 0), 0);
   assert.equal(totalLegs, 46, 'todas as 46 etapas do contexto julho-agosto-setembro devem ser preservadas');
-  const identities = days.flatMap((day) => (day.legs || []).map((leg) => `${leg.flightNumber}|${leg.origin}|${leg.destination}`));
-  assert.equal(new Set(identities).size, identities.length, 'pernas reconstruídas não podem coexistir com cópias malformadas do parser anterior');
+  const datedIdentities = days.flatMap((day) => (day.legs || []).map((leg) => `${day.date}|${leg.flightNumber}|${leg.origin}|${leg.destination}`));
+  assert.equal(new Set(datedIdentities).size, datedIdentities.length, 'pernas reconstruídas não podem coexistir com cópias malformadas na mesma data civil');
   for (const day of days.filter((item) => (item.legs?.length || 0) > 1)) {
     for (let index = 1; index < day.legs.length; index++) {
       assert.equal(day.legs[index - 1].destination, day.legs[index].origin, `${day.date} não pode conter teletransporte entre ${day.legs[index - 1].flightNumber} e ${day.legs[index].flightNumber}`);
@@ -125,4 +130,4 @@ const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14345/apply
 assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda aplicação v14.3.45 falhou');
 for (const relative of tracked) assert.equal(read(relative), before.get(relative), `v14.3.45 deve ser idempotente em ${relative}`);
 
-console.log('v14.3.45 August CrewRoster: previous-month continuation, explicit +1/+2/+3 dates, two MCK activities, HSB/DR preservation, 46 flights, no malformed duplicates, no teleports, FH/DH order and idempotency validated.');
+console.log('v14.3.45 August CrewRoster: previous-month continuation, explicit +1/+2/+3 dates, two MCK activities, malformed-original replacement, HSB/DR preservation, 46 flights, no teleports, FH/DH order and idempotency validated.');
