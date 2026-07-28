@@ -37,11 +37,37 @@ update('client/src/pages/Home.tsx', (source) => {
   if (wrapperStart < 0 || wrapperEnd < 0 || buttonStart < wrapperEnd) {
     throw new Error('[v14345] Meteorologia deve manter input/lupa em wrapper próprio e botão fora dele.');
   }
-  if (next.includes('<div className="cc-search-field"><input') && weather.includes('<div className="cc-search-field"><input')) {
+  if (weather.includes('<div className="cc-search-field"><input')) {
     throw new Error('[v14345] O wrapper da Meteorologia não pode absorver o botão de pesquisa.');
   }
   return next;
 });
+
+update('scripts/regression-v14-3-42-google-maps-budget-fallback.mjs', (source) => {
+  let next = source;
+  if (!next.includes('const v14345Index =')) {
+    const anchor = `const v14344Index = chain.indexOf("await import('../v14344/apply.mjs');");`;
+    if (!next.includes(anchor)) throw new Error('[v14345] Âncora da cadeia v14.3.42 não localizada.');
+    next = next.replace(anchor, `${anchor}\nconst v14345Index = chain.indexOf("await import('../v14345/apply.mjs');");`);
+  }
+  if (!next.includes('v14.3.45 deve suceder v14.3.44')) {
+    const anchor = `assert.ok(v14344Index > v14343Index, 'v14.3.44 deve suceder v14.3.43 sem remover a política de mapas');`;
+    if (!next.includes(anchor)) throw new Error('[v14345] Asserção v14.3.44 da regressão de mapas não localizada.');
+    next = next.replace(anchor, `${anchor}\nassert.ok(v14345Index > v14344Index, 'v14.3.45 deve suceder v14.3.44 sem remover a política de mapas');`);
+  }
+  return next.replaceAll('14.3.44', VERSION);
+});
+
+const webMenuCss = fs.readFileSync('scripts/v14344/web-menu.css', 'utf8');
+if (!webMenuCss.includes('@media (hover: hover) and (pointer: fine)')) {
+  throw new Error('[v14345] Menu icon-only deve responder a qualquer ponteiro fino com hover.');
+}
+if (webMenuCss.includes('@media (hover: hover) and (pointer: fine) and (min-width: 1024px)')) {
+  throw new Error('[v14345] Largura da janela não pode desligar o modo desktop com mouse.');
+}
+if (webMenuCss.includes('@media (max-width: 1023px), (hover: none), (pointer: coarse)')) {
+  throw new Error('[v14345] Janela estreita não pode ser confundida com dispositivo touch.');
+}
 
 update('client/src/App.tsx', (source) => source
   .replace(/crewcheck_last_loaded_version',\s*'[^']+'/g, `crewcheck_last_loaded_version', '${VERSION}'`)
