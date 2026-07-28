@@ -78,6 +78,7 @@ const conciergeSnippet = read('scripts/v14342/concierge-route.snippet');
 const applySource = read('scripts/v14342/apply.mjs');
 const chain = read('scripts/v139/apply.mjs');
 const calendar = read('client/src/lib/googleCalendarSync.ts');
+const viteConfig = read('vite.config.ts');
 
 assert.doesNotThrow(() => new Function(routeSnippet), 'snippet da política de rotas deve ser JavaScript válido');
 assert.doesNotThrow(() => new Function(conciergeSnippet), 'snippet do Concierge deve ser JavaScript válido');
@@ -87,7 +88,7 @@ assert.ok(serverBefore.includes("if (url.pathname === '/api/maps/provider/status
 assert.ok(serverBefore.includes("'GOOGLE_ROUTES_API_KEY', 'GOOGLE_MAPS_SERVER_KEY'"), 'chave específica do Routes deve ser priorizada');
 assert.ok(serverBefore.includes("providerOrder: ['Google Routes', 'TomTom']"), 'ordem pública deve registrar Google antes de TomTom');
 assert.ok(serverBefore.includes("fallbackFrom: 'Google Routes'"), 'fallback deve informar origem sem expor segredo');
-assert.ok(serverBefore.includes("fallbackReason: reason"), 'motivo do fallback deve ser rastreável');
+assert.ok(serverBefore.includes('fallbackReason: reason'), 'motivo do fallback deve ser rastreável');
 assert.ok(serverBefore.includes('await reserveGoogleMapsRequest'), 'chamada Google deve reservar cota antes da requisição');
 assert.ok(serverBefore.includes('readGoogleRouteCache'), 'rotas repetidas devem consultar cache');
 
@@ -113,6 +114,10 @@ for (const marker of [
 assert.ok(calendar.includes('VITE_GOOGLE_CLIENT_ID'), 'Calendar deve ler o Client ID incorporado no build');
 assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.events'), 'escopo de eventos deve permanecer');
 assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.calendarlist.readonly'), 'escopo de lista de calendários deve permanecer');
+assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome público recomendado');
+assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
+assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
+assert.ok(!viteConfig.includes('GOOGLE_CLIENT_SECRET'), 'segredo OAuth nunca pode ser incorporado no bundle');
 assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.42';"), 'versão Web/PWA 14.3.42 ausente');
 assert.ok(homeBefore.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
 assert.ok(releaseBefore.includes('14.3.42'), 'release.json deve anunciar 14.3.42');
@@ -128,4 +133,4 @@ assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch de mapas deve
 assert.equal(fs.readFileSync(envPath, 'utf8'), envBefore, 'patch de mapas deve ser idempotente no template de ambiente');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch de mapas deve ser idempotente no release');
 
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, cache, quota block, Google-first order, TomTom fallback, Calendar Client ID and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: monthly cap, cache, quota block, Google-first order, TomTom fallback, Render Calendar Client ID and protected engine validated.');
