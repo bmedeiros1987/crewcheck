@@ -39,6 +39,17 @@
   opacity: .76 !important;
 }
 
+/* Meteorologia mantém duas áreas reais: input/lupa e botão Pesquisar. */
+.cc-weather-search label > div {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  padding-left: 0 !important;
+}
+.cc-weather-search label > div > .cc-search-field,
+.cc-weather-search label > div > button {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .cz-menu-panel {
     width: min(76vw, 760px) !important;
@@ -240,5 +251,17 @@
     white-space: normal !important;
     word-break: normal !important;
     overflow-wrap: break-word !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .cc-weather-search label > div {
+    grid-template-columns: minmax(0, 1fr) !important;
+    padding: 10px 10px 0 !important;
+  }
+  .cc-weather-search label > div > .cc-search-field,
+  .cc-weather-search label > div > button {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
   }
 }
