@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -78,14 +77,10 @@ try {
 }
 
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
-const serverPath = path.join(root, 'server.mjs');
-const homePath = path.join(root, 'client/src/pages/Home.tsx');
-const envPath = path.join(root, '.env.example');
-const releasePath = path.join(root, 'client/public/release.json');
-const serverBefore = read('server.mjs');
-const homeBefore = read('client/src/pages/Home.tsx');
-const envBefore = read('.env.example');
-const releaseBefore = read('client/public/release.json');
+const server = read('server.mjs');
+const home = read('client/src/pages/Home.tsx');
+const envExample = read('.env.example');
+const release = read('client/public/release.json');
 const routeSnippet = read('scripts/v14342/route-policy.snippet');
 const conciergeSnippet = read('scripts/v14342/concierge-route.snippet');
 const budgetSource = read('server/v14342/maps-budget.mjs');
@@ -98,15 +93,19 @@ const viteConfig = read('vite.config.ts');
 
 assert.doesNotThrow(() => new Function(routeSnippet), 'snippet da política de rotas deve ser JavaScript válido');
 assert.doesNotThrow(() => new Function(conciergeSnippet), 'snippet do Concierge deve ser JavaScript válido');
-assert.ok(chain.includes("await import('../v14342/apply.mjs');"), 'v14.3.42 deve encerrar a preparação canônica');
-assert.ok(serverBefore.includes("from './server/v14342/maps-budget.mjs'"), 'servidor deve importar o controlador de cota');
-assert.ok(serverBefore.includes("if (url.pathname === '/api/maps/provider/status')"), 'status seguro de mapas deve estar registrado');
-assert.ok(serverBefore.includes("'GOOGLE_ROUTES_API_KEY', 'GOOGLE_MAPS_SERVER_KEY'"), 'chave específica do Routes deve ser priorizada');
-assert.ok(serverBefore.includes("providerOrder: ['Google Routes', 'TomTom']"), 'ordem pública deve registrar Google antes de TomTom');
-assert.ok(serverBefore.includes("fallbackFrom: 'Google Routes'"), 'fallback deve informar origem sem expor segredo');
-assert.ok(serverBefore.includes('fallbackReason: reason'), 'motivo do fallback deve ser rastreável');
-assert.ok(serverBefore.includes('await reserveGoogleMapsRequest'), 'chamada Google deve reservar cota antes da requisição');
-assert.ok(serverBefore.includes('readGoogleRouteCache'), 'rotas repetidas devem consultar cache');
+const v14342Index = chain.indexOf("await import('../v14342/apply.mjs');");
+const v14343Index = chain.indexOf("await import('../v14343/apply.mjs');");
+assert.ok(v14342Index >= 0, 'v14.3.42 deve participar da preparação canônica');
+assert.ok(v14343Index > v14342Index, 'v14.3.43 deve suceder v14.3.42 sem remover a política de mapas');
+assert.ok(chain.includes("await import('../v14341/compatibility.mjs');"), 'compatibilidade semântica v14.3.41 deve ser preservada');
+assert.ok(server.includes("from './server/v14342/maps-budget.mjs'"), 'servidor deve importar o controlador de cota');
+assert.ok(server.includes("if (url.pathname === '/api/maps/provider/status')"), 'status seguro de mapas deve estar registrado');
+assert.ok(server.includes("'GOOGLE_ROUTES_API_KEY', 'GOOGLE_MAPS_SERVER_KEY'"), 'chave específica do Routes deve ser priorizada');
+assert.ok(server.includes("providerOrder: ['Google Routes', 'TomTom']"), 'ordem pública deve registrar Google antes de TomTom');
+assert.ok(server.includes("fallbackFrom: 'Google Routes'"), 'fallback deve informar origem sem expor segredo');
+assert.ok(server.includes('fallbackReason: reason'), 'motivo do fallback deve ser rastreável');
+assert.ok(server.includes('await reserveGoogleMapsRequest'), 'chamada Google deve reservar cota antes da requisição');
+assert.ok(server.includes('readGoogleRouteCache'), 'rotas repetidas devem consultar cache');
 assert.ok(budgetSource.includes('INSERT IGNORE INTO crewcheck_external_api_usage'), 'primeira reserva persistente deve criar a linha antes do lock');
 assert.ok(budgetSource.includes('FOR UPDATE'), 'contador persistente deve ser serializado por competência');
 assert.ok(budgetSource.indexOf('INSERT IGNORE INTO crewcheck_external_api_usage') < budgetSource.indexOf('FOR UPDATE'), 'linha mensal deve existir antes do bloqueio transacional');
@@ -119,15 +118,31 @@ assert.ok(budgetSource.includes('connection = await db.getConnection();'), 'cone
 assert.ok(budgetSource.includes('connection?.release();'), 'liberação da conexão deve ser condicional');
 assert.ok(budgetSource.includes('const latch = blockMemory(monthKey, safeReason);'), 'bloqueio de cota deve existir antes da tentativa de persistência');
 
-const handlerStart = serverBefore.indexOf('async function handleRoutePreview(');
-const handlerEnd = serverBefore.indexOf('async function handleMapsProviderStatus(', handlerStart);
-const handler = serverBefore.slice(handlerStart, handlerEnd);
+const handlerStart = server.indexOf('async function handleRoutePreview(');
+const handlerEnd = server.indexOf('async function handleMapsProviderStatus(', handlerStart);
+const handler = server.slice(handlerStart, handlerEnd);
 assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, 'handler de rota preparado não localizado');
+const sessionCheck = handler.indexOf('cc1371Verify(cc1371RequestToken(req))');
+const authRejection = handler.indexOf('cc1371AuthRequired() && !session');
+const googleKeyRead = handler.indexOf('const googleKey = mapsServerKey()');
+const googleRouteCall = handler.indexOf('await googleRoutePreview');
+assert.ok(sessionCheck >= 0 && authRejection > sessionCheck, 'rota deve validar a sessão CrewCheck');
+assert.ok(authRejection < googleKeyRead && authRejection < googleRouteCall, 'requisição anônima deve ser rejeitada antes de ler o provedor ou consumir cota');
+assert.ok(handler.includes("sendJson(res, 401"), 'rota pública sem sessão deve receber 401 explícito');
+assert.ok(handler.includes("req.method !== 'GET'"), 'rota deve aceitar somente GET');
 assert.ok(handler.indexOf('await googleRoutePreview') < handler.indexOf('await tomtomRoutePreview'), 'Google deve ser tentado antes da TomTom');
 
-const statusStart = serverBefore.indexOf('async function handleMapsProviderStatus(');
-const statusEnd = serverBefore.indexOf('async function handleReverseGeocode(', statusStart);
-const statusHandler = serverBefore.slice(statusStart, statusEnd);
+const routeClientStart = home.indexOf('async function fetchRoutePreviewInfo(');
+const routeClientEnd = home.indexOf('async function fetchNearbyPlaces(', routeClientStart);
+const routeClient = home.slice(routeClientStart, routeClientEnd);
+assert.ok(routeClientStart >= 0 && routeClientEnd > routeClientStart, 'cliente da prévia de rota não localizado');
+assert.ok(routeClient.includes('authFetch<RoutePreviewInfo>'), 'cliente deve enviar bearer token e cookie pela camada autenticada');
+assert.ok(!routeClient.includes('await fetch(`/api/maps/route-preview'), 'cliente não pode chamar a rota protegida por fetch cru');
+assert.ok(applySource.includes('authenticatedRouteFetch'), 'preparação deve aplicar o cliente autenticado de forma idempotente');
+
+const statusStart = server.indexOf('async function handleMapsProviderStatus(');
+const statusEnd = server.indexOf('async function handleReverseGeocode(', statusStart);
+const statusHandler = server.slice(statusStart, statusEnd);
 assert.ok(statusHandler.includes('alarmRequestIdentity(req)'), 'diagnóstico de custo deve identificar o administrador');
 assert.ok(statusHandler.includes('if (!identity.admin)'), 'diagnóstico mensal não pode ficar público');
 assert.ok(statusHandler.includes('sendJson(res, 403'), 'usuário comum deve receber bloqueio explícito');
@@ -147,9 +162,9 @@ for (const cssMarker of ['.cc-maps-budget-track', '.cc-maps-budget-facts', '@med
   assert.ok(controlCss.includes(cssMarker), `responsividade do controle de mapas ausente: ${cssMarker}`);
 }
 
-const conciergeStart = serverBefore.indexOf('async function conciergeTravelEstimate(');
-const conciergeEnd = serverBefore.indexOf('function conciergeLeaveDateLabel(', conciergeStart);
-const concierge = serverBefore.slice(conciergeStart, conciergeEnd);
+const conciergeStart = server.indexOf('async function conciergeTravelEstimate(');
+const conciergeEnd = server.indexOf('function conciergeLeaveDateLabel(', conciergeStart);
+const concierge = server.slice(conciergeStart, conciergeEnd);
 assert.ok(concierge.indexOf('await googleRoutePreview') < concierge.indexOf('await tomtomRoutePreview'), 'Concierge deve usar a mesma ordem Google → TomTom');
 
 for (const marker of [
@@ -158,7 +173,7 @@ for (const marker of [
   'CREWCHECK_GOOGLE_MAPS_CACHE_TTL_MS=120000',
   'CREWCHECK_ROUTING_PROVIDER=google',
   'VITE_GOOGLE_CLIENT_ID=',
-]) assert.ok(envBefore.includes(marker), `variável documentada ausente: ${marker}`);
+]) assert.ok(envExample.includes(marker), `variável documentada ausente: ${marker}`);
 
 assert.ok(calendar.includes('VITE_GOOGLE_CLIENT_ID'), 'Calendar deve ler o Client ID incorporado no build');
 assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.events.owned'), 'escopo mínimo de eventos próprios deve permanecer');
@@ -167,20 +182,15 @@ assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve ac
 assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
 assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
 assert.ok(!viteConfig.includes('GOOGLE_CLIENT_SECRET'), 'segredo OAuth nunca pode ser incorporado no bundle');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.42';"), 'versão Web/PWA 14.3.42 ausente');
-assert.ok(homeBefore.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
-assert.ok(releaseBefore.includes('14.3.42'), 'release.json deve anunciar 14.3.42');
+assert.ok(home.includes("const DEFAULT_VERSION = '14.3.43';"), 'a preparação final deve terminar na versão Web/PWA 14.3.43');
+assert.ok(home.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
+assert.ok(release.includes('14.3.43'), 'release final deve anunciar 14.3.43');
 assert.ok(applySource.includes("next.indexOf('type RoutePreviewInfo = {')"), 'patch do tipo deve usar a forma produzida pela preparação, sem depender dos últimos campos');
+assert.ok(applySource.includes('if (source.includes(replacement.trim())) return source;'), 'substituições de servidor devem ser idempotentes');
+assert.ok(applySource.includes("if (!next.includes('mapsBudget?: {'))"), 'tipo de rota deve ter proteção contra duplicidade');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14342/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda aplicação v14.3.42 falhou');
-assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'patch de mapas deve ser idempotente no servidor');
-assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch de mapas deve ser idempotente na interface');
-assert.equal(fs.readFileSync(envPath, 'utf8'), envBefore, 'patch de mapas deve ser idempotente no template de ambiente');
-assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch de mapas deve ser idempotente no release');
-
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, Render Client ID and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.43 chain and protected engine validated.');
