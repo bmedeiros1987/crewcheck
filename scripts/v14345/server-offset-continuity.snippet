@@ -13,6 +13,9 @@ function serverCrewRosterAbsoluteMinutes(value, fallbackOffset = 0) {
 function serverCrewRosterLegKey(leg) {
  return `${String(leg?.flightNumber || '').replace(/\s+/g, '').toUpperCase()}|${String(leg?.origin || '').toUpperCase()}|${String(leg?.destination || '').toUpperCase()}|${serverCrewRosterCleanTime(leg?.departureTime)}|${serverCrewRosterCleanTime(leg?.arrivalTime)}`;
 }
+function serverCrewRosterLegIdentity(leg) {
+ return `${String(leg?.flightNumber || '').replace(/\s+/g, '').toUpperCase()}|${String(leg?.origin || '').toUpperCase()}|${String(leg?.destination || '').toUpperCase()}`;
+}
 function serverCrewRosterOffsetMatches(text) {
  const source = cleanRosterLineV3(String(text || '').replace(/\bLA\s+(\d{3,4})\b/gi, 'LA$1'));
  const regex = /\b(LA\d{3,4})\b\s+(?:(OP|PS|DH)\s+)?([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)\s*([A-Z]{3})\s+(\d{1,2}:\d{2}(?:\(\+\d+\))?)/gi;
@@ -143,10 +146,11 @@ function rebuildServerCrewRosterOffsetDays(days, fullText, referenceMonth, refer
   authoritative.push(...serverCrewRosterMckDays(blockText, baseDate, referenceMonth, referenceYear, base));
  }
  const authoritativeLegs = new Set(authoritative.flatMap((day) => day.legs || []).map(serverCrewRosterLegKey));
+ const authoritativeIdentities = new Set(authoritative.flatMap((day) => day.legs || []).map(serverCrewRosterLegIdentity));
  const retained = [];
  for (const original of days || []) {
   if (/^MCK(?:320|_SS)?$/i.test(original.pairingCode || '') || (!original.legs?.length && /\bMCK(?:320|_SS)?\b/i.test(original.rawText || ''))) continue;
-  const nextLegs = (original.legs || []).filter((leg) => !authoritativeLegs.has(serverCrewRosterLegKey(leg)) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.origin || '').toUpperCase()) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.destination || '').toUpperCase()));
+  const nextLegs = (original.legs || []).filter((leg) => !authoritativeLegs.has(serverCrewRosterLegKey(leg)) && !authoritativeIdentities.has(serverCrewRosterLegIdentity(leg)) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.origin || '').toUpperCase()) && !/^(MCK|HSB|ASB|DO|DR)$/.test(String(leg.destination || '').toUpperCase()));
   if (original.legs?.length && nextLegs.length !== original.legs.length) {
    if (!nextLegs.length) continue;
    const clone = { ...original, legs: nextLegs };
