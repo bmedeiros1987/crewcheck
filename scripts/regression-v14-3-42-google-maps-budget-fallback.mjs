@@ -41,6 +41,19 @@ try {
   assert.equal(denied.kinds.routes, 3, 'contador por tipo não pode ultrapassar o limite');
 
   budgetModule.resetMapsBudgetForTests();
+  process.env.DATABASE_URL = 'mysql://%';
+  const initializationFailure = await budgetModule.reserveGoogleMapsRequest('routes', 1, fixedNow);
+  assert.equal(initializationFailure.allowed, false, 'banco configurado e indisponível deve falhar fechado');
+  assert.equal(initializationFailure.blocked, true);
+  assert.equal(initializationFailure.blockedReason, 'persistence_initialization_failure');
+  assert.equal(initializationFailure.provider, 'TomTom');
+  process.env.DATABASE_URL = '';
+  const latchedAfterFailure = await budgetModule.reserveGoogleMapsRequest('routes', 1, fixedNow);
+  assert.equal(latchedAfterFailure.allowed, false, 'bloqueio local deve prevalecer mesmo após mudança do estado do pool');
+  assert.equal(latchedAfterFailure.blockedReason, 'persistence_initialization_failure');
+
+  budgetModule.resetMapsBudgetForTests();
+  process.env.DATABASE_URL = '';
   const blocked = await budgetModule.markGoogleMapsQuotaBlocked('provider_quota_429', fixedNow);
   assert.equal(blocked.blocked, true);
   assert.equal(blocked.blockedReason, 'provider_quota_429');
@@ -97,9 +110,14 @@ assert.ok(serverBefore.includes('readGoogleRouteCache'), 'rotas repetidas devem 
 assert.ok(budgetSource.includes('INSERT IGNORE INTO crewcheck_external_api_usage'), 'primeira reserva persistente deve criar a linha antes do lock');
 assert.ok(budgetSource.includes('FOR UPDATE'), 'contador persistente deve ser serializado por competência');
 assert.ok(budgetSource.indexOf('INSERT IGNORE INTO crewcheck_external_api_usage') < budgetSource.indexOf('FOR UPDATE'), 'linha mensal deve existir antes do bloqueio transacional');
+assert.ok(budgetSource.includes('function persistentDatabaseConfigured()'), 'ausência de banco deve ser distinguida de banco configurado e indisponível');
+assert.ok(budgetSource.includes("blockMemory(monthKey, 'persistence_initialization_failure')"), 'falha de inicialização persistente deve fechar a cota');
 assert.ok(budgetSource.includes("blockMemory(monthKey, 'persistence_reservation_failure')"), 'falha transacional deve fechar a cota em vez de liberar contador local');
-assert.ok(budgetSource.includes('return { allowed: false, ...publicStatus(record, now, false) };'), 'falha persistente deve acionar TomTom');
-assert.ok(budgetSource.includes('`${safeReason}_persistence_failure`'), 'falha ao persistir 429 deve manter bloqueio local');
+assert.ok(budgetSource.includes('if (latch.blocked) return { allowed: false'), 'bloqueio local deve prevalecer antes de consultar o banco');
+assert.ok(budgetSource.includes('let connection = null;'), 'aquisição da conexão deve participar do tratamento de falha');
+assert.ok(budgetSource.includes('connection = await db.getConnection();'), 'conexão deve ser adquirida dentro do bloco protegido');
+assert.ok(budgetSource.includes('connection?.release();'), 'liberação da conexão deve ser condicional');
+assert.ok(budgetSource.includes('const latch = blockMemory(monthKey, safeReason);'), 'bloqueio de cota deve existir antes da tentativa de persistência');
 
 const handlerStart = serverBefore.indexOf('async function handleRoutePreview(');
 const handlerEnd = serverBefore.indexOf('async function handleMapsProviderStatus(', handlerStart);
@@ -165,4 +183,4 @@ assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch de mapas deve
 assert.equal(fs.readFileSync(envPath, 'utf8'), envBefore, 'patch de mapas deve ser idempotente no template de ambiente');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch de mapas deve ser idempotente no release');
 
-console.log('v14.3.42 Google Maps budget/fallback: monthly cap, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, Render Client ID and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, Render Client ID and protected engine validated.');
