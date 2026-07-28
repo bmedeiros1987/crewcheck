@@ -18,17 +18,21 @@ const before = Object.fromEntries(Object.entries(paths).map(([key, value]) => [k
 const chain = read('scripts/v139/apply.mjs');
 const applySource = read('scripts/v14343/apply.mjs');
 const successorSource = read('scripts/v14344/apply.mjs');
+const finalSource = read('scripts/v14345/apply.mjs');
 const mapsApplySource = read('scripts/v14342/apply.mjs');
 const cssSource = read('scripts/v14343/premium-layout.css');
 const locationSnippet = read('scripts/v14343/location-access.snippet');
 
 const v14343Index = chain.indexOf("await import('../v14343/apply.mjs');");
 const v14344Index = chain.indexOf("await import('../v14344/apply.mjs');");
+const v14345Index = chain.indexOf("await import('../v14345/apply.mjs');");
 assert.ok(v14343Index >= 0, 'v14.3.43 deve participar da preparação canônica');
 assert.ok(v14344Index > v14343Index, 'v14.3.44 deve suceder a estabilidade v14.3.43 sem removê-la');
-assert.ok(before.home.includes("const DEFAULT_VERSION = '14.3.44';"), 'a preparação final deve anunciar v14.3.44');
+assert.ok(v14345Index > v14344Index, 'v14.3.45 deve finalizar a cadeia sem remover a estabilidade do iPad');
+assert.ok(before.home.includes("const DEFAULT_VERSION = '14.3.45';"), 'a preparação final deve anunciar v14.3.45');
 assert.ok(before.home.includes('data-layout-v14343="premium-contained"'), 'shell deve preservar o layout contido v14.3.43');
-assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve registrar o refinamento final v14.3.44');
+assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve preservar o refinamento Web v14.3.44');
+assert.ok(before.home.includes('data-layout-v14345="weather-search-pointer-hotfix"'), 'shell deve registrar o hotfix final v14.3.45');
 
 for (const marker of [
   'function CrewLocationAccess(',
@@ -78,9 +82,9 @@ assert.ok(before.css.includes('CrewCheck v14.3.43 — premium layout hardening')
 assert.equal((before.css.match(/CrewCheck v14\.3\.43 — premium layout hardening/g) || []).length, 1, 'CSS-base v14.3.43 não pode ser duplicado');
 
 assert.ok(!before.app.includes('registrations.map((registration) => registration.unregister())'), 'App não pode desregistrar todo service worker a cada inicialização');
-assert.ok(before.app.includes("const cleanupKey = 'crewcheck-client-cleanup:14.3.44'"), 'limpeza segura deve acompanhar a versão final');
+assert.ok(before.app.includes("const cleanupKey = 'crewcheck-client-cleanup:14.3.45'"), 'limpeza segura deve acompanhar a versão final');
 assert.ok(before.app.includes('registration?.update()'), 'atualização deve preservar o service worker ativo');
-assert.ok(before.app.includes("!name.includes('v14.3.44')"), 'cache da versão final não pode ser apagado no boot');
+assert.ok(before.app.includes("!name.includes('v14.3.45')"), 'cache da versão final não pode ser apagado no boot');
 assert.ok(!before.index.includes('registration.unregister()'), 'HTML inicial não pode desregistrar o service worker');
 assert.ok(!before.index.includes('crewcheck-cache-reset-'), 'script legado de limpeza destrutiva deve ser removido do HTML');
 assert.ok(applySource.includes('legacyCleanupMarker'), 'aplicação deve remover explicitamente a limpeza destrutiva antiga');
@@ -89,7 +93,7 @@ const watcherStart = before.index.indexOf('<script id="crewcheck-release-watch-v
 const watcherEnd = watcherStart >= 0 ? before.index.indexOf('</script>', watcherStart) : -1;
 assert.ok(watcherStart >= 0 && watcherEnd > watcherStart, 'watcher seguro de release não localizado');
 const watcher = before.index.slice(watcherStart, watcherEnd);
-assert.ok(watcher.includes("var currentRelease = '14.3.44';"), 'watcher preservado deve acompanhar a versão final');
+assert.ok(watcher.includes("var currentRelease = '14.3.45';"), 'watcher preservado deve acompanhar a versão final');
 assert.ok(watcher.includes('cooldownMs = 30 * 60 * 1000'), 'watcher deve ter circuit breaker de 30 minutos');
 assert.ok(watcher.includes('window.localStorage.setItem(reloadKey'), 'reload deve ser marcado persistentemente antes de ocorrer');
 assert.ok(!watcher.includes('window.sessionStorage'), 'guard de atualização no iPad não pode depender apenas da sessão');
@@ -103,18 +107,19 @@ for (const marker of [
   "location: locationState === 'granted' ? true",
 ]) assert.ok(before.runtime.includes(marker), `runtime de permissão ausente: ${marker}`);
 
-assert.ok(before.release.includes('14.3.44'), 'release final deve anunciar 14.3.44');
+assert.ok(before.release.includes('14.3.45'), 'release final deve anunciar 14.3.45');
 assert.ok(before.release.includes('automatic-safe'), 'política de atualização segura deve permanecer registrada');
+assert.ok(finalSource.includes('weather-search-pointer-hotfix'), 'hotfix final deve preservar a cadeia de estabilidade');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch visual não pode alterar motor protegido: ${protectedPath}`);
 }
 
 assert.ok(applySource.includes("next = patchBlock(next, 'function MenuDrawer('") || applySource.includes("patchBlock(next, 'function MenuDrawer('"), 'v14.3.43 deve continuar contendo a base do controle de localização');
-const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14344/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.3.44 falhou');
+const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14345/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.3.45 falhou');
 for (const [key, relative] of Object.entries(paths)) {
-  assert.equal(read(relative), before[key], `estado final v14.3.44 deve preservar a estabilidade v14.3.43 em ${relative}`);
+  assert.equal(read(relative), before[key], `estado final v14.3.45 deve preservar a estabilidade v14.3.43 em ${relative}`);
 }
 
-console.log('v14.3.43 iPad premium stability preserved under final v14.3.44: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');
+console.log('v14.3.43 iPad premium stability preserved under final v14.3.45: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');
