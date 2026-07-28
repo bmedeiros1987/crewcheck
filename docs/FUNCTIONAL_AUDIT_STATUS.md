@@ -17,7 +17,7 @@ Atualizado para a estratégia **Web/PWA primeiro; Android assinado depois**.
 | Ordem | Área | Estado | Evidência necessária para avançar |
 |---:|---|---|---|
 | 1 | Importação CrewRosterReport normal | ESTRUTURAL | PDF oficial real importado sem perder voo ou atividade |
-| 2 | Importação rotacionada | ESTRUTURAL | mesmo conteúdo da escala normal |
+| 2 | Importação rotacionada | EM TESTE | PDF oficial de agosto: 32 datas, 33 atividades e 46 etapas em cliente e servidor |
 | 3 | Escala canônica | ESTRUTURAL | FlyDeck, Escala e Histórico idênticos |
 | 4 | FlyDeck cronológico | ESTRUTURAL | cinco etapas abrem a tela correta |
 | 5 | Saída Inteligente | ESTRUTURAL | evento, apresentação, origem, rota, margem e horário coerentes |
@@ -79,6 +79,14 @@ Atualizado para a estratégia **Web/PWA primeiro; Android assinado depois**.
 | Deep links | ADIADO |
 | Ícone launcher/adaptive icon | ADIADO |
 | Instalação e atualização sobre versão anterior | ADIADO |
+
+## Evidência da rodada v14.3.45 — agosto de 2026
+
+- PDF oficial rotacionado validado diretamente nos parsers Web/PWA e servidor;
+- resultado conferido: 32 datas únicas, 33 atividades, 46 etapas, FH 67:40 e DH 142:35;
+- carry-in de 30/07, dois MCK em 07/08 e carry-out de 01/09 preservados;
+- fixture versionado permanece anonimizado e a regressão cobre orientações ascendente e descendente;
+- próximo gate: validar um CrewRosterReport oficial não rotacionado e, depois, comparar FlyDeck, Escala e Histórico.
 
 ## Regra de prioridade
 
