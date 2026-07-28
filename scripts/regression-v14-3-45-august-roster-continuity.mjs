@@ -52,8 +52,8 @@ try {
   const parser = await import(`${pathToFileURL(testModulePath).href}?v=${Date.now()}`);
 
   const blocks = parser.buildServerCrewRosterOffsetBlocks(fixture, 2026);
-  assert.equal(blocks[0]?.dayToken, '30', 'primeiro bloco deve usar a data compacta do pairing anterior');
-  assert.equal(blocks[0]?.monthToken, 'Jul', 'pairing <== deve permanecer em julho antes da distribuição');
+  const julyContinuation = blocks.find((block) => block.dayToken === '30' && block.monthToken === 'Jul' && /\bLA3512\b/.test(block.text));
+  assert.ok(julyContinuation, 'pairing <== deve gerar um bloco explícito de 30/07 antes da distribuição');
   assert.ok(blocks.some((block) => block.dayToken === '06' && /\bMCK\b/.test(block.text)), 'bloco de 06/08 deve carregar as duas atividades MCK');
 
   const initial = parser.parseServerRosterReport(fixture, [], 'CrewRosterReport-August-2026.pdf');
@@ -92,6 +92,8 @@ try {
 
   const totalLegs = days.reduce((sum, day) => sum + (day.legs?.length || 0), 0);
   assert.equal(totalLegs, 46, 'todas as 46 etapas do contexto julho-agosto-setembro devem ser preservadas');
+  const identities = days.flatMap((day) => (day.legs || []).map((leg) => `${leg.flightNumber}|${leg.origin}|${leg.destination}`));
+  assert.equal(new Set(identities).size, identities.length, 'pernas reconstruídas não podem coexistir com cópias malformadas do parser anterior');
   for (const day of days.filter((item) => (item.legs?.length || 0) > 1)) {
     for (let index = 1; index < day.legs.length; index++) {
       assert.equal(day.legs[index - 1].destination, day.legs[index].origin, `${day.date} não pode conter teletransporte entre ${day.legs[index - 1].flightNumber} e ${day.legs[index].flightNumber}`);
@@ -123,4 +125,4 @@ const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14345/apply
 assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda aplicação v14.3.45 falhou');
 for (const relative of tracked) assert.equal(read(relative), before.get(relative), `v14.3.45 deve ser idempotente em ${relative}`);
 
-console.log('v14.3.45 August CrewRoster: previous-month continuation, explicit +1/+2/+3 dates, two MCK activities, HSB/DR preservation, 46 flights, no teleports, FH/DH order and idempotency validated.');
+console.log('v14.3.45 August CrewRoster: previous-month continuation, explicit +1/+2/+3 dates, two MCK activities, HSB/DR preservation, 46 flights, no malformed duplicates, no teleports, FH/DH order and idempotency validated.');
