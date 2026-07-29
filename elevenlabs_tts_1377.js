@@ -1,7 +1,7 @@
 // CrewCheck v14.3.21 — ElevenLabs TTS pt-BR natural e contextual.
 // ElevenLabs permanece como TTS principal. A voz do titular é o padrão;
 // Daniel continua disponível como alternativa explícita.
-const CREWCHECK_BRUNO_VOICE_ID = 'hYLzOVviGWJgnkfQyCeO';
+const CREWCHECK_BRUNO_VOICE_ID = 'pNZa0DWwl4bXevTwyjr0';
 
 const CREWCHECK_AIRPORT_SPEECH_NAMES = Object.freeze({
   BSB: 'Brasília', SBBR: 'Brasília',

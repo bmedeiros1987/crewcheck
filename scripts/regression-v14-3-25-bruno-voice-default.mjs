@@ -2,7 +2,7 @@ import fs from 'node:fs';
 
 const source = fs.readFileSync('scripts/v14325/apply.mjs', 'utf8');
 for (const marker of [
-  "hYLzOVviGWJgnkfQyCeO",
+  "pNZa0DWwl4bXevTwyjr0",
   "CREWCHECK_ALLOW_DANIEL_VOICE",
   "explicitProfile === 'daniel'",
   "patch('server.mjs')",

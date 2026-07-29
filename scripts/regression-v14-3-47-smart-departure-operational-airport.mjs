@@ -21,9 +21,11 @@ const applySource = read('scripts/v14347/apply.mjs');
 
 const v14346Index = chain.indexOf("await import('../v14346/apply.mjs');");
 const v14347Index = chain.indexOf("await import('../v14347/apply.mjs');");
+const v14348Index = chain.indexOf("await import('../v14348/apply.mjs');");
 assert.ok(v14346Index >= 0, 'v14.3.46 deve permanecer na preparação canônica');
 assert.ok(v14347Index > v14346Index, 'v14.3.47 deve suceder a correção de localização');
-assert.ok(chain.trimEnd().endsWith("await import('../v14347/apply.mjs');"), 'v14.3.47 deve encerrar a preparação canônica');
+assert.ok(v14348Index > v14347Index, 'v14.3.48 deve suceder o aeroporto operacional sem sobrescrevê-lo');
+assert.ok(chain.trimEnd().endsWith("await import('../v14348/apply.mjs');"), 'v14.3.48 deve encerrar a preparação canônica');
 assert.ok(clientParser.includes("(day as any).operationalAirport = match[2].toUpperCase();"), 'cliente deve guardar o aeroporto operacional da MCK');
 assert.ok(serverParser.includes('day.operationalAirport = match[2].toUpperCase();'), 'servidor deve guardar o aeroporto operacional da MCK');
 assert.ok(canonical.includes("const operationalAirport = String((day as any).operationalAirport || (day as any).airport || day.base || '')"), 'evento canônico deve priorizar o aeroporto operacional');
@@ -33,9 +35,9 @@ assert.ok(home.includes("const base = safe((day as any).operationalAirport || (d
 assert.ok(departurePatch.includes("return event.kind === 'duty'"), 'atividade presencial deve continuar elegível para a Saída Inteligente');
 assert.ok(departurePatch.includes('DO|DOF|DOP|DOPR|DR|OFF'), 'folga e DR devem continuar inelegíveis');
 assert.ok(departurePatch.includes('return eventRouteDestination(event);'), 'rota terrestre deve terminar no aeroporto de origem do evento selecionado');
-assert.match(server, /url\.pathname === '\/api\/release'[^\r\n]*version\s*:\s*'14\.3\.47'/, 'endpoint de release deve anunciar a versão Web/PWA atual');
-assert.match(server, /url\.pathname === '\/api\/health'[^\r\n]*version\s*:\s*'14\.3\.47'/, 'endpoint de saúde deve anunciar a versão Web/PWA atual');
-assert.ok(runtime.includes("version: '14.3.47'"), 'runtime premium deve anunciar a versão Web/PWA atual');
+assert.match(server, /url\.pathname === '\/api\/release'[^\r\n]*version\s*:\s*'14\.3\.48'/, 'endpoint de release deve anunciar a versão Web/PWA atual');
+assert.match(server, /url\.pathname === '\/api\/health'[^\r\n]*version\s*:\s*'14\.3\.48'/, 'endpoint de saúde deve anunciar a versão Web/PWA atual');
+assert.ok(runtime.includes("version: '14.3.48'"), 'runtime premium deve anunciar a versão Web/PWA atual');
 for (const marker of [
   'function loadFreshCurrentGeo(',
   'CURRENT_GEO_MAX_AGE_MS = 30 * 60_000',
@@ -141,8 +143,8 @@ const tracked = [
   'android-wrapper/app/build.gradle',
 ];
 const before = new Map(tracked.map((relative) => [relative, read(relative)]));
-const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'reaplicação v14.3.47 falhou');
+const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'reaplicação final v14.3.48 falhou');
 for (const relative of tracked) assert.equal(read(relative), before.get(relative), `preparação build→start deve ser idempotente em ${relative}`);
 
 console.log('v14.3.47 Smart Departure handoff: MCK operational airport CGH, contractual base BSB, first-event airport matrix, rest exclusions, release metadata and idempotency validated.');

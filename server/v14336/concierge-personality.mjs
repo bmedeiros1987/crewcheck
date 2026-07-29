@@ -1,4 +1,9 @@
-const BRUNO_VOICE_ID = 'hYLzOVviGWJgnkfQyCeO';
+import {
+  normalizeElevenLabsVoiceProfileV14348,
+  publicElevenLabsVoiceCatalogV14348,
+  resolveElevenLabsVoiceV14348,
+} from '../v14348/elevenlabs-voice-policy.mjs';
+
 const HUMOR_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 export function normalizeConciergeMode(value) {
@@ -7,46 +12,25 @@ export function normalizeConciergeMode(value) {
 }
 
 export function normalizeConciergeVoiceProfile(value) {
-  const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  if (['bruno', 'titular'].includes(normalized)) return 'bruno';
-  if (['daniel'].includes(normalized)) return 'daniel';
-  return 'default';
-}
-
-function envValue(env, names = []) {
-  for (const name of names) {
-    const value = String(typeof env === 'function' ? env(name) : env?.[name] || '').trim();
-    if (value) return value;
-  }
-  return '';
-}
-
-function envFlag(env, name, fallback = false) {
-  const value = envValue(env, [name]);
-  if (!value) return fallback;
-  return ['1', 'true', 'yes', 'sim', 'on', 'enabled'].includes(value.toLowerCase());
+  return normalizeElevenLabsVoiceProfileV14348(value);
 }
 
 export function conciergeVoiceCatalog(env = process.env) {
-  const defaultVoiceId = envValue(env, ['ELEVENLABS_VOICE_ID', 'ELEVENLABS_TTS_VOICE_ID', 'CREWCHECK_ELEVENLABS_VOICE_ID', 'ELEVENLABS_DEFAULT_VOICE_ID']) || BRUNO_VOICE_ID;
-  const brunoVoiceId = envValue(env, ['CREWCHECK_BRUNO_VOICE_ID', 'ELEVENLABS_BRUNO_VOICE_ID']) || BRUNO_VOICE_ID;
-  const catalog = [
-    { id: 'default', label: 'Padrão do CrewCheck', voiceId: defaultVoiceId, available: Boolean(defaultVoiceId) },
-    { id: 'bruno', label: 'Bruno', voiceId: brunoVoiceId, available: Boolean(brunoVoiceId) },
-  ];
-  const danielVoiceId = envValue(env, ['ELEVENLABS_DANIEL_VOICE_ID', 'CREWCHECK_DANIEL_VOICE_ID']);
-  if (danielVoiceId && envFlag(env, 'CREWCHECK_ALLOW_DANIEL_VOICE', false)) catalog.push({ id: 'daniel', label: 'Daniel', voiceId: danielVoiceId, available: true });
-  return catalog.filter((item, index, all) => item.available && all.findIndex((other) => other.id === item.id) === index);
+  return publicElevenLabsVoiceCatalogV14348(env).map(({ id, label }) => {
+    const voice = resolveElevenLabsVoiceV14348(id, env);
+    return { id, label, voiceId: voice.voiceId, available: voice.configured };
+  });
 }
 
 export function publicConciergeVoiceCatalog(env = process.env) {
-  return conciergeVoiceCatalog(env).map(({ id, label }) => ({ id, label }));
+  return publicElevenLabsVoiceCatalogV14348(env);
 }
 
 export function conciergeVoiceIdForPreferences(preferences = {}, env = process.env) {
-  const profile = normalizeConciergeVoiceProfile(preferences.voiceProfile);
+  const profile = normalizeConciergeVoiceProfile(preferences);
   const catalog = conciergeVoiceCatalog(env);
-  return catalog.find((item) => item.id === profile)?.voiceId || catalog.find((item) => item.id === 'default')?.voiceId || BRUNO_VOICE_ID;
+  return catalog.find((item) => item.id === profile)?.voiceId
+    || resolveElevenLabsVoiceV14348('default', env).voiceId;
 }
 
 export function normalizeConciergePreferences(input = {}, previous = {}, env = process.env) {

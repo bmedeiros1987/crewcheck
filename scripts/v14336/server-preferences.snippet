@@ -7,6 +7,9 @@ function conciergeVoiceOptionsV14336() {
 function conciergeVoiceIdForSnapshotV14336(snapshot = null) {
   return conciergeVoiceIdForPreferencesV14336(conciergePreferencesV14336(snapshot), process.env);
 }
+function conciergeVoiceProfileForSnapshotV14348(snapshot = null) {
+  return normalizeConciergeVoiceProfileV14336(conciergePreferencesV14336(snapshot).voiceProfile);
+}
 function conciergePreferenceSummaryV14336(snapshot = null) {
   const preferences = conciergePreferencesV14336(snapshot);
   const mode = preferences.mode === 'comic' ? 'Cômico leve (impessoal)' : 'Formal (profissional)';
