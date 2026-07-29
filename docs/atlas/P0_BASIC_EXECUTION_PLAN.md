@@ -145,6 +145,8 @@ Implementação real, ainda mantida como rascunho:
   tripulante;
 - acrescenta uma linha curta de confirmação da escala oficial somente nas
   respostas dependentes de escala, apresentação, saída ou regulamentação;
+- documenta a base normativa e a redação de produto em
+  `docs/atlas/P0_SCHEDULE_SOURCE_GUARDRAIL.md`;
 - preserva METAR/TAF bruto sem reescrever códigos;
 - exige `updatedAt` real para usar localização persistida;
 - invalida localizações legadas sem horário de captura, eliminando a
@@ -181,6 +183,8 @@ Implementação real, ainda mantida como rascunho:
 - [x] Corrigir gramática, números e objetividade do Concierge.
 - [x] Corrigir a renovação artificial de localização legada.
 - [x] Incluir orientação de conferência da escala oficial.
+- [ ] Validar a redação do guardrail com o jurídico responsável antes da
+  produção.
 - [ ] Validar desktop, Android e iPad em tema claro e escuro.
 
 ## Fora do escopo por enquanto
