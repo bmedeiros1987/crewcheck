@@ -10,6 +10,16 @@ function expect(condition, message) {
   if (!condition) throw new Error(`[v14.3.50] ${message}`);
 }
 
+function versionAtLeast(actual, minimum) {
+  const left = String(actual || '').split('.').map((value) => Number(value) || 0);
+  const right = String(minimum || '').split('.').map((value) => Number(value) || 0);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if ((left[index] || 0) > (right[index] || 0)) return true;
+    if ((left[index] || 0) < (right[index] || 0)) return false;
+  }
+  return true;
+}
+
 async function loadClassificationModule() {
   const source = read('client/src/lib/scheduleActivityClassification.ts');
   const output = ts.transpileModule(source, {
@@ -172,7 +182,10 @@ expect(
   applyChain.includes("await import('../v14350/apply.mjs');"),
   'v14.3.50 não está na preparação canônica.',
 );
-expect(packageJson.version === '14.3.50', `Versão esperada 14.3.50; recebida ${packageJson.version}.`);
+expect(
+  versionAtLeast(packageJson.version, '14.3.50'),
+  `Versão mínima esperada 14.3.50; recebida ${packageJson.version}.`,
+);
 expect(
   Boolean(packageJson.scripts?.['regression:v14.3.50:p0-activity-classification']),
   'Script de regressão v14.3.50 não registrado.',
