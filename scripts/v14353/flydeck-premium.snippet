@@ -1,0 +1,107 @@
+function flyDeckClockV14353(value?: string | null): string {
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  return match ? `${String(Number(match[1])).padStart(2, '0')}:${match[2]}` : 'A confirmar';
+}
+function flyDeckProgramMomentV14353(event: ZeroLeg): Date {
+  const start = eventStartDateTime(event);
+  const match = String(event.presentation || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return start;
+  const presentation = new Date(start);
+  presentation.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  if (presentation.getTime() > start.getTime() + 6 * 60 * 60 * 1000) presentation.setDate(presentation.getDate() - 1);
+  return presentation;
+}
+function flyDeckCountdownV14353(event: ZeroLeg, nowMs: number): string {
+  const start = flyDeckProgramMomentV14353(event).getTime();
+  const end = eventEndDateTime(event).getTime();
+  if (nowMs >= start && nowMs <= end) return 'Em andamento';
+  const minutes = Math.max(0, Math.ceil((start - nowMs) / 60_000));
+  if (minutes < 60) return `Em ${Math.max(1, minutes)} min`;
+  if (minutes < 24 * 60) {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `Em ${hours} h ${rest} min` : `Em ${hours} h`;
+  }
+  const days = Math.floor(minutes / (24 * 60));
+  const hours = Math.floor((minutes % (24 * 60)) / 60);
+  return hours ? `Em ${days} d ${hours} h` : `Em ${days} d`;
+}
+function flyDeckBriefingPhaseV14353(event: ZeroLeg, nowMs: number): string {
+  const start = flyDeckProgramMomentV14353(event).getTime();
+  const end = eventEndDateTime(event).getTime();
+  if (nowMs >= start && nowMs <= end) return 'EM ANDAMENTO';
+  if (start > nowMs && start - nowMs <= 6 * 60 * 60 * 1000) return 'BRIEFING ATIVO';
+  return 'PRÓXIMA PROGRAMAÇÃO';
+}
+function flyDeckLiveClockV14353(nowMs: number): string {
+  return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(nowMs));
+}
+
+function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
+  const event = nextFlight(events);
+  const radar = useRadarSnapshot(event);
+  const loaded = events.some((item) => !item.placeholder);
+  const alertCount = actionableComplianceAlerts(compliance).length;
+  const departureEligible = loaded && !event.placeholder && isSmartDepartureEligible(event);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (!loaded || event.placeholder) {
+    return <><Brand onMenu={openMenu}/><main className="cc-flydeck-premium-v14353" data-flydeck-v14353="premium-briefing">
+      <header className="cc-flydeck-topline"><div><small>FLYDECK</small><h1>Briefing operacional</h1></div><span className="cc-flydeck-live"><i/> SISTEMA ATIVO</span></header>
+      <article className="cc-flydeck-empty">
+        <Upload aria-hidden="true"/>
+        <div><h2>{loaded ? 'Sem programação futura' : 'Importe a escala oficial'}</h2><p>{loaded ? 'Confira o período importado ou sincronize novamente.' : 'O briefing aparecerá aqui com os dados reais da próxima programação.'}</p></div>
+        <button onClick={onUpload}>{loaded ? 'Reimportar escala' : 'Importar PDF'}</button>
+      </article>
+      <aside className="cc-flydeck-official-note"><ShieldCheck aria-hidden="true"/><p><strong>Fonte operacional</strong> O CrewCheck organiza dados importados e não substitui a escala oficial nem as comunicações da empresa. Em caso de divergência, prevalece a fonte oficial.</p></aside>
+    </main></>;
+  }
+
+  const isFlight = event.kind === 'flight';
+  const gate = safe(radar?.gate || event.gate, 'A confirmar');
+  const terminal = safe(radar?.terminal || event.terminal, '');
+  const status = safe(radar?.status || event.status, 'Programado');
+  const route = isFlight ? `${safe(event.origin, '—')} → ${safe(event.destination, '—')}` : safe(city(event.origin), safe(event.origin, 'Local a confirmar'));
+  const programTitle = isFlight ? safe(event.flightNumber, rosterEventTitle(event)) : rosterEventTitle(event);
+  const countdown = flyDeckCountdownV14353(event, nowMs);
+  const phase = flyDeckBriefingPhaseV14353(event, nowMs);
+  const gateLine = terminal && terminal !== 'A confirmar' ? `${gate} · T${terminal}` : gate;
+
+  return <><Brand onMenu={openMenu}/><main className="cc-flydeck-premium-v14353" data-flydeck-v14353="premium-briefing">
+    <header className="cc-flydeck-topline">
+      <div><small>FLYDECK</small><h1>Briefing operacional</h1></div>
+      <span className="cc-flydeck-live" aria-live="polite"><i/> ATUALIZADO {flyDeckLiveClockV14353(nowMs)}</span>
+    </header>
+
+    <article className="cc-flydeck-briefing">
+      <header>
+        <div className="cc-flydeck-phase"><span>{phase}</span><strong>{countdown}</strong></div>
+        <button className="cc-flydeck-roster-link" onClick={() => setView('roster')}>Ver escala <ChevronRight size={18}/></button>
+      </header>
+      <div className="cc-flydeck-program">
+        <small>{programDateLabel(event)}</small>
+        <h2>{programTitle}</h2>
+        <p>{route}</p>
+      </div>
+      <section className="cc-flydeck-facts" aria-label="Dados essenciais da próxima programação">
+        <div><Clock aria-hidden="true"/><span>Apresentação<strong>{flyDeckClockV14353(event.presentation)}</strong></span></div>
+        <div><Plane aria-hidden="true"/><span>{isFlight ? 'Partida' : 'Início'}<strong>{flyDeckClockV14353(event.departure)}</strong></span></div>
+        <div><CalendarDays aria-hidden="true"/><span>{isFlight ? 'Chegada' : 'Fim'}<strong>{flyDeckClockV14353(event.arrival)}</strong></span></div>
+        <div><Radar aria-hidden="true"/><span>{isFlight ? 'Portão' : 'Status'}<strong>{isFlight ? gateLine : status}</strong></span></div>
+      </section>
+      <footer className="cc-flydeck-actions">
+        {departureEligible ? <button className="primary" onClick={() => setView('departure')}><Navigation/> Planejar saída</button> : <span className="cc-flydeck-no-route"><ShieldCheck/> Esta programação não exige rota automática</span>}
+        {isFlight ? <button onClick={() => setView('radar')}><Radar/> Radar</button> : null}
+        {alertCount > 0 ? <button className="warning" onClick={() => setView('alerts')}><AlertTriangle/> {alertCount} {alertCount === 1 ? 'alerta' : 'alertas'}</button> : null}
+      </footer>
+    </article>
+
+    <OperationalDayTimeline events={events} onNavigate={(target) => setView(target as ZeroView)}/>
+
+    <aside className="cc-flydeck-official-note"><ShieldCheck aria-hidden="true"/><p><strong>Confirmação obrigatória</strong> Consulte sempre a escala oficial e as comunicações da empresa antes de cada programação. O CrewCheck é uma camada de organização; em caso de divergência, prevalece a fonte oficial.</p></aside>
+  </main></>;
+}
