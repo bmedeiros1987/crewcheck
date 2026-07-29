@@ -143,6 +143,7 @@ function serverCrewRosterMckDays(blockText, baseDate, referenceMonth, referenceY
   const day = makeDay(shifted.day, shifted.month, shifted.year, base);
   day.type = 'CRM';
   day.pairingCode = code;
+  day.operationalAirport = match[2].toUpperCase();
   day.dutyReport = serverCrewRosterCleanTime(rawStart);
   day.dutyDebrief = serverCrewRosterCleanTime(rawEnd);
   day.isNextDay = serverCrewRosterRawOffset(rawEnd) > serverCrewRosterRawOffset(rawStart) || toMin(day.dutyDebrief) < toMin(day.dutyReport);

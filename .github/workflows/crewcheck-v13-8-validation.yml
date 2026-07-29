@@ -89,6 +89,8 @@ jobs:
         run: node scripts/regression-v14-3-45-august-roster-orientation.mjs 2>&1 | tee "$RUNNER_TEMP/august-roster-orientation-regression.log"
       - name: Validate fresh Web, Android and Telegram location
         run: node scripts/regression-v14-3-46-fresh-location.mjs 2>&1 | tee "$RUNNER_TEMP/fresh-location-regression.log"
+      - name: Validate Smart Departure operational airport handoff
+        run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs 2>&1 | tee "$RUNNER_TEMP/smart-departure-operational-airport-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Publish functional audit report
@@ -127,5 +129,6 @@ jobs:
             ${{ runner.temp }}/august-roster-continuity-regression.log
             ${{ runner.temp }}/august-roster-orientation-regression.log
             ${{ runner.temp }}/fresh-location-regression.log
+            ${{ runner.temp }}/smart-departure-operational-airport-regression.log
           if-no-files-found: ignore
           retention-days: 7

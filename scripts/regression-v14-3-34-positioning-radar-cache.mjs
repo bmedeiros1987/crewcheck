@@ -5,7 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const applyPath = path.join(root, 'scripts/v14334/apply.mjs');
 const chain = fs.readFileSync(path.join(root, 'scripts/v139/apply.mjs'), 'utf8');
 assert.ok(chain.includes("await import('../v14334/apply.mjs');"), 'v14.3.34 deve estar no fim da preparação canônica');
 
@@ -30,12 +29,12 @@ for (const marker of [
 
 assert.ok(!before.includes('FLIGHTAWARE_AEROAPI_KEY'), 'cliente não pode conhecer credencial de provedor');
 assert.ok(!before.includes('AVIATIONSTACK_API_KEY'), 'cliente não pode conhecer credencial de provedor');
-assert.ok(before.includes("const DEFAULT_VERSION = '14.3.34';"), 'versão web 14.3.34 ausente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.34'), 'release.json 14.3.34 ausente');
+assert.ok(before.includes("const DEFAULT_VERSION = '14.3.47';"), 'versão Web/PWA final 14.3.47 ausente');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.47'), 'release.json final 14.3.47 ausente');
 
-const second = spawnSync(process.execPath, [applyPath], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'segunda aplicação v14.3.34 falhou');
-assert.equal(fs.readFileSync(homePath, 'utf8'), before, 'patch v14.3.34 deve ser idempotente');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.47 falhou');
+assert.equal(fs.readFileSync(homePath, 'utf8'), before, 'preparação final deve preservar a proteção v14.3.34');
 
 function localDate(value) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;

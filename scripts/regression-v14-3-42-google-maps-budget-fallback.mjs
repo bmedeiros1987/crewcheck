@@ -184,9 +184,9 @@ assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve ac
 assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
 assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
 assert.ok(!viteConfig.includes('GOOGLE_CLIENT_SECRET'), 'segredo OAuth nunca pode ser incorporado no bundle');
-assert.ok(home.includes("const DEFAULT_VERSION = '14.3.44';"), 'a preparação final deve terminar na versão Web/PWA 14.3.44');
+assert.ok(home.includes("const DEFAULT_VERSION = '14.3.47';"), 'a preparação final deve terminar na versão Web/PWA 14.3.47');
 assert.ok(home.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
-assert.ok(release.includes('14.3.44'), 'release final deve anunciar 14.3.44');
+assert.ok(release.includes('14.3.47'), 'release final deve anunciar 14.3.47');
 assert.ok(applySource.includes("next.indexOf('type RoutePreviewInfo = {')"), 'patch do tipo deve usar a forma produzida pela preparação, sem depender dos últimos campos');
 assert.ok(applySource.includes('if (source.includes(replacement.trim())) return source;'), 'substituições de servidor devem ser idempotentes');
 assert.ok(applySource.includes("if (!next.includes('mapsBudget?: {'))"), 'tipo de rota deve ter proteção contra duplicidade');
@@ -195,4 +195,4 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
 }
 
-console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.44 chain and protected engine validated.');
+console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.47 chain and protected engine validated.');

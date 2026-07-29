@@ -18,19 +18,19 @@ const release = read('client/public/release.json');
 
 assert.ok(chain.includes("await import('../v14340/apply.mjs');"), 'v14.3.40 deve encerrar a preparação canônica');
 assert.ok(clientParser.includes('function rescueFlightsFromVisualRows('), 'cliente precisa resgatar linhas visuais rotacionadas');
-assert.ok(clientParser.includes('importação seguirá e os resgates visual/servidor continuarão'), 'integridade deve virar diagnóstico, não bloqueio');
+assert.ok(clientParser.includes('importação seguirá e o fallback visual do servidor será acionado'), 'integridade deve virar diagnóstico, não bloqueio');
 assert.ok(!clientParser.includes('A importação foi bloqueada para não salvar uma escala incompleta'), 'cliente não pode bloquear CrewRosterReport reconhecível');
 assert.ok(serverParser.includes('function buildServerVisualRows('), 'servidor precisa escolher orientação visual');
 assert.ok(serverParser.includes('function rescueServerFlightsFromVisualPages('), 'servidor precisa resgatar voos diretamente das páginas');
 assert.ok(serverParser.includes('scoreServerRows(rotated) > scoreServerRows(normal)'), 'orientação deve ser escolhida por qualidade');
 assert.ok(!serverParser.includes('importação parcial bloqueada'), 'servidor não pode recusar o PDF por diagnóstico de qualidade');
-assert.ok(home.includes("const DEFAULT_VERSION = '14.3.40';"), 'versão 14.3.40 ausente');
+assert.ok(home.includes("const DEFAULT_VERSION = '14.3.47';"), 'versão Web/PWA final 14.3.47 ausente');
 assert.ok(home.includes('A escala será importada mesmo assim'), 'guardião deve avisar e continuar');
 assert.ok(home.includes('/icons/crewcheck-icon-v3.png?v=14340'), 'cabeçalho deve usar a marca canônica v3');
 assert.ok(brand.includes('/icons/crewcheck-icon-v3.png'), 'PDF e compartilhamento devem usar a marca v3');
 assert.ok(manifest.includes('/icons/crewcheck-icon-v3.png?v=14340'), 'PWA deve usar a marca v3');
 assert.ok(android.includes('crewcheck-icon-v3.png'), 'Android deve copiar a marca v3');
-assert.ok(release.includes('14.3.40'), 'release 14.3.40 ausente');
+assert.ok(release.includes('14.3.47'), 'release final 14.3.47 ausente');
 
 const icon = path.join(root, 'client/public/icons/crewcheck-icon-v3.png');
 assert.ok(fs.existsSync(icon) && fs.statSync(icon).size > 1024, 'ícone canônico v3 deve ser gerado');
