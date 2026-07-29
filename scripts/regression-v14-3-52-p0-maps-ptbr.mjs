@@ -9,6 +9,16 @@ function expect(condition, message) {
   if (!condition) throw new Error(`[v14.3.52] ${message}`);
 }
 
+function versionAtLeast(actual, minimum) {
+  const left = String(actual || '').split('.').map((value) => Number(value) || 0);
+  const right = String(minimum || '').split('.').map((value) => Number(value) || 0);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if ((left[index] || 0) > (right[index] || 0)) return true;
+    if ((left[index] || 0) < (right[index] || 0)) return false;
+  }
+  return true;
+}
+
 process.env.CREWCHECK_V14352_SKIP_APPLY = '1';
 const transforms = await import('./v14352/apply.mjs');
 
@@ -107,7 +117,10 @@ expect(
   applyChain.includes("await import('../v14352/apply.mjs');"),
   'v14.3.52 não está na preparação canônica.',
 );
-expect(packageJson.version === '14.3.52', `Versão esperada 14.3.52; recebida ${packageJson.version}.`);
+expect(
+  versionAtLeast(packageJson.version, '14.3.52'),
+  `Versão mínima esperada 14.3.52; recebida ${packageJson.version}.`,
+);
 expect(
   Boolean(packageJson.scripts?.['regression:v14.3.52:p0-maps-ptbr']),
   'Script de regressão v14.3.52 não registrado.',
