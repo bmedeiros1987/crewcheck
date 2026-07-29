@@ -5,7 +5,6 @@ import {
   Hotel,
   MapPin,
   MoonStar,
-  Navigation,
   Plane,
   ShieldCheck,
 } from 'lucide-react';
@@ -33,7 +32,7 @@ type RosterEvent = {
   };
 };
 
-type TimelineTone = 'departure' | 'presentation' | 'operation' | 'stay' | 'rest';
+type TimelineTone = 'presentation' | 'operation' | 'stay' | 'rest';
 
 type TimelineItem = {
   id: string;
@@ -46,7 +45,8 @@ type TimelineItem = {
   targetView?: string;
 };
 
-const REST_PATTERN = /\b(?:DO|DOF|DOP|OFF|FOLGA|DESCANSO|REPOUSO)\b/i;
+const REST_DAY_PATTERN = /\b(?:DO|DOF|DOP|DOPR|OFF|FOLGA|VC)\b/i;
+const REST_RECOVERY_PATTERN = /\b(?:DR|DESCANSO|REPOUSO)\b/i;
 
 function validDate(value?: string): Date | null {
   if (!value) return null;
@@ -69,19 +69,30 @@ function eventText(event: RosterEvent): string {
 }
 
 function isRest(event: RosterEvent): boolean {
+  const text = eventText(event);
   return event.kind === 'rest'
     || event.canonical?.kind === 'rest'
-    || REST_PATTERN.test(eventText(event));
+    || REST_DAY_PATTERN.test(text)
+    || REST_RECOVERY_PATTERN.test(text);
 }
 
 function isStay(event: RosterEvent): boolean {
-  return event.kind === 'stay'
-    || event.canonical?.kind === 'stay'
-    || Boolean(event.hotel);
+  return event.kind === 'stay' || event.canonical?.kind === 'stay';
+}
+
+function isFlight(event: RosterEvent): boolean {
+  return event.kind === 'flight' || event.canonical?.kind === 'flight';
 }
 
 function isOperational(event: RosterEvent): boolean {
   return !event.placeholder && !isRest(event) && !isStay(event);
+}
+
+function restCopy(event: RosterEvent): { title: string; detail: string } {
+  if (REST_RECOVERY_PATTERN.test(eventText(event))) {
+    return { title: 'Repouso', detail: 'Período de recuperação programado' };
+  }
+  return { title: 'Folga', detail: 'Descanso programado' };
 }
 
 function routeLabel(event: RosterEvent): string {
@@ -120,6 +131,9 @@ function presentationDate(event: RosterEvent): Date | null {
   if (!start || !match) return null;
   const result = new Date(start);
   result.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  if (result.getTime() > start.getTime() + 3 * 60 * 60 * 1000) {
+    result.setDate(result.getDate() - 1);
+  }
   return result;
 }
 
@@ -129,8 +143,8 @@ function operationTitle(event: RosterEvent): string {
   return flight || title || 'Programação operacional';
 }
 
-function buildTimeline(events: RosterEvent[]): TimelineItem[] {
-  const now = Date.now();
+export function buildOperationalDayTimeline(events: RosterEvent[], nowDate = new Date()): TimelineItem[] {
+  const now = nowDate.getTime();
   const relevant = events
     .filter((event) => !event.placeholder)
     .filter((event) => eventStart(event))
@@ -138,23 +152,17 @@ function buildTimeline(events: RosterEvent[]): TimelineItem[] {
     .sort((left, right) => (eventStart(left)?.getTime() || 0) - (eventStart(right)?.getTime() || 0));
 
   const items: TimelineItem[] = [];
-  const nextOperational = relevant.find(isOperational);
+  const nextOperational = relevant.find((event) => isOperational(event) && (eventEnd(event)?.getTime() || 0) >= now);
   if (nextOperational) {
     const presentation = presentationDate(nextOperational);
-    if (presentation) {
-      const recommendedDeparture = new Date(presentation.getTime() - 90 * 60 * 1000);
-      if (recommendedDeparture.getTime() >= now - 3 * 60 * 60 * 1000) {
-        items.push({
-          id: `departure-${nextOperational.id || recommendedDeparture.toISOString()}`,
-          at: recommendedDeparture,
-          eyebrow: 'Saída Inteligente',
-          title: 'Saída recomendada',
-          detail: routeLabel(nextOperational) || 'Deslocamento para a apresentação',
-          meta: 'Estimativa inicial; confirme o trânsito no card de rota.',
-          tone: 'departure',
-          targetView: 'departure',
-        });
-      }
+    const start = eventStart(nextOperational);
+    const isDistinctUpcomingPresentation = Boolean(
+      presentation
+      && start
+      && presentation.getTime() >= now - 5 * 60 * 1000
+      && presentation.getTime() < start.getTime() - 60 * 1000,
+    );
+    if (presentation && isDistinctUpcomingPresentation) {
       items.push({
         id: `presentation-${nextOperational.id || presentation.toISOString()}`,
         at: presentation,
@@ -172,26 +180,29 @@ function buildTimeline(events: RosterEvent[]): TimelineItem[] {
     const start = eventStart(event);
     if (!start) continue;
     if (isRest(event)) {
+      const copy = restCopy(event);
+      const end = eventEnd(event);
       items.push({
         id: `rest-${event.id || start.toISOString()}`,
         at: start,
         eyebrow: 'Descanso',
-        title: 'Folga',
-        detail: 'Descanso programado',
-        meta: eventEnd(event) ? `Encerra ${dateLabel(eventEnd(event) as Date)}, às ${timeLabel(eventEnd(event) as Date)}` : undefined,
+        title: copy.title,
+        detail: copy.detail,
+        meta: end ? `Encerra ${dateLabel(end)}, às ${timeLabel(end)}` : undefined,
         tone: 'rest',
         targetView: 'roster',
       });
       continue;
     }
     if (isStay(event)) {
+      const end = eventEnd(event);
       items.push({
         id: `stay-${event.id || start.toISOString()}`,
         at: start,
         eyebrow: 'Hospedagem',
         title: 'Pernoite',
         detail: event.hotel || routeLabel(event) || 'Hotel a confirmar',
-        meta: eventEnd(event) ? `Até ${dateLabel(eventEnd(event) as Date)}, às ${timeLabel(eventEnd(event) as Date)}` : undefined,
+        meta: end ? `Até ${dateLabel(end)}, às ${timeLabel(end)}` : undefined,
         tone: 'stay',
         targetView: 'hotels',
       });
@@ -200,12 +211,12 @@ function buildTimeline(events: RosterEvent[]): TimelineItem[] {
     items.push({
       id: `operation-${event.id || start.toISOString()}`,
       at: start,
-      eyebrow: event.kind === 'flight' ? 'Voo' : 'Programação',
+      eyebrow: isFlight(event) ? 'Voo' : 'Programação',
       title: operationTitle(event),
       detail: routeLabel(event) || event.subtitle || 'Atividade operacional',
       meta: [event.status, event.gate ? `Portão ${event.gate}` : '', event.terminal || ''].filter(Boolean).join(' · ') || undefined,
       tone: 'operation',
-      targetView: event.kind === 'flight' ? 'radar' : 'roster',
+      targetView: isFlight(event) ? 'radar' : 'roster',
     });
   }
 
@@ -222,7 +233,6 @@ function buildTimeline(events: RosterEvent[]): TimelineItem[] {
 }
 
 const iconForTone = {
-  departure: Navigation,
   presentation: Clock3,
   operation: Plane,
   stay: Hotel,
@@ -236,19 +246,19 @@ export default function OperationalDayTimeline({
   events: RosterEvent[];
   onNavigate: (view: string) => void;
 }) {
-  const timeline = buildTimeline(events);
+  const timeline = buildOperationalDayTimeline(events);
 
   return <section className="cc14349-dayline" aria-labelledby="cc14349-dayline-title">
     <header className="cc14349-dayline-head">
       <span className="cc14349-dayline-heading">
-        <span className="cc14349-dayline-heading-icon"><CalendarDays/></span>
+        <span className="cc14349-dayline-heading-icon" aria-hidden="true"><CalendarDays/></span>
         <span>
           <small>ROTINA OPERACIONAL</small>
           <h2 id="cc14349-dayline-title">Linha do Dia</h2>
           <p>Sua rotina operacional em ordem cronológica.</p>
         </span>
       </span>
-      <button type="button" onClick={() => onNavigate('roster')}>Ver escala <ChevronRight/></button>
+      <button type="button" onClick={() => onNavigate('roster')}>Ver escala <ChevronRight aria-hidden="true"/></button>
     </header>
 
     {timeline.length ? <div className="cc14349-dayline-list">
@@ -261,18 +271,18 @@ export default function OperationalDayTimeline({
           onClick={() => onNavigate(item.targetView || 'roster')}
         >
           <span className="cc14349-dayline-time"><strong>{timeLabel(item.at)}</strong><small>{dateLabel(item.at)}</small></span>
-          <span className="cc14349-dayline-marker"><Icon/></span>
+          <span className="cc14349-dayline-marker" aria-hidden="true"><Icon/></span>
           <span className="cc14349-dayline-copy">
             <small>{item.eyebrow}</small>
             <strong>{item.title}</strong>
-            <span><MapPin/>{item.detail}</span>
+            <span><MapPin aria-hidden="true"/>{item.detail}</span>
             {item.meta && <em>{item.meta}</em>}
           </span>
-          <ChevronRight className="cc14349-dayline-chevron"/>
+          <ChevronRight className="cc14349-dayline-chevron" aria-hidden="true"/>
         </button>;
       })}
     </div> : <div className="cc14349-dayline-empty">
-      <ShieldCheck/>
+      <ShieldCheck aria-hidden="true"/>
       <div><strong>Nenhuma programação futura encontrada</strong><span>Confira o período da escala ou importe um arquivo atualizado.</span></div>
       <button type="button" onClick={() => onNavigate('import')}>Importar escala</button>
     </div>}
