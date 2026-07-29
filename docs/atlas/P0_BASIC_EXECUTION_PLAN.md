@@ -82,6 +82,25 @@ Implementação real, ainda mantida como rascunho:
 - largura contida, lista de uma coluna e scroll vertical único;
 - verificação estática dos arquivos protegidos do motor.
 
+## Terceiro lote funcional — v14.3.52
+
+- separa as chaves server-only de Routes, Geocoding e Places;
+- impede o servidor de usar a chave pública `VITE_GOOGLE_MAPS_API_KEY`;
+- documenta a chave de navegador necessária para Embed e Static Maps;
+- deixa de montar iframe legado quando a chave pública não existe;
+- mantém “Abrir no Google Maps” como saída permanente;
+- troca estados indefinidos por mensagens finitas e prioritárias em pt-BR;
+- registra o diagnóstico e a matriz de APIs/restrições sem copiar segredos.
+
+## Validação executada no terceiro lote
+
+- sintaxe do patch v14.3.52 e da regressão;
+- separação idempotente das chaves por superfície;
+- fallback de rota para falha de sessão, rede ou configuração;
+- remoção de “Calculando” e “aguardando” nos estados finais da rota;
+- verificação de que a chave `VITE_` permanece somente no cliente;
+- verificação estática dos arquivos protegidos do motor.
+
 ## Ordem de execução
 
 - [x] Confirmar repositório, branch e baseline da `main`.
@@ -92,8 +111,8 @@ Implementação real, ainda mantida como rascunho:
 - [ ] Comparar quantidade de atividades, datas, horários, origem, destino e
   continuidade antes/depois com a escala oficial.
 - [x] Corrigir App Shell, menu, largura, scroll e identificação do usuário.
-- [ ] Revisar textos prioritários em pt-BR.
-- [ ] Auditar chave, restrições e serviços realmente usados pelo Google Maps.
+- [x] Revisar textos prioritários em pt-BR.
+- [x] Auditar chave, restrições e serviços realmente usados pelo Google Maps.
 - [x] Manter Bruno e Daniel em variáveis de voz independentes.
 - [ ] Validar desktop, Android e iPad em tema claro e escuro.
 
