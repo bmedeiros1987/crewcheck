@@ -8,14 +8,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const homePath = path.join(root, 'client/src/pages/Home.tsx');
 const cssPath = path.join(root, 'client/src/index.css');
 const applyPath = path.join(root, 'scripts/v14337/apply.mjs');
-const compatibilityPath = path.join(root, 'scripts/v14337/compatibility.mjs');
 const chain = fs.readFileSync(path.join(root, 'scripts/v139/apply.mjs'), 'utf8');
 const homeBefore = fs.readFileSync(homePath, 'utf8');
 const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14337/apply.mjs');"), 'v14.3.37 deve estar na preparação canônica');
 assert.ok(chain.includes("await import('../v14337/compatibility.mjs');"), 'compatibilidade v14.3.37 deve preservar módulos existentes');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.37';"), 'versão web 14.3.37 ausente');
+assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.47';"), 'versão Web/PWA final 14.3.47 ausente');
 assert.ok(homeBefore.includes('function CrewCheckMark('), 'componente único da marca CrewCheck ausente');
 assert.equal((homeBefore.match(/data-crewcheck-brand="canonical"/g) || []).length, 1, 'a definição da marca canônica deve existir uma única vez');
 assert.ok(homeBefore.includes('<CrewCheckMark/>'), 'cabeçalho deve reutilizar a marca canônica');
@@ -95,18 +94,16 @@ assert.ok(fs.existsSync(playSourcePath), 'fonte vetorial para o ativo Play Store
 const mark = fs.readFileSync(markPath, 'utf8');
 assert.ok(mark.includes('viewBox="0 0 512 512"'), 'marca deve possuir matriz 512×512');
 assert.equal(fs.readFileSync(playSourcePath, 'utf8'), mark, 'ativo Play Store deve nascer da mesma marca interna');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.37'), 'release.json não foi atualizado');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.47'), 'release.json final não foi atualizado');
 
 const applySource = fs.readFileSync(applyPath, 'utf8');
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'server.mjs', 'financialRules', 'canonicalRoster']) {
   assert.ok(!applySource.includes(`update('${protectedPath}`), `v14.3.37 não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const second = spawnSync(process.execPath, [applyPath], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'segunda aplicação v14.3.37 falhou');
-const compatibility = spawnSync(process.execPath, [compatibilityPath], { cwd: root, encoding: 'utf8' });
-assert.equal(compatibility.status, 0, compatibility.stderr || compatibility.stdout || 'segunda compatibilidade v14.3.37 falhou');
-assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch FlyDeck deve ser idempotente no Home');
-assert.equal(fs.readFileSync(cssPath, 'utf8'), cssBefore, 'patch FlyDeck deve ser idempotente no CSS');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.47 falhou');
+assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar o FlyDeck no Home');
+assert.equal(fs.readFileSync(cssPath, 'utf8'), cssBefore, 'preparação final deve preservar o CSS do FlyDeck');
 
 console.log('v14.3.37 FlyDeck/navigation/brand: chronology, portal footer, complete grouped menu, five-item bottom nav, protected engine and canonical mark validated.');

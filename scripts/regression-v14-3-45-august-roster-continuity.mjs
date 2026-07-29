@@ -13,7 +13,9 @@ const clientSource = read('client/src/lib/pdfParser.ts');
 const serverSource = read('server/rosterParser.mjs');
 const applySource = read('scripts/v14345/apply.mjs');
 
-assert.ok(chain.trimEnd().endsWith("await import('../v14345/apply.mjs');"), 'v14.3.45 deve encerrar a preparação canônica');
+assert.ok(chain.includes("await import('../v14345/apply.mjs');"), 'v14.3.45 deve permanecer na preparação canônica');
+assert.ok(chain.trimEnd().endsWith("await import('../v14347/apply.mjs');"), 'v14.3.47 deve encerrar a preparação canônica');
+assert.ok(applySource.includes('declaredFunctions.every('), 'v14.3.45 deve reconhecer snippets já preparados por marcadores semânticos');
 assert.ok(!fixture.includes('BRUNO SARAIVA'), 'fixture não pode carregar nome real');
 assert.ok(!fixture.includes('04453812'), 'fixture não pode carregar BP real');
 assert.ok(fixture.includes('<== Thu LA3512/300726/'), 'fixture deve preservar a continuação anterior ao mês');
@@ -127,8 +129,8 @@ const tracked = [
   'client/public/release.json',
 ];
 const before = new Map(tracked.map((relative) => [relative, read(relative)]));
-const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14345/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda aplicação v14.3.45 falhou');
-for (const relative of tracked) assert.equal(read(relative), before.get(relative), `v14.3.45 deve ser idempotente em ${relative}`);
+const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'reaplicação final v14.3.47 após v14.3.45 falhou');
+for (const relative of tracked) assert.equal(read(relative), before.get(relative), `preparação canônica deve ser idempotente em ${relative}`);
 
 console.log('v14.3.45 August CrewRoster: previous-month continuation, explicit +1/+2/+3 dates, two MCK activities, malformed-original replacement, HSB/DR preservation, 46 flights, no teleports, FH/DH order and idempotency validated.');

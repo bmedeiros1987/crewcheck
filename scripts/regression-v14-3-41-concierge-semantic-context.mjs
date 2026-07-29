@@ -91,7 +91,6 @@ const homeBefore = fs.readFileSync(homePath, 'utf8');
 const releaseBefore = fs.readFileSync(releasePath, 'utf8');
 const engineSource = fs.readFileSync(path.join(root, 'server/v14338/concierge-semantic.mjs'), 'utf8');
 const applySource = fs.readFileSync(path.join(root, 'scripts/v14341/apply.mjs'), 'utf8');
-const compatibilityPath = path.join(root, 'scripts/v14341/compatibility.mjs');
 
 assert.ok(chain.includes("await import('../v14341/apply.mjs');"), 'v14.3.41 deve integrar o interpretador semântico');
 assert.ok(chain.includes("await import('../v14341/compatibility.mjs');"), 'v14.3.41 deve encerrar descartando contexto expirado');
@@ -109,26 +108,24 @@ for (const marker of [
 ]) assert.ok(serverBefore.includes(marker), `servidor preparado sem marcador: ${marker}`);
 assert.ok(!serverBefore.includes("if (!isConciergeContextFreshV14338(previous)) return previous;"), 'contexto vencido não pode alcançar busca por recordKey, voo ou data');
 for (const marker of [
-  "const DEFAULT_VERSION = '14.3.41';",
+  "const DEFAULT_VERSION = '14.3.47';",
   'data-concierge-semantic="v14.3.41"',
   'Converse normalmente',
   'O contexto expira em até 6 horas',
   'title="Compreensão" value="Natural"',
   '<h2>Teste a conversa</h2>',
 ]) assert.ok(homeBefore.includes(marker), `interface preparada sem marcador: ${marker}`);
-assert.ok(releaseBefore.includes('14.3.41'), 'release web deve ser 14.3.41');
+assert.ok(releaseBefore.includes('14.3.47'), 'release Web/PWA final deve ser 14.3.47');
 assert.ok(!engineSource.includes('fetch('), 'interpretador semântico deve ser determinístico e sem chamada externa');
 assert.ok(!/OPENAI|GEMINI|ANTHROPIC|LLM_API/i.test(engineSource), 'interpretador não pode depender de modelo generativo externo');
 for (const protectedPath of ['client/src/lib/pdfParser.ts','server/rosterParser.mjs','canonicalRoster','financialRules']) {
   assert.ok(!applySource.includes(`update('${protectedPath}`), `v14.3.41 não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14341/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'segunda aplicação v14.3.41 falhou');
-const compatibility = spawnSync(process.execPath, [compatibilityPath], { cwd: root, encoding: 'utf8' });
-assert.equal(compatibility.status, 0, compatibility.stderr || compatibility.stdout || 'segunda compatibilidade v14.3.41 falhou');
-assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'patch semântico deve ser idempotente no servidor');
-assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'patch semântico deve ser idempotente na interface');
-assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'patch semântico deve ser idempotente no release');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.47 falhou');
+assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'preparação final deve preservar o Concierge semântico no servidor');
+assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar o Concierge semântico na interface');
+assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'preparação final deve preservar o release');
 
 console.log('v14.3.41 Concierge semantic context: natural dates, carriers, requested ICAO, follow-ups, expired-context isolation, safe memory, canonical routing, UI and idempotency validated.');

@@ -18,16 +18,29 @@ function update(path, transform, { optional = false } = {}) {
 }
 
 function insertBefore(source, marker, content, label) {
-  if (source.includes(content.trim())) return source;
+  const normalizedSource = source.replace(/\r\n/g, '\n');
+  const normalizedContent = content.trim().replace(/\r\n/g, '\n');
+  if (normalizedSource.includes(normalizedContent)) return source;
+  const declaredFunctions = [...content.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g)].map((match) => match[1]);
+  if (
+    declaredFunctions.length > 0
+    && declaredFunctions.every((name) => new RegExp(`\\bfunction\\s+${name}\\s*\\(`).test(source))
+  ) return source;
   const index = source.indexOf(marker);
   if (index < 0) throw new Error(`[v14345] Âncora não localizada: ${label}`);
-  return `${source.slice(0, index)}${content.trimEnd()}\n\n${source.slice(index)}`;
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const preparedContent = normalizedContent.replace(/\n/g, eol);
+  return `${source.slice(0, index)}${preparedContent}${eol}${eol}${source.slice(index)}`;
 }
 
 function replaceRequired(source, before, after, label) {
-  if (source.includes(after)) return source;
-  if (!source.includes(before)) throw new Error(`[v14345] Ponto não localizado: ${label}`);
-  return source.replace(before, after);
+  const afterVariants = [...new Set([after, after.replace(/\n/g, '\r\n')])];
+  if (afterVariants.some((value) => source.includes(value))) return source;
+  const beforeVariants = [...new Set([before, before.replace(/\n/g, '\r\n')])];
+  const matched = beforeVariants.find((value) => source.includes(value));
+  if (!matched) throw new Error(`[v14345] Ponto não localizado: ${label}`);
+  const replacement = matched.includes('\r\n') ? after.replace(/\n/g, '\r\n') : after;
+  return source.replace(matched, replacement);
 }
 
 update('client/src/lib/pdfParser.ts', (source) => {
@@ -37,7 +50,8 @@ update('client/src/lib/pdfParser.ts', (source) => {
   if (!next.includes('const offsetAwareDays = rebuildCrewRosterOffsetDays(')) {
     const visualDeclaration = '  const visuallyRescuedDays = rescueFlightsFromVisualRows(rescuedDays, rows, header.month, header.year, header.base);';
     if (!next.includes(visualDeclaration)) throw new Error('[v14345] Resgate visual do cliente não está preparado.');
-    next = next.replace(visualDeclaration, `${visualDeclaration}\n  const offsetAwareDays = rebuildCrewRosterOffsetDays(visuallyRescuedDays, fullText, header.month, header.year, header.base);`);
+    const eol = next.includes('\r\n') ? '\r\n' : '\n';
+    next = next.replace(visualDeclaration, `${visualDeclaration}${eol}  const offsetAwareDays = rebuildCrewRosterOffsetDays(visuallyRescuedDays, fullText, header.month, header.year, header.base);`);
   }
   next = next.replace('normalizeCrewRosterReportContinuationDays(visuallyRescuedDays,', 'normalizeCrewRosterReportContinuationDays(offsetAwareDays,');
   if (!next.includes('normalizeCrewRosterReportContinuationDays(offsetAwareDays,') && !next.includes('const continuationDays = offsetAwareDays;')) throw new Error('[v14345] Reconstrução por offsets não foi conectada ao motor canônico do cliente.');
@@ -66,11 +80,12 @@ update('server/rosterParser.mjs', (source) => {
 
   const visualPipeline = ` roster.days = rescueServerFlightsFromVisualPages(roster.days, pages, roster.month, roster.year, roster.base);\n roster.days = finalizeServerDays(roster.days, roster.month, roster.year, roster.base);`;
   const offsetPipeline = ` roster.days = rescueServerFlightsFromVisualPages(roster.days, pages, roster.month, roster.year, roster.base);\n roster.days = rebuildServerCrewRosterOffsetDays(roster.days, fullText, roster.month, roster.year, roster.base);\n roster.days = finalizeServerDays(roster.days, roster.month, roster.year, roster.base);`;
-  if (next.includes(visualPipeline)) next = next.replace(visualPipeline, offsetPipeline);
+  if (next.replace(/\r\n/g, '\n').includes(visualPipeline)) next = replaceRequired(next, visualPipeline, offsetPipeline, 'pipeline de offsets no servidor');
   else if (!next.includes('rebuildServerCrewRosterOffsetDays(roster.days, fullText')) {
     const finalLine = ' roster.days = finalizeServerDays(roster.days, roster.month, roster.year, roster.base);';
     if (!next.includes(finalLine)) throw new Error('[v14345] Pipeline final do servidor não localizado.');
-    next = next.replace(finalLine, ` roster.days = rebuildServerCrewRosterOffsetDays(roster.days, fullText, roster.month, roster.year, roster.base);\n${finalLine}`);
+    const eol = next.includes('\r\n') ? '\r\n' : '\n';
+    next = next.replace(finalLine, ` roster.days = rebuildServerCrewRosterOffsetDays(roster.days, fullText, roster.month, roster.year, roster.base);${eol}${finalLine}`);
   }
 
   next = next.replace("'NS','NSJ','IJ','DM','FH']);", "'NS','NSJ','IJ','DM','FH','MCK','MCK320']);");

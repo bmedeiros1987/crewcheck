@@ -13,19 +13,27 @@ function update(filePath, transform, { optional = false } = {}) {
 }
 
 function replaceRequired(source, before, after, label) {
-  if (source.includes(after)) return source;
-  if (!source.includes(before)) throw new Error(`[v14345] Ponto de aplicação não localizado: ${label}`);
-  return source.replace(before, after);
+  const afterVariants = [...new Set([after, after.replace(/\n/g, '\r\n')])];
+  if (afterVariants.some((value) => source.includes(value))) return source;
+  const beforeVariants = [...new Set([before, before.replace(/\n/g, '\r\n')])];
+  const matched = beforeVariants.find((value) => source.includes(value));
+  if (!matched) throw new Error(`[v14345] Ponto de aplicação não localizado: ${label}`);
+  const replacement = matched.includes('\r\n') ? after.replace(/\n/g, '\r\n') : after;
+  return source.replace(matched, replacement);
 }
 
 function replaceBlock(source, startMarker, endMarker, replacement, label) {
-  if (source.includes(replacement.trim())) return source;
+  const normalizedSource = source.replace(/\r\n/g, '\n');
+  const normalizedReplacement = replacement.trim().replace(/\r\n/g, '\n');
+  if (normalizedSource.includes(normalizedReplacement)) return source;
   const start = source.indexOf(startMarker);
   const end = start >= 0 ? source.indexOf(endMarker, start + startMarker.length) : -1;
   if (start < 0 || end < 0) {
     throw new Error(`[v14345] Bloco não localizado: ${label}. start=${start} end=${end}`);
   }
-  return `${source.slice(0, start)}${replacement.trimEnd()}\n\n${source.slice(end)}`;
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const preparedReplacement = normalizedReplacement.replace(/\n/g, eol);
+  return `${source.slice(0, start)}${preparedReplacement}${eol}${eol}${source.slice(end)}`;
 }
 
 const clientVisualRows = String.raw`async function extractVisualRows(pdf: any): Promise<VisualRow[]> {

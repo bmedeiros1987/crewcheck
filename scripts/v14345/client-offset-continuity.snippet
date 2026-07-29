@@ -158,6 +158,7 @@ function crewRosterOffsetMckDays(blockText: string, baseDate: { day: number; mon
     const day = createRosterDay(shifted.day, shifted.month, shifted.year, base);
     day.type = 'CRM';
     day.pairingCode = code;
+    (day as any).operationalAirport = match[2].toUpperCase();
     day.dutyReport = cleanTime(rawStart);
     day.dutyDebrief = cleanTime(rawEnd);
     day.isNextDay = crewRosterRawOffset(rawEnd) > crewRosterRawOffset(rawStart) || timeToMinutes(day.dutyDebrief) < timeToMinutes(day.dutyReport);
