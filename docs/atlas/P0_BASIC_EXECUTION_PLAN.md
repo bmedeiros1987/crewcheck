@@ -24,6 +24,10 @@ de cada integração e sem alterar o motor canônico da escala.
 4. Padronizar os textos mais visíveis em pt-BR.
 5. Diagnosticar o Google Maps sem expor erro técnico ao usuário.
 6. Manter as vozes de Bruno e Daniel independentes.
+7. Transformar o FlyDeck em um briefing pré-programação conciso.
+8. Corrigir gramática, números e objetividade do Concierge.
+9. Impedir que uma localização antiga permaneça como cidade atual.
+10. Exibir orientação permanente para conferência da escala oficial.
 
 ## Primeiro lote funcional — v14.3.50
 
@@ -101,6 +105,65 @@ Implementação real, ainda mantida como rascunho:
 - verificação de que a chave `VITE_` permanece somente no cliente;
 - verificação estática dos arquivos protegidos do motor.
 
+## Quarto lote funcional — v14.3.53
+
+- substitui os cards mensais e financeiros da tela inicial por um briefing
+  operacional da próxima programação;
+- mostra somente data, programação/rota, apresentação, início/partida,
+  fim/chegada e portão/status;
+- mantém um relógio de atualização e contagem regressiva em algarismos para
+  indicar que o sistema está ativo;
+- oferece ações diretas para consultar a escala, planejar a saída, abrir o
+  Radar e revisar alertas;
+- não apresenta o horário de apresentação como se fosse o horário calculado de
+  saída;
+- preserva a Linha do Dia logo após o briefing;
+- mantém HSB e EAD como próximas programações quando publicados, mas sem
+  ativar rota automática;
+- remove indicadores mensais e atalhos financeiros da superfície operacional;
+- inclui orientação visível de que a escala oficial e as comunicações da
+  empresa prevalecem em caso de divergência.
+
+## Validação prevista no quarto lote
+
+- sintaxe e transpile isolado do novo briefing;
+- transformação e CSS idempotentes;
+- matriz mobile, iPad e Web em tema claro e escuro;
+- HSB/EAD visíveis como programação e inelegíveis para Saída Inteligente;
+- ausência de KPIs mensais, financeiro e horário de saída inventado no
+  FlyDeck;
+- verificação estática dos arquivos protegidos do motor.
+
+## Quinto lote funcional — v14.3.54
+
+- normaliza respostas textuais do Concierge em pt-BR;
+- corrige construções como “as meio dia” para “às 12:00”;
+- troca duração e contagem por extenso por formas rápidas como `1 min`, `2 h`
+  e `3 etapas`;
+- corrige singular e plural em respostas determinísticas;
+- remove métricas técnicas de qualidade/fonte do Radar da mensagem enviada ao
+  tripulante;
+- acrescenta uma linha curta de confirmação da escala oficial somente nas
+  respostas dependentes de escala, apresentação, saída ou regulamentação;
+- preserva METAR/TAF bruto sem reescrever códigos;
+- exige `updatedAt` real para usar localização persistida;
+- invalida localizações legadas sem horário de captura, eliminando a
+  renovação artificial de “Goiânia/GO” ou de qualquer outra cidade;
+- mantém localização recente compartilhada no Telegram com validade de 6 h e
+  localização Web/Android com a validade curta já definida na v14.3.46.
+
+## Validação prevista no quinto lote
+
+- matriz de gramática, algarismos, horários, singular/plural e indicativos de
+  voo;
+- preservação literal de METAR bruto;
+- aviso oficial presente em `/hoje`, `/amanha`, `/proximo`, `/escala`,
+  `/saida` e consultas regulatórias, sem poluir meteorologia;
+- localização sem `updatedAt` tratada como vencida;
+- localização recente aceita e localização com mais de 6 h rejeitada;
+- transformação do servidor idempotente;
+- verificação estática dos arquivos protegidos do motor.
+
 ## Ordem de execução
 
 - [x] Confirmar repositório, branch e baseline da `main`.
@@ -114,11 +177,14 @@ Implementação real, ainda mantida como rascunho:
 - [x] Revisar textos prioritários em pt-BR.
 - [x] Auditar chave, restrições e serviços realmente usados pelo Google Maps.
 - [x] Manter Bruno e Daniel em variáveis de voz independentes.
+- [x] Projetar e implementar o briefing Premium do FlyDeck.
+- [x] Corrigir gramática, números e objetividade do Concierge.
+- [x] Corrigir a renovação artificial de localização legada.
+- [x] Incluir orientação de conferência da escala oficial.
 - [ ] Validar desktop, Android e iPad em tema claro e escuro.
 
 ## Fora do escopo por enquanto
 
-- reconstrução do FlyDeck;
 - nova Central Admin;
 - Locais Próximos completo;
 - novas integrações;
@@ -127,7 +193,9 @@ Implementação real, ainda mantida como rascunho:
 
 ## Bloqueios externos
 
-- GitHub Actions continua sem créditos; os jobs encerram antes do checkout.
+- GitHub Actions continua sem créditos; os jobs encerram com zero etapas,
+  antes do checkout. O estado `failure` não representa execução nem resultado
+  do código.
 - O ambiente Work possui acesso ao repositório pelo conector, mas não recebeu
   um checkout privado integral. Por isso, build completo, smoke do servidor,
   comparação com PDF oficial e validação visual permanecem pendentes.
