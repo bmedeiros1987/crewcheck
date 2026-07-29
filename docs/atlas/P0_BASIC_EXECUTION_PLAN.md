@@ -58,6 +58,30 @@ Implementação real, ainda mantida como rascunho:
 - verificação estática de que o patch não escreve em parser, motor canônico,
   continuidade, financeiro ou regulamentação.
 
+## Segundo lote funcional — v14.3.51
+
+- o menu Web deixa de esconder nomes e descrições em tooltips e passa a usar a
+  mesma lista legível de uma coluna do mobile;
+- painel, cabeçalho e lista têm responsabilidades separadas: o painel contém, o
+  cabeçalho permanece visível e somente a lista rola;
+- o menu passa a ter largura previsível de até `440 px`, inclusive em iPad;
+- o conteúdo principal fica centralizado e contido em até `1180 px`, sem
+  overflow horizontal;
+- o nome da conta autenticada tem prioridade sobre um apelido local antigo;
+- nome, e-mail, função, base e plano disponível aparecem juntos na
+  identificação do menu;
+- o patch continua restrito à apresentação e não grava no parser nem no motor
+  canônico.
+
+## Validação executada no segundo lote
+
+- sintaxe do patch v14.3.51 e da regressão;
+- transformação idempotente da identidade, do marcador do App Shell e do CSS;
+- precedência da conta autenticada sobre nome local;
+- presença permanente dos rótulos do menu, sem dependência de hover;
+- largura contida, lista de uma coluna e scroll vertical único;
+- verificação estática dos arquivos protegidos do motor.
+
 ## Ordem de execução
 
 - [x] Confirmar repositório, branch e baseline da `main`.
@@ -67,7 +91,7 @@ Implementação real, ainda mantida como rascunho:
 - [x] Aplicar a classificação única de Folga/Descanso × Programação.
 - [ ] Comparar quantidade de atividades, datas, horários, origem, destino e
   continuidade antes/depois com a escala oficial.
-- [ ] Corrigir App Shell, menu, largura, scroll e identificação do usuário.
+- [x] Corrigir App Shell, menu, largura, scroll e identificação do usuário.
 - [ ] Revisar textos prioritários em pt-BR.
 - [ ] Auditar chave, restrições e serviços realmente usados pelo Google Maps.
 - [x] Manter Bruno e Daniel em variáveis de voz independentes.
