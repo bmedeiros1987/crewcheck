@@ -8,9 +8,9 @@ const requiredSignals = [
   'Consentimento por visitante',
   'Relação familiar e interpretação',
   'Alexa',
-  'hYLzOVviGWJgnkfQyCeO',
+  'pNZa0DWwl4bXevTwyjr0',
   '`daniel`',
-  'não afirma que o usuário está dormindo',
+  'nunca afirma que o usuário está dormindo',
   'localização exata, desligada por padrão',
   'resposta afetiva configurada',
 ];

@@ -19,8 +19,8 @@ const applySource = read('scripts/v14344/apply.mjs');
 const cssSource = read('scripts/v14344/web-menu.css');
 const workflow = read('.github/workflows/crewcheck-v13-8-validation.yml');
 
-assert.ok(chain.trimEnd().endsWith("await import('../v14347/apply.mjs');"), 'v14.3.47 deve encerrar a preparação canônica');
-assert.ok(before.home.includes("const DEFAULT_VERSION = '14.3.47';"), 'Home deve anunciar a versão final v14.3.47');
+assert.ok(chain.trimEnd().endsWith("await import('../v14348/apply.mjs');"), 'v14.3.48 deve encerrar a preparação canônica');
+assert.ok(before.home.includes("const DEFAULT_VERSION = '14.3.48';"), 'Home deve anunciar a versão final v14.3.48');
 assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve identificar o menu Web icon-first');
 
 const menuStart = before.home.indexOf('function MenuDrawer(');
@@ -133,16 +133,16 @@ assert.equal(applyModule.installWebMenuCss(upgradedCss), upgradedCss, 'substitui
 assert.ok(!/^(?:<<<<<<<|=======|>>>>>>>)/m.test(workflow), 'workflow não pode conter marcadores de conflito Git');
 assert.ok(workflow.includes('Validate menu icons, Settings location and end-positioned search'), 'workflow deve executar a regressão v14.3.44');
 assert.ok(workflow.includes('menu-location-search-regression.log'), 'diagnóstico v14.3.44 deve ser publicado em caso de falha');
-assert.ok(before.release.includes('14.3.47'), 'release.json deve anunciar a versão final v14.3.47');
+assert.ok(before.release.includes('14.3.48'), 'release.json deve anunciar a versão final v14.3.48');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch visual não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda preparação canônica v14.3.47 falhou');
+const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda preparação canônica v14.3.48 falhou');
 for (const [key, relative] of Object.entries(paths)) {
-  assert.equal(read(relative), before[key], `preparação final v14.3.47 deve preservar v14.3.44 em ${relative}`);
+  assert.equal(read(relative), before[key], `preparação final v14.3.48 deve preservar v14.3.44 em ${relative}`);
 }
 
-console.log('v14.3.44 menu usability preserved under final v14.3.47: clean and previously prepared workspaces converge to Settings-only location, pointer-capability menu modes, two-column Weather input/action grid, replaced CSS block and end-positioned magnifiers.');
+console.log('v14.3.44 menu usability preserved under final v14.3.48: clean and previously prepared workspaces converge to Settings-only location, pointer-capability menu modes, two-column Weather input/action grid, replaced CSS block and end-positioned magnifiers.');

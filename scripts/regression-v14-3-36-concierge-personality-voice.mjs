@@ -90,13 +90,13 @@ for (const marker of [
   'conciergePreferenceCommandV14336(',
   'decorateConciergeReplyV14336(',
   'lastHumorAt: new Date().toISOString()',
-  'voiceId = conciergeVoiceIdForSnapshotV14336(snapshot)',
+  'voiceProfile = conciergeVoiceProfileForSnapshotV14348(snapshot)',
   'sendHumanTelegramVoiceReply(chatId, reply, transcript, snapshot)',
   "conciergeModes: ['formal','comic']",
   'safeHumor: true',
 ]) assert.ok(serverBefore.includes(marker), `marcador de segurança ausente: ${marker}`);
 for (const marker of [
-  "const DEFAULT_VERSION = '14.3.47';",
+  "const DEFAULT_VERSION = '14.3.48';",
   'Estilo e voz do Concierge',
   'Formal (profissional)',
   'Cômico leve (impessoal)',
@@ -106,11 +106,13 @@ for (const marker of [
   'MessageCircle,',
 ]) assert.ok(homeBefore.includes(marker), `configuração visual ausente: ${marker}`);
 assert.ok(!serverBefore.includes('voiceId: body.voiceId'), 'cliente não pode enviar ID arbitrário de voz ao Concierge');
+assert.ok(!serverBefore.includes('payload.voiceId'), 'endpoint TTS não pode aceitar ID arbitrário de voz');
+assert.ok(!serverBefore.includes('options.voiceId'), 'gerador TTS não pode contornar a seleção segura por perfil');
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.47 falhou');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');
 assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'preparação final deve preservar a personalidade no servidor');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar a personalidade no cliente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.47'));
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.48'));
 
 console.log('v14.3.36 Concierge personality/voice: formal mode, safe comic cooldown, protected voice catalog and UI preferences validated.');

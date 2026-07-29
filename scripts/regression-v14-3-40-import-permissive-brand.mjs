@@ -24,13 +24,13 @@ assert.ok(serverParser.includes('function buildServerVisualRows('), 'servidor pr
 assert.ok(serverParser.includes('function rescueServerFlightsFromVisualPages('), 'servidor precisa resgatar voos diretamente das páginas');
 assert.ok(serverParser.includes('scoreServerRows(rotated) > scoreServerRows(normal)'), 'orientação deve ser escolhida por qualidade');
 assert.ok(!serverParser.includes('importação parcial bloqueada'), 'servidor não pode recusar o PDF por diagnóstico de qualidade');
-assert.ok(home.includes("const DEFAULT_VERSION = '14.3.47';"), 'versão Web/PWA final 14.3.47 ausente');
+assert.ok(home.includes("const DEFAULT_VERSION = '14.3.48';"), 'versão Web/PWA final 14.3.48 ausente');
 assert.ok(home.includes('A escala será importada mesmo assim'), 'guardião deve avisar e continuar');
 assert.ok(home.includes('/icons/crewcheck-icon-v3.png?v=14340'), 'cabeçalho deve usar a marca canônica v3');
 assert.ok(brand.includes('/icons/crewcheck-icon-v3.png'), 'PDF e compartilhamento devem usar a marca v3');
 assert.ok(manifest.includes('/icons/crewcheck-icon-v3.png?v=14340'), 'PWA deve usar a marca v3');
 assert.ok(android.includes('crewcheck-icon-v3.png'), 'Android deve copiar a marca v3');
-assert.ok(release.includes('14.3.47'), 'release final 14.3.47 ausente');
+assert.ok(release.includes('14.3.48'), 'release final 14.3.48 ausente');
 
 const icon = path.join(root, 'client/public/icons/crewcheck-icon-v3.png');
 assert.ok(fs.existsSync(icon) && fs.statSync(icon).size > 1024, 'ícone canônico v3 deve ser gerado');

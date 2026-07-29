@@ -148,16 +148,16 @@ O titular pode escolher a voz usada pelo Concierge e pelas respostas aos visitan
 
 Opções iniciais:
 
-- `bruno_saraiva_clone` — padrão do titular;
-- `daniel` — voz atual alternativa;
+- `bruno_saraiva_clone` — perfil Bruno;
+- `daniel` — voz atual preservada do titular e perfil padrão;
 - outras vozes habilitadas futuramente.
 
 Configuração inicial do titular:
 
 - provedor: ElevenLabs;
-- Voice ID: `hYLzOVviGWJgnkfQyCeO`;
+- Voice ID do Bruno: `pNZa0DWwl4bXevTwyjr0`;
 - chave de exibição: `Bruno Saraiva`;
-- alternativa: `Daniel`.
+- voz preservada/default: `Daniel`, configurada por ambiente sem expor o ID no catálogo público.
 
 A voz clonada nunca pode ser usada por outro usuário sem consentimento explícito do titular. O sistema deve sinalizar que a resposta é gerada pelo CrewCheck, mesmo quando usa uma voz clonada.
 

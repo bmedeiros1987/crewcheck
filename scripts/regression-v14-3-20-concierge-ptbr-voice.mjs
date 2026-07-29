@@ -3,8 +3,7 @@ import fs from 'node:fs';
 const source = fs.readFileSync('elevenlabs_tts_1377.js', 'utf8');
 
 const required = [
-  "const CREWCHECK_BRUNO_VOICE_ID = 'hYLzOVviGWJgnkfQyCeO'",
-  "CREWCHECK_CONCIERGE_VOICE_PROFILE || 'bruno'",
+  "const CREWCHECK_BRUNO_VOICE_ID = 'pNZa0DWwl4bXevTwyjr0'",
   "language_code: 'pt'",
   "MAB: 'Marabá'",
   "SBMA: 'Marabá'",
@@ -16,6 +15,12 @@ const required = [
 
 for (const marker of required) {
   if (!source.includes(marker)) throw new Error(`[v14.3.20] marcador ausente: ${marker}`);
+}
+if (
+  !source.includes("CREWCHECK_CONCIERGE_VOICE_PROFILE || 'bruno'")
+  && !source.includes("const explicitProfile = String(options.voiceProfile || '').trim().toLowerCase();")
+) {
+  throw new Error('[v14.3.20] seleção explícita do perfil de voz ausente');
 }
 
 if (/ELEVENLABS_VOICE_ID[^\n]+\|\|\s*CREWCHECK_BRUNO_VOICE_ID/.test(source)) {

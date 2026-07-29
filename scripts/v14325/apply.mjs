@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const BRUNO_VOICE_ID = 'hYLzOVviGWJgnkfQyCeO';
+const BRUNO_VOICE_ID = 'pNZa0DWwl4bXevTwyjr0';
 
 function patch(path) {
   if (!fs.existsSync(path)) return;

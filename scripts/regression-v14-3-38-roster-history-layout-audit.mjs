@@ -15,8 +15,8 @@ const homeBefore = fs.readFileSync(homePath, 'utf8');
 const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14338/apply.mjs');"), 'v14.3.38 deve encerrar a preparação canônica');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.47';"), 'versão Web/PWA final 14.3.47 ausente no cliente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.47'), 'release.json final não atualizado');
+assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.48';"), 'versão Web/PWA final 14.3.48 ausente no cliente');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.48'), 'release.json final não atualizado');
 
 for (const marker of [
   'function localRosterPeriodIdentity(',
@@ -70,8 +70,8 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}`), `v14.3.38 não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14347/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.47 falhou');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');
 assert.equal(fs.readFileSync(databasePath, 'utf8'), databaseBefore, 'preparação final deve preservar a persistência de histórico');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar a importação');
 assert.equal(fs.readFileSync(cssPath, 'utf8'), cssBefore, 'preparação final deve preservar a auditoria visual');

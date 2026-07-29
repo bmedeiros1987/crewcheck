@@ -2,12 +2,12 @@ async function sendHumanTelegramVoiceReply(chatId, replyText, transcript = '', s
   const policy = premiumVoicePolicy(replyText, transcript, Math.max(420, Math.min(700, Number(envAny(['TELEGRAM_CONCIERGE_MAX_VOICE_CHARS', 'CREWCHECK_TELEGRAM_MAX_VOICE_CHARS']) || 650))));
   if (!policy.allowed) return false;
   const finalReply = premiumVoiceText(replyText);
-  const voiceId = conciergeVoiceIdForSnapshotV14336(snapshot);
+  const voiceProfile = conciergeVoiceProfileForSnapshotV14348(snapshot);
   await showHumanRecordingAction(chatId, 1);
   const audioReply = await sendTelegramTtsAudio(chatId, finalReply, {
     caption: telegramHumanAudioCaption(),
     filename: 'crewcheck-voice.ogg',
-    voiceId,
+    voiceProfile,
   });
   if (audioReply?.ok) {
     if (telegramShouldEchoTranscript() && transcript) {
