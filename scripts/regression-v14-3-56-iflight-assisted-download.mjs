@@ -1,29 +1,40 @@
 import assert from 'node:assert/strict';
 
 process.env.CREWCHECK_V14356_SKIP_APPLY = '1';
-const { patchIFlightSemiAutomaticV14356 } = await import('./v14356/apply.mjs');
+const { patchIFlightSemiAutomaticV14356, patchIFlightAndroidAuthorizationLockV14356 } = await import('./v14356/apply.mjs');
 
 const before = `function IFlightPushView({ actions }: { actions: QuickActions }) {
-  function openPortal() {
-    window.open('https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage');
-  }
+  function openPortal() { window.open('https://iflight.example'); }
   return <button onClick={openPortal}>Abrir</button>;
 }
 
-function dutyHoursForRosterDay(day: RosterDay): number {
-  return 0;
-}`;
-
+function dutyHoursForRosterDay(day: RosterDay): number { return 0; }`;
 const after = patchIFlightSemiAutomaticV14356(before);
+assert.match(after, /const admin = isAdmin\(\)/);
+assert.match(after, /automaticIFlightAuthorized = false/);
+assert.match(after, /Acesso restrito/);
+assert.match(after, /LABORATÓRIO DO ADMINISTRADOR/);
+assert.match(after, /AGUARDANDO AUTORIZAÇÃO FORMAL/);
+assert.match(after, /disabled=\{!automaticIFlightAuthorized\}/);
+assert.match(after, /Importar PDF manualmente/);
+assert.doesNotMatch(after, /window\.open/);
+assert.equal(patchIFlightSemiAutomaticV14356(after), after, 'o patch web deve ser idempotente');
 
-assert.match(after, /DOWNLOAD SEMIAUTOMÁTICO/);
-assert.match(after, /1\. Abrir iFlight/);
-assert.match(after, /2\. Gerar PDF em LT/);
-assert.match(after, /3\. Selecionar PDF baixado/);
-assert.match(after, /crewcheck:iflight-assisted-step/);
-assert.match(after, /não pode vigiar sua pasta Downloads/);
-assert.match(after, /usuário, senha, MFA, cookie e sessão não são enviados/);
-assert.match(after, /iflight-cwp\/web\/getMainPage/);
-assert.equal(patchIFlightSemiAutomaticV14356(after), after, 'o patch deve ser idempotente');
+const androidBefore = `public class MainActivity extends Activity {
+  private WebView webView;
+  public class CrewCheckIFlightBridge {
+    @JavascriptInterface
+    public void openPortalAndImport(final String url, final String configJson, final String requestId) {
+      runOnUiThread(() -> openIFlightPortal(url, configJson, requestId));
+    }
+  }
+  private String escapeJs(String value) { return value; }
+}`;
+const androidAfter = patchIFlightAndroidAuthorizationLockV14356(androidBefore);
+assert.match(androidAfter, /IFLIGHT_AUTOPULL_AUTHORIZED = false/);
+assert.match(androidAfter, /IFLIGHT_AUTHORIZATION_PENDING/);
+assert.match(androidAfter, /if \(!IFLIGHT_AUTOPULL_AUTHORIZED\)/);
+assert.match(androidAfter, /return;/);
+assert.equal(patchIFlightAndroidAuthorizationLockV14356(androidAfter), androidAfter, 'a trava Android deve ser idempotente');
 
-console.log('[v14.3.56-iflight-assisted-download] fluxo semiautomático validado.');
+console.log('[v14.3.56-iflight-assisted-download] acesso admin e kill switch de autorização validados.');
