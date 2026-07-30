@@ -10,7 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 const chain = read('scripts/v139/apply.mjs');
-assert.ok(chain.trimEnd().endsWith("await import('../v14357/apply.mjs');"), 'v14.3.57 deve encerrar a preparação canônica');
+assert.ok(chain.includes("await import('../v14357/apply.mjs');"), 'v14.3.57 deve participar da preparação canônica');
+assert.ok(chain.trimEnd().endsWith("await import('../v14357/compatibility.mjs');"), 'compatibilidade v14.3.57 deve encerrar a preparação canônica');
 
 const auth = read('client/src/pages/AuthPage.tsx');
 const authCss = read('client/src/pages/auth-compact.css');
@@ -53,9 +54,13 @@ const cssFixture = '@import "tailwindcss";\nbody{}';
 const patchedCss = patchIndexCssV14357(cssFixture);
 assert.equal(patchIndexCssV14357(patchedCss), patchedCss, 'patch do CSS global deve ser idempotente');
 
+const legacySmartDeparture = read('scripts/regression-v14-3-47-smart-departure-operational-airport.mjs');
+assert.ok(legacySmartDeparture.includes("runtime.includes('window.CrewCheckPremium = {')"), 'regressão da Saída Inteligente deve validar capacidades do runtime');
+assert.ok(!legacySmartDeparture.includes('runtime premium deve anunciar a versão atual'), 'runtime não deve depender de versão fixa');
+
 const legacyVoice = read('scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs');
 assert.ok(legacyVoice.includes("const currentVersion = JSON.parse(read('package.json')).version;"), 'regressão de voz deve acompanhar a versão atual');
-assert.ok(!legacyVoice.includes("v14.3.48 deve encerrar a preparação canônica"), 'regressão antiga não pode exigir v14.3.48 como última versão');
+assert.ok(!legacyVoice.includes('v14.3.48 deve encerrar a preparação canônica'), 'regressão antiga não pode exigir v14.3.48 como última versão');
 assert.equal(patchLegacyVoiceRegressionV14357(legacyVoice), legacyVoice, 'compatibilidade da regressão de voz deve ser idempotente');
 
 const typescriptModule = await import('typescript');
