@@ -50,10 +50,15 @@ export function patchIndexCssV14357(source) {
 }
 
 export function patchLegacySmartDepartureRegressionV14357(source) {
-  return source.replace(
-    "assert.ok(runtime.includes(\"version: '14.3.48'\"), 'runtime premium deve preservar a política de voz consolidada na v14.3.48');",
-    "assert.ok(runtime.includes(`version: '${currentVersion}'`), 'runtime premium deve anunciar a versão atual sem perder a política de voz');",
-  );
+  return source
+    .replace(
+      "assert.ok(runtime.includes(\"version: '14.3.48'\"), 'runtime premium deve preservar a política de voz consolidada na v14.3.48');",
+      "assert.ok(runtime.includes(`version: '${currentVersion}'`), 'runtime premium deve anunciar a versão atual sem perder a política de voz');",
+    )
+    .replace(
+      "assert.ok(chain.trimEnd().endsWith(\"await import('../v14357/apply.mjs');\"), 'a versão atual deve encerrar a preparação canônica');",
+      "assert.ok(chain.trimEnd().endsWith(`await import('../v${currentVersion.replace(/\\./g, '')}/apply.mjs');`), 'a versão declarada no package.json deve encerrar a preparação canônica');",
+    );
 }
 
 export function patchLegacyVoiceRegressionV14357(source) {
