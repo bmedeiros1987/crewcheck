@@ -49,6 +49,13 @@ export function patchIndexCssV14357(source) {
   return source.replace(needle, `${needle}\n@import "./styles/v14357-ui-clarity.css";`);
 }
 
+export function patchLegacySmartDepartureRegressionV14357(source) {
+  return source.replace(
+    "assert.ok(runtime.includes(\"version: '14.3.48'\"), 'runtime premium deve preservar a política de voz consolidada na v14.3.48');",
+    "assert.ok(runtime.includes(`version: '${currentVersion}'`), 'runtime premium deve anunciar a versão atual sem perder a política de voz');",
+  );
+}
+
 export function patchLegacyVoiceRegressionV14357(source) {
   let patched = source;
   const readNeedle = "const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');";
@@ -132,6 +139,7 @@ if (process.env.CREWCHECK_V14357_SKIP_APPLY !== '1') {
     .replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
   update('server.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`), { optional: true });
   update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`), { optional: true });
+  update('scripts/regression-v14-3-47-smart-departure-operational-airport.mjs', patchLegacySmartDepartureRegressionV14357, { optional: true });
   update('scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs', patchLegacyVoiceRegressionV14357, { optional: true });
 
   console.log(`[v14357] CrewCheck ${VERSION}: clareza operacional, login compacto e padrão visual aplicados.`);
