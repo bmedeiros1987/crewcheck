@@ -11,8 +11,9 @@ Durante a auditoria, não entram funcionalidades novas: cada superfície existen
 - **v14.3.45:** parser do CrewRosterReport rotacionado validado estruturalmente com a escala oficial de agosto de 2026.
 - **v14.3.46–v14.3.48:** localização fresca, aeroporto operacional da Saída Inteligente e vozes independentes de Daniel e Bruno publicados.
 - **v14.3.49–v14.3.55:** classificação operacional única, App Shell, Google Maps, FlyDeck Premium, Concierge e origem de localização confiável integrados pela PR `#209`.
-- **GitHub Actions:** TypeScript, build Web, testes do servidor, regressões funcionais e validação CrewRoster concluídos com sucesso no head integrado.
-- **Render:** build e deploy da `main` concluídos com sucesso após o merge da PR `#209`.
+- **v14.3.56:** laboratório AutoPull do iFlight integrado com acesso exclusivo do administrador e kill switch desligado até autorização formal.
+- **GitHub Actions:** voltou a executar TypeScript, build Web, regressões e validação CrewRoster. Falhas remanescentes devem ser tratadas como diagnóstico real, e não como falta de créditos.
+- **Render:** build e deploy da `main` concluídos após os lotes da P0; cada nova versão permanece condicionada aos gates automatizados e à validação visual.
 
 ## Evidência funcional — CrewRosterReport normal
 
@@ -30,6 +31,44 @@ Relatório normal de referência:
 A bateria histórica continha 68 PDFs oficiais de 2025–2026. O fallback de período recuperou os formatos normais; o único formato separado foi o CrewRosterReport rotacionado de agosto de 2026, já coberto pela regressão específica da v14.3.45 e pelos workflows aprovados.
 
 Nenhum PDF, nome, matrícula, rota pessoal completa ou outro dado identificável deve ser adicionado ao repositório. Fixtures futuras devem permanecer sintéticas ou anonimizadas.
+
+## Gate em execução — clareza operacional e padrão visual v14.3.57
+
+As capturas reais do FlyDeck mostraram que uma cronologia tecnicamente correta ainda pode exigir interpretação excessiva do usuário. O lote v14.3.57 prioriza familiaridade e decisão rápida, sem alterar o motor canônico.
+
+### Linha do Dia
+
+- mostrar **Agora** e **Próximo compromisso** antes da cronologia;
+- traduzir códigos comuns, como `HSB` para **Sobreaviso** e `ASB` para **Reserva**;
+- destacar o item atual e o próximo;
+- remover repetições como `A confirmar · A confirmar`;
+- oferecer ações diretas para Escala, Radar ou Hotel;
+- manter ordem cronológica, Folga, Repouso, Pernoite e limite visual de eventos.
+
+### Próxima programação
+
+- reduzir altura e espaços vazios;
+- manter apenas data, atividade, local, horários essenciais e estado;
+- enfatizar a ação principal;
+- não repetir a Linha do Dia;
+- não oferecer Saída Inteligente para atividades inelegíveis.
+
+### Login
+
+- usar um cartão compacto e central, baseado em padrões familiares de autenticação, sem copiar identidade de terceiros;
+- reduzir título, marca e instruções;
+- remover caixas aninhadas dos campos;
+- preservar cadastro, recuperação, demonstração, termos e acessibilidade;
+- cobrir integralmente os temas claro e escuro.
+
+### Padrão visual
+
+- FlyDeck e Linha do Dia com a mesma largura de conteúdo;
+- espaçamentos, bordas, raios e tipografia coerentes;
+- navegação inferior somente em telas móveis;
+- nenhuma alteração em parser, continuidade, financeiro ou regulamentação.
+
+O gate v14.3.57 somente será aprovado após TypeScript, build Web, regressões v14.3.47/v14.3.48/v14.3.57, teste do servidor e conferência visual em desktop, celular e tablet.
 
 ## Próximo gate — consistência da programação canônica
 
