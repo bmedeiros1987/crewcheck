@@ -24,18 +24,17 @@ function readLocal(name) {
 export function patchAuthPageV14357(source) {
   let patched = source;
   if (!patched.includes("import './auth-compact.css';")) {
-    patched = patched.replace(
-      "import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';",
-      "import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';\nimport './auth-compact.css';",
-    );
+    const importNeedle = /import \{ acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms \} from ['"]@\/lib\/termsClient['"];?\r?\n/;
+    if (!importNeedle.test(patched)) throw new Error('[v14357] Import de termos do login não localizado.');
+    patched = patched.replace(importNeedle, (match) => `${match}import './auth-compact.css';\n`);
   }
   patched = patched
-    .replace("const title = mode === 'login' ? 'Bem-vindo de volta.'", "const title = mode === 'login' ? 'Entrar no CrewCheck'")
-    .replace('className="cz-auth" data-version="14.0.6"', `className="cz-auth cc-auth-compact" data-version="${VERSION}"`)
-    .replace('>Criar cadastro</button>', '>Criar conta</button>')
+    .replace(/const title = mode === ['"]login['"] \? ['"][^'"]+['"]/, "const title = mode === 'login' ? 'Entrar no CrewCheck'")
+    .replace(/className="cz-auth(?:\s+cc-auth-compact)?"\s+data-version="[^"]+"/, `className="cz-auth cc-auth-compact" data-version="${VERSION}"`)
+    .replace(/>Criar (?:cadastro|conta)<\/button>/, '>Criar conta</button>')
     .replace('Entre para carregar sua escala e continuar de onde parou.', 'Use seu e-mail e senha para continuar.')
-    .replace('CREWCHECK V14.0.6 • PREMIUM BETA', `CREWCHECK V${VERSION} • ACESSO PROTEGIDO`);
-  if (!patched.includes('cc-auth-compact')) throw new Error('[v14357] Login compacto não aplicado.');
+    .replace(/CREWCHECK V[^<•]+•\s*(?:PREMIUM BETA|ACESSO PROTEGIDO)/, `CREWCHECK V${VERSION} • ACESSO PROTEGIDO`);
+  if (!patched.includes('className="cz-auth cc-auth-compact"')) throw new Error('[v14357] Login compacto não aplicado.');
   return patched;
 }
 
@@ -49,7 +48,7 @@ export function patchIndexCssV14357(source) {
 export function patchLegacyVoiceRegressionV14357(source) {
   let patched = source;
   const readNeedle = "const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');";
-  if (!patched.includes('const currentVersion = JSON.parse(read(\'package.json\')).version;')) {
+  if (!patched.includes("const currentVersion = JSON.parse(read('package.json')).version;")) {
     patched = patched.replace(
       readNeedle,
       `${readNeedle}\nconst currentVersion = JSON.parse(read('package.json')).version;\nconst escapedCurrentVersion = String(currentVersion).replace(/\\./g, '\\\\.');`,
