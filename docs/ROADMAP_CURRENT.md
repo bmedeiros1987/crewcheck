@@ -9,49 +9,55 @@ Durante a auditoria, não entram funcionalidades novas: cada superfície existen
 ## Estado atual
 
 - **v14.3.45:** parser do CrewRosterReport rotacionado validado estruturalmente com a escala oficial de agosto de 2026.
-- **v14.3.46:** política de localização fresca Web/Telegram e correção do preparo de fonte no Render publicadas.
-- **v14.3.47:** aeroporto operacional da Saída Inteligente publicado no Render; atividades MCK usam `CGH` sem alterar a base contratual `BSB`.
-- Itens estruturais continuam sem aprovação funcional até existir evidência em ambiente real.
+- **v14.3.46–v14.3.48:** localização fresca, aeroporto operacional da Saída Inteligente e vozes independentes de Daniel e Bruno publicados.
+- **v14.3.49–v14.3.55:** classificação operacional única, App Shell, Google Maps, FlyDeck Premium, Concierge e origem de localização confiável integrados pela PR `#209`.
+- **GitHub Actions:** TypeScript, build Web, testes do servidor, regressões funcionais e validação CrewRoster concluídos com sucesso no head integrado.
+- **Render:** build e deploy da `main` concluídos com sucesso após o merge da PR `#209`.
 
-## Próxima entrega — v14.3.48
+## Evidência funcional — CrewRosterReport normal
 
-A próxima entrega separa as **vozes ElevenLabs de Daniel e Bruno** sem alterar a voz atual do Daniel.
+O primeiro gate funcional após a P0 foi executado localmente com relatórios oficiais reais, sem versionar PDFs nem dados pessoais.
 
-Escopo obrigatório:
+Relatório normal de referência:
 
-- preservar `ELEVENLABS_VOICE_ID` como Daniel/default;
-- selecionar Bruno por `ELEVENLABS_TTS_VOICE_ID=pNZa0DWwl4bXevTwyjr0`;
-- aceitar `speaker`, `persona` e `voiceProfile`, sem permitir Voice ID arbitrário no endpoint público;
-- preservar as variáveis genéricas como fallback e aceitar aliases dedicados opcionais;
-- publicar catálogo e health somente com perfis lógicos, sem expor Voice IDs;
-- aplicar `v14.3.48` depois de `v14.3.47`, sem alterar STT, escala ou Saída Inteligente.
+- período publicado: julho de 2026;
+- 32 atividades em 30 datas únicas;
+- 40 etapas de voo reconhecidas;
+- FH `66:05` e DH `129:28`, iguais ao cabeçalho oficial;
+- confiança alta no parser do servidor;
+- continuidade entre jornadas, viradas `(+1)`, carry-in, carry-out, ASB, HSB, folgas e descansos conferidos visualmente.
 
-## Gates da v14.3.48
+A bateria histórica continha 68 PDFs oficiais de 2025–2026. O fallback de período recuperou os formatos normais; o único formato separado foi o CrewRosterReport rotacionado de agosto de 2026, já coberto pela regressão específica da v14.3.45 e pelos workflows aprovados.
 
-### Antes do merge
+Nenhum PDF, nome, matrícula, rota pessoal completa ou outro dado identificável deve ser adicionado ao repositório. Fixtures futuras devem permanecer sintéticas ou anonimizadas.
 
-1. O preparo canônico deve executar `v14.3.47` e depois `v14.3.48`.
-2. A aplicação do patch final deve passar duas vezes sem alteração adicional.
-3. As regressões de v14.3.34 a v14.3.47 devem continuar passando.
-4. A nova regressão deve comprovar Daniel/default preservado, Bruno atualizado, aliases lógicos, fallbacks, catálogo privado e bloqueio de Voice ID arbitrário.
-5. TypeScript, build Web, testes do servidor e integração STT devem concluir sem regressão.
+## Próximo gate — consistência da programação canônica
 
-### Após o deploy no Render
+Comparar o mesmo relatório importado nas três superfícies de produção:
 
-1. O preparo de fonte e o build devem concluir sem erro.
-2. Cliente, endpoint de saúde, `release.json` e cache da PWA devem anunciar `14.3.48`.
-3. `/api/tts/health` deve mostrar Daniel/default e Bruno como perfis distintos, sem expor seus Voice IDs.
-4. Uma resposta de Daniel deve manter a voz atual e uma resposta de Bruno deve usar `pNZa0DWwl4bXevTwyjr0`.
-5. A configuração atual do Render deve permanecer com 300 variáveis, sem apagar ou substituir qualquer valor para abrir novas vagas.
+1. FlyDeck;
+2. Escala;
+3. Histórico.
+
+A comparação deve confirmar, para cada atividade:
+
+- mesma data operacional;
+- mesmo tipo de atividade;
+- mesmos horários de apresentação, partida/início, chegada/fim e debrief;
+- mesma origem e destino;
+- mesma continuidade em viradas de meia-noite e entre meses;
+- HSB, ASB, folga e descanso sem conversão indevida em voo.
+
+O gate somente será marcado como aprovado após evidência de uso real no Web/PWA.
 
 ## Gates seguintes da auditoria Web/PWA
 
-Após a v14.3.48:
+Após a consistência FlyDeck × Escala × Histórico:
 
-1. validar um CrewRosterReport oficial não rotacionado;
-2. comparar FlyDeck, Escala e Histórico e confirmar a mesma programação canônica;
-3. validar Saída Inteligente para voo, reserva, sobreaviso, treinamento e fora de base;
-4. avançar para hotel/pernoite, Concierge, Radar, Meteorologia, financeiro, conta e integrações;
-5. executar a matriz responsiva em 360 px, 412 px, tablet e desktop.
+1. validar Saída Inteligente para voo, reserva, sobreaviso, treinamento e fora de base;
+2. validar hotel/pernoite e origem atual sem reaproveitar cidade legada;
+3. validar Concierge, Radar e Meteorologia com a mesma próxima programação;
+4. avançar para regulamentação, financeiro, conta e integrações;
+5. executar a matriz responsiva em 360 px, 412 px, tablet e desktop, nos temas claro e escuro.
 
 Android permanece adiado até esses gates Web/PWA estarem aprovados com evidência registrada.
