@@ -1,0 +1,63 @@
+name: Atlas v14.3.57 UI clarity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14357/**'
+      - 'scripts/regression-v14-3-47-smart-departure-operational-airport.mjs'
+      - 'scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs'
+      - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - 'server.mjs'
+      - 'server/platform.mjs'
+      - 'package.json'
+      - '.github/workflows/atlas-v14357-ui-clarity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlas-v14357-ui-clarity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-ui-clarity:
+    name: Linha do Dia, login and visual consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare CrewCheck v14.3.57
+        run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-prepare.log"
+      - name: TypeScript
+        run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/v14357-typescript.log"
+      - name: Build Web
+        run: npx vite build 2>&1 | tee "$RUNNER_TEMP/v14357-build.log"
+      - name: Validate UI clarity
+        run: node scripts/regression-v14-3-57-ui-clarity.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-ui-clarity.log"
+      - name: Preserve Smart Departure airport handoff
+        run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs
+      - name: Preserve Daniel and Bruno voices
+        run: node scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs
+      - name: Test server
+        run: node test-server.mjs
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Atlas-v14357-ui-clarity-diagnostics
+          path: |
+            ${{ runner.temp }}/v14357-prepare.log
+            ${{ runner.temp }}/v14357-typescript.log
+            ${{ runner.temp }}/v14357-build.log
+            ${{ runner.temp }}/v14357-ui-clarity.log
+          if-no-files-found: ignore
+          retention-days: 7
