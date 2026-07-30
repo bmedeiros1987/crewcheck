@@ -43,7 +43,7 @@ if (!source.includes(marker)) {
         pushAlert(alerts, {
           severity: 'warning',
           title: 'Mais de 6 atividades consecutivas sem folga formal — revisar',
-          description: \`${day.date}: identificados \${consecutiveWorkPeriods} períodos consecutivos de atividade sem folga periódica.\`,
+          description: \`\${day.date}: identificados \${consecutiveWorkPeriods} períodos consecutivos de atividade sem folga periódica.\`,
           details: 'O sistema agora conta apenas atividades efetivas; DOP/DOPR/DO/DR/DOF/VC contam como folga formal; OFF e inativo/pernoite interrompem a sequência operacional, mas não entram como folga formal mensal.',
           legalReference: 'RBAC 117, Apêndice A, A117.25(a)',
           date: day.date,
