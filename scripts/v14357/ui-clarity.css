@@ -1,0 +1,54 @@
+/* CrewCheck v14.3.57 — clareza operacional e padrão visual */
+.cc-flydeck-premium-v14353 {
+  width: min(100%, 1180px) !important;
+  gap: 18px !important;
+}
+
+.cc-flydeck-briefing {
+  gap: 14px !important;
+  padding: clamp(18px, 2.6vw, 24px) !important;
+  border-radius: 22px !important;
+}
+
+.cc-flydeck-program h2 {
+  font-size: clamp(1.75rem, 4vw, 2.7rem) !important;
+  line-height: 1.04 !important;
+}
+
+.cc-flydeck-program p {
+  margin-top: 6px !important;
+  font-size: clamp(.96rem, 2.6vw, 1.15rem) !important;
+}
+
+.cc-flydeck-facts > div {
+  min-height: 66px !important;
+  padding: 12px !important;
+}
+
+.cc-flydeck-actions {
+  min-height: 40px;
+}
+
+.cc-flydeck-official-note {
+  border-radius: 14px !important;
+}
+
+@media (min-width: 901px) {
+  .cz-bottom-nav {
+    display: none !important;
+  }
+
+  .cz-app {
+    padding-bottom: 34px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .cc-flydeck-briefing {
+    padding: 16px !important;
+  }
+
+  .cc-flydeck-facts > div {
+    min-height: 62px !important;
+  }
+}
