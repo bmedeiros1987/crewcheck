@@ -24,12 +24,14 @@ const applySource = read('scripts/v14347/apply.mjs');
 const v14346Index = chain.indexOf("await import('../v14346/apply.mjs');");
 const v14347Index = chain.indexOf("await import('../v14347/apply.mjs');");
 const v14348Index = chain.indexOf("await import('../v14348/apply.mjs');");
-const latestIndex = chain.indexOf("await import('../v14357/apply.mjs');");
+const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+)\/apply\.mjs'\);/g));
+const latestPreparation = preparationImports.at(-1);
 assert.ok(v14346Index >= 0, 'v14.3.46 deve permanecer na preparação canônica');
 assert.ok(v14347Index > v14346Index, 'v14.3.47 deve suceder a correção de localização');
 assert.ok(v14348Index > v14347Index, 'v14.3.48 deve suceder o aeroporto operacional sem sobrescrevê-lo');
-assert.ok(latestIndex > v14348Index, 'a preparação atual deve preservar e suceder as garantias da v14.3.48');
-assert.ok(chain.trimEnd().endsWith("await import('../v14357/apply.mjs');"), 'a versão atual deve encerrar a preparação canônica');
+assert.ok(latestPreparation, 'a preparação canônica deve possuir uma etapa final aplicável');
+assert.ok((latestPreparation?.index ?? -1) > v14348Index, 'a preparação atual deve preservar e suceder as garantias da v14.3.48');
+assert.ok(chain.trimEnd().endsWith(latestPreparation?.[0] || ''), 'a última etapa aplicável deve encerrar a preparação canônica');
 assert.ok(clientParser.includes("(day as any).operationalAirport = match[2].toUpperCase();"), 'cliente deve guardar o aeroporto operacional da MCK');
 assert.ok(serverParser.includes('day.operationalAirport = match[2].toUpperCase();'), 'servidor deve guardar o aeroporto operacional da MCK');
 assert.ok(canonical.includes("const operationalAirport = String((day as any).operationalAirport || (day as any).airport || day.base || '')"), 'evento canônico deve priorizar o aeroporto operacional');
@@ -147,8 +149,9 @@ const tracked = [
   'android-wrapper/app/build.gradle',
 ];
 const before = new Map(tracked.map((relative) => [relative, read(relative)]));
-const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14357/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'reaplicação final v14.3.57 falhou');
+const latestPreparationPath = path.join(root, 'scripts', latestPreparation?.[1] || '', 'apply.mjs');
+const apply = spawnSync(process.execPath, [latestPreparationPath], { cwd: root, encoding: 'utf8' });
+assert.equal(apply.status, 0, apply.stderr || apply.stdout || `reaplicação final de ${latestPreparation?.[1] || 'versão atual'} falhou`);
 for (const relative of tracked) assert.equal(read(relative), before.get(relative), `preparação build→start deve ser idempotente em ${relative}`);
 
 console.log(`v14.3.47 Smart Departure handoff preservado na versão ${currentVersion}: MCK CGH, base BSB, matriz de aeroportos, exclusões de descanso, metadados e idempotência validados.`);
