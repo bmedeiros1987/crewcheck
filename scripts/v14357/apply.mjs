@@ -46,6 +46,51 @@ export function patchIndexCssV14357(source) {
   return source.replace(needle, `${needle}\n@import "./styles/v14357-ui-clarity.css";`);
 }
 
+export function patchLegacyVoiceRegressionV14357(source) {
+  let patched = source;
+  const readNeedle = "const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');";
+  if (!patched.includes('const currentVersion = JSON.parse(read(\'package.json\')).version;')) {
+    patched = patched.replace(
+      readNeedle,
+      `${readNeedle}\nconst currentVersion = JSON.parse(read('package.json')).version;\nconst escapedCurrentVersion = String(currentVersion).replace(/\\./g, '\\\\.');`,
+    );
+  }
+  patched = patched
+    .replace(
+      "assert.ok(chain.trimEnd().endsWith(\"await import('../v14348/apply.mjs');\"), 'v14.3.48 deve encerrar a preparação canônica');",
+      "assert.ok(chain.lastIndexOf(\"await import('../v\") > v14348Index, 'a preparação atual deve suceder e preservar a política da v14.3.48');",
+    )
+    .replace(
+      "assert.match(server, /url\\.pathname === '\\/api\\/release'[^\\r\\n]*version\\s*:\\s*'14\\.3\\.48'/, 'release do servidor deve anunciar v14.3.48');",
+      "assert.match(server, new RegExp(`url\\\\.pathname === '/api/release'[^\\\\r\\\\n]*version\\\\s*:\\\\s*'${escapedCurrentVersion}'`), 'release do servidor deve anunciar a versão atual');",
+    )
+    .replace(
+      "assert.match(server, /url\\.pathname === '\\/api\\/health'[^\\r\\n]*version\\s*:\\s*'14\\.3\\.48'/, 'health do servidor deve anunciar v14.3.48');",
+      "assert.match(server, new RegExp(`url\\\\.pathname === '/api/health'[^\\\\r\\\\n]*version\\\\s*:\\\\s*'${escapedCurrentVersion}'`), 'health do servidor deve anunciar a versão atual');",
+    )
+    .replace(
+      "assert.ok(read('client/src/pages/Home.tsx').includes(\"const DEFAULT_VERSION = '14.3.48';\"), 'Web/PWA deve anunciar v14.3.48');",
+      "assert.ok(read('client/src/pages/Home.tsx').includes(`const DEFAULT_VERSION = '${currentVersion}';`), 'Web/PWA deve anunciar a versão atual');",
+    )
+    .replace(
+      "assert.ok(read('client/public/release.json').includes('14.3.48'), 'release.json deve anunciar v14.3.48');",
+      "assert.ok(read('client/public/release.json').includes(currentVersion), 'release.json deve anunciar a versão atual');",
+    )
+    .replace(
+      "const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], {",
+      "const currentApplyPath = path.join(root, 'scripts', `v${currentVersion.replace(/\\./g, '')}`, 'apply.mjs');\nconst second = spawnSync(process.execPath, [currentApplyPath], {",
+    )
+    .replace(
+      "assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');",
+      "assert.equal(second.status, 0, second.stderr || second.stdout || `reaplicação final v${currentVersion} falhou`);",
+    )
+    .replace(
+      "assert.equal(read(relative), before.get(relative), `v14.3.48 deve ser idempotente em ${relative}`);",
+      "assert.equal(read(relative), before.get(relative), `a versão ${currentVersion} deve ser idempotente em ${relative}`);",
+    );
+  return patched;
+}
+
 if (process.env.CREWCHECK_V14357_SKIP_APPLY !== '1') {
   const timelineSource = readLocal('./OperationalDayTimeline.tsx');
   const timelineCss = readLocal('./operational-day-timeline.css');
@@ -84,6 +129,7 @@ if (process.env.CREWCHECK_V14357_SKIP_APPLY !== '1') {
     .replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
   update('server.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`), { optional: true });
   update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`), { optional: true });
+  update('scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs', patchLegacyVoiceRegressionV14357, { optional: true });
 
   console.log(`[v14357] CrewCheck ${VERSION}: clareza operacional, login compacto e padrão visual aplicados.`);
 }
