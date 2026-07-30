@@ -27,8 +27,8 @@ jobs:
       - run: npm ci
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
-      - name: Verify preparation idempotency
-        run: node scripts/v139/apply.mjs
+      - name: Verify v14.3.59 idempotency
+        run: node scripts/v14359/apply.mjs
       - name: Official August roster regression
         run: node scripts/regression-v14-3-59-official-roster-compliance.mjs
       - name: TypeScript
