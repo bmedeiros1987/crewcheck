@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { replaceReleaseWatchers } from '../lib/release-watcher.mjs';
 
 const VERSION = '14.3.43';
 const VERSION_DIGITS = VERSION.replace(/\./g, '');
@@ -183,9 +184,7 @@ update('client/index.html', (source) => {
     .replace(/manifest\.json\?v=\d+/g, `manifest.json?v=${VERSION_DIGITS}`)
     .replace(/sw\.js\?v=\d+/g, `sw.js?v=${VERSION_DIGITS}`)
     .replace(/var currentRelease = '[^']+';/g, `var currentRelease = '${VERSION}';`);
-  const legacyWatcher = /<script id="crewcheck-release-watch-v14329">[\s\S]*?<\/script>/;
-  if (legacyWatcher.test(next)) next = next.replace(legacyWatcher, releaseWatcher);
-  else if (!next.includes('crewcheck-release-watch-v14343')) next = next.replace('</body>', `  ${releaseWatcher}\n</body>`);
+  next = replaceReleaseWatchers(next, releaseWatcher);
   if (next.includes('registration.unregister()') || next.includes('crewcheck-cache-reset-')) throw new Error('[v14343] Limpeza destrutiva do PWA ainda presente no HTML.');
   return next;
 });
