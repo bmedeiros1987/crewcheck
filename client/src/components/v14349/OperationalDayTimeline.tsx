@@ -8,9 +8,15 @@ import {
   Plane,
   ShieldCheck,
 } from 'lucide-react';
+import {
+  classifyScheduleActivity,
+  isFlightScheduleActivity,
+  isProgramScheduleActivity,
+  type ScheduleActivityLike,
+} from '../../lib/scheduleActivityClassification';
 import './operational-day-timeline.css';
 
-type RosterEvent = {
+type RosterEvent = ScheduleActivityLike & {
   id?: string;
   kind?: string;
   title?: string;
@@ -45,9 +51,6 @@ type TimelineItem = {
   targetView?: string;
 };
 
-const REST_DAY_PATTERN = /\b(?:DO|DOF|DOP|DOPR|OFF|FOLGA|VC)\b/i;
-const REST_RECOVERY_PATTERN = /\b(?:DR|DESCANSO|REPOUSO)\b/i;
-
 function validDate(value?: string): Date | null {
   if (!value) return null;
   const date = new Date(value);
@@ -62,34 +65,16 @@ function eventEnd(event: RosterEvent): Date | null {
   return validDate(event.canonical?.endDateTime) || eventStart(event);
 }
 
-function eventText(event: RosterEvent): string {
-  return [event.canonical?.code, event.title, event.subtitle, event.kind, event.canonical?.kind]
-    .filter(Boolean)
-    .join(' ');
-}
-
-function isRest(event: RosterEvent): boolean {
-  const text = eventText(event);
-  return event.kind === 'rest'
-    || event.canonical?.kind === 'rest'
-    || REST_DAY_PATTERN.test(text)
-    || REST_RECOVERY_PATTERN.test(text);
-}
-
-function isStay(event: RosterEvent): boolean {
-  return event.kind === 'stay' || event.canonical?.kind === 'stay';
-}
-
 function isFlight(event: RosterEvent): boolean {
-  return event.kind === 'flight' || event.canonical?.kind === 'flight';
+  return isFlightScheduleActivity(event);
 }
 
 function isOperational(event: RosterEvent): boolean {
-  return !event.placeholder && !isRest(event) && !isStay(event);
+  return isProgramScheduleActivity(event);
 }
 
 function restCopy(event: RosterEvent): { title: string; detail: string } {
-  if (REST_RECOVERY_PATTERN.test(eventText(event))) {
+  if (classifyScheduleActivity(event) === 'REPOUSO') {
     return { title: 'Repouso', detail: 'Período de recuperação programado' };
   }
   return { title: 'Folga', detail: 'Descanso programado' };
@@ -179,7 +164,8 @@ export function buildOperationalDayTimeline(events: RosterEvent[], nowDate = new
   for (const event of relevant.slice(0, 8)) {
     const start = eventStart(event);
     if (!start) continue;
-    if (isRest(event)) {
+    const category = classifyScheduleActivity(event);
+    if (category === 'FOLGA' || category === 'REPOUSO') {
       const copy = restCopy(event);
       const end = eventEnd(event);
       items.push({
@@ -194,7 +180,7 @@ export function buildOperationalDayTimeline(events: RosterEvent[], nowDate = new
       });
       continue;
     }
-    if (isStay(event)) {
+    if (category === 'PERNOITE') {
       const end = eventEnd(event);
       items.push({
         id: `stay-${event.id || start.toISOString()}`,

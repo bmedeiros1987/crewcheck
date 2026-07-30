@@ -1,0 +1,247 @@
+/* CrewCheck v14.3.51 — P0 app shell, menu legível e identidade autenticada */
+.cz-app[data-layout-v14351="p0-stable-shell"] {
+  width: min(100%, 1180px) !important;
+  max-width: 1180px !important;
+  min-width: 0 !important;
+  margin-inline: auto !important;
+  padding-inline: clamp(16px, 3vw, 32px) !important;
+  overflow-x: clip !important;
+}
+
+.cz-menu-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+.cz-menu-panel {
+  width: min(94vw, 440px) !important;
+  min-width: 0 !important;
+  max-width: 440px !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  max-height: 100dvh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+.cz-menu-header {
+  position: relative !important;
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+.cz-menu-identity {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  align-items: center !important;
+  min-width: 0 !important;
+}
+
+.cz-menu-profile {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  flex: 1 1 auto !important;
+  align-items: center !important;
+  gap: 11px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  text-align: left !important;
+}
+
+.cz-menu-avatar {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+}
+
+.cz-menu-avatar img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.cz-menu-profile-copy {
+  display: grid !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.cz-menu-profile-copy strong,
+.cz-menu-profile-copy small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cz-menu-profile-email {
+  color: color-mix(in srgb, currentColor 78%, transparent) !important;
+  font-size: .75rem !important;
+}
+
+.cz-menu-profile-meta {
+  color: color-mix(in srgb, currentColor 62%, transparent) !important;
+  font-size: .7rem !important;
+}
+
+.cz-menu-close {
+  flex: 0 0 44px !important;
+}
+
+.cz-menu-scroll {
+  flex: 1 1 auto !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  scrollbar-gutter: stable !important;
+  padding: 12px 14px calc(32px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.cz-menu-section,
+.cz-menu-section.cz-menu-group {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-flow: row !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  gap: 10px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 0 18px !important;
+  padding: 12px 0 0 !important;
+  overflow: visible !important;
+}
+
+.cz-menu-section > h3,
+.cz-menu-section.cz-menu-group > h3 {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  margin: 0 0 2px !important;
+  padding: 0 4px !important;
+}
+
+.cz-menu-section > button,
+.cz-menu-section.cz-menu-group > button {
+  position: relative !important;
+  z-index: 1 !important;
+  display: grid !important;
+  grid-template-columns: 42px minmax(0, 1fr) 20px !important;
+  place-items: initial !important;
+  align-items: center !important;
+  justify-content: stretch !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 68px !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  text-align: left !important;
+}
+
+.cz-menu-section > button:hover,
+.cz-menu-section > button:focus-visible,
+.cz-menu-section.cz-menu-group > button:hover,
+.cz-menu-section.cz-menu-group > button:focus-visible {
+  z-index: 2 !important;
+  transform: translateY(-1px) !important;
+}
+
+.cz-menu-section > button > svg:first-child,
+.cz-menu-section.cz-menu-group > button > svg:first-child {
+  display: block !important;
+  width: 26px !important;
+  height: 26px !important;
+  margin: 0 !important;
+  justify-self: center !important;
+}
+
+.cz-menu-section > button > svg:last-child,
+.cz-menu-section.cz-menu-group > button > svg:last-child {
+  display: block !important;
+  width: 18px !important;
+  height: 18px !important;
+  margin: 0 !important;
+  justify-self: end !important;
+}
+
+.cz-menu-section > button > span,
+.cz-menu-section.cz-menu-group > button > span {
+  position: static !important;
+  inset: auto !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  transition: none !important;
+  pointer-events: auto !important;
+}
+
+.cz-menu-section > button > span strong,
+.cz-menu-section > button > span small,
+.cz-menu-section.cz-menu-group > button > span strong,
+.cz-menu-section.cz-menu-group > button > span small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+@media (max-width: 720px) {
+  .cz-app[data-layout-v14351="p0-stable-shell"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-inline: 16px !important;
+  }
+
+  .cz-menu-panel {
+    width: 100vw !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+  }
+
+  .cz-menu-scroll {
+    padding-inline: 12px !important;
+    scrollbar-gutter: auto !important;
+  }
+}

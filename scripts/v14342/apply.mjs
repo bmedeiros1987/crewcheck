@@ -34,7 +34,9 @@ update('server.mjs', (source) => {
 
   const currentMapsKey = "return envAny(['GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);";
   const mapsKeyWithRoutes = "return envAny(['GOOGLE_ROUTES_API_KEY', 'GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY']);";
-  if (!next.includes(mapsKeyWithRoutes)) {
+  const mapsKeysAlreadySeparated = next.includes('function googleRoutesServerKey()')
+    && next.includes("return envAny(['GOOGLE_ROUTES_API_KEY', 'GOOGLE_MAPS_SERVER_KEY', 'GOOGLE_MAPS_API_KEY']);");
+  if (!mapsKeysAlreadySeparated && !next.includes(mapsKeyWithRoutes)) {
     if (!next.includes(currentMapsKey)) throw new Error('[v14342] Leitura da chave Google Maps não localizada.');
     next = next.replace(currentMapsKey, mapsKeyWithRoutes);
   }

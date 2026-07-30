@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { hasReleaseWatcher } from '../lib/release-watcher.mjs';
 
 const VERSION = '14.3.29';
 const VERSION_DIGITS = VERSION.replace(/\./g, '');
@@ -91,7 +92,7 @@ update('client/index.html', (source) => {
     .replace(/crewcheck-auto-update-v\d+/, 'crewcheck-auto-update-v14329')
     .replace(/\/sw\.js\?v=\d+/, `/sw.js?v=${VERSION_DIGITS}`);
 
-  if (!next.includes('crewcheck-release-watch-v14329')) {
+  if (!hasReleaseWatcher(next)) {
     const watch = [
       '  <script id="crewcheck-release-watch-v14329">',
       '    (function () {',

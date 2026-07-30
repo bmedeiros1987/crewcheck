@@ -19,6 +19,7 @@ import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
 import { getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
+import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
@@ -139,12 +140,11 @@ export default function App() {
 
   useEffect(() => {
     const splashTimer = window.setTimeout(() => setBootSplashDone(true), 80);
+    const stopPwaCoordinator = installPwaUpdateCoordinator();
     const applySavedTheme = () => applyCrewThemeMode(loadCrewThemeMode());
     applyDocumentLanguage(); installGlobalStaticTranslations(); applySavedTheme();
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '14.2.6');
-      if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister()))).catch(() => undefined);
-      if ('caches' in window) caches.keys().then((names) => Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name)).map((name) => caches.delete(name)))).catch(() => undefined);
+      window.localStorage.setItem('crewcheck_last_loaded_version', '14.3.56');
     } catch {}
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     const handleSystemTheme = () => { if (loadCrewThemeMode() === 'system') applySavedTheme(); };
@@ -157,7 +157,13 @@ export default function App() {
       if (enabled) { window.localStorage.setItem('crewcheck_app_mode', '1'); document.documentElement.classList.add('crewcheck-android'); document.body.classList.add('crewcheck-android-body'); }
       setAppMode(enabled);
     } catch { setAppMode(false); }
-    return () => { window.clearTimeout(splashTimer); media?.removeEventListener?.('change', handleSystemTheme); window.removeEventListener('crewcheck:theme-change', applySavedTheme); window.removeEventListener('storage', applySavedTheme); };
+    return () => {
+      window.clearTimeout(splashTimer);
+      stopPwaCoordinator();
+      media?.removeEventListener?.('change', handleSystemTheme);
+      window.removeEventListener('crewcheck:theme-change', applySavedTheme);
+      window.removeEventListener('storage', applySavedTheme);
+    };
   }, []);
 
   useEffect(() => {
