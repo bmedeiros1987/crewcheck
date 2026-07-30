@@ -10,8 +10,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 const chain = read('scripts/v139/apply.mjs');
-assert.ok(chain.includes("await import('../v14357/apply.mjs');"), 'v14.3.57 deve participar da preparação canônica');
-assert.ok(chain.trimEnd().endsWith("await import('../v14357/compatibility.mjs');"), 'compatibilidade v14.3.57 deve encerrar a preparação canônica');
+const v14357ApplyIndex = chain.indexOf("await import('../v14357/apply.mjs');");
+const v14357CompatibilityIndex = chain.indexOf("await import('../v14357/compatibility.mjs');");
+assert.ok(v14357ApplyIndex >= 0, 'v14.3.57 deve participar da preparação canônica');
+assert.ok(v14357CompatibilityIndex > v14357ApplyIndex, 'compatibilidade v14.3.57 deve suceder a aplicação v14.3.57 sem bloquear versões posteriores');
 
 const auth = read('client/src/pages/AuthPage.tsx');
 const authCss = read('client/src/pages/auth-compact.css');
