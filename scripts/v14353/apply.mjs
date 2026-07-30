@@ -50,6 +50,13 @@ function patchBlock(source, startMarker, endMarker, label, transform) {
   return after === before ? source : `${source.slice(0, start)}${after}${source.slice(end)}`;
 }
 
+export function removeLegacyCockpitBundlePropV14353(source) {
+  return source.replace(
+    '<Cockpit bundle={bundle} events={events}',
+    '<Cockpit events={events}',
+  );
+}
+
 export function patchFlyDeckHomeV14353(source) {
   let next = source;
   next = insertAfterRequired(
@@ -95,6 +102,8 @@ export function patchFlyDeckHomeV14353(source) {
     const eol = next.slice(start, end).includes('\r\n') ? '\r\n' : '\n';
     next = `${next.slice(0, start)}${withEol(flyDeckSnippet, eol)}${eol}${eol}${next.slice(end)}`;
   }
+
+  next = removeLegacyCockpitBundlePropV14353(next);
 
   if (next.includes('<SmartCard event={departureEvent}')) throw new Error('[v14353] Card antigo de saída ainda aparece na tela inicial.');
   if (next.includes('<section className="cz-kpi-row">') && next.slice(next.indexOf('function Cockpit('), next.indexOf('function rosterCode(')).includes('cz-kpi-row')) {
@@ -148,7 +157,7 @@ if (process.env.CREWCHECK_V14353_SKIP_APPLY !== '1') {
     data.version = VERSION;
     data.description = `CrewCheck v${VERSION} - concise premium pre-program briefing with official-roster guardrail`;
     data.scripts ||= {};
-    data.scripts['regression:v14.3.53:flydeck-premium-briefing'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-3-53-flydeck-premium-briefing.mjs';
+    data.scripts['regression:v14.3.53:flydeck-premium-briefing'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-3-53-flydeck-premium-briefing.mjs && node scripts/regression-v14-3-53-cockpit-props.mjs';
     return `${JSON.stringify(data, null, 2)}\n`;
   });
   update('android-wrapper/app/build.gradle', (source) => source
