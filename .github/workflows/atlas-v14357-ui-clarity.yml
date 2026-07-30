@@ -1,6 +1,19 @@
 name: Atlas v14.3.57 UI clarity
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14357/**'
+      - 'scripts/regression-v14-3-47-smart-departure-operational-airport.mjs'
+      - 'scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs'
+      - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - 'server.mjs'
+      - 'server/platform.mjs'
+      - 'package.json'
+      - '.github/workflows/atlas-v14357-ui-clarity.yml'
   pull_request:
     branches: [main]
     paths:
