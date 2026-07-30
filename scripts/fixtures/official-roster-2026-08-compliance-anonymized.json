@@ -26,7 +26,7 @@
   "expected": {
     "blankDays": ["02/08/2026", "03/08/2026"],
     "maxConsecutiveOperationalHoursBeforePublishedRecovery": 128.4,
-    "maxWorkedNightsIn168h": 4,
+    "maxWorkedNightsIn168h": 3,
     "maxConsecutiveWorkedNights": 3,
     "standbyNightsExcludedFromWorkedCount": 2,
     "mustNotEmitTitles": [
