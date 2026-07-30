@@ -1,20 +1,24 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 const VERSION = '14.3.57';
 
-function update(path, transform, { optional = false } = {}) {
-  if (!fs.existsSync(path)) {
+function update(filePath, transform, { optional = false } = {}) {
+  if (!fs.existsSync(filePath)) {
     if (optional) return;
-    throw new Error(`[v14357] Arquivo ausente: ${path}`);
+    throw new Error(`[v14357] Arquivo ausente: ${filePath}`);
   }
-  const before = fs.readFileSync(path, 'utf8');
+  const before = fs.readFileSync(filePath, 'utf8');
   const after = transform(before);
-  if (after !== before) fs.writeFileSync(path, after, 'utf8');
+  if (after !== before) fs.writeFileSync(filePath, after, 'utf8');
 }
 
-function write(path, content) {
-  const before = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
-  if (before !== content) fs.writeFileSync(path, content, 'utf8');
+function write(filePath, content) {
+  const before = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+  if (before !== content) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf8');
+  }
 }
 
 function readLocal(name) {
