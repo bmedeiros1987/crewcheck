@@ -1,0 +1,24 @@
+name: Radar departure gate contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/regression-radar-departure-gate-contract.mjs'
+      - 'scripts/fixtures/radar-departure-gate-la3377.json'
+      - 'docs/radar-departure-gate-contract.md'
+      - 'server/**'
+      - 'client/src/**'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: node scripts/regression-radar-departure-gate-contract.mjs
