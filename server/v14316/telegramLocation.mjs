@@ -60,6 +60,12 @@ export async function handleTelegramLocationAndPlaces(update = {}, options = {})
   // mesma atualização continue até o handler canônico. Academias, farmácias,
   // hospitais, rotas e qualquer outro consumidor usam a mesma localização.
   await saveLegacyLocationMirror(message, Boolean(edited)).catch(() => false);
+
+  /* Marcador inerte para manter o patch histórico v14.3.46 idempotente sem
+     reativar a interceptação ou consumir atualizações:
+    if (edited) return true;
+    if (options.silent) return true;
+  */
   void options;
   return false;
 }
