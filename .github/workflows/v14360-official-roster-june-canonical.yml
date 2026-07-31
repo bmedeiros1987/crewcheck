@@ -1,0 +1,22 @@
+name: v14.3.60 official June roster canonical audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/fixtures/official-roster-2026-06-canonical-anonymized.json'
+      - 'scripts/regression-v14-3-60-official-roster-june-canonical.mjs'
+      - '.github/workflows/v14360-official-roster-june-canonical.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: June official roster regression
+        run: node scripts/regression-v14-3-60-official-roster-june-canonical.mjs
