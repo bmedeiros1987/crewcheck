@@ -1,0 +1,26 @@
+name: Automatic roster audit pipeline
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit-roster-pdf.mjs'
+      - 'server/rosterParser.mjs'
+      - 'scripts/fixtures/official-roster-*-anonymized.json'
+      - 'scripts/regression-official-roster-corpus.mjs'
+      - '.github/workflows/automatic-roster-audit-pipeline.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate CLI contract
+        run: node scripts/audit-roster-pdf.mjs --help
+      - name: Validate official corpus
+        run: node scripts/regression-official-roster-corpus.mjs
