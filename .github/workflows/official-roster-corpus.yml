@@ -1,0 +1,26 @@
+name: Official roster corpus
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/fixtures/official-roster-*-anonymized.json'
+      - 'scripts/regression-official-roster-corpus.mjs'
+      - '.github/workflows/official-roster-corpus.yml'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/**/compliance*'
+      - 'client/src/**/schedule*'
+      - 'client/src/**/smart*departure*'
+  workflow_dispatch:
+
+jobs:
+  validate-corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate all official anonymized roster fixtures
+        run: node scripts/regression-official-roster-corpus.mjs
