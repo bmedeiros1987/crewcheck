@@ -103,6 +103,16 @@ export function patchConciergeServerV14354(source) {
 }
 
 export function patchConciergeLocationPolicyV14354(source) {
+  // Versões posteriores já substituem a política antiga por uma implementação
+  // canônica mais restritiva (fonte confiável, timestamp obrigatório e proteção
+  // contra horário futuro). Nessa situação, v14.3.54 deve ser idempotente e não
+  // exigir que o bloco legado continue existindo.
+  if (source.includes('function parseCapturedAt(')
+    && source.includes('TRUSTED_LOCATION_SOURCES')
+    && source.includes('if (latitude === null || longitude === null || !source || !updatedAt) return null;')) {
+    return source;
+  }
+
   let next = replaceRequired(
     source,
     `  const updated = new Date(location.updatedAt || now);
