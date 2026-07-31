@@ -1,7 +1,7 @@
 async function conciergePharmaciesReply(snapshot) {
   const locationState = conciergeLocationContextV14335(snapshot);
   if (!locationState.fresh) return locationState.message;
-  const places = await conciergeSearchPlaces('farmácia aberta agora', '', locationState.location, 6);
+  const places = await conciergeSearchNearbyHealthPlaces(['pharmacy'], locationState.location, 6);
   if (!places.length) return `Não encontrei farmácias próximas agora. ${conciergeLocationLineV14335(snapshot)} Tente novamente ou abra o mapa do aparelho.`;
   return [
     'Farmácias próximas',
@@ -9,6 +9,6 @@ async function conciergePharmaciesReply(snapshot) {
     '',
     conciergePlaceLines(places),
     '',
-    'A busca usa somente a localização recente enviada no Telegram e descarta resultados a mais de 35 km.',
+    'A busca usa exclusivamente a localização recente compartilhada e descarta qualquer resultado fora da região.',
   ].join('\n');
 }
