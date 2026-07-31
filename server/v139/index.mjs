@@ -12,6 +12,20 @@ import { handlePartnerAccountsRoute } from '../v1410/partnerAccounts.mjs';
 import { handleEmailHealthRoute } from '../v1412/emailHealth.mjs';
 import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
 
+function normalizeTelegramIntentText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9/]+/g, ' ')
+    .trim();
+}
+
+function isCanonicalHealthPlacesIntent(message = {}) {
+  const text = normalizeTelegramIntentText(message?.text || message?.caption || '');
+  return /^(?:\/(?:farmacias|hospitais)(?:@\w+)?|farmacias|hospitais)$/.test(text);
+}
+
 export async function handleV139Route(req, res, url) {
   try {
     if (await handleMailerSendWebhook(req, res, url)) return true;
@@ -45,8 +59,9 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
       : { message: updateOrMessage };
     const message = update?.message || update?.edited_message || updateOrMessage || {};
     const isLiveLocation = Boolean(message?.location && (message.location.live_period || update?.edited_message));
+    const shouldUseCanonicalHealthPlaces = isCanonicalHealthPlacesIntent(message);
 
-    if (!isLiveLocation && await handleEmergencyTelegram(update, sendTelegram)) return true;
+    if (!isLiveLocation && !shouldUseCanonicalHealthPlaces && await handleEmergencyTelegram(update, sendTelegram)) return true;
 
     return await handleCrewLockTelegram(message, sendTelegram);
   } catch {
