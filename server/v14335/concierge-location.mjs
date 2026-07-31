@@ -2,6 +2,7 @@ const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_PLACE_DISTANCE_KM = 35;
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const TRUSTED_LOCATION_SOURCES = new Set(['telegram', 'app', 'web', 'android', 'manual']);
+const TELEGRAM_LEGACY_LOCATION_SOURCES = new Set(['live', 'static']);
 
 const AIRPORT_LOCATION_LABELS = {
   AJU: 'Aracaju/SE', BEL: 'Belém/PA', BSB: 'Brasília/DF', BVB: 'Boa Vista/RR',
@@ -26,6 +27,7 @@ function radians(value) {
 
 function normalizeSource(value) {
   const source = String(value || '').trim().toLowerCase();
+  if (TELEGRAM_LEGACY_LOCATION_SOURCES.has(source)) return 'telegram';
   return TRUSTED_LOCATION_SOURCES.has(source) ? source : '';
 }
 
