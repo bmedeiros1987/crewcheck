@@ -109,6 +109,13 @@ update('server/v14316/telegramLocation.mjs', (source) => {
     'export async function handleTelegramLocationAndPlaces(update = {}) {',
     'export async function handleTelegramLocationAndPlaces(update = {}, options = {}) {',
   );
+
+  const canonicalMirror = next.includes('saveLegacyLocationMirror')
+    && next.includes('compatibilityMirror: true')
+    && next.includes('return false;');
+
+  if (canonicalMirror) return next;
+
   if (!next.includes('if (options.silent) return true;')) {
     next = replaceRequired(
       next,
@@ -124,11 +131,13 @@ update('server.mjs', replaceTelegramLocationDispatch);
 
 update('client/src/lib/crewcheckPremiumRuntime.ts', (source) => {
   let next = source.replace(/version:\s*'14\.3\.\d+'/, `version: '${VERSION}'`);
-  const oldPersist = `    if (Number.isFinite(lat) && Number.isFinite(lng)) localStorage.setItem('crewcheck_last_geo', \`\${lat},\${lng}\`);`;
-  const newPersist = `    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      localStorage.setItem('crewcheck_last_geo', \`\${lat},\${lng}\`);
-      localStorage.setItem('crewcheck_last_geo_meta', JSON.stringify({ lat, lng, accuracy, capturedAt: new Date().toISOString(), source: 'runtime' }));
-    }`;
+  const oldPersist = "    if (Number.isFinite(lat) && Number.isFinite(lng)) localStorage.setItem('crewcheck_last_geo', `${lat},${lng}`);";
+  const newPersist = [
+    '    if (Number.isFinite(lat) && Number.isFinite(lng)) {',
+    "      localStorage.setItem('crewcheck_last_geo', `${lat},${lng}`);",
+    "      localStorage.setItem('crewcheck_last_geo_meta', JSON.stringify({ lat, lng, accuracy, capturedAt: new Date().toISOString(), source: 'runtime' }));",
+    '    }',
+  ].join('\n');
   next = replaceRequired(next, oldPersist, newPersist, 'metadados da posição no runtime');
   return next;
 }, { optional: true });
