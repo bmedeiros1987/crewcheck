@@ -1,0 +1,37 @@
+name: v14.3.59 official roster compliance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/actRules.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14359/**'
+      - 'scripts/fixtures/official-roster-2026-08-compliance-anonymized.json'
+      - 'scripts/regression-v14-3-59-official-roster-compliance.mjs'
+      - 'package.json'
+      - '.github/workflows/v14359-official-roster-compliance.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Verify v14.3.59 idempotency
+        run: node scripts/v14359/apply.mjs
+      - name: Official August roster regression
+        run: node scripts/regression-v14-3-59-official-roster-compliance.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Web build
+        run: npx vite build
