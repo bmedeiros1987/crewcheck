@@ -1,0 +1,22 @@
+name: Canonical location without fixed city
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/v14335/concierge-location.mjs'
+      - 'scripts/regression-canonical-location-no-goiania.mjs'
+      - '.github/workflows/canonical-location-no-goiania.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Canonical location regression
+        run: node scripts/regression-canonical-location-no-goiania.mjs

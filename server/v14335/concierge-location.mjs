@@ -1,5 +1,7 @@
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_PLACE_DISTANCE_KM = 35;
+const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const TRUSTED_LOCATION_SOURCES = new Set(['telegram', 'app', 'web', 'android', 'manual']);
 
 const AIRPORT_LOCATION_LABELS = {
   AJU: 'Aracaju/SE', BEL: 'Belém/PA', BSB: 'Brasília/DF', BVB: 'Boa Vista/RR',
@@ -22,6 +24,21 @@ function radians(value) {
   return Number(value || 0) * Math.PI / 180;
 }
 
+function normalizeSource(value) {
+  const source = String(value || '').trim().toLowerCase();
+  return TRUSTED_LOCATION_SOURCES.has(source) ? source : '';
+}
+
+function parseCapturedAt(location, now) {
+  const raw = location.updatedAt || location.capturedAt || location.timestamp || '';
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  const current = new Date(now).getTime();
+  if (parsed.getTime() > current + MAX_FUTURE_SKEW_MS) return null;
+  return parsed;
+}
+
 export function conciergeLocationDistanceKm(a, b) {
   const lat1 = finiteCoordinate(a?.latitude ?? a?.lat, -90, 90);
   const lon1 = finiteCoordinate(a?.longitude ?? a?.lon ?? a?.lng, -180, 180);
@@ -40,7 +57,7 @@ export function nearestConciergeLocationLabel(location, airportPoints = {}) {
     .filter((item) => Number.isFinite(item.distanceKm))
     .sort((a, b) => a.distanceKm - b.distanceKm);
   const nearest = candidates[0];
-  if (!nearest || nearest.distanceKm > 180) return { label: 'localização compartilhada no Telegram', airport: '', distanceKm: null };
+  if (!nearest || nearest.distanceKm > 180) return { label: 'localização compartilhada', airport: '', distanceKm: null };
   const city = String(nearest.point?.city || '').trim();
   const label = AIRPORT_LOCATION_LABELS[nearest.code] || (city ? `${city} · referência ${nearest.code}` : `região de ${nearest.code}`);
   return { label, airport: nearest.code, distanceKm: nearest.distanceKm };
@@ -49,23 +66,29 @@ export function nearestConciergeLocationLabel(location, airportPoints = {}) {
 export function normalizeConciergeLocation(location = {}, { now = new Date(), ttlMs = DEFAULT_TTL_MS, airportPoints = {} } = {}) {
   const latitude = finiteCoordinate(location.latitude, -90, 90);
   const longitude = finiteCoordinate(location.longitude, -180, 180);
-  if (latitude === null || longitude === null) return null;
-  const updated = new Date(location.updatedAt || now);
-  const updatedAt = Number.isFinite(updated.getTime()) ? updated : new Date(now);
+  const source = normalizeSource(location.source);
+  const updatedAt = parseCapturedAt(location, now);
+  if (latitude === null || longitude === null || !source || !updatedAt) return null;
+
   const fallback = nearestConciergeLocationLabel({ latitude, longitude }, airportPoints);
   const city = String(location.city || '').trim();
   const state = String(location.state || '').trim().toUpperCase();
   const explicitLabel = String(location.label || '').trim();
-  const label = explicitLabel || (city ? `${city}${state ? `/${state}` : ''}` : fallback.label);
+  const nearestAirport = String(location.nearestAirport || fallback.airport || '').toUpperCase();
+  const explicitAirportMatches = !location.nearestAirport || nearestAirport === fallback.airport || fallback.distanceKm === null;
+  const label = explicitLabel && explicitAirportMatches
+    ? explicitLabel
+    : (city && explicitAirportMatches ? `${city}${state ? `/${state}` : ''}` : fallback.label);
+
   return {
     latitude,
     longitude,
     accuracy: Math.max(0, Number(location.accuracy || 0)),
-    source: String(location.source || 'telegram'),
+    source,
     label,
-    city,
-    state,
-    nearestAirport: String(location.nearestAirport || fallback.airport || ''),
+    city: explicitAirportMatches ? city : '',
+    state: explicitAirportMatches ? state : '',
+    nearestAirport: fallback.airport || nearestAirport,
     updatedAt: updatedAt.toISOString(),
     expiresAt: new Date(updatedAt.getTime() + ttlMs).toISOString(),
   };
@@ -73,13 +96,13 @@ export function normalizeConciergeLocation(location = {}, { now = new Date(), tt
 
 export function conciergeLocationState(location, { now = new Date(), ttlMs = DEFAULT_TTL_MS, airportPoints = {} } = {}) {
   const normalized = normalizeConciergeLocation(location || {}, { now, ttlMs, airportPoints });
-  if (!normalized) return { status: 'missing', fresh: false, location: null, label: '', ageMinutes: null, message: 'Envie sua localização pelo clipe do Telegram.' };
+  if (!normalized) return { status: 'missing', fresh: false, location: null, label: '', ageMinutes: null, message: 'Compartilhe novamente sua localização atual pelo clipe do Telegram.' };
   const updatedAt = new Date(normalized.updatedAt).getTime();
   const expiresAt = new Date(normalized.expiresAt).getTime();
   const current = new Date(now).getTime();
   const ageMinutes = Math.max(0, Math.round((current - updatedAt) / 60000));
   if (!Number.isFinite(updatedAt) || !Number.isFinite(expiresAt) || current > expiresAt) {
-    return { status: 'stale', fresh: false, location: normalized, label: normalized.label, ageMinutes, message: `Sua localização de ${normalized.label} expirou. Compartilhe novamente pelo Telegram para evitar busca na cidade errada.` };
+    return { status: 'stale', fresh: false, location: normalized, label: normalized.label, ageMinutes, message: `Sua localização expirou há ${ageMinutes} min. Compartilhe novamente para evitar busca na cidade errada.` };
   }
   return { status: 'fresh', fresh: true, location: normalized, label: normalized.label, ageMinutes, message: `Localização usada: ${normalized.label}.` };
 }
@@ -104,7 +127,7 @@ export async function resolveConciergeLocationLabel(location, { apiKey = '', fet
 }
 
 export function filterConciergePlacesByLocation(places = [], location, maxDistanceKm = DEFAULT_MAX_PLACE_DISTANCE_KM) {
-  if (!location) return Array.isArray(places) ? places : [];
+  if (!location) return [];
   return (Array.isArray(places) ? places : [])
     .map((place) => {
       const distanceKm = Number.isFinite(Number(place?.distanceKm)) ? Number(place.distanceKm) : conciergeLocationDistanceKm(location, place?.location);
