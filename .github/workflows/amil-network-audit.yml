@@ -1,0 +1,21 @@
+name: Amil S450/S750 network audit
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/import-amil-network.py'
+      - 'scripts/audit-amil-network.mjs'
+      - 'server/data/amil-network-s450-s750.json'
+      - '.github/workflows/amil-network-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Audit S450/S750 normalized snapshot
+        run: node scripts/audit-amil-network.mjs
