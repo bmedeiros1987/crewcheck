@@ -1,3 +1,15 @@
+function conciergeGoogleMapsRouteUrl(point = null) {
+  const latitude = Number(point?.latitude);
+  const longitude = Number(point?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return '';
+  const params = new URLSearchParams({
+    api: '1',
+    destination: `${latitude},${longitude}`,
+    travelmode: 'driving',
+  });
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 async function conciergeSearchNearbyHealthPlaces(includedTypes = [], location = null, maxResultCount = 6) {
   const key = mapsServerKey();
   if (!key) return [];
@@ -37,6 +49,7 @@ async function conciergeSearchNearbyHealthPlaces(includedTypes = [], location = 
         address: place?.formattedAddress || '',
         rating: Number(place?.rating || 0),
         mapsUrl: place?.googleMapsUri || '',
+        routeUrl: conciergeGoogleMapsRouteUrl(point),
         openNow: place?.currentOpeningHours?.openNow,
         location: point,
         distanceKm: conciergeLocationDistanceKmV14335(current, point),
