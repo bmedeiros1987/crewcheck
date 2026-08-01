@@ -9,4 +9,4 @@ node scripts/regression-canonical-location-architecture.mjs
 
 O primeiro teste valida o contrato funcional puro de normalização, validade e distância.
 
-O segundo registra, de forma explícita, os pontos legados ainda existentes. Ele serve como inventário controlado para que a remoção da interceptação de Academias e dos TTLs paralelos seja feita em uma alteração posterior, pequena e revisável.
+O segundo garante que `server/v14316/telegramLocation.mjs` permaneça somente como espelho silencioso de compatibilidade: ele pode persistir a localização histórica, mas não pode decidir TTL, interceptar Academias ou consultar uma localização paralela. A decisão de frescor e o consumo pelos recursos geográficos permanecem concentrados no Concierge canônico.
