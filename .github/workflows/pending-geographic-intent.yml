@@ -1,0 +1,20 @@
+name: Telegram pending geographic intent
+
+on:
+  pull_request:
+    paths:
+      - 'server/v14369/pending-geographic-intent.mjs'
+      - 'scripts/regression-v14-3-69-pending-geographic-intent.mjs'
+      - '.github/workflows/pending-geographic-intent.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate pending geographic intent contract
+        run: node scripts/regression-v14-3-69-pending-geographic-intent.mjs
