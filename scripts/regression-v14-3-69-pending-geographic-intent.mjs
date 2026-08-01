@@ -30,6 +30,17 @@ assert.equal(filters.ativo, true);
 assert.equal(filters.nested, undefined, 'objetos aninhados não devem ser persistidos');
 assert.equal(filters.token.length, 160, 'strings devem ser limitadas');
 
+assert.equal(
+  createPendingGeographicIntent('Hospitais', { chatId: 'chat-123', now: NOW }),
+  null,
+  'criação sem userId deve ser rejeitada',
+);
+assert.equal(
+  createPendingGeographicIntent('Hospitais', { userId: 'user-456', now: NOW }),
+  null,
+  'criação sem chatId deve ser rejeitada',
+);
+
 const pending = createPendingGeographicIntent('Hospitais', {
   filters: { plano: 'S450', tipo: ['PA', 'PS'] },
   chatId: 'chat-123',
@@ -59,6 +70,36 @@ const expired = pendingGeographicIntentState(pending, {
 assert.equal(expired.status, 'expired');
 assert.equal(expired.usable, false);
 
+const missingExpectedChat = pendingGeographicIntentState(pending, {
+  userId: 'user-456',
+  now: NOW,
+});
+assert.equal(missingExpectedChat.status, 'scope-missing');
+assert.equal(missingExpectedChat.usable, false, 'consulta sem chatId não pode consumir intenção');
+
+const missingExpectedUser = pendingGeographicIntentState(pending, {
+  chatId: 'chat-123',
+  now: NOW,
+});
+assert.equal(missingExpectedUser.status, 'scope-missing');
+assert.equal(missingExpectedUser.usable, false, 'consulta sem userId não pode consumir intenção');
+
+const missingRecordChat = pendingGeographicIntentState({ ...pending, chatId: '' }, {
+  chatId: 'chat-123',
+  userId: 'user-456',
+  now: NOW,
+});
+assert.equal(missingRecordChat.status, 'scope-missing');
+assert.equal(missingRecordChat.usable, false, 'registro sem chatId não pode ser reutilizado');
+
+const missingRecordUser = pendingGeographicIntentState({ ...pending, userId: '' }, {
+  chatId: 'chat-123',
+  userId: 'user-456',
+  now: NOW,
+});
+assert.equal(missingRecordUser.status, 'scope-missing');
+assert.equal(missingRecordUser.usable, false, 'registro sem userId não pode ser reutilizado');
+
 const wrongChat = pendingGeographicIntentState(pending, {
   chatId: 'chat-999',
   userId: 'user-456',
@@ -74,6 +115,10 @@ const wrongUser = pendingGeographicIntentState(pending, {
 });
 assert.equal(wrongUser.status, 'scope-mismatch');
 assert.equal(wrongUser.usable, false, 'intenção não pode migrar entre usuários');
+
+const consumedWithoutScope = consumePendingGeographicIntent(pending, { now: NOW });
+assert.equal(consumedWithoutScope.consumed, false, 'consumo sem escopo deve falhar fechado');
+assert.equal(consumedWithoutScope.status, 'scope-missing');
 
 const consumed = consumePendingGeographicIntent(pending, {
   chatId: 'chat-123',
