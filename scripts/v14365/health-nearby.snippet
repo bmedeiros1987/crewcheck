@@ -10,6 +10,13 @@ function conciergeGoogleMapsRouteUrl(point = null) {
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
+function conciergeHealthRouteLines(places = []) {
+  return (Array.isArray(places) ? places : [])
+    .map((place, index) => place?.routeUrl ? `${index + 1}. Rota: ${place.routeUrl}` : '')
+    .filter(Boolean)
+    .join('\n');
+}
+
 async function conciergeSearchNearbyHealthPlaces(includedTypes = [], location = null, maxResultCount = 6) {
   const key = mapsServerKey();
   if (!key) return [];
