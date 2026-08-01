@@ -49,9 +49,25 @@ const consumed = consumePendingGeographicIntentFromSnapshot(stored, {
 });
 assert.equal(consumed.consumed, true);
 assert.equal(consumed.intent.intent, 'hospitais');
-assert.equal(consumed.snapshot.preferences.pendingGeographicIntent, undefined, 'consumo deve ser one-shot');
+assert.equal(consumed.snapshot.preferences.pendingGeographicIntent, null, 'consumo deve persistir tombstone one-shot');
 assert.equal(consumed.snapshot.preferences.mode, 'formal');
 assert.equal(consumed.snapshot.preferences.location.label, 'Brasília, DF');
+
+const mergedAfterConsume = {
+  ...stored,
+  preferences: {
+    ...stored.preferences,
+    ...consumed.snapshot.preferences,
+  },
+};
+assert.equal(mergedAfterConsume.preferences.pendingGeographicIntent, null, 'merge de preferências deve preservar a exclusão');
+const reloadedAfterConsume = pendingGeographicIntentFromSnapshot(mergedAfterConsume, {
+  chatId: 'chat-123',
+  userId: 'user-456',
+  now: NOW,
+});
+assert.equal(reloadedAfterConsume.usable, false, 'intenção consumida não pode reaparecer após salvar e recarregar');
+assert.equal(reloadedAfterConsume.status, 'missing');
 
 const expired = consumePendingGeographicIntentFromSnapshot(stored, {
   chatId: 'chat-123',
@@ -60,10 +76,10 @@ const expired = consumePendingGeographicIntentFromSnapshot(stored, {
 });
 assert.equal(expired.consumed, false);
 assert.equal(expired.status, 'expired');
-assert.equal(expired.snapshot.preferences.pendingGeographicIntent, undefined, 'intenção expirada deve ser removida');
+assert.equal(expired.snapshot.preferences.pendingGeographicIntent, null, 'intenção expirada deve persistir tombstone');
 
 const cleared = clearPendingGeographicIntent(stored);
-assert.equal(cleared.preferences.pendingGeographicIntent, undefined);
+assert.equal(cleared.preferences.pendingGeographicIntent, null);
 assert.equal(cleared.preferences.voiceProfile, 'default');
 assert.ok(base.preferences.pendingGeographicIntent === undefined, 'helper não deve mutar snapshot de entrada');
 

@@ -30,11 +30,12 @@ export function withPendingGeographicIntent(snapshot = null, intent = '', option
 }
 
 export function clearPendingGeographicIntent(snapshot = null) {
-  const preferences = clonePreferences(snapshot);
-  delete preferences[PREFERENCE_KEY];
   return {
     ...snapshot,
-    preferences,
+    preferences: {
+      ...clonePreferences(snapshot),
+      [PREFERENCE_KEY]: null,
+    },
   };
 }
 
