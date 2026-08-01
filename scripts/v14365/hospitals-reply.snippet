@@ -9,6 +9,8 @@ async function conciergeHospitalsReply(snapshot) {
     '',
     conciergePlaceLines(places),
     '',
+    conciergeHealthRouteLines(places),
+    '',
     'A busca usa exclusivamente a localização recente compartilhada. Confirme rota, atendimento e disponibilidade. Em emergência, procure o serviço oficial imediatamente.',
-  ].join('\n');
+  ].filter((line) => line !== '').join('\n');
 }
