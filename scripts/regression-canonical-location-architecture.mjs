@@ -27,7 +27,17 @@ for (const pattern of forbiddenLegacyDecisionPatterns) {
 
 assert.match(legacy, /compatibilityMirror:\s*true/);
 assert.match(legacy, /saveLegacyLocationMirror/);
-assert.match(legacy, /return false;/);
 assert.match(legacy, /Concierge canônico é a única camada autorizada/);
+
+const exportedHandlerMarker = 'export async function handleTelegramLocationAndPlaces';
+const exportedHandlerStart = legacy.indexOf(exportedHandlerMarker);
+assert.notEqual(exportedHandlerStart, -1, 'handler legado exportado não encontrado');
+const exportedHandler = legacy.slice(exportedHandlerStart);
+assert.match(exportedHandler, /await saveLegacyLocationMirror\(/);
+assert.match(
+  exportedHandler,
+  /return false;\s*}\s*$/,
+  'handler legado deve terminar retornando false para liberar o fluxo canônico',
+);
 
 console.log('[regression:canonical-location-architecture] handler legado é apenas espelho e decisão permanece canônica.');
