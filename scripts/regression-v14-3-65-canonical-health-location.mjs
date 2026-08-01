@@ -12,10 +12,16 @@ assert.match(helper, /rankPreference:\s*'DISTANCE'/, 'resultados devem ser orden
 assert.match(helper, /filterConciergePlacesByLocationV14335\(places, current, 35\)/, 'resultados fora de 35 km devem ser descartados');
 assert.doesNotMatch(helper, /Goiânia|GYN|GO['"`]/, 'helper não pode conter fallback fixo de Goiânia');
 
+assert.match(helper, /function conciergeGoogleMapsRouteUrl\(/, 'resultado geográfico deve expor rota universal');
+assert.match(helper, /https:\/\/www\.google\.com\/maps\/dir\/\?/, 'rota deve usar URL universal do Google Maps');
+assert.match(helper, /destination:\s*`\$\{latitude\},\$\{longitude\}`/, 'rota deve usar as coordenadas exatas do resultado');
+assert.match(helper, /routeUrl:\s*conciergeGoogleMapsRouteUrl\(point\)/, 'cada local de saúde deve receber routeUrl');
+assert.doesNotMatch(helper, /origin:/, 'rota não deve fixar origem antiga; o app de mapas decide a origem atual');
+
 assert.match(pharmacies, /conciergeSearchNearbyHealthPlaces\(\['pharmacy'\]/, 'Farmácias deve consumir o helper canônico');
 assert.match(hospitals, /conciergeSearchNearbyHealthPlaces\(\['hospital'\]/, 'Hospitais deve consumir o helper canônico');
 assert.doesNotMatch(pharmacies, /conciergeSearchPlaces\(/, 'Farmácias não pode usar busca textual com fallback de cidade');
 assert.doesNotMatch(hospitals, /conciergeSearchPlaces\(/, 'Hospitais não pode usar busca textual com fallback de cidade');
 assert.match(loader, /v14365\/apply\.mjs/, 'patch deve participar da preparação canônica');
 
-console.log('[regression:v14.3.65] Farmácias e Hospitais usam localização canônica restrita: OK');
+console.log('[regression:v14.3.65] Farmácias e Hospitais usam localização canônica restrita e rota universal: OK');
