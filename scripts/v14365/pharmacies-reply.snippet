@@ -9,6 +9,8 @@ async function conciergePharmaciesReply(snapshot) {
     '',
     conciergePlaceLines(places),
     '',
+    conciergeHealthRouteLines(places),
+    '',
     'A busca usa exclusivamente a localização recente compartilhada e descarta qualquer resultado fora da região.',
-  ].join('\n');
+  ].filter((line) => line !== '').join('\n');
 }
