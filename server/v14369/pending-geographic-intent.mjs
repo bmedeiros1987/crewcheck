@@ -65,6 +65,10 @@ export function createPendingGeographicIntent(intent, {
   const normalizedIntent = normalizePendingGeographicIntent(intent);
   if (!normalizedIntent) return null;
 
+  const scopedChatId = safeString(chatId, 96);
+  const scopedUserId = safeString(userId, 96);
+  if (!scopedChatId || !scopedUserId) return null;
+
   const createdAt = new Date(now);
   if (!Number.isFinite(createdAt.getTime())) return null;
   const safeTtlMs = Math.max(60_000, Math.min(Number(ttlMs) || DEFAULT_TTL_MS, 30 * 60 * 1000));
@@ -72,8 +76,8 @@ export function createPendingGeographicIntent(intent, {
   return {
     intent: normalizedIntent,
     filters: sanitizePendingGeographicIntentFilters(filters),
-    chatId: safeString(chatId, 96),
-    userId: safeString(userId, 96),
+    chatId: scopedChatId,
+    userId: scopedUserId,
     createdAt: createdAt.toISOString(),
     expiresAt: new Date(createdAt.getTime() + safeTtlMs).toISOString(),
   };
@@ -99,10 +103,10 @@ export function pendingGeographicIntentState(record, {
   const recordChatId = safeString(record.chatId, 96);
   const recordUserId = safeString(record.userId, 96);
 
-  if (expectedChatId && recordChatId && expectedChatId !== recordChatId) {
-    return { status: 'scope-mismatch', usable: false, intent: null };
+  if (!expectedChatId || !expectedUserId || !recordChatId || !recordUserId) {
+    return { status: 'scope-missing', usable: false, intent: null };
   }
-  if (expectedUserId && recordUserId && expectedUserId !== recordUserId) {
+  if (expectedChatId !== recordChatId || expectedUserId !== recordUserId) {
     return { status: 'scope-mismatch', usable: false, intent: null };
   }
   if (current.getTime() > expiresAt.getTime()) {
