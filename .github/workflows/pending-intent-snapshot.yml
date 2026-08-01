@@ -1,0 +1,21 @@
+name: Telegram pending intent snapshot
+
+on:
+  pull_request:
+    paths:
+      - 'server/v14369/pending-geographic-intent.mjs'
+      - 'server/v14370/pending-geographic-intent-snapshot.mjs'
+      - 'scripts/regression-v14-3-70-pending-intent-snapshot.mjs'
+      - '.github/workflows/pending-intent-snapshot.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate pending intent snapshot adapter
+        run: node scripts/regression-v14-3-70-pending-intent-snapshot.mjs
