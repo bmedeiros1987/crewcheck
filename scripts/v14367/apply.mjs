@@ -37,6 +37,26 @@ update('client/src/lib/airports.ts', (source) => {
   return replaceRequired(source, "  PMW: 'Palmas',", "  PHB: 'Parnaíba',\n  PMW: 'Palmas',", 'cidade PHB');
 });
 
+// A release canônica precisa manter todas as superfícies de identidade na mesma versão.
+// Isso evita que regressões de políticas antigas interpretem release.json novo como divergência.
+update('package.json', (source) => {
+  const data = JSON.parse(source);
+  data.version = VERSION;
+  data.description = `CrewCheck v${VERSION} - MCK ground training and PHB airport recognition`;
+  return `${JSON.stringify(data, null, 2)}\n`;
+});
+
+update('client/src/pages/Home.tsx', (source) => source
+  .replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`)
+  .replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, `const CREWCHECK_UI_CORE_NOTE = 'v${VERSION}: MCK em solo e PHB/Parnaíba reconhecidos';`));
+
+update('client/src/App.tsx', (source) => source
+  .replace(/crewcheck_last_loaded_version',\s*'[^']+'/g, `crewcheck_last_loaded_version', '${VERSION}'`)
+  .replace(/crewcheck-client-cleanup:[^']+/g, `crewcheck-client-cleanup:${VERSION}`));
+
+update('server.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`));
+update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`));
+
 update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
   channel: 'web',
