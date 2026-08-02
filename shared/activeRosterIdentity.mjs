@@ -25,8 +25,8 @@ export function compareActiveRosterIdentity(leftSummary, rightSummary) {
   const right = normalizeActiveRosterIdentity(rightSummary);
 
   if (!leftSummary && !rightSummary) return { status: 'missing-both', left, right, same: true };
-  if (!leftSummary) return { status: 'remote-only', left, right, same: false };
-  if (!rightSummary) return { status: 'local-only', left, right, same: false };
+  if (!leftSummary) return { status: 'local-only', left, right, same: false };
+  if (!rightSummary) return { status: 'remote-only', left, right, same: false };
 
   if (left.checksum && right.checksum) {
     return {
