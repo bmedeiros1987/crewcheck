@@ -44,12 +44,10 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
     'shareId no payload nativo',
   );
 
-  next = replaceRequired(
-    next,
-    `            webView.evaluateJavascript(js, null);\n            pendingSharedPdfBase64 = null;\n            pendingSharedPdfName = null;\n            Toast.makeText(this, "Dados recebidos pelo CrewCheck. Importando escala...", Toast.LENGTH_LONG).show();`,
-    `            webView.evaluateJavascript(js, null);`,
-    'retenção do PDF até confirmação do cliente',
-  );
+  const eagerCleanup = `            webView.evaluateJavascript(js, null);\n            pendingSharedPdfBase64 = null;\n            pendingSharedPdfName = null;\n            Toast.makeText(this, "Dados recebidos pelo CrewCheck. Importando escala...", Toast.LENGTH_LONG).show();`;
+  if (next.includes(eagerCleanup)) {
+    next = next.replace(eagerCleanup, `            webView.evaluateJavascript(js, null);`);
+  }
 
   if (!next.includes('public boolean acknowledgeSharedPdf(final String shareId)')) {
     const anchor = `        @JavascriptInterface\n        public boolean requestLocation() {`;
