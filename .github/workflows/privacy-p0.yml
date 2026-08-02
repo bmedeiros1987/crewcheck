@@ -1,0 +1,39 @@
+name: CrewCheck privacy P0
+
+on:
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'android-wrapper/**'
+      - 'scripts/v139/**'
+      - 'scripts/v14372/**'
+      - '.github/workflows/privacy-p0.yml'
+
+jobs:
+  privacy-p0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Block user-facing corporate portal references
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            client/src/components/premium/IFlightIntegrationView.tsx
+            client/src/pages/Home.tsx
+            client/src/components/v1391/RosterLaunchView.tsx
+            client/src/lib/i18n.ts
+            android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          )
+          if grep -Ein 'iFlight Admin|Calendar Sweep iFlight|conta corporativa|login corporativo' "${files[@]}"; then
+            echo 'P0 privacy gate failed: forbidden user-facing reference found.' >&2
+            exit 1
+          fi
+          echo 'P0 privacy gate passed.'
