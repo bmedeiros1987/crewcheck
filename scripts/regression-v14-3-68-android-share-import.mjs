@@ -7,6 +7,22 @@ function read(path) {
 function expect(condition, message) {
   if (!condition) throw new Error(`[v14.3.68] ${message}`);
 }
+function javaMethodBody(source, signature) {
+  const start = source.indexOf(signature);
+  if (start < 0) return '';
+  const open = source.indexOf('{', start);
+  if (open < 0) return '';
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+  return '';
+}
 
 const home = read('client/src/pages/Home.tsx');
 const android = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
@@ -24,12 +40,16 @@ expect(android.includes('intent.getClipData().getItemAt(0).getUri()'), 'Android 
 expect(android.includes('payload.put("shareId", pendingSharedPdfId'), 'Payload nativo não envia shareId.');
 expect(android.includes('public boolean acknowledgeSharedPdf(final String shareId)'), 'Bridge Android não expõe ACK do PDF.');
 
-const dispatchStart = android.indexOf('private void dispatchPendingSharedPdf()');
-const dispatchEnd = android.indexOf('private void injectIFlightAutomation(', dispatchStart);
-expect(dispatchStart >= 0 && dispatchEnd > dispatchStart, 'Não foi possível isolar dispatchPendingSharedPdf.');
-const dispatchBlock = android.slice(dispatchStart, dispatchEnd);
-expect(!dispatchBlock.includes('pendingSharedPdfBase64 = null;'), 'Android ainda apaga o PDF imediatamente após disparar o evento.');
-expect(!dispatchBlock.includes('pendingSharedPdfName = null;'), 'Android ainda apaga o nome do PDF antes do ACK.');
+const dispatchBody = javaMethodBody(android, 'private void dispatchPendingSharedPdf()');
+expect(dispatchBody, 'Não foi possível isolar dispatchPendingSharedPdf.');
+expect(!dispatchBody.includes('pendingSharedPdfBase64 = null;'), 'Android ainda apaga o PDF imediatamente após disparar o evento.');
+expect(!dispatchBody.includes('pendingSharedPdfName = null;'), 'Android ainda apaga o nome do PDF antes do ACK.');
+
+const ackBody = javaMethodBody(android, 'public boolean acknowledgeSharedPdf(final String shareId)');
+expect(ackBody, 'Não foi possível isolar acknowledgeSharedPdf.');
+expect(ackBody.includes('pendingSharedPdfBase64 = null;'), 'ACK não libera o buffer do PDF compartilhado.');
+expect(ackBody.includes('pendingSharedPdfName = null;'), 'ACK não libera o nome do PDF compartilhado.');
+expect(ackBody.includes('pendingSharedPdfId = null;'), 'ACK não libera a identidade do PDF compartilhado.');
 
 expect(manifest.includes('android:mimeType="application/pdf"'), 'Manifest perdeu suporte a application/pdf.');
 expect(manifest.includes('android:mimeType="application/octet-stream"'), 'Manifest não aceita compartilhadores que enviam PDF como octet-stream.');
