@@ -25,7 +25,16 @@ update('client/index.html', (source) => {
   if (!next.includes(`rel="preload" as="image" href="${LOGO}"`)) {
     next = next.replace('</title>', `</title>\n    <link rel="preload" as="image" href="${LOGO}" fetchpriority="high" />`);
   }
-  next = next.replace(/\s*<script id="crewcheck-release-watch-v\d+">[\s\S]*?<\/script>\s*/g, '\n');
+
+  // Remove legacy release watchers by behavior, not only by their historical id.
+  // This keeps unrelated scripts intact while guaranteeing there is no forced reload loop.
+  next = next.replace(/\s*<script(?:\s+[^>]*)?>[\s\S]*?<\/script>\s*/g, (block) => {
+    const checksReleaseJson = /\/release\.json(?:\?|['"`])/.test(block);
+    const forcesReload = /window\.location\.reload\s*\(/.test(block);
+    const destructiveReset = /crewcheck-cache-reset-/i.test(block) && /registration\.unregister\s*\(/.test(block);
+    return (checksReleaseJson && forcesReload) || destructiveReset ? '\n' : block;
+  });
+
   if (/window\.location\.reload\s*\(/.test(next)) throw new Error('[v14366] Reload automático ainda presente no HTML final.');
   if (/registration\.unregister\s*\(/.test(next)) throw new Error('[v14366] unregister destrutivo ainda presente no HTML final.');
   return next;
