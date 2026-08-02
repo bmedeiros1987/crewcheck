@@ -35,3 +35,6 @@ update('scripts/v14335/pharmacies-reply.snippet', () => `${pharmacies}\n`);
 update('scripts/v14335/hospitals-reply.snippet', () => `${hospitals}\n`);
 
 console.log('[v14365] Farmácias e Hospitais usam busca Nearby restrita à localização canônica; fallback de cidade removido.');
+
+// P0 boot hotfix must run last so older release watchers cannot reintroduce reload loops.
+await import('../v14366/apply.mjs');
