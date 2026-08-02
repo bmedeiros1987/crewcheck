@@ -65,9 +65,15 @@ jobs:
           set -euo pipefail
           node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
 
-          version="$(node -p "require('./package.json').version")"
-          version_code="$(node -e "const [a,b,c]=require('./package.json').version.split('.').map(Number); if (![a,b,c].every(Number.isInteger)) process.exit(1); process.stdout.write(String(a*10000+b*100+c));")"
-          echo "CrewCheck version: $version ($version_code)"
+          release_file='client/public/release.json'
+          if [[ ! -s "$release_file" ]]; then
+            echo '::error title=Release canônica ausente::A preparação não produziu client/public/release.json.'
+            exit 1
+          fi
+
+          version="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('client/public/release.json','utf8')); const v=String(r.version||'').trim(); if(!/^\\d+\\.\\d+\\.\\d+$/.test(v)) { console.error('Invalid canonical release version: '+v); process.exit(1); } process.stdout.write(v);")"
+          version_code="$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number); if (![a,b,c].every(Number.isInteger) || [a,b,c].some(n=>n<0||n>99)) process.exit(1); process.stdout.write(String(a*10000+b*100+c));" "$version")"
+          echo "CrewCheck canonical release: $version ($version_code)"
           echo "CREWCHECK_VERSION=$version" >> "$GITHUB_ENV"
           echo "CREWCHECK_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
 
@@ -88,7 +94,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const fs=require('fs'); const p=require('./package.json'); const expected=process.env.CREWCHECK_VERSION; if(p.version!==expected) throw new Error('Expected '+expected+', got '+p.version); const server=fs.readFileSync('server.mjs','utf8'); if(!server.includes(\"version: '\"+expected+\"'\")) throw new Error('server.mjs does not expose '+expected);"
+          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('client/public/release.json','utf8')); const expected=process.env.CREWCHECK_VERSION; if(String(r.version)!==expected) throw new Error('Expected canonical release '+expected+', got '+r.version);"
           grep -Fq "versionName \"${CREWCHECK_VERSION}\"" android-wrapper/app/build.gradle
           grep -Fq "versionCode ${CREWCHECK_VERSION_CODE}" android-wrapper/app/build.gradle
           grep -Fq "id 'com.android.application' version '8.11.1'" android-wrapper/build.gradle
