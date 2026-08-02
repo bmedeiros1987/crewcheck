@@ -7,6 +7,7 @@ on:
       - ci/android-typescript-diagnostics
     paths:
       - '.github/workflows/android-typescript-diagnostics.yml'
+      - '.github/workflows/android.yml'
       - 'client/**'
       - 'server.mjs'
       - 'server/**'
@@ -19,6 +20,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/android-typescript-diagnostics.yml'
+      - '.github/workflows/android.yml'
       - 'client/**'
       - 'server.mjs'
       - 'server/**'
@@ -54,6 +56,23 @@ jobs:
           set -euo pipefail
           node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
 
+      - name: Validate canonical Android release version source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s client/public/release.json
+          version="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('client/public/release.json','utf8')); const v=String(r.version||'').trim(); if(!/^\\d+\\.\\d+\\.\\d+$/.test(v)) process.exit(1); process.stdout.write(v);")"
+          package_version="$(node -p "require('./package.json').version")"
+          version_code="$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number); if (![a,b,c].every(Number.isInteger) || [a,b,c].some(n=>n<0||n>99)) process.exit(1); process.stdout.write(String(a*10000+b*100+c));" "$version")"
+          test -n "$version_code"
+          grep -Fq "release_file='client/public/release.json'" .github/workflows/android.yml
+          grep -Fq 'CREWCHECK_VERSION=$version' .github/workflows/android.yml
+          if [[ "$version" == "$package_version" ]]; then
+            echo "Canonical release and package metadata currently match: $version"
+          else
+            echo "Canonical release $version intentionally overrides legacy package metadata $package_version for Android versionName/versionCode."
+          fi
+
       - name: Run TypeScript check with complete diagnostics
         id: typecheck
         continue-on-error: true
@@ -73,6 +92,7 @@ jobs:
           cp client/src/pages/Home.tsx "$RUNNER_TEMP/crewcheck-typescript-diagnostics/Home.prepared.tsx"
           cp server.mjs "$RUNNER_TEMP/crewcheck-typescript-diagnostics/server.prepared.mjs"
           cp package.json "$RUNNER_TEMP/crewcheck-typescript-diagnostics/package.json"
+          cp client/public/release.json "$RUNNER_TEMP/crewcheck-typescript-diagnostics/release.json" 2>/dev/null || true
           cp tsconfig.json "$RUNNER_TEMP/crewcheck-typescript-diagnostics/tsconfig.json"
           if [[ -s "$RUNNER_TEMP/typescript-check.log" ]]; then
             tail -n 400 "$RUNNER_TEMP/typescript-check.log" > "$RUNNER_TEMP/crewcheck-typescript-diagnostics/typescript-check-tail.log"
