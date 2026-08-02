@@ -24,7 +24,7 @@ export function installOfflineRuntime(): () => void {
   window.addEventListener('online', publishConnectivityState);
   window.addEventListener('offline', publishConnectivityState);
 
-  let stopCoordinator = () => undefined;
+  let stopCoordinator: () => void = () => undefined;
   let disposed = false;
 
   const register = async () => {
