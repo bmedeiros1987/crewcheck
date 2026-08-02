@@ -62,7 +62,7 @@ update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck'
 // Alteramos somente identidade/versionamento; nenhuma regra operacional Android é tocada.
 update('android-wrapper/app/build.gradle', (source) => source
   .replace(/versionCode\s+\d+/, `versionCode ${VERSION_CODE}`)
-  .replace(/versionName\s+['"][^'"]+['"]/, `versionName '${VERSION}'`));
+  .replace(/versionName\s+['"][^'"]+['"]/, `versionName "${VERSION}"`));
 
 update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
