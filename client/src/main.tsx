@@ -1,5 +1,6 @@
 import './lib/crewcheckPremiumRuntime';
 import './lib/themeRuntime';
+import './lib/offlineRuntime';
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
