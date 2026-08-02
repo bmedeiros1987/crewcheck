@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const VERSION = '14.3.67';
+const VERSION_CODE = 140367;
 
 function update(path, transform) {
   if (!fs.existsSync(path)) throw new Error(`[v14367] Arquivo ausente: ${path}`);
@@ -56,6 +57,12 @@ update('client/src/App.tsx', (source) => source
 
 update('server.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`));
 update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`));
+
+// O APK/AAB preparado deve anunciar a mesma release do cliente Web.
+// Alteramos somente identidade/versionamento; nenhuma regra operacional Android é tocada.
+update('android-wrapper/app/build.gradle', (source) => source
+  .replace(/versionCode\s+\d+/, `versionCode ${VERSION_CODE}`)
+  .replace(/versionName\s+['"][^'"]+['"]/, `versionName '${VERSION}'`));
 
 update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
