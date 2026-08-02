@@ -8,14 +8,15 @@ function normalizeNumber(value) {
 }
 
 export function normalizeActiveRosterIdentity(summary = {}) {
+  const source = summary && typeof summary === 'object' ? summary : {};
   return {
-    id: clean(summary.id),
-    checksum: clean(summary.checksum),
-    year: normalizeNumber(summary.year),
-    month: normalizeNumber(summary.month),
-    createdAt: clean(summary.createdAt || summary.created_at),
-    activeAt: clean(summary.activeAt || summary.active_at),
-    sourceFileName: clean(summary.sourceFileName || summary.source_file_name),
+    id: clean(source.id),
+    checksum: clean(source.checksum),
+    year: normalizeNumber(source.year),
+    month: normalizeNumber(source.month),
+    createdAt: clean(source.createdAt || source.created_at),
+    activeAt: clean(source.activeAt || source.active_at),
+    sourceFileName: clean(source.sourceFileName || source.source_file_name),
   };
 }
 
