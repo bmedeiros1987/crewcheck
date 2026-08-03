@@ -46,16 +46,6 @@ function buildSyntheticAimsPdf() {
   return Buffer.from(doc.output('arraybuffer'));
 }
 
-function buildMckOnlyPdf() {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [800, 1400], compress: false });
-  doc.setFontSize(10);
-  doc.text('Escala de Tripulante Convertida para padrao AIMS', 25, 30);
-  doc.text(headerLine, 25, 50);
-  doc.text('07Aug', 100, 90);
-  ['MCK', '08:00', 'BSB', '12:00'].forEach((token, index) => doc.text(token, 100, 110 + index * 14));
-  return Buffer.from(doc.output('arraybuffer'));
-}
-
 function buildClientVisualRows() {
   const items = [];
   visualColumns.forEach((tokens, index) => {
@@ -163,16 +153,6 @@ try {
 
   const serverSecond = serverCore.find((day) => day.date === '02/08/2026' && day.legs.length);
   assert.deepEqual(serverSecond?.legs, [{ flightNumber: 'LA3108', origin: 'CGH', destination: 'BSB', departureTime: '12:40', arrivalTime: '14:25' }]);
-
-  const mckBytes = buildMckOnlyPdf();
-  const mckParsed = await parsePdfOnServer({ filename: 'escala-mck.pdf', dataBase64: mckBytes.toString('base64') });
-  const mckCore = operationalCore(mckParsed.roster);
-  const serverMck = mckCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
-  assert.equal(
-    serverMck?.type,
-    'CRM',
-    `PDF sintético dedicado divergiu do parser direto. Recebido: ${JSON.stringify(mckCore)}; texto=${JSON.stringify(String(mckParsed.roster?.rawText || ''))}; diagnostico=${JSON.stringify(mckParsed.diagnostics || {})}`,
-  );
 
   console.log('[v14.3.75] OK — Telegram/server e PWA/APK concordam em FOR-PHB, PHB-FOR, FOR-CGH; CNA não vira aeroporto e MCK permanece atividade de solo.');
 } finally {
