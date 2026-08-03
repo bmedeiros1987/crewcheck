@@ -1,0 +1,6 @@
+{
+  "version": "14.3.73",
+  "channel": "web",
+  "updatePolicy": "automatic-safe",
+  "notes": "APK/AAB passam a empacotar o shell Web canônico e servi-lo no mesmo origin, preservando APIs online e abertura resiliente."
+}
