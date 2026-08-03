@@ -25,11 +25,6 @@ const columnX = (index) => 55 + index * 70;
 function buildSyntheticAimsPdf() {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [800, 1400], compress: false });
   doc.setFontSize(10);
-  // jsPDF receives Y from the top while PDF.js exposes Y from the bottom.
-  // Keep headers visually above the date markers and activity tokens below them
-  // so parseServerAims sees the same geometry as a real AIMS page. The compact
-  // X spacing intentionally keeps all ten test days inside even the shorter
-  // physical page dimension exposed by different jsPDF/PDF.js orientations.
   doc.text('Escala de Tripulante Convertida para padrao AIMS', 25, 30);
   doc.text('Tripulante: TRIPULANTE TESTE -BP:00000000 -Base: BSB -01/08/2026 ate31/08/2026', 25, 50);
   visualColumns.forEach((tokens, index) => {
@@ -113,11 +108,12 @@ try {
 
   const clientMck = clientCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
   const serverMck = serverCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
+  const extractedMckLines = String(serverRoster.rawText || '').split(/\n/).filter((line) => /07Aug|MCK/i.test(line));
   assert.equal(clientMck?.type, 'CRM', 'cliente deve manter MCK como atividade de solo');
   assert.equal(
     serverMck?.type,
     'CRM',
-    `Telegram/server deve manter MCK como atividade de solo. Dia 07 recebido: ${JSON.stringify(serverCore.filter((day) => day.date === '07/08/2026'))}`,
+    `Telegram/server deve manter MCK como atividade de solo. Dia 07 recebido: ${JSON.stringify(serverCore.filter((day) => day.date === '07/08/2026'))}; texto extraído: ${JSON.stringify(extractedMckLines)}`,
   );
 
   const serverSecond = serverCore.find((day) => day.date === '02/08/2026' && day.legs.length);
