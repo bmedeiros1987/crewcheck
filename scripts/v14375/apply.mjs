@@ -47,9 +47,18 @@ if (!source.includes(marker)) {
   if (!source.includes(oldAimsColumnDispatch)) throw new Error('[v14.3.75] despacho de colunas AIMS do servidor não localizado.');
   source = source.replace(oldAimsColumnDispatch, newAimsColumnDispatch);
 
+  // v14.3.45 introduced a CrewRosterReport-specific offset rebuilder into the
+  // shared server pipeline. On AIMS PDFs it has no authoritative dd-Mon-yyyy
+  // blocks, so it removed valid MCK activities while trying to replace them.
+  // Keep that reconstruction strictly on the format it was designed for.
+  const unconditionalOffsetRebuild = ' roster.days = rebuildServerCrewRosterOffsetDays(roster.days, fullText, roster.month, roster.year, roster.base);';
+  const guardedOffsetRebuild = ' if (!isAims) roster.days = rebuildServerCrewRosterOffsetDays(roster.days, fullText, roster.month, roster.year, roster.base);';
+  if (source.includes(unconditionalOffsetRebuild)) source = source.replace(unconditionalOffsetRebuild, guardedOffsetRebuild);
+  else if (!source.includes(guardedOffsetRebuild)) throw new Error('[v14.3.75] pipeline de offsets do servidor não localizado.');
+
   source = `${source.trimEnd()}\n\n${marker}\n`;
   fs.writeFileSync(file, source, 'utf8');
-  console.log('[v14.3.75] Telegram/server: CNA não vira aeroporto nem atravessa inferência de rota; PHB e MCK/RCFI seguem semântica canônica AIMS.');
+  console.log('[v14.3.75] Telegram/server: AIMS preserva MCK/RCFI, CNA não vira aeroporto e o rebuilder de offsets fica restrito ao CrewRosterReport.');
 } else {
   console.log('[v14.3.75] paridade AIMS Telegram/server já aplicada.');
 }
