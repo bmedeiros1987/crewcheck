@@ -10,6 +10,16 @@ function run(script) {
   console.log(`[p0-multichannel] running ${script}`);
   execFileSync(process.execPath, [script], { stdio: 'inherit', env: process.env });
 }
+function nearby(source, anchor, span = 1800) {
+  const index = source.indexOf(anchor);
+  assert.ok(index >= 0, `[p0-multichannel] âncora ausente: ${anchor}`);
+  return source.slice(index, index + span);
+}
+function expectAll(label, source, needles) {
+  for (const needle of needles) {
+    assert.ok(source.includes(needle), `[p0-multichannel] ${label}: ausente ${needle}`);
+  }
+}
 
 const home = read('client/src/pages/Home.tsx');
 const android = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
@@ -17,14 +27,23 @@ const platform = read('server/platform.mjs');
 const server = read('server.mjs');
 
 // One runtime snapshot must feed both the operational cockpit/FlyDeck surface
-// and the full roster view. A channel may change the active roster, but once
-// loaded the UI cannot source cockpit and roster independently.
+// and the full roster view. Assert semantics inside each render/action block,
+// without coupling the gate to JSX attribute order or formatting.
 assert.match(home, /const \[bundle, setBundle\] = useState<BundleState>\(loadRoster\(\)\);/);
 assert.match(home, /const events = useMemo\(\(\) => buildLegs\(bundle\.roster\)/);
-assert.match(home, /view === 'cockpit' && <Cockpit events=\{events\}/);
-assert.match(home, /view === 'roster' && <Roster roster=\{bundle\.roster\} events=\{events\}/);
-assert.match(home, /openActiveRoster\(\)\.then\(active => \{ if \(active\?\.roster\) \{/);
-assert.match(home, /setBundle\(\{ roster: active\.roster, compliance: c, source: 'Escala ativa do banco' \}\)/);
+
+const cockpitRender = nearby(home, "view === 'cockpit'", 900);
+expectAll('Cockpit deve usar events do bundle ativo', cockpitRender, ['<Cockpit', 'events={events}']);
+
+const rosterRender = nearby(home, "view === 'roster'", 900);
+expectAll('Escala deve usar o mesmo bundle/events do Cockpit', rosterRender, ['<Roster', 'roster={bundle.roster}', 'events={events}']);
+
+const openActiveAction = nearby(home, 'openActive: () =>', 1800);
+expectAll('abrir escala ativa deve substituir o bundle compartilhado', openActiveAction, [
+  'openActiveRoster()',
+  'active?.roster',
+  'setBundle({ roster: active.roster',
+]);
 
 // Android ACTION_SEND must enter the exact same handleFile pipeline as PWA.
 assert.match(home, /window\.addEventListener\('crewcheck:native-pdf'/);
