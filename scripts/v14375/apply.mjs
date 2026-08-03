@@ -42,6 +42,11 @@ if (!source.includes(marker)) {
   if (!source.includes(oldColumnType)) throw new Error('[v14.3.75] classificação colunar AIMS do servidor não localizada.');
   source = source.replace(oldColumnType, newColumnType);
 
+  const oldAimsColumnDispatch = "  for (const { marker, tokens } of stitchServerAimsMidnightColumns(columns)) {\n   days.push(...parseAimsTokensIntoEventsV3(tokens, marker.day, marker.month, marker.year, h.base));\n  }";
+  const newAimsColumnDispatch = "  for (const { marker, tokens } of stitchServerAimsMidnightColumns(columns)) {\n   const parsedEvents = parseAimsTokensIntoEventsV3(tokens, marker.day, marker.month, marker.year, h.base);\n   const mckIndex = tokens.findIndex((token) => /^MCK(?:320|_SS)?$/i.test(String(token || '')));\n   const hasParsedMck = parsedEvents.some((day) => /^MCK(?:320|_SS)?$/i.test(String(day?.pairingCode || '')));\n   if (mckIndex >= 0 && !hasParsedMck) {\n    const code = String(tokens[mckIndex]).toUpperCase();\n    const day = makeDay(marker.day, marker.month, marker.year, h.base);\n    const window = pickDutyWindowFromAimsTokensV3(tokens, mckIndex);\n    day.rawText = tokens.join(' ');\n    day.pairingCode = code;\n    day.type = 'CRM';\n    day.dutyReport = window.start;\n    day.dutyDebrief = window.end;\n    day.dutyHours = window.start && window.end ? diffHours(window.start, window.end) : null;\n    day.flyingHours = 0;\n    parsedEvents.push(day);\n   }\n   days.push(...parsedEvents);\n  }";
+  if (!source.includes(oldAimsColumnDispatch)) throw new Error('[v14.3.75] despacho de colunas AIMS do servidor não localizado.');
+  source = source.replace(oldAimsColumnDispatch, newAimsColumnDispatch);
+
   source = `${source.trimEnd()}\n\n${marker}\n`;
   fs.writeFileSync(file, source, 'utf8');
   console.log('[v14.3.75] Telegram/server: CNA não vira aeroporto nem atravessa inferência de rota; PHB e MCK/RCFI seguem semântica canônica AIMS.');
