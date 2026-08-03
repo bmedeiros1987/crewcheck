@@ -1,0 +1,27 @@
+name: CrewCheck v14.3.79 shell visual
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14379/**'
+      - 'scripts/regression-v14-3-79-shell-visual.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/components/premium/SideDrawer.tsx'
+      - 'client/src/components/premium/shell-premium.css'
+      - '.github/workflows/v14379-shell-visual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Validate premium shell profile and logout
+        run: node scripts/regression-v14-3-79-shell-visual.mjs
