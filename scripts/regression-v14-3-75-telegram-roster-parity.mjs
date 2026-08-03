@@ -130,8 +130,6 @@ try {
   const serverSecond = serverCore.find((day) => day.date === '02/08/2026' && day.legs.length);
   assert.deepEqual(serverSecond?.legs, [{ flightNumber: 'LA3108', origin: 'CGH', destination: 'BSB', departureTime: '12:40', arrivalTime: '14:25' }]);
 
-  // MCK gets a dedicated real-PDF fixture so the activity semantic is tested
-  // independently from the dense multi-column flight geometry above.
   const mckBytes = buildMckOnlyPdf();
   const mckParsed = await parsePdfOnServer({ filename: 'escala-mck.pdf', dataBase64: mckBytes.toString('base64') });
   const mckCore = operationalCore(mckParsed.roster);
@@ -139,7 +137,7 @@ try {
   assert.equal(
     serverMck?.type,
     'CRM',
-    `Telegram/server deve manter MCK como atividade de solo no PDF dedicado. Recebido: ${JSON.stringify(mckCore)}`,
+    `Telegram/server deve manter MCK como atividade de solo no PDF dedicado. Recebido: ${JSON.stringify(mckCore)}; texto=${JSON.stringify(String(mckParsed.roster?.rawText || ''))}; diagnostico=${JSON.stringify(mckParsed.diagnostics || {})}`,
   );
 
   console.log('[v14.3.75] OK — Telegram/server e PWA/APK concordam em FOR-PHB, PHB-FOR, FOR-CGH; CNA não vira aeroporto e MCK permanece atividade de solo.');
