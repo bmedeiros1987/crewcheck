@@ -6,9 +6,15 @@ import { jsPDF } from 'jspdf';
 const parserPath = 'server/rosterParser.mjs';
 const source = fs.readFileSync(parserPath, 'utf8');
 const debugPath = 'server/.v14375-debug-parser.mjs';
-const debugSource = source.replace(
+let debugSource = source.replace(
   'export { parsePdfOnServer };',
   'export { parsePdfOnServer, parseAimsTokensIntoEventsV3, parseServerAims, finalizeServerDays, parseServerHeader, parseAimsDateMarkerServer };',
+);
+const rosterLine = " const roster = isAims ? parseServerAims(fullText, pages) : parseServerRosterReport(fullText, pages, filename);";
+if (!debugSource.includes(rosterLine)) throw new Error('Não consegui instrumentar parsePdfOnServer.');
+debugSource = debugSource.replace(
+  rosterLine,
+  `${rosterLine}\n if (String(filename || '').includes('mck-debug')) console.log('[v14.3.75:mck-inside-parsePdf]', JSON.stringify({ pages, fullText, isAims, preFinalizeDays: roster.days }));`,
 );
 if (debugSource === source) throw new Error('Não consegui expor helpers internos do parser.');
 fs.writeFileSync(debugPath, debugSource, 'utf8');
