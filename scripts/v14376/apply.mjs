@@ -43,17 +43,28 @@ const serverPath = 'server.mjs';
     'import do sincronizador canônico',
   );
 
-  const snapshotAnchor = "    const snapshot = await conciergeSaveSnapshotAsync(profile, roster, { source: 'telegram-pdf', fileName: document.file_name || 'escala.pdf', parserDiagnostics: parsed.diagnostics || null });\n    const stats = snapshot.diagnostics || conciergeRosterDiagnostics(roster);";
-  const snapshotReplacement = "    const snapshot = await conciergeSaveSnapshotAsync(profile, roster, { source: 'telegram-pdf', fileName: document.file_name || 'escala.pdf', parserDiagnostics: parsed.diagnostics || null });\n    const platformSync = profile.linked\n      ? await syncLinkedTelegramRoster({ email: profile.email, roster, sourceName: document.file_name || 'escala-telegram.pdf' })\n      : { ok: false, skipped: true, code: 'TELEGRAM_ACCOUNT_NOT_LINKED' };\n    const stats = snapshot.diagnostics || conciergeRosterDiagnostics(roster);";
-  source = replaceRequired(source, snapshotAnchor, snapshotReplacement, 'sincronização do PDF Telegram com a plataforma');
+  const block = functionBlock(source, 'async function handleTelegramPdfRoster(', '\nasync function handleTelegramLocation(');
+  let handler = block.value;
+  if (!handler.includes('const platformSync = profile.linked')) {
+    const statsAnchor = '    const stats = snapshot.diagnostics || conciergeRosterDiagnostics(roster);';
+    const syncInsert = `    const platformSync = profile.linked\n      ? await syncLinkedTelegramRoster({ email: profile.email, roster, sourceName: document.file_name || 'escala-telegram.pdf' })\n      : { ok: false, skipped: true, code: 'TELEGRAM_ACCOUNT_NOT_LINKED' };\n${statsAnchor}`;
+    handler = replaceRequired(handler, statsAnchor, syncInsert, 'sincronização do PDF Telegram com a plataforma');
 
-  const titleAnchor = "      'Escala ativada no Concierge.',";
-  const titleReplacement = "      profile.linked && platformSync.ok\n        ? 'Escala ativada no CrewCheck e no Concierge.'\n        : 'Escala ativada no Concierge.',";
-  source = replaceRequired(source, titleAnchor, titleReplacement, 'mensagem de ativação do Telegram');
+    handler = replaceRequired(
+      handler,
+      "      'Escala ativada no Concierge.',",
+      "      profile.linked && platformSync.ok\n        ? 'Escala ativada no CrewCheck e no Concierge.'\n        : 'Escala ativada no Concierge.',",
+      'mensagem de ativação do Telegram',
+    );
 
-  const nextAnchor = "      next ? `Próxima: ${conciergeProgramLabel(next)}.` : 'Não encontrei próxima programação futura nesta escala.',";
-  const nextReplacement = "      next ? `Próxima: ${conciergeProgramLabel(next)}.` : 'Não encontrei próxima programação futura nesta escala.',\n      !profile.linked\n        ? 'Vincule sua conta CrewCheck ao Telegram para manter Web, PWA e aplicativo na mesma escala.'\n        : !platformSync.ok\n          ? 'A sincronização com sua conta CrewCheck não foi confirmada. Reenvie o PDF quando a conexão estiver disponível.'\n          : 'Web, PWA e aplicativo receberam a mesma revisão ativa desta escala.',";
-  source = replaceRequired(source, nextAnchor, nextReplacement, 'estado de sincronização na resposta Telegram');
+    handler = replaceRequired(
+      handler,
+      "      profile.linked ? 'A escala também está disponível para importar/sincronizar no app.' : 'Vincule este Telegram no app para compartilhar a mesma escala entre os dois.',",
+      "      !profile.linked\n        ? 'Vincule sua conta CrewCheck ao Telegram para manter Web, PWA e aplicativo na mesma escala.'\n        : !platformSync.ok\n          ? 'A sincronização com sua conta CrewCheck não foi confirmada. Reenvie o PDF quando a conexão estiver disponível.'\n          : 'Web, PWA e aplicativo receberam a mesma revisão ativa desta escala.',",
+      'estado de sincronização na resposta Telegram',
+    );
+  }
+  source = `${source.slice(0, block.start)}${handler}${source.slice(block.end)}`;
   write(serverPath, before, source);
 }
 
