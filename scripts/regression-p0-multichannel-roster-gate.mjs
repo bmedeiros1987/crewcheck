@@ -27,18 +27,18 @@ const platform = read('server/platform.mjs');
 const server = read('server.mjs');
 
 // One runtime snapshot must feed both the operational cockpit/FlyDeck surface
-// and the full roster view. Assert semantics inside each render/action block,
-// without coupling the gate to JSX attribute order or formatting.
+// and the full roster view. Assert semantics inside the actual JSX render and
+// action blocks, without coupling the gate to attribute order or whitespace.
 assert.match(home, /const \[bundle, setBundle\] = useState<BundleState>\(loadRoster\(\)\);/);
 assert.match(home, /const events = useMemo\(\(\) => buildLegs\(bundle\.roster\)/);
 
-const cockpitRender = nearby(home, "view === 'cockpit'", 900);
+const cockpitRender = nearby(home, "{view === 'cockpit' && <Cockpit", 900);
 expectAll('Cockpit deve usar events do bundle ativo', cockpitRender, ['<Cockpit', 'events={events}']);
 
-const rosterRender = nearby(home, "view === 'roster'", 900);
+const rosterRender = nearby(home, "{view === 'roster' && <Roster", 900);
 expectAll('Escala deve usar o mesmo bundle/events do Cockpit', rosterRender, ['<Roster', 'roster={bundle.roster}', 'events={events}']);
 
-const openActiveAction = nearby(home, 'openActive: () =>', 1800);
+const openActiveAction = nearby(home, 'openActive: () => { openActiveRoster()', 1800);
 expectAll('abrir escala ativa deve substituir o bundle compartilhado', openActiveAction, [
   'openActiveRoster()',
   'active?.roster',
