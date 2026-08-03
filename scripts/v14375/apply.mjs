@@ -17,6 +17,11 @@ if (!source.includes(marker)) {
   if (!source.includes(oldNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
   source = source.replace(oldNonAirport, newNonAirport);
 
+  const oldScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
+  const newScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(originIdx + 1, destIdx).some((token) => routeBoundaries.has(token))) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
+  if (!source.includes(oldScoreGuard)) throw new Error('[v14.3.75] guard de inferência de rota não localizado.');
+  source = source.replace(oldScoreGuard, newScoreGuard);
+
   const oldTokenActivities = "['HSB','HSBE','ASB','CBF','EMER','MT','CRM','NS','NSJ','IJ','DM'].includes(token)";
   const newTokenActivities = "['HSB','HSBE','ASB','CBF','EMER','MT','CRM','RCFI','MCK','MCK320','MCK_SS','NS','NSJ','IJ','DM'].includes(token)";
   if (!source.includes(oldTokenActivities)) throw new Error('[v14.3.75] lista de atividades AIMS do servidor não localizada.');
@@ -39,7 +44,7 @@ if (!source.includes(marker)) {
 
   source = `${source.trimEnd()}\n\n${marker}\n`;
   fs.writeFileSync(file, source, 'utf8');
-  console.log('[v14.3.75] Telegram/server: CNA não vira aeroporto; PHB e MCK/RCFI seguem semântica canônica AIMS.');
+  console.log('[v14.3.75] Telegram/server: CNA não vira aeroporto nem atravessa inferência de rota; PHB e MCK/RCFI seguem semântica canônica AIMS.');
 } else {
   console.log('[v14.3.75] paridade AIMS Telegram/server já aplicada.');
 }
