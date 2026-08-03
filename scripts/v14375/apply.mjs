@@ -1,0 +1,45 @@
+import fs from 'node:fs';
+
+const file = 'server/rosterParser.mjs';
+if (!fs.existsSync(file)) throw new Error('[v14.3.75] server roster parser ausente.');
+
+let source = fs.readFileSync(file, 'utf8');
+const marker = '// [v14.3.75] Telegram/server AIMS parity with canonical client parser';
+
+if (!source.includes(marker)) {
+  source = source.replace(
+    "'PDP','PET','PFB','PIN','PMW'",
+    "'PDP','PET','PFB','PHB','PIN','PMW'",
+  );
+
+  const oldNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
+  const newNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','MCK','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
+  if (!source.includes(oldNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
+  source = source.replace(oldNonAirport, newNonAirport);
+
+  const oldTokenActivities = "['HSB','HSBE','ASB','CBF','EMER','MT','CRM','NS','NSJ','IJ','DM'].includes(token)";
+  const newTokenActivities = "['HSB','HSBE','ASB','CBF','EMER','MT','CRM','RCFI','MCK','MCK320','MCK_SS','NS','NSJ','IJ','DM'].includes(token)";
+  if (!source.includes(oldTokenActivities)) throw new Error('[v14.3.75] lista de atividades AIMS do servidor não localizada.');
+  source = source.replace(oldTokenActivities, newTokenActivities);
+
+  const oldTokenType = "day.type = code === 'HSB' || code === 'HSBE' || code === 'ASB' ? code : (code === 'CRM' || /^C\\d{2,3}F$/.test(code) || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');";
+  const newTokenType = "day.type = code === 'HSB' || code === 'HSBE' || code === 'ASB' ? code : (code === 'CRM' || code === 'RCFI' || /^MCK(?:320|_SS)?$/.test(code) || /^C\\d{2,3}F$/.test(code) || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');";
+  if (!source.includes(oldTokenType)) throw new Error('[v14.3.75] classificação de atividade AIMS do servidor não localizada.');
+  source = source.replace(oldTokenType, newTokenType);
+
+  const oldColumnActivity = "const activity = text.match(/\\b(HSBE|HSB|ASB|RCFI|CRMBSB|CRMB|CRM|C\\d{2,3}F|MT|CBF|EMER)\\b/i)?.[1]?.toUpperCase();";
+  const newColumnActivity = "const activity = text.match(/\\b(HSBE|HSB|ASB|RCFI|CRMBSB|CRMB|CRM|MCK320|MCK_SS|MCK|C\\d{2,3}F|MT|CBF|EMER)\\b/i)?.[1]?.toUpperCase();";
+  if (!source.includes(oldColumnActivity)) throw new Error('[v14.3.75] atividade colunar AIMS do servidor não localizada.');
+  source = source.replace(oldColumnActivity, newColumnActivity);
+
+  const oldColumnType = "day.type = code === 'ASB' || code === 'HSB' || code === 'HSBE' ? code : (code === 'RCFI' || code === 'CRM' || code === 'MT' || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');";
+  const newColumnType = "day.type = code === 'ASB' || code === 'HSB' || code === 'HSBE' ? code : (code === 'RCFI' || code === 'CRM' || /^MCK(?:320|_SS)?$/.test(code) || code === 'MT' || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');";
+  if (!source.includes(oldColumnType)) throw new Error('[v14.3.75] classificação colunar AIMS do servidor não localizada.');
+  source = source.replace(oldColumnType, newColumnType);
+
+  source = `${source.trimEnd()}\n\n${marker}\n`;
+  fs.writeFileSync(file, source, 'utf8');
+  console.log('[v14.3.75] Telegram/server: CNA não vira aeroporto; PHB e MCK/RCFI seguem semântica canônica AIMS.');
+} else {
+  console.log('[v14.3.75] paridade AIMS Telegram/server já aplicada.');
+}
