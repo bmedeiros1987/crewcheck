@@ -58,6 +58,8 @@ function operationalCore(roster) {
       date: day.date,
       type: day.type,
       pairingCode: day.pairingCode,
+      dutyReport: day.dutyReport || null,
+      dutyDebrief: day.dutyDebrief || null,
       legs: (day.legs || []).map((leg) => ({
         flightNumber: leg.flightNumber,
         origin: leg.origin,
@@ -97,19 +99,25 @@ try {
     { flightNumber: 'LA4631', origin: 'FOR', destination: 'CGH', departureTime: '17:39', arrivalTime: '21:09' },
   ];
 
-  const clientDayOne = operationalCore(clientRoster).find((day) => day.date === '01/08/2026' && day.legs.length)?.legs || [];
-  const serverDayOne = operationalCore(serverRoster).find((day) => day.date === '01/08/2026' && day.legs.length)?.legs || [];
+  const clientCore = operationalCore(clientRoster);
+  const serverCore = operationalCore(serverRoster);
+  const clientDayOne = clientCore.find((day) => day.date === '01/08/2026' && day.legs.length)?.legs || [];
+  const serverDayOne = serverCore.find((day) => day.date === '01/08/2026' && day.legs.length)?.legs || [];
   assert.deepEqual(clientDayOne, expectedDayOne, 'PWA/APK canônico deve preservar as três pernas de 01/08');
   assert.deepEqual(serverDayOne, expectedDayOne, 'Telegram/server deve preservar as mesmas três pernas de 01/08');
   assert.deepEqual(serverDayOne, clientDayOne, 'Telegram e PWA/APK devem concordar no núcleo operacional da jornada');
   assert.ok(!serverDayOne.some((leg) => leg.origin === 'CNA' || leg.destination === 'CNA'), 'CNA nunca pode ser interpretado como aeroporto pelo servidor');
 
-  const clientMck = operationalCore(clientRoster).find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
-  const serverMck = operationalCore(serverRoster).find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
+  const clientMck = clientCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
+  const serverMck = serverCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
   assert.equal(clientMck?.type, 'CRM', 'cliente deve manter MCK como atividade de solo');
-  assert.equal(serverMck?.type, 'CRM', 'Telegram/server deve manter MCK como atividade de solo');
+  assert.equal(
+    serverMck?.type,
+    'CRM',
+    `Telegram/server deve manter MCK como atividade de solo. Dia 07 recebido: ${JSON.stringify(serverCore.filter((day) => day.date === '07/08/2026'))}`,
+  );
 
-  const serverSecond = operationalCore(serverRoster).find((day) => day.date === '02/08/2026' && day.legs.length);
+  const serverSecond = serverCore.find((day) => day.date === '02/08/2026' && day.legs.length);
   assert.deepEqual(serverSecond?.legs, [{ flightNumber: 'LA3108', origin: 'CGH', destination: 'BSB', departureTime: '12:40', arrivalTime: '14:25' }]);
 
   console.log('[v14.3.75] OK — Telegram/server e PWA/APK concordam em FOR-PHB, PHB-FOR, FOR-CGH; CNA não vira aeroporto e MCK permanece atividade de solo.');
