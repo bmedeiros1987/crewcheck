@@ -7,10 +7,8 @@ let source = fs.readFileSync(file, 'utf8');
 const marker = '// [v14.3.72] server-compatible roster fingerprint';
 if (source.includes(marker)) {
   console.log('[v14.3.72] Fingerprint local já alinhado ao servidor.');
-  process.exit(0);
-}
-
-const oldBlock = `export async function checksumRoster(payload: unknown): Promise<string> {
+} else {
+  const oldBlock = `export async function checksumRoster(payload: unknown): Promise<string> {
   const roster = (payload as any)?.roster;
   const periodKey = roster?.year && roster?.month
     ? \`period:\${roster?.crewId || roster?.crewName || 'crew'}:\${roster.year}-\${String(roster.month).padStart(2, '0')}\`
@@ -26,7 +24,7 @@ const oldBlock = `export async function checksumRoster(payload: unknown): Promis
   return \`fallback-\${Math.abs(hash)}\`;
 }`;
 
-const newBlock = `export async function checksumRoster(payload: unknown): Promise<string> {
+  const newBlock = `export async function checksumRoster(payload: unknown): Promise<string> {
   const roster = (payload as any)?.roster;
   // [v14.3.72] server-compatible roster fingerprint
   // Must stay byte-for-byte compatible with server/platform.mjs rosterFingerprint():
@@ -46,7 +44,10 @@ const newBlock = `export async function checksumRoster(payload: unknown): Promis
   return \`fallback-\${Math.abs(hash)}\`;
 }`;
 
-if (!source.includes(oldBlock)) throw new Error('[v14.3.72] Bloco checksumRoster esperado não encontrado.');
-source = source.replace(oldBlock, newBlock);
-fs.writeFileSync(file, source, 'utf8');
-console.log('[v14.3.72] Checksum local usa o mesmo fingerprint SHA-256 do servidor.');
+  if (!source.includes(oldBlock)) throw new Error('[v14.3.72] Bloco checksumRoster esperado não encontrado.');
+  source = source.replace(oldBlock, newBlock);
+  fs.writeFileSync(file, source, 'utf8');
+  console.log('[v14.3.72] Checksum local usa o mesmo fingerprint SHA-256 do servidor.');
+}
+
+await import('./privacy-redaction.mjs');
