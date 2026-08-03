@@ -5,6 +5,8 @@ on:
     paths:
       - 'client/**'
       - 'android-wrapper/**'
+      - 'docs/**'
+      - 'README*'
       - 'scripts/v139/**'
       - 'scripts/v14372/**'
       - '.github/workflows/privacy-p0.yml'
@@ -21,19 +23,33 @@ jobs:
       - run: npm ci
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
+      - name: Preserve executable external endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage' client/src/components/premium/IFlightIntegrationView.tsx
+          grep -Fq 'https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          if grep -Fq 'ibsplc.aeroacesso externo' client/src/components/premium/IFlightIntegrationView.tsx android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java; then
+            echo 'P0 privacy gate failed: executable endpoint was corrupted by redaction.' >&2
+            exit 1
+          fi
       - name: Block user-facing corporate portal references
         shell: bash
         run: |
           set -euo pipefail
-          files=(
-            client/src/components/premium/IFlightIntegrationView.tsx
-            client/src/pages/Home.tsx
-            client/src/components/v1391/RosterLaunchView.tsx
-            client/src/lib/i18n.ts
-            android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
-          )
-          if grep -Ein 'iFlight Admin|Calendar Sweep iFlight|conta corporativa|login corporativo' "${files[@]}"; then
-            echo 'P0 privacy gate failed: forbidden user-facing reference found.' >&2
+          mapfile -d '' files < <(find client android-wrapper docs -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.html' -o -name '*.md' -o -name '*.txt' -o -name '*.xml' \) -print0)
+          if grep -Ein 'iFlight Admin|Calendar Sweep iFlight|conta corporativa|login corporativo' "${files[@]}" README* 2>/dev/null; then
+            echo 'P0 privacy gate failed: forbidden user-facing reference found in a distributed/public surface.' >&2
             exit 1
           fi
           echo 'P0 privacy gate passed.'
+      - name: Validate CrewCheck Life health privacy disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          privacy='client/public/privacy.html'
+          grep -Fiq 'Health Connect' "$privacy"
+          grep -Fiq 'dados de saúde' "$privacy"
+          grep -Fiq 'consentimento' "$privacy"
+          grep -Fiq 'revogar' "$privacy"
+          grep -Fiq 'não vendemos' "$privacy"
