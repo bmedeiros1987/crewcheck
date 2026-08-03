@@ -51,3 +51,4 @@ if (source.includes(marker)) {
 }
 
 await import('./privacy-redaction.mjs');
+await import('../p0-active-roster-server/apply.mjs');
