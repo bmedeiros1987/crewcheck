@@ -103,7 +103,7 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
 update('package.json', (source) => {
   const data = JSON.parse(source);
   data.version = VERSION;
-  data.description = `CrewCheck v${VERSION} - Android bundled offline shell`; 
+  data.description = `CrewCheck v${VERSION} - Android bundled offline shell`;
   return `${JSON.stringify(data, null, 2)}\n`;
 });
 
@@ -125,4 +125,9 @@ update('client/public/release.json', () => `${JSON.stringify({
   notes: 'APK/AAB passam a empacotar o shell Web canônico e servi-lo no mesmo origin, preservando APIs online e abertura resiliente.',
 }, null, 2)}\n`);
 
-console.log(`[v14373] CrewCheck ${VERSION}: shell Android canônico empacotado para abertura resiliente.`);
+update('client/public/manual.html', (source) => source
+  .replace(/Manual CrewCheck v\d+\.\d+\.\d+/g, `Manual CrewCheck v${VERSION}`)
+  .replace(/CrewCheck v\d+\.\d+\.\d+/g, `CrewCheck v${VERSION}`)
+  .replace(/Última revisão: CrewCheck v\d+\.\d+\.\d+/g, `Última revisão: CrewCheck v${VERSION}`));
+
+console.log(`[v14373] CrewCheck ${VERSION}: shell Android canônico empacotado para abertura resiliente; manual alinhado à release canônica.`);
