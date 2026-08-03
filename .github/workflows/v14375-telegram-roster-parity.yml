@@ -30,10 +30,6 @@ jobs:
       - run: npm ci
       - name: Prepare canonical CrewCheck source
         run: node scripts/v139/apply.mjs
-      - name: Inspect synthetic MCK PDF geometry
-        run: node scripts/v14375/debug-mck-geometry.mjs
-      - name: Isolate MCK parser stages
-        run: node scripts/v14375/debug-mck-parser.mjs
       - name: Compare Telegram server and PWA APK AIMS parsing
         run: node scripts/regression-v14-3-75-telegram-roster-parity.mjs
       - name: TypeScript check
