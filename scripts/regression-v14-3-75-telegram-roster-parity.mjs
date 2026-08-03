@@ -24,12 +24,15 @@ const visualColumns = [
 function buildSyntheticAimsPdf() {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [800, 1400], compress: false });
   doc.setFontSize(10);
-  doc.text('Escala de Tripulante Convertida para padrao AIMS', 25, 770);
-  doc.text('Tripulante: TRIPULANTE TESTE -BP:00000000 -Base: BSB -01/08/2026 ate31/08/2026', 25, 750);
+  // jsPDF receives Y from the top while PDF.js exposes Y from the bottom.
+  // Keep headers visually above the date markers and activity tokens below them
+  // so parseServerAims sees the same geometry as a real AIMS page.
+  doc.text('Escala de Tripulante Convertida para padrao AIMS', 25, 30);
+  doc.text('Tripulante: TRIPULANTE TESTE -BP:00000000 -Base: BSB -01/08/2026 ate31/08/2026', 25, 50);
   visualColumns.forEach((tokens, index) => {
     const x = 85 + index * 130;
-    doc.text(`${String(index + 1).padStart(2, '0')}Aug`, x, 710);
-    tokens.forEach((token, tokenIndex) => doc.text(String(token), x, 690 - tokenIndex * 14));
+    doc.text(`${String(index + 1).padStart(2, '0')}Aug`, x, 90);
+    tokens.forEach((token, tokenIndex) => doc.text(String(token), x, 110 + tokenIndex * 14));
   });
   return Buffer.from(doc.output('arraybuffer'));
 }
