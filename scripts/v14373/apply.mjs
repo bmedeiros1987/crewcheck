@@ -73,7 +73,7 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
     '                    if (isCrewCheckWebUrl(target)) return false;',
   );
 
-  if (!next.includes('public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request)')) {
+  if (!next.includes('WebResourceResponse bundled = serveBundledCrewCheckAsset(request);')) {
     const marker = '            @Override\n            public void onPageFinished(WebView view, String url) {';
     const method = `            @Override\n            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {\n                WebResourceResponse bundled = serveBundledCrewCheckAsset(request);\n                if (bundled != null) return bundled;\n                return super.shouldInterceptRequest(view, request);\n            }\n\n`;
     if (!next.includes(marker)) throw new Error('[v14373] WebViewClient onPageFinished não encontrado.');
