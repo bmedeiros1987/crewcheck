@@ -1,0 +1,34 @@
+name: CrewCheck v14.3.76 ground next-day
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/rosterParser.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14375/**'
+      - 'scripts/v14376/**'
+      - 'scripts/regression-v14-3-76-ground-next-day.mjs'
+      - '.github/workflows/v14376-ground-next-day.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ground-next-day:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Regress overnight MCK and RCFI next-day semantics
+        run: node scripts/regression-v14-3-76-ground-next-day.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
