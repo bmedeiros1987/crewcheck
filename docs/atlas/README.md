@@ -10,7 +10,7 @@ O Projeto Atlas organiza a evolução do CrewCheck como produto, plataforma e ma
 
 1. Importação de escala por PDF diretamente no sistema.
 2. Envio de PDF pelo Telegram com processamento seguro e confirmação ao usuário.
-3. Manutenção da integração iFlight como iniciativa condicionada à autorização e cooperação da companhia aérea.
+3. Evolução de importações assistidas somente quando houver autorização, segurança e conformidade adequadas.
 4. Estrutura de assinatura justa, sustentável e transparente.
 5. Padronização institucional, visual, documental e técnica do CrewCheck.
 6. Preservação do parser canônico, regulamentação, autenticação, PWA e integrações existentes.
@@ -32,11 +32,17 @@ O Projeto Atlas organiza a evolução do CrewCheck como produto, plataforma e ma
 - Compartilhamento de PDF com o PWA/APK.
 - Envio de PDF pelo Telegram.
 
-### Condicionado a autorização externa
+### Condicionados a validação externa
 
-- Importação direta via iFlight.
+- Importações assistidas por fontes externas autorizadas.
 
-A indisponibilidade do iFlight não deve impedir o uso completo do CrewCheck por PDF.
+A indisponibilidade de qualquer fonte externa não deve impedir o uso completo do CrewCheck por PDF.
+
+## Privacidade
+
+- O CrewCheck não deve solicitar, transmitir ou armazenar credenciais de sistemas de terceiros.
+- Referências públicas devem usar terminologia neutra e funcional.
+- Dados pessoais devem seguir minimização, finalidade, retenção limitada e transparência.
 
 ## Método BMT
 
