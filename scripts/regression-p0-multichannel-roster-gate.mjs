@@ -35,8 +35,21 @@ assert.match(home, /const events = useMemo\(\(\) => buildLegs\(bundle\.roster\)/
 const cockpitRender = nearby(home, "{view === 'cockpit' && <Cockpit", 900);
 expectAll('Cockpit deve usar events do bundle ativo', cockpitRender, ['<Cockpit', 'events={events}']);
 
-const rosterRender = nearby(home, "{view === 'roster' && <Roster", 900);
-expectAll('Escala deve usar o mesmo bundle/events do Cockpit', rosterRender, ['<Roster', 'roster={bundle.roster}', 'events={events}']);
+if (home.includes("{view === 'roster' && <RosterLaunchView")) {
+  const rosterRender = nearby(home, "{view === 'roster' && <RosterLaunchView", 900);
+  expectAll('Escala canônica deve usar os mesmos events e finanças do bundle ativo', rosterRender, [
+    '<RosterLaunchView',
+    'events={events}',
+    'finance={financeSnapshot(bundle.roster)}',
+  ]);
+} else {
+  const rosterRender = nearby(home, "{view === 'roster' && <Roster", 900);
+  expectAll('Escala legada deve usar o mesmo bundle/events do Cockpit', rosterRender, [
+    '<Roster',
+    'roster={bundle.roster}',
+    'events={events}',
+  ]);
+}
 
 const openActiveAction = nearby(home, 'openActive: () => { openActiveRoster()', 1800);
 expectAll('abrir escala ativa deve substituir o bundle compartilhado', openActiveAction, [
