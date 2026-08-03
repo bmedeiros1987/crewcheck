@@ -131,3 +131,4 @@ update('client/public/manual.html', (source) => source
   .replace(/Última revisão: CrewCheck v\d+\.\d+\.\d+/g, `Última revisão: CrewCheck v${VERSION}`));
 
 console.log(`[v14373] CrewCheck ${VERSION}: shell Android canônico empacotado para abertura resiliente; manual alinhado à release canônica.`);
+await import('./preflight.mjs');
