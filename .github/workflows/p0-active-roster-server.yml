@@ -1,0 +1,44 @@
+name: CrewCheck P0 active roster server
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/platform.mjs'
+      - 'client/src/lib/databaseClient.ts'
+      - 'shared/activeRosterIdentity.mjs'
+      - 'scripts/v139/**'
+      - 'scripts/v14372/**'
+      - 'scripts/p0-active-roster-server/**'
+      - 'scripts/regression-p0-active-roster-server.mjs'
+      - 'scripts/regression-active-roster-runtime.mjs'
+      - 'scripts/regression-v14-3-72-roster-fingerprint-parity.mjs'
+      - '.github/workflows/p0-active-roster-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  active-roster-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate canonical server activation
+        run: node scripts/regression-p0-active-roster-server.mjs
+      - name: Preserve Web APK runtime reconciliation
+        run: node scripts/regression-active-roster-runtime.mjs
+      - name: Preserve server client fingerprint parity
+        run: node scripts/regression-v14-3-72-roster-fingerprint-parity.mjs
+      - name: Validate server syntax
+        run: node --check server/platform.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
