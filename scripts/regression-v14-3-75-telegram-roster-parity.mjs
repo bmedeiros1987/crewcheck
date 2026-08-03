@@ -7,6 +7,16 @@ import { build } from 'vite';
 import { jsPDF } from 'jspdf';
 import { parsePdfOnServer } from '../server/rosterParser.mjs';
 
+const preparedServerParser = fs.readFileSync('server/rosterParser.mjs', 'utf8');
+assert.ok(
+  preparedServerParser.includes("['HSB','HSBE','ASB','CBF','EMER','MT','CRM','RCFI','MCK','MCK320','MCK_SS','NS','NSJ','IJ','DM'].includes(token)"),
+  'fonte preparada do servidor precisa reconhecer MCK no parser AIMS',
+);
+assert.ok(
+  preparedServerParser.includes("/^MCK(?:320|_SS)?$/.test(code)"),
+  'fonte preparada do servidor precisa classificar MCK como atividade de solo',
+);
+
 const header = 'Escala de Tripulante Convertida para padrao AIMS\nTripulante: TRIPULANTE TESTE -BP:00000000 -Base: BSB -01/08/2026 ate31/08/2026';
 const visualColumns = [
   ['LA','3558','13:05','13:35','FOR','PHB','14:37','15:07','LA','3559','15:28','15:58','PHB','FOR','16:52','17:22','LA','4631','17:09','17:39','FOR','CGH','21:09','CNA','21:10','CGH','21:20','21:50'],
@@ -109,11 +119,12 @@ try {
   const clientMck = clientCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
   const serverMck = serverCore.find((day) => day.date === '07/08/2026' && day.pairingCode === 'MCK');
   const extractedMckLines = String(serverRoster.rawText || '').split(/\n/).filter((line) => /07Aug|MCK/i.test(line));
+  const anyServerMck = serverCore.filter((day) => day.pairingCode === 'MCK');
   assert.equal(clientMck?.type, 'CRM', 'cliente deve manter MCK como atividade de solo');
   assert.equal(
     serverMck?.type,
     'CRM',
-    `Telegram/server deve manter MCK como atividade de solo. Dia 07 recebido: ${JSON.stringify(serverCore.filter((day) => day.date === '07/08/2026'))}; texto extraído: ${JSON.stringify(extractedMckLines)}`,
+    `Telegram/server deve manter MCK como atividade de solo. Dia 07: ${JSON.stringify(serverCore.filter((day) => day.date === '07/08/2026'))}; MCK em outras datas: ${JSON.stringify(anyServerMck)}; texto extraído: ${JSON.stringify(extractedMckLines)}`,
   );
 
   const serverSecond = serverCore.find((day) => day.date === '02/08/2026' && day.legs.length);
