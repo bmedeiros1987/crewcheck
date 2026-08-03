@@ -68,6 +68,10 @@ export function patchAuthPageV14378(source) {
   return patched;
 }
 
+function patchRuntimeVersionV14378(source) {
+  return source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`);
+}
+
 if (process.env.CREWCHECK_V14378_SKIP_APPLY !== '1') {
   write('client/src/pages/auth-premium.css', readLocal('./auth-premium.css'));
   update('client/src/pages/AuthPage.tsx', patchAuthPageV14378);
@@ -89,6 +93,8 @@ if (process.env.CREWCHECK_V14378_SKIP_APPLY !== '1') {
   update('android-wrapper/app/build.gradle', (source) => source
     .replace(/versionCode\s+\d+/, 'versionCode 140378')
     .replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
+  update('server.mjs', patchRuntimeVersionV14378, { optional: true });
+  update('server/platform.mjs', patchRuntimeVersionV14378, { optional: true });
 
   console.log(`[v14378] CrewCheck ${VERSION}: autenticação premium e responsiva aplicada.`);
 }
