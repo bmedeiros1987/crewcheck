@@ -129,7 +129,7 @@ jobs:
           grep -Fq 'conciergeLayoverAwareReply' server/v1403/premium-helpers.snippet
           grep -Fq 'CREWCHECK_FOUNDER_PHOTO' client/src/pages/AboutUsPage.tsx
           grep -Fqi 'quem constrói o crewcheck' client/src/pages/AboutUsPage.tsx
-          grep -Fq 'CrewCheck v14.3.16' client/public/manual.html
+          grep -Fq "CrewCheck v${CREWCHECK_VERSION}" client/public/manual.html
           grep -Fq "ORDER: CrewCheckThemePreference[] = ['system', 'light', 'dark']" client/src/lib/themeRuntime.ts
           grep -Fq 'Aparência: Automático' client/src/theme-v14-3-17.css
           grep -Fq 'theme-v14-3-19.css' client/src/main.tsx
