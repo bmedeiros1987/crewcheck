@@ -91,6 +91,40 @@ function operationalCore(roster) {
 
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-telegram-parity-'));
 try {
+  const debugParserPath = path.join(outDir, 'server-parser-debug.mjs');
+  const debugSource = preparedServerParser.replace(
+    'export { parsePdfOnServer };',
+    'export { parsePdfOnServer, parseAimsTokensIntoEventsV3, parseServerAims };',
+  );
+  assert.notEqual(debugSource, preparedServerParser, 'não consegui expor os helpers internos do parser para a regressão');
+  fs.writeFileSync(debugParserPath, debugSource, 'utf8');
+  const debugParser = await import(`${pathToFileURL(debugParserPath).href}?v=${Date.now()}`);
+
+  const directMck = debugParser.parseAimsTokensIntoEventsV3(['MCK', '08:00', 'BSB', '12:00'], 7, 8, 2026, 'BSB');
+  assert.equal(
+    directMck.find((day) => day.pairingCode === 'MCK')?.type,
+    'CRM',
+    `parser de tokens preparado deve reconhecer MCK diretamente. Recebido: ${JSON.stringify(directMck)}`,
+  );
+
+  const directMckRoster = debugParser.parseServerAims(header, [{
+    pageNo: 1,
+    items: [
+      { str: 'Escala de Tripulante Convertida para padrao AIMS', x: 25, y: 770, page: 1 },
+      { str: headerLine, x: 25, y: 750, page: 1 },
+      { str: '07Aug', x: 100, y: 710, page: 1 },
+      { str: 'MCK', x: 100, y: 690, page: 1 },
+      { str: '08:00', x: 100, y: 676, page: 1 },
+      { str: 'BSB', x: 100, y: 662, page: 1 },
+      { str: '12:00', x: 100, y: 648, page: 1 },
+    ],
+  }]);
+  assert.equal(
+    directMckRoster.days.find((day) => day.pairingCode === 'MCK')?.type,
+    'CRM',
+    `parser colunar preparado deve reconhecer MCK com geometria AIMS direta. Recebido: ${JSON.stringify(directMckRoster.days)}`,
+  );
+
   const pdfBytes = buildSyntheticAimsPdf();
   const serverParsed = await parsePdfOnServer({ filename: 'escala-paridade.pdf', dataBase64: pdfBytes.toString('base64') });
   const serverRoster = serverParsed.roster;
@@ -105,7 +139,7 @@ try {
         fileName: () => 'aims-parser.mjs',
       },
       outDir,
-      emptyOutDir: true,
+      emptyOutDir: false,
       minify: false,
     },
   });
@@ -137,7 +171,7 @@ try {
   assert.equal(
     serverMck?.type,
     'CRM',
-    `Telegram/server deve manter MCK como atividade de solo no PDF dedicado. Recebido: ${JSON.stringify(mckCore)}; texto=${JSON.stringify(String(mckParsed.roster?.rawText || ''))}; diagnostico=${JSON.stringify(mckParsed.diagnostics || {})}`,
+    `PDF sintético dedicado divergiu do parser direto. Recebido: ${JSON.stringify(mckCore)}; texto=${JSON.stringify(String(mckParsed.roster?.rawText || ''))}; diagnostico=${JSON.stringify(mckParsed.diagnostics || {})}`,
   );
 
   console.log('[v14.3.75] OK — Telegram/server e PWA/APK concordam em FOR-PHB, PHB-FOR, FOR-CGH; CNA não vira aeroporto e MCK permanece atividade de solo.');
