@@ -23,7 +23,6 @@ const replacements = [
   ['abertura interna do iFlight', 'abertura interna da fonte externa'],
   ['iFlight Crew', 'Fonte externa principal'],
   ['iFlight CWP', 'Fonte externa alternativa'],
-  ['/iflight-crew/web/getMainPage', 'acesso externo'],
   ['Faça login/MFA com conta autorizada', 'Conclua a autenticação diretamente na fonte externa'],
   ['conta corporativa correta', 'conta autorizada'],
   ['Conta corporativa', 'Conta autorizada'],
@@ -47,6 +46,9 @@ for (const file of files) {
   if (changed) fs.writeFileSync(file, source, 'utf8');
 }
 
+// Executable endpoints/identifiers are intentionally not redacted here. Privacy
+// redaction is limited to user-facing copy; mutating URL fragments can break
+// import flows while providing no additional privacy protection.
 const forbiddenVisible = [
   /iFlight Admin/i,
   /Calendar Sweep iFlight/i,
@@ -64,4 +66,4 @@ for (const file of files) {
   }
 }
 
-console.log('[privacy-p0] referências visíveis ao portal/login corporativo neutralizadas nas superfícies distribuídas.');
+console.log('[privacy-p0] referências visíveis ao portal/login corporativo neutralizadas nas superfícies distribuídas sem alterar endpoints executáveis.');

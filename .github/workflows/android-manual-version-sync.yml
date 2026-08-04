@@ -1,0 +1,34 @@
+name: CrewCheck Android manual release sync
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/v139/**'
+      - 'scripts/ci/sync-canonical-manual.mjs'
+      - 'scripts/regression-android-manual-version-sync.mjs'
+      - 'scripts/v14373/**'
+      - 'client/public/manual.html'
+      - 'client/public/release.json'
+      - 'android-wrapper/**'
+      - '.github/workflows/android-manual-version-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manual-release-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Validate manual and canonical release parity
+        run: node scripts/regression-android-manual-version-sync.mjs
+      - name: Run named Android preflight
+        run: node scripts/v14373/preflight.mjs

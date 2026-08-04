@@ -86,8 +86,10 @@ services:
       - key: INFOBIP_API_KEY
         sync: false
       - key: INFOBIP_BASE_URL
-        sync: false
+        value: https://y4x2z9.api.infobip.com
       - key: INFOBIP_PHONE_FROM
+        value: "+16728742360"
+      - key: INFOBIP_SUBSCRIPTION_ID
         sync: false
       - key: INFOBIP_VOICE_LANGUAGE
         value: pt-BR
