@@ -6,7 +6,9 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 
 process.env.CREWCHECK_V14380_SKIP_APPLY = '1';
-const { patchRosterCacheIntegrityV14380, patchRuntimeVersionV14380 } = await import('./v14380/apply.mjs');
+process.env.CREWCHECK_V14381_SKIP_APPLY = '1';
+const { patchRosterCacheIntegrityV14380 } = await import('./v14380/apply.mjs');
+const { patchRosterCacheOperationalDateV14381, patchRuntimeVersionV14381 } = await import('./v14381/apply.mjs');
 
 const root = process.cwd();
 const fixture = fs.readFileSync(path.join(root, 'scripts/fixtures/crew-roster-august-2026-current-p0.txt'), 'utf8');
@@ -65,19 +67,20 @@ try {
   // sem marcador pertencem a parsers anteriores e devem falhar fechados.
   assert.ok(homeSource.includes("() => sessionStorage.getItem('crewcheck_roster')"), 'Home deve ter cache de roster em sessão');
   assert.ok(homeSource.includes("() => localStorage.getItem('crewcheck_latest_roster_bundle')"), 'Home deve ter cache persistente de roster');
-  assert.ok(homeSource.includes("const ROSTER_CACHE_SCHEMA = 'p0-date-integrity-v1';"), 'Home deve declarar o schema do cache canônico');
+  assert.ok(homeSource.includes("const ROSTER_CACHE_SCHEMA = 'p0-operational-date-anchor-v2';"), 'Home deve declarar o schema que invalida o roster contaminado pela Updated Date');
   assert.ok(homeSource.includes('if (payload?.cacheSchema !== ROSTER_CACHE_SCHEMA) continue;'), 'cache legado sem schema deve ser rejeitado antes da leitura do roster');
   assert.ok(homeSource.includes("JSON.stringify({ roster, cacheSchema: ROSTER_CACHE_SCHEMA, sourceFileName: source"), 'cache de sessão deve persistir o schema atual');
-  assert.ok(homeSource.includes("source: 'crewcheck-v14.3.80-p0-date-integrity', cacheSchema: ROSTER_CACHE_SCHEMA"), 'bundle persistente deve registrar origem e schema atuais');
-  assert.equal(patchRosterCacheIntegrityV14380(homeSource), homeSource, 'patch de cache P0 deve ser idempotente');
+  assert.ok(homeSource.includes("source: 'crewcheck-v14.3.81-p0-operational-date-anchor', cacheSchema: ROSTER_CACHE_SCHEMA"), 'bundle persistente deve registrar origem e schema atuais');
+  assert.equal(patchRosterCacheIntegrityV14380(homeSource), homeSource, 'patch de cache P0 anterior deve respeitar schemas posteriores');
+  assert.equal(patchRosterCacheOperationalDateV14381(homeSource), homeSource, 'patch de cache operacional deve ser idempotente');
 
-  assert.equal(packageJson.version, '14.3.80', 'package deve anunciar a versão P0 atual');
+  assert.equal(packageJson.version, '14.3.81', 'package deve anunciar a versão P0 atual');
   assert.equal(release.version, packageJson.version, 'release Web/PWA deve acompanhar o package');
   const escapedVersion = packageJson.version.replace(/\./g, '\\.');
   assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/release'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de release deve acompanhar a versão P0');
   assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/health'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de saúde deve acompanhar a versão P0');
-  assert.equal(patchRuntimeVersionV14380(runtimeServerSource), runtimeServerSource, 'patch de versão do servidor deve ser idempotente');
-  assert.equal(patchRuntimeVersionV14380(platformSource), platformSource, 'patch de versão da plataforma deve ser idempotente');
+  assert.equal(patchRuntimeVersionV14381(runtimeServerSource), runtimeServerSource, 'patch de versão do servidor deve ser idempotente');
+  assert.equal(patchRuntimeVersionV14381(platformSource), platformSource, 'patch de versão da plataforma deve ser idempotente');
 
   console.log('[P0 roster-date] parser e canônico preservados; cache legado falha fechado e cliente/servidor anunciam a mesma versão.');
 } finally {

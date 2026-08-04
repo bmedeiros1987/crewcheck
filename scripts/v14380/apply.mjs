@@ -15,7 +15,10 @@ function update(filePath, transform, { optional = false } = {}) {
 
 export function patchRosterCacheIntegrityV14380(source) {
   let patched = source;
-  if (!patched.includes("const ROSTER_CACHE_SCHEMA = 'p0-date-integrity-v1';")) {
+  // Releases posteriores podem avançar o schema. O patch 14.3.80 continua na
+  // cadeia canônica, portanto deve reconhecer um marcador P0 mais novo sem
+  // reinserir a constante antiga ou rebaixar o cache.
+  if (!/const ROSTER_CACHE_SCHEMA = 'p0-[^']+';/.test(patched)) {
     const needle = "function loadRoster(): BundleState {";
     if (!patched.includes(needle)) throw new Error('[v14380] loadRoster não localizado');
     patched = patched.replace(needle, "const ROSTER_CACHE_SCHEMA = 'p0-date-integrity-v1';\n\nfunction loadRoster(): BundleState {");
@@ -37,7 +40,8 @@ export function patchRosterCacheIntegrityV14380(source) {
 
   const oldBundle = "    localStorage.setItem('crewcheck_latest_roster_bundle', JSON.stringify({ roster, compliance, sourceFileName: source, updatedAt: new Date().toISOString(), source: 'crewcheck-v13.8.0-canonical' }));";
   const newBundle = "    localStorage.setItem('crewcheck_latest_roster_bundle', JSON.stringify({ roster, compliance, sourceFileName: source, updatedAt: new Date().toISOString(), source: 'crewcheck-v14.3.80-p0-date-integrity', cacheSchema: ROSTER_CACHE_SCHEMA }));";
-  if (!patched.includes(newBundle)) {
+  const hasForwardCompatibleBundle = /localStorage\.setItem\('crewcheck_latest_roster_bundle',[\s\S]*?source: 'crewcheck-v14\.3\.\d+-p0-[^']+', cacheSchema: ROSTER_CACHE_SCHEMA/.test(patched);
+  if (!patched.includes(newBundle) && !hasForwardCompatibleBundle) {
     if (!patched.includes(oldBundle)) throw new Error('[v14380] bundle persistente da escala não localizado');
     patched = patched.replace(oldBundle, newBundle);
   }

@@ -5,10 +5,13 @@ on:
     paths:
       - 'scripts/fixtures/crew-roster-august-2026-current-p0.txt'
       - 'scripts/regression-p0-roster-date-integrity.mjs'
+      - 'scripts/regression-v14-3-81-operational-date-anchor.mjs'
       - 'scripts/v14380/**'
+      - 'scripts/v14381/**'
       - 'scripts/v139/apply.mjs'
       - 'client/src/pages/Home.tsx'
       - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/pdfParser.ts'
       - 'server/rosterParser.mjs'
       - '.github/workflows/p0-roster-date-integrity.yml'
@@ -28,4 +31,4 @@ jobs:
           node-version: '22.13.0'
       - run: npm ci --ignore-scripts
       - name: Prepare canonical source and run P0 date regression
-        run: node scripts/v139/apply.mjs && node scripts/regression-p0-roster-date-integrity.mjs
+        run: node scripts/v139/apply.mjs && node scripts/regression-p0-roster-date-integrity.mjs && node scripts/regression-v14-3-81-operational-date-anchor.mjs
