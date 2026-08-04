@@ -105,10 +105,48 @@ Escopo mínimo:
 
 Critérios de aceite:
 
-- o PWA aparece na folha **Compartilhar** e em **Abrir com** para arquivos PDF compatíveis;
+- o PWA aparece na folha **Compartilhar** e em **Abrir com** para arquivos PDF compatíveis onde a plataforma oferecer suporte;
 - o mesmo PDF produz exatamente a mesma escala na importação manual, via compartilhamento PWA e via APK;
 - nenhuma alteração em parser, normalização canônica, regulamentação ou financeiro;
 - tratamento separado do incidente P0 `#290`, já validado quanto à integridade de datas.
+
+## Requisito transversal — compatibilidade entre navegadores e dispositivos
+
+A importação, o processamento offline e a sincronização de dados tratados devem funcionar com degradação segura em Android, iPhone, iPad e navegadores desktop, sem depender de uma única API proprietária.
+
+Matriz mínima obrigatória:
+
+- Android: Chrome, Edge, Samsung Internet, PWA instalado e APK;
+- Apple: Safari no iPhone e iPad, PWA adicionado à Tela de Início e navegador comum;
+- desktop: Chrome, Edge, Safari e Firefox;
+- tamanhos de tela: celular, tablet e desktop.
+
+Estratégia de compatibilidade:
+
+- processamento local do PDF como caminho principal, preferencialmente em Web Worker;
+- IndexedDB para escala tratada, fila de sincronização e cache versionado;
+- sincronização com o banco somente do JSON canônico e de metadados mínimos;
+- nunca exigir `share_target` para o funcionamento básico;
+- quando a plataforma não permitir receber PDF pela folha de compartilhamento, oferecer seletor de arquivo, arrastar e soltar e importação pelo botão interno;
+- quando Web Worker, IndexedDB persistente ou outra capacidade não estiver disponível, usar fallback controlado sem travar a interface;
+- detectar capacidades em tempo de execução, e não por identificação fixa do navegador;
+- manter o mesmo parser e o mesmo schema canônico em todas as superfícies;
+- preservar a escala local quando a rede cair e sincronizar quando a conexão retornar;
+- resolver conflitos por fingerprint, versão do parser, versão do schema e `updatedAt`, sem duplicar atividades;
+- não armazenar o PDF original no banco nem enviá-lo ao Render por padrão.
+
+Critérios de aceite multiplataforma:
+
+- importar o mesmo PDF manualmente em Android, iPhone/iPad e desktop produz o mesmo fingerprint e os mesmos eventos;
+- o Android instalado recebe PDF pelo compartilhamento quando suportado;
+- iPhone/iPad continuam plenamente funcionais por importação manual mesmo que o sistema não registre o PWA como destino de arquivos;
+- o usuário consegue consultar a escala offline em todas as plataformas suportadas;
+- dados tratados sincronizam entre dispositivos após autenticação, sem envio do PDF original;
+- nenhum navegador suportado fica sem caminho alternativo para importar a escala;
+- testes automatizados cobrem schema, deduplicação, fila offline e compatibilidade do parser;
+- testes manuais cobrem pelo menos um dispositivo Android, um iPhone/iPad e um desktop antes da aprovação do gate.
+
+Observação: compatibilidade significa oferecer o mesmo resultado funcional com fallback equivalente; não se deve prometer que todos os sistemas operacionais apresentarão o PWA na folha nativa de compartilhamento, pois essa integração depende do suporte do navegador e da plataforma.
 
 ## Gates seguintes da auditoria Web/PWA
 
