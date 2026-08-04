@@ -5,10 +5,17 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 
+process.env.CREWCHECK_V14380_SKIP_APPLY = '1';
+const { patchRosterCacheIntegrityV14380, patchRuntimeVersionV14380 } = await import('./v14380/apply.mjs');
+
 const root = process.cwd();
 const fixture = fs.readFileSync(path.join(root, 'scripts/fixtures/crew-roster-august-2026-current-p0.txt'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server/rosterParser.mjs'), 'utf8');
 const homeSource = fs.readFileSync(path.join(root, 'client/src/pages/Home.tsx'), 'utf8');
+const runtimeServerSource = fs.readFileSync(path.join(root, 'server.mjs'), 'utf8');
+const platformSource = fs.readFileSync(path.join(root, 'server/platform.mjs'), 'utf8');
+const release = JSON.parse(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8'));
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-p0-date-'));
 
 function flightNumbers(days, date) {
@@ -54,13 +61,25 @@ try {
   assert.deepEqual(eventFlights('02/08/2026'), ['LA3108'], 'canônico: 02/08 deve conter somente LA3108');
   assert.deepEqual(eventFlights('11/08/2026'), ['LA3895', 'LA3728', 'LA3027'], 'canônico: 11/08 deve manter as três pernas');
 
-  // Segurança: hoje a Home restaura JSON serializado sem reprocessar o PDF de origem.
-  // Uma atualização do app, portanto, pode continuar mostrando um roster gerado por parser antigo.
+  // Segurança: a Home só pode restaurar JSON produzido pelo schema atual. Caches
+  // sem marcador pertencem a parsers anteriores e devem falhar fechados.
   assert.ok(homeSource.includes("() => sessionStorage.getItem('crewcheck_roster')"), 'Home deve ter cache de roster em sessão');
   assert.ok(homeSource.includes("() => localStorage.getItem('crewcheck_latest_roster_bundle')"), 'Home deve ter cache persistente de roster');
-  assert.ok(!/loadRoster\(\)[\s\S]{0,2500}parsePDF\(/.test(homeSource), 'loadRoster não deve fingir que reprocessa PDF: evidência de cache serializado legado');
+  assert.ok(homeSource.includes("const ROSTER_CACHE_SCHEMA = 'p0-date-integrity-v1';"), 'Home deve declarar o schema do cache canônico');
+  assert.ok(homeSource.includes('if (payload?.cacheSchema !== ROSTER_CACHE_SCHEMA) continue;'), 'cache legado sem schema deve ser rejeitado antes da leitura do roster');
+  assert.ok(homeSource.includes("JSON.stringify({ roster, cacheSchema: ROSTER_CACHE_SCHEMA, sourceFileName: source"), 'cache de sessão deve persistir o schema atual');
+  assert.ok(homeSource.includes("source: 'crewcheck-v14.3.80-p0-date-integrity', cacheSchema: ROSTER_CACHE_SCHEMA"), 'bundle persistente deve registrar origem e schema atuais');
+  assert.equal(patchRosterCacheIntegrityV14380(homeSource), homeSource, 'patch de cache P0 deve ser idempotente');
 
-  console.log('[P0 roster-date] parser CrewRosterReport + canônico estão corretos no fixture atual; risco reproduzido está na restauração de roster serializado legado após atualização do cliente.');
+  assert.equal(packageJson.version, '14.3.80', 'package deve anunciar a versão P0 atual');
+  assert.equal(release.version, packageJson.version, 'release Web/PWA deve acompanhar o package');
+  const escapedVersion = packageJson.version.replace(/\./g, '\\.');
+  assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/release'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de release deve acompanhar a versão P0');
+  assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/health'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de saúde deve acompanhar a versão P0');
+  assert.equal(patchRuntimeVersionV14380(runtimeServerSource), runtimeServerSource, 'patch de versão do servidor deve ser idempotente');
+  assert.equal(patchRuntimeVersionV14380(platformSource), platformSource, 'patch de versão da plataforma deve ser idempotente');
+
+  console.log('[P0 roster-date] parser e canônico preservados; cache legado falha fechado e cliente/servidor anunciam a mesma versão.');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }

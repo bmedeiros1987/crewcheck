@@ -8,6 +8,9 @@ assert.equal(run.status, 0, run.stderr || run.stdout || 'preparação canônica 
 const auth = fs.readFileSync('client/src/pages/AuthPage.tsx', 'utf8');
 const css = fs.readFileSync('client/src/pages/auth-premium.css', 'utf8');
 const chain = fs.readFileSync('scripts/v139/apply.mjs', 'utf8');
+const v14378Index = chain.indexOf("await import('../v14378/apply.mjs');");
+const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+)\/apply\.mjs'\);/g));
+const latestPreparation = preparationImports.at(-1);
 
 assert.ok(auth.includes("import './auth-premium.css';"), 'AuthPage deve importar o CSS premium');
 assert.ok(auth.includes('cc-auth-premium'), 'AuthPage deve usar a classe premium');
@@ -21,6 +24,9 @@ assert.match(css, /\.cc-auth-premium \.cz-login-card\s*\{[\s\S]*min-height:\s*61
 assert.match(css, /\.cc-auth-premium \.cz-password-toggle\s*\{[\s\S]*position:\s*absolute[\s\S]*top:\s*50%[\s\S]*right:\s*5px/, 'ícone do olho deve permanecer dentro do campo');
 assert.match(css, /@media \(max-width:\s*640px\)/, 'layout deve possuir contrato mobile');
 assert.match(css, /html\[data-crew-theme="dark"\]/, 'layout deve possuir modo escuro explícito');
-assert.ok(chain.trimEnd().endsWith("await import('../v14378/apply.mjs');"), 'v14.3.78 deve encerrar a preparação canônica');
+assert.ok(v14378Index >= 0, 'v14.3.78 deve participar da preparação canônica');
+assert.ok(latestPreparation, 'a preparação canônica deve possuir uma etapa final aplicável');
+assert.ok((latestPreparation?.index ?? -1) >= v14378Index, 'versões posteriores devem preservar a autenticação premium da v14.3.78');
+assert.ok(chain.trimEnd().endsWith(latestPreparation?.[0] || ''), 'a etapa aplicável mais recente deve encerrar a preparação canônica');
 
 console.log('[v14.3.78-auth-visual] OK — login/cadastro padronizados, tema acessível e olho contido no campo.');

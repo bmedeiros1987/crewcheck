@@ -52,6 +52,10 @@ export function patchRosterCacheIntegrityV14380(source) {
   return patched;
 }
 
+export function patchRuntimeVersionV14380(source) {
+  return source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`);
+}
+
 if (process.env.CREWCHECK_V14380_SKIP_APPLY !== '1') {
   update(HOME, patchRosterCacheIntegrityV14380);
   update('client/src/pages/Home.tsx', (source) => source.replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`));
@@ -65,5 +69,7 @@ if (process.env.CREWCHECK_V14380_SKIP_APPLY !== '1') {
     return `${JSON.stringify(data, null, 2)}\n`;
   });
   update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCode\s+\d+/, 'versionCode 140380').replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
+  update('server.mjs', patchRuntimeVersionV14380, { optional: true });
+  update('server/platform.mjs', patchRuntimeVersionV14380, { optional: true });
   console.log(`[v14380] CrewCheck ${VERSION}: P0 fail-closed de cache de escala aplicado.`);
 }
