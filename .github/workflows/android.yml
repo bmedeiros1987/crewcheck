@@ -3,7 +3,7 @@ name: Android APK and AAB
 on:
   workflow_dispatch:
   push:
-    branches: [main, hotfix/p0-roster-date-integrity]
+    branches: [main]
     paths:
       - 'android-wrapper/**'
       - 'client/**'
