@@ -18,7 +18,7 @@ assert.ok(v14357CompatibilityIndex > v14357ApplyIndex, 'compatibilidade v14.3.57
 const auth = read('client/src/pages/AuthPage.tsx');
 const authCss = read('client/src/pages/auth-compact.css');
 assert.ok(auth.includes("import './auth-compact.css';"), 'login deve carregar o estilo compacto');
-assert.ok(auth.includes('className="cz-auth cc-auth-compact"'), 'login deve usar o layout compacto');
+assert.match(auth, /className="[^"]*\bcc-auth-compact\b[^"]*"/, 'login deve preservar o layout compacto mesmo com camadas visuais posteriores');
 assert.ok(auth.includes('Entrar no CrewCheck'), 'título do login deve ser familiar e direto');
 assert.ok(auth.includes('Use seu e-mail e senha para continuar.'), 'instrução do login deve ser curta');
 assert.ok(auth.includes('Criar conta'), 'cadastro deve permanecer disponível');
