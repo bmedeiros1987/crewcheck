@@ -89,6 +89,27 @@ A comparação deve confirmar, para cada atividade:
 
 O gate somente será marcado como aprovado após evidência de uso real no Web/PWA.
 
+## Gate futuro — compartilhamento de PDF com o PWA
+
+Registrar o CrewCheck PWA como destino de compartilhamento e abertura de arquivos PDF no Android, sem depender exclusivamente do APK.
+
+Escopo mínimo:
+
+- declarar `share_target` no Web App Manifest com suporte a `application/pdf`;
+- criar uma rota dedicada para receber arquivos compartilhados;
+- encaminhar o PDF recebido ao mesmo fluxo canônico de importação já utilizado dentro do CrewCheck;
+- impedir importação duplicada ao reabrir ou recarregar o PWA;
+- apresentar mensagem clara quando o arquivo não for uma escala compatível;
+- validar reinstalação/atualização do PWA, pois o Android registra essa capacidade na instalação;
+- testar em PWA instalado no Android e comparar o resultado com a importação manual e com o APK.
+
+Critérios de aceite:
+
+- o PWA aparece na folha **Compartilhar** e em **Abrir com** para arquivos PDF compatíveis;
+- o mesmo PDF produz exatamente a mesma escala na importação manual, via compartilhamento PWA e via APK;
+- nenhuma alteração em parser, normalização canônica, regulamentação ou financeiro;
+- tratamento separado do incidente P0 `#290`, já validado quanto à integridade de datas.
+
 ## Gates seguintes da auditoria Web/PWA
 
 Após a consistência FlyDeck × Escala × Histórico:
