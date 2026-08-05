@@ -1134,6 +1134,32 @@ function describeRbac117Limit(limit: Rbac117DutyLimit | EffectiveDutyLimit): str
   return `Tabela ${limit.table}: início ${limit.startBucket}, ${limit.sectorsBucket} etapa(s) → jornada máxima ${formatHoursForAlert(limit.maxDutyHours)} e voo máximo ${formatHoursForAlert(limit.maxFlightHours)}${applied}.`;
 }
 
+export type PublishedDutyLimitSummary = {
+  usedHours: number;
+  maxDutyHours: number;
+  remainingHours: number;
+  sectors: number;
+  startTime: string;
+  source: string;
+};
+
+export function getPublishedDutyLimitSummary(day: RosterDay, profile?: LegalProfileSummary | null): PublishedDutyLimitSummary | null {
+  if (!day || day.type !== 'VOO') return null;
+  const startTime = getFirstOperationalStart(day).time;
+  const sectors = Math.max(1, day.legs?.length || 1);
+  const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(startTime, sectors), profile);
+  if (!limit) return null;
+  const usedHours = round1(getDutyHours(day));
+  return {
+    usedHours,
+    maxDutyHours: limit.maxDutyHours,
+    remainingHours: round1(limit.maxDutyHours - usedHours),
+    sectors,
+    startTime: startTime || '',
+    source: limit.appliedRule,
+  };
+}
+
 function addMinutesToClock(time: string, minutesToAdd: number, explicitNextDay = false): { time: string; isNextDay: boolean } | null {
   const base = minutesOfDay(time);
   if (base === null) return null;
