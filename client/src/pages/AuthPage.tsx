@@ -9,6 +9,15 @@ type Mode = 'login' | 'register' | 'recover' | 'reset';
 type Delivery = 'email' | 'telegram' | 'both' | 'telegram-call';
 type CrewFunction = '' | 'Comissário(a) de voo' | 'Chefe de cabine' | 'Copiloto' | 'Comandante' | 'Copiloto Embraer' | 'Comandante Embraer';
 
+const CREW_FUNCTIONS: Exclude<CrewFunction, ''>[] = [
+  'Comissário(a) de voo',
+  'Chefe de cabine',
+  'Copiloto',
+  'Comandante',
+  'Copiloto Embraer',
+  'Comandante Embraer',
+];
+
 const MODE_FEEDBACK: Record<Mode, string> = {
   login: 'Tela de entrada aberta.',
   register: 'Cadastro aberto. Preencha seus dados para criar a conta.',
@@ -24,6 +33,10 @@ function profileRankStorageKey(value: string): string {
   return `crewcheck_profile_rank:${normalizedEmail(value)}`;
 }
 
+function isCrewFunction(value: unknown): value is Exclude<CrewFunction, ''> {
+  return CREW_FUNCTIONS.includes(String(value || '') as Exclude<CrewFunction, ''>);
+}
+
 function activateStoredProfileRank(value: string) {
   try {
     const rank = localStorage.getItem(profileRankStorageKey(value));
@@ -32,7 +45,7 @@ function activateStoredProfileRank(value: string) {
   } catch {}
 }
 
-function saveProfileRank(value: string, rank: CrewFunction) {
+function saveProfileRank(value: string, rank: Exclude<CrewFunction, ''>) {
   try {
     const key = profileRankStorageKey(value);
     localStorage.setItem(key, rank);
@@ -81,8 +94,9 @@ export default function AuthPage() {
     try {
       if (mode === 'login') {
         if (!password) throw new Error('Informe sua senha.');
-        await login(email, password);
-        activateStoredProfileRank(email);
+        const session = await login(email, password);
+        if (isCrewFunction(session.user.rank)) saveProfileRank(email, session.user.rank);
+        else activateStoredProfileRank(email);
         toast.success('Bem-vindo ao CrewCheck.');
         setLocation('/');
       } else if (mode === 'register') {
