@@ -49,6 +49,20 @@ services:
         sync: false
       - key: TELEGRAM_PUBLIC_BASE_URL
         value: https://crewcheck.online
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_NUMBER
+        sync: false
+      - key: CREWCHECK_WHATSAPP_AUDIT_SALT
+        sync: false
       - key: GOOGLE_MAPS_SERVER_KEY
         sync: false
       - key: TOMTOM_API_KEY
