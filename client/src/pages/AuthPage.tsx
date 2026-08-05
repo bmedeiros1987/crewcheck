@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Lock, Mail, Plane, Send, ShieldCheck, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Plane, Send, ShieldCheck, Sparkles } from 'lucide-react';
 import { confirmPasswordReset, login, register, requestPasswordReset } from '@/lib/authClient';
 import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';
 
 type Mode = 'login' | 'register' | 'recover' | 'reset';
 type Delivery = 'email' | 'telegram' | 'both' | 'telegram-call';
+type CrewFunction = '' | 'Comissário(a) de voo' | 'Chefe de cabine' | 'Copiloto' | 'Comandante' | 'Copiloto Embraer' | 'Comandante Embraer';
+
+const CREW_FUNCTIONS: Exclude<CrewFunction, ''>[] = [
+  'Comissário(a) de voo',
+  'Chefe de cabine',
+  'Copiloto',
+  'Comandante',
+  'Copiloto Embraer',
+  'Comandante Embraer',
+];
 
 const MODE_FEEDBACK: Record<Mode, string> = {
   login: 'Tela de entrada aberta.',
@@ -14,6 +24,34 @@ const MODE_FEEDBACK: Record<Mode, string> = {
   recover: 'Recuperação de senha aberta. Escolha como receber o código.',
   reset: 'Código enviado. Digite o código e defina a nova senha.',
 };
+
+function normalizedEmail(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function profileRankStorageKey(value: string): string {
+  return `crewcheck_profile_rank:${normalizedEmail(value)}`;
+}
+
+function isCrewFunction(value: unknown): value is Exclude<CrewFunction, ''> {
+  return CREW_FUNCTIONS.includes(String(value || '') as Exclude<CrewFunction, ''>);
+}
+
+function activateStoredProfileRank(value: string) {
+  try {
+    const rank = localStorage.getItem(profileRankStorageKey(value));
+    if (rank) localStorage.setItem('crewcheck_profile_rank', rank);
+    else localStorage.removeItem('crewcheck_profile_rank');
+  } catch {}
+}
+
+function saveProfileRank(value: string, rank: Exclude<CrewFunction, ''>) {
+  try {
+    const key = profileRankStorageKey(value);
+    localStorage.setItem(key, rank);
+    localStorage.setItem('crewcheck_profile_rank', rank);
+  } catch {}
+}
 
 export default function AuthPage() {
   const [, setLocation] = useLocation();
@@ -25,6 +63,7 @@ export default function AuthPage() {
   const [code, setCode] = useState('');
   const [delivery, setDelivery] = useState<Delivery>('both');
   const [name, setName] = useState('');
+  const [crewFunction, setCrewFunction] = useState<CrewFunction>('');
   const [busy, setBusy] = useState(false);
   const [terms, setTerms] = useState<CrewCheckTerms | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -55,16 +94,27 @@ export default function AuthPage() {
     try {
       if (mode === 'login') {
         if (!password) throw new Error('Informe sua senha.');
-        await login(email, password);
+        const session = await login(email, password);
+        if (isCrewFunction(session.user.rank)) saveProfileRank(email, session.user.rank);
+        else activateStoredProfileRank(email);
         toast.success('Bem-vindo ao CrewCheck.');
         setLocation('/');
       } else if (mode === 'register') {
         if (!password) throw new Error('Informe uma senha.');
         if (password.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+        if (!crewFunction) throw new Error('Informe sua função para o CrewCheck aplicar corretamente as regras e valores do seu perfil.');
         if (!termsAccepted) throw new Error('Leia e aceite os Termos de Uso e a Política de Privacidade.');
-        await register({ email, password, confirmPassword: password, name: name || email.split('@')[0], usageIntent: 'crewcheck-premium' }) as any;
+        await register({
+          email,
+          password,
+          confirmPassword: password,
+          name: name || email.split('@')[0],
+          rank: crewFunction,
+          usageIntent: 'crewcheck-premium',
+        }) as any;
+        saveProfileRank(email, crewFunction);
         if (terms) await acceptCurrentTerms(terms).catch(() => undefined);
-        toast.success('Cadastro concluído.');
+        toast.success('Cadastro concluído. Função salva para aplicar as regras corretas do seu perfil.');
         setLocation('/');
       } else if (mode === 'recover') {
         await requestPasswordReset(email, delivery);
@@ -105,6 +155,18 @@ export default function AuthPage() {
       <p>{mode === 'recover' || mode === 'reset' ? 'Receba um código temporário por e-mail, Telegram ou ligação via Telegram.' : 'Entre para carregar sua escala e continuar de onde parou.'}</p>
       <p className="cz-auth-mode-feedback" role="status" aria-live="polite">{MODE_FEEDBACK[mode]}</p>
       {mode === 'register' && <label><span/> Nome completo<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoComplete="name"/></label>}
+      {mode === 'register' && <label><BriefcaseBusiness/> Função *
+        <select value={crewFunction} onChange={(event) => setCrewFunction(event.target.value as CrewFunction)} required>
+          <option value="">Selecione sua função</option>
+          <option value="Comissário(a) de voo">Comissário(a) de voo</option>
+          <option value="Chefe de cabine">Chefe de cabine / líder</option>
+          <option value="Copiloto">Copiloto / Primeiro Oficial (FO)</option>
+          <option value="Comandante">Comandante (CMTE)</option>
+          <option value="Copiloto Embraer">Copiloto Embraer</option>
+          <option value="Comandante Embraer">Comandante Embraer</option>
+        </select>
+        <small>Usamos a função para aplicar automaticamente os valores e regras correspondentes ao seu perfil. Você poderá alterar isso depois no Perfil.</small>
+      </label>}
       <label><Mail/> E-mail cadastrado *<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.email@exemplo.com" autoComplete="email"/></label>
       {mode === 'recover' && <label><Send/> Canal
         <select value={delivery} onChange={(event) => setDelivery(event.target.value as Delivery)}>

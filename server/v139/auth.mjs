@@ -28,6 +28,15 @@ import {
   telegramToken,
 } from './delivery.mjs';
 
+const CREW_FUNCTIONS = new Set([
+  'Comissário(a) de voo',
+  'Chefe de cabine',
+  'Copiloto',
+  'Comandante',
+  'Copiloto Embraer',
+  'Comandante Embraer',
+]);
+
 function passwordDigest(password, salt = crypto.randomBytes(16).toString('hex')) {
   return { salt, hash: crypto.scryptSync(String(password), salt, 64).toString('hex') };
 }
@@ -63,6 +72,46 @@ function resetMessage(code, minutes) {
   ].join('\n');
 }
 
+function normalizeCrewFunction(value) {
+  const cleaned = cleanText(value || '', 64);
+  return CREW_FUNCTIONS.has(cleaned) ? cleaned : '';
+}
+
+async function ensureCrewFunctionTable(db) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS crewcheck_platform_profile_functions (
+      email VARCHAR(254) NOT NULL,
+      crew_function VARCHAR(64) NOT NULL,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function saveCrewFunction(db, email, crewFunction) {
+  await ensureCrewFunctionTable(db);
+  await db.query(
+    `INSERT INTO crewcheck_platform_profile_functions (email, crew_function)
+     VALUES(?,?)
+     ON DUPLICATE KEY UPDATE crew_function=VALUES(crew_function), updated_at=CURRENT_TIMESTAMP(3)`,
+    [email, crewFunction],
+  );
+}
+
+async function enrichCrewFunction(db, email, user) {
+  try {
+    await ensureCrewFunctionTable(db);
+    const [rows] = await db.query(
+      'SELECT crew_function FROM crewcheck_platform_profile_functions WHERE email=? LIMIT 1',
+      [email],
+    );
+    return { ...user, rank: normalizeCrewFunction(rows[0]?.crew_function) || null };
+  } catch (error) {
+    console.warn('[crewcheck:auth:crew-function]', String(error?.code || 'PROFILE_FUNCTION_UNAVAILABLE'));
+    return { ...user, rank: null };
+  }
+}
+
 async function config(res) {
   return sendJson(res, 200, {
     ok: true,
@@ -87,11 +136,13 @@ async function register(req, res, db) {
   const email = safeEmail(body.email);
   const password = String(body.password || '');
   const name = cleanText(body.name || '', 120);
+  const crewFunction = normalizeCrewFunction(body.rank || body.crewFunction || body.function);
   if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail pessoal válido.' });
   if (blockedDomains().includes(email.split('@')[1])) {
     return sendJson(res, 403, { ok: false, message: 'Use um e-mail pessoal para acessar o CrewCheck.' });
   }
   if (password.length < 8) return sendJson(res, 400, { ok: false, message: 'Use pelo menos 8 caracteres.' });
+  if (!crewFunction) return sendJson(res, 400, { ok: false, message: 'Informe sua função para aplicar corretamente as regras e valores do seu perfil.' });
   const [existing] = await db.query('SELECT email FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [email]);
   if (existing[0]) return sendJson(res, 409, { ok: false, message: 'Este e-mail já possui cadastro. Use Recuperar senha.' });
   const digest = passwordDigest(password);
@@ -100,7 +151,9 @@ async function register(req, res, db) {
     'INSERT INTO crewcheck_platform_accounts (email,password_hash,password_salt,must_change_password) VALUES(?,?,?,0)',
     [email, digest.hash, digest.salt],
   );
-  return loginResponse(res, await userFromAccount(db, email), 'Cadastro concluído.');
+  await saveCrewFunction(db, email, crewFunction);
+  const user = await enrichCrewFunction(db, email, await userFromAccount(db, email));
+  return loginResponse(res, user, 'Cadastro concluído.');
 }
 
 async function login(req, res, db) {
@@ -113,13 +166,13 @@ async function login(req, res, db) {
   const account = accounts[0];
   const emergencyPassword = env('CREWCHECK_TEST_ACCOUNT_PASSWORD');
   if (!account && isAdminEmail(email) && emergencyPassword && secureCompare(password, emergencyPassword)) {
-    return loginResponse(res, await userFromAccount(db, email), 'Administrador conectado.');
+    return loginResponse(res, await enrichCrewFunction(db, email, await userFromAccount(db, email)), 'Administrador conectado.');
   }
   if (!account || !passwordMatches(password, account.password_salt, account.password_hash)) {
     return sendJson(res, 401, { ok: false, message: 'E-mail ou senha inválidos.' });
   }
   await db.query('UPDATE crewcheck_platform_accounts SET last_login_at=CURRENT_TIMESTAMP(3) WHERE email=?', [email]);
-  const user = await userFromAccount(db, email, Boolean(account.must_change_password));
+  const user = await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(account.must_change_password)));
   return loginResponse(res, user, account.must_change_password ? 'Entre e defina uma nova senha.' : 'Login realizado.');
 }
 
@@ -230,7 +283,7 @@ async function me(req, res, db) {
   return sendJson(res, 200, {
     ok: true,
     authenticated: true,
-    user: await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password)),
+    user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
   });
 }
 

@@ -153,6 +153,25 @@ function normalizeAirport(value?: string | null): string {
   return String(value || '').trim().toUpperCase();
 }
 
+function readRegisteredCrewFunction(): string {
+  try {
+    const storage = typeof globalThis !== 'undefined' ? (globalThis as any).localStorage : null;
+    if (!storage) return '';
+    let email = '';
+    try {
+      const user = JSON.parse(String(storage.getItem('crewcheck_auth_user') || '{}'));
+      email = String(user?.email || '').trim().toLowerCase();
+    } catch {}
+    if (email) {
+      const scoped = String(storage.getItem(`crewcheck_profile_rank:${email}`) || '').trim();
+      if (scoped) return scoped;
+    }
+    return String(storage.getItem('crewcheck_profile_rank') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 function pilotSalaryProfile(functionLabel: string): { label: string; rates: SalaryActRates; manual: boolean } {
   const value = functionLabel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const embraer = value.includes('embraer');
@@ -192,7 +211,7 @@ export function resolveActFinancialRules(
     };
   }
 
-  const pilot = pilotSalaryProfile(legal.functionLabel);
+  const pilot = pilotSalaryProfile(readRegisteredCrewFunction() || legal.functionLabel);
   return {
     version: ACT_FINANCIAL_RULES_VERSION,
     roleLabel: legal.roleLabel,

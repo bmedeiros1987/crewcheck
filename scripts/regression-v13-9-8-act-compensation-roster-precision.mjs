@@ -5,6 +5,7 @@ import ts from 'typescript';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const policySource = read('client/src/lib/compensationPolicy.ts');
 const financialRulesSource = read('client/src/lib/financialRules.ts');
+const authPageSource = read('client/src/pages/AuthPage.tsx');
 const transformed = ts.transpileModule(policySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
 const policy = await import(`data:text/javascript;base64,${Buffer.from(transformed.outputText).toString('base64')}`);
 const at = (day, hour, minute) => new Date(2026, 6, day, hour, minute, 0, 0);
@@ -31,9 +32,23 @@ assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?reserveHour: 
 assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?standbyHour: 16\.25/);
 assert.match(financialRulesSource, /first_officer:[\s\S]{0,250}?dayKm: 0\.140262[\s\S]{0,250}?nightKm: 0\.285240/);
 assert.match(financialRulesSource, /commander:[\s\S]{0,250}?dayKm: 0\.211605[\s\S]{0,250}?nightKm: 0\.423250/);
+assert.match(financialRulesSource, /embraer_first_officer:[\s\S]{0,250}?reserveHour: 54\.84[\s\S]{0,250}?standbyHour: 18\.28/);
+assert.match(financialRulesSource, /embraer_commander:[\s\S]{0,250}?reserveHour: 134\.90[\s\S]{0,250}?standbyHour: 44\.96/);
 assert.match(financialRulesSource, /north_america'[\s\S]{0,100}?mainMeal: 25\.70/);
 assert.match(financialRulesSource, /europe'[\s\S]{0,100}?mainMeal: 23\.00/);
 assert.match(financialRulesSource, /breakfastPercent: 0\.25/);
+assert.match(financialRulesSource, /readRegisteredCrewFunction\(\) \|\| legal\.functionLabel/);
+
+// O cadastro precisa coletar a função antes de criar a conta e preservar o perfil
+// por e-mail para não aplicar os valores de outro usuário no mesmo dispositivo.
+assert.match(authPageSource, /Função \*/);
+assert.match(authPageSource, /Copiloto \/ Primeiro Oficial \(FO\)/);
+assert.match(authPageSource, /Comandante \(CMTE\)/);
+assert.match(authPageSource, /Copiloto Embraer/);
+assert.match(authPageSource, /Comandante Embraer/);
+assert.match(authPageSource, /rank: crewFunction/);
+assert.match(authPageSource, /crewcheck_profile_rank:\$\{normalizedEmail\(value\)\}/);
+assert.match(authPageSource, /Informe sua função para o CrewCheck aplicar corretamente as regras e valores do seu perfil/);
 
 const statementActivities = [
   { kind:'flight', start:at(8,9,3), end:at(8,19,18), enginesOff:at(8,19,18), originAtContractualBase:false },
@@ -75,4 +90,4 @@ assert.match(menuCss, /min-width:768px/);
 assert.match(menuCss, /pointer:coarse/);
 assert.match(rosterView, /groupPendingCurrencies/);
 
-console.log('CrewCheck v13.9.8 ACT compensation, statement, roster and iPad regression: OK');
+console.log('CrewCheck v13.9.8 ACT compensation, statement, roster, registration function and iPad regression: OK');
