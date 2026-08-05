@@ -1510,9 +1510,9 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
-function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
+function Brand({ back, onMenu, global = false }: { back?: boolean; onMenu?: () => void; global?: boolean }) {
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
-  return <header className="cz-brand-row">
+  return <header className={`cz-brand-row${global ? ' cz-global-header' : ''}`} data-global-internal-header={global ? 'true' : undefined}>
     <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
     <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>
   </header>;
@@ -4667,6 +4667,8 @@ export default function Home() {
   return <main className="cz-app" data-version={DEFAULT_VERSION} data-view={view}>
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
+    <Brand global back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>
+    <div className="cz-global-header-spacer" aria-hidden="true"/>
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>

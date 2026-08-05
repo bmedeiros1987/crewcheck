@@ -9,6 +9,7 @@ import "./premium-audit-v13-8-8.css";
 import "./components/v1409/layout-lock.css";
 import "./components/v1417/operational-intelligence.css";
 import "./theme-v14-3-17.css";
+import "./styles/internal-global-header.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
