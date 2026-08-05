@@ -14,6 +14,40 @@ Durante a auditoria, não entram funcionalidades novas: cada superfície existen
 - **v14.3.56:** laboratório AutoPull do iFlight integrado com acesso exclusivo do administrador e kill switch desligado até autorização formal.
 - **GitHub Actions:** voltou a executar TypeScript, build Web, regressões e validação CrewRoster. Falhas remanescentes devem ser tratadas como diagnóstico real, e não como falta de créditos.
 - **Render:** build e deploy da `main` concluídos após os lotes da P0; cada nova versão permanece condicionada aos gates automatizados e à validação visual.
+- **v14.3.82–v14.3.87:** hidratação da escala ativa, identidade operacional do Radar, elegibilidade da Saída Inteligente, disposição auditável de alertas, limite regulamentar no FlyDeck e cabeçalho global entregues na PR `#308`.
+
+## Próximo lote — sistema visual unificado v14.3.88–v14.3.90
+
+A padronização visual passa a ser um gate formal do roadmap, e não uma coleção de correções isoladas por tela. O contrato completo está em `docs/V14_3_88_VISUAL_STANDARDIZATION_ROADMAP.md`.
+
+### v14.3.88 — fundação visual
+
+- consolidar tokens de cor, tipografia, espaçamento, raio, borda, sombra, largura e camadas;
+- manter o cabeçalho global fixo em todos os sistemas internos;
+- definir uma grade responsiva única para celular, tablet e desktop;
+- padronizar estados de botão, foco, hover, carregamento, vazio, erro e indisponibilidade;
+- definir movimento curto, estável e compatível com `prefers-reduced-motion`;
+- impedir deslocamento de conteúdo ou botão ao passar o mouse.
+
+### v14.3.89 — superfícies operacionais prioritárias
+
+- migrar FlyDeck, Próxima Programação, Linha do Dia, Escala, Saída Inteligente, Alertas e Menu;
+- ordenar informação por cronologia, segurança operacional e prioridade configurada pelo usuário;
+- manter regulamentação e limites operacionais visíveis no ponto de decisão, sem competir com o próximo compromisso;
+- remover repetição, espaços vazios excessivos, mensagens técnicas e componentes visualmente divergentes;
+- usar navegação inferior somente quando o espaço e o dispositivo justificarem.
+
+### v14.3.90 — cobertura e auditoria final
+
+- migrar os demais sistemas internos para os mesmos componentes e tokens;
+- validar temas claro e escuro em 360 px, 390/412 px, tablet e desktop;
+- verificar teclado, foco visível, contraste, redução de movimento e zoom;
+- adicionar regressões visuais dos fluxos críticos e inventário de exceções temporárias;
+- impedir aprovação enquanto houver tela interna com cabeçalho, largura, botões ou estados fora do padrão sem justificativa registrada.
+
+Restrições do lote: nenhuma mudança visual pode alterar parser, fingerprint, escala ativa, identidade de atividade, cronologia canônica, regulamentação, financeiro ou sincronização multicanal. Web, PWA, APK e Telegram continuam consumindo a mesma verdade operacional.
+
+Critério de saída: TypeScript, build Web, regressões funcionais e visuais aprovados, mais conferência em desktop, celular e tablet. Teste manual só será solicitado depois de build/deploy estável.
 
 ## Evidência funcional — CrewRosterReport normal
 
