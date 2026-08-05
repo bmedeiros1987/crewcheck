@@ -4,6 +4,7 @@ import ts from 'typescript';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const policySource = read('client/src/lib/compensationPolicy.ts');
+const financialRulesSource = read('client/src/lib/financialRules.ts');
 const transformed = ts.transpileModule(policySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
 const policy = await import(`data:text/javascript;base64,${Buffer.from(transformed.outputText).toString('base64')}`);
 const at = (day, hour, minute) => new Date(2026, 6, day, hour, minute, 0, 0);
@@ -20,6 +21,20 @@ assert.equal(policy.freeDayPostponementIndemnity(4.01), 700);
 assert.equal(policy.freeDayPostponementIndemnity(12, true), 0);
 assert.equal(policy.freeDayPostponementIndemnity(12.01, true), 700);
 
+// Referência pública dos ACTs Latam 2025/2027 (SNA): manter separada de valores
+// observados em demonstrativos, que podem superar os pisos do ACT.
+assert.match(financialRulesSource, /ACT-LATAM-2025-2027\.2025-12-SNA/);
+assert.match(financialRulesSource, /key: 'domestic'[\s\S]{0,100}?mainMeal: 105\.04/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?dayKm: 0\.057349/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?nightKm: 0\.114698/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?reserveHour: 48\.75/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?standbyHour: 16\.25/);
+assert.match(financialRulesSource, /first_officer:[\s\S]{0,250}?dayKm: 0\.140262[\s\S]{0,250}?nightKm: 0\.285240/);
+assert.match(financialRulesSource, /commander:[\s\S]{0,250}?dayKm: 0\.211605[\s\S]{0,250}?nightKm: 0\.423250/);
+assert.match(financialRulesSource, /north_america'[\s\S]{0,100}?mainMeal: 25\.70/);
+assert.match(financialRulesSource, /europe'[\s\S]{0,100}?mainMeal: 23\.00/);
+assert.match(financialRulesSource, /breakfastPercent: 0\.25/);
+
 const statementActivities = [
   { kind:'flight', start:at(8,9,3), end:at(8,19,18), enginesOff:at(8,19,18), originAtContractualBase:false },
   { kind:'flight', start:at(10,13,25), end:at(11,0,24), enginesOff:at(11,0,24), originAtContractualBase:true },
@@ -29,6 +44,7 @@ const statementActivities = [
   { kind:'reserve', start:at(14,6,5), end:at(14,12,5) },
 ];
 const statementRows = statementActivities.flatMap(policy.classifyAllowanceWindows);
+// Valor observado em demonstrativo real; propositalmente não substituído pelo piso público do ACT.
 const statementTotal = statementRows.reduce((sum, row) => sum + (row.slot === 'breakfast' ? 27.36 : 109.44), 0);
 assert.equal(statementRows.length, 11);
 assert.equal(Number(statementTotal.toFixed(2)), 1039.68);
