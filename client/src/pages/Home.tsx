@@ -1401,7 +1401,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     {!!route?.incidents?.length && <section className={`cc-route-incidents ${route.hasRoadClosure ? 'critical' : ''}`}><AlertTriangle/><div><strong>{route.hasRoadClosure ? 'Bloqueio detectado no trajeto' : `${route.incidents.length} ocorrência(s) no trajeto`}</strong>{route.incidents.slice(0, 3).map((incident) => <span key={incident.id || incident.title}>{incident.title}{incident.delayText ? ` · ${incident.delayText}` : ''}</span>)}</div></section>}
     {monitor && <section className="cc-route-monitor"><Bell/><div><strong>{monitor.telegramLinked ? 'Monitoramento em segundo plano ativo' : 'Monitoramento do servidor ativo'}</strong><span>{monitor.message}</span>{Number(monitor.learning?.samples || 0) >= 3 && <small>Tendência aprendida: cerca de {monitor.learning?.expectedMinutes} min neste dia e horário.</small>}</div></section>}
     <div className="cz-google-map-preview">
-      {embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
+      {route?.ok && embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : route?.ok && staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
     </div>
     {route?.message && <p className="cz-mini-status">{route.message} O horário de saída se ajusta sozinho enquanto esta tela estiver aberta; com Telegram vinculado, o servidor continua monitorando.</p>}
     <footer><button onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}><MapIcon/> Abrir no Google Maps</button>{mode.includes('uber') && <button onClick={openUber}><Car/> Chamar Uber</button>}<button onClick={() => { const manual = window.prompt('Endereço de origem para a rota') || ''; if (manual.trim()) { storage.set('crewcheck_manual_route_origin', manual.trim()); setOrigin(manual.trim()); setOriginLabel(manual.trim()); onOriginLabel?.(manual.trim()); toast.success('Origem manual aplicada.'); } }}><HomeIcon/> Usar endereço manual</button></footer>
@@ -1543,24 +1543,37 @@ type RadarSnapshot = {
   alternatives?: number;
   message?: string;
   updatedAt?: number;
+  operationalDate?: string;
+  origin?: string;
+  destination?: string;
 };
 const RADAR_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const RADAR_CARD_REFRESH_MS = 5 * 60 * 1000;
 function radarSnapshotKey(event: ZeroLeg): string {
   return ['crewcheck_radar_v2', event.id, event.flightNumber, event.origin, event.destination].map((part) => String(part || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '_')).join(':');
 }
+function radarEventOperationalDate(event: ZeroLeg): string {
+  const date = eventStartDateTime(event);
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+}
+function radarSnapshotMatchesEvent(snapshot: RadarSnapshot, event: ZeroLeg): boolean {
+  return String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
+    && snapshot.operationalDate === radarEventOperationalDate(event)
+    && String(snapshot.origin || '').trim().toUpperCase() === String(event.origin || '').trim().toUpperCase()
+    && String(snapshot.destination || '').trim().toUpperCase() === String(event.destination || '').trim().toUpperCase();
+}
 function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   if (event.kind !== 'flight' || event.placeholder) return null;
   try {
     const parsed = JSON.parse(storage.get(radarSnapshotKey(event), 'null')) as RadarSnapshot | null;
-    if (!parsed || !parsed.updatedAt || Date.now() - parsed.updatedAt > RADAR_CARD_CACHE_TTL_MS) return null;
+    if (!parsed || !parsed.updatedAt || Date.now() - parsed.updatedAt > RADAR_CARD_CACHE_TTL_MS || !radarSnapshotMatchesEvent(parsed, event)) return null;
     return parsed;
   } catch {
     return null;
   }
 }
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
-  const snapshot = { ...payload, updatedAt: Date.now() };
+  const snapshot = { ...payload, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
@@ -1627,7 +1640,13 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
   if (event.placeholder) {
     return <article className="cz-smart-card" onClick={() => setView('import')}><div className="cz-smart-title"><span><Upload size={26}/></span><div><h2>Importar escala real</h2><p>PDF oficial de julho</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>PDF</strong><em>REAL</em><p>Nenhum dado fictício será usado.</p><div><small>Status</small><b>Aguardando escala</b></div></div></article>;
   }
+  if (!smartDepartureEligible(event)) return null;
   return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Planejador de Saída</h2><p>Calcula quando sair usando trânsito, margem e apresentação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>Trânsito</b></div></div></article>;
+}
+
+function smartDepartureEligible(event: ZeroLeg): boolean {
+  const code = rosterCode(event.day).toUpperCase();
+  return !event.placeholder && event.presentation !== '—' && (event.kind === 'flight' || ['ASB', 'RES', 'RSV', 'HSB', 'SA', 'RCFI', 'CRM', 'MCK', 'TRE', 'TRN'].includes(code));
 }
 
 
@@ -2307,6 +2326,7 @@ function Departure({ event }: { event: ZeroLeg }) {
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Planejador de Saída aguardando a escala</h2><p>Importe o PDF para calcular quando sair usando sua origem, apresentação, margem e trânsito ao vivo.</p></article></>;
+  if (!smartDepartureEligible(event)) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Esta programação não exige planejamento de saída</h2><p>Este compromisso não possui apresentação ou deslocamento operacional publicável. A próxima atividade elegível aparecerá automaticamente.</p></article></>;
   const travelMinutes = routeDurationMinutes(route);
   const presentationDate = eventClockDate(event, event.presentation);
   const leaveDate = travelMinutes ? new Date(presentationDate.getTime() - (travelMinutes + margin) * 60000) : null;
@@ -4495,6 +4515,22 @@ export default function Home() {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
+
+  useEffect(() => {
+    // A escala ativa pertence à conta, não ao cache deste dispositivo.
+    if (Array.isArray(bundle.roster.days) && bundle.roster.days.length) return;
+    let alive = true;
+    openActiveRoster().then((active) => {
+      if (!alive || !active?.roster?.days?.length) return;
+      const compliance = active.compliance || analyzeSafe(active.roster);
+      saveRoster(active.roster, 'Escala ativa sincronizada');
+      setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
+    }).catch((error: any) => {
+      if (!alive) return;
+      if (Number(error?.status) === 409) toast.error('Há um conflito de escala ativa. Atualize a sessão antes de importar novamente.');
+    });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const mode = storage.get('crewcheck_theme_mode', storage.get('crewcheck_light_premium', '0') === '1' ? 'light' : 'dark');
