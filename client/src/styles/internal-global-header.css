@@ -1,8 +1,8 @@
-.cz-app > .cz-brand-row:not(.cz-global-header) {
+.cz-app > .cz-brand-row {
   display: none !important;
 }
 
-.cz-app > .cz-brand-row.cz-global-header {
+.cz-app > .cz-global-header {
   position: fixed !important;
   top: max(14px, env(safe-area-inset-top, 0px)) !important;
   left: 50% !important;
@@ -19,6 +19,11 @@
   will-change: transform;
 }
 
+.cz-global-header > .cz-brand-row {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
 .cz-global-header-spacer {
   display: block;
   height: calc(116px + env(safe-area-inset-top, 0px));
@@ -26,7 +31,7 @@
 }
 
 @media (max-width: 720px) {
-  .cz-app > .cz-brand-row.cz-global-header {
+  .cz-app > .cz-global-header {
     top: max(8px, env(safe-area-inset-top, 0px)) !important;
     width: calc(100vw - 24px) !important;
   }
