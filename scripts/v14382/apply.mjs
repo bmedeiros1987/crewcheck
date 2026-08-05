@@ -38,10 +38,15 @@ update('server.mjs', (source) => {
     '  if (await handleWhatsAppRoute(req, res, url)) return;',
     'rota pública do WhatsApp antes das rotas autenticadas',
   );
-  if (!next.includes("'/api/whatsapp/webhook'")) {
-    throw new Error('[v14382] Endpoint oficial do WhatsApp não ficou acessível.');
+  if (!next.includes('handleWhatsAppRoute(req, res, url)')) {
+    throw new Error('[v14382] Roteamento oficial do WhatsApp não ficou acessível.');
   }
   return next;
 });
+
+const whatsappSource = fs.readFileSync('server/whatsapp.mjs', 'utf8');
+if (!whatsappSource.includes("url.pathname !== '/api/whatsapp/webhook'")) {
+  throw new Error('[v14382] Endpoint /api/whatsapp/webhook ausente no handler oficial.');
+}
 
 console.log(`[v14382] CrewCheck ${VERSION}: webhook oficial do WhatsApp Business preparado.`);
