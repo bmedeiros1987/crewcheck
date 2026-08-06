@@ -1,0 +1,32 @@
+name: CrewCheck P0 base rest vs overnight
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14387a/apply.mjs'
+      - 'scripts/regression-p0-base-rest-vs-overnight.mjs'
+      - '.github/workflows/p0-base-rest-vs-overnight.yml'
+  push:
+    branches:
+      - fix/p0-base-rest-vs-overnight
+
+jobs:
+  base-rest-vs-overnight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Dedicated P0 overnight and current classification regression
+        run: node scripts/regression-p0-base-rest-vs-overnight.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
