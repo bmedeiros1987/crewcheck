@@ -58,6 +58,15 @@ for (const event of realOvernights) {
   expect(classification.classifyScheduleActivity(event) === 'PERNOITE', 'PERNOITE_CONTINUIDADE fora de base deve permanecer PERNOITE.');
 }
 
+// Proteções do modelo atual, independentes dos KPIs legados removidos do FlyDeck.
+const asb = { kind: 'duty', title: 'ASB', presentation: '13:30', arrival: '18:25', day: { type: 'ASB', pairingCode: 'ASB', legs: [] }, canonical: { kind: 'duty', publishedDay: { type: 'ASB', pairingCode: 'ASB', legs: [] } } };
+const hsb = { kind: 'duty', title: 'HSB', presentation: '08:00', arrival: '14:00', day: { type: 'HSB', pairingCode: 'HSB', legs: [] }, canonical: { kind: 'duty', publishedDay: { type: 'HSB', pairingCode: 'HSB', legs: [] } } };
+const dayOff = { kind: 'rest', title: 'DO', day: { type: 'DO', pairingCode: 'DO', legs: [] }, canonical: { kind: 'rest', publishedDay: { type: 'DO', pairingCode: 'DO', legs: [] } } };
+expect(classification.classifyScheduleActivity(asb) === 'PROGRAMACAO', 'ASB deve permanecer Programação.');
+expect(classification.classifyScheduleActivity(hsb) === 'PROGRAMACAO', 'HSB deve permanecer Programação.');
+expect(classification.classifyScheduleActivity(dayOff) === 'FOLGA', 'DO deve permanecer Folga.');
+expect(classification.isSmartDepartureEligible(hsb) === false, 'HSB não acionado não pode ganhar Saída Inteligente.');
+
 const rosterView = read('client/src/components/v1391/RosterLaunchView.tsx');
 expect(rosterView.includes("import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';"), 'Visão mensal não usa classificação compartilhada.');
 expect(rosterView.includes('const scheduleCategory = classifyScheduleActivity(event);'), 'workMode ainda deriva stay/rest por regex local.');
@@ -71,7 +80,7 @@ expect(continuity.includes('Não é folga publicada.'), 'Descanso de continuidad
 
 const patch = read('scripts/v14387a/apply.mjs');
 for (const protectedPath of ['client/src/lib/rosterContinuity.ts','client/src/lib/canonicalRoster.ts','client/src/lib/pdfParser.ts','client/src/lib/aimsParser.ts','client/src/lib/complianceEngine.ts','client/src/lib/financialRules.ts']) {
-  expect(!patch.includes(`const ${protectedPath}`) && !patch.includes(`'${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
+  expect(!patch.includes(`'${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
 }
 
-console.log('[P0/#303/pernoite] OK — 8 pernoites + 2 descansos na base permanecem 8 pernoites e 2 repousos na UI.');
+console.log('[P0/#303/pernoite] OK — 8 pernoites + 2 descansos na base permanecem 8 pernoites e 2 repousos; ASB/HSB/DO preservados.');
