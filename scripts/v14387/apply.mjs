@@ -19,42 +19,9 @@ if (!source.includes('const previewRosterCounts = rosterCounters(roster);')) {
   source = source.replace(guardianOld, guardianNew);
 }
 
-// FlyDeck: não reescreve a classificação da v14.3.50. Apenas injeta o roster
-// ativo e substitui a regra local de dias pela normalização canônica. A troca é
-// propositalmente independente da forma exata do bloco de Programações, pois
-// versões posteriores podem reorganizar as linhas sem mudar a semântica.
-const cockpitSignatureOld = `function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {`;
-const cockpitSignatureNew = `function Cockpit({ roster, events, compliance, setView, onUpload, openMenu }: { roster: CrewRoster; events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {`;
-if (!source.includes(cockpitSignatureNew)) {
-  if (!source.includes(cockpitSignatureOld)) throw new Error('[v14387] assinatura do FlyDeck não localizada.');
-  source = source.replace(cockpitSignatureOld, cockpitSignatureNew);
-}
-
-if (!source.includes('days: rosterCounters(roster).days,')) {
-  const cockpitStart = source.indexOf(cockpitSignatureNew);
-  const cockpitEnd = source.indexOf('function rosterCode(', cockpitStart);
-  if (cockpitStart < 0 || cockpitEnd <= cockpitStart) throw new Error('[v14387] limites do FlyDeck não localizados.');
-  const before = source.slice(0, cockpitStart);
-  const cockpit = source.slice(cockpitStart, cockpitEnd);
-  const after = source.slice(cockpitEnd);
-  const patchedCockpit = cockpit.replace(
-    /days:\s*new Set\(events\.map\(\((?:e|item)\)\s*=>\s*(?:e|item)\.day\.date\)\)\.size,/,
-    'days: rosterCounters(roster).days,',
-  );
-  if (patchedCockpit === cockpit) {
-    const counterIndex = cockpit.indexOf('const counters');
-    const diagnostic = counterIndex >= 0 ? cockpit.slice(counterIndex, counterIndex + 700).replace(/\s+/g, ' ') : cockpit.slice(0, 700).replace(/\s+/g, ' ');
-    throw new Error(`[v14387] contador local de dias do FlyDeck não localizado. Forma atual: ${diagnostic}`);
-  }
-  source = `${before}${patchedCockpit}${after}`;
-}
-
-const cockpitCallOld = `<Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>`;
-const cockpitCallNew = `<Cockpit roster={bundle.roster} events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>`;
-if (!source.includes(cockpitCallNew)) {
-  if (!source.includes(cockpitCallOld)) throw new Error('[v14387] chamada do FlyDeck não localizada.');
-  source = source.replace(cockpitCallOld, cockpitCallNew);
-}
+// O FlyDeck Premium atual (v14.3.53+) não exibe mais os KPIs agregados antigos
+// de Dias/Voos/Atividades. Portanto, não há contador paralelo a corrigir ali;
+// a cronologia continua consumindo os mesmos eventos canônicos sem mudança.
 
 // Escala: KPIs passam a usar explicitamente o mesmo contador canônico do preview.
 const rosterFinance = `  const finance = financeSnapshot(normalizedRoster);`;
@@ -81,8 +48,6 @@ source = source.replace(
 for (const required of [
   'const previewRosterCounts = rosterCounters(roster);',
   'const days = previewRosterCounts.days;',
-  'days: rosterCounters(roster).days,',
-  '<Cockpit roster={bundle.roster}',
   'const rosterSurfaceCounts = rosterCounters(roster);',
   '<strong>{rosterSurfaceCounts.days}</strong>',
   '<strong>{rosterSurfaceCounts.flights}</strong>',
@@ -92,4 +57,4 @@ for (const required of [
 }
 
 fs.writeFileSync(file, source, 'utf8');
-console.log(`[v14387] CrewCheck ${VERSION}: dias canônicos unificados no preview/FlyDeck/Escala; classificação v14.3.50 preservada; jornada mensal rotulada.`);
+console.log(`[v14387] CrewCheck ${VERSION}: dias canônicos unificados no preview/Escala; jornada regulatória mensal rotulada sem tocar FlyDeck Premium.`);
