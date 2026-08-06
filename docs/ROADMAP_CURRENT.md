@@ -15,6 +15,38 @@ Durante a auditoria, não entram funcionalidades novas: cada superfície existen
 - **GitHub Actions:** voltou a executar TypeScript, build Web, regressões e validação CrewRoster. Falhas remanescentes devem ser tratadas como diagnóstico real, e não como falta de créditos.
 - **Render:** build e deploy da `main` concluídos após os lotes da P0; cada nova versão permanece condicionada aos gates automatizados e à validação visual.
 - **v14.3.82–v14.3.87:** hidratação da escala ativa, identidade operacional do Radar, elegibilidade da Saída Inteligente, disposição auditável de alertas, limite regulamentar no FlyDeck e cabeçalho global entregues na PR `#308`.
+- **v14.3.84 / PR `#320`:** correção do CC-0001 para contar `DO` formal de aproximadamente 24 h iniciado após jornada no mesmo dia civil, com regressão `9 + 1 = 10` e sem alteração de parser/continuidade/financeiro.
+- **v14.3.85 / PR `#321`:** correção financeira do CC-0001 para Reserva acionada: crédito da Reserva termina no primeiro voo dentro da janela publicada, preservando a jornada regulatória.
+
+## Prioridade imediata — primeiro ticket real de suporte CC-0001 (`#263`)
+
+O CC-0001 permanece acima do lote visual e de melhorias não críticas até cumprir o fluxo obrigatório `relatado → reproduzido → corrigido → regressão verde → produção → validado → Tácio notificado → resolvido`.
+
+### Folgas (`#225`)
+
+- causa reproduzida: `DO` formal pode começar depois de uma jornada no mesmo dia civil e ficar visível na escala sem entrar na métrica mensal;
+- correção mesclada na PR `#320`;
+- regressão dedicada confirma o caso `9 → 10 folgas`;
+- pendente: confirmar a versão em produção e validar o caso real antes de fechar.
+
+### Reserva (`#250`)
+
+- causa reproduzida no caso de Reserva acionada: a camada financeira somava a janela publicada inteira, mesmo quando o primeiro voo começava antes do fim da Reserva;
+- correção mesclada na PR `#321`;
+- fixture protegida: Reserva `06:05–12:05`, primeiro voo `06:53`, crédito financeiro `0,8 h`; sem acionamento permanece `6 h`;
+- a janela regulatória da Reserva não é encurtada pela regra financeira;
+- pendente: confirmar produção e caso real.
+
+### KM (`#250`)
+
+- não usar distância geográfica/Google Maps como se fosse automaticamente quilometragem remunerável;
+- a remuneração da empresa usa critérios/tabela de quilômetros por trecho; a distância operacional pode ser diferente da quantidade usada no demonstrativo;
+- a divergência observada no CC-0001 preserva um mesmo fator entre os quatro componentes, portanto não deve ser corrigida com quatro tarifas independentes nem com divisão fixa sem fonte;
+- manter segregação estrita por função: valores de CMTE não podem ser aplicados a FO/CP, CCM ou comissários;
+- próximo passo: separar `distância operacional` de `KM remunerável`, admitir somente fonte financeira confiável/tabela auditável para o cálculo salarial e manter fallback explícito como estimativa quando a tabela de remuneração não estiver disponível;
+- fechar somente após regressão específica, produção e conferência com o caso real.
+
+Enquanto o CC-0001 estiver pendente, o lote visual pode receber manutenção indispensável, mas não volta a ser a prioridade principal.
 
 ## Próximo lote — sistema visual unificado v14.3.88–v14.3.90
 
@@ -122,6 +154,21 @@ A comparação deve confirmar, para cada atividade:
 - HSB, ASB, folga e descanso sem conversão indevida em voo.
 
 O gate somente será marcado como aprovado após evidência de uso real no Web/PWA.
+
+## Gate futuro — Concierge com paridade temporal da programação
+
+O Concierge deve consumir a mesma programação canônica do FlyDeck/Escala e nunca transformar ausência de voo em “escala em branco” quando houver folga/descanso publicado.
+
+Critérios obrigatórios:
+
+- pergunta como **“O que eu tenho hoje?”** deve responder `Folga`/`Descanso` quando essa for a atividade oficial do dia, e somente usar “programação em branco” quando realmente não existir atividade publicada para a data;
+- `DO`, `DOF`, `DOP` e demais folgas válidas permanecem distintos de ausência de programação; `ASB` permanece Reserva e `HSB` permanece Sobreaviso;
+- qualquer programação que não seja de hoje deve trazer a **data explícita** antes de horários, voo ou Saída Inteligente;
+- nunca dizer apenas “na próxima programação, apresentação às...” quando a programação for de amanhã ou de outra data;
+- Saída Inteligente narrada pelo Concierge deve dizer, por exemplo, “para a programação de sábado, 8 de agosto, saia...” e não soar como instrução para sair hoje;
+- respostas em texto e áudio devem usar a mesma data operacional, horários, origem/destino e classificação da Escala;
+- manter o aviso de segurança de que a escala oficial e as comunicações da empresa prevalecem em caso de divergência;
+- regressões devem cobrir: hoje em folga, hoje em Reserva, hoje em Sobreaviso, dia realmente em branco, próxima programação amanhã e próxima programação em data posterior.
 
 ## Gate futuro — compartilhamento de PDF com o PWA
 
