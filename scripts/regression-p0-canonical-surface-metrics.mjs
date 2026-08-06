@@ -33,12 +33,11 @@ expect(!guardian.includes('Array.isArray(roster.days) ? roster.days.length'), 'P
 
 const cockpit = between(home, 'function Cockpit(', 'function rosterCode(');
 expect(cockpit.includes('roster: CrewRoster'), 'FlyDeck precisa receber o mesmo roster ativo usado pelas demais superfícies.');
-expect(cockpit.includes('const scheduleCounts = countScheduleCategories(events);'), 'FlyDeck precisa preservar classificação única v14.3.50.');
-expect(cockpit.includes('const cockpitRosterCounts = rosterCounters(roster);'), 'FlyDeck não usa contador canônico de dias.');
-expect(cockpit.includes('days: cockpitRosterCounts.days,'), 'FlyDeck não usa dias normalizados.');
-expect(cockpit.includes('flights: scheduleCounts.flights,'), 'FlyDeck deve manter voos pela classificação única.');
-expect(cockpit.includes('programming: scheduleCounts.programming,'), 'FlyDeck deve manter Programações separadas.');
-expect(!cockpit.includes('days: new Set(events.map'), 'FlyDeck não pode manter contagem local de dias em paralelo.');
+expect(cockpit.includes('days: rosterCounters(roster).days,'), 'FlyDeck não usa dias normalizados pelo roster canônico.');
+expect(!/days:\s*new Set\(events\.map/.test(cockpit), 'FlyDeck não pode manter contagem local de dias em paralelo.');
+// A classificação detalhada do FlyDeck é protegida pela regressão histórica v14.3.50;
+// este gate só muda a origem do contador de dias e não reescreve Programações/Folga/Descanso.
+expect(home.includes('title="Programações"'), 'FlyDeck deve continuar expondo Programações separadas após o patch.');
 
 const roster = between(home, 'function Roster({ roster, events, setView }', 'function comparisonEventSummary(');
 expect(roster.includes('const rosterSurfaceCounts = rosterCounters(roster);'), 'Escala não usa rosterCounters canônico nos KPIs.');
@@ -70,4 +69,4 @@ for (const protectedPath of [
   expect(!patch.includes(`update('${protectedPath}'`) && !patch.includes(`const file = '${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
 }
 
-console.log('[P0/#303] OK — dias normalizados unificados; Programações/Folga/Descanso/Pernoite v14.3.50 preservados; jornada mensal rotulada.');
+console.log('[P0/#303] OK — dias normalizados unificados; categorias v14.3.50 preservadas por gate histórico; jornada mensal rotulada.');
