@@ -31,23 +31,18 @@ expect(guardian.includes('Descansos: ${scheduleCounts.recoveryRest}'), 'Preview 
 expect(guardian.includes('Pernoites: ${scheduleCounts.overnights}'), 'Preview perdeu Pernoites separados.');
 expect(!guardian.includes('Array.isArray(roster.days) ? roster.days.length'), 'Preview não pode voltar a contar dias brutos antes da normalização.');
 
+// FlyDeck Premium v14.3.53+ não exibe KPIs agregados de Dias/Voos/Atividades.
+// Esse gate não deve reintroduzir esses contadores nem alterar sua cronologia.
 const cockpit = between(home, 'function Cockpit(', 'function rosterCode(');
-expect(cockpit.includes('roster: CrewRoster'), 'FlyDeck precisa receber o mesmo roster ativo usado pelas demais superfícies.');
-expect(cockpit.includes('days: rosterCounters(roster).days,'), 'FlyDeck não usa dias normalizados pelo roster canônico.');
-expect(!/days:\s*new Set\(events\.map/.test(cockpit), 'FlyDeck não pode manter contagem local de dias em paralelo.');
-// A classificação detalhada do FlyDeck é protegida pela regressão histórica v14.3.50;
-// este gate só muda a origem do contador de dias e não reescreve Programações/Folga/Descanso.
-expect(home.includes('title="Programações"'), 'FlyDeck deve continuar expondo Programações separadas após o patch.');
+expect(cockpit.includes('data-flydeck-v14353="premium-briefing"'), 'FlyDeck Premium atual deve permanecer preservado.');
+expect(cockpit.includes('<OperationalDayTimeline events={events}'), 'FlyDeck deve continuar usando a cronologia operacional existente.');
+expect(!cockpit.includes('title="Dias publicados"'), 'FlyDeck Premium não deve reintroduzir KPI agregado legado de dias.');
 
 const roster = between(home, 'function Roster({ roster, events, setView }', 'function comparisonEventSummary(');
 expect(roster.includes('const rosterSurfaceCounts = rosterCounters(roster);'), 'Escala não usa rosterCounters canônico nos KPIs.');
 expect(roster.includes('<strong>{rosterSurfaceCounts.days}</strong>'), 'KPI de dias da Escala não usa contador canônico.');
 expect(roster.includes('<strong>{rosterSurfaceCounts.flights}</strong>'), 'KPI de voos da Escala não usa contador canônico.');
 
-expect(
-  home.includes("{view === 'cockpit' && <Cockpit roster={bundle.roster} events={events}"),
-  'Home não entrega o mesmo roster ativo ao FlyDeck.',
-);
 expect(
   home.includes('HourLimitBar title="Jornada regulatória mensal" used={monthlyHours}'),
   'Carga/Limites precisa rotular totalDutyHours como jornada regulatória, não como programação genérica.',
@@ -69,4 +64,4 @@ for (const protectedPath of [
   expect(!patch.includes(`update('${protectedPath}'`) && !patch.includes(`const file = '${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
 }
 
-console.log('[P0/#303] OK — dias normalizados unificados; categorias v14.3.50 preservadas por gate histórico; jornada mensal rotulada.');
+console.log('[P0/#303] OK — preview/Escala usam dias canônicos; FlyDeck Premium preservado; jornada regulatória mensal rotulada.');
