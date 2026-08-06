@@ -78,18 +78,18 @@ const DAY_OFF_CODES = new Set([
   'DOM',
   'DOP',
   'DOPR',
+  'DR',
   'DRC',
   'DS',
   'DW',
   'FOLGA',
   'NSC',
-  'OFF',
   'VC',
   'FERIAS',
 ]);
 
 const RECOVERY_REST_CODES = new Set([
-  'DR',
+  'OFF',
   'REST',
   'REPOUSO',
   'DESCANSO',
@@ -215,7 +215,7 @@ export function classifyScheduleActivity(
   const canonicalKind = normalize(activity.canonical?.kind);
 
   if (kind === 'REST' || canonicalKind === 'REST') {
-    return /\b(?:DR|REST|REPOUSO|DESCANSO REGULAMENTAR)\b/.test(activitySemanticText(activity))
+    return /\b(?:OFF|REST|REPOUSO|DESCANSO REGULAMENTAR)\b/.test(activitySemanticText(activity))
       ? 'REPOUSO'
       : 'FOLGA';
   }
