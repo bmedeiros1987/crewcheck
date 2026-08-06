@@ -41,7 +41,11 @@ if (!source.includes('days: rosterCounters(roster).days,')) {
     /days:\s*new Set\(events\.map\(\((?:e|item)\)\s*=>\s*(?:e|item)\.day\.date\)\)\.size,/,
     'days: rosterCounters(roster).days,',
   );
-  if (patchedCockpit === cockpit) throw new Error('[v14387] contador local de dias do FlyDeck não localizado.');
+  if (patchedCockpit === cockpit) {
+    const counterIndex = cockpit.indexOf('const counters');
+    const diagnostic = counterIndex >= 0 ? cockpit.slice(counterIndex, counterIndex + 700).replace(/\s+/g, ' ') : cockpit.slice(0, 700).replace(/\s+/g, ' ');
+    throw new Error(`[v14387] contador local de dias do FlyDeck não localizado. Forma atual: ${diagnostic}`);
+  }
   source = `${before}${patchedCockpit}${after}`;
 }
 
