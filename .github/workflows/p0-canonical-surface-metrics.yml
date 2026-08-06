@@ -1,0 +1,31 @@
+name: CrewCheck P0 canonical surface metrics
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14387/apply.mjs'
+      - 'scripts/regression-p0-canonical-surface-metrics.mjs'
+      - '.github/workflows/p0-canonical-surface-metrics.yml'
+  push:
+    branches:
+      - fix/p0-canonical-surface-metrics
+
+jobs:
+  canonical-surface-metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Dedicated P0 surface metrics regression
+        run: node scripts/regression-p0-canonical-surface-metrics.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
