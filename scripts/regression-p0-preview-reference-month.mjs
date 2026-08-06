@@ -44,7 +44,8 @@ expect(home.includes('filterDaysToRosterReferencePeriod(normalizedPreviewRoster.
 expect(!home.includes('const previewRosterCounts = rosterCounters(roster);'), 'Preview não deve resumir o bundle multimensal inteiro sob um único mês.');
 
 const canonical = read('client/src/lib/canonicalRoster.ts');
-expect(canonical.includes('preserveFollowingDays: 45'), 'Carry-out do mês seguinte deve continuar preservado no bundle canônico.');
+expect(canonical.includes('const forwardContinuationLimit = end + 45 * 24 * 60 * 60_000;'), 'Carry-out de 45 dias do mês seguinte deve continuar preservado no bundle canônico.');
+expect(canonical.includes('publicada do mês seguinte para que ela apareça no seletor mensal.'), 'Semântica de carry-out multimensal não pode ser removida para corrigir apenas o preview.');
 const patch = read('scripts/v14387b/apply.mjs');
 for (const protectedPath of ['client/src/lib/canonicalRoster.ts','client/src/lib/rosterContinuity.ts','client/src/lib/pdfParser.ts','client/src/lib/aimsParser.ts','client/src/lib/complianceEngine.ts','client/src/lib/financialRules.ts']) {
   expect(!patch.includes(`'${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
