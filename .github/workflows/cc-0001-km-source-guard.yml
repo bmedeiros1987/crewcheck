@@ -1,0 +1,31 @@
+name: CrewCheck CC-0001 KM source guard
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14386/apply.mjs'
+      - 'scripts/regression-cc-0001-km-source-guard.mjs'
+      - '.github/workflows/cc-0001-km-source-guard.yml'
+  push:
+    branches:
+      - fix/cc-0001-km-source-guard
+
+jobs:
+  km-source-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Dedicated CC-0001 KM source regression
+        run: node scripts/regression-cc-0001-km-source-guard.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
