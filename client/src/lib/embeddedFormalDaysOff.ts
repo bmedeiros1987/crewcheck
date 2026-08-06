@@ -39,10 +39,14 @@ function formalDoDurationMinutes(startTime: string, endTime: string): number {
   return duration;
 }
 
-function explicitDoKey(day: EmbeddedDayOffDayLike): string | null {
+function isExplicitDo(day: EmbeddedDayOffDayLike): boolean {
   const type = String(day.type || '').trim().toUpperCase();
   const pairing = String(day.pairingCode || '').trim().toUpperCase();
-  if (!EXPLICIT_DO_CODES.has(type) && !EXPLICIT_DO_CODES.has(pairing)) return null;
+  return EXPLICIT_DO_CODES.has(type) || EXPLICIT_DO_CODES.has(pairing);
+}
+
+function explicitDoKey(day: EmbeddedDayOffDayLike): string | null {
+  if (!isExplicitDo(day)) return null;
   const startTime = normalizeClock(String(day.dutyReport || ''));
   const endTime = normalizeClock(String(day.dutyDebrief || ''));
   if (!startTime || !endTime) return null;
@@ -55,12 +59,12 @@ export function collectMissingEmbeddedFormalDoIntervals(
   days: readonly EmbeddedDayOffDayLike[],
 ): EmbeddedFormalDayOffInterval[] {
   const explicit = new Set(days.map(explicitDoKey).filter((value): value is string => Boolean(value)));
+  const explicitDates = new Set(days.filter(isExplicitDo).map((day) => String(day.date || '').trim()).filter(Boolean));
   const found = new Map<string, EmbeddedFormalDayOffInterval>();
 
   for (const day of days) {
-    const dayType = String(day.type || '').trim().toUpperCase();
-    const pairing = String(day.pairingCode || '').trim().toUpperCase();
-    if (EXPLICIT_DO_CODES.has(dayType) || EXPLICIT_DO_CODES.has(pairing)) continue;
+    const date = String(day.date || '').trim();
+    if (isExplicitDo(day) || explicitDates.has(date)) continue;
 
     const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.toUpperCase();
     for (const marker of raw.matchAll(/\bDO\b/g)) {
@@ -73,10 +77,10 @@ export function collectMissingEmbeddedFormalDoIntervals(
       // O ticket CC-0001 trata uma folga formal de ~24h embutida depois da jornada.
       // Exigir 23–25h evita transformar qualquer ocorrência textual de "DO" em folga.
       if (duration < 23 * 60 || duration > 25 * 60) continue;
-      const key = `${String(day.date || '').trim()}|DO|${startTime}|${endTime}|+1`;
+      const key = `${date}|DO|${startTime}|${endTime}|+1`;
       if (explicit.has(key) || found.has(key)) continue;
       found.set(key, {
-        date: String(day.date || '').trim(),
+        date,
         code: 'DO',
         startTime,
         endTime,
