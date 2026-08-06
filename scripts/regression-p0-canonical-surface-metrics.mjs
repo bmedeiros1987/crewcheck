@@ -19,17 +19,21 @@ function between(source, start, end) {
 const home = read('client/src/pages/Home.tsx');
 const canonical = read('client/src/lib/canonicalRoster.ts');
 const patch = read('scripts/v14387/apply.mjs');
+const referenceMonthPatch = read('scripts/v14387b/apply.mjs');
 
 const guardian = between(home, 'function importGuardianSummary(', 'function confirmRosterImport(');
-expect(guardian.includes('const previewRosterCounts = rosterCounters(roster);'), 'Preview não usa rosterCounters para dias canônicos.');
+expect(guardian.includes('const normalizedPreviewRoster = normalizeRosterDays(roster);'), 'Preview não normaliza o roster antes de resumir o mês de referência.');
+expect(guardian.includes('filterEventsToRosterReferencePeriod(buildLegs(roster), normalizedPreviewRoster)'), 'Preview não limita eventos ao mês/ano exibido.');
+expect(guardian.includes('filterDaysToRosterReferencePeriod(normalizedPreviewRoster.days, normalizedPreviewRoster)'), 'Preview não limita dias ao mês/ano exibido.');
 expect(guardian.includes('const scheduleCounts = countScheduleCategories(events);'), 'Preview deve preservar a classificação única de programação/folga/descanso/pernoite.');
-expect(guardian.includes('const days = previewRosterCounts.days;'), 'Preview ainda usa quantidade bruta de roster.days.');
+expect(guardian.includes('const days = previewDays.length;'), 'Preview não usa a quantidade de dias normalizados do mês de referência.');
 expect(guardian.includes('const flights = scheduleCounts.flights;'), 'Preview deve manter voos pela mesma classificação da v14.3.50.');
 expect(guardian.includes('Programações: ${scheduleCounts.programming}'), 'Preview perdeu a contagem separada de Programações.');
 expect(guardian.includes('Folgas: ${scheduleCounts.daysOff}'), 'Preview perdeu Folgas separadas.');
 expect(guardian.includes('Descansos: ${scheduleCounts.recoveryRest}'), 'Preview perdeu Descansos separados.');
 expect(guardian.includes('Pernoites: ${scheduleCounts.overnights}'), 'Preview perdeu Pernoites separados.');
 expect(!guardian.includes('Array.isArray(roster.days) ? roster.days.length'), 'Preview não pode voltar a contar dias brutos antes da normalização.');
+expect(!guardian.includes('const previewRosterCounts = rosterCounters(roster);'), 'Preview não pode voltar a resumir o bundle multimensal inteiro sob um único mês.');
 
 // FlyDeck Premium v14.3.53+ não exibe KPIs agregados de Dias/Voos/Atividades.
 // Esse gate não deve reintroduzir esses contadores nem alterar sua cronologia.
@@ -52,6 +56,10 @@ expect(
   /export function rosterCounters\(roster: CrewRoster\)[\s\S]{0,260}?const normalized = normalizeRosterDays\(roster\);[\s\S]{0,260}?buildCanonicalRosterEvents\(normalized\)/.test(canonical),
   'rosterCounters deve continuar derivado de normalizeRosterDays + eventos canônicos.',
 );
+expect(
+  canonical.includes('const forwardContinuationLimit = end + 45 * 24 * 60 * 60_000;'),
+  'Bundle canônico deve continuar preservando carry-out de até 45 dias; só o preview é recortado por mês.',
+);
 
 for (const protectedPath of [
   'client/src/lib/pdfParser.ts',
@@ -61,7 +69,8 @@ for (const protectedPath of [
   'client/src/lib/complianceEngine.ts',
   'client/src/lib/financialRules.ts',
 ]) {
-  expect(!patch.includes(`update('${protectedPath}'`) && !patch.includes(`const file = '${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
+  expect(!patch.includes(`update('${protectedPath}'`) && !patch.includes(`const file = '${protectedPath}'`), `Patch v14.3.87 não deve alterar motor protegido: ${protectedPath}.`);
+  expect(!referenceMonthPatch.includes(`'${protectedPath}'`), `Patch v14.3.87b não deve alterar motor protegido: ${protectedPath}.`);
 }
 
-console.log('[P0/#303] OK — preview/Escala usam dias canônicos; FlyDeck Premium preservado; jornada regulatória mensal rotulada.');
+console.log('[P0/#303] OK — preview usa roster normalizado e mês de referência; Escala mantém rosterCounters; FlyDeck Premium preservado; jornada regulatória mensal rotulada.');
