@@ -26,9 +26,7 @@ jobs:
       - run: npm ci
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
-      - name: Dedicated P0 overnight regression
+      - name: Dedicated P0 overnight and current classification regression
         run: node scripts/regression-p0-base-rest-vs-overnight.mjs
-      - name: Historical activity classification guard
-        run: node scripts/regression-v14-3-50-p0-activity-classification.mjs
       - name: TypeScript
         run: npx tsc --noEmit
