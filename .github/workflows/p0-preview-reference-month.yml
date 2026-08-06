@@ -1,0 +1,32 @@
+name: CrewCheck P0 preview reference month
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/rosterReferencePeriod.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14387b/apply.mjs'
+      - 'scripts/regression-p0-preview-reference-month.mjs'
+      - '.github/workflows/p0-preview-reference-month.yml'
+  push:
+    branches:
+      - fix/p0-preview-reference-month
+
+jobs:
+  preview-reference-month:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Dedicated P0 reference-month regression
+        run: node scripts/regression-p0-preview-reference-month.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
