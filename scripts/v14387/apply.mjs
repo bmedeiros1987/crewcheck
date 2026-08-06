@@ -5,24 +5,22 @@ const file = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(file)) throw new Error('[v14387] Home.tsx ausente.');
 let source = fs.readFileSync(file, 'utf8');
 
-const guardianOld = `function importGuardianSummary(roster: CrewRoster, sourceFileName: string): ImportGuardianDecision {
-  const events = buildLegs(roster);
-  const flights = events.filter((event) => event.kind === 'flight').length;
-  const days = Array.isArray(roster.days) ? roster.days.length : 0;
-  const activities = events.filter((event) => event.kind !== 'flight' && event.canonical?.kind !== 'rest').length;
-  const rest = events.filter((event) => event.canonical?.kind === 'rest').length;`;
-const guardianNew = `function importGuardianSummary(roster: CrewRoster, sourceFileName: string): ImportGuardianDecision {
-  const events = buildLegs(roster);
-  const canonicalCounts = rosterCounters(roster);
-  const flights = canonicalCounts.flights;
-  const days = canonicalCounts.days;
-  const activities = canonicalCounts.activities;
-  const rest = canonicalCounts.rest;`;
-if (!source.includes('const canonicalCounts = rosterCounters(roster);')) {
-  if (!source.includes(guardianOld)) throw new Error('[v14387] bloco do preview canônico não localizado.');
+// Preview: preserva countScheduleCategories (Folga/Descanso/Pernoite) e troca
+// apenas a contagem bruta de dias pela mesma normalização usada na Escala.
+const guardianOld = `  const scheduleCounts = countScheduleCategories(events);
+  const flights = scheduleCounts.flights;
+  const days = Array.isArray(roster.days) ? roster.days.length : 0;`;
+const guardianNew = `  const previewRosterCounts = rosterCounters(roster);
+  const scheduleCounts = countScheduleCategories(events);
+  const flights = scheduleCounts.flights;
+  const days = previewRosterCounts.days;`;
+if (!source.includes('const previewRosterCounts = rosterCounters(roster);')) {
+  if (!source.includes(guardianOld)) throw new Error('[v14387] contadores do preview pós-v14.3.50 não localizados.');
   source = source.replace(guardianOld, guardianNew);
 }
 
+// FlyDeck: mantém a classificação única da v14.3.50; só a dimensão "dias" passa
+// a vir do mesmo roster normalizado que alimenta a Escala.
 const cockpitSignatureOld = `function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {`;
 const cockpitSignatureNew = `function Cockpit({ roster, events, compliance, setView, onUpload, openMenu }: { roster: CrewRoster; events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {`;
 if (!source.includes(cockpitSignatureNew)) {
@@ -30,16 +28,23 @@ if (!source.includes(cockpitSignatureNew)) {
   source = source.replace(cockpitSignatureOld, cockpitSignatureNew);
 }
 
-const cockpitCountersOld = `  const counters = loaded && events[0]?.day ? {
-    days: new Set(events.map((e) => e.day.date)).size,
-    flights: events.filter((e) => e.kind === 'flight').length,
-    activities: events.filter((e) => e.kind !== 'flight' && e.canonical?.kind !== 'rest').length,
-    rest: events.filter((e) => e.canonical?.kind === 'rest').length,
-  } : { days: 0, flights: 0, activities: 0, rest: 0 };`;
-const cockpitCountersNew = `  const counters = loaded ? rosterCounters(roster) : { days: 0, flights: 0, activities: 0, rest: 0, events: 0 };`;
-if (!source.includes(cockpitCountersNew)) {
-  if (!source.includes(cockpitCountersOld)) throw new Error('[v14387] contadores locais do FlyDeck não localizados.');
-  source = source.replace(cockpitCountersOld, cockpitCountersNew);
+const cockpitScheduleAnchor = `  const scheduleCounts = countScheduleCategories(events);
+  const counters = loaded && events[0]?.day ? {`;
+const cockpitScheduleNew = `  const scheduleCounts = countScheduleCategories(events);
+  const cockpitRosterCounts = rosterCounters(roster);
+  const counters = loaded && events[0]?.day ? {`;
+if (!source.includes('const cockpitRosterCounts = rosterCounters(roster);')) {
+  if (!source.includes(cockpitScheduleAnchor)) throw new Error('[v14387] scheduleCounts do FlyDeck não localizado.');
+  source = source.replace(cockpitScheduleAnchor, cockpitScheduleNew);
+}
+source = source.replace(
+  `    days: new Set(events.map((item) => item.day.date)).size,
+    flights: scheduleCounts.flights,`,
+  `    days: cockpitRosterCounts.days,
+    flights: scheduleCounts.flights,`,
+);
+if (source.includes('days: new Set(events.map((item) => item.day.date)).size')) {
+  throw new Error('[v14387] contador local de dias do FlyDeck ainda presente.');
 }
 
 const cockpitCallOld = `<Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>`;
@@ -49,35 +54,41 @@ if (!source.includes(cockpitCallNew)) {
   source = source.replace(cockpitCallOld, cockpitCallNew);
 }
 
+// Escala: KPIs passam a usar explicitamente o mesmo contador canônico do preview.
 const rosterFinance = `  const finance = financeSnapshot(normalizedRoster);`;
-const rosterFinanceNew = `  const finance = financeSnapshot(normalizedRoster);\n  const canonicalCounts = rosterCounters(roster);`;
-if (!source.includes(rosterFinanceNew)) {
+const rosterFinanceNew = `  const finance = financeSnapshot(normalizedRoster);\n  const rosterSurfaceCounts = rosterCounters(roster);`;
+if (!source.includes('const rosterSurfaceCounts = rosterCounters(roster);')) {
   if (!source.includes(rosterFinance)) throw new Error('[v14387] snapshot financeiro da Escala não localizado.');
   source = source.replace(rosterFinance, rosterFinanceNew);
 }
 
 const rosterKpisOld = `<div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div>`;
-const rosterKpisNew = `<div><CalendarDays/><span>Dias</span><strong>{canonicalCounts.days}</strong></div><div><Plane/><span>Voos</span><strong>{canonicalCounts.flights}</strong></div>`;
+const rosterKpisNew = `<div><CalendarDays/><span>Dias</span><strong>{rosterSurfaceCounts.days}</strong></div><div><Plane/><span>Voos</span><strong>{rosterSurfaceCounts.flights}</strong></div>`;
 if (!source.includes(rosterKpisNew)) {
   if (!source.includes(rosterKpisOld)) throw new Error('[v14387] KPIs da Escala não localizados.');
   source = source.replace(rosterKpisOld, rosterKpisNew);
 }
 
+// "Total mensal" em Carga/Limites é jornada regulatória (compliance.metrics.totalDutyHours),
+// conceito diferente de horas de programação exibidas em outras superfícies.
 source = source.replace(
   `HourLimitBar title="Total mensal" used={monthlyHours}`,
   `HourLimitBar title="Jornada regulatória mensal" used={monthlyHours}`,
 );
 
 for (const required of [
-  'const canonicalCounts = rosterCounters(roster);',
-  'const counters = loaded ? rosterCounters(roster)',
+  'const previewRosterCounts = rosterCounters(roster);',
+  'const days = previewRosterCounts.days;',
+  'const cockpitRosterCounts = rosterCounters(roster);',
+  'days: cockpitRosterCounts.days,',
   '<Cockpit roster={bundle.roster}',
-  '<strong>{canonicalCounts.days}</strong>',
-  '<strong>{canonicalCounts.flights}</strong>',
+  'const rosterSurfaceCounts = rosterCounters(roster);',
+  '<strong>{rosterSurfaceCounts.days}</strong>',
+  '<strong>{rosterSurfaceCounts.flights}</strong>',
   'title="Jornada regulatória mensal"',
 ]) {
   if (!source.includes(required)) throw new Error(`[v14387] contrato não aplicado: ${required}`);
 }
 
 fs.writeFileSync(file, source, 'utf8');
-console.log(`[v14387] CrewCheck ${VERSION}: preview, FlyDeck e Escala usam rosterCounters canônico; Carga/Limites rotula jornada mensal.`);
+console.log(`[v14387] CrewCheck ${VERSION}: dias canônicos unificados no preview/FlyDeck/Escala; classificação v14.3.50 preservada; jornada mensal rotulada.`);
