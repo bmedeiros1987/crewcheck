@@ -21,22 +21,29 @@ const canonical = read('client/src/lib/canonicalRoster.ts');
 const patch = read('scripts/v14387/apply.mjs');
 
 const guardian = between(home, 'function importGuardianSummary(', 'function confirmRosterImport(');
-expect(guardian.includes('const canonicalCounts = rosterCounters(roster);'), 'Preview não usa rosterCounters canônico.');
-expect(guardian.includes('const days = canonicalCounts.days;'), 'Preview ainda usa quantidade bruta de roster.days.');
-expect(guardian.includes('const flights = canonicalCounts.flights;'), 'Preview não usa contagem canônica de voos.');
-expect(guardian.includes('const activities = canonicalCounts.activities;'), 'Preview não usa contagem canônica de atividades.');
-expect(guardian.includes('const rest = canonicalCounts.rest;'), 'Preview não usa contagem canônica de folga/descanso.');
+expect(guardian.includes('const previewRosterCounts = rosterCounters(roster);'), 'Preview não usa rosterCounters para dias canônicos.');
+expect(guardian.includes('const scheduleCounts = countScheduleCategories(events);'), 'Preview deve preservar a classificação única de programação/folga/descanso/pernoite.');
+expect(guardian.includes('const days = previewRosterCounts.days;'), 'Preview ainda usa quantidade bruta de roster.days.');
+expect(guardian.includes('const flights = scheduleCounts.flights;'), 'Preview deve manter voos pela mesma classificação da v14.3.50.');
+expect(guardian.includes('Programações: ${scheduleCounts.programming}'), 'Preview perdeu a contagem separada de Programações.');
+expect(guardian.includes('Folgas: ${scheduleCounts.daysOff}'), 'Preview perdeu Folgas separadas.');
+expect(guardian.includes('Descansos: ${scheduleCounts.recoveryRest}'), 'Preview perdeu Descansos separados.');
+expect(guardian.includes('Pernoites: ${scheduleCounts.overnights}'), 'Preview perdeu Pernoites separados.');
 expect(!guardian.includes('Array.isArray(roster.days) ? roster.days.length'), 'Preview não pode voltar a contar dias brutos antes da normalização.');
 
 const cockpit = between(home, 'function Cockpit(', 'function rosterCode(');
 expect(cockpit.includes('roster: CrewRoster'), 'FlyDeck precisa receber o mesmo roster ativo usado pelas demais superfícies.');
-expect(cockpit.includes('const counters = loaded ? rosterCounters(roster)'), 'FlyDeck ainda deriva contadores por regra local.');
+expect(cockpit.includes('const scheduleCounts = countScheduleCategories(events);'), 'FlyDeck precisa preservar classificação única v14.3.50.');
+expect(cockpit.includes('const cockpitRosterCounts = rosterCounters(roster);'), 'FlyDeck não usa contador canônico de dias.');
+expect(cockpit.includes('days: cockpitRosterCounts.days,'), 'FlyDeck não usa dias normalizados.');
+expect(cockpit.includes('flights: scheduleCounts.flights,'), 'FlyDeck deve manter voos pela classificação única.');
+expect(cockpit.includes('programming: scheduleCounts.programming,'), 'FlyDeck deve manter Programações separadas.');
 expect(!cockpit.includes('days: new Set(events.map'), 'FlyDeck não pode manter contagem local de dias em paralelo.');
 
 const roster = between(home, 'function Roster({ roster, events, setView }', 'function comparisonEventSummary(');
-expect(roster.includes('const canonicalCounts = rosterCounters(roster);'), 'Escala não usa rosterCounters canônico.');
-expect(roster.includes('<strong>{canonicalCounts.days}</strong>'), 'KPI de dias da Escala não usa contador canônico.');
-expect(roster.includes('<strong>{canonicalCounts.flights}</strong>'), 'KPI de voos da Escala não usa contador canônico.');
+expect(roster.includes('const rosterSurfaceCounts = rosterCounters(roster);'), 'Escala não usa rosterCounters canônico nos KPIs.');
+expect(roster.includes('<strong>{rosterSurfaceCounts.days}</strong>'), 'KPI de dias da Escala não usa contador canônico.');
+expect(roster.includes('<strong>{rosterSurfaceCounts.flights}</strong>'), 'KPI de voos da Escala não usa contador canônico.');
 
 expect(
   home.includes("{view === 'cockpit' && <Cockpit roster={bundle.roster} events={events}"),
@@ -44,7 +51,7 @@ expect(
 );
 expect(
   home.includes('HourLimitBar title="Jornada regulatória mensal" used={monthlyHours}'),
-  'Carga/Limites precisa rotular 126,3h como jornada regulatória, não como programação genérica.',
+  'Carga/Limites precisa rotular totalDutyHours como jornada regulatória, não como programação genérica.',
 );
 
 expect(
@@ -63,4 +70,4 @@ for (const protectedPath of [
   expect(!patch.includes(`update('${protectedPath}'`) && !patch.includes(`const file = '${protectedPath}'`), `Patch não deve alterar motor protegido: ${protectedPath}.`);
 }
 
-console.log('[P0/#303] OK — preview, FlyDeck e Escala compartilham rosterCounters; Carga/Limites diferencia jornada regulatória.');
+console.log('[P0/#303] OK — dias normalizados unificados; Programações/Folga/Descanso/Pernoite v14.3.50 preservados; jornada mensal rotulada.');
