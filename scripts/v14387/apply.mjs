@@ -19,8 +19,10 @@ if (!source.includes('const previewRosterCounts = rosterCounters(roster);')) {
   source = source.replace(guardianOld, guardianNew);
 }
 
-// FlyDeck: mantém a classificação única da v14.3.50; só a dimensão "dias" passa
-// a vir do mesmo roster normalizado que alimenta a Escala.
+// FlyDeck: não reescreve a classificação da v14.3.50. Apenas injeta o roster
+// ativo e substitui a regra local de dias pela normalização canônica. A troca é
+// propositalmente independente da forma exata do bloco de Programações, pois
+// versões posteriores podem reorganizar as linhas sem mudar a semântica.
 const cockpitSignatureOld = `function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {`;
 const cockpitSignatureNew = `function Cockpit({ roster, events, compliance, setView, onUpload, openMenu }: { roster: CrewRoster; events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {`;
 if (!source.includes(cockpitSignatureNew)) {
@@ -28,23 +30,19 @@ if (!source.includes(cockpitSignatureNew)) {
   source = source.replace(cockpitSignatureOld, cockpitSignatureNew);
 }
 
-const cockpitScheduleAnchor = `  const scheduleCounts = countScheduleCategories(events);
-  const counters = loaded && events[0]?.day ? {`;
-const cockpitScheduleNew = `  const scheduleCounts = countScheduleCategories(events);
-  const cockpitRosterCounts = rosterCounters(roster);
-  const counters = loaded && events[0]?.day ? {`;
-if (!source.includes('const cockpitRosterCounts = rosterCounters(roster);')) {
-  if (!source.includes(cockpitScheduleAnchor)) throw new Error('[v14387] scheduleCounts do FlyDeck não localizado.');
-  source = source.replace(cockpitScheduleAnchor, cockpitScheduleNew);
-}
-source = source.replace(
-  `    days: new Set(events.map((item) => item.day.date)).size,
-    flights: scheduleCounts.flights,`,
-  `    days: cockpitRosterCounts.days,
-    flights: scheduleCounts.flights,`,
-);
-if (source.includes('days: new Set(events.map((item) => item.day.date)).size')) {
-  throw new Error('[v14387] contador local de dias do FlyDeck ainda presente.');
+if (!source.includes('days: rosterCounters(roster).days,')) {
+  const cockpitStart = source.indexOf(cockpitSignatureNew);
+  const cockpitEnd = source.indexOf('function rosterCode(', cockpitStart);
+  if (cockpitStart < 0 || cockpitEnd <= cockpitStart) throw new Error('[v14387] limites do FlyDeck não localizados.');
+  const before = source.slice(0, cockpitStart);
+  const cockpit = source.slice(cockpitStart, cockpitEnd);
+  const after = source.slice(cockpitEnd);
+  const patchedCockpit = cockpit.replace(
+    /days:\s*new Set\(events\.map\(\((?:e|item)\)\s*=>\s*(?:e|item)\.day\.date\)\)\.size,/,
+    'days: rosterCounters(roster).days,',
+  );
+  if (patchedCockpit === cockpit) throw new Error('[v14387] contador local de dias do FlyDeck não localizado.');
+  source = `${before}${patchedCockpit}${after}`;
 }
 
 const cockpitCallOld = `<Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>`;
@@ -79,8 +77,7 @@ source = source.replace(
 for (const required of [
   'const previewRosterCounts = rosterCounters(roster);',
   'const days = previewRosterCounts.days;',
-  'const cockpitRosterCounts = rosterCounters(roster);',
-  'days: cockpitRosterCounts.days,',
+  'days: rosterCounters(roster).days,',
   '<Cockpit roster={bundle.roster}',
   'const rosterSurfaceCounts = rosterCounters(roster);',
   '<strong>{rosterSurfaceCounts.days}</strong>',
