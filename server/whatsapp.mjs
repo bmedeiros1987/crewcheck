@@ -373,14 +373,18 @@ async function tryCompleteLink(from, code) {
   );
   const pending = pendingRows[0];
   if (!pending?.email) return { linked: false };
+
   const [existingRows] = await db.query(
-    `SELECT email FROM crewcheck_whatsapp_links
-     WHERE phone_hash=? AND revoked_at IS NULL LIMIT 1`,
+    `SELECT email,revoked_at FROM crewcheck_whatsapp_links
+     WHERE phone_hash=? LIMIT 1`,
     [phoneHash],
   );
-  if (existingRows[0]?.email && String(existingRows[0].email).toLowerCase() !== String(pending.email).toLowerCase()) {
-    return { linked: false, conflict: true };
+  const existing = existingRows[0];
+  if (existing?.email && String(existing.email).toLowerCase() !== String(pending.email).toLowerCase()) {
+    if (!existing.revoked_at) return { linked: false, conflict: true };
+    await db.query('DELETE FROM crewcheck_whatsapp_links WHERE phone_hash=? AND revoked_at IS NOT NULL', [phoneHash]);
   }
+
   await db.query(
     `INSERT INTO crewcheck_whatsapp_links
      (email,phone_hash,phone_cipher,phone_last4,consent_concierge,consent_alerts,linked_at,revoked_at)
@@ -542,6 +546,8 @@ async function handleLinkStart(req, res) {
   }
   const db = await ensureWhatsAppTables(identity.db);
   if (!db || !auditSecret()) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
+
+  await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=? OR expires_at <= UTC_TIMESTAMP(3)', [identity.email]);
   let code = '';
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const candidate = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
@@ -549,8 +555,7 @@ async function handleLinkStart(req, res) {
     try {
       await db.query(
         `INSERT INTO crewcheck_whatsapp_link_codes (email,code_hash,expires_at)
-         VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ${LINK_TTL_MINUTES} MINUTE))
-         ON DUPLICATE KEY UPDATE code_hash=VALUES(code_hash),expires_at=VALUES(expires_at),updated_at=CURRENT_TIMESTAMP(3)`,
+         VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ${LINK_TTL_MINUTES} MINUTE))`,
         [identity.email, hash],
       );
       code = candidate;
@@ -600,7 +605,7 @@ async function handleUnlink(req, res) {
   const db = await ensureWhatsAppTables(identity.db);
   if (!db) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
   await db.query(
-    `UPDATE crewcheck_whatsapp_links SET revoked_at=CURRENT_TIMESTAMP(3),updated_at=CURRENT_TIMESTAMP(3) WHERE email=?`,
+    `UPDATE crewcheck_whatsapp_links SET revoked_at=CURRENT_TIMESTAMP(3),consent_concierge=0,consent_alerts=0,updated_at=CURRENT_TIMESTAMP(3) WHERE email=?`,
     [identity.email],
   );
   await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [identity.email]);
