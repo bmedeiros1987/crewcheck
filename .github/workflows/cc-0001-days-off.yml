@@ -1,0 +1,31 @@
+name: CrewCheck CC-0001 folga x repouso
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/lib/rosterCodes.ts'
+      - 'scripts/regression-cc-0001-days-off-classification.mjs'
+      - 'scripts/regression-v14-3-50-p0-activity-classification.mjs'
+      - '.github/workflows/cc-0001-days-off.yml'
+  push:
+    branches:
+      - fix/cc-0001-folga-descanso
+
+jobs:
+  cc-0001-days-off:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical client
+        run: node scripts/v139/apply.mjs
+      - name: Dedicated CC-0001 regression
+        run: node scripts/regression-cc-0001-days-off-classification.mjs
+      - name: Historical activity classification guard
+        run: node scripts/regression-v14-3-50-p0-activity-classification.mjs
