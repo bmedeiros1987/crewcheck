@@ -1,0 +1,32 @@
+name: CrewCheck P0 import confirmation modal
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/v14387/import-confirm.css'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14387d/apply.mjs'
+      - 'scripts/regression-p0-import-confirm-modal.mjs'
+      - '.github/workflows/p0-import-confirm-modal.yml'
+  push:
+    branches:
+      - fix/p0-import-confirm-modal
+
+jobs:
+  import-confirm-modal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Dedicated P0 import confirmation regression
+        run: node scripts/regression-p0-import-confirm-modal.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
