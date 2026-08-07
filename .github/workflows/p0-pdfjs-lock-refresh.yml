@@ -1,0 +1,50 @@
+name: P0 pdfjs lock refresh
+
+on:
+  push:
+    branches:
+      - agent/p0-pdfjs-security
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Refresh pdfjs-dist safely
+        run: npm install --package-lock-only --ignore-scripts --save-exact pdfjs-dist@6.2.108
+      - name: Restrict generated dependency diff
+        shell: bash
+        run: |
+          changed="$(git diff --name-only)"
+          echo "$changed"
+          unexpected="$(printf '%s\n' "$changed" | grep -vE '^(package.json|package-lock.json)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected files changed:"
+            echo "$unexpected"
+            exit 1
+          fi
+          grep -q '"pdfjs-dist": "6.2.108"' package.json
+          grep -q '"version": "6.2.108"' package-lock.json
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Production security gate
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit generated lockfile and remove bootstrap workflow
+        shell: bash
+        run: |
+          rm .github/workflows/p0-pdfjs-lock-refresh.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json .github/workflows/p0-pdfjs-lock-refresh.yml
+          git commit -m "fix(security): update pdfjs-dist to 6.2.108"
+          git push origin HEAD:agent/p0-pdfjs-security
