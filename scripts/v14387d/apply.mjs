@@ -164,3 +164,4 @@ fs.writeFileSync(file, source, 'utf8');
 console.log(`[v14387d] CrewCheck ${VERSION}: importação usa um único modal responsivo; cancelar preserva a escala ativa.`);
 
 await import('../p0-fast-logout/apply.mjs');
+await import('../p0-maps-route-tristate/apply.mjs');
