@@ -5,33 +5,51 @@ if (!fs.existsSync(file)) throw new Error('[p0-maps-route-tristate] Home.tsx nã
 
 let source = fs.readFileSync(file, 'utf8');
 
-function replaceDeclaration(name, replacement) {
-  if (source.includes(replacement)) return;
+function replaceSingleLineDeclaration(name, replacement) {
+  if (source.includes(replacement)) return true;
   const pattern = new RegExp(`^\\s*const ${name} = .*;$`, 'm');
-  if (!pattern.test(source)) throw new Error(`[p0-maps-route-tristate] declaração ${name} não localizada.`);
+  if (!pattern.test(source)) return false;
   source = source.replace(pattern, replacement);
+  return true;
+}
+
+function replaceFlexibleConst(name, replacement) {
+  if (source.includes(replacement)) return true;
+  const pattern = new RegExp(`^\\s*const ${name}\\s*=\\s*[\\s\\S]*?;(?=\\n\\s*const |\\n\\s*if |\\n\\s*return |\\n\\s*<|\\n\\s*})`, 'm');
+  if (!pattern.test(source)) return false;
+  source = source.replace(pattern, replacement);
+  return true;
 }
 
 if (!source.includes('const routeDistanceMeters = Number(route?.distanceMeters);')) {
-  replaceDeclaration('distanceKm', '  const routeDistanceMeters = Number(route?.distanceMeters);\n  const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;\n  const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;');
+  const replaced = replaceSingleLineDeclaration('distanceKm', '  const routeDistanceMeters = Number(route?.distanceMeters);\n  const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;\n  const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;');
+  if (!replaced) throw new Error('[p0-maps-route-tristate] declaração distanceKm não localizada.');
 }
 
-if (!source.includes("const trafficText = !route")) {
-  const trafficPattern = /^\s*const trafficText = .*;$/m;
-  if (!trafficPattern.test(source)) throw new Error('[p0-maps-route-tristate] métrica de trânsito não localizada.');
-  source = source.replace(trafficPattern, `  const trafficText = !route
+const trafficReplacement = `  const trafficText = !route
     ? 'Calculando rota'
     : route.trafficAware
       ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado')
       : hasValidRouteDistance
         ? safe(route.durationText, 'Tempo disponível')
-        : 'Trânsito indisponível';`);
+        : 'Trânsito indisponível';`;
+
+if (!source.includes("const trafficText = !route")) {
+  const replaced = replaceFlexibleConst('trafficText', trafficReplacement);
+  if (!replaced) {
+    const anchor = '  const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;';
+    if (!source.includes(anchor)) throw new Error('[p0-maps-route-tristate] âncora de distância não localizada para inserir trânsito.');
+    source = source.replace(anchor, `${anchor}\n${trafficReplacement}`);
+  }
 }
 
 if (!source.includes('const uberReference = distanceKm !== null')) {
-  const uberPattern = /^\s*const uberReference = .*;$/m;
-  if (!uberPattern.test(source)) throw new Error('[p0-maps-route-tristate] referência Uber não localizada.');
-  source = source.replace(uberPattern, `  const uberReference = distanceKm !== null ? \`R$ \${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ \${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}\` : '';`);
+  const uberReplacement = `  const uberReference = distanceKm !== null ? \`R$ \${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ \${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}\` : '';`;
+  const replaced = replaceFlexibleConst('uberReference', uberReplacement) || replaceSingleLineDeclaration('uberReference', uberReplacement);
+  if (!replaced) {
+    const anchor = "        : 'Trânsito indisponível';";
+    if (source.includes(anchor)) source = source.replace(anchor, `${anchor}\n${uberReplacement}`);
+  }
 }
 
 const distanceKpiPattern = /<div><small>Distância<\/small><strong>\{[^\n]*?<\/strong><\/div>/;
