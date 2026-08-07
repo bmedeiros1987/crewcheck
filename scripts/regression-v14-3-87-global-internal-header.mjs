@@ -9,7 +9,10 @@ assert.match(home, /<Brand back=\{view !== 'cockpit'\}/, 'cabeçalho global deve
 assert.match(home, /cz-global-header-spacer/, 'conteúdo não pode ficar escondido sob o cabeçalho fixo');
 assert.match(css, /\.cz-global-header \{[\s\S]*position: fixed !important/, 'cabeçalho deve permanecer no topo durante a rolagem');
 assert.match(css, /\.cz-app > \.cz-brand-row \{/, 'cabeçalhos legados diretos devem ser ocultados sem afetar o contêiner global');
+assert.match(css, /\.cz-app:has\(\.cz-menu-overlay\) > \.cz-global-header \{[\s\S]*visibility: hidden !important/, 'cabeçalho deve desaparecer enquanto o drawer estiver aberto');
+assert.match(css, /@media \(max-width: 720px\)[\s\S]*\.cz-global-header > \.cz-brand-row \{[\s\S]*padding: 7px 10px !important/, 'cabeçalho mobile deve permanecer compacto');
+assert.match(css, /\.cz-global-header-spacer \{[\s\S]*height: calc\(82px \+ env\(safe-area-inset-top, 0px\)\)/, 'espaçador mobile deve acompanhar a redução do cabeçalho');
 assert.match(css, /env\(safe-area-inset-top/, 'iPhone e PWA devem respeitar a área segura');
 assert.match(css, /prefers-reduced-motion: reduce/, 'movimento reduzido deve ser respeitado');
 
-console.log('[v14.3.87] OK — cabeçalho CrewCheck único e persistente em todos os sistemas internos.');
+console.log('[v14.3.87] OK — cabeçalho CrewCheck único, compacto no mobile e oculto durante o menu.');
