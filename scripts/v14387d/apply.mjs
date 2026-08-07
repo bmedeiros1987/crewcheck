@@ -162,3 +162,5 @@ if (/overrideImport\s*=\s*window\.confirm/.test(source)) throw new Error('[v1438
 
 fs.writeFileSync(file, source, 'utf8');
 console.log(`[v14387d] CrewCheck ${VERSION}: importação usa um único modal responsivo; cancelar preserva a escala ativa.`);
+
+await import('../p0-fast-logout/apply.mjs');
