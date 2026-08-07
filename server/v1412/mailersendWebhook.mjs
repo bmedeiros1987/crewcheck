@@ -1,8 +1,51 @@
 import crypto from 'node:crypto';
-import { cleanText, dbPool, env, readBody, sendJson } from '../v139/common.mjs';
+import { cleanText, dbPool, env, sendJson } from '../v139/common.mjs';
 
 function safeString(value, limit = 500) {
   return cleanText(String(value || ''), limit);
+}
+
+function readRawJsonBody(req, limit = 500_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
+    req.on('data', (chunk) => {
+      if (settled) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > limit) {
+        fail(Object.assign(new Error('Conteúdo maior que o limite permitido.'), { status: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(buffer);
+    });
+
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      const rawBody = Buffer.concat(chunks);
+      const text = rawBody.toString('utf8');
+      if (!text.trim()) {
+        resolve({ rawBody, body: {} });
+        return;
+      }
+      try {
+        resolve({ rawBody, body: JSON.parse(text) });
+      } catch {
+        reject(Object.assign(new Error('JSON inválido.'), { status: 400 }));
+      }
+    });
+
+    req.on('error', fail);
+  });
 }
 
 function signatureValid(req, rawBody) {
@@ -74,7 +117,7 @@ async function ensureTable(db) {
 export async function handleMailerSendWebhook(req, res, url) {
   if (url.pathname !== '/api/webhooks/mailersend') return false;
   if (req.method === 'GET' || req.method === 'HEAD') {
-    sendJson(res, 200, { ok: true, provider: 'mailersend', version: '2.1', message: 'Webhook MailerSend pronto.' });
+    sendJson(res, 200, { ok: true, provider: 'mailersend', version: '2.2', message: 'Webhook MailerSend pronto.' });
     return true;
   }
   if (req.method !== 'POST') {
@@ -83,14 +126,14 @@ export async function handleMailerSendWebhook(req, res, url) {
   }
 
   let body;
+  let rawBody;
   try {
-    body = await readBody(req, 500_000);
-  } catch {
-    sendJson(res, 400, { ok: false, message: 'Payload inválido.' });
+    ({ body, rawBody } = await readRawJsonBody(req, 500_000));
+  } catch (error) {
+    sendJson(res, Number(error?.status || 400), { ok: false, message: 'Payload inválido.' });
     return true;
   }
 
-  const rawBody = JSON.stringify(body || {});
   if (!signatureValid(req, rawBody)) {
     sendJson(res, 401, { ok: false, message: 'Assinatura do webhook inválida.' });
     return true;
