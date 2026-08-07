@@ -24,7 +24,10 @@ const applySource = read('scripts/v14347/apply.mjs');
 const v14346Index = chain.indexOf("await import('../v14346/apply.mjs');");
 const v14347Index = chain.indexOf("await import('../v14347/apply.mjs');");
 const v14348Index = chain.indexOf("await import('../v14348/apply.mjs');");
-const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+)\/apply\.mjs'\);/g));
+// Version stages may carry suffixes (for example v14387a/b/c/d). The gate must
+// follow the actual final functional apply stage rather than stopping at the
+// last digits-only directory.
+const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+[a-z]*)\/apply\.mjs'\);/gi));
 const latestPreparation = preparationImports.at(-1);
 const manualFinalizer = "await import('../ci/sync-canonical-manual.mjs');";
 const manualFinalizerIndex = chain.indexOf(manualFinalizer);
