@@ -5,30 +5,55 @@ if (!fs.existsSync(file)) throw new Error('[p0-maps-route-tristate] Home.tsx nã
 
 let source = fs.readFileSync(file, 'utf8');
 
-const oldMetrics = `  const trafficText = route?.trafficAware ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado') : 'Ao abrir no Google Maps';\n  const updatedLabel = route?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(route.updatedAt)) : 'aguardando';\n  const distanceKm = Number(route?.distanceMeters || 0) / 1000;\n  const uberReference = distanceKm > 0 ? \`R$ \${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ \${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}\` : '';`;
-const newMetrics = `  const routeDistanceMeters = Number(route?.distanceMeters);\n  const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;\n  const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;\n  const trafficText = !route\n    ? 'Calculando rota'\n    : route.trafficAware\n      ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado')\n      : hasValidRouteDistance\n        ? safe(route.durationText, 'Tempo disponível')\n        : 'Trânsito indisponível';\n  const updatedLabel = route?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(route.updatedAt)) : 'aguardando';\n  const uberReference = distanceKm !== null ? \`R$ \${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ \${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}\` : '';`;
-
 if (!source.includes('const routeDistanceMeters = Number(route?.distanceMeters);')) {
-  if (!source.includes(oldMetrics)) throw new Error('[p0-maps-route-tristate] bloco de métricas de rota não localizado.');
-  source = source.replace(oldMetrics, newMetrics);
+  const oldDistanceMetric = '  const distanceKm = Number(route?.distanceMeters || 0) / 1000;';
+  if (!source.includes(oldDistanceMetric)) throw new Error('[p0-maps-route-tristate] métrica de distância não localizada.');
+  source = source.replace(oldDistanceMetric, [
+    '  const routeDistanceMeters = Number(route?.distanceMeters);',
+    '  const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;',
+    '  const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;',
+  ].join('\n'));
 }
 
-const oldDistance = `<div><small>Distância</small><strong>{route?.distanceText || 'Abrir Maps'}</strong></div>`;
-const newDistance = `<div><small>Distância</small><strong>{hasValidRouteDistance ? safe(route?.distanceText, \`${'${distanceKm!.toFixed(1).replace(\'.\', \',\')}'} km\`) : route ? 'Rota indisponível' : 'Calculando rota'}</strong></div>`;
+if (!source.includes("const trafficText = !route")) {
+  const trafficPattern = /  const trafficText = [^\n]+;/;
+  if (!trafficPattern.test(source)) throw new Error('[p0-maps-route-tristate] métrica de trânsito não localizada.');
+  source = source.replace(trafficPattern, [
+    "  const trafficText = !route",
+    "    ? 'Calculando rota'",
+    '    : route.trafficAware',
+    "      ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado')",
+    '      : hasValidRouteDistance',
+    "        ? safe(route.durationText, 'Tempo disponível')",
+    "        : 'Trânsito indisponível';",
+  ].join('\n'));
+}
+
+if (source.includes('const uberReference = distanceKm > 0 ?')) {
+  source = source.replace('const uberReference = distanceKm > 0 ?', 'const uberReference = distanceKm !== null ?');
+}
+
 if (!source.includes("hasValidRouteDistance ? safe(route?.distanceText")) {
-  if (!source.includes(oldDistance)) throw new Error('[p0-maps-route-tristate] KPI de distância não localizado.');
-  source = source.replace(oldDistance, newDistance);
+  const distanceKpiPattern = /<div><small>Distância<\/small><strong>\{route\?\.distanceText \|\| '[^']*'\}<\/strong><\/div>/;
+  if (!distanceKpiPattern.test(source)) throw new Error('[p0-maps-route-tristate] KPI de distância não localizado.');
+  source = source.replace(
+    distanceKpiPattern,
+    `<div><small>Distância</small><strong>{hasValidRouteDistance ? safe(route?.distanceText, \`${'${distanceKm!.toFixed(1).replace(\'.\', \',\')}'} km\`) : route ? 'Rota indisponível' : 'Calculando rota'}</strong></div>`,
+  );
 }
 
-const oldDelay = `<div><small>Atraso do trânsito</small><strong>{route?.trafficDelayText || 'Calculando'}</strong></div>`;
-const newDelay = `<div><small>Atraso do trânsito</small><strong>{route?.trafficDelayText || (route ? 'Sem dado' : 'Calculando')}</strong></div>`;
-if (source.includes(oldDelay)) source = source.replace(oldDelay, newDelay);
+if (!source.includes("route?.trafficDelayText || (route ? 'Sem dado' : 'Calculando')")) {
+  const delayPattern = /route\?\.trafficDelayText \|\| 'Calculando'/;
+  if (delayPattern.test(source)) source = source.replace(delayPattern, "route?.trafficDelayText || (route ? 'Sem dado' : 'Calculando')");
+}
 
 for (const required of [
   'const routeDistanceMeters = Number(route?.distanceMeters);',
   'const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;',
+  'const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;',
+  "const trafficText = !route",
   "? 'Rota indisponível' : 'Calculando rota'",
-  "? 'Sem dado' : 'Calculando'",
+  "route?.trafficDelayText || (route ? 'Sem dado' : 'Calculando')",
 ]) {
   if (!source.includes(required)) throw new Error(`[p0-maps-route-tristate] contrato ausente: ${required}`);
 }
