@@ -132,7 +132,7 @@
     "lucide-react": "^0.453.0",
     "mysql2": "^3.11.5",
     "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "6.1.200",
+    "pdfjs-dist": "6.2.108",
     "qrcode": "^1.5.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
