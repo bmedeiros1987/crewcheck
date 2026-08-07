@@ -37,7 +37,7 @@ if (!source.includes('const uberReference = distanceKm !== null')) {
 const distanceKpiPattern = /<div><small>Distância<\/small><strong>\{[^\n]*?<\/strong><\/div>/;
 if (!source.includes("hasValidRouteDistance ? safe(route?.distanceText")) {
   if (!distanceKpiPattern.test(source)) throw new Error('[p0-maps-route-tristate] KPI de distância não localizado.');
-  source = source.replace(distanceKpiPattern, `<div><small>Distância</small><strong>{hasValidRouteDistance ? safe(route?.distanceText, \`${distanceKm!.toFixed(1).replace('.', ',')} km\`) : route ? 'Rota indisponível' : 'Calculando rota'}</strong></div>`);
+  source = source.replace(distanceKpiPattern, `<div><small>Distância</small><strong>{hasValidRouteDistance ? safe(route?.distanceText, (distanceKm !== null ? distanceKm.toFixed(1).replace('.', ',') : '—') + ' km') : route ? 'Rota indisponível' : 'Calculando rota'}</strong></div>`);
 }
 
 const delayKpiPattern = /<div><small>Atraso do trânsito<\/small><strong>\{[^\n]*?<\/strong><\/div>/;
