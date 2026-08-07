@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
-import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Plane, Send, ShieldCheck, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Plane, ShieldCheck, Sparkles } from 'lucide-react';
 import { confirmPasswordReset, login, register, requestPasswordReset } from '@/lib/authClient';
 import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';
 
@@ -21,7 +21,7 @@ const CREW_FUNCTIONS: Exclude<CrewFunction, ''>[] = [
 const MODE_FEEDBACK: Record<Mode, string> = {
   login: 'Tela de entrada aberta.',
   register: 'Cadastro aberto. Preencha seus dados para criar a conta.',
-  recover: 'Recuperação de senha aberta. Escolha como receber o código.',
+  recover: 'Recuperação de senha aberta. O código será enviado para o e-mail cadastrado.',
   reset: 'Código enviado. Digite o código e defina a nova senha.',
 };
 
@@ -61,7 +61,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [code, setCode] = useState('');
-  const [delivery, setDelivery] = useState<Delivery>('both');
+  const [delivery] = useState<Delivery>('email');
   const [name, setName] = useState('');
   const [crewFunction, setCrewFunction] = useState<CrewFunction>('');
   const [busy, setBusy] = useState(false);
@@ -118,7 +118,7 @@ export default function AuthPage() {
         setLocation('/');
       } else if (mode === 'recover') {
         await requestPasswordReset(email, delivery);
-        toast.success('Código solicitado. Confira os canais escolhidos.');
+        toast.success('Código solicitado. Confira seu e-mail.');
         changeMode('reset');
       } else {
         if (code.replace(/\D/g, '').length !== 6) throw new Error('Informe o código de 6 dígitos.');
@@ -152,7 +152,7 @@ export default function AuthPage() {
       <div className="cz-tabs" role="tablist" aria-label="Acesso ao CrewCheck"><button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => changeMode('login')}>Entrar</button><button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => changeMode('register')}>Criar cadastro</button></div>
       <small style={{ color:'#5b21b6', opacity:1 }}>Acesso protegido</small>
       <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
-      <p>{mode === 'recover' || mode === 'reset' ? 'Receba um código temporário por e-mail, Telegram ou ligação via Telegram.' : 'Entre para carregar sua escala e continuar de onde parou.'}</p>
+      <p>{mode === 'recover' || mode === 'reset' ? 'Receba um código temporário no e-mail cadastrado.' : 'Entre para carregar sua escala e continuar de onde parou.'}</p>
       <p className="cz-auth-mode-feedback" role="status" aria-live="polite">{MODE_FEEDBACK[mode]}</p>
       {mode === 'register' && <label><span/> Nome completo<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoComplete="name"/></label>}
       {mode === 'register' && <label><BriefcaseBusiness/> Função *
@@ -168,12 +168,6 @@ export default function AuthPage() {
         <small>Usamos a função para aplicar automaticamente os valores e regras correspondentes ao seu perfil. Você poderá alterar isso depois no Perfil.</small>
       </label>}
       <label><Mail/> E-mail cadastrado *<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.email@exemplo.com" autoComplete="email"/></label>
-      {mode === 'recover' && <label><Send/> Canal
-        <select value={delivery} onChange={(event) => setDelivery(event.target.value as Delivery)}>
-          <option value="both">E-mail + Telegram</option><option value="email">Somente e-mail</option><option value="telegram">Somente Telegram</option><option value="telegram-call">Telegram + ligação com o código</option>
-        </select>
-        <small>A ligação usa a mesma franquia mensal do Despertador, inclusive no plano gratuito.</small>
-      </label>}
       {mode === 'reset' && <label><ShieldCheck/> Código temporário *<input inputMode="numeric" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" autoComplete="one-time-code"/></label>}
       {(mode === 'login' || mode === 'register' || mode === 'reset') && <label><Lock/> {mode === 'reset' ? 'Nova senha' : 'Senha'} *<div className="cz-password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="mínimo 8 caracteres" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/><button type="button" className="cz-password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'} aria-pressed={showPassword}>{showPassword ? <EyeOff/> : <Eye/>}</button></div></label>}
       {mode === 'register' && <label className="cz-auth-terms"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)}/><span>Li, compreendi e aceito os <a href="/terms" target="_blank" rel="noreferrer">Termos de Uso</a> e a <a href="/privacy" target="_blank" rel="noreferrer">Política de Privacidade</a>{terms ? `, versão ${terms.version}` : ''}. As integrações opcionais, como Google Calendar e localização, serão solicitadas separadamente quando eu decidir utilizá-las.</span></label>}
