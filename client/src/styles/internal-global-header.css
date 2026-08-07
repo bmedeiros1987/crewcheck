@@ -17,11 +17,20 @@
   -webkit-backdrop-filter: blur(20px) saturate(130%);
   backdrop-filter: blur(20px) saturate(130%);
   will-change: transform;
+  transition: opacity .16s ease, visibility .16s ease;
 }
 
 .cz-global-header > .cz-brand-row {
   width: 100% !important;
   margin: 0 !important;
+}
+
+/* O drawer é a superfície principal enquanto aberto: o cabeçalho não compete
+   visualmente nem intercepta toque atrás do menu. */
+.cz-app:has(.cz-menu-overlay) > .cz-global-header {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .cz-global-header-spacer {
@@ -32,12 +41,46 @@
 
 @media (max-width: 720px) {
   .cz-app > .cz-global-header {
-    top: max(8px, env(safe-area-inset-top, 0px)) !important;
-    width: calc(100vw - 24px) !important;
+    top: max(6px, env(safe-area-inset-top, 0px)) !important;
+    width: calc(100vw - 16px) !important;
+    border-radius: 14px !important;
+  }
+
+  .cz-global-header > .cz-brand-row {
+    min-height: 0 !important;
+    padding: 7px 10px !important;
+    gap: 8px !important;
+  }
+
+  .cz-global-header .cz-menu-btn {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+  }
+
+  .cz-global-header .cz-menu-btn svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup {
+    gap: 7px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup strong {
+    font-size: .82rem !important;
+    line-height: 1.05 !important;
+  }
+
+  .cz-global-header .cz-brand-lockup small {
+    font-size: .54rem !important;
+    line-height: 1.05 !important;
+    letter-spacing: .08em !important;
   }
 
   .cz-global-header-spacer {
-    height: calc(104px + env(safe-area-inset-top, 0px));
+    height: calc(82px + env(safe-area-inset-top, 0px));
   }
 }
 
