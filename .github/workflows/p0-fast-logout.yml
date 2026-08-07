@@ -1,0 +1,26 @@
+name: CrewCheck P0 fast logout
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/authClient.ts'
+      - 'client/src/index.css'
+      - 'scripts/p0-fast-logout/**'
+      - 'scripts/v14387d/apply.mjs'
+      - 'scripts/regression-p0-fast-logout.mjs'
+      - '.github/workflows/p0-fast-logout.yml'
+
+jobs:
+  fast-logout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-p0-fast-logout.mjs
+      - run: npx tsc --noEmit
