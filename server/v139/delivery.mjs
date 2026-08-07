@@ -75,7 +75,8 @@ function smtpResponseReader(socket) {
     while (true) {
       const finalIndex = queue.findIndex((line) => /^\d{3} /.test(line));
       if (finalIndex >= 0) { const lines = queue.splice(0, finalIndex + 1); const response = lines.join('\n'); const code = Number(lines.at(-1)?.slice(0, 3)); if (!expected.includes(code)) throw new Error(response || `SMTP ${code}`); return response; }
-      const remaining = deadline - Date.now(); if (remaining <= 0) throw new Error('SMTP timeout');
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error('SMTP timeout');
       await new Promise((resolve, reject) => { const timer = setTimeout(() => { if (wake === wrapped) wake = null; reject(new Error('SMTP timeout')); }, remaining); const wrapped = () => { clearTimeout(timer); resolve(); }; wake = wrapped; });
     }
   };
@@ -98,20 +99,29 @@ async function sendSmtp(message) {
   } catch (error) { try { socket?.destroy(); } catch {} return { ok: false, configured: true, provider: 'smtp', raw: cleanText(error?.message || 'Falha SMTP.', 500) }; }
 }
 
+function logEmailAttempt(result) {
+  console.info('[crewcheck:email]', `provider=${result?.provider || 'unknown'}`, `configured=${Boolean(result?.configured)}`, `ok=${Boolean(result?.ok)}`, `status=${Number(result?.status || 0) || 'n/a'}`);
+}
+
 export async function sendSystemEmail(message) {
   const normalized = normalizeMessage(message);
   const attempts = [];
-  for (const provider of [sendEmailSenderApi, sendMailerSend]) {
+  // MailerSend is the canonical primary provider because it is the production path already proven to deliver CrewCheck mail reliably.
+  // EmailSender API is retained only as a secondary provider, followed by SMTP as the final controlled fallback.
+  for (const provider of [sendMailerSend, sendEmailSenderApi]) {
     const result = await provider(normalized);
     attempts.push(result);
+    logEmailAttempt(result);
     if (result.ok) return { ...result, attempts };
   }
   if (flag('CREWCHECK_EMAIL_FALLBACK_ENABLED', true)) {
     const result = await sendSmtp(normalized);
     attempts.push(result);
+    logEmailAttempt(result);
     if (result.ok) return { ...result, attempts };
   }
   const failed = [...attempts].reverse().find((item) => item.configured && (item.raw || item.status)) || [...attempts].reverse().find((item) => item.raw) || attempts.at(-1) || { provider: 'none', configured: false };
+  console.warn('[crewcheck:email]', 'delivery_failed=true', `attempts=${attempts.map((item) => item.provider || 'unknown').join(',') || 'none'}`);
   return { ...failed, ok: false, attempts };
 }
 
