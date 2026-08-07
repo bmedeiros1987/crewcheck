@@ -24,7 +24,9 @@ const applySource = read('scripts/v14347/apply.mjs');
 const v14346Index = chain.indexOf("await import('../v14346/apply.mjs');");
 const v14347Index = chain.indexOf("await import('../v14347/apply.mjs');");
 const v14348Index = chain.indexOf("await import('../v14348/apply.mjs');");
-const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+)\/apply\.mjs'\);/g));
+// Etapas de preparação podem usar sufixos (ex.: v14387a/b/c/d). O gate deve
+// acompanhar a última etapa funcional real, e não parar no último diretório só numérico.
+const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+[a-z]*)\/apply\.mjs'\);/gi));
 const latestPreparation = preparationImports.at(-1);
 const manualFinalizer = "await import('../ci/sync-canonical-manual.mjs');";
 const manualFinalizerIndex = chain.indexOf(manualFinalizer);
