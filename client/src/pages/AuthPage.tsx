@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
-import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Plane, ShieldCheck, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Monitor, Moon, Plane, ShieldCheck, Sparkles, Sun } from 'lucide-react';
 import { confirmPasswordReset, login, register, requestPasswordReset } from '@/lib/authClient';
 import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';
 
