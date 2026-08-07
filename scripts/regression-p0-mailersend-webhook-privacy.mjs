@@ -19,5 +19,9 @@ assert(!/const\s+subject\s*=\s*safeString\(data\?\.subject/.test(source), 'assun
 assert(/\[type, eventId, messageId, emailId, recipient\.stored, null, JSON\.stringify\(snapshot\)/.test(source), 'subject fica nulo e recipient persistido é pseudonimizado');
 assert(source.includes('[crewcheck:email:delivery]'), 'diagnóstico sanitizado de entrega está presente');
 assert(!source.includes("console.info('[crewcheck:email:delivery]', JSON.stringify(body"), 'log não despeja payload bruto');
+assert(source.includes('function readRawJsonBody'), 'webhook preserva o corpo bruto recebido para validar assinatura');
+assert(source.includes('({ body, rawBody } = await readRawJsonBody(req'), 'handler usa parser que retorna JSON e raw body juntos');
+assert(source.includes("createHmac('sha256', secret).update(rawBody)"), 'HMAC é calculado sobre o raw body exato');
+assert(!source.includes('const rawBody = JSON.stringify(body || {})'), 'assinatura não é mais validada contra JSON reconstruído');
 
-console.log('OK: P0 #333 MailerSend webhook privacy regression');
+console.log('OK: P0 #333 MailerSend webhook privacy + raw signature regression');
