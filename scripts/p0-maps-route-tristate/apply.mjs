@@ -13,11 +13,24 @@ function replaceSingleLineDeclaration(name, replacement) {
   return true;
 }
 
-function replaceFlexibleConst(name, replacement) {
+function replaceDeclarationBefore(name, nextNames, replacement) {
   if (source.includes(replacement)) return true;
-  const pattern = new RegExp(`^\\s*const ${name}\\s*=\\s*[\\s\\S]*?;(?=\\n\\s*const |\\n\\s*if |\\n\\s*return |\\n\\s*<|\\n\\s*})`, 'm');
-  if (!pattern.test(source)) return false;
-  source = source.replace(pattern, replacement);
+  const startPattern = new RegExp(`(^|\\n)([ \\t]*)const ${name}\\s*=`, 'm');
+  const startMatch = startPattern.exec(source);
+  if (!startMatch) return false;
+  const start = startMatch.index + (startMatch[1] ? startMatch[1].length : 0);
+  const searchFrom = start + startMatch[0].length - (startMatch[1] ? startMatch[1].length : 0);
+  let end = -1;
+  for (const nextName of nextNames) {
+    const nextPattern = new RegExp(`\\n[ \\t]*const ${nextName}\\s*=`, 'm');
+    const tail = source.slice(searchFrom);
+    const nextMatch = nextPattern.exec(tail);
+    if (!nextMatch) continue;
+    const candidate = searchFrom + nextMatch.index;
+    if (end < 0 || candidate < end) end = candidate;
+  }
+  if (end < 0) return false;
+  source = source.slice(0, start) + replacement + source.slice(end);
   return true;
 }
 
@@ -35,7 +48,7 @@ const trafficReplacement = `  const trafficText = !route
         : 'Trânsito indisponível';`;
 
 if (!source.includes("const trafficText = !route")) {
-  const replaced = replaceFlexibleConst('trafficText', trafficReplacement);
+  const replaced = replaceDeclarationBefore('trafficText', ['updatedLabel', 'uberReference'], trafficReplacement);
   if (!replaced) {
     const anchor = '  const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;';
     if (!source.includes(anchor)) throw new Error('[p0-maps-route-tristate] âncora de distância não localizada para inserir trânsito.');
@@ -45,10 +58,11 @@ if (!source.includes("const trafficText = !route")) {
 
 if (!source.includes('const uberReference = distanceKm !== null')) {
   const uberReplacement = `  const uberReference = distanceKm !== null ? \`R$ \${Math.max(8, distanceKm * 2.1 + 6).toFixed(0)} a R$ \${Math.max(12, distanceKm * 3.1 + 9).toFixed(0)}\` : '';`;
-  const replaced = replaceFlexibleConst('uberReference', uberReplacement) || replaceSingleLineDeclaration('uberReference', uberReplacement);
+  const replaced = replaceSingleLineDeclaration('uberReference', uberReplacement);
   if (!replaced) {
     const anchor = "        : 'Trânsito indisponível';";
-    if (source.includes(anchor)) source = source.replace(anchor, `${anchor}\n${uberReplacement}`);
+    if (!source.includes(anchor)) throw new Error('[p0-maps-route-tristate] referência Uber e âncora de trânsito não localizadas.');
+    source = source.replace(anchor, `${anchor}\n${uberReplacement}`);
   }
 }
 
