@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { diagnoseCirium } from './cirium-diagnostic.mjs';
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -1045,6 +1046,7 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/terms\/accept$/, ['POST']],
   [/^\/api\/platform\/admin\/terms$/, ['GET', 'POST']],
   [/^\/api\/platform\/admin\/unlimited$/, ['POST']],
+  [/^\/api\/platform\/admin\/diagnostics\/cirium$/, ['GET']],
   [/^\/api\/platform\/health\/amil$/, ['GET']],
   [/^\/api\/platform\/health\/amil\/search$/, ['GET']],
 ];
@@ -1199,6 +1201,13 @@ async function handleAdminUnlimited(req, res) {
   const profile = await ensureProfile(context.db, targetIdentity, { apply: true, displayName: targetIdentity.name });
   await context.db.query("UPDATE crewcheck_platform_profiles SET plan='premium_unlimited',updated_at=NOW() WHERE email=$1", [email]);
   return sendJson(res, 200, { ok: true, profile: { ...publicProfile(profile), plan: 'premium_unlimited' }, message: 'Premium Unlimited concedido. Obrigado por fazer parte do CrewCheck.' });
+}
+
+async function handleAdminCiriumDiagnostic(req, res) {
+  const identity = mainIdentity(req);
+  if (!identity.authenticated) return sendJson(res, 401, { ok: false, message: 'Autentica\u00e7\u00e3o necess\u00e1ria.' });
+  if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necess\u00e1rio.' });
+  return sendJson(res, 200, await diagnoseCirium());
 }
 
 function amilConfiguration() {
@@ -2530,6 +2539,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }
     if (url.pathname === '/api/platform/admin/terms') { await handleAdminTerms(req, res); return true; }
     if (url.pathname === '/api/platform/admin/unlimited') { await handleAdminUnlimited(req, res); return true; }
+    if (url.pathname === '/api/platform/admin/diagnostics/cirium') { await handleAdminCiriumDiagnostic(req, res); return true; }
     if (url.pathname === '/api/platform/health/amil') { await handleAmilHealth(req, res); return true; }
     if (url.pathname === '/api/platform/health/amil/search') { await handleAmilSearch(req, res, url); return true; }
     if (url.pathname === '/api/platform/database/health') { await handleDatabaseHealth(req, res); return true; }
