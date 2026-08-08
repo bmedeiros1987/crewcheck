@@ -31,3 +31,5 @@ for (const required of [
 
 fs.writeFileSync(file, source, 'utf8');
 console.log(`[v14391] CrewCheck ${VERSION}: latência de rede não influencia mais a qualidade semântica do Radar.`);
+
+await import('../v14392/apply.mjs');
