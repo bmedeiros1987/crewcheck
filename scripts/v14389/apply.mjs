@@ -62,3 +62,5 @@ if (/\.origin\b|\.destination\b|hotelName|hotelLocation/i.test(helperScope)) {
 
 fs.writeFileSync(file, source, 'utf8');
 console.log(`[v14389] CrewCheck ${VERSION}: hotel/catalogo e local explícito de apresentação permanecem semanticamente separados.`);
+
+await import('../v14390/apply.mjs');
