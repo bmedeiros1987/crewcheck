@@ -1,0 +1,27 @@
+name: P0 Google server key separation
+
+on:
+  pull_request:
+    paths:
+      - 'server.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14388/**'
+      - 'scripts/regression-p0-google-server-key-separation.mjs'
+      - '.github/workflows/p0-google-server-key-separation.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Apply canonical preparation
+        run: node scripts/v139/apply.mjs
+      - name: Regression — Google key separation
+        run: node scripts/regression-p0-google-server-key-separation.mjs
+      - name: Server syntax
+        run: node --check server.mjs
