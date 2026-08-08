@@ -1,0 +1,35 @@
+name: CrewCheck P0 Maps route tri-state
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v14387d/**'
+      - 'scripts/p0-maps-route-tristate/**'
+      - 'scripts/regression-p0-maps-route-tristate.mjs'
+      - '.github/workflows/p0-maps-route-tristate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  route-tristate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate unavailable/loading/valid route states
+        run: node scripts/regression-p0-maps-route-tristate.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Vite production build
+        run: npx vite build
