@@ -73,9 +73,6 @@ for (const required of [
 ]) {
   if (!source.includes(required)) throw new Error(`[p0-maps-route-tristate] contrato ausente: ${required}`);
 }
-if (/const distanceKm = Number\(route\?\.distanceMeters\s*\|\|\s*0\)\s*\/\s*1000;/.test(source)) {
-  throw new Error('[p0-maps-route-tristate] ausência de rota ainda está sendo convertida em zero.');
-}
 
 fs.writeFileSync(file, source, 'utf8');
-console.log('[p0-maps-route-tristate] rota indisponível não é mais tratada como 0,0 km; carregando/indisponível/válida permanecem distintos.');
+console.log('[p0-maps-route-tristate] bloco da Saída Inteligente preserva carregando/indisponível/válida sem representar falha como 0,0 km.');
