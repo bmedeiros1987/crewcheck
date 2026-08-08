@@ -1,0 +1,64 @@
+name: P0 dependency remediation probe
+
+on:
+  push:
+    branches:
+      - fix/p0-maps-route-tristate
+    paths:
+      - '.github/workflows/p0-dependency-remediation-probe.yml'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remediate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/p0-maps-route-tristate
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Install current lock
+        run: npm ci
+
+      - name: Refresh vulnerable transitive lock entries only
+        run: npm update postcss nanoid --package-lock-only --ignore-scripts
+
+      - name: Show resolved security-sensitive versions
+        run: |
+          node -e "const l=require('./package-lock.json'); for (const p of ['node_modules/postcss','node_modules/nanoid','node_modules/dompurify']) console.log(p, l.packages?.[p]?.version || 'missing')"
+
+      - name: Reinstall from refreshed lock
+        run: npm ci
+
+      - name: High severity audit gate
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: TypeScript gate
+        run: npx tsc --noEmit
+
+      - name: Vite production build
+        run: npx vite build
+
+      - name: Commit lockfile only when all gates passed
+        shell: bash
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo 'No lockfile change required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'chore(ci): refresh vulnerable transitive lock entries'
+          git push
