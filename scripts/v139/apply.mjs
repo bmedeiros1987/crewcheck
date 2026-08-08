@@ -138,4 +138,5 @@ await import('../v14387b/apply.mjs');
 await import('../v14387c/apply.mjs');
 await import('../v14387d/apply.mjs');
 await import('../v14388/apply.mjs');
+await import('../v14389/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');
