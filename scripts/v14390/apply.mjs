@@ -35,3 +35,5 @@ for (const required of [
 
 fs.writeFileSync(file, source, 'utf8');
 console.log(`[v14390] CrewCheck ${VERSION}: radar aguarda as fontes configuradas dentro da janela operacional antes de escolher o melhor resultado.`);
+
+await import('../v14391/apply.mjs');
