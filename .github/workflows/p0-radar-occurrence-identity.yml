@@ -1,0 +1,36 @@
+name: CrewCheck P0 Radar occurrence identity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'server.mjs'
+      - 'scripts/v14391/**'
+      - 'scripts/v14392/**'
+      - 'scripts/regression-v14-3-92-radar-occurrence-identity.mjs'
+      - '.github/workflows/p0-radar-occurrence-identity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  radar-occurrence-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate radar occurrence identity
+        run: node scripts/regression-v14-3-92-radar-occurrence-identity.mjs
+      - name: Validate server syntax
+        run: node --check server.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
