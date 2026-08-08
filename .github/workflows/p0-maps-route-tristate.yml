@@ -31,3 +31,5 @@ jobs:
         run: node scripts/regression-p0-maps-route-tristate.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
+      - name: Vite production build
+        run: npx vite build
