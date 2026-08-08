@@ -40,7 +40,7 @@ server = server.replace(
 
 const oldHandleContext = `  const origin = String(url.searchParams.get('origin') || '').trim();\n  const destination = String(url.searchParams.get('destination') || '').trim();`;
 const newHandleContext = `  const origin = String(url.searchParams.get('origin') || '').trim();\n  const destination = String(url.searchParams.get('destination') || '').trim();\n  const scheduledDeparture = String(url.searchParams.get('scheduledDeparture') || '').trim();`;
-if (server.includes(oldHandleContext)) server = server.replace(oldHandleContext, newHandleContext);
+if (server.includes(oldHandleContext) && !server.includes(newHandleContext)) server = server.replace(oldHandleContext, newHandleContext);
 server = server.replace(
   '  const payload = await runRadarRace(ctx, origin, destination);',
   '  const payload = await runRadarRace(ctx, origin, destination, scheduledDeparture);',
