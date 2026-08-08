@@ -16,12 +16,25 @@ for (const required of [
   "if (wantedOrigin && rowOrigin && wantedOrigin !== rowOrigin) return Number.POSITIVE_INFINITY;",
   "if (wantedDestination && rowDestination && wantedDestination !== rowDestination) return Number.POSITIVE_INFINITY;",
   'Math.abs(rowMs - targetMs)',
+  'if (row.cancelled) rank += 2;',
+  'if (row.actual_in) rank += 1;',
   "async function providerFlightAware(ctx, timeoutMs, origin = '', destination = '', scheduledDeparture = '')",
   'selectFlightAwareOccurrence(flights, origin, destination, scheduledDeparture)',
   "const scheduledDeparture = String(url.searchParams.get('scheduledDeparture') || '').trim();",
   'runRadarRace(ctx, origin, destination, scheduledDeparture)',
 ]) {
   if (!server.includes(required)) throw new Error(`Contrato de identidade da ocorrência ausente: ${required}`);
+}
+
+const rankStart = server.indexOf('function flightAwareOccurrenceRank(');
+const rankEnd = server.indexOf('\nfunction selectFlightAwareOccurrence(', rankStart + 1);
+if (rankStart < 0 || rankEnd < 0) throw new Error('flightAwareOccurrenceRank não localizado.');
+const rankScope = server.slice(rankStart, rankEnd);
+for (const forbidden of [
+  'row.cancelled) rank += 14 * 24 * 60 * 60_000',
+  'row.actual_in) rank += 7 * 24 * 60 * 60_000',
+]) {
+  if (rankScope.includes(forbidden)) throw new Error(`Status ainda domina identidade temporal: ${forbidden}`);
 }
 
 const start = server.indexOf('async function providerFlightAware(');
