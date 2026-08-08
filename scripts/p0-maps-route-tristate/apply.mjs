@@ -43,7 +43,7 @@ const trafficReplacement = `  const trafficText = !route
     ? 'Calculando rota'
     : route.trafficAware
       ? safe(route.durationInTrafficText || route.durationText, 'Tempo atualizado')
-      : hasValidRouteDistance
+      : (Number.isFinite(Number(route?.distanceMeters)) && Number(route?.distanceMeters) > 0)
         ? safe(route.durationText, 'Tempo disponível')
         : 'Trânsito indisponível';`;
 
@@ -54,6 +54,8 @@ if (!source.includes("const trafficText = !route")) {
     if (!source.includes(anchor)) throw new Error('[p0-maps-route-tristate] âncora de distância não localizada para inserir trânsito.');
     source = source.replace(anchor, `${anchor}\n${trafficReplacement}`);
   }
+} else if (source.includes(': hasValidRouteDistance\n        ? safe(route.durationText')) {
+  source = source.replace(': hasValidRouteDistance\n        ? safe(route.durationText', ': (Number.isFinite(Number(route?.distanceMeters)) && Number(route?.distanceMeters) > 0)\n        ? safe(route.durationText');
 }
 
 if (!source.includes('const uberReference = distanceKm !== null')) {
@@ -67,9 +69,10 @@ if (!source.includes('const uberReference = distanceKm !== null')) {
 }
 
 const distanceKpiPattern = /<div><small>Distância<\/small><strong>\{[^\n]*?<\/strong><\/div>/;
-if (!source.includes("hasValidRouteDistance ? safe(route?.distanceText")) {
+const distanceKpiReplacement = `<div><small>Distância</small><strong>{(Number.isFinite(Number(route?.distanceMeters)) && Number(route?.distanceMeters) > 0) ? safe(route?.distanceText, (Number(route?.distanceMeters) / 1000).toFixed(1).replace('.', ',') + ' km') : route ? 'Rota indisponível' : 'Calculando rota'}</strong></div>`;
+if (!source.includes("Number.isFinite(Number(route?.distanceMeters)) && Number(route?.distanceMeters) > 0) ? safe(route?.distanceText")) {
   if (!distanceKpiPattern.test(source)) throw new Error('[p0-maps-route-tristate] KPI de distância não localizado.');
-  source = source.replace(distanceKpiPattern, `<div><small>Distância</small><strong>{hasValidRouteDistance ? safe(route?.distanceText, (distanceKm !== null ? distanceKm.toFixed(1).replace('.', ',') : '—') + ' km') : route ? 'Rota indisponível' : 'Calculando rota'}</strong></div>`);
+  source = source.replace(distanceKpiPattern, distanceKpiReplacement);
 }
 
 const delayKpiPattern = /<div><small>Atraso do trânsito<\/small><strong>\{[^\n]*?<\/strong><\/div>/;
@@ -89,4 +92,4 @@ for (const required of [
 }
 
 fs.writeFileSync(file, source, 'utf8');
-console.log('[p0-maps-route-tristate] bloco da Saída Inteligente preserva carregando/indisponível/válida sem representar falha como 0,0 km.');
+console.log('[p0-maps-route-tristate] bloco da Saída Inteligente preserva carregando/indisponível/válida sem representar falha como 0,0 km e sem depender de variável fora do escopo.');
