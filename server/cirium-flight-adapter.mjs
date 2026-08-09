@@ -7,7 +7,7 @@ function timeValue(value) {
 }
 
 const STATUS_LABELS = {
-  A: 'Em voo', C: 'Cancelado', D: 'Desviado', L: 'Pousado', NO: 'NÃ£o operacional',
+  A: 'Em voo', C: 'Cancelado', D: 'Desviado', L: 'Pousado', NO: 'Não operacional',
   R: 'Redirecionado', S: 'Programado', U: 'Desconhecido',
 };
 
@@ -27,11 +27,11 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
     gate: firstKnown(resources.departureGate),
     terminal: firstKnown(resources.departureTerminal),
     departure: firstKnown(
-      timeValue(times.estimatedGateDeparture), timeValue(times.actualGateDeparture),
+      timeValue(times.actualGateDeparture), timeValue(times.estimatedGateDeparture),
       timeValue(times.scheduledGateDeparture), timeValue(times.publishedDeparture),
     ),
     arrival: firstKnown(
-      timeValue(times.estimatedGateArrival), timeValue(times.actualGateArrival),
+      timeValue(times.actualGateArrival), timeValue(times.estimatedGateArrival),
       timeValue(times.scheduledGateArrival), timeValue(times.publishedArrival),
     ),
     origin,
@@ -39,9 +39,9 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
     aircraft: firstKnown(row.flightEquipment?.scheduledEquipment?.iata, row.flightEquipment?.actualEquipment?.iata),
     registration: firstKnown(row.flightEquipment?.tailNumber),
     cancelled,
-    updatedAt: firstKnown(row.lastUpdatedDate),
+    updatedAt: firstKnown(row.lastUpdatedDate, row.statusDetails?.updatedAt),
     sourceFlightId: Number(row.flightId) || null,
-    message: 'Dados Cirium normalizados em laboratÃ³rio.',
+    message: 'Dados Cirium normalizados em laboratório.',
   };
 }
 
@@ -51,4 +51,3 @@ export function ciriumCoverage(item = {}) {
   const count = Object.values(present).filter(Boolean).length;
   return { present, fields: fields.length, populated: count, percent: Math.round((count / fields.length) * 100) };
 }
-
