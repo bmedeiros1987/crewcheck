@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { diagnoseCirium } from './cirium-diagnostic.mjs';
+import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -1047,6 +1047,7 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/admin\/terms$/, ['GET', 'POST']],
   [/^\/api\/platform\/admin\/unlimited$/, ['POST']],
   [/^\/api\/platform\/admin\/diagnostics\/cirium$/, ['GET']],
+  [/^\/api\/platform\/admin\/diagnostics\/cirium\/flight$/, ['GET']],
   [/^\/api\/platform\/health\/amil$/, ['GET']],
   [/^\/api\/platform\/health\/amil\/search$/, ['GET']],
 ];
@@ -1208,6 +1209,18 @@ async function handleAdminCiriumDiagnostic(req, res) {
   if (!identity.authenticated) return sendJson(res, 401, { ok: false, message: 'Autentica\u00e7\u00e3o necess\u00e1ria.' });
   if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necess\u00e1rio.' });
   return sendJson(res, 200, await diagnoseCirium());
+}
+
+
+async function handleAdminCiriumFlightDiagnostic(req, res, url) {
+  const identity = mainIdentity(req);
+  if (!identity.authenticated) return sendJson(res, 401, { ok: false, message: 'Autenticação necessária.' });
+  if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessário.' });
+  return sendJson(res, 200, await diagnoseCiriumFlight({
+    carrier: url.searchParams.get('carrier'),
+    flight: url.searchParams.get('flight'),
+    date: url.searchParams.get('date'),
+  }));
 }
 
 function amilConfiguration() {
@@ -2540,6 +2553,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/admin/terms') { await handleAdminTerms(req, res); return true; }
     if (url.pathname === '/api/platform/admin/unlimited') { await handleAdminUnlimited(req, res); return true; }
     if (url.pathname === '/api/platform/admin/diagnostics/cirium') { await handleAdminCiriumDiagnostic(req, res); return true; }
+    if (url.pathname === '/api/platform/admin/diagnostics/cirium/flight') { await handleAdminCiriumFlightDiagnostic(req, res, url); return true; }
     if (url.pathname === '/api/platform/health/amil') { await handleAmilHealth(req, res); return true; }
     if (url.pathname === '/api/platform/health/amil/search') { await handleAmilSearch(req, res, url); return true; }
     if (url.pathname === '/api/platform/database/health') { await handleDatabaseHealth(req, res); return true; }

@@ -22,3 +22,10 @@ The response never includes credentials or the upstream response body. It report
 The probe requests the single LATAM (`LA`) airline reference record. This keeps the response small and tests an API included in the Evaluation Plan without invoking flight-status, airport, FIDS, or alert quotas.
 
 When the result is `available`, the next separate step is a real-flight evaluation of status, gate, terminal, scheduled/estimated/actual times, and freshness. Cirium must not enter the provider consensus until that mapping is measured against the existing canonical contract.
+
+For that isolated evaluation, an Admin can request:
+
+`GET /api/platform/admin/diagnostics/cirium/flight?carrier=LA&flight=3377&date=2026-08-09`
+
+The date is the local departure date and must be within the Flight Status API's current-data window. The response contains only normalized operational fields and presence/freshness measurements; it never returns the upstream body or credentials. Omitting parameters uses LA3377 and today's date in `America/Sao_Paulo`.
+
