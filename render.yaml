@@ -103,6 +103,8 @@ services:
         value: 10
       - key: CREWCHECK_WAKEUP_CALL_PROVIDER
         value: infobip
+      - key: ELEVENLABS_STT_API_KEY
+        sync: false
       - key: INFOBIP_API_KEY
         sync: false
       - key: INFOBIP_BASE_URL
