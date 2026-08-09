@@ -48,14 +48,17 @@ function readRawJsonBody(req, limit = 500_000) {
   });
 }
 
-function signatureValid(req, rawBody) {
-  const secret = env('MAILERSEND_WEBHOOK_SECRET');
-  if (!secret) return true;
+function webhookSecret() {
+  return env('MAILERSEND_WEBHOOK_SECRET');
+}
+
+function signatureValid(secret, req, rawBody) {
+  if (!secret) return false;
   const supplied = String(req.headers['signature'] || req.headers['x-mailersend-signature'] || '').trim();
   if (!supplied) return false;
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   try {
-    return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+    return crypto.timingSafeEqual(Buffer.from(supplied, 'hex'), Buffer.from(expected, 'hex'));
   } catch {
     return false;
   }
@@ -117,11 +120,17 @@ async function ensureTable(db) {
 export async function handleMailerSendWebhook(req, res, url) {
   if (url.pathname !== '/api/webhooks/mailersend') return false;
   if (req.method === 'GET' || req.method === 'HEAD') {
-    sendJson(res, 200, { ok: true, provider: 'mailersend', version: '2.2', message: 'Webhook MailerSend pronto.' });
+    sendJson(res, 200, { ok: true, provider: 'mailersend', version: '2.3', configured: Boolean(webhookSecret()), message: 'Webhook MailerSend pronto.' });
     return true;
   }
   if (req.method !== 'POST') {
     sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+    return true;
+  }
+
+  const secret = webhookSecret();
+  if (!secret) {
+    sendJson(res, 503, { ok: false, code: 'WEBHOOK_NOT_CONFIGURED', message: 'Webhook temporariamente indisponível.' });
     return true;
   }
 
@@ -134,7 +143,7 @@ export async function handleMailerSendWebhook(req, res, url) {
     return true;
   }
 
-  if (!signatureValid(req, rawBody)) {
+  if (!signatureValid(secret, req, rawBody)) {
     sendJson(res, 401, { ok: false, message: 'Assinatura do webhook inválida.' });
     return true;
   }
