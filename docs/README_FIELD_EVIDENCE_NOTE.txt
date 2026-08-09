@@ -1,0 +1,1 @@
+Field-evidence docs are diagnostic notes only and must not be treated as product contracts unless linked from an issue/PR.
