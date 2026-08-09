@@ -29,3 +29,9 @@ For that isolated evaluation, an Admin can request:
 
 The date is the local departure date and must be within the Flight Status API's current-data window. The response contains only normalized operational fields and presence/freshness measurements; it never returns the upstream body or credentials. Omitting parameters uses LA3377 and today's date in `America/Sao_Paulo`.
 
+## Roadmap gate
+
+The laboratory adapter maps a Flight Status fixture to the existing Radar shape and measures field coverage. It deliberately uses departure gate and terminal only; arrival resources can never fill the boarding fields. The adapter is not imported by `server.mjs`, is absent from the provider race/order, and has no production enable flag.
+
+Activation remains blocked until a real response demonstrates the correct segment identity and acceptable coverage for status, departure gate/terminal, scheduled/estimated/actual times, and freshness. After that evidence, integration must be a separate PR with rollback flag, health isolation, cache, and existing-provider preservation.
+
