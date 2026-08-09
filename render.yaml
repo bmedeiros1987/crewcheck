@@ -69,6 +69,8 @@ services:
         sync: false
       - key: GOOGLE_MAPS_SERVER_KEY
         sync: false
+      - key: GOOGLE_ROUTES_API_KEY
+        sync: false
       - key: TOMTOM_API_KEY
         sync: false
       - key: CREWCHECK_NOTIFICATION_INTERVAL_MS
