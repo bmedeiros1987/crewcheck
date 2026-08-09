@@ -25,9 +25,11 @@ jobs:
           node-version: '22.13.0'
           cache: npm
       - run: npm ci
+      - name: Validate committed radar runtime
+        run: node scripts/regression-v14-3-91-radar-no-latency-bias.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
-      - name: Validate radar semantic score
+      - name: Validate prepared radar semantic score
         run: node scripts/regression-v14-3-91-radar-no-latency-bias.mjs
       - name: Validate server syntax
         run: node --check server.mjs
