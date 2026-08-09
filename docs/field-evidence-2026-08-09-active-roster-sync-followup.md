@@ -1,0 +1,1 @@
+This follow-up intentionally contains no implementation. See `field-evidence-2026-08-09-active-roster-sync.md`. Implementation should be isolated behind active-roster sync gates and must not modify the canonical parser/roster engine.
