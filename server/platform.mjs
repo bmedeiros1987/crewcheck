@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { diagnoseCirium } from './cirium-diagnostic.mjs';
+import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -15,7 +15,7 @@ const AMIL_NETWORK_SNAPSHOT = (() => {
   try {
     return JSON.parse(readFileSync(new URL('./data/amil-network-s450-s750.json', import.meta.url), 'utf8'));
   } catch {
-    return { schemaVersion: 0, generatedAt: '', sources: [], providers: [], missingPublishedStates: ['AM'], disclaimer: 'Base credenciada local indisponível.' };
+    return { schemaVersion: 0, generatedAt: '', sources: [], providers: [], missingPublishedStates: ['AM'], disclaimer: 'Base credenciada local indisponÃ­vel.' };
   }
 })();
 
@@ -29,36 +29,36 @@ const PLAN_CATALOG = [
     callLimitEnv: 'CREWCHECK_FREE_CALL_LIMIT',
     callLimit: 1,
     features: [
-      'Importação e leitura da escala oficial',
-      'Próxima programação, escala completa e mapa do mês',
+      'ImportaÃ§Ã£o e leitura da escala oficial',
+      'PrÃ³xima programaÃ§Ã£o, escala completa e mapa do mÃªs',
       'Conformidade preventiva e carga de trabalho',
-      'Diárias e salário com parâmetros informados pelo usuário',
-      'PDF, ICS e envio de relatório pelo CrewCheck',
-      'Concierge Telegram por texto e 1 teste de ligação por mês',
+      'DiÃ¡rias e salÃ¡rio com parÃ¢metros informados pelo usuÃ¡rio',
+      'PDF, ICS e envio de relatÃ³rio pelo CrewCheck',
+      'Concierge Telegram por texto e 1 teste de ligaÃ§Ã£o por mÃªs',
     ],
   },
   {
     id: 'premium_monthly',
     name: 'CrewCheck Premium Mensal',
-    cycle: 'Mensal, renovação automática',
+    cycle: 'Mensal, renovaÃ§Ã£o automÃ¡tica',
     priceEnv: 'CREWCHECK_PREMIUM_MONTHLY_BRL',
     defaultPrice: 19.9,
     callLimitEnv: 'CREWCHECK_PREMIUM_CALL_LIMIT',
     callLimit: 20,
     features: [
       'Tudo do Essencial',
-      'Radar, portão e terminal quando disponíveis',
-      'Saída Inteligente, meteorologia e rotinas conectadas',
-      'Hotéis, aprendizado de apresentação e academias parceiras',
-      'Comparação de escala, visitantes e chat interno',
-      '20 ligações do despertador por mês',
-      'Sincronização e compartilhamentos revogáveis em banco',
+      'Radar, portÃ£o e terminal quando disponÃ­veis',
+      'SaÃ­da Inteligente, meteorologia e rotinas conectadas',
+      'HotÃ©is, aprendizado de apresentaÃ§Ã£o e academias parceiras',
+      'ComparaÃ§Ã£o de escala, visitantes e chat interno',
+      '20 ligaÃ§Ãµes do despertador por mÃªs',
+      'SincronizaÃ§Ã£o e compartilhamentos revogÃ¡veis em banco',
     ],
   },
   {
     id: 'premium_annual',
     name: 'CrewCheck Premium Anual',
-    cycle: 'Anual, renovação automática',
+    cycle: 'Anual, renovaÃ§Ã£o automÃ¡tica',
     priceEnv: 'CREWCHECK_PREMIUM_ANNUAL_BRL',
     defaultPrice: 179.9,
     callLimitEnv: 'CREWCHECK_PREMIUM_CALL_LIMIT',
@@ -66,22 +66,22 @@ const PLAN_CATALOG = [
     features: [
       'Todos os recursos do Premium Mensal',
       'Economia anual exibida antes da compra',
-      '20 ligações do despertador por mês',
-      'Prioridade de restauração e sincronização de escala',
+      '20 ligaÃ§Ãµes do despertador por mÃªs',
+      'Prioridade de restauraÃ§Ã£o e sincronizaÃ§Ã£o de escala',
     ],
   },
   {
     id: 'premium_unlimited',
     name: 'Premium Unlimited',
-    cycle: 'Vitalício, somente concessão administrativa',
+    cycle: 'VitalÃ­cio, somente concessÃ£o administrativa',
     priceEnv: '',
     defaultPrice: 0,
     callLimitEnv: 'CREWCHECK_UNLIMITED_CALL_LIMIT',
     callLimit: 60,
     features: [
-      'Todos os recursos Premium sem cobrança recorrente',
-      'Acesso vitalício para contas autorizadas',
-      '60 ligações mensais de uso justo para proteger custos externos',
+      'Todos os recursos Premium sem cobranÃ§a recorrente',
+      'Acesso vitalÃ­cio para contas autorizadas',
+      '60 ligaÃ§Ãµes mensais de uso justo para proteger custos externos',
     ],
   },
 ];
@@ -106,14 +106,14 @@ function readBody(req, limit = 2_500_000) {
     req.on('data', (chunk) => {
       raw += chunk;
       if (Buffer.byteLength(raw, 'utf8') > limit) {
-        reject(Object.assign(new Error('Conteúdo maior que o limite permitido.'), { status: 413 }));
+        reject(Object.assign(new Error('ConteÃºdo maior que o limite permitido.'), { status: 413 }));
         req.destroy();
       }
     });
     req.on('end', () => {
       if (!raw.trim()) return resolve({});
       try { resolve(JSON.parse(raw)); }
-      catch { reject(Object.assign(new Error('JSON inválido.'), { status: 400 })); }
+      catch { reject(Object.assign(new Error('JSON invÃ¡lido.'), { status: 400 })); }
     });
     req.on('error', reject);
   });
@@ -156,7 +156,7 @@ function authSecret() {
   const configured = env('CREWCHECK_AUTH_SECRET');
   if (configured) return configured;
   if (env('NODE_ENV').toLowerCase() === 'production') {
-    throw Object.assign(new Error('Autenticação aguardando segredo seguro do servidor.'), { status: 503, code: 'AUTH_SECRET_REQUIRED' });
+    throw Object.assign(new Error('AutenticaÃ§Ã£o aguardando segredo seguro do servidor.'), { status: 503, code: 'AUTH_SECRET_REQUIRED' });
   }
   return 'crewcheck-local-development-secret';
 }
@@ -387,9 +387,9 @@ async function platformSchemaReport(db) {
   };
 }
 
-// Compatibilidade com diagnósticos e integrações anteriores à separação entre
-// tabelas essenciais e opcionais. O resultado representa somente o núcleo que
-// precisa estar disponível para autenticação, perfil e assinatura funcionarem.
+// Compatibilidade com diagnÃ³sticos e integraÃ§Ãµes anteriores Ã  separaÃ§Ã£o entre
+// tabelas essenciais e opcionais. O resultado representa somente o nÃºcleo que
+// precisa estar disponÃ­vel para autenticaÃ§Ã£o, perfil e assinatura funcionarem.
 async function platformSchemaReady(db) {
   const report = await platformSchemaReport(db);
   return report.coreReady;
@@ -421,13 +421,13 @@ async function pool() {
       await db.query('SELECT 1');
       state.schemaReport = await platformSchemaReport(db);
       if (!state.schemaReport.coreReady) {
-        throw Object.assign(new Error('A migration MySQL do CrewCheck ainda não foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+        throw Object.assign(new Error('A migration MySQL do CrewCheck ainda nÃ£o foi aplicada.'), { code: 'DATABASE_MIGRATION_REQUIRED' });
       }
       state.databaseFailure = null;
       return db;
     })().catch((error) => {
       state.poolPromise = null;
-      state.databaseFailure = { code: String(error?.code || 'DATABASE_UNAVAILABLE'), message: String(error?.message || 'Falha de conexão').slice(0, 180) };
+      state.databaseFailure = { code: String(error?.code || 'DATABASE_UNAVAILABLE'), message: String(error?.message || 'Falha de conexÃ£o').slice(0, 180) };
       console.error('[crewcheck:database]', state.databaseFailure.code, state.databaseFailure.message);
       return null;
     });
@@ -508,7 +508,7 @@ async function ensureProfile(db, identity, patch = {}) {
       }
       const result = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [identity.email]);
       const profile = result.rows[0];
-      if (!profile?.public_id) throw Object.assign(new Error('O perfil não recebeu um ID público.'), { code: 'PROFILE_ID_MISSING' });
+      if (!profile?.public_id) throw Object.assign(new Error('O perfil nÃ£o recebeu um ID pÃºblico.'), { code: 'PROFILE_ID_MISSING' });
       return profile;
     } catch (error) {
       const duplicate = String(error?.code || '') === 'ER_DUP_ENTRY' || Number(error?.errno) === 1062;
@@ -516,7 +516,7 @@ async function ensureProfile(db, identity, patch = {}) {
       throw error;
     }
   }
-  throw Object.assign(new Error('Não foi possível gerar um ID público único.'), { code: 'PROFILE_ID_GENERATION_FAILED' });
+  throw Object.assign(new Error('NÃ£o foi possÃ­vel gerar um ID pÃºblico Ãºnico.'), { code: 'PROFILE_ID_GENERATION_FAILED' });
 }
 
 function planCatalog() {
@@ -588,15 +588,15 @@ async function subscriptionStatus(db, profile) {
 
 export async function consumePlatformUsage(reqOrIdentity, kind = 'wakeup_call', amount = 1) {
   const identity = reqOrIdentity?.headers ? mainIdentity(reqOrIdentity) : reqOrIdentity;
-  if (!identity?.email) return { allowed: false, status: 401, message: 'Faça login para usar ligações.' };
+  if (!identity?.email) return { allowed: false, status: 401, message: 'FaÃ§a login para usar ligaÃ§Ãµes.' };
   if (identity.admin) return { allowed: true, admin: true, used: 0, limit: null, remaining: null };
   const db = await pool();
-  if (!db) return { allowed: false, status: 503, message: 'O controle de custos está aguardando o banco. Nenhuma ligação foi cobrada.' };
+  if (!db) return { allowed: false, status: 503, message: 'O controle de custos estÃ¡ aguardando o banco. Nenhuma ligaÃ§Ã£o foi cobrada.' };
   const profile = await ensureProfile(db, identity);
   const status = await subscriptionStatus(db, profile);
   const monthKey = currentMonthKey(profile.timezone);
   const limit = planLimit(status.plan, kind);
-  if (amount <= 0 || amount > limit) return { allowed: false, status: 429, used: 0, limit, remaining: limit, message: `Limite mensal de ${limit} ligações atingido.` };
+  if (amount <= 0 || amount > limit) return { allowed: false, status: 429, used: 0, limit, remaining: limit, message: `Limite mensal de ${limit} ligaÃ§Ãµes atingido.` };
 
   const client = await db.connect();
   try {
@@ -609,7 +609,7 @@ export async function consumePlatformUsage(reqOrIdentity, kind = 'wakeup_call', 
     const used = usedBefore + amount;
     if (used > limit) {
       await client.query('ROLLBACK');
-      return { allowed: false, status: 429, used: usedBefore, limit, remaining: Math.max(0, limit - usedBefore), message: `Limite mensal de ${limit} ligações atingido. Mensagens Telegram e lembrete local continuam disponíveis.` };
+      return { allowed: false, status: 429, used: usedBefore, limit, remaining: Math.max(0, limit - usedBefore), message: `Limite mensal de ${limit} ligaÃ§Ãµes atingido. Mensagens Telegram e lembrete local continuam disponÃ­veis.` };
     }
     await client.query(`
       INSERT INTO crewcheck_platform_usage(email,month_key,usage_kind,used,limit_value)
@@ -816,19 +816,19 @@ async function googleAccessToken() {
 
 async function verifyGooglePlaySubscription(purchaseToken, expectedProductId = '', allowInactive = false) {
   const accessToken = await googleAccessToken();
-  if (!accessToken) throw Object.assign(new Error('Verificação Google Play aguardando credencial segura do servidor.'), { status: 503 });
+  if (!accessToken) throw Object.assign(new Error('VerificaÃ§Ã£o Google Play aguardando credencial segura do servidor.'), { status: 503 });
   const packageName = env('GOOGLE_PLAY_PACKAGE_NAME', 'com.crewcheck.app');
   const endpoint = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`;
   const response = await fetch(endpoint, { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
   const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload) throw Object.assign(new Error('A compra não pôde ser confirmada na Google Play.'), { status: 400 });
+  if (!response.ok || !payload) throw Object.assign(new Error('A compra nÃ£o pÃ´de ser confirmada na Google Play.'), { status: 400 });
   const item = Array.isArray(payload.lineItems)
     ? payload.lineItems.find((line) => expectedProductId ? line.productId === expectedProductId : GOOGLE_PLAY_PRODUCTS.has(line.productId))
     : null;
   const expiry = item?.expiryTime ? new Date(item.expiryTime) : null;
   const activeStates = new Set(['SUBSCRIPTION_STATE_ACTIVE', 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_CANCELED']);
   const active = activeStates.has(payload.subscriptionState) && expiry && expiry.getTime() > Date.now();
-  if (!item || (!active && !allowInactive)) throw Object.assign(new Error('A assinatura não está ativa para este produto.'), { status: 402 });
+  if (!item || (!active && !allowInactive)) throw Object.assign(new Error('A assinatura nÃ£o estÃ¡ ativa para este produto.'), { status: 402 });
   return { payload, item, expiry, packageName };
 }
 
@@ -847,11 +847,11 @@ function normalizedGoogleStatus(payload, expiry) {
 async function saveGoogleSubscription(db, email, purchaseToken, verified) {
   const productId = normalizeText(verified.item?.productId, 100);
   const plan = GOOGLE_PLAY_PRODUCTS.get(productId);
-  if (!plan) throw Object.assign(new Error('Produto Google Play não reconhecido.'), { status: 400 });
+  if (!plan) throw Object.assign(new Error('Produto Google Play nÃ£o reconhecido.'), { status: 400 });
   const tokenHash = sha256(purchaseToken);
   const owner = await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE purchase_token_hash=$1 LIMIT 1', [tokenHash]);
   if (owner.rows[0] && owner.rows[0].email !== email) {
-    throw Object.assign(new Error('Esta compra já está vinculada a outra conta CrewCheck.'), { status: 409, code: 'PURCHASE_ALREADY_LINKED' });
+    throw Object.assign(new Error('Esta compra jÃ¡ estÃ¡ vinculada a outra conta CrewCheck.'), { status: 409, code: 'PURCHASE_ALREADY_LINKED' });
   }
   const normalized = normalizedGoogleStatus(verified.payload, verified.expiry);
   await db.query(`
@@ -877,34 +877,34 @@ async function verifyGooglePubSubIdentity(req) {
   const expectedAudience = env('GOOGLE_PLAY_RTDN_AUDIENCE');
   const expectedEmail = safeEmail(env('GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL'));
   const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1] || '';
-  if (!expectedAudience || !expectedEmail) throw Object.assign(new Error('RTDN aguardando audiência e conta de serviço.'), { status: 503 });
-  if (!bearer) throw Object.assign(new Error('RTDN não autenticada.'), { status: 401 });
+  if (!expectedAudience || !expectedEmail) throw Object.assign(new Error('RTDN aguardando audiÃªncia e conta de serviÃ§o.'), { status: 503 });
+  if (!bearer) throw Object.assign(new Error('RTDN nÃ£o autenticada.'), { status: 401 });
   const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(bearer)}`, { headers: { accept: 'application/json' } });
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload || payload.aud !== expectedAudience || safeEmail(payload.email) !== expectedEmail || String(payload.email_verified) !== 'true') {
-    throw Object.assign(new Error('Identidade RTDN inválida.'), { status: 403 });
+    throw Object.assign(new Error('Identidade RTDN invÃ¡lida.'), { status: 403 });
   }
 }
 
 async function asaasRequest(path, init = {}) {
   const apiKey = env('ASAAS_API_KEY');
-  if (!apiKey) throw Object.assign(new Error('Cobrança web aguardando configuração do Asaas.'), { status: 503 });
+  if (!apiKey) throw Object.assign(new Error('CobranÃ§a web aguardando configuraÃ§Ã£o do Asaas.'), { status: 503 });
   const base = env('ASAAS_API_BASE_URL', 'https://api.asaas.com/v3').replace(/\/+$/, '');
   const response = await fetch(`${base}${path}`, { ...init, headers: { access_token: apiKey, 'content-type': 'application/json', accept: 'application/json', ...(init.headers || {}) } });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw Object.assign(new Error('O provedor de cobrança não aceitou a solicitação.'), { status: 502, providerStatus: response.status, detail: payload });
+  if (!response.ok) throw Object.assign(new Error('O provedor de cobranÃ§a nÃ£o aceitou a solicitaÃ§Ã£o.'), { status: 502, providerStatus: response.status, detail: payload });
   return payload;
 }
 
 async function requireMain(req, res, body = {}) {
   const identity = mainIdentity(req, body);
   if (!identity.email) {
-    sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Faça login para continuar.' });
+    sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'FaÃ§a login para continuar.' });
     return null;
   }
   const db = await pool();
   if (!db) {
-    sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível. Seus dados locais continuam protegidos.' });
+    sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'SincronizaÃ§Ã£o temporariamente indisponÃ­vel. Seus dados locais continuam protegidos.' });
     return null;
   }
   const profile = await ensureProfile(db, identity);
@@ -924,7 +924,7 @@ async function requirePlatformTable(context, res, tableName, feature) {
 
 async function handleDatabaseHealth(req, res) {
   const configured = Boolean(databaseConnectionString());
-  if (!configured) return sendJson(res, 200, { ok: false, configured: false, connected: false, coreReady: false, degraded: true, migrationRequired: true, missingOptionalCount: 0, message: 'Banco aguardando configuração.' });
+  if (!configured) return sendJson(res, 200, { ok: false, configured: false, connected: false, coreReady: false, degraded: true, migrationRequired: true, missingOptionalCount: 0, message: 'Banco aguardando configuraÃ§Ã£o.' });
   const db = await pool();
   const report = state.schemaReport || { coreReady: false, optionalReady: false, missingCore: [], missingOptional: [] };
   const connected = Boolean(db && report.coreReady);
@@ -945,15 +945,15 @@ async function handleDatabaseHealth(req, res) {
     missingOptionalCount: Array.isArray(report.missingOptional) ? report.missingOptional.length : 0,
     retryable: !connected,
     message: connected
-      ? report.optionalReady ? 'Banco conectado e schema completo.' : 'Banco principal conectado; módulos opcionais aguardam migration.'
-      : 'Não foi possível conectar ao núcleo do banco agora.',
+      ? report.optionalReady ? 'Banco conectado e schema completo.' : 'Banco principal conectado; mÃ³dulos opcionais aguardam migration.'
+      : 'NÃ£o foi possÃ­vel conectar ao nÃºcleo do banco agora.',
   });
 }
 
 async function requirePremium(context, res, feature = 'Este recurso') {
   const billing = await subscriptionStatus(context.db, context.profile);
   if (!billing.premiumAccess) {
-    sendJson(res, 402, { ok: false, code: 'PREMIUM_REQUIRED', billing, message: `${feature} está disponível nos planos Premium.` });
+    sendJson(res, 402, { ok: false, code: 'PREMIUM_REQUIRED', billing, message: `${feature} estÃ¡ disponÃ­vel nos planos Premium.` });
     return null;
   }
   return billing;
@@ -1047,6 +1047,7 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/admin\/terms$/, ['GET', 'POST']],
   [/^\/api\/platform\/admin\/unlimited$/, ['POST']],
   [/^\/api\/platform\/admin\/diagnostics\/cirium$/, ['GET']],
+  [/^\/api\/platform\/admin\/diagnostics\/cirium\/flight$/, ['GET']],
   [/^\/api\/platform\/health\/amil$/, ['GET']],
   [/^\/api\/platform\/health\/amil\/search$/, ['GET']],
 ];
@@ -1055,7 +1056,7 @@ function enforcePlatformMethod(req, res, pathname) {
   const policy = PLATFORM_METHOD_POLICIES.find(([pattern]) => pattern.test(pathname));
   if (!policy || policy[1].includes(req.method)) return true;
   res.setHeader('Allow', policy[1].join(', '));
-  sendJson(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Método não permitido.' });
+  sendJson(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'MÃ©todo nÃ£o permitido.' });
   return false;
 }
 
@@ -1079,10 +1080,10 @@ async function handleCatalog(req, res) {
     ok: true, version: APP_VERSION, encoding: 'UTF-8', defaultLocale: 'pt-BR', supportedLocales: [...SUPPORTED_LOCALES],
     defaultTimezone: DEFAULT_TIMEZONE, plans: visiblePlans,
     disclosures: {
-      autoRenew: 'Assinaturas Mensal e Anual renovam automaticamente até o cancelamento.',
-      trial: 'Quando disponível, o teste de 7 dias informa a data da primeira cobrança antes da confirmação.',
-      cancellation: 'Compras Google Play são gerenciadas na Play Store; compras web são gerenciadas no CrewCheck.',
-      calls: 'Ligações usam provedores externos e têm franquia mensal. Telegram por texto e lembrete local continuam disponíveis ao atingir o limite.',
+      autoRenew: 'Assinaturas Mensal e Anual renovam automaticamente atÃ© o cancelamento.',
+      trial: 'Quando disponÃ­vel, o teste de 7 dias informa a data da primeira cobranÃ§a antes da confirmaÃ§Ã£o.',
+      cancellation: 'Compras Google Play sÃ£o gerenciadas na Play Store; compras web sÃ£o gerenciadas no CrewCheck.',
+      calls: 'LigaÃ§Ãµes usam provedores externos e tÃªm franquia mensal. Telegram por texto e lembrete local continuam disponÃ­veis ao atingir o limite.',
     },
   });
 }
@@ -1118,7 +1119,7 @@ async function handleTermsCurrent(req, res) {
     return sendJson(res, 200, { ok: true, configured: false, terms: null, message: 'Termos aguardando migration MySQL.' });
   }
   const terms = await currentTerms(db);
-  if (!terms) return sendJson(res, 200, { ok: true, configured: false, terms: null, message: 'Nenhuma versão publicada.' });
+  if (!terms) return sendJson(res, 200, { ok: true, configured: false, terms: null, message: 'Nenhuma versÃ£o publicada.' });
   const identity = mainIdentity(req);
   let accepted = false;
   if (identity.email && await platformTableReady(db, 'crewcheck_platform_terms_acceptances')) {
@@ -1135,9 +1136,9 @@ async function handleTermsAccept(req, res) {
   if (!await requirePlatformTable(context, res, 'crewcheck_platform_terms', 'Aceite dos Termos')) return;
   if (!await requirePlatformTable(context, res, 'crewcheck_platform_terms_acceptances', 'Aceite dos Termos')) return;
   const terms = await currentTerms(context.db);
-  if (!terms) return sendJson(res, 409, { ok: false, message: 'Nenhuma versão dos Termos está publicada.' });
+  if (!terms) return sendJson(res, 409, { ok: false, message: 'Nenhuma versÃ£o dos Termos estÃ¡ publicada.' });
   if (String(body.termsId || '') !== String(terms.id) || String(body.contentHash || '') !== String(terms.content_hash)) {
-    return sendJson(res, 409, { ok: false, code: 'TERMS_VERSION_CHANGED', message: 'Os Termos foram atualizados. Leia a versão vigente antes de aceitar.' });
+    return sendJson(res, 409, { ok: false, code: 'TERMS_VERSION_CHANGED', message: 'Os Termos foram atualizados. Leia a versÃ£o vigente antes de aceitar.' });
   }
   const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
   const userAgent = normalizeText(req.headers['user-agent'], 500);
@@ -1154,7 +1155,7 @@ async function handleAdminTerms(req, res) {
   const body = req.method === 'POST' ? await readBody(req, 500_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessário.' });
+  if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessÃ¡rio.' });
   if (!await requirePlatformTable(context, res, 'crewcheck_platform_terms', 'Editor de Termos')) return;
   if (req.method === 'GET') {
     const result = await context.db.query('SELECT id,version,title,content_hash,status,published_at,effective_at,created_by FROM crewcheck_platform_terms ORDER BY version DESC LIMIT 20');
@@ -1162,7 +1163,7 @@ async function handleAdminTerms(req, res) {
   }
   const title = normalizeText(body.title, 180);
   const bodyText = normalizeText(body.body, 120_000);
-  if (title.length < 5 || bodyText.length < 300) return sendJson(res, 400, { ok: false, message: 'Informe título e texto completo com pelo menos 300 caracteres.' });
+  if (title.length < 5 || bodyText.length < 300) return sendJson(res, 400, { ok: false, message: 'Informe tÃ­tulo e texto completo com pelo menos 300 caracteres.' });
   const contentHash = crypto.createHash('sha256').update(bodyText, 'utf8').digest('hex');
   const published = await currentTerms(context.db);
   if (published && String(published.content_hash || '') === contentHash) {
@@ -1170,7 +1171,7 @@ async function handleAdminTerms(req, res) {
       ok: true,
       unchanged: true,
       terms: publicTerms(published),
-      message: 'O texto não mudou. A versão atual foi mantida e nenhum novo aceite será solicitado.',
+      message: 'O texto nÃ£o mudou. A versÃ£o atual foi mantida e nenhum novo aceite serÃ¡ solicitado.',
     });
   }
   const latest = await context.db.query('SELECT COALESCE(MAX(version),0) version FROM crewcheck_platform_terms');
@@ -1187,16 +1188,16 @@ async function handleAdminTerms(req, res) {
     await client.query('ROLLBACK');
     throw error;
   } finally { client.release(); }
-  return sendJson(res, 200, { ok: true, terms: publicTerms({ id, version, title, body_text: bodyText, content_hash: contentHash, published_at: new Date(), effective_at: new Date() }), message: 'Nova versão publicada. Usuários deverão aceitá-la uma vez.' });
+  return sendJson(res, 200, { ok: true, terms: publicTerms({ id, version, title, body_text: bodyText, content_hash: contentHash, published_at: new Date(), effective_at: new Date() }), message: 'Nova versÃ£o publicada. UsuÃ¡rios deverÃ£o aceitÃ¡-la uma vez.' });
 }
 
 async function handleAdminUnlimited(req, res) {
   const body = await readBody(req, 100_000);
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessário.' });
+  if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessÃ¡rio.' });
   const email = safeEmail(body.email);
-  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail vÃ¡lido.' });
   const targetIdentity = { email, name: normalizeText(body.name || email.split('@')[0], 120), role: 'user', plan: 'free', locale: 'pt-BR', timezone: DEFAULT_TIMEZONE, admin: false };
   const profile = await ensureProfile(context.db, targetIdentity, { apply: true, displayName: targetIdentity.name });
   await context.db.query("UPDATE crewcheck_platform_profiles SET plan='premium_unlimited',updated_at=NOW() WHERE email=$1", [email]);
@@ -1208,6 +1209,17 @@ async function handleAdminCiriumDiagnostic(req, res) {
   if (!identity.authenticated) return sendJson(res, 401, { ok: false, message: 'Autentica\u00e7\u00e3o necess\u00e1ria.' });
   if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necess\u00e1rio.' });
   return sendJson(res, 200, await diagnoseCirium());
+}
+
+async function handleAdminCiriumFlightDiagnostic(req, res, url) {
+  const identity = mainIdentity(req);
+  if (!identity.authenticated) return sendJson(res, 401, { ok: false, message: 'Autentica\u00e7\u00e3o necess\u00e1ria.' });
+  if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necess\u00e1rio.' });
+  return sendJson(res, 200, await diagnoseCiriumFlight({
+    carrier: url.searchParams.get('carrier'),
+    flight: url.searchParams.get('flight'),
+    date: url.searchParams.get('date'),
+  }));
 }
 
 function amilConfiguration() {
@@ -1247,12 +1259,12 @@ function amilProviderCare(provider, planCode) {
 
 function amilServiceLabel(codes = []) {
   const labels = {
-    H: 'Hospital eletivo', 'H CARD': 'Hospital cardiológico', HD: 'Hospital-dia', 'H ORT': 'Hospital ortopédico',
-    M: 'Maternidade', HP: 'Hospital pediátrico', PA: 'Pronto atendimento', PS: 'Pronto-socorro',
-    'PS CARD': 'Pronto-socorro cardiológico', 'PS OBST': 'Pronto-socorro obstétrico', PSI: 'Pronto-socorro infantil',
-    PSO: 'Pronto-socorro ortopédico', DIAGNOSTICO: 'Clínica / diagnóstico',
+    H: 'Hospital eletivo', 'H CARD': 'Hospital cardiolÃ³gico', HD: 'Hospital-dia', 'H ORT': 'Hospital ortopÃ©dico',
+    M: 'Maternidade', HP: 'Hospital pediÃ¡trico', PA: 'Pronto atendimento', PS: 'Pronto-socorro',
+    'PS CARD': 'Pronto-socorro cardiolÃ³gico', 'PS OBST': 'Pronto-socorro obstÃ©trico', PSI: 'Pronto-socorro infantil',
+    PSO: 'Pronto-socorro ortopÃ©dico', DIAGNOSTICO: 'ClÃ­nica / diagnÃ³stico',
   };
-  return codes.map((code) => labels[code] || code).join(' · ');
+  return codes.map((code) => labels[code] || code).join(' Â· ');
 }
 
 function amilSnapshotSearch(url) {
@@ -1324,7 +1336,7 @@ async function handleAmilHealth(req, res) {
       missingPublishedStates: AMIL_NETWORK_SNAPSHOT.missingPublishedStates || ['AM'],
       sourcePage: AMIL_NETWORK_SNAPSHOT.sourcePage || '',
     },
-    message: snapshotReady ? 'Snapshot S450/S750 publicado e disponível; confirme a rede nos canais oficiais antes do atendimento.' : 'Rede Amil indisponível agora.',
+    message: snapshotReady ? 'Snapshot S450/S750 publicado e disponÃ­vel; confirme a rede nos canais oficiais antes do atendimento.' : 'Rede Amil indisponÃ­vel agora.',
   });
 }
 
@@ -1359,7 +1371,7 @@ async function handleAmilSearch(req, res, url) {
   try {
     const response = await fetch(`${config.baseUrl}${config.searchPath}?${params.toString()}`, { headers, signal: controller.signal });
     const payload = await response.json().catch(() => null);
-    if (!response.ok) return sendJson(res, 502, { ok: false, configured: true, message: 'A Amil não concluiu a consulta agora.' });
+    if (!response.ok) return sendJson(res, 502, { ok: false, configured: true, message: 'A Amil nÃ£o concluiu a consulta agora.' });
     const candidates = Array.isArray(payload) ? payload : payload?.items || payload?.results || payload?.data || payload?.prestadores || [];
     const providers = Array.isArray(candidates) ? candidates.slice(0, 30).map((item) => ({
       id: normalizeText(item.id || item.codigo || item.providerId, 100),
@@ -1406,7 +1418,7 @@ async function handleGooglePurchase(req, res) {
   const productId = normalizeText(body.productId, 100);
   const purchaseToken = normalizeText(body.purchaseToken, 5000);
   const plan = GOOGLE_PLAY_PRODUCTS.get(productId);
-  if (!plan || !purchaseToken) return sendJson(res, 400, { ok: false, message: 'Produto ou comprovante Google Play inválido.' });
+  if (!plan || !purchaseToken) return sendJson(res, 400, { ok: false, message: 'Produto ou comprovante Google Play invÃ¡lido.' });
   const verified = await verifyGooglePlaySubscription(purchaseToken, productId);
   const obfuscatedAccountId = normalizeText(verified.payload?.externalAccountIdentifiers?.obfuscatedExternalAccountId, 64).toUpperCase();
   if (obfuscatedAccountId && obfuscatedAccountId !== String(context.profile.public_id || '').toUpperCase()) {
@@ -1429,11 +1441,11 @@ async function handleAsaasCheckout(req, res) {
   const platform = normalizeText(body.platform || req.headers['x-crewcheck-platform'], 30).toLowerCase();
   if (platform === 'android' || body.googlePlay === true) return sendJson(res, 409, { ok: false, code: 'USE_GOOGLE_PLAY', message: 'No aplicativo Android, conclua a assinatura pela Google Play.' });
   const plan = normalizeText(body.plan, 40);
-  if (!['premium_monthly', 'premium_annual'].includes(plan)) return sendJson(res, 400, { ok: false, message: 'Escolha um plano recorrente válido.' });
+  if (!['premium_monthly', 'premium_annual'].includes(plan)) return sendJson(res, 400, { ok: false, message: 'Escolha um plano recorrente vÃ¡lido.' });
   const currentBilling = await subscriptionStatus(context.db, context.profile);
-  if (currentBilling.premiumAccess) return sendJson(res, 409, { ok: false, code: 'SUBSCRIPTION_ALREADY_ACTIVE', billing: currentBilling, message: 'Esta conta já possui uma assinatura ativa. Gerencie o plano atual antes de iniciar outra cobrança.' });
+  if (currentBilling.premiumAccess) return sendJson(res, 409, { ok: false, code: 'SUBSCRIPTION_ALREADY_ACTIVE', billing: currentBilling, message: 'Esta conta jÃ¡ possui uma assinatura ativa. Gerencie o plano atual antes de iniciar outra cobranÃ§a.' });
   const cpfCnpj = String(body.cpfCnpj || '').replace(/\D/g, '');
-  if (![11, 14].includes(cpfCnpj.length)) return sendJson(res, 400, { ok: false, code: 'CPF_REQUIRED', message: 'Informe CPF ou CNPJ válido para a cobrança web.' });
+  if (![11, 14].includes(cpfCnpj.length)) return sendJson(res, 400, { ok: false, code: 'CPF_REQUIRED', message: 'Informe CPF ou CNPJ vÃ¡lido para a cobranÃ§a web.' });
   const price = planCatalog().find((item) => item.id === plan)?.value;
   const pendingResult = await context.db.query("SELECT provider_ref,metadata FROM crewcheck_platform_subscriptions WHERE email=$1 AND provider='asaas' AND plan=$2 AND status='pending' LIMIT 1", [context.identity.email, plan]);
   const pending = pendingResult.rows[0];
@@ -1441,7 +1453,7 @@ async function handleAsaasCheckout(req, res) {
     const existingPayments = await asaasRequest(`/subscriptions/${encodeURIComponent(pending.provider_ref)}/payments?limit=1`).catch(() => null);
     const existing = existingPayments?.data?.[0] || null;
     const checkoutUrl = existing?.invoiceUrl || existing?.bankSlipUrl || null;
-    return sendJson(res, 200, { ok: true, provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutUrl, message: 'A cobrança pendente existente foi reutilizada; nenhuma assinatura duplicada foi criada.' });
+    return sendJson(res, 200, { ok: true, provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutUrl, message: 'A cobranÃ§a pendente existente foi reutilizada; nenhuma assinatura duplicada foi criada.' });
   }
   const customers = await asaasRequest(`/customers?email=${encodeURIComponent(context.identity.email)}&limit=1`);
   let customerId = customers?.data?.[0]?.id;
@@ -1456,7 +1468,7 @@ async function handleAsaasCheckout(req, res) {
   await context.db.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
     VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)
     ON DUPLICATE KEY UPDATE plan=VALUES(plan),status='pending',provider='asaas',product_id=VALUES(product_id),provider_ref=VALUES(provider_ref),metadata=VALUES(metadata),updated_at=NOW()`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
-  return sendJson(res, 200, { ok: true, provider: 'asaas', plan, firstDueDate: firstDue, checkoutUrl: firstPayment?.invoiceUrl || firstPayment?.bankSlipUrl || subscription.invoiceUrl || subscription.paymentLink || null, message: 'Assinatura web criada. A primeira cobrança ocorrerá após o período informado.' });
+  return sendJson(res, 200, { ok: true, provider: 'asaas', plan, firstDueDate: firstDue, checkoutUrl: firstPayment?.invoiceUrl || firstPayment?.bankSlipUrl || subscription.invoiceUrl || subscription.paymentLink || null, message: 'Assinatura web criada. A primeira cobranÃ§a ocorrerÃ¡ apÃ³s o perÃ­odo informado.' });
 }
 
 async function handleBillingCancel(req, res) {
@@ -1468,15 +1480,15 @@ async function handleBillingCancel(req, res) {
   if (subscription.provider === 'google_play') {
     const product = encodeURIComponent(subscription.product_id || '');
     const manageUrl = `https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`;
-    return sendJson(res, 200, { ok: true, actionRequired: true, manageUrl, message: 'Conclua o cancelamento na Google Play. O acesso permanece até o fim do período pago.' });
+    return sendJson(res, 200, { ok: true, actionRequired: true, manageUrl, message: 'Conclua o cancelamento na Google Play. O acesso permanece atÃ© o fim do perÃ­odo pago.' });
   }
-  if (subscription.provider !== 'asaas' || !subscription.provider_ref) return sendJson(res, 409, { ok: false, message: 'Este plano não possui cobrança recorrente cancelável.' });
+  if (subscription.provider !== 'asaas' || !subscription.provider_ref) return sendJson(res, 409, { ok: false, message: 'Este plano nÃ£o possui cobranÃ§a recorrente cancelÃ¡vel.' });
   await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.provider_ref)}`, { method: 'DELETE' });
   const keepsPaidAccess = ['active', 'trialing', 'grace_period'].includes(subscription.status)
     && subscription.current_period_end && new Date(subscription.current_period_end).getTime() > Date.now();
   await context.db.query("UPDATE crewcheck_platform_subscriptions SET status=$2,cancel_at_period_end=TRUE,updated_at=NOW() WHERE email=$1", [context.identity.email, keepsPaidAccess ? subscription.status : 'canceled']);
   if (!keepsPaidAccess && context.profile.plan !== 'premium_unlimited') await context.db.query("UPDATE crewcheck_platform_profiles SET plan='free',updated_at=NOW() WHERE email=$1", [context.identity.email]);
-  return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: subscription.current_period_end || null, message: keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período já pago.' : 'Assinatura web cancelada. Não haverá nova renovação.' });
+  return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: subscription.current_period_end || null, message: keepsPaidAccess ? 'RenovaÃ§Ã£o web cancelada. O acesso permanece atÃ© o fim do perÃ­odo jÃ¡ pago.' : 'Assinatura web cancelada. NÃ£o haverÃ¡ nova renovaÃ§Ã£o.' });
 }
 
 function asaasEventStatus(eventName) {
@@ -1489,16 +1501,16 @@ function asaasEventStatus(eventName) {
 }
 
 async function handleAsaasWebhook(req, res) {
-  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'MÃ©todo nÃ£o permitido.' });
   const expected = env('ASAAS_WEBHOOK_TOKEN');
-  if (!expected || !safeEqual(req.headers['asaas-access-token'], expected)) return sendJson(res, 403, { ok: false, message: 'Webhook não autorizado.' });
+  if (!expected || !safeEqual(req.headers['asaas-access-token'], expected)) return sendJson(res, 403, { ok: false, message: 'Webhook nÃ£o autorizado.' });
   const body = await readBody(req, 1_000_000);
   const eventId = normalizeText(body.id, 180);
   const eventName = normalizeText(body.event, 100).toUpperCase();
   const subscriptionRef = normalizeText(body.payment?.subscription || body.subscription?.id || body.subscription, 180);
-  if (!eventId || !eventName) return sendJson(res, 400, { ok: false, message: 'Evento Asaas inválido.' });
+  if (!eventId || !eventName) return sendJson(res, 400, { ok: false, message: 'Evento Asaas invÃ¡lido.' });
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const eventRow = await db.query(`INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash)
     VALUES('asaas',$1,$2)`, [eventId, sha256(JSON.stringify(body))]);
   if (!eventRow.rowCount) return sendJson(res, 200, { ok: true, duplicate: true });
@@ -1507,7 +1519,7 @@ async function handleAsaasWebhook(req, res) {
   const subscription = current.rows[0];
   if (!subscription) {
     await db.query("DELETE FROM crewcheck_platform_webhook_events WHERE provider='asaas' AND event_id=$1", [eventId]);
-    return sendJson(res, 503, { ok: false, message: 'Assinatura ainda não conciliada; tente novamente.' });
+    return sendJson(res, 503, { ok: false, message: 'Assinatura ainda nÃ£o conciliada; tente novamente.' });
   }
   const status = asaasEventStatus(eventName);
   if (!status) return sendJson(res, 200, { ok: true, ignored: true, message: 'Evento informativo registrado sem alterar a assinatura.' });
@@ -1524,18 +1536,18 @@ async function handleAsaasWebhook(req, res) {
 }
 
 async function handleGoogleRtdn(req, res) {
-  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'MÃ©todo nÃ£o permitido.' });
   await verifyGooglePubSubIdentity(req);
   const body = await readBody(req, 1_000_000);
   const eventId = normalizeText(body.message?.messageId, 180);
   let notification;
   try { notification = JSON.parse(Buffer.from(String(body.message?.data || ''), 'base64').toString('utf8')); }
-  catch { return sendJson(res, 400, { ok: false, message: 'RTDN inválida.' }); }
+  catch { return sendJson(res, 400, { ok: false, message: 'RTDN invÃ¡lida.' }); }
   const purchaseToken = normalizeText(notification?.subscriptionNotification?.purchaseToken, 5000);
   const packageName = normalizeText(notification?.packageName, 180);
   if (!eventId || !purchaseToken || packageName !== env('GOOGLE_PLAY_PACKAGE_NAME', 'com.crewcheck.app')) return sendJson(res, 400, { ok: false, message: 'RTDN incompleta.' });
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const duplicate = await db.query("SELECT 1 FROM crewcheck_platform_webhook_events WHERE provider='google_play' AND event_id=$1", [eventId]);
   if (duplicate.rows[0]) return sendJson(res, 200, { ok: true, duplicate: true });
   const verified = await verifyGooglePlaySubscription(purchaseToken, '', true);
@@ -1544,7 +1556,7 @@ async function handleGoogleRtdn(req, res) {
     const publicIdValue = normalizeText(verified.payload?.externalAccountIdentifiers?.obfuscatedExternalAccountId, 40).toUpperCase();
     if (publicIdValue) owner = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [publicIdValue]);
   }
-  if (!owner.rows[0]) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliável.' });
+  if (!owner.rows[0]) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliÃ¡vel.' });
   await saveGoogleSubscription(db, owner.rows[0].email, purchaseToken, verified);
   await db.query("INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2)", [eventId, sha256(JSON.stringify(notification))]);
   return sendJson(res, 200, { ok: true });
@@ -1659,14 +1671,14 @@ async function handleRosterSync(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   const roster = sanitizeRoster(body.roster);
-  if (!Array.isArray(roster.days) || !roster.days.length) return sendJson(res, 400, { ok: false, message: 'A escala não possui dias válidos.' });
+  if (!Array.isArray(roster.days) || !roster.days.length) return sendJson(res, 400, { ok: false, message: 'A escala nÃ£o possui dias vÃ¡lidos.' });
   const firstDate = parseDateOnly(roster.days.find((day) => parseDateOnly(day?.date))?.date);
   const inferredYear = Number(firstDate?.slice(0, 4));
   const inferredMonth = Number(firstDate?.slice(5, 7));
   roster.year = Number(roster.year) || inferredYear;
   roster.month = Number(roster.month) || inferredMonth;
   if (!Number.isInteger(roster.year) || roster.year < 2000 || roster.year > 2100 || !Number.isInteger(roster.month) || roster.month < 1 || roster.month > 12) {
-    return sendJson(res, 400, { ok: false, code: 'ROSTER_PERIOD_REQUIRED', message: 'Não foi possível confirmar mês e ano da escala.' });
+    return sendJson(res, 400, { ok: false, code: 'ROSTER_PERIOD_REQUIRED', message: 'NÃ£o foi possÃ­vel confirmar mÃªs e ano da escala.' });
   }
   const key = rosterKey(roster);
   const id = crypto.randomUUID();
@@ -1709,7 +1721,7 @@ async function handleStays(req, res) {
   const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req, 500_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Hotéis e aprendizado de apresentação')) return;
+  if (!await requirePremium(context, res, 'HotÃ©is e aprendizado de apresentaÃ§Ã£o')) return;
   if (req.method !== 'GET') {
     const id = normalizeText(body.id, 80);
     const hotelName = normalizeText(body.hotelName, 180);
@@ -1760,7 +1772,7 @@ async function handleSameHotel(req, res, url) {
   const date = parseDateOnly(url.searchParams.get('date'));
   if (!hKey || !date) return sendJson(res, 400, { ok: false, message: 'Informe hotel e data.' });
   const result = await context.db.query(`SELECT p.display_name,p.public_id FROM crewcheck_platform_stays s JOIN crewcheck_platform_profiles p ON p.email=s.owner_email WHERE s.hotel_key=$1 AND s.stay_date=$2 AND s.share_same_hotel=TRUE AND s.owner_email<>$3 ORDER BY p.display_name LIMIT 30`, [hKey, date, context.identity.email]);
-  return sendJson(res, 200, { ok: true, companions: result.rows.map((row) => ({ displayName: row.display_name, publicId: row.public_id })), privacy: 'Número do quarto nunca é exibido a colegas.' });
+  return sendJson(res, 200, { ok: true, companions: result.rows.map((row) => ({ displayName: row.display_name, publicId: row.public_id })), privacy: 'NÃºmero do quarto nunca Ã© exibido a colegas.' });
 }
 
 async function handleVisitors(req, res) {
@@ -1797,11 +1809,11 @@ async function handleVisitors(req, res) {
     const safePassword = escapeHtml(password);
     const mail = await sendSystemEmail({
       to: email,
-      subject: `${context.profile.display_name} convidou você para acompanhar a escala no CrewCheck`,
-      text: `Você recebeu acesso de visitante ao CrewCheck.\n\nLink: ${link}\nSenha temporária: ${password}\n\nNo primeiro acesso, defina uma nova senha. O titular controla e pode revogar todas as permissões.\nTelegram: ${telegramLink}`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Convite CrewCheck</h1><p><b>${safeOwnerName}</b> convidou você para acompanhar informações selecionadas da escala.</p><p><a href="${safeLink}" style="display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold">Aceitar convite</a></p><p>Senha temporária: <b>${safePassword}</b></p><p>Você deverá criar outra senha no primeiro acesso.</p><p><a href="${safeTelegramLink}">Vincular Telegram</a></p></div>`,
+      subject: `${context.profile.display_name} convidou vocÃª para acompanhar a escala no CrewCheck`,
+      text: `VocÃª recebeu acesso de visitante ao CrewCheck.\n\nLink: ${link}\nSenha temporÃ¡ria: ${password}\n\nNo primeiro acesso, defina uma nova senha. O titular controla e pode revogar todas as permissÃµes.\nTelegram: ${telegramLink}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Convite CrewCheck</h1><p><b>${safeOwnerName}</b> convidou vocÃª para acompanhar informaÃ§Ãµes selecionadas da escala.</p><p><a href="${safeLink}" style="display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold">Aceitar convite</a></p><p>Senha temporÃ¡ria: <b>${safePassword}</b></p><p>VocÃª deverÃ¡ criar outra senha no primeiro acesso.</p><p><a href="${safeTelegramLink}">Vincular Telegram</a></p></div>`,
     });
-    return sendJson(res, 200, { ok: true, id: saved.rows[0]?.id || id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
+    return sendJson(res, 200, { ok: true, id: saved.rows[0]?.id || id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail nÃ£o estÃ¡ configurado; compartilhe o link e a senha temporÃ¡ria exibidos agora.' });
   }
   const result = await context.db.query('SELECT id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at FROM crewcheck_platform_visitors WHERE owner_email=$1 ORDER BY created_at DESC', [context.identity.email]);
   return sendJson(res, 200, { ok: true, visitors: result.rows });
@@ -1818,35 +1830,35 @@ async function handleVisitorUpdate(req, res, id) {
   const body = await readBody(req, 300_000);
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Permissões do visitante')) return;
+  if (!await requirePremium(context, res, 'PermissÃµes do visitante')) return;
   const permissions = allowedPermissions(body.permissions);
   const visitorId = normalizeText(id, 80);
   const updated = await context.db.query(`
     UPDATE crewcheck_platform_visitors SET permissions=$3,updated_at=NOW()
     WHERE id=$1 AND owner_email=$2 AND status<>'revoked'`,
   [visitorId, context.identity.email, JSON.stringify(permissions)]);
-  if (!updated.rowCount) return sendJson(res, 404, { ok: false, message: 'Visitante ativo ou convidado não localizado.' });
+  if (!updated.rowCount) return sendJson(res, 404, { ok: false, message: 'Visitante ativo ou convidado nÃ£o localizado.' });
   const result = await context.db.query(
     'SELECT id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 LIMIT 1',
     [visitorId, context.identity.email],
   );
-  return sendJson(res, 200, { ok: true, visitor: result.rows[0], message: 'Permissões atualizadas imediatamente.' });
+  return sendJson(res, 200, { ok: true, visitor: result.rows[0], message: 'PermissÃµes atualizadas imediatamente.' });
 }
 
 async function handleVisitorInviteInfo(req, res, url) {
   const token = normalizeText(url.searchParams.get('token'), 500);
   const db = await pool();
-  if (!db || !token) return sendJson(res, 404, { ok: false, message: 'Convite não localizado.' });
+  if (!db || !token) return sendJson(res, 404, { ok: false, message: 'Convite nÃ£o localizado.' });
   const result = await db.query("SELECT id,email,display_name,status,must_change_password FROM crewcheck_platform_visitors WHERE invite_token_hash=$1 AND status='invited' LIMIT 1", [sha256(token)]);
   const visitor = result.rows[0];
-  if (!visitor) return sendJson(res, 404, { ok: false, message: 'Convite inválido, expirado ou revogado.' });
+  if (!visitor) return sendJson(res, 404, { ok: false, message: 'Convite invÃ¡lido, expirado ou revogado.' });
   return sendJson(res, 200, { ok: true, visitor: { email: visitor.email, displayName: visitor.display_name, mustChangePassword: visitor.must_change_password } });
 }
 
 async function handleVisitorAccept(req, res) {
   const body = await readBody(req, 300_000);
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const token = normalizeText(body.token, 500);
   const email = safeEmail(body.email);
   const temporary = String(body.temporaryPassword || '');
@@ -1857,7 +1869,7 @@ async function handleVisitorAccept(req, res) {
   const visitor = result.rows[0];
   if (!visitor || !passwordMatches(temporary, visitor.password_hash)) {
     await recordAuthFailure(db, throttleId);
-    return sendJson(res, 401, { ok: false, message: 'Convite, e-mail ou senha temporária inválidos.' });
+    return sendJson(res, 401, { ok: false, message: 'Convite, e-mail ou senha temporÃ¡ria invÃ¡lidos.' });
   }
   await clearAuthFailures(db, throttleId);
   await db.query("UPDATE crewcheck_platform_visitors SET password_hash=$2,invite_token_hash=$3,status='active',must_change_password=FALSE,last_login_at=NOW(),updated_at=NOW() WHERE id=$1", [visitor.id, passwordHash(nextPassword), retiredTokenHash()]);
@@ -1870,10 +1882,10 @@ async function handleVisitorAccept(req, res) {
 async function handleVisitorLogin(req, res) {
   const body = await readBody(req, 200_000);
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const email = safeEmail(body.email);
   const password = String(body.password || '');
-  if (!email || !password || password.length > 256) return sendJson(res, 401, { ok: false, message: 'E-mail ou senha inválidos.' });
+  if (!email || !password || password.length > 256) return sendJson(res, 401, { ok: false, message: 'E-mail ou senha invÃ¡lidos.' });
   const throttleId = await checkAuthThrottle(db, req, email);
   const result = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE email=$1 AND status='active' ORDER BY updated_at DESC LIMIT 20", [email]);
   const matches = result.rows.filter((candidate) => passwordMatches(password, candidate.password_hash));
@@ -1892,7 +1904,7 @@ async function handleVisitorLogin(req, res) {
       return sendJson(res, 409, { ok: false, code: 'OWNER_SELECTION_REQUIRED', owners: owners.rows.map((owner) => ({ displayName: owner.display_name, publicId: owner.public_id })), message: 'Escolha qual convite deseja acessar.' });
     }
     await recordAuthFailure(db, throttleId);
-    return sendJson(res, 401, { ok: false, message: 'E-mail ou senha inválidos.' });
+    return sendJson(res, 401, { ok: false, message: 'E-mail ou senha invÃ¡lidos.' });
   }
   await clearAuthFailures(db, throttleId);
   await db.query('UPDATE crewcheck_platform_visitors SET last_login_at=NOW() WHERE id=$1', [visitor.id]);
@@ -1906,13 +1918,13 @@ async function handleVisitorData(req, res) {
   const identity = visitorIdentity(req);
   if (!identity) return sendJson(res, 401, { ok: false, message: 'Acesso de visitante expirado.' });
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const result = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1", [identity.visitorId, identity.ownerEmail]);
   const visitor = result.rows[0];
   if (!visitor) return sendJson(res, 403, { ok: false, message: 'Acesso revogado.' });
   const ownerProfileResult = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [identity.ownerEmail]);
   const ownerProfile = ownerProfileResult.rows[0];
-  if (!ownerProfile || !(await subscriptionStatus(db, ownerProfile)).premiumAccess) return sendJson(res, 402, { ok: false, code: 'OWNER_PREMIUM_REQUIRED', message: 'Este acesso está pausado porque o plano Premium do titular não está ativo.' });
+  if (!ownerProfile || !(await subscriptionStatus(db, ownerProfile)).premiumAccess) return sendJson(res, 402, { ok: false, code: 'OWNER_PREMIUM_REQUIRED', message: 'Este acesso estÃ¡ pausado porque o plano Premium do titular nÃ£o estÃ¡ ativo.' });
   const permissions = allowedPermissions(visitor.permissions);
   const owner = await db.query('SELECT display_name,public_id FROM crewcheck_platform_profiles WHERE email=$1', [identity.ownerEmail]);
   const rosterResult = permissions.roster || permissions.map || permissions.hotels || permissions.presentation || permissions.radar ? await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [identity.ownerEmail]) : { rows: [] };
@@ -1926,7 +1938,7 @@ async function handleVisitorData(req, res) {
 async function handleVisitorLogout(req, res) {
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `crewcheck_visitor_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
-  return sendJson(res, 200, { ok: true, message: 'Sessão de visitante encerrada.' });
+  return sendJson(res, 200, { ok: true, message: 'SessÃ£o de visitante encerrada.' });
 }
 
 function emergencyLocation(body = {}) {
@@ -1939,25 +1951,25 @@ function emergencyLocation(body = {}) {
 async function notifyOwnerEmergency(db, visitor, body = {}) {
   const recent = await db.query("SELECT COUNT(*) count FROM crewcheck_platform_emergencies WHERE visitor_id=$1 AND created_at>DATE_SUB(NOW(), INTERVAL 10 MINUTE)", [visitor.id]);
   if (Number(recent.rows[0]?.count || 0) >= 3) throw Object.assign(new Error('Aguarde alguns minutos antes de enviar outro pedido de ajuda.'), { status: 429 });
-  const message = normalizeText(body.message || 'Preciso de ajuda. Entre em contato comigo assim que possível.', 800);
+  const message = normalizeText(body.message || 'Preciso de ajuda. Entre em contato comigo assim que possÃ­vel.', 800);
   const locationUrl = emergencyLocation(body);
   const owner = await db.query('SELECT display_name FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [visitor.owner_email]);
   const ownerName = owner.rows[0]?.display_name || 'Tripulante';
   const telegramState = await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1 LIMIT 1', [`link-email:${visitor.owner_email}`]).catch(() => ({ rows: [] }));
   const telegramChatId = telegramState.rows[0]?.payload?.chatId || '';
   const alertText = [
-    'ALERTA DE AJUDA — CrewCheck',
+    'ALERTA DE AJUDA â€” CrewCheck',
     `Visitante: ${visitor.display_name} (${visitor.email})`,
     `Mensagem: ${message}`,
-    locationUrl ? `Localização compartilhada: ${locationUrl}` : '',
-    'Confirme o contato diretamente com a pessoa. Em risco imediato, acione os serviços públicos de emergência.',
+    locationUrl ? `LocalizaÃ§Ã£o compartilhada: ${locationUrl}` : '',
+    'Confirme o contato diretamente com a pessoa. Em risco imediato, acione os serviÃ§os pÃºblicos de emergÃªncia.',
   ].filter(Boolean).join('\n');
   const [mail, telegram] = await Promise.all([
     sendSystemEmail({
       to: visitor.owner_email,
       subject: `Pedido de ajuda de ${visitor.display_name} no CrewCheck`,
       text: alertText,
-      html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Pedido de ajuda</h1><p>Olá, ${escapeHtml(ownerName)}.</p><p><b>${escapeHtml(visitor.display_name)}</b> enviou um pedido de ajuda pelo CrewCheck.</p><p>${escapeHtml(message)}</p>${locationUrl ? `<p><a href="${escapeHtml(locationUrl)}">Ver localização compartilhada</a></p>` : ''}<p>Confirme o contato diretamente. Em risco imediato, acione os serviços públicos de emergência.</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Pedido de ajuda</h1><p>OlÃ¡, ${escapeHtml(ownerName)}.</p><p><b>${escapeHtml(visitor.display_name)}</b> enviou um pedido de ajuda pelo CrewCheck.</p><p>${escapeHtml(message)}</p>${locationUrl ? `<p><a href="${escapeHtml(locationUrl)}">Ver localizaÃ§Ã£o compartilhada</a></p>` : ''}<p>Confirme o contato diretamente. Em risco imediato, acione os serviÃ§os pÃºblicos de emergÃªncia.</p></div>`,
     }),
     sendTelegramDirect(telegramChatId, alertText),
   ]);
@@ -1971,12 +1983,12 @@ async function handleVisitorEmergency(req, res) {
   if (!identity) return sendJson(res, 401, { ok: false, message: 'Acesso de visitante expirado.' });
   const body = await readBody(req, 200_000);
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const result = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1", [identity.visitorId, identity.ownerEmail]);
   const visitor = result.rows[0];
-  if (!visitor || !allowedPermissions(visitor.permissions).emergency) return sendJson(res, 403, { ok: false, message: 'O titular não habilitou pedidos de ajuda para este acesso.' });
+  if (!visitor || !allowedPermissions(visitor.permissions).emergency) return sendJson(res, 403, { ok: false, message: 'O titular nÃ£o habilitou pedidos de ajuda para este acesso.' });
   const channels = await notifyOwnerEmergency(db, visitor, body);
-  return sendJson(res, channels.email || channels.telegram ? 200 : 503, { ok: channels.email || channels.telegram, channels, message: channels.email || channels.telegram ? 'Pedido de ajuda enviado ao titular.' : 'Nenhum canal do titular está disponível agora. Em risco imediato, use os serviços públicos de emergência.' });
+  return sendJson(res, channels.email || channels.telegram ? 200 : 503, { ok: channels.email || channels.telegram, channels, message: channels.email || channels.telegram ? 'Pedido de ajuda enviado ao titular.' : 'Nenhum canal do titular estÃ¡ disponÃ­vel agora. Em risco imediato, use os serviÃ§os pÃºblicos de emergÃªncia.' });
 }
 
 function visitorDaySummary(day) {
@@ -1984,8 +1996,8 @@ function visitorDaySummary(day) {
   const legs = Array.isArray(day?.legs) ? day.legs : [];
   const first = legs[0] || {};
   const last = legs[legs.length - 1] || first;
-  const route = first.origin && last.destination ? `${first.origin} → ${last.destination}` : '';
-  return `${date || 'Data a confirmar'} — ${normalizeText(day?.type || day?.pairingCode || route || 'Programação', 120)}${route ? ` · ${route}` : ''}`;
+  const route = first.origin && last.destination ? `${first.origin} â†’ ${last.destination}` : '';
+  return `${date || 'Data a confirmar'} â€” ${normalizeText(day?.type || day?.pairingCode || route || 'ProgramaÃ§Ã£o', 120)}${route ? ` Â· ${route}` : ''}`;
 }
 
 export async function handlePlatformVisitorTelegram(message = {}, text = '', send = sendTelegramDirect) {
@@ -1998,7 +2010,7 @@ export async function handlePlatformVisitorTelegram(message = {}, text = '', sen
     const visitorResult = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE telegram_token_hash=$1 AND status IN ('invited','active') LIMIT 1", [sha256(bind[1])]);
     const visitor = visitorResult.rows[0];
     if (!visitor) {
-      await send(chatId, 'Este vínculo de visitante expirou ou foi revogado. Peça um novo convite ao titular.');
+      await send(chatId, 'Este vÃ­nculo de visitante expirou ou foi revogado. PeÃ§a um novo convite ao titular.');
       return true;
     }
     await db.query('UPDATE crewcheck_platform_visitors SET telegram_chat_id=$2,telegram_token_hash=$3,updated_at=NOW() WHERE id=$1', [visitor.id, chatId, retiredTokenHash()]);
@@ -2015,42 +2027,42 @@ export async function handlePlatformVisitorTelegram(message = {}, text = '', sen
   const permissions = allowedPermissions(visitor.permissions);
   const command = normalizeText(text, 200).toLowerCase().split(/\s+/)[0];
   if (command === '/emergencia' || command === '/ajuda_agora') {
-    if (!permissions.emergency) await send(chatId, 'O titular não habilitou pedidos de ajuda neste acesso.');
+    if (!permissions.emergency) await send(chatId, 'O titular nÃ£o habilitou pedidos de ajuda neste acesso.');
     else {
       const channels = await notifyOwnerEmergency(db, visitor, { message: String(text).replace(/^\/\S+\s*/i, '') || 'Preciso de ajuda. Entre em contato comigo.' });
-      await send(chatId, channels.email || channels.telegram ? 'Pedido de ajuda enviado ao titular.' : 'Não consegui alcançar o titular pelos canais configurados. Em risco imediato, acione os serviços públicos de emergência.');
+      await send(chatId, channels.email || channels.telegram ? 'Pedido de ajuda enviado ao titular.' : 'NÃ£o consegui alcanÃ§ar o titular pelos canais configurados. Em risco imediato, acione os serviÃ§os pÃºblicos de emergÃªncia.');
     }
     return true;
   }
   const ownerProfile = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [visitor.owner_email]);
   if (!ownerProfile.rows[0] || !(await subscriptionStatus(db, ownerProfile.rows[0])).premiumAccess) {
-    await send(chatId, 'O acesso de visitante está pausado porque o plano Premium do titular não está ativo.');
+    await send(chatId, 'O acesso de visitante estÃ¡ pausado porque o plano Premium do titular nÃ£o estÃ¡ ativo.');
     return true;
   }
   if (command === '/ajuda' || command === '/start' || !command.startsWith('/')) {
-    await send(chatId, ['/escala — próximos dias permitidos', '/proximo — próxima programação', '/hotel — pernoite compartilhado', permissions.emergency ? '/emergencia mensagem — pedir ajuda ao titular' : ''].filter(Boolean).join('\n'));
+    await send(chatId, ['/escala â€” prÃ³ximos dias permitidos', '/proximo â€” prÃ³xima programaÃ§Ã£o', '/hotel â€” pernoite compartilhado', permissions.emergency ? '/emergencia mensagem â€” pedir ajuda ao titular' : ''].filter(Boolean).join('\n'));
     return true;
   }
   if (command === '/hotel') {
-    if (!permissions.hotels) await send(chatId, 'O titular não compartilhou a aba de hotéis.');
+    if (!permissions.hotels) await send(chatId, 'O titular nÃ£o compartilhou a aba de hotÃ©is.');
     else {
       const stays = await db.query('SELECT * FROM crewcheck_platform_stays WHERE owner_email=$1 AND share_with_visitors=TRUE AND stay_date>=CURRENT_DATE ORDER BY stay_date LIMIT 3', [visitor.owner_email]);
-      const lines = stays.rows.map((stay) => [stay.stay_date, stay.hotel_name, permissions.room && stay.room_cipher ? `quarto ${decryptPrivate(stay.room_cipher)}` : '', permissions.presentation && stay.presentation_time ? `apresentação ${stay.presentation_time}` : ''].filter(Boolean).join(' · '));
+      const lines = stays.rows.map((stay) => [stay.stay_date, stay.hotel_name, permissions.room && stay.room_cipher ? `quarto ${decryptPrivate(stay.room_cipher)}` : '', permissions.presentation && stay.presentation_time ? `apresentaÃ§Ã£o ${stay.presentation_time}` : ''].filter(Boolean).join(' Â· '));
       await send(chatId, lines.length ? lines.join('\n') : 'Nenhum pernoite foi compartilhado agora.');
     }
     return true;
   }
   if (command === '/escala' || command === '/proximo') {
-    if (!permissions.roster) await send(chatId, 'O titular não compartilhou a escala.');
+    if (!permissions.roster) await send(chatId, 'O titular nÃ£o compartilhou a escala.');
     else {
       const rosterResult = await db.query('SELECT roster FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [visitor.owner_email]);
       const today = new Date().toISOString().slice(0, 10);
       const days = (rosterResult.rows[0]?.roster?.days || []).filter((day) => !parseDateOnly(day?.date) || parseDateOnly(day?.date) >= today).slice(0, command === '/proximo' ? 1 : 7);
-      await send(chatId, days.length ? days.map(visitorDaySummary).join('\n') : 'Nenhuma programação futura compartilhada.');
+      await send(chatId, days.length ? days.map(visitorDaySummary).join('\n') : 'Nenhuma programaÃ§Ã£o futura compartilhada.');
     }
     return true;
   }
-  await send(chatId, 'Comando não disponível para visitante. Use /ajuda.');
+  await send(chatId, 'Comando nÃ£o disponÃ­vel para visitante. Use /ajuda.');
   return true;
 }
 
@@ -2058,7 +2070,7 @@ async function handleShares(req, res) {
   const body = req.method === 'POST' ? await readBody(req, 500_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Compartilhamentos revogáveis')) return;
+  if (!await requirePremium(context, res, 'Compartilhamentos revogÃ¡veis')) return;
   if (!await requirePlatformTable(context, res, 'crewcheck_platform_shares', 'O QR Code e o compartilhamento')) return;
   if (req.method === 'POST') {
     const token = crypto.randomBytes(32).toString('base64url');
@@ -2072,21 +2084,21 @@ async function handleShares(req, res) {
       [id, context.identity.email, sha256(token), kind, normalizeText(body.rosterKey, 20) || null, JSON.stringify(permissions), expiresAt],
     );
     const url = `${publicBaseUrl(req)}/share/${token}`;
-    return sendJson(res, 200, { ok: true, id, url, token, expiresAt, permissions, revocable: true, message: 'Link temporário criado. O QR deve conter somente este link revogável.' });
+    return sendJson(res, 200, { ok: true, id, url, token, expiresAt, permissions, revocable: true, message: 'Link temporÃ¡rio criado. O QR deve conter somente este link revogÃ¡vel.' });
   }
   const result = await context.db.query('SELECT id,kind,roster_key,permissions,expires_at,revoked_at,created_at FROM crewcheck_platform_shares WHERE owner_email=$1 ORDER BY created_at DESC LIMIT 100', [context.identity.email]);
   return sendJson(res, 200, { ok: true, shares: result.rows });
 }
 async function handleSharePublic(req, res, token) {
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   if (!await platformTableReady(db, 'crewcheck_platform_shares')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'O compartilhamento aguarda a migration do banco configurado.' });
   const shareResult = await db.query('SELECT * FROM crewcheck_platform_shares WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>NOW() LIMIT 1', [sha256(token)]);
   const share = shareResult.rows[0];
   if (!share) return sendJson(res, 404, { ok: false, message: 'Compartilhamento expirado ou revogado.' });
   const permissions = allowedPermissions(share.permissions);
   const owner = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [share.owner_email]);
-  if (!owner.rows[0] || !(await subscriptionStatus(db, owner.rows[0])).premiumAccess) return sendJson(res, 410, { ok: false, code: 'SHARE_PAUSED', message: 'Este compartilhamento não está mais disponível.' });
+  if (!owner.rows[0] || !(await subscriptionStatus(db, owner.rows[0])).premiumAccess) return sendJson(res, 410, { ok: false, code: 'SHARE_PAUSED', message: 'Este compartilhamento nÃ£o estÃ¡ mais disponÃ­vel.' });
   const roster = share.roster_key
     ? await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email, share.roster_key])
     : await db.query('SELECT roster_key,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY active DESC,updated_at DESC LIMIT 1', [share.owner_email]);
@@ -2113,14 +2125,14 @@ async function handleConnections(req, res) {
   const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req, 300_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Comparação de escala')) return;
+  if (!await requirePremium(context, res, 'ComparaÃ§Ã£o de escala')) return;
   if (req.method === 'POST') {
     const targetEmail = safeEmail(body.email || body.publicId);
     const targetId = normalizeText(body.publicId, 20).toUpperCase();
     const target = targetEmail
       ? await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [targetEmail])
       : await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [targetId]);
-    if (!target.rows[0] || target.rows[0].email === context.identity.email) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck não localizado.' });
+    if (!target.rows[0] || target.rows[0].email === context.identity.email) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck nÃ£o localizado.' });
     await context.db.query(
       `INSERT INTO crewcheck_platform_connections(id,requester_email,target_email,status,permissions)
        VALUES($1,$2,$3,'pending',$4)
@@ -2139,13 +2151,13 @@ async function handleConnections(req, res) {
 async function handleCompare(req, res, url) {
   const context = await requireMain(req, res);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Comparação de escala')) return;
+  if (!await requirePremium(context, res, 'ComparaÃ§Ã£o de escala')) return;
   const otherId = normalizeText(url.searchParams.get('publicId'), 20).toUpperCase();
   const target = await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE public_id=$1', [otherId]);
   const other = target.rows[0];
-  if (!other) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck não localizado.' });
+  if (!other) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck nÃ£o localizado.' });
   const connection = await context.db.query("SELECT 1 FROM crewcheck_platform_connections WHERE status='accepted' AND ((requester_email=$1 AND target_email=$2) OR (requester_email=$2 AND target_email=$1)) LIMIT 1", [context.identity.email, other.email]);
-  if (!connection.rows[0]) return sendJson(res, 403, { ok: false, message: 'A comparação precisa ser aceita pelos dois usuários.' });
+  if (!connection.rows[0]) return sendJson(res, 403, { ok: false, message: 'A comparaÃ§Ã£o precisa ser aceita pelos dois usuÃ¡rios.' });
   const rosters = await context.db.query('SELECT owner_email,roster FROM crewcheck_platform_rosters WHERE active=TRUE AND owner_email IN ($1,$2) ORDER BY updated_at DESC', [context.identity.email, other.email]);
   const mine = rosters.rows.find((row) => row.owner_email === context.identity.email)?.roster;
   const theirs = rosters.rows.find((row) => row.owner_email === other.email)?.roster;
@@ -2156,12 +2168,12 @@ async function handleCompare(req, res, url) {
   const sharedHotelMap = new Map(sharedStays.rows.map((stay) => [`${stay.owner_email}|${parseDateOnly(stay.stay_date)}`, stay.hotel_key]));
   const rows = dates.map((date) => {
     const x = a.get(date); const y = b.get(date);
-    const off = (day) => /\b(DO|DOF|DOP|DOPR|DR|OFF|FOLGA|FERIAS|FÉRIAS)\b/i.test(`${day?.type || ''} ${day?.pairingCode || ''}`) && !(day?.legs || []).length;
+    const off = (day) => /\b(DO|DOF|DOP|DOPR|DR|OFF|FOLGA|FERIAS|FÃ‰RIAS)\b/i.test(`${day?.type || ''} ${day?.pairingCode || ''}`) && !(day?.legs || []).length;
     const mineHotel = sharedHotelMap.get(`${context.identity.email}|${date}`);
     const otherHotel = sharedHotelMap.get(`${other.email}|${date}`);
     return { date, mine: x ? (off(x) ? 'Folga/descanso' : 'Programado') : 'Sem dado', colleague: y ? (off(y) ? 'Folga/descanso' : 'Programado') : 'Sem dado', bothFree: Boolean(x && y && off(x) && off(y)), sameHotel: Boolean(mineHotel && otherHotel && mineHotel === otherHotel) };
   });
-  return sendJson(res, 200, { ok: true, colleague: { displayName: other.display_name, publicId: other.public_id }, summary: { daysCompared: rows.length, bothFree: rows.filter((row) => row.bothFree).length, sameHotel: rows.filter((row) => row.sameHotel).length }, rows, privacy: 'A comparação exibe disponibilidade agregada, não números de voo, quarto ou dados pessoais.' });
+  return sendJson(res, 200, { ok: true, colleague: { displayName: other.display_name, publicId: other.public_id }, summary: { daysCompared: rows.length, bothFree: rows.filter((row) => row.bothFree).length, sameHotel: rows.filter((row) => row.sameHotel).length }, rows, privacy: 'A comparaÃ§Ã£o exibe disponibilidade agregada, nÃ£o nÃºmeros de voo, quarto ou dados pessoais.' });
 }
 async function handleChat(req, res, url) {
   const body = req.method === 'POST' ? await readBody(req, 100_000) : {};
@@ -2171,9 +2183,9 @@ async function handleChat(req, res, url) {
   const otherId = normalizeText(body.publicId || url.searchParams.get('publicId'), 20).toUpperCase();
   const target = await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [otherId]);
   const other = target.rows[0];
-  if (!other) return sendJson(res, 404, { ok: false, message: 'Usuário não localizado.' });
+  if (!other) return sendJson(res, 404, { ok: false, message: 'UsuÃ¡rio nÃ£o localizado.' });
   const connection = await context.db.query("SELECT permissions FROM crewcheck_platform_connections WHERE status='accepted' AND ((requester_email=$1 AND target_email=$2) OR (requester_email=$2 AND target_email=$1)) LIMIT 1", [context.identity.email, other.email]);
-  if (!connection.rows[0]?.permissions?.chat) return sendJson(res, 403, { ok: false, message: 'O chat precisa estar autorizado na conexão.' });
+  if (!connection.rows[0]?.permissions?.chat) return sendJson(res, 403, { ok: false, message: 'O chat precisa estar autorizado na conexÃ£o.' });
   const directKey = [context.identity.email, other.email].sort().join('|');
   const id = crypto.randomUUID();
   await context.db.query(
@@ -2225,13 +2237,13 @@ async function handleVisitorChat(req, res) {
   if (!identity) return sendJson(res, 401, { ok: false, message: 'Acesso de visitante expirado.' });
   const body = req.method === 'POST' ? await readBody(req, 100_000) : {};
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponÃ­vel.' });
   const visitorResult = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1", [identity.visitorId, identity.ownerEmail]);
   const visitor = visitorResult.rows[0];
-  if (!visitor || !allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'O titular não habilitou o chat neste acesso.' });
+  if (!visitor || !allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'O titular nÃ£o habilitou o chat neste acesso.' });
   const ownerResult = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [visitor.owner_email]);
   const owner = ownerResult.rows[0];
-  if (!owner || !(await subscriptionStatus(db, owner)).premiumAccess) return sendJson(res, 402, { ok: false, code: 'OWNER_PREMIUM_REQUIRED', message: 'O chat está pausado porque o plano Premium do titular não está ativo.' });
+  if (!owner || !(await subscriptionStatus(db, owner)).premiumAccess) return sendJson(res, 402, { ok: false, code: 'OWNER_PREMIUM_REQUIRED', message: 'O chat estÃ¡ pausado porque o plano Premium do titular nÃ£o estÃ¡ ativo.' });
   const threadId = await visitorChatThread(db, visitor);
   const sender = `visitor:${visitor.id}`;
   if (req.method === 'POST') await appendChatMessage(db, threadId, sender, body.message);
@@ -2245,8 +2257,8 @@ async function handleOwnerVisitorChat(req, res, visitorId) {
   if (!await requirePremium(context, res, 'Chat com visitante')) return;
   const result = await context.db.query("SELECT * FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1", [normalizeText(visitorId, 80), context.identity.email]);
   const visitor = result.rows[0];
-  if (!visitor) return sendJson(res, 404, { ok: false, message: 'Visitante ativo não localizado.' });
-  if (!allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'Habilite a permissão de chat para este visitante.' });
+  if (!visitor) return sendJson(res, 404, { ok: false, message: 'Visitante ativo nÃ£o localizado.' });
+  if (!allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'Habilite a permissÃ£o de chat para este visitante.' });
   const threadId = await visitorChatThread(context.db, visitor);
   if (req.method === 'POST') await appendChatMessage(context.db, threadId, context.identity.email, body.message);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: visitor.display_name, visitorId: visitor.id }, messages: await chatMessages(context.db, threadId, context.identity.email) });
@@ -2274,7 +2286,7 @@ async function handleParking(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   if (!await platformTableReady(context.db, 'crewcheck_platform_parking_positions')) {
-    return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'A sincronização de estacionamento aguarda a migration; a marcação local continua disponível.' });
+    return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', message: 'A sincronizaÃ§Ã£o de estacionamento aguarda a migration; a marcaÃ§Ã£o local continua disponÃ­vel.' });
   }
   if (req.method === 'DELETE') {
     await context.db.query('UPDATE crewcheck_platform_parking_positions SET active=FALSE,cleared_at=NOW() WHERE owner_email=$1 AND active=TRUE', [context.identity.email]);
@@ -2284,7 +2296,7 @@ async function handleParking(req, res) {
     const latitude = Number(body.lat);
     const longitude = Number(body.lng);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-      return sendJson(res, 400, { ok: false, message: 'Coordenadas de estacionamento inválidas.' });
+      return sendJson(res, 400, { ok: false, message: 'Coordenadas de estacionamento invÃ¡lidas.' });
     }
     const details = JSON.stringify({
       reference: normalizeText(body.reference || body.label, 240),
@@ -2319,7 +2331,7 @@ async function handleGym(req, res, url) {
   const body = req.method === 'POST' ? await readBody(req, 200_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Presença e lotação colaborativa')) return;
+  if (!await requirePremium(context, res, 'PresenÃ§a e lotaÃ§Ã£o colaborativa')) return;
   if (req.method === 'POST') {
     const gymName = normalizeText(body.gymName, 180);
     if (!gymName) return sendJson(res, 400, { ok: false, message: 'Informe a academia.' });
@@ -2337,7 +2349,7 @@ async function handleGym(req, res, url) {
   const result = queryKey
     ? await context.db.query(`${aggregate} AND gym_key=$1 GROUP BY gym_key,gym_name,chain_name`, [queryKey])
     : await context.db.query(`${aggregate} GROUP BY gym_key,gym_name,chain_name ORDER BY shared_count DESC LIMIT 50`);
-  return sendJson(res, 200, { ok: true, gyms: result.rows.map((row) => ({ gymKey: row.gym_key, gymName: row.gym_name, chainName: row.chain_name, peopleSharing: Number(row.shared_count || 0), crowdLabel: Number(row.shared_count || 0) >= 8 ? 'Movimentada segundo usuários' : Number(row.shared_count || 0) >= 3 ? 'Movimento moderado segundo usuários' : Number(row.shared_count || 0) > 0 ? 'Poucos relatos agora' : 'Sem relatos recentes', lastReport: row.last_report })), disclaimer: 'Lotação é colaborativa e temporária; não representa dado oficial da academia ou do Wellhub.' });
+  return sendJson(res, 200, { ok: true, gyms: result.rows.map((row) => ({ gymKey: row.gym_key, gymName: row.gym_name, chainName: row.chain_name, peopleSharing: Number(row.shared_count || 0), crowdLabel: Number(row.shared_count || 0) >= 8 ? 'Movimentada segundo usuÃ¡rios' : Number(row.shared_count || 0) >= 3 ? 'Movimento moderado segundo usuÃ¡rios' : Number(row.shared_count || 0) > 0 ? 'Poucos relatos agora' : 'Sem relatos recentes', lastReport: row.last_report })), disclaimer: 'LotaÃ§Ã£o Ã© colaborativa e temporÃ¡ria; nÃ£o representa dado oficial da academia ou do Wellhub.' });
 }
 
 function periodStats(row) {
@@ -2388,9 +2400,9 @@ async function handleLegacyStats(req, res) {
   const globalPeriods = globalRows.rows.map(periodStats);
   return sendJson(res, 200, {
     ok: true,
-    personal: { mode: 'personal', summary: statsSummary(periods), periods, disclaimer: 'Estatísticas calculadas somente a partir das escalas salvas desta conta.' },
-    global: { mode: 'global', summary: statsSummary(globalPeriods), periods: [], disclaimer: enoughForAggregate ? 'Resumo agregado e sem identificação individual.' : 'Resumo global oculto até existir uma base mínima de cinco usuários.' },
-    notice: 'Os números dependem da integridade da escala importada e não substituem documentos oficiais.',
+    personal: { mode: 'personal', summary: statsSummary(periods), periods, disclaimer: 'EstatÃ­sticas calculadas somente a partir das escalas salvas desta conta.' },
+    global: { mode: 'global', summary: statsSummary(globalPeriods), periods: [], disclaimer: enoughForAggregate ? 'Resumo agregado e sem identificaÃ§Ã£o individual.' : 'Resumo global oculto atÃ© existir uma base mÃ­nima de cinco usuÃ¡rios.' },
+    notice: 'Os nÃºmeros dependem da integridade da escala importada e nÃ£o substituem documentos oficiais.',
   });
 }
 
@@ -2418,7 +2430,7 @@ async function handleLegacyDatabase(req, res, url) {
   const activate = url.pathname.match(/^\/api\/rosters\/([^/]+)\/activate$/);
   if (activate && req.method === 'POST') {
     const target = await context.db.query('SELECT * FROM crewcheck_platform_rosters WHERE id=$1 AND owner_email=$2 LIMIT 1', [activate[1], context.identity.email]);
-    if (!target.rows[0]) return sendJson(res, 404, { ok: false, message: 'Escala não localizada.' });
+    if (!target.rows[0]) return sendJson(res, 404, { ok: false, message: 'Escala nÃ£o localizada.' });
     await context.db.query('UPDATE crewcheck_platform_rosters SET active=(id=$2),updated_at=CASE WHEN id=$2 THEN NOW() ELSE updated_at END WHERE owner_email=$1', [context.identity.email, activate[1]]);
     return sendJson(res, 200, { ok: true, roster: rosterSummary({ ...target.rows[0], active: true, updated_at: new Date() }) });
   }
@@ -2433,23 +2445,23 @@ async function handleLegacyDatabase(req, res, url) {
       const next = await context.db.query('SELECT id FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY updated_at DESC LIMIT 1', [context.identity.email]);
       if (next.rows[0]?.id) await context.db.query('UPDATE crewcheck_platform_rosters SET active=TRUE,updated_at=NOW() WHERE id=$1', [next.rows[0].id]);
     }
-    return sendJson(res, 200, { ok: Boolean(removed.rowCount), message: removed.rowCount ? 'Escala excluída.' : 'Escala não localizada.' });
+    return sendJson(res, 200, { ok: Boolean(removed.rowCount), message: removed.rowCount ? 'Escala excluÃ­da.' : 'Escala nÃ£o localizada.' });
   }
   if (id && req.method === 'GET') {
     const result = await context.db.query('SELECT * FROM crewcheck_platform_rosters WHERE id=$1 AND owner_email=$2 LIMIT 1', [id, context.identity.email]);
     const row = result.rows[0];
-    if (!row) return sendJson(res, 404, { ok: false, message: 'Escala não localizada.' });
+    if (!row) return sendJson(res, 404, { ok: false, message: 'Escala nÃ£o localizada.' });
     return sendJson(res, 200, { ok: true, roster: rosterSummary(row), data: { roster: row.roster, compliance: row.compliance, gym: row.gym || [] } });
   }
-  return sendJson(res, 404, { ok: false, message: 'Recurso de banco não localizado.' });
+  return sendJson(res, 404, { ok: false, message: 'Recurso de banco nÃ£o localizado.' });
 }
 
 async function handleAccountDeletion(req, res) {
-  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'MÃ©todo nÃ£o permitido.' });
   const body = await readBody(req, 100_000);
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (normalizeText(body.confirmation, 30).toUpperCase() !== 'EXCLUIR') return sendJson(res, 400, { ok: false, message: 'Digite EXCLUIR para confirmar a remoção permanente.' });
+  if (normalizeText(body.confirmation, 30).toUpperCase() !== 'EXCLUIR') return sendJson(res, 400, { ok: false, message: 'Digite EXCLUIR para confirmar a remoÃ§Ã£o permanente.' });
   const subscriptionResult = await context.db.query('SELECT provider,provider_ref,status FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
   const subscription = subscriptionResult.rows[0] || null;
   let externalCancellation = null;
@@ -2465,13 +2477,13 @@ async function handleAccountDeletion(req, res) {
         if (error?.providerStatus === 404) {
           externalCancellation = true;
         } else {
-          console.error('[CrewCheck] Falha ao cancelar a assinatura Asaas antes da exclusão:', error?.message || error);
+          console.error('[CrewCheck] Falha ao cancelar a assinatura Asaas antes da exclusÃ£o:', error?.message || error);
           return sendJson(res, error?.status === 503 ? 503 : 502, {
             ok: false,
             deleted: false,
             retryable: true,
             code: 'ASAAS_CANCELLATION_REQUIRED',
-            message: 'Não foi possível confirmar o cancelamento da cobrança no Asaas. Nenhum dado foi excluído; tente novamente em alguns minutos.',
+            message: 'NÃ£o foi possÃ­vel confirmar o cancelamento da cobranÃ§a no Asaas. Nenhum dado foi excluÃ­do; tente novamente em alguns minutos.',
           });
         }
       }
@@ -2524,7 +2536,7 @@ async function handleAccountDeletion(req, res) {
   return sendJson(res, 200, {
     ok: true, deleted: true, externalCancellation,
     manageGooglePlayUrl: subscription?.provider === 'google_play' ? 'https://play.google.com/store/account/subscriptions' : null,
-    message: subscription?.provider === 'google_play' ? 'Dados excluídos e sessão encerrada. A assinatura Google Play deve ser cancelada separadamente na Play Store.' : 'Dados excluídos e sessão encerrada.',
+    message: subscription?.provider === 'google_play' ? 'Dados excluÃ­dos e sessÃ£o encerrada. A assinatura Google Play deve ser cancelada separadamente na Play Store.' : 'Dados excluÃ­dos e sessÃ£o encerrada.',
   });
 }
 
@@ -2540,6 +2552,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/admin/terms') { await handleAdminTerms(req, res); return true; }
     if (url.pathname === '/api/platform/admin/unlimited') { await handleAdminUnlimited(req, res); return true; }
     if (url.pathname === '/api/platform/admin/diagnostics/cirium') { await handleAdminCiriumDiagnostic(req, res); return true; }
+    if (url.pathname === '/api/platform/admin/diagnostics/cirium/flight') { await handleAdminCiriumFlightDiagnostic(req, res, url); return true; }
     if (url.pathname === '/api/platform/health/amil') { await handleAmilHealth(req, res); return true; }
     if (url.pathname === '/api/platform/health/amil/search') { await handleAmilSearch(req, res, url); return true; }
     if (url.pathname === '/api/platform/database/health') { await handleDatabaseHealth(req, res); return true; }
@@ -2579,13 +2592,14 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/gyms/checkins') { await handleGym(req, res, url); return true; }
     if (url.pathname === '/api/platform/parking') { await handleParking(req, res); return true; }
     if (url.pathname === '/api/platform/account/delete') { await handleAccountDeletion(req, res); return true; }
-    sendJson(res, 404, { ok: false, message: 'Recurso da plataforma não localizado.' });
+    sendJson(res, 404, { ok: false, message: 'Recurso da plataforma nÃ£o localizado.' });
     return true;
   } catch (error) {
     const status = Number(error?.status || 500);
-    sendJson(res, status >= 400 && status < 600 ? status : 500, { ok: false, code: error?.code || 'PLATFORM_ERROR', message: status >= 500 ? 'O CrewCheck não conseguiu concluir esta operação agora.' : error?.message || 'Solicitação inválida.' });
+    sendJson(res, status >= 400 && status < 600 ? status : 500, { ok: false, code: error?.code || 'PLATFORM_ERROR', message: status >= 500 ? 'O CrewCheck nÃ£o conseguiu concluir esta operaÃ§Ã£o agora.' : error?.message || 'SolicitaÃ§Ã£o invÃ¡lida.' });
     return true;
   }
 }
 
 export const crewCheckPlatform = { version: APP_VERSION, defaultTimezone: DEFAULT_TIMEZONE, supportedLocales: [...SUPPORTED_LOCALES] };
+
