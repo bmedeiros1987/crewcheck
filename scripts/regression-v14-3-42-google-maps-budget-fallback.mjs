@@ -57,7 +57,6 @@ try {
   assert.equal(blocked.blocked, true);
   assert.equal(blocked.blockedReason, 'provider_quota_429');
   assert.equal((await budgetModule.reserveGoogleMapsRequest('routes', 1, fixedNow)).allowed, false, 'erro de cota externo deve bloquear novas tentativas naquele mês');
-
   assert.equal(budgetModule.googleMapsQuotaFailure(429, {}), true);
   assert.equal(budgetModule.googleMapsQuotaFailure(403, { error: { status: 'RESOURCE_EXHAUSTED' } }), true);
   assert.equal(budgetModule.googleMapsQuotaFailure(403, { status: 'OVER_QUERY_LIMIT' }), true);
@@ -103,9 +102,8 @@ assert.ok(chain.includes("await import('../v14341/compatibility.mjs');"), 'compa
 assert.ok(server.includes("from './server/v14342/maps-budget.mjs'"), 'servidor deve importar o controlador de cota');
 assert.ok(server.includes("if (url.pathname === '/api/maps/provider/status')"), 'status seguro de mapas deve estar registrado');
 assert.ok(server.includes("'GOOGLE_ROUTES_API_KEY', 'GOOGLE_MAPS_SERVER_KEY'"), 'chave específica do Routes deve ser priorizada');
-assert.ok(server.includes("providerOrder: ['Google Routes', 'TomTom']"), 'ordem pública deve registrar Google antes de TomTom');
-assert.ok(server.includes("fallbackFrom: 'Google Routes'"), 'fallback deve informar origem sem expor segredo');
-assert.ok(server.includes('fallbackReason: reason'), 'motivo do fallback deve ser rastreável');
+assert.ok(server.includes("providerOrder: ['TomTom', 'Google Routes']"), 'ordem terrestre deve registrar TomTom antes de Google');
+assert.ok(server.includes("fallbackFrom: 'TomTom'"), 'fallback Google deve informar origem sem expor segredo');
 assert.ok(server.includes('await reserveGoogleMapsRequest'), 'chamada Google deve reservar cota antes da requisição');
 assert.ok(server.includes('readGoogleRouteCache'), 'rotas repetidas devem consultar cache');
 assert.ok(budgetSource.includes('INSERT IGNORE INTO crewcheck_external_api_usage'), 'primeira reserva persistente deve criar a linha antes do lock');
@@ -127,12 +125,16 @@ assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, 'handler de rota prepa
 const sessionCheck = handler.indexOf('cc1371Verify(cc1371RequestToken(req))');
 const authRejection = handler.indexOf('cc1371AuthRequired() && !session');
 const googleKeyRead = handler.indexOf('const googleKey = mapsServerKey()');
+const tomtomRouteCall = handler.indexOf('await tomtomRoutePreview');
 const googleRouteCall = handler.indexOf('await googleRoutePreview');
 assert.ok(sessionCheck >= 0 && authRejection > sessionCheck, 'rota deve validar a sessão CrewCheck');
-assert.ok(authRejection < googleKeyRead && authRejection < googleRouteCall, 'requisição anônima deve ser rejeitada antes de ler o provedor ou consumir cota');
+assert.ok(authRejection < googleKeyRead && authRejection < googleRouteCall && authRejection < tomtomRouteCall, 'requisição anônima deve ser rejeitada antes de ler o provedor ou consumir cota');
 assert.ok(handler.includes("sendJson(res, 401"), 'rota pública sem sessão deve receber 401 explícito');
 assert.ok(handler.includes("req.method !== 'GET'"), 'rota deve aceitar somente GET');
-assert.ok(handler.indexOf('await googleRoutePreview') < handler.indexOf('await tomtomRoutePreview'), 'Google deve ser tentado antes da TomTom');
+assert.ok(tomtomRouteCall >= 0 && tomtomRouteCall < googleRouteCall, 'TomTom deve ser tentado antes do Google para driving');
+assert.ok(handler.includes("requestedMode !== 'transit' && tomtomKey"), 'TomTom não deve interceptar transporte público');
+assert.ok(handler.includes("requestedMode === 'transit' ? ['Google Routes']"), 'transit deve permanecer Google-only');
+assert.ok(!handler.includes('0,0 km') && !handler.includes('0.0 km'), 'falha de rota nunca pode virar distância zero apresentada');
 
 const routeClientStart = home.indexOf('async function fetchRoutePreviewInfo(');
 const routeClientEnd = home.indexOf('async function fetchNearbyPlaces(', routeClientStart);
@@ -148,6 +150,7 @@ const statusHandler = server.slice(statusStart, statusEnd);
 assert.ok(statusHandler.includes('alarmRequestIdentity(req)'), 'diagnóstico de custo deve identificar o administrador');
 assert.ok(statusHandler.includes('if (!identity.admin)'), 'diagnóstico mensal não pode ficar público');
 assert.ok(statusHandler.includes('sendJson(res, 403'), 'usuário comum deve receber bloqueio explícito');
+assert.ok(statusHandler.includes("primary: tomtomConfigured ? 'TomTom'"), 'Admin deve refletir TomTom como primário terrestre quando configurado');
 assert.ok(!statusHandler.includes('API_KEY'), 'status nunca pode serializar nomes ou valores de chaves');
 
 for (const marker of [
@@ -167,7 +170,12 @@ for (const cssMarker of ['.cc-maps-budget-track', '.cc-maps-budget-facts', '@med
 const conciergeStart = server.indexOf('async function conciergeTravelEstimate(');
 const conciergeEnd = server.indexOf('function conciergeLeaveDateLabel(', conciergeStart);
 const concierge = server.slice(conciergeStart, conciergeEnd);
-assert.ok(concierge.indexOf('await googleRoutePreview') < concierge.indexOf('await tomtomRoutePreview'), 'Concierge deve usar a mesma ordem Google → TomTom');
+assert.ok(conciergeStart >= 0 && conciergeEnd > conciergeStart, 'rota do Concierge preparada não localizada');
+assert.ok(concierge.indexOf('await tomtomRoutePreview') < concierge.indexOf('await googleRoutePreview'), 'Concierge deve usar a mesma ordem TomTom → Google Routes');
+assert.ok(concierge.includes('return null;'), 'sem provider real o Concierge deve falhar fechado');
+assert.ok(!concierge.includes('estimativa de referência'), 'Concierge não pode mascarar falha com ETA heurístico');
+assert.ok(!concierge.includes('distanceKm / 38'), 'velocidade fixa não pode substituir trânsito real');
+assert.ok(!concierge.includes('conciergeHaversineKm'), 'linha reta não pode substituir rota terrestre');
 
 for (const marker of [
   'GOOGLE_ROUTES_API_KEY=',
@@ -195,4 +203,4 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch de mapas não pode alterar motor protegido: ${protectedPath}`);
 }
 
-console.log('v14.3.42 Google Maps budget/fallback: authenticated route preview with bearer/cookie client, monthly cap, database-outage latch, visible Admin control, serialized fail-closed persistence, cache, quota block, Google-first order, TomTom fallback, minimal Calendar scope, final v14.3.48 chain and protected engine validated.');
+console.log('v14.3.42 Maps: authenticated route preview, protected budget/cache, TomTom-first driving, Google fallback/transit, fail-closed Concierge and protected engines validated.');

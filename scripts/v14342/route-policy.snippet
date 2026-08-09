@@ -1,8 +1,8 @@
 async function googleRoutePreview(origin, destination, requestedMode, key) {
   const cached = readGoogleRouteCache(origin, destination, requestedMode);
-  if (cached) return { ...cached, mapsBudget: await googleMapsBudgetStatus(), providerOrder: ['Google Routes', 'TomTom'] };
+  if (cached) return { ...cached, mapsBudget: await googleMapsBudgetStatus(), providerOrder: requestedMode === 'transit' ? ['Google Routes'] : ['TomTom', 'Google Routes'] };
   const budget = await reserveGoogleMapsRequest('routes', 1);
-  if (!budget.allowed) return { ok: false, configured: true, budgetDenied: true, mapsBudget: budget, message: 'Limite mensal do Google Maps atingido; ativando TomTom.' };
+  if (!budget.allowed) return { ok: false, configured: true, budgetDenied: true, mapsBudget: budget, message: 'Limite mensal do Google Maps atingido.' };
   const travelMode = requestedMode === 'transit' ? 'TRANSIT' : 'DRIVE';
   const result = await fetchRouteJson('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
@@ -23,10 +23,10 @@ async function googleRoutePreview(origin, destination, requestedMode, key) {
   });
   if (googleMapsQuotaFailure(result.status, result.payload)) {
     const blocked = await markGoogleMapsQuotaBlocked(`provider_quota_${result.status || 'unknown'}`);
-    return { ok: false, configured: true, quotaFailure: true, mapsBudget: blocked, message: 'Cota do Google Maps indisponível; ativando TomTom.' };
+    return { ok: false, configured: true, quotaFailure: true, mapsBudget: blocked, message: 'Cota do Google Maps indisponível.' };
   }
   const route = result.payload?.routes?.[0];
-  if (!result.ok || !route) return { ok: false, configured: true, googleFailure: true, mapsBudget: await googleMapsBudgetStatus(), message: 'Google Routes não respondeu; ativando contingência.' };
+  if (!result.ok || !route) return { ok: false, configured: true, googleFailure: true, mapsBudget: await googleMapsBudgetStatus(), message: 'Google Routes não respondeu.' };
   const durationSeconds = routeDurationSeconds(route.duration);
   const baselineDurationSeconds = routeDurationSeconds(route.staticDuration);
   const trafficDelaySeconds = Math.max(0, durationSeconds - baselineDurationSeconds);
@@ -34,8 +34,9 @@ async function googleRoutePreview(origin, destination, requestedMode, key) {
     ok: true,
     configured: true,
     provider: 'Google Routes',
-    providerOrder: ['Google Routes', 'TomTom'],
-    fallback: false,
+    providerOrder: travelMode === 'TRANSIT' ? ['Google Routes'] : ['TomTom', 'Google Routes'],
+    fallback: travelMode === 'DRIVE',
+    fallbackFrom: travelMode === 'DRIVE' ? 'TomTom' : undefined,
     liveTraffic: travelMode === 'DRIVE',
     trafficAware: travelMode === 'DRIVE',
     distanceMeters: route.distanceMeters || 0,
@@ -51,7 +52,7 @@ async function googleRoutePreview(origin, destination, requestedMode, key) {
     polyline: route.polyline?.encodedPolyline || '',
     updatedAt: new Date().toISOString(),
     refreshAfterSeconds: 120,
-    message: travelMode === 'DRIVE' ? 'Rota Google calculada com trânsito quando disponível.' : 'Rota de transporte público calculada pelo Google dentro do CrewCheck.',
+    message: travelMode === 'DRIVE' ? 'Rota Google calculada como contingência com trânsito quando disponível.' : 'Rota de transporte público calculada pelo Google dentro do CrewCheck.',
     mapsBudget: await googleMapsBudgetStatus(),
   };
   writeGoogleRouteCache(origin, destination, requestedMode, value);
@@ -69,32 +70,34 @@ async function handleRoutePreview(req, res, url) {
   if (!origin || !destination) return sendJson(res, 400, { ok: false, message: 'Origem e destino são necessários.' });
   if (!googleKey && !tomtomKey) return sendJson(res, 200, { ok: false, configured: false, message: 'Rota ao vivo aguarda uma chave Google Routes ou TomTom.' });
   try {
-    let googleResult = null;
-    if (googleKey) googleResult = await googleRoutePreview(origin, destination, requestedMode, googleKey);
-    if (googleResult?.ok) return sendJson(res, 200, { ...googleResult, learningEligible: requestedMode !== 'transit' });
-
-    let route = null;
-    if (requestedMode !== 'transit' && tomtomKey) route = await tomtomRoutePreview(origin, destination, tomtomKey);
-    if (route) {
-      const reason = googleResult?.budgetDenied ? 'monthly_limit' : googleResult?.quotaFailure ? 'provider_quota' : googleKey ? 'google_unavailable' : 'google_not_configured';
-      return sendJson(res, 200, {
+    if (requestedMode !== 'transit' && tomtomKey) {
+      const route = await tomtomRoutePreview(origin, destination, tomtomKey);
+      if (route?.ok) return sendJson(res, 200, {
         ...route,
         provider: 'TomTom',
-        providerOrder: ['Google Routes', 'TomTom'],
-        fallback: true,
-        fallbackFrom: 'Google Routes',
-        fallbackReason: reason,
-        mapsBudget: googleResult?.mapsBudget || await googleMapsBudgetStatus(),
+        providerOrder: ['TomTom', 'Google Routes'],
+        fallback: false,
+        mapsBudget: await googleMapsBudgetStatus(),
         learningEligible: true,
-        message: reason === 'monthly_limit' || reason === 'provider_quota'
-          ? 'Limite do Google Maps atingido; rota atualizada automaticamente pela TomTom.'
-          : 'Google Routes indisponível; rota atualizada automaticamente pela TomTom.',
+        message: 'Rota atualizada pela TomTom com trânsito quando disponível.',
       });
     }
+
+    let googleResult = null;
+    if (googleKey) googleResult = await googleRoutePreview(origin, destination, requestedMode, googleKey);
+    if (googleResult?.ok) return sendJson(res, 200, {
+      ...googleResult,
+      providerOrder: requestedMode === 'transit' ? ['Google Routes'] : ['TomTom', 'Google Routes'],
+      fallback: requestedMode !== 'transit' && Boolean(tomtomKey),
+      fallbackFrom: requestedMode !== 'transit' && tomtomKey ? 'TomTom' : undefined,
+      fallbackReason: requestedMode !== 'transit' && tomtomKey ? 'tomtom_unavailable' : undefined,
+      learningEligible: requestedMode !== 'transit',
+    });
+
     return sendJson(res, 200, {
       ok: false,
       configured: true,
-      providerOrder: ['Google Routes', 'TomTom'],
+      providerOrder: requestedMode === 'transit' ? ['Google Routes'] : ['TomTom', 'Google Routes'],
       mapsBudget: googleResult?.mapsBudget || await googleMapsBudgetStatus(),
       message: requestedMode === 'transit' && googleResult?.budgetDenied
         ? 'Limite mensal do Google Maps atingido. Transporte público ficará disponível no próximo ciclo; abra o Google Maps para navegação externa.'
@@ -112,13 +115,15 @@ async function handleMapsProviderStatus(req, res) {
   const tomtomConfigured = Boolean(tomtomServerKey());
   return sendJson(res, 200, {
     ok: googleConfigured || tomtomConfigured,
-    primary: googleConfigured && !budget.blocked ? 'Google Routes' : tomtomConfigured ? 'TomTom' : 'Indisponível',
-    fallback: 'TomTom',
+    primary: tomtomConfigured ? 'TomTom' : googleConfigured && !budget.blocked ? 'Google Routes' : 'Indisponível',
+    fallback: tomtomConfigured && googleConfigured && !budget.blocked ? 'Google Routes' : null,
     googleConfigured,
     tomtomConfigured,
     budget,
-    message: budget.blocked
-      ? 'Google Maps pausado até a próxima competência; TomTom ativo automaticamente.'
-      : `Google Maps principal: ${budget.used} de ${budget.limit} solicitações usadas neste mês.`,
+    message: tomtomConfigured
+      ? 'TomTom é o provedor principal para carro; Google Routes permanece como contingência e transporte público.'
+      : budget.blocked
+        ? 'Google Maps pausado até a próxima competência; rota terrestre indisponível sem TomTom.'
+        : `Google Routes ativo como contingência: ${budget.used} de ${budget.limit} solicitações usadas neste mês.`,
   });
 }
