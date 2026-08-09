@@ -133,5 +133,9 @@ services:
         sync: false
       - key: OAG_FLIGHT_INFO_CONNECTIONS_SECONDARY_KEY
         sync: false
+      - key: CIRIUM_APP_ID
+        sync: false
+      - key: CIRIUM_APP_KEY
+        sync: false
       - key: EXTRA_FLIGHT_PROVIDER_ORDER
         value: OAG_CONNECTIONS,OAG_FLIGHT_INFO,SABRE,SERPAPI,SEARCHAPI,AMADEUS
