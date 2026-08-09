@@ -22,6 +22,10 @@ assert(!source.includes("console.info('[crewcheck:email:delivery]', JSON.stringi
 assert(source.includes('function readRawJsonBody'), 'webhook preserva o corpo bruto recebido para validar assinatura');
 assert(source.includes('({ body, rawBody } = await readRawJsonBody(req'), 'handler usa parser que retorna JSON e raw body juntos');
 assert(source.includes("createHmac('sha256', secret).update(rawBody)"), 'HMAC é calculado sobre o raw body exato');
+assert(source.includes("Buffer.from(supplied, 'hex')") && source.includes("Buffer.from(expected, 'hex')"), 'assinaturas hexadecimais são comparadas em tempo constante');
 assert(!source.includes('const rawBody = JSON.stringify(body || {})'), 'assinatura não é mais validada contra JSON reconstruído');
+assert(source.includes("const secret = webhookSecret();") && source.includes("if (!secret) {"), 'POST falha fechado quando o signing secret não está configurado');
+assert(source.includes("code: 'WEBHOOK_NOT_CONFIGURED'") && source.includes('503'), 'configuração ausente retorna diagnóstico sanitizado sem aceitar evento');
+assert(!source.includes("if (!secret) return true"), 'ausência de secret nunca aprova assinatura');
 
-console.log('OK: P0 #333 MailerSend webhook privacy + raw signature regression');
+console.log('OK: P0 #333 MailerSend webhook privacy + fail-closed signature regression');
