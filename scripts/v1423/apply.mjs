@@ -62,15 +62,22 @@ patchFile('server/v1412/emailHealth.mjs', (source) => {
       configured: Boolean(env('MAILERSEND_API_KEY') && mailerSendFrom),
       from: maskEmail(mailerSendFrom),
     },`;
+  const mailerProviderWebhookAnchor = `    mailerSend: {
+      configured: Boolean(env('MAILERSEND_API_KEY') && mailerSendFrom),
+      webhookConfigured: Boolean(env('MAILERSEND_WEBHOOK_SECRET')),
+      from: maskEmail(mailerSendFrom),
+    },`;
   const mailerProviderReplacement = `    mailerSend: {
       configured: Boolean(env('MAILERSEND_API_KEY') && mailerSendFrom),
+      webhookConfigured: Boolean(env('MAILERSEND_WEBHOOK_SECRET')),
       from: maskEmail(mailerSendFrom),
       configuredFrom: maskEmail(configuredMailerSendFrom),
       usingTrialDomain: mailerSendUsingTrialDomain,
       enforced: Boolean(mailerSendFrom && mailerSendFrom !== configuredMailerSendFrom),
     },`;
 
-  if (next.includes(mailerProviderAnchor)) next = next.replace(mailerProviderAnchor, mailerProviderReplacement);
+  if (next.includes(mailerProviderWebhookAnchor)) next = next.replace(mailerProviderWebhookAnchor, mailerProviderReplacement);
+  else if (next.includes(mailerProviderAnchor)) next = next.replace(mailerProviderAnchor, mailerProviderReplacement);
   else if (!next.includes('usingTrialDomain: mailerSendUsingTrialDomain')) {
     throw new Error('[v1423] Diagnóstico do remetente não encontrado.');
   }
