@@ -37,15 +37,21 @@ for (const required of [
   '.cz-app[data-ipad-layout-v14394="contained"]',
   '.cz-app[data-menu-open="true"] > .cz-global-header',
   '@media (pointer: coarse) and (min-width: 700px)',
+  '@media (pointer: fine) and (min-width: 1181px)',
   'width: 100vw !important;',
   'grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
   '.cz-menu-logout span',
   'white-space: nowrap !important;',
-  '.cc-sidebar',
-  'width: 220px !important;',
+  'flex-basis: 0 !important;',
+  'margin-left: 0 !important;',
 ]) {
   if (!css.includes(required)) throw new Error(`[v14394] contrato visual ausente: ${required}`);
 }
 if (css.includes('word-break: break-all')) throw new Error('[v14394] quebra letra a letra não é permitida.');
 
-console.log(`[v14394] CrewCheck ${VERSION}: iPad/menu contidos, header não compete com drawer e logout permanece horizontal.`);
+const tabletRange = css.match(/@media \(min-width: 700px\) and \(max-width: 1600px\) \{([\s\S]*?)\n\}/)?.[1] || '';
+if (/\.cc-sidebar\s*\{[\s\S]*?220px/.test(tabletRange)) {
+  throw new Error('[v14394] sidebar desktop de 220px não pode reservar largura no intervalo tablet.');
+}
+
+console.log(`[v14394] CrewCheck ${VERSION}: tablet sem rail fantasma, drawer sobreposto, header contido e logout horizontal.`);
