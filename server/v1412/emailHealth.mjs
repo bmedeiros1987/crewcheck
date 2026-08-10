@@ -1,5 +1,6 @@
 import {
   cleanText,
+  dbPool,
   env,
   flag,
   readBody,
@@ -41,6 +42,7 @@ function emailConfiguration() {
     },
     mailerSend: {
       configured: Boolean(env('MAILERSEND_API_KEY') && mailerSendFrom),
+      webhookConfigured: Boolean(env('MAILERSEND_WEBHOOK_SECRET')),
       from: maskEmail(mailerSendFrom),
     },
     smtp: {
@@ -77,6 +79,53 @@ function summarizeAttempt(attempt = {}) {
   };
 }
 
+async function recentWebhookDelivery() {
+  const db = await dbPool();
+  if (!db) return { available: false, reason: 'database_unavailable' };
+
+  try {
+    const [rows] = await db.query(`
+      SELECT event_type, message_id, email_id, provider_created_at, created_at
+      FROM crewcheck_email_events
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+    const events = rows.map((row) => ({
+      eventType: cleanText(row.event_type || 'unknown', 80),
+      hasMessageId: Boolean(row.message_id),
+      hasEmailId: Boolean(row.email_id),
+      providerCreatedAt: row.provider_created_at || null,
+      receivedAt: row.created_at || null,
+    }));
+    const latestDelivered = events.find((event) => event.eventType === 'activity.delivered' || event.eventType === 'delivered') || null;
+    const latestFailure = events.find((event) => [
+      'activity.soft_bounced',
+      'activity.hard_bounced',
+      'activity.rejected',
+      'activity.failed',
+      'soft_bounced',
+      'hard_bounced',
+      'rejected',
+      'failed',
+    ].includes(event.eventType)) || null;
+
+    return {
+      available: true,
+      eventCount: events.length,
+      latestEvent: events[0] || null,
+      latestDelivered,
+      latestFailure,
+      events,
+    };
+  } catch (error) {
+    if (String(error?.code || '') === 'ER_NO_SUCH_TABLE') {
+      return { available: true, eventCount: 0, latestEvent: null, latestDelivered: null, latestFailure: null, events: [] };
+    }
+    console.warn('[crewcheck:email-health:webhook]', cleanText(error?.code || error?.message || 'WEBHOOK_HEALTH_UNAVAILABLE', 120));
+    return { available: false, reason: 'webhook_health_unavailable' };
+  }
+}
+
 export async function handleEmailHealthRoute(req, res, url) {
   if (url.pathname !== '/api/admin/email-health') return false;
 
@@ -90,12 +139,20 @@ export async function handleEmailHealthRoute(req, res, url) {
   const configuration = emailConfiguration();
 
   if (req.method === 'GET' || req.method === 'HEAD') {
+    const webhookDelivery = await recentWebhookDelivery();
+    const deliveryConfirmed = Boolean(webhookDelivery.latestDelivered);
     sendJson(res, 200, {
       ok: true,
       configuration,
-      message: configuration.ready
-        ? 'Há pelo menos um provedor de e-mail configurado. Use POST para validar a entrega real.'
-        : 'Nenhum provedor de e-mail está completamente configurado.',
+      webhookDelivery,
+      deliveryConfirmed,
+      message: !configuration.ready
+        ? 'Nenhum provedor de e-mail está completamente configurado.'
+        : !configuration.providers.mailerSend.webhookConfigured
+          ? 'MailerSend está configurado para envio, mas o signing secret do webhook não está configurado.'
+          : deliveryConfirmed
+            ? 'Entrega real confirmada por webhook do MailerSend.'
+            : 'O provedor está configurado, mas ainda não há confirmação de entrega por webhook. Use POST para enviar um teste real.',
     });
     return true;
   }
@@ -136,9 +193,10 @@ export async function handleEmailHealthRoute(req, res, url) {
     ok: Boolean(result.ok),
     provider: cleanText(result.provider || 'none', 60),
     configuration,
+    webhookConfigured: Boolean(configuration.providers.mailerSend.webhookConfigured),
     attempts,
     message: result.ok
-      ? 'O provedor aceitou o e-mail de teste.'
+      ? 'O provedor aceitou o e-mail de teste. Confirme a entrega real consultando novamente este diagnóstico após o webhook.'
       : 'Nenhum provedor conseguiu aceitar o e-mail de teste.',
   });
   return true;
