@@ -231,12 +231,10 @@ export async function getMe(): Promise<AuthUser> {
 }
 
 export async function logout(): Promise<void> {
-  try {
-    await jsonFetch('/api/auth/logout', { method: 'POST', body: '{}' });
-  } catch {
-  } finally {
-    clearSession();
-  }
+  // Local logout is the security boundary: do not keep an authenticated client
+  // alive while waiting for a slow/offline network request.
+  clearSession();
+  void jsonFetch('/api/auth/logout', { method: 'POST', body: '{}' }).catch(() => {});
 }
 
 export async function authFetch<T>(url: string, init?: RequestInit): Promise<T> {
