@@ -11,6 +11,7 @@ import { handleStayProfileRoute } from '../v1391/stayProfile.mjs';
 import { handlePartnerAccountsRoute } from '../v1410/partnerAccounts.mjs';
 import { handleEmailHealthRoute } from '../v1412/emailHealth.mjs';
 import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
+import { handleAiswebHealthRoute } from '../v1412/aiswebHealth.mjs';
 
 function normalizeTelegramIntentText(value = '') {
   return String(value || '')
@@ -30,6 +31,7 @@ export async function handleV139Route(req, res, url) {
   try {
     if (await handleMailerSendWebhook(req, res, url)) return true;
     if (await handleEmailHealthRoute(req, res, url)) return true;
+    if (await handleAiswebHealthRoute(req, res, url)) return true;
     if (await handleAuthRoute(req, res, url)) return true;
     if (await handlePartnerAccountsRoute(req, res, url)) return true;
     if (await handleEmergencyRoute(req, res, url)) return true;
@@ -71,5 +73,5 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 
 export const crewCheckV139 = {
   version: '14.1.2',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook', 'email-health'],
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health'],
 };
