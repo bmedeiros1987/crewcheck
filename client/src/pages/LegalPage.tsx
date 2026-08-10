@@ -9,7 +9,8 @@ type LegalSection = {
   bullets?: string[];
 };
 
-const LAST_UPDATED = '19 de julho de 2026';
+const TERMS_LAST_UPDATED = '19 de julho de 2026';
+const PRIVACY_LAST_UPDATED = '10 de agosto de 2026';
 const PRIVACY_EMAIL = 'suporte@crewcheck.app';
 
 const termsSections: LegalSection[] = [
@@ -122,7 +123,7 @@ const termsSections: LegalSection[] = [
   {
     title: '15. Vigência e contato',
     paragraphs: [
-      `Esta versão entra em vigor na data de publicação. Última atualização: ${LAST_UPDATED}.`,
+      `Esta versão entra em vigor na data de publicação. Última atualização: ${TERMS_LAST_UPDATED}.`,
       `Contato geral, privacidade e exercício de direitos: ${PRIVACY_EMAIL}.`,
     ],
   },
@@ -153,6 +154,16 @@ const privacySections: LegalSection[] = [
       'Quando o usuário conecta o Google Calendar, o CrewCheck utiliza o escopo https://www.googleapis.com/auth/calendar.events.owned. Esse escopo permite ver, criar, alterar e excluir eventos nos calendários pertencentes ao usuário.',
       'O CrewCheck usa o acesso para criar eventos da escala no calendário principal, consultar um intervalo limitado para localizar eventos próprios, substituir versões anteriores sem duplicidade e excluir somente eventos identificados como gerados pelo CrewCheck.',
       'Podem ser processados identificador do calendário, identificador do evento, título, descrição, local, data, hora, lembretes, cor e propriedades privadas técnicas. Eventos pessoais que não tenham marcação CrewCheck não são usados para perfil, publicidade ou análise comportamental.',
+    ],
+  },
+  {
+    title: '3-A. Dados de saúde e atividade física — CrewCheck Life',
+    paragraphs: [
+      'O CrewCheck Life é opcional. No Android, somente depois de o usuário ativar o recurso, aceitar esta finalidade e conceder cada permissão no Health Connect, o aplicativo lê dados autorizados dos últimos 1 a 30 dias: total de passos, distância total, duração total de exercícios, sessão de sono mais recente (horários, duração e origem) e média de frequência cardíaca em repouso. Dados do Samsung Health ou de wearables só chegam ao CrewCheck quando o próprio usuário os sincroniza com o Health Connect e autoriza o acesso. O usuário também pode informar manualmente horas de sono, passos e minutos de atividade.',
+      'Esses dados pessoais sensíveis são usados exclusivamente para mostrar ao próprio usuário resumos e sugestões de organização de descanso, atividade e rotina ao redor da escala. A base legal é o consentimento específico, livre e revogável. O recurso não é necessário para as funções principais, não realiza diagnóstico, não determina aptidão para voo ou trabalho e não acessa prontuários, diagnósticos, medicamentos, exames, dados reprodutivos, nutrição, peso, altura, pressão arterial, glicose, saturação ou frequência cardíaca contínua.',
+      'O resumo autorizado e os lançamentos manuais ficam somente no armazenamento local do aparelho/navegador; registros brutos do Health Connect não são copiados nem enviados aos servidores do CrewCheck. Esses dados não são compartilhados com empregadores, companhias aéreas, anunciantes ou outros terceiros, não são vendidos e não são usados para publicidade, perfil comercial ou decisões automatizadas de emprego.',
+      'Os dados locais permanecem até o usuário usar “Apagar dados do Life”, limpar os dados do aplicativo/navegador ou desinstalar o app. O acesso pode ser revogado em CrewCheck Life ou em Android > Health Connect > Permissões de apps > CrewCheck; a revogação impede novas leituras. “Desconectar” remove o resumo local, e “Apagar dados do Life” remove consentimento, objetivos, lançamentos e resumos locais. Dados mantidos pelo aplicativo de origem ou pelo Health Connect devem ser excluídos nesses próprios serviços.',
+      'A proteção inclui solicitação apenas das permissões de leitura necessárias, acesso restrito à origem HTTPS do CrewCheck, processamento local, minimização, ausência do conteúdo de saúde em logs e analytics e controles do próprio Android/Health Connect.',
     ],
   },
   {
@@ -234,7 +245,7 @@ const privacySections: LegalSection[] = [
   {
     title: '13. Atualizações e contato',
     paragraphs: [
-      `Mudanças materiais serão publicadas com nova data e, quando necessário, novo aceite. Última atualização: ${LAST_UPDATED}.`,
+      `Mudanças materiais serão publicadas com nova data e, quando necessário, novo aceite. Última atualização: ${PRIVACY_LAST_UPDATED}.`,
       `Solicitações de privacidade: ${PRIVACY_EMAIL}. O exercício dos direitos é gratuito, sujeito à confirmação razoável de identidade para evitar fraude.`,
     ],
   },
