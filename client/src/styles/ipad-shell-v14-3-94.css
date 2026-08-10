@@ -160,8 +160,10 @@ body,
     width: min(100vw, 620px) !important;
     max-width: min(100vw, 620px) !important;
   }
+}
 
-  /* The previous 72px tablet sidebar squeezed literal button text vertically. */
+/* Keep the fixed 220px navigation rail only on intentional desktop/fine-pointer layouts. */
+@media (pointer: fine) and (min-width: 1181px) {
   .cc-sidebar {
     width: 220px !important;
     min-width: 220px !important;
@@ -186,8 +188,29 @@ body,
   }
 }
 
-/* iPad/touch tablets: make the menu a stable full-screen surface. */
+/* iPad/Android touch landscape: drawer overlays; no phantom desktop rail may reserve width. */
 @media (pointer: coarse) and (min-width: 700px) {
+  .cc-sidebar {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    flex-basis: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .cc-main-content,
+  .cz-app[data-ipad-layout-v14394="contained"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    transform: none !important;
+  }
+
   .cz-menu-panel {
     width: 100vw !important;
     max-width: none !important;

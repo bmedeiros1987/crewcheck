@@ -38,15 +38,30 @@ for (const marker of [
   'writing-mode: horizontal-tb !important;',
   '@media (min-width: 700px) and (max-width: 1600px)',
   '@media (pointer: coarse) and (min-width: 700px)',
+  '@media (pointer: fine) and (min-width: 1181px)',
   'width: 100vw !important;',
   'max-width: none !important;',
   'grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
-  '.cc-sidebar',
-  'width: 220px !important;',
+  'flex-basis: 0 !important;',
+  'margin-left: 0 !important;',
 ]) assert.ok(cssSource.includes(marker), `contrato visual ausente: ${marker}`);
 
 assert.ok(!cssSource.includes('word-break: break-all'), 'texto do menu não pode quebrar letra por letra');
 assert.ok(cssSource.indexOf('.cz-app[data-menu-open="true"] > .cz-global-header') >= 0, 'header precisa de fallback sem :has()');
+
+const tabletRange = cssSource.match(/@media \(min-width: 700px\) and \(max-width: 1600px\) \{([\s\S]*?)\n\}/)?.[1] || '';
+assert.ok(tabletRange, 'faixa de tablet 700–1600px deve existir');
+assert.ok(!/\.cc-sidebar\s*\{[\s\S]*?220px/.test(tabletRange), 'faixa tablet não pode reservar sidebar desktop de 220px');
+
+const coarseRange = cssSource.match(/@media \(pointer: coarse\) and \(min-width: 700px\) \{([\s\S]*?)\n\}/)?.[1] || '';
+assert.ok(coarseRange.includes('.cc-sidebar'), 'tablet touch precisa neutralizar o rail desktop');
+assert.ok(coarseRange.includes('width: 0 !important;'), 'tablet touch deve zerar a largura do rail desktop');
+assert.ok(coarseRange.includes('flex-basis: 0 !important;'), 'tablet touch não pode reservar flex-basis para sidebar');
+assert.ok(coarseRange.includes('margin-left: 0 !important;'), 'conteúdo tablet não pode herdar offset lateral desktop');
+assert.ok(coarseRange.includes('transform: none !important;'), 'conteúdo tablet não pode herdar transformação lateral desktop');
+
+const fineDesktopRange = cssSource.match(/@media \(pointer: fine\) and \(min-width: 1181px\) \{([\s\S]*?)\n\}/)?.[1] || '';
+assert.ok(fineDesktopRange.includes('width: 220px !important;'), 'desktop fino mantém sidebar intencional de 220px');
 
 for (const protectedPath of [
   'client/src/lib/pdfParser.ts',
@@ -70,4 +85,4 @@ assert.equal(reapplied.status, 0, reapplied.stderr || reapplied.stdout || 'reapl
 assert.equal(read('client/src/pages/Home.tsx'), afterFirst.home, 'v14.3.94 deve ser idempotente em Home.tsx');
 assert.equal(read('client/src/main.tsx'), afterFirst.main, 'v14.3.94 deve ser idempotente em main.tsx');
 
-console.log('v14.3.94 iPad/menu P0 regression passed: viewport contained, drawer full-screen on coarse tablets, logout horizontal, explicit header suppression and protected engines untouched.');
+console.log('v14.3.94 iPad/Android landscape P0 regression passed: no tablet rail reservation, content zero-offset, drawer overlay, logout horizontal and protected engines untouched.');
