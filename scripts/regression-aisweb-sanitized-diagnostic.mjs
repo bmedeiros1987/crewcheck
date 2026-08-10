@@ -51,4 +51,24 @@ const normalizedIcao = await diagnoseAiswebNotam({
 });
 assert.equal(normalizedIcao.query.icao, 'SBBR');
 
+const timeout = await diagnoseAiswebNotam({
+  fetchImpl: async (_url, { signal }) => ({
+    status: 200,
+    text: async () => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    }),
+  }),
+  timeoutMs: 5,
+});
+assert.equal(timeout.ok, false);
+assert.equal(timeout.state, 'timeout');
+
+process.env.AISWEB_API_BASE_URL = 'not a valid url';
+const malformedBase = await diagnoseAiswebNotam();
+assert.equal(malformedBase.ok, false);
+assert.equal(malformedBase.state, 'configuration_error');
+assert.equal(JSON.stringify(malformedBase).includes('secret-key'), false);
+assert.equal(JSON.stringify(malformedBase).includes('secret-pass'), false);
+delete process.env.AISWEB_API_BASE_URL;
+
 console.log('AISWEB sanitized diagnostic regression OK');

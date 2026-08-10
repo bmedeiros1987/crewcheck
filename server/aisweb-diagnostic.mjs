@@ -58,7 +58,18 @@ export async function diagnoseAiswebNotam({
   }
 
   const aerodrome = safeIcao(icao);
-  const url = new URL(config.baseUrl);
+  let url;
+  try {
+    url = new URL(config.baseUrl);
+  } catch {
+    return {
+      ok: false,
+      provider: 'aisweb-decea',
+      state: 'configuration_error',
+      configured: true,
+      query: { area: 'notam', icao: aerodrome },
+    };
+  }
   url.searchParams.set('apiKey', config.apiKey);
   url.searchParams.set('apiPass', config.apiPass);
   url.searchParams.set('area', 'notam');
@@ -73,7 +84,12 @@ export async function diagnoseAiswebNotam({
       redirect: 'error',
       signal: controller.signal,
     });
-    const body = await response.text().catch(() => '');
+    let body = '';
+    try {
+      body = await response.text();
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+    }
     const bodySummary = summarizeBody(body);
     const state = classifyHttp(response.status);
     return {
