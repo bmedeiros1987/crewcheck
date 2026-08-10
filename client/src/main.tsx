@@ -11,6 +11,7 @@ import "./components/v1417/operational-intelligence.css";
 import "./theme-v14-3-17.css";
 import "./styles/internal-global-header.css";
 import "./styles/auth-premium-v2.css";
+import "./styles/ipad-shell-v14-3-94.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>

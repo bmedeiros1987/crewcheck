@@ -1,0 +1,39 @@
+name: iPad menu layout P0
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/styles/ipad-shell-v14-3-94.css'
+      - 'scripts/v14394/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-v14-3-94-ipad-menu-layout.mjs'
+      - '.github/workflows/ipad-menu-layout-p0.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/styles/ipad-shell-v14-3-94.css'
+      - 'scripts/v14394/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-v14-3-94-ipad-menu-layout.mjs'
+      - '.github/workflows/ipad-menu-layout-p0.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ipad-menu-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+      - name: Validate patch syntax
+        run: |
+          node --check scripts/v14394/apply.mjs
+          node --check scripts/regression-v14-3-94-ipad-menu-layout.mjs
+      - name: Run iPad menu regression
+        run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs

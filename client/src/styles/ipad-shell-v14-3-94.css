@@ -1,0 +1,262 @@
+/* CrewCheck v14.3.94 — P0 iPad/tablet menu and app-shell containment. */
+html,
+body,
+#root {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: clip !important;
+}
+
+.cz-app[data-ipad-layout-v14394="contained"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin-inline: 0 !important;
+  padding-inline: clamp(12px, 2vw, 24px) !important;
+  overflow-x: clip !important;
+  box-sizing: border-box !important;
+}
+
+/* Do not depend on :has() to hide the fixed header behind the drawer. */
+.cz-app[data-menu-open="true"] > .cz-global-header {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.cz-menu-overlay {
+  inset: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.cz-menu-panel,
+.cz-menu-scroll,
+.cz-menu-section,
+.cz-menu-section.cz-menu-group,
+.cz-menu-header,
+.cz-menu-identity,
+.cz-menu-profile,
+.cz-menu-profile-copy {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.cz-menu-panel {
+  right: 0 !important;
+  left: auto !important;
+  transform: none !important;
+  margin-left: auto !important;
+}
+
+.cz-menu-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+}
+
+.cz-menu-identity {
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+}
+
+.cz-menu-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+  white-space: nowrap !important;
+}
+
+.cz-menu-logout,
+.cz-menu-close {
+  flex: 0 0 auto !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+
+.cz-menu-logout {
+  width: auto !important;
+  min-width: 78px !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+}
+
+.cz-menu-logout span {
+  display: inline !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+
+.cz-menu-section > button,
+.cz-menu-section.cz-menu-group > button {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.cz-menu-section > button > span,
+.cz-menu-section.cz-menu-group > button > span,
+.cz-menu-section > button > span strong,
+.cz-menu-section > button > span small,
+.cz-menu-section.cz-menu-group > button > span strong,
+.cz-menu-section.cz-menu-group > button > span small {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Tablet widths must use the available viewport instead of the old 1180px desktop cap. */
+@media (min-width: 700px) and (max-width: 1600px) {
+  .cz-app[data-ipad-layout-v14394="contained"] {
+    width: 100% !important;
+    max-width: none !important;
+    padding-inline: clamp(14px, 2vw, 26px) !important;
+  }
+
+  .cz-app > .cz-global-header {
+    left: clamp(12px, 2vw, 24px) !important;
+    right: clamp(12px, 2vw, 24px) !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
+  }
+
+  .cz-global-header > .cz-brand-row,
+  .cz-global-header .cz-brand-lockup,
+  .cz-global-header .cz-brand-lockup > div {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .cz-global-header .cz-brand-lockup {
+    flex: 1 1 auto !important;
+  }
+
+  .cz-global-header .cz-brand-lockup strong,
+  .cz-global-header .cz-brand-lockup small {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .cz-menu-panel {
+    width: min(100vw, 620px) !important;
+    max-width: min(100vw, 620px) !important;
+  }
+
+  /* The previous 72px tablet sidebar squeezed literal button text vertically. */
+  .cc-sidebar {
+    width: 220px !important;
+    min-width: 220px !important;
+    max-width: 220px !important;
+  }
+
+  .cc-sidebar .cc-sidebar-label,
+  .cc-sidebar .cc-sidebar-section-label {
+    display: block !important;
+  }
+
+  .cc-sidebar-nav-item {
+    justify-content: flex-start !important;
+    padding: 0.625rem 0.75rem !important;
+  }
+
+  .cc-sidebar-nav-item > span {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+}
+
+/* iPad/touch tablets: make the menu a stable full-screen surface. */
+@media (pointer: coarse) and (min-width: 700px) {
+  .cz-menu-panel {
+    width: 100vw !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  .cz-menu-scroll {
+    width: min(100%, 980px) !important;
+    max-width: 980px !important;
+    margin-inline: auto !important;
+    padding-inline: clamp(16px, 4vw, 42px) !important;
+    scrollbar-gutter: auto !important;
+  }
+
+  .cz-menu-section.cz-menu-group {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+
+  .cz-menu-section.cz-menu-group > h3 {
+    grid-column: 1 / -1 !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) 20px !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 72px !important;
+    overflow: hidden !important;
+    text-align: left !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button > span {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: none !important;
+    pointer-events: auto !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button > svg:last-child {
+    display: block !important;
+  }
+}
+
+@media (pointer: coarse) and (min-width: 700px) and (max-width: 820px) {
+  .cz-menu-section.cz-menu-group {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 699px) {
+  .cz-menu-logout {
+    min-width: 40px !important;
+  }
+
+  .cz-menu-logout span {
+    display: none !important;
+  }
+}
