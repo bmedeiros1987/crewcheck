@@ -99,6 +99,10 @@ services:
         value: true
       - key: REDEMET_API_KEY
         sync: false
+      - key: AISWEB_API_KEY
+        sync: false
+      - key: AISWEB_API_PASS
+        sync: false
       - key: CREWCHECK_SCHEDULER_SECRET
         generateValue: true
       - key: CREWCHECK_WEATHER_MONITOR_ENABLED
