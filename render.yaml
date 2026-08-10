@@ -41,6 +41,10 @@ services:
         value: false
       - key: CREWCHECK_EMAIL_DISABLE_SMTP
         value: true
+      - key: ASAAS_API_KEY
+        sync: false
+      - key: ASAAS_WEBHOOK_TOKEN
+        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_BOT_USERNAME
