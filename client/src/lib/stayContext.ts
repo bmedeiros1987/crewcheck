@@ -17,6 +17,10 @@ function startOfLocalDay(date: Date): Date {
   return copy;
 }
 
+function compareId(a: StayContextCandidate, b: StayContextCandidate): number {
+  return String(a.id).localeCompare(String(b.id));
+}
+
 /**
  * Selects the stay that best matches the user's current temporal context.
  *
@@ -57,18 +61,18 @@ export function selectContextualStay<T extends StayContextCandidate>(
 
   const active = normalized
     .filter((item) => item.end !== null && item.start <= timestamp && timestamp < item.end)
-    .sort((a, b) => b.start - a.start)[0];
+    .sort((a, b) => b.start - a.start || compareId(a.stay, b.stay))[0];
   if (active) return active.stay;
 
   const todayStay = normalized
     .filter((item) => item.rosterDay === today)
-    .sort((a, b) => a.start - b.start)[0];
+    .sort((a, b) => a.start - b.start || compareId(a.stay, b.stay))[0];
   if (todayStay) return todayStay.stay;
 
   const future = normalized
     .filter((item) => item.start > timestamp)
-    .sort((a, b) => a.start - b.start)[0];
+    .sort((a, b) => a.start - b.start || compareId(a.stay, b.stay))[0];
   if (future) return future.stay;
 
-  return normalized.sort((a, b) => b.start - a.start)[0]?.stay || null;
+  return normalized.sort((a, b) => b.start - a.start || compareId(a.stay, b.stay))[0]?.stay || null;
 }

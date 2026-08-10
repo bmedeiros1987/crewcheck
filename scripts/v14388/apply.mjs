@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const VERSION = '14.3.95';
+const VERSION = '14.3.96';
 const file = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(file)) throw new Error('[v14388] Home.tsx ausente.');
 let source = fs.readFileSync(file, 'utf8');
@@ -26,9 +26,23 @@ const legacyStart = `function contextualStayId(stays: ZeroLeg[], now = new Date(
   return [...stays].sort((a, b) => String(a.id).localeCompare(String(b.id)))[0]?.id || '';
 }`;
 
-const sharedAdapter = `function contextualStayId(stays: ZeroLeg[], now = new Date()): string {
+const previousSharedAdapter = `function contextualStayId(stays: ZeroLeg[], now = new Date()): string {
   const selected = selectContextualStay(
     stays.map((event) => ({ id: event.id, date: event.date, event })),
+    now,
+  );
+  return selected?.event.id || '';
+}`;
+
+const sharedAdapter = `function contextualStayId(stays: ZeroLeg[], now = new Date()): string {
+  const selected = selectContextualStay(
+    stays.map((event) => ({
+      id: event.id,
+      date: event.date,
+      startAt: event.kind === 'stay' ? event.canonical?.startDateTime : null,
+      endAt: event.kind === 'stay' ? event.canonical?.endDateTime : null,
+      event,
+    })),
     now,
   );
   return selected?.event.id || '';
@@ -41,6 +55,7 @@ if (!source.includes("from '@/lib/stayContext'")) {
 }
 
 if (source.includes(legacyStart)) source = source.replace(legacyStart, sharedAdapter);
+if (source.includes(previousSharedAdapter)) source = source.replace(previousSharedAdapter, sharedAdapter);
 
 if (!source.includes('function contextualStayId(stays: ZeroLeg[]')) {
   const newStart = `${sharedAdapter}\n\nfunction HotelsView({ events }: { events: ZeroLeg[] }) {
@@ -74,6 +89,8 @@ if (source.includes(oldEffect)) source = source.replace(oldEffect, newEffect);
 for (const required of [
   "import { selectContextualStay } from '@/lib/stayContext';",
   'const selected = selectContextualStay(',
+  "startAt: event.kind === 'stay' ? event.canonical?.startDateTime : null",
+  "endAt: event.kind === 'stay' ? event.canonical?.endDateTime : null",
   'const [selectedEventId, setSelectedEventId] = useState(() => contextualStayId(stays));',
   'const contextualEventId = contextualStayId(stays);',
   "if (!stays.some((event) => event.id === selectedEventId)) setSelectedEventId(contextualStayId(stays));",
@@ -89,4 +106,4 @@ if (/selectedEventId[^\n]*stays\[0\]|selectedEvent[^\n]*stays\[0\]/.test(hotelsS
 }
 
 fs.writeFileSync(file, source, 'utf8');
-console.log(`[v14388] CrewCheck ${VERSION}: HotelsView usa o seletor contextual compartilhado sem depender da ordem do array.`);
+console.log(`[v14388] CrewCheck ${VERSION}: HotelsView usa limites canônicos do pernoite e seleção contextual determinística.`);
