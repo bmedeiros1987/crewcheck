@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const VERSION = '14.3.88';
+const VERSION = '14.3.95';
 const file = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(file)) throw new Error('[v14388] Home.tsx ausente.');
 let source = fs.readFileSync(file, 'utf8');
@@ -11,7 +11,7 @@ const oldStart = `function HotelsView({ events }: { events: ZeroLeg[] }) {
   const [companions, setCompanions] = useState<Record<string, any[]>>({});
   const [selectedEventId, setSelectedEventId] = useState(() => stays[0]?.id || '');`;
 
-const newStart = `function contextualStayId(stays: ZeroLeg[], now = new Date()): string {
+const legacyStart = `function contextualStayId(stays: ZeroLeg[], now = new Date()): string {
   if (!stays.length) return '';
   const localDay = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
   const dated = stays
@@ -24,15 +24,30 @@ const newStart = `function contextualStayId(stays: ZeroLeg[], now = new Date()):
   const past = dated.filter((item) => item.date < localDay).sort((a, b) => b.date.localeCompare(a.date) || a.event.id.localeCompare(b.event.id))[0];
   if (past) return past.event.id;
   return [...stays].sort((a, b) => String(a.id).localeCompare(String(b.id)))[0]?.id || '';
+}`;
+
+const sharedAdapter = `function contextualStayId(stays: ZeroLeg[], now = new Date()): string {
+  const selected = selectContextualStay(
+    stays.map((event) => ({ id: event.id, date: event.date, event })),
+    now,
+  );
+  return selected?.event.id || '';
+}`;
+
+if (!source.includes("from '@/lib/stayContext'")) {
+  const anchor = "import { airportCity } from '@/lib/airports';";
+  if (!source.includes(anchor)) throw new Error('[v14388] âncora de import não localizada.');
+  source = source.replace(anchor, `${anchor}\nimport { selectContextualStay } from '@/lib/stayContext';`);
 }
 
-function HotelsView({ events }: { events: ZeroLeg[] }) {
+if (source.includes(legacyStart)) source = source.replace(legacyStart, sharedAdapter);
+
+if (!source.includes('function contextualStayId(stays: ZeroLeg[]')) {
+  const newStart = `${sharedAdapter}\n\nfunction HotelsView({ events }: { events: ZeroLeg[] }) {
   const stays = events.filter((event) => event.kind === 'stay' || event.hotel);
   const [saved, setSaved] = useState<any[]>([]);
   const [companions, setCompanions] = useState<Record<string, any[]>>({});
   const [selectedEventId, setSelectedEventId] = useState(() => contextualStayId(stays));`;
-
-if (!source.includes('function contextualStayId(stays: ZeroLeg[]')) {
   if (!source.includes(oldStart)) throw new Error('[v14388] início de HotelsView não localizado.');
   source = source.replace(oldStart, newStart);
 }
@@ -57,7 +72,8 @@ const newEffect = `  useEffect(() => {
 if (source.includes(oldEffect)) source = source.replace(oldEffect, newEffect);
 
 for (const required of [
-  'function contextualStayId(stays: ZeroLeg[], now = new Date()): string',
+  "import { selectContextualStay } from '@/lib/stayContext';",
+  'const selected = selectContextualStay(',
   'const [selectedEventId, setSelectedEventId] = useState(() => contextualStayId(stays));',
   'const contextualEventId = contextualStayId(stays);',
   "if (!stays.some((event) => event.id === selectedEventId)) setSelectedEventId(contextualStayId(stays));",
@@ -73,4 +89,4 @@ if (/selectedEventId[^\n]*stays\[0\]|selectedEvent[^\n]*stays\[0\]/.test(hotelsS
 }
 
 fs.writeFileSync(file, source, 'utf8');
-console.log(`[v14388] CrewCheck ${VERSION}: pernoite abre no dia atual, próximo futuro ou passado mais recente sem depender da ordem do array.`);
+console.log(`[v14388] CrewCheck ${VERSION}: HotelsView usa o seletor contextual compartilhado sem depender da ordem do array.`);
