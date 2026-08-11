@@ -145,6 +145,14 @@ services:
         sync: false
       - key: OAG_FLIGHT_INFO_CONNECTIONS_SECONDARY_KEY
         sync: false
+      - key: CIRIUM_SKY_BASE_URL
+        value: https://api.sky.cirium.com
+      - key: CIRIUM_SKY_IDENTIFIER
+        sync: false
+      - key: CIRIUM_SKY_API_TOKEN
+        sync: false
+      - key: CIRIUM_SKY_SECRET
+        sync: false
       - key: CIRIUM_APP_ID
         sync: false
       - key: CIRIUM_APP_KEY
