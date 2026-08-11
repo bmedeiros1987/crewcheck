@@ -163,7 +163,12 @@ function departurePositioningPlan(event: ZeroLeg, route: RoutePreviewInfo | null
   return { requiresFlight, sameDayConfirmed, distanceKm, originAirport: nearestDepartureAirport(origin), travelDate };
 }
 function departureGroundRouteDestination(event: ZeroLeg, origin = eventRouteOrigin(event), route: RoutePreviewInfo | null = null): string {
-  const plan = departurePositioningPlan(event, route, origin);
+  // The route target must not depend on the previous response for that target.
+  // Otherwise a long route to the presentation airport selects the nearby
+  // positioning airport, whose short ground route then deselects positioning,
+  // producing an endless long-route/short-route feedback loop.
+  void route;
+  const plan = departurePositioningPlan(event, null, origin);
   if (plan.requiresFlight && plan.originAirport) return coordsLabel(plan.originAirport.lat, plan.originAirport.lon);
   return eventRouteDestination(event);
 }

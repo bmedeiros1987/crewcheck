@@ -160,6 +160,7 @@ try {
     "'PLANEJAR VOO NO DIA ANTERIOR'",
     'Nenhum voo de posicionamento no mesmo dia foi confirmado',
     'function departureGroundRouteDestination(',
+    'const plan = departurePositioningPlan(event, null, origin);',
     "positioningPlan.sameDayConfirmed ? 'VOO CONFIRMADO' : 'VOO NECESSÁRIO'",
     '<Departure event={departureEvent}/>',
     '<SmartCard event={departureEvent} setView={setView}/>',
