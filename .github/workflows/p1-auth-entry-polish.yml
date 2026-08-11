@@ -1,0 +1,19 @@
+name: P1 Auth Entry Polish
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/styles/auth-p1-entry-polish.css'
+      - 'scripts/regression-p1-auth-entry-polish.mjs'
+      - '.github/workflows/p1-auth-entry-polish.yml'
+
+jobs:
+  auth-entry-polish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/regression-p1-auth-entry-polish.mjs
