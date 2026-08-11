@@ -15,9 +15,16 @@ expect(source.includes("explicitStayReportLocation(event) || 'Local a confirmar'
 expect(source.includes("const catalogAirport = selectedEvent?.destination || selectedEvent?.origin || '';"), 'escopo do catálogo de hotéis não está separado.');
 expect(source.includes('searchCrewHotels(query, catalogAirport)'), 'catálogo de hotéis não usa seu próprio escopo.');
 
-const helperStart = source.indexOf('function explicitStayReportLocation(');
-const helperEnd = source.indexOf('\nfunction ', helperStart + 1);
-const helperScope = source.slice(helperStart, helperEnd > helperStart ? helperEnd : undefined);
+// Inspect only the helper template that v14.3.89 injects into Home.tsx. Searching from
+// the first function-name occurrence would hit this apply script's own guard string and
+// incorrectly include unrelated hotel-catalog code such as selectedEvent.origin.
+const helperMarker = 'const helper = `function explicitStayReportLocation(';
+const helperMarkerStart = source.indexOf(helperMarker);
+expect(helperMarkerStart >= 0, 'template do helper explícito não localizado.');
+const helperStart = helperMarkerStart + 'const helper = `'.length;
+const helperEnd = source.indexOf('`;\n  source = source.slice', helperStart);
+expect(helperEnd > helperStart, 'fim do template do helper explícito não localizado.');
+const helperScope = source.slice(helperStart, helperEnd);
 
 for (const forbidden of ['.origin', '.destination', 'hotelName', 'hotelLocation', 'CGH', 'GRU']) {
   expect(!helperScope.includes(forbidden), `local de apresentação não pode depender de ${forbidden}.`);
