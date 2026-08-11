@@ -24,6 +24,7 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
     provider: 'cirium-flightstats',
     flight,
     status: firstKnown(STATUS_LABELS[row.status], row.status, 'Monitorando'),
+    statusProvided: Boolean(row.status),
     gate: firstKnown(resources.departureGate),
     terminal: firstKnown(resources.departureTerminal),
     departure: firstKnown(
@@ -47,7 +48,7 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
 
 export function ciriumCoverage(item = {}) {
   const fields = ['status', 'gate', 'terminal', 'departure', 'arrival', 'origin', 'destination', 'aircraft', 'registration', 'updatedAt'];
-  const present = Object.fromEntries(fields.map((field) => [field, Boolean(item[field])]));
+  const present = Object.fromEntries(fields.map((field) => [field, field === 'status' ? Boolean(item.statusProvided) : Boolean(item[field])]));
   const count = Object.values(present).filter(Boolean).length;
   return { present, fields: fields.length, populated: count, percent: Math.round((count / fields.length) * 100) };
 }
