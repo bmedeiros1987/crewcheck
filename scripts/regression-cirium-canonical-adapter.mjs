@@ -38,6 +38,8 @@ const noDepartureResources = normalizeCiriumFlightStatus({
 });
 assert.equal(noDepartureResources.gate, '');
 assert.equal(noDepartureResources.terminal, '');
+assert.equal(noDepartureResources.status, 'Monitorando');
+assert.equal(ciriumCoverage(noDepartureResources).present.status, false, 'synthetic status must not count as provider coverage');
 
 const alternateFreshness = normalizeCiriumFlightStatus({
   carrierFsCode: 'LA', flightNumber: '3377', departureAirportFsCode: 'REC', arrivalAirportFsCode: 'GRU',
