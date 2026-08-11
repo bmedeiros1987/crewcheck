@@ -51,19 +51,33 @@ analyzeAndAfter = replaceOnce(
 );
 compliance = beforeAnalyze + analyzeAndAfter;
 
-// Full source preparation v14.3.84 inserts an all-days DO adjustment just before
-// weekendPairs. Remove only that derived block: v14.3.95 reapplies the same rule
-// against the reference-month slice, so adjacent-month DO cannot inflate August.
-compliance = compliance.replace(
-  /  \/\/ CC-0001\/#225:[\s\S]*?  if \(missingEmbeddedFormalDaysOff > 0\) \{\n    metrics\.totalDaysOff \+= missingEmbeddedFormalDaysOff;\n    metrics\.daysOff \+= missingEmbeddedFormalDaysOff;\n    metrics\.restDays \+= missingEmbeddedFormalDaysOff;\n  \}\n\n(?=  metrics\.weekendPairs = calculateWeekendPairs\(sortedDays\);)/,
-  '',
-);
+// Reconcile monthly counters at a stable boundary after the per-day scan. Earlier
+// patches may have accumulated adjacent days for continuity; these assignments are
+// deliberately authoritative only for the roster's reference competence.
+const monthlyBoundary = '  metrics.weekendPairs = calculateWeekendPairs(sortedDays);';
+const competenceBlock = `  // ${MARKER}: dias adjacentes continuam no bundle para continuidade, mas não\n  // contaminam KPIs/cálculos da competência mensal principal.\n  const competenceKey = \`${'${roster.year || \'\'}'}-${'${String(roster.month || \'\').padStart(2, \'0\')}'}\`;\n  const competenceDays = sortedDays.filter((day) => complianceDayMonthKey(day) === competenceKey);\n  const competenceGroundIntervals = competenceDays.flatMap((day) => getGroundIntervals(day));\n  const competenceMissingEmbeddedFormalDaysOff = countMissingEmbeddedFormalDoIntervals(competenceDays);\n  metrics.totalFlightHours = competenceDays.reduce((sum, day) => sum + getFlightHours(day), 0);\n  metrics.totalDutyHours = competenceDays.reduce((sum, day) => sum + getRegulatoryWorkHoursForTotals(day), 0);\n  metrics.totalDaysOff = competenceDays.filter(isFormalDayOff).length + competenceMissingEmbeddedFormalDaysOff;\n  metrics.daysOff = metrics.totalDaysOff;\n  metrics.restDays = competenceDays.filter(isRecoveryDay).length + competenceMissingEmbeddedFormalDaysOff;\n  metrics.totalStandby = competenceDays.filter(isStandby).length;\n  metrics.standbyCount = metrics.totalStandby;\n  metrics.reserveCount = competenceDays.filter(isReserve).length;\n  metrics.nightOperations = competenceDays.filter(hasMadrugadaDuty).length;\n  metrics.totalGroundHours = competenceGroundIntervals.reduce((sum, interval) => sum + interval.minutes, 0) / 60;\n  metrics.maxGroundIntervalMinutes = competenceGroundIntervals.reduce((max, interval) => Math.max(max, interval.minutes), 0);\n  metrics.groundLimitExceedances = competenceGroundIntervals.filter((interval) => interval.minutes > (interval.period === 'diurno'\n    ? actRules.groundBetweenLegs.maxDayMinutes\n    : actRules.groundBetweenLegs.maxNightMinutes)).length;\n\n`;
+if (!compliance.includes(`const competenceKey = \`${'${roster.year || \'\'}'}-${'${String(roster.month || \'\').padStart(2, \'0\')}'}\`;`)) {
+  if (!compliance.includes(monthlyBoundary)) throw new Error(`[${MARKER}] monthly boundary missing`);
+  compliance = compliance.replace(monthlyBoundary, `${competenceBlock}  metrics.weekendPairs = calculateWeekendPairs(competenceDays);`);
+} else {
+  compliance = compliance.replace(monthlyBoundary, '  metrics.weekendPairs = calculateWeekendPairs(competenceDays);');
+}
 
-compliance = replaceOnce(
-  compliance,
-  `  metrics.weekendPairs = calculateWeekendPairs(sortedDays);\n  metrics.averageTurnaround = restCount > 0 ? restTotal / restCount : 0;\n  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(sortedDays);\n  const maxNightOpsWindow = countNightOpsInRolling168h(sortedDays);\n\n  if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;\n  // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode\n  // incluir solo/pernoite/continuação e inflar a escala. Mantemos cálculo próprio.\n`,
-  `  // ${MARKER}: dias adjacentes continuam no bundle para continuidade, mas não\n  // contaminam KPIs/cálculos da competência mensal principal.\n  const competenceKey = \`${'${roster.year || \'\'}'}-${'${String(roster.month || \'\').padStart(2, \'0\')}'}\`;\n  const competenceDays = sortedDays.filter((day) => complianceDayMonthKey(day) === competenceKey);\n  const competenceGroundIntervals = competenceDays.flatMap((day) => getGroundIntervals(day));\n  const competenceMissingEmbeddedFormalDaysOff = countMissingEmbeddedFormalDoIntervals(competenceDays);\n  metrics.totalFlightHours = competenceDays.reduce((sum, day) => sum + getFlightHours(day), 0);\n  metrics.totalDutyHours = competenceDays.reduce((sum, day) => sum + getRegulatoryWorkHoursForTotals(day), 0);\n  metrics.totalDaysOff = competenceDays.filter(isFormalDayOff).length + competenceMissingEmbeddedFormalDaysOff;\n  metrics.daysOff = metrics.totalDaysOff;\n  metrics.restDays = competenceDays.filter(isRecoveryDay).length + competenceMissingEmbeddedFormalDaysOff;\n  metrics.totalStandby = competenceDays.filter(isStandby).length;\n  metrics.standbyCount = metrics.totalStandby;\n  metrics.reserveCount = competenceDays.filter(isReserve).length;\n  metrics.nightOperations = competenceDays.filter(hasMadrugadaDuty).length;\n  metrics.totalGroundHours = competenceGroundIntervals.reduce((sum, interval) => sum + interval.minutes, 0) / 60;\n  metrics.maxGroundIntervalMinutes = competenceGroundIntervals.reduce((max, interval) => Math.max(max, interval.minutes), 0);\n  metrics.groundLimitExceedances = competenceGroundIntervals.filter((interval) => interval.minutes > (interval.period === 'diurno'\n    ? actRules.groundBetweenLegs.maxDayMinutes\n    : actRules.groundBetweenLegs.maxNightMinutes)).length;\n  metrics.weekendPairs = calculateWeekendPairs(competenceDays);\n  metrics.averageTurnaround = restCount > 0 ? restTotal / restCount : 0;\n  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(sortedDays);\n  const maxNightOpsWindow = countNightOpsInRolling168h(sortedDays);\n\n  // Totais agregados do PDF podem conter dias adjacentes/acumulados. A competência\n  // usa sempre os eventos normalizados do mês; continuidade permanece disponível.\n`,
-  'competence metrics',
+// v14.3.59 upgrades night-window detection during the full preparation chain. Keep
+// its rolling/all-context summary for regulatory continuity, but do not let it
+// overwrite the reference-month KPI shown in the report.
+if (compliance.includes('  metrics.nightOperations = nightSummary.workedEvents.length;')) {
+  compliance = compliance.replace(
+    '  metrics.nightOperations = nightSummary.workedEvents.length;',
+    `  metrics.nightOperations = summarizeRegulatoryNightEvents(competenceDays, actRules.nightOps.resetAfterFreeHours).workedEvents.length;`,
+  );
+}
+
+// Raw PDF totals may span adjacent context days or accumulated periods. Never let
+// them overwrite the reference-month value derived from normalized roster days.
+compliance = compliance.replace(
+  `  if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;\n`,
+  '',
 );
 
 compliance = replaceOnce(
