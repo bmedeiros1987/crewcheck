@@ -1,0 +1,172 @@
+/* P-1 Auth entry polish — visual only, no auth/roster semantics. */
+.cz-auth {
+  --auth-entry-width: 460px;
+  min-height: 100dvh;
+  align-content: center;
+  gap: 12px;
+  padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 50% -8%, color-mix(in srgb, var(--auth-accent) 12%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--cc-surface, #fff) 98%, transparent), color-mix(in srgb, var(--cc-text, #0f172a) 2%, var(--cc-surface, #fff)));
+}
+
+.cz-wallpaper { display: none !important; }
+
+.cz-auth-brand {
+  width: min(100%, var(--auth-entry-width));
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  padding-inline: 4px;
+}
+
+.cz-auth-brand > span {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+}
+
+.cz-auth-brand > span svg { width: 21px; height: 21px; }
+.cz-auth-brand strong { font-size: 1.16rem; letter-spacing: -.02em; }
+.cz-auth-brand small { margin-top: 2px; font-size: .6rem; letter-spacing: .13em; }
+.cz-auth-brand > p { display: none !important; }
+
+.cz-login-card {
+  width: min(100%, var(--auth-entry-width)) !important;
+  padding: 26px !important;
+  border-radius: 26px !important;
+  box-shadow: 0 22px 64px rgba(2, 6, 23, .14) !important;
+}
+
+.cz-login-card > small,
+.cz-auth-mode-feedback {
+  display: none !important;
+}
+
+.cz-login-card h1 {
+  margin: 18px 0 7px !important;
+  font-size: clamp(1.72rem, 5.6vw, 2.15rem) !important;
+  line-height: 1.04 !important;
+  letter-spacing: -.035em;
+}
+
+.cz-login-card > p:not(.cz-auth-mode-feedback) {
+  margin-bottom: 18px !important;
+  max-width: 38ch;
+  font-size: .88rem;
+  line-height: 1.45;
+}
+
+.cz-tabs {
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+}
+
+.cz-tabs button {
+  min-height: 40px;
+  border-radius: 10px !important;
+  font-size: .82rem;
+}
+
+.cz-login-card label {
+  width: 100%;
+  grid-template-columns: 20px minmax(0, 1fr) !important;
+  gap: 6px 8px;
+  margin-top: 13px;
+  font-size: .78rem;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.cz-login-card label > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cz-login-card label > input,
+.cz-login-card label > select,
+.cz-login-card label > .cz-password-field,
+.cz-login-card label > small {
+  min-width: 0;
+  width: 100%;
+}
+
+.cz-login-card input,
+.cz-login-card select {
+  min-height: 48px;
+  border-radius: 14px !important;
+  font-size: .93rem;
+}
+
+.cz-login-card input::placeholder { opacity: .56; }
+
+.cz-primary {
+  min-height: 50px !important;
+  margin-top: 18px !important;
+  border-radius: 14px !important;
+  font-size: .92rem;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--auth-accent) 22%, transparent) !important;
+}
+
+/* Demo remains an explicit choice, never an auth-error fallback, but no longer competes with Login. */
+.cz-secondary {
+  min-height: 40px !important;
+  margin-top: 9px !important;
+  border: 0 !important;
+  background: transparent !important;
+  font-size: .8rem;
+  font-weight: 800 !important;
+  opacity: .78;
+}
+
+.cz-secondary:hover,
+.cz-secondary:focus-visible { opacity: 1; }
+
+.cz-login-card footer {
+  margin-top: 6px !important;
+  gap: 4px !important;
+}
+
+.cz-auth-link {
+  min-height: 38px !important;
+  padding: 6px 8px !important;
+  font-size: .78rem;
+}
+
+.cz-auth-footer {
+  width: min(100%, var(--auth-entry-width));
+  font-size: .61rem;
+  letter-spacing: .06em;
+  opacity: .52;
+}
+
+html[data-crew-theme='dark'] .cz-auth {
+  background:
+    radial-gradient(circle at 50% -8%, rgba(124, 58, 237, .18), transparent 40%),
+    linear-gradient(180deg, #07101f, #050b16);
+}
+
+html[data-crew-theme='dark'] .cz-login-card {
+  background: rgba(9, 17, 32, .9) !important;
+  box-shadow: 0 22px 64px rgba(0, 0, 0, .34) !important;
+}
+
+@media (max-width: 560px) {
+  .cz-auth {
+    place-items: start center;
+    align-content: start;
+    gap: 10px;
+    padding-inline: 12px;
+  }
+
+  .cz-auth-brand { margin-top: 4px; }
+  .cz-login-card { padding: 20px 16px 18px !important; border-radius: 22px !important; }
+  .cz-login-card h1 { margin-top: 15px !important; }
+  .cz-login-card footer { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .cz-auth-link { white-space: normal; line-height: 1.15; }
+}
+
+@media (max-width: 360px) {
+  .cz-login-card footer { grid-template-columns: 1fr !important; }
+  .cz-auth-brand small { display: none; }
+}
