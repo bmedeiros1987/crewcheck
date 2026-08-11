@@ -196,27 +196,43 @@ async function requestReset(req, res, db) {
     );
   }
 
-  const [recent] = await db.query(
-    'SELECT created_at FROM crewcheck_platform_password_resets WHERE email=? ORDER BY created_at DESC LIMIT 1',
-    [email],
-  );
-  if (recent[0] && Date.now() - new Date(recent[0].created_at).getTime() < 60_000) return sendJson(res, 200, generic);
-
   const minutes = Math.max(5, Math.min(30, Number(env('CREWCHECK_PASSWORD_RESET_CODE_MINUTES', '10'))));
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   const resetId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + minutes * 60_000);
+  const connection = await db.getConnection();
+  let issued = false;
+  try {
+    await connection.beginTransaction();
+    await connection.query('SELECT email FROM crewcheck_platform_accounts WHERE email=? LIMIT 1 FOR UPDATE', [email]);
+    const [recent] = await connection.query(
+      'SELECT created_at FROM crewcheck_platform_password_resets WHERE email=? ORDER BY created_at DESC LIMIT 1',
+      [email],
+    );
+    if (recent[0] && Date.now() - new Date(recent[0].created_at).getTime() < 60_000) {
+      await connection.rollback();
+      return sendJson(res, 200, generic);
+    }
+    await connection.query(
+      'UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL',
+      [email],
+    );
+    await connection.query(
+      'INSERT INTO crewcheck_platform_password_resets (id,email,code_hash,expires_at,channels) VALUES(?,?,?,?,?)',
+      [resetId, email, resetHash(email, code), expiresAt, JSON.stringify({ requested: delivery })],
+    );
+    await connection.commit();
+    issued = true;
+  } catch (error) {
+    try { await connection.rollback(); } catch {}
+    throw error;
+  } finally {
+    connection.release();
+  }
+  if (!issued) return sendJson(res, 200, generic);
+
   const link = await telegramLink(db, email);
   const channels = { email: false, telegram: false, telegramCall: false };
-  await db.query(
-    'INSERT INTO crewcheck_platform_password_resets (id,email,code_hash,expires_at,channels) VALUES(?,?,?,?,?)',
-    [resetId, email, resetHash(email, code), expiresAt, JSON.stringify({ requested: delivery })],
-  );
-  await db.query(
-    'UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND id<>? AND used_at IS NULL',
-    [email, resetId],
-  );
-
   const message = resetMessage(code, minutes);
   if (delivery === 'email' || delivery === 'both') {
     const mail = await sendSystemEmail({
@@ -253,28 +269,42 @@ async function resetPassword(req, res, db) {
   if (!email || code.length !== 6 || password.length < 8 || password !== confirmation) {
     return sendJson(res, 400, { ok: false, message: 'Confira e-mail, código e a nova senha de pelo menos 8 caracteres.' });
   }
-  const [rows] = await db.query(
-    'SELECT * FROM crewcheck_platform_password_resets WHERE email=? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1',
-    [email],
-  );
-  const reset = rows[0];
-  if (!reset || new Date(reset.expires_at).getTime() < Date.now() || Number(reset.attempts || 0) >= 5) {
-    return sendJson(res, 400, { ok: false, message: 'Código inválido ou expirado. Solicite outro.' });
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query('SELECT email FROM crewcheck_platform_accounts WHERE email=? LIMIT 1 FOR UPDATE', [email]);
+    const [rows] = await connection.query(
+      'SELECT * FROM crewcheck_platform_password_resets WHERE email=? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1 FOR UPDATE',
+      [email],
+    );
+    const reset = rows[0];
+    if (!reset || new Date(reset.expires_at).getTime() < Date.now() || Number(reset.attempts || 0) >= 5) {
+      await connection.rollback();
+      return sendJson(res, 400, { ok: false, message: 'Código inválido ou expirado. Solicite outro.' });
+    }
+    if (!secureCompare(reset.code_hash, resetHash(email, code))) {
+      await connection.query('UPDATE crewcheck_platform_password_resets SET attempts=attempts+1 WHERE id=?', [reset.id]);
+      await connection.commit();
+      return sendJson(res, 400, { ok: false, message: 'Código inválido ou expirado. Solicite outro.' });
+    }
+    const digest = passwordDigest(password);
+    await connection.query(
+      'UPDATE crewcheck_platform_accounts SET password_hash=?,password_salt=?,must_change_password=0 WHERE email=?',
+      [digest.hash, digest.salt, email],
+    );
+    await connection.query(
+      'UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL',
+      [email],
+    );
+    await connection.commit();
+    return sendJson(res, 200, { ok: true, message: 'Senha atualizada. Entre novamente.' });
+  } catch (error) {
+    try { await connection.rollback(); } catch {}
+    throw error;
+  } finally {
+    connection.release();
   }
-  if (!secureCompare(reset.code_hash, resetHash(email, code))) {
-    await db.query('UPDATE crewcheck_platform_password_resets SET attempts=attempts+1 WHERE id=?', [reset.id]);
-    return sendJson(res, 400, { ok: false, message: 'Código inválido ou expirado. Solicite outro.' });
-  }
-  const digest = passwordDigest(password);
-  await db.query(
-    'UPDATE crewcheck_platform_accounts SET password_hash=?,password_salt=?,must_change_password=0 WHERE email=?',
-    [digest.hash, digest.salt, email],
-  );
-  await db.query(
-    'UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL',
-    [email],
-  );
-  return sendJson(res, 200, { ok: true, message: 'Senha atualizada. Entre novamente.' });
 }
 
 async function me(req, res, db) {
