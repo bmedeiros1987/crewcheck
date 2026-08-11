@@ -2,7 +2,7 @@ async function googleRoutePreview(origin, destination, requestedMode, key) {
   const cached = readGoogleRouteCache(origin, destination, requestedMode);
   if (cached) return { ...cached, mapsBudget: await googleMapsBudgetStatus(), providerOrder: requestedMode === 'transit' ? ['Google Routes'] : ['TomTom', 'Google Routes'] };
   const budget = await reserveGoogleMapsRequest('routes', 1);
-  if (!budget.allowed) return { ok: false, configured: true, budgetDenied: true, mapsBudget: budget, message: 'Limite mensal do Google Maps atingido.' };
+  if (!budget.allowed) return { ok: false, configured: true, budgetDenied: true, failureClass: 'quota', mapsBudget: budget, message: 'Limite mensal do Google Maps atingido.' };
   const travelMode = requestedMode === 'transit' ? 'TRANSIT' : 'DRIVE';
   const result = await fetchRouteJson('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
@@ -23,10 +23,24 @@ async function googleRoutePreview(origin, destination, requestedMode, key) {
   });
   if (googleMapsQuotaFailure(result.status, result.payload)) {
     const blocked = await markGoogleMapsQuotaBlocked(`provider_quota_${result.status || 'unknown'}`);
-    return { ok: false, configured: true, quotaFailure: true, mapsBudget: blocked, message: 'Cota do Google Maps indisponível.' };
+    return { ok: false, configured: true, quotaFailure: true, failureClass: 'quota', httpStatus: Number(result.status) || null, mapsBudget: blocked, message: 'Cota do Google Maps indisponível.' };
   }
   const route = result.payload?.routes?.[0];
-  if (!result.ok || !route) return { ok: false, configured: true, googleFailure: true, mapsBudget: await googleMapsBudgetStatus(), message: 'Google Routes não respondeu.' };
+  if (!result.ok || !route) return {
+    ok: false,
+    configured: true,
+    googleFailure: true,
+    httpStatus: Number(result.status) || null,
+    failureClass: result.status === 401 || result.status === 403
+      ? 'auth_or_restriction'
+      : result.status === 400
+        ? 'request_or_api'
+        : result.status >= 500
+          ? 'provider_unavailable'
+          : 'unknown',
+    mapsBudget: await googleMapsBudgetStatus(),
+    message: 'Google Routes não respondeu.',
+  };
   const durationSeconds = routeDurationSeconds(route.duration);
   const baselineDurationSeconds = routeDurationSeconds(route.staticDuration);
   const trafficDelaySeconds = Math.max(0, durationSeconds - baselineDurationSeconds);
@@ -107,23 +121,78 @@ async function handleRoutePreview(req, res, url) {
     return sendJson(res, 200, { ok: false, configured: true, mapsBudget: await googleMapsBudgetStatus(), message: 'Rota ao vivo indisponível agora. Use Abrir no Google Maps.' });
   }
 }
+function sanitizedMapsProbe(provider, configured, result) {
+  if (!configured) return { provider, configured: false, state: 'not_configured' };
+  if (!result) return { provider, configured: true, state: 'unavailable' };
+  const distanceMeters = Number(result.distanceMeters);
+  const durationSeconds = Number(result.durationSeconds);
+  const routeValid = result.ok === true
+    && Number.isFinite(distanceMeters) && distanceMeters > 0
+    && Number.isFinite(durationSeconds) && durationSeconds > 0;
+  return {
+    provider,
+    configured: true,
+    state: routeValid
+      ? 'available'
+      : result.failureClass === 'quota' || result.quotaFailure || result.budgetDenied
+        ? 'quota'
+        : result.failureClass || 'unavailable',
+    httpStatus: Number(result.httpStatus) || undefined,
+    routeValid,
+    liveTraffic: routeValid ? Boolean(result.liveTraffic || result.trafficAware) : false,
+    updatedAt: routeValid ? result.updatedAt || new Date().toISOString() : undefined,
+  };
+}
 async function handleMapsProviderStatus(req, res) {
   const identity = alarmRequestIdentity(req);
   if (!identity.admin) return sendJson(res, 403, { ok: false, message: 'Controle mensal de mapas disponível somente no Admin.' });
   const budget = await googleMapsBudgetStatus();
-  const googleConfigured = Boolean(mapsServerKey());
-  const tomtomConfigured = Boolean(tomtomServerKey());
-  return sendJson(res, 200, {
+  const googleKey = mapsServerKey();
+  const tomtomKey = tomtomServerKey();
+  const googleConfigured = Boolean(googleKey);
+  const tomtomConfigured = Boolean(tomtomKey);
+  const status = {
     ok: googleConfigured || tomtomConfigured,
     primary: tomtomConfigured ? 'TomTom' : googleConfigured && !budget.blocked ? 'Google Routes' : 'Indisponível',
     fallback: tomtomConfigured && googleConfigured && !budget.blocked ? 'Google Routes' : null,
     googleConfigured,
     tomtomConfigured,
     budget,
+    probeAvailable: true,
     message: tomtomConfigured
       ? 'TomTom é o provedor principal para carro; Google Routes permanece como contingência e transporte público.'
       : budget.blocked
         ? 'Google Maps pausado até a próxima competência; rota terrestre indisponível sem TomTom.'
         : `Google Routes ativo como contingência: ${budget.used} de ${budget.limit} solicitações usadas neste mês.`,
+  };
+
+  const requestUrl = new URL(req.url || '/api/maps/provider/status', 'https://crewcheck.local');
+  if (requestUrl.searchParams.get('probe') !== '1') return sendJson(res, 200, status);
+
+  const origin = 'Aeroporto Internacional de Brasília, Brasília - DF';
+  const destination = 'ParkShopping Brasília, Brasília - DF';
+  let tomtomResult = null;
+  let googleResult = null;
+  try {
+    if (tomtomKey) tomtomResult = await tomtomRoutePreview(origin, destination, tomtomKey);
+  } catch {}
+  try {
+    if (googleKey && !budget.blocked) googleResult = await googleRoutePreview(origin, destination, 'driving', googleKey);
+  } catch {}
+
+  const providers = [
+    sanitizedMapsProbe('TomTom', tomtomConfigured, tomtomResult),
+    sanitizedMapsProbe('Google Routes', googleConfigured, googleResult),
+  ];
+  return sendJson(res, 200, {
+    ...status,
+    ok: providers.some((item) => item.state === 'available'),
+    runtimeProbe: {
+      executed: true,
+      scope: 'rota terrestre curta em Brasília',
+      providers,
+      checkedAt: new Date().toISOString(),
+      note: 'O probe é executado somente sob solicitação explícita do Admin e não expõe chaves nem payload bruto dos provedores.',
+    },
   });
 }

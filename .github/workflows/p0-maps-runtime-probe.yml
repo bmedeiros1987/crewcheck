@@ -1,0 +1,27 @@
+name: CrewCheck P0 Maps runtime probe
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14342/route-policy.snippet'
+      - 'scripts/regression-p0-maps-runtime-probe.mjs'
+      - '.github/workflows/p0-maps-runtime-probe.yml'
+  push:
+    branches:
+      - feat/maps-runtime-probe-331
+
+jobs:
+  maps-runtime-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+      - name: Runtime probe contract
+        run: node scripts/regression-p0-maps-runtime-probe.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Server syntax
+        run: node --check server.mjs
