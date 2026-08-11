@@ -212,6 +212,10 @@ async function requestReset(req, res, db) {
     'INSERT INTO crewcheck_platform_password_resets (id,email,code_hash,expires_at,channels) VALUES(?,?,?,?,?)',
     [resetId, email, resetHash(email, code), expiresAt, JSON.stringify({ requested: delivery })],
   );
+  await db.query(
+    'UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND id<>? AND used_at IS NULL',
+    [email, resetId],
+  );
 
   const message = resetMessage(code, minutes);
   if (delivery === 'email' || delivery === 'both') {
@@ -266,7 +270,10 @@ async function resetPassword(req, res, db) {
     'UPDATE crewcheck_platform_accounts SET password_hash=?,password_salt=?,must_change_password=0 WHERE email=?',
     [digest.hash, digest.salt, email],
   );
-  await db.query('UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE id=?', [reset.id]);
+  await db.query(
+    'UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL',
+    [email],
+  );
   return sendJson(res, 200, { ok: true, message: 'Senha atualizada. Entre novamente.' });
 }
 
