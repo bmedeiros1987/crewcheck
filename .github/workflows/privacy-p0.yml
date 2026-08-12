@@ -51,5 +51,5 @@ jobs:
           grep -Fiq 'Health Connect' "$privacy"
           grep -Fiq 'dados de saúde' "$privacy"
           grep -Fiq 'consentimento' "$privacy"
-          grep -Fiq 'revogar' "$privacy"
+          grep -Eiq 'revogar|revoga[cç][aã]o|revogad[oa]' "$privacy"
           grep -Fiq 'não vendemos' "$privacy"
