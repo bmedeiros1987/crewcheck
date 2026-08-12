@@ -32,7 +32,7 @@ if (/\.cz-login-card label\s*\{[^}]*grid-template-columns:\s*\d+px\s+\d+px/s.tes
   throw new Error('Auth labels must not be constrained to two fixed-width columns');
 }
 
-if (/(^|\n)\s*\.cz-wallpaper(?:\s|:|\{)/m.test(css)) {
+if (/(^|\n)[\t ]*\.cz-wallpaper(?:\s|:|\{)/m.test(css)) {
   throw new Error('Auth cabin wallpaper selectors must be scoped through .cz-auth');
 }
 
