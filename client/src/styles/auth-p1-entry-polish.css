@@ -14,7 +14,7 @@
 }
 
 /* Passenger-safe cabin crops supplied by the product owner. The source crops stop before any passenger area. */
-.cz-wallpaper {
+.cz-auth .cz-wallpaper {
   display: block !important;
   position: fixed;
   inset: 0;
@@ -24,8 +24,8 @@
   background: #050b16;
 }
 
-.cz-wallpaper::before,
-.cz-wallpaper::after {
+.cz-auth .cz-wallpaper::before,
+.cz-auth .cz-wallpaper::after {
   content: '';
   position: absolute;
   inset: -2%;
@@ -37,12 +37,12 @@
   will-change: opacity;
 }
 
-.cz-wallpaper::before {
+.cz-auth .cz-wallpaper::before {
   background-image: url('/assets/auth/crewcheck-cabin-red-01.webp');
   opacity: .72;
 }
 
-.cz-wallpaper::after {
+.cz-auth .cz-wallpaper::after {
   background-image: url('/assets/auth/crewcheck-cabin-red-02.webp');
   opacity: 0;
   animation: crewcheck-auth-cabin-crossfade 18s ease-in-out infinite;
@@ -191,8 +191,8 @@ html[data-crew-theme='dark'] .cz-auth {
     radial-gradient(circle at 50% -8%, rgba(124, 58, 237, .18), transparent 40%);
 }
 
-html[data-crew-theme='dark'] .cz-wallpaper::before,
-html[data-crew-theme='dark'] .cz-wallpaper::after {
+html[data-crew-theme='dark'] .cz-auth .cz-wallpaper::before,
+html[data-crew-theme='dark'] .cz-auth .cz-wallpaper::after {
   filter: saturate(.96) contrast(1.02) brightness(.68);
 }
 
@@ -202,7 +202,7 @@ html[data-crew-theme='dark'] .cz-login-card {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cz-wallpaper::after { animation: none; display: none; }
+  .cz-auth .cz-wallpaper::after { animation: none; display: none; }
 }
 
 @media (max-width: 560px) {
@@ -213,8 +213,8 @@ html[data-crew-theme='dark'] .cz-login-card {
     padding-inline: 12px;
   }
 
-  .cz-wallpaper::before,
-  .cz-wallpaper::after {
+  .cz-auth .cz-wallpaper::before,
+  .cz-auth .cz-wallpaper::after {
     background-position: 50% 0;
     background-size: auto 100dvh;
   }
