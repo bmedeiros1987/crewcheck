@@ -10,10 +10,17 @@ const required = [
   '.cz-secondary',
   '@media (max-width: 560px)',
   'grid-template-columns: 20px minmax(0, 1fr)',
+  "url('/assets/auth/crewcheck-cabin-red-01.webp')",
+  "url('/assets/auth/crewcheck-cabin-red-02.webp')",
+  'prefers-reduced-motion: reduce',
 ];
 
 for (const marker of required) {
   if (!(main + css).includes(marker)) throw new Error(`Missing P-1 Auth entry marker: ${marker}`);
+}
+
+if (!css.includes('Passenger-safe cabin crops supplied by the product owner.')) {
+  throw new Error('Passenger-safe auth cabin background contract missing');
 }
 
 if (!css.includes('Demo remains an explicit choice, never an auth-error fallback')) {
@@ -22,6 +29,10 @@ if (!css.includes('Demo remains an explicit choice, never an auth-error fallback
 
 if (/\.cz-login-card label\s*\{[^}]*grid-template-columns:\s*\d+px\s+\d+px/s.test(css)) {
   throw new Error('Auth labels must not be constrained to two fixed-width columns');
+}
+
+if (/\.cz-wallpaper\s*\{[^}]*display:\s*none\s*!important/s.test(css)) {
+  throw new Error('Auth cabin wallpaper must remain visible');
 }
 
 console.log('P-1 Auth entry polish regression OK');
