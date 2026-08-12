@@ -13,6 +13,7 @@ const required = [
   "url('/assets/auth/crewcheck-cabin-red-01.webp')",
   "url('/assets/auth/crewcheck-cabin-red-02.webp')",
   'prefers-reduced-motion: reduce',
+  '.cz-auth .cz-wallpaper',
 ];
 
 for (const marker of required) {
@@ -31,8 +32,16 @@ if (/\.cz-login-card label\s*\{[^}]*grid-template-columns:\s*\d+px\s+\d+px/s.tes
   throw new Error('Auth labels must not be constrained to two fixed-width columns');
 }
 
-if (/\.cz-wallpaper\s*\{[^}]*display:\s*none\s*!important/s.test(css)) {
-  throw new Error('Auth cabin wallpaper must remain visible');
+if (/(^|\n)\.cz-wallpaper(?:\s|:|\{)/m.test(css)) {
+  throw new Error('Auth cabin wallpaper selectors must be scoped through .cz-auth');
+}
+
+if (/html\[data-crew-theme='dark'\]\s+\.cz-wallpaper/m.test(css)) {
+  throw new Error('Dark-mode auth cabin wallpaper selectors must remain scoped through .cz-auth');
+}
+
+if (!/\.cz-auth\s+\.cz-wallpaper\s*\{[^}]*display:\s*block\s*!important/s.test(css)) {
+  throw new Error('Auth cabin wallpaper must remain visible on the auth page');
 }
 
 console.log('P-1 Auth entry polish regression OK');
