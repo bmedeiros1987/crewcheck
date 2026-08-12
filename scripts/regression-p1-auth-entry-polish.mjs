@@ -32,8 +32,15 @@ if (/\.cz-login-card label\s*\{[^}]*grid-template-columns:\s*\d+px\s+\d+px/s.tes
   throw new Error('Auth labels must not be constrained to two fixed-width columns');
 }
 
-if (/(^|\n)[\t ]*\.cz-wallpaper(?:\s|:|\{)/m.test(css)) {
-  throw new Error('Auth cabin wallpaper selectors must be scoped through .cz-auth');
+for (const match of css.matchAll(/([^{}]+)\{/g)) {
+  const prelude = String(match[1] || '').trim();
+  if (!prelude || prelude.startsWith('@')) continue;
+  for (const selector of prelude.split(',')) {
+    if (!selector.includes('.cz-wallpaper')) continue;
+    if (!/\.cz-auth\b[\s>+~]+\.cz-wallpaper\b/s.test(selector)) {
+      throw new Error(`Auth cabin wallpaper selectors must be scoped through .cz-auth: ${selector.trim()}`);
+    }
+  }
 }
 
 if (/html\[data-crew-theme='dark'\]\s+\.cz-wallpaper/m.test(css)) {
