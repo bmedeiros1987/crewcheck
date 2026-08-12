@@ -20,6 +20,7 @@ const alreadyApplied = source.includes('const [lockedProfiles] = await connectio
 
 if (alreadyApplied) {
   console.log('[crewcheck:prepare] v14.3.96 auth profile-only recovery already applied.');
+  await import('../v14397/apply.mjs');
   process.exit(0);
 }
 
@@ -40,3 +41,4 @@ const next = source
 
 fs.writeFileSync(path, next, 'utf8');
 console.log('[crewcheck:prepare] v14.3.96 auth profile-only recovery applied.');
+await import('../v14397/apply.mjs');
