@@ -71,3 +71,4 @@ if (!pageAlreadyApplied) {
 if (nextAuth !== auth) fs.writeFileSync(authPath, nextAuth, 'utf8');
 if (nextPage !== page) fs.writeFileSync(pagePath, nextPage, 'utf8');
 console.log('[crewcheck:prepare] v14.3.97 auth password confirmation applied.');
+await import('../v14398/apply.mjs');
