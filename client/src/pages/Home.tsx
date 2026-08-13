@@ -1319,7 +1319,6 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
   const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const [monitor, setMonitor] = useState<{ message?: string; telegramLinked?: boolean; learning?: { samples?: number; expectedMinutes?: number | null } } | null>(null);
-  const incidentFingerprintRef = useRef('');
   const destination = eventRouteDestination(event);
   const mapsMode = mode.includes('transit') ? 'transit' : 'driving';
   const routeModeLabel = mode === 'automatic' ? 'mais rápido' : mode.includes('transit') ? 'transporte público' : mode.includes('uber') ? 'Uber/99' : mode.includes('flight') ? 'carro + voo' : 'carro';
@@ -1350,14 +1349,20 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
   useEffect(() => {
     const incidents = route?.incidents || [];
     const fingerprint = incidents.map((item) => `${item.id || item.title}:${item.severity}:${item.delaySeconds || 0}`).join('|');
-    if (!fingerprint || fingerprint === incidentFingerprintRef.current) return;
-    incidentFingerprintRef.current = fingerprint;
+    if (!fingerprint) return;
+    // Persisted (not component-scoped) so a remount/reload of the same still-active
+    // incident does not re-alert; only a genuine change in the occurrence fingerprint does.
+    const signatureKey = `crewcheck_route_incident_signature_${event.id}`;
+    const previous = storage.get(signatureKey, '');
+    if (previous === fingerprint) return;
+    storage.set(signatureKey, fingerprint);
+    if (!previous) return;
     const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');
     const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';
     const body = (critical || incidents[0])?.title || 'Revise o trajeto antes de sair.';
     notifyCrewCheck(title, body);
     toast.warning(title, { description: body });
-  }, [route?.updatedAt]);
+  }, [route?.updatedAt, event.id]);
   useEffect(() => {
     const pair = coordinatePair(origin);
     if (!pair) {
