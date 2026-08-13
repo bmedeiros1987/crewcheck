@@ -54,10 +54,11 @@
   }
 
   .cz-global-header .cz-menu-btn {
-    width: 32px !important;
-    height: 32px !important;
-    min-width: 32px !important;
-    border-radius: 10px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    margin: -6px 0 !important;
+    border-radius: 12px !important;
     padding: 0 !important;
   }
 
