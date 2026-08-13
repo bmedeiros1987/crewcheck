@@ -74,13 +74,20 @@ try {
   assert.equal(patchRosterCacheIntegrityV14380(homeSource), homeSource, 'patch de cache P0 anterior deve respeitar schemas posteriores');
   assert.equal(patchRosterCacheOperationalDateV14381(homeSource), homeSource, 'patch de cache operacional deve ser idempotente');
 
-  assert.equal(packageJson.version, '14.3.81', 'package deve anunciar a versão P0 atual');
+  // Âncora completa (sem sufixo de build metadata tipo "+build.1"): o escape abaixo só
+  // trata pontos, então uma versão com outros metacaracteres de regex quebraria os
+  // asserts de endpoint mais abaixo em vez de simplesmente reprovar aqui.
+  assert.match(packageJson.version, /^\d+\.\d+\.\d+$/, 'package deve anunciar uma versão P0 válida (x.y.z)');
   assert.equal(release.version, packageJson.version, 'release Web/PWA deve acompanhar o package');
   const escapedVersion = packageJson.version.replace(/\./g, '\\.');
   assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/release'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de release deve acompanhar a versão P0');
   assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/health'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de saúde deve acompanhar a versão P0');
-  assert.equal(patchRuntimeVersionV14381(runtimeServerSource), runtimeServerSource, 'patch de versão do servidor deve ser idempotente');
-  assert.equal(patchRuntimeVersionV14381(platformSource), platformSource, 'patch de versão da plataforma deve ser idempotente');
+  // patchRuntimeVersionV14381 grava um literal de versão fixo (v14.3.81); comparar sua
+  // saída contra o server.mjs/platform.mjs atuais (já avançados por writers posteriores,
+  // ex. v14382+) sempre reprovaria. O invariante real que vale a pena travar é que a
+  // função é idempotente em relação à sua própria saída, não a um snapshot histórico.
+  assert.equal(patchRuntimeVersionV14381(patchRuntimeVersionV14381(runtimeServerSource)), patchRuntimeVersionV14381(runtimeServerSource), 'patch de versão do servidor deve ser idempotente em relação à própria saída');
+  assert.equal(patchRuntimeVersionV14381(patchRuntimeVersionV14381(platformSource)), patchRuntimeVersionV14381(platformSource), 'patch de versão da plataforma deve ser idempotente em relação à própria saída');
 
   console.log('[P0 roster-date] parser e canônico preservados; cache legado falha fechado e cliente/servidor anunciam a mesma versão.');
 } finally {
