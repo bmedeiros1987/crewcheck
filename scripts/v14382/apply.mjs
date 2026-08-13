@@ -27,12 +27,16 @@ if (!fs.existsSync('server/whatsapp.mjs')) {
 }
 
 update('server.mjs', (source) => {
-  let next = insertAfter(
-    source,
-    "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';",
-    "import { handleWhatsAppRoute } from './server/whatsapp.mjs';",
-    'import do WhatsApp',
-  );
+  let next = source;
+  const whatsappImportPresent = /import\s*\{[^}]*\bhandleWhatsAppRoute\b[^}]*\}\s*from\s*['"]\.\/server\/whatsapp\.mjs['"];?/.test(next);
+  if (!whatsappImportPresent) {
+    next = insertAfter(
+      next,
+      "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';",
+      "import { handleWhatsAppRoute } from './server/whatsapp.mjs';",
+      'import do WhatsApp',
+    );
+  }
   next = insertBefore(
     next,
     '  if (await handleV139Route(req, res, url)) return;',
