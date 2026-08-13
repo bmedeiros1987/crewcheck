@@ -1,0 +1,24 @@
+name: TomTom incident terminal-occurrence filter
+
+on:
+  pull_request:
+    paths:
+      - 'server.mjs'
+      - 'scripts/regression-tomtom-incident-terminal-filter.mjs'
+      - '.github/workflows/tomtom-incident-terminal-filter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+      - run: node --check server.mjs
+      - run: node scripts/regression-tomtom-incident-terminal-filter.mjs

@@ -465,6 +465,17 @@ function incidentGeometryPoints(geometry = {}) {
   const values = geometry.type === 'Point' ? [coordinates] : coordinates;
   return values.filter((point) => Array.isArray(point) && point.length >= 2).map((point) => ({ longitude: Number(point[0]), latitude: Number(point[1]) })).filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
 }
+// timeValidityFilter=present on the TomTom request is a server-side hint, not a guarantee:
+// an incident can still carry an explicit endTime in the past (reporting lag) or
+// timeValidity='future' (not started yet). Filter explicitly so an ended/not-yet-active
+// occurrence never reaches the client as if it were live.
+function tomtomIncidentIsActive(properties = {}, now = Date.now()) {
+  const timeValidity = String(properties.timeValidity || '').toLowerCase();
+  if (timeValidity && timeValidity !== 'present') return false;
+  const endTime = properties.endTime ? Date.parse(properties.endTime) : NaN;
+  if (Number.isFinite(endTime) && endTime <= now) return false;
+  return true;
+}
 async function tomtomIncidentDetails(route, key) {
   const routePoints = (route.legs || []).flatMap((leg) => leg.points || []).filter((point) => Number.isFinite(Number(point?.latitude)) && Number.isFinite(Number(point?.longitude))).map((point) => ({ latitude: Number(point.latitude), longitude: Number(point.longitude) }));
   if (routePoints.length < 2) return [];
@@ -496,6 +507,7 @@ async function tomtomIncidentDetails(route, key) {
     const properties = incident?.properties || {};
     const meta = categoryMeta[Number(properties.iconCategory)] || null;
     if (!meta) return [];
+    if (!tomtomIncidentIsActive(properties)) return [];
     const geometryPoints = incidentGeometryPoints(incident.geometry);
     const nearRoute = geometryPoints.some((incidentPoint) => routePoints.some((routePoint) => routePointDistanceMeters(incidentPoint, routePoint) <= 3500));
     if (!nearRoute) return [];
@@ -512,6 +524,9 @@ async function tomtomIncidentDetails(route, key) {
       from: String(properties.from || ''),
       to: String(properties.to || ''),
       lastReportTime: String(properties.lastReportTime || ''),
+      startTime: String(properties.startTime || ''),
+      endTime: String(properties.endTime || ''),
+      timeValidity: String(properties.timeValidity || ''),
     }];
   }).slice(0, 12);
 }
