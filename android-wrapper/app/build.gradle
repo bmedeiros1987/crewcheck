@@ -30,7 +30,7 @@ android {
     defaultConfig {
         applicationId 'com.crewcheck.app'
         minSdk 26
-        targetSdk 35
+        targetSdk 36
         versionCode 139900
         versionName '13.9.9'
     }
