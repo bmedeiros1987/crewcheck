@@ -14,6 +14,12 @@ const required = [
   "url('/assets/auth/crewcheck-cabin-red-02.webp')",
   'prefers-reduced-motion: reduce',
   '.cz-auth .cz-wallpaper',
+  'overflow-y: auto',
+  'overscroll-behavior-y: contain',
+  '-webkit-overflow-scrolling: touch',
+  'scroll-padding-block:',
+  'padding-bottom: max(96px, env(safe-area-inset-bottom))',
+  'scroll-padding-bottom: max(128px, env(safe-area-inset-bottom))',
 ];
 
 for (const marker of required) {
@@ -22,6 +28,10 @@ for (const marker of required) {
 
 if (!css.includes('Passenger-safe cabin crops supplied by the product owner.')) {
   throw new Error('Passenger-safe auth cabin background contract missing');
+}
+
+if (/\.cz-auth\s*\{[^}]*overflow:\s*hidden/s.test(css)) {
+  throw new Error('Auth root must remain vertically scrollable when the mobile keyboard reduces the viewport');
 }
 
 if (!css.includes('Demo remains an explicit choice, never an auth-error fallback')) {
