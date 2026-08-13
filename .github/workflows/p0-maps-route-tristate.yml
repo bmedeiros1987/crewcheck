@@ -5,9 +5,11 @@ on:
     branches: [main]
     paths:
       - 'client/src/pages/Home.tsx'
+      - 'server.mjs'
       - 'scripts/v14387d/**'
       - 'scripts/p0-maps-route-tristate/**'
       - 'scripts/regression-p0-maps-route-tristate.mjs'
+      - 'scripts/regression-p0-maps-terminal-incidents.mjs'
       - '.github/workflows/p0-maps-route-tristate.yml'
   workflow_dispatch:
 
@@ -29,6 +31,8 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Validate unavailable/loading/valid route states
         run: node scripts/regression-p0-maps-route-tristate.mjs
+      - name: Reject terminal route incidents
+        run: node scripts/regression-p0-maps-terminal-incidents.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Vite production build
