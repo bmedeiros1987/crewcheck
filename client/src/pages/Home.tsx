@@ -426,7 +426,7 @@ type RoutePreviewInfo = {
   trafficDelaySeconds?: number;
   trafficDelayText?: string;
   trafficAware?: boolean;
-  incidents?: Array<{ id?: string; category?: string; title?: string; delaySeconds?: number; delayText?: string; severity?: string; roadClosure?: boolean }>;
+  incidents?: Array<{ id?: string; category?: string; title?: string; delaySeconds?: number; delayText?: string; severity?: string; roadClosure?: boolean; timeValidity?: string; startTime?: string; endTime?: string }>;
   hasRoadClosure?: boolean;
   updatedAt?: string;
   refreshAfterSeconds?: number;
