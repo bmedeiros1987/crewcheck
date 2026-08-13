@@ -1319,6 +1319,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
   const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const [monitor, setMonitor] = useState<{ message?: string; telegramLinked?: boolean; learning?: { samples?: number; expectedMinutes?: number | null } } | null>(null);
+  const lastAlertedIncidentFingerprintRef = useRef<string | null>(null);
   const destination = eventRouteDestination(event);
   const mapsMode = mode.includes('transit') ? 'transit' : 'driving';
   const routeModeLabel = mode === 'automatic' ? 'mais rápido' : mode.includes('transit') ? 'transporte público' : mode.includes('uber') ? 'Uber/99' : mode.includes('flight') ? 'carro + voo' : 'carro';
@@ -1350,11 +1351,14 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     const incidents = route?.incidents || [];
     const fingerprint = incidents.map((item) => `${item.id || item.title}:${item.severity}:${item.delaySeconds || 0}`).join('|');
     if (!fingerprint) return;
-    // Persisted (not component-scoped) so a remount/reload of the same still-active
-    // incident does not re-alert; only a genuine change in the occurrence fingerprint does.
+    // Persisted across mounts/reloads (not just component-scoped) so a remount of the
+    // same still-active incident does not re-alert; only a genuine fingerprint change does.
+    // The in-memory ref is kept as a fallback for when localStorage is unavailable/quota-full,
+    // so a broken storage never causes either total silence or a repeat alert every refresh.
     const signatureKey = `crewcheck_route_incident_signature_${event.id}`;
-    const previous = storage.get(signatureKey, '');
+    const previous = lastAlertedIncidentFingerprintRef.current ?? storage.get(signatureKey, '');
     if (previous === fingerprint) return;
+    lastAlertedIncidentFingerprintRef.current = fingerprint;
     storage.set(signatureKey, fingerprint);
     if (!previous) return;
     const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');
