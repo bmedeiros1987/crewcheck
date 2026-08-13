@@ -492,10 +492,17 @@ async function tomtomIncidentDetails(route, key) {
     9: { category: 'road_works', title: 'Obra na rota', severity: 'warning' },
     14: { category: 'broken_down_vehicle', title: 'Veículo parado na rota', severity: 'warning' },
   };
+  const now = Date.now();
   return result.payload.incidents.flatMap((incident) => {
     const properties = incident?.properties || {};
     const meta = categoryMeta[Number(properties.iconCategory)] || null;
     if (!meta) return [];
+    const timeValidity = String(properties.timeValidity || '').trim().toLowerCase();
+    const endTime = String(properties.endTime || '').trim();
+    const endTimestamp = endTime ? Date.parse(endTime) : Number.NaN;
+    const description = String(properties.events?.[0]?.description || '').trim();
+    const terminalDescription = /^(?:encerrad[oa](?:\/a)?|finalizad[oa](?:\/a)?|resolvid[oa](?:\/a)?|expirad[oa](?:\/a)?|ended|resolved|expired|finished)$/i.test(description);
+    if ((timeValidity && timeValidity !== 'present') || (Number.isFinite(endTimestamp) && endTimestamp <= now) || terminalDescription) return [];
     const geometryPoints = incidentGeometryPoints(incident.geometry);
     const nearRoute = geometryPoints.some((incidentPoint) => routePoints.some((routePoint) => routePointDistanceMeters(incidentPoint, routePoint) <= 3500));
     if (!nearRoute) return [];
@@ -503,11 +510,14 @@ async function tomtomIncidentDetails(route, key) {
     return [{
       id: String(properties.id || `${meta.category}-${properties.from || ''}-${properties.to || ''}`),
       category: meta.category,
-      title: String(properties.events?.[0]?.description || meta.title),
+      title: description || meta.title,
       delaySeconds,
       delayText: delaySeconds ? formatDuration(`${delaySeconds}s`) : '',
       severity: meta.severity,
       roadClosure: Number(properties.iconCategory) === 8,
+      timeValidity: timeValidity || 'present',
+      startTime: String(properties.startTime || ''),
+      endTime,
       roadNumbers: Array.isArray(properties.roadNumbers) ? properties.roadNumbers.slice(0, 4) : [],
       from: String(properties.from || ''),
       to: String(properties.to || ''),
