@@ -77,6 +77,19 @@ jobs:
           echo "CREWCHECK_VERSION=$version" >> "$GITHUB_ENV"
           echo "CREWCHECK_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
 
+          # A versão canônica é derivada de client/public/release.json, que é escrito por
+          # scripts/v14382/apply.mjs (o último gravador de versão na cadeia de scripts/v139/apply.mjs).
+          # Se um script de preparação futuro esquecer de propagar esse gravador para o novo
+          # topo da cadeia, o release.json regride silenciosamente para uma versão antiga e o
+          # AAB assinado sai com um versionCode que o Play já rejeitou/consumiu (já aconteceu:
+          # ver commit "fix(android): bump Play version to 14.3.74" revertido em #441).
+          # Atualize LAST_ACCEPTED_PLAY_VERSION_CODE após cada novo release aceito no Play.
+          LAST_ACCEPTED_PLAY_VERSION_CODE=140382
+          if (( version_code < LAST_ACCEPTED_PLAY_VERSION_CODE )); then
+            echo "::error title=Regressão de versionCode Android::client/public/release.json produziu $version ($version_code), anterior ao último release aceito no Play ($LAST_ACCEPTED_PLAY_VERSION_CODE). Verifique se o gravador de versão terminal (hoje scripts/v14382/apply.mjs) ainda é o último item da cadeia em scripts/v139/apply.mjs."
+            exit 1
+          fi
+
           sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"$version\"/" android-wrapper/app/build.gradle
           sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $version_code/" android-wrapper/app/build.gradle
           sed -i "s/id 'com.android.application' version '[^']*'/id 'com.android.application' version '8.11.1'/" android-wrapper/build.gradle
