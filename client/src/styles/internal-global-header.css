@@ -68,6 +68,7 @@
   }
 
   .cz-global-header .cz-brand-lockup {
+    min-height: 44px !important;
     gap: 6px !important;
   }
 
