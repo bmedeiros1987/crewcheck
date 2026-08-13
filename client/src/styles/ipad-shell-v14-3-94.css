@@ -162,6 +162,16 @@ body,
   }
 }
 
+/* Preserve the established centered shell on wide desktop monitors. */
+@media (min-width: 1601px) {
+  .cz-app[data-ipad-layout-v14394="contained"] {
+    width: min(100%, 1180px) !important;
+    max-width: 1180px !important;
+    margin-inline: auto !important;
+    padding-inline: clamp(16px, 3vw, 32px) !important;
+  }
+}
+
 /* Keep the fixed 220px navigation rail only on intentional desktop/fine-pointer layouts. */
 @media (pointer: fine) and (min-width: 1181px) {
   .cc-sidebar {
