@@ -3,14 +3,20 @@ name: CrewCheck hotel location separation
 on:
   pull_request:
     paths:
+      - 'client/src/lib/stayContext.ts'
+      - 'scripts/v14388/apply.mjs'
       - 'scripts/v14389/apply.mjs'
+      - 'scripts/regression-hotel-context-selection.mjs'
       - 'scripts/regression-hotel-report-location-separation.mjs'
       - '.github/workflows/hotel-location-separation.yml'
   push:
     branches:
       - main
     paths:
+      - 'client/src/lib/stayContext.ts'
+      - 'scripts/v14388/apply.mjs'
       - 'scripts/v14389/apply.mjs'
+      - 'scripts/regression-hotel-context-selection.mjs'
       - 'scripts/regression-hotel-report-location-separation.mjs'
       - '.github/workflows/hotel-location-separation.yml'
 
@@ -24,6 +30,10 @@ jobs:
         with:
           node-version: 22.13.0
       - name: Syntax
-        run: node --check scripts/regression-hotel-report-location-separation.mjs
+        run: |
+          node --check scripts/regression-hotel-context-selection.mjs
+          node --check scripts/regression-hotel-report-location-separation.mjs
+      - name: Guard contextual stay selection
+        run: node scripts/regression-hotel-context-selection.mjs
       - name: Guard hotel vs report/training location
         run: node scripts/regression-hotel-report-location-separation.mjs
