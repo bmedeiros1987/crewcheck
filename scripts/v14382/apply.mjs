@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const VERSION = '14.3.82';
+const VERSION_CODE = 140382;
 
 function update(filePath, transform) {
   if (!fs.existsSync(filePath)) throw new Error(`[v14382] Arquivo ausente: ${filePath}`);
@@ -45,7 +46,7 @@ update('server.mjs', (source) => {
   if (!next.includes('handleWhatsAppRoute(req, res, url)')) {
     throw new Error('[v14382] Roteamento oficial do WhatsApp não ficou acessível.');
   }
-  return next;
+  return next.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`);
 });
 
 const whatsappSource = fs.readFileSync('server/whatsapp.mjs', 'utf8');
@@ -53,4 +54,23 @@ if (!whatsappSource.includes("url.pathname !== '/api/whatsapp/webhook'")) {
   throw new Error('[v14382] Endpoint /api/whatsapp/webhook ausente no handler oficial.');
 }
 
-console.log(`[v14382] CrewCheck ${VERSION}: webhook oficial do WhatsApp Business preparado.`);
+// A cadeia Android executa todos os patches antes de derivar versionCode/versionName.
+// v14.3.81 é um writer de release anterior; v14.3.82 deve deixar o valor final
+// monotônico para que o Play não reutilize o código já emitido pelo artefato anterior.
+update('client/public/release.json', (source) => {
+  const release = JSON.parse(source);
+  release.version = VERSION;
+  return `${JSON.stringify(release, null, 2)}\n`;
+});
+update('android-wrapper/app/build.gradle', (source) => source
+  .replace(/versionCode\s+\d+/, `versionCode ${VERSION_CODE}`)
+  .replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`));
+update('client/src/pages/Home.tsx', (source) => source.replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION = '${VERSION}';`));
+update('package.json', (source) => {
+  const data = JSON.parse(source);
+  data.version = VERSION;
+  return `${JSON.stringify(data, null, 2)}\n`;
+});
+update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`));
+
+console.log(`[v14382] CrewCheck ${VERSION} (${VERSION_CODE}): webhook oficial preparado e release Android/Play alinhada.`);
