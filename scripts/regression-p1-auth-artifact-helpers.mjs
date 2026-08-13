@@ -22,4 +22,13 @@ if (/console\.(log|warn|error)\([^\n]*(token|code|email)/i.test(apply)) throw ne
 if (apply.includes('crewcheck_platform_roster') || apply.includes('canonical roster')) throw new Error('Artifact helper must not touch roster');
 if (!apply.includes("purpose=? AND token_hash=?") || !apply.includes("purpose=? AND email=?")) throw new Error('Purpose-separated consume lookup missing');
 
+// A password_reset issuance must never create/touch crewcheck_platform_email_identity_state.
+// Only email_verification may materialize pending_email_verification for an identity.
+if (!apply.includes("if (purpose === 'email_verification') {\\n      await connection.query(\\n        \\`INSERT IGNORE INTO crewcheck_platform_email_identity_state")) {
+  throw new Error('pending_email_verification mutation must be scoped to purpose === email_verification only');
+}
+if (apply.includes("await connection.beginTransaction();\\n    await connection.query(\\n      \\`INSERT IGNORE INTO crewcheck_platform_email_identity_state")) {
+  throw new Error('email verification state must not be mutated unconditionally for every purpose (would also fire for password_reset)');
+}
+
 console.log('P-1 Auth artifact runtime helper regression OK');
