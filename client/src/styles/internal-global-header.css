@@ -41,46 +41,58 @@
 
 @media (max-width: 720px) {
   .cz-app > .cz-global-header {
-    top: max(6px, env(safe-area-inset-top, 0px)) !important;
-    width: calc(100vw - 16px) !important;
-    border-radius: 14px !important;
+    top: max(4px, env(safe-area-inset-top, 0px)) !important;
+    width: calc(100vw - 12px) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .22), inset 0 1px rgba(255, 255, 255, .04) !important;
   }
 
   .cz-global-header > .cz-brand-row {
     min-height: 0 !important;
-    padding: 7px 10px !important;
-    gap: 8px !important;
+    padding: 5px 8px !important;
+    gap: 7px !important;
   }
 
   .cz-global-header .cz-menu-btn {
-    width: 34px !important;
-    height: 34px !important;
-    min-width: 34px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    border-radius: 10px !important;
     padding: 0 !important;
   }
 
   .cz-global-header .cz-menu-btn svg {
-    width: 20px !important;
-    height: 20px !important;
+    width: 18px !important;
+    height: 18px !important;
   }
 
   .cz-global-header .cz-brand-lockup {
-    gap: 7px !important;
+    gap: 6px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup .cz-logo {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    border-radius: 10px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup .cz-logo svg {
+    width: 17px !important;
+    height: 17px !important;
   }
 
   .cz-global-header .cz-brand-lockup strong {
-    font-size: .82rem !important;
-    line-height: 1.05 !important;
+    font-size: .8rem !important;
+    line-height: 1 !important;
   }
 
   .cz-global-header .cz-brand-lockup small {
-    font-size: .54rem !important;
-    line-height: 1.05 !important;
-    letter-spacing: .08em !important;
+    display: none !important;
   }
 
   .cz-global-header-spacer {
-    height: calc(82px + env(safe-area-inset-top, 0px));
+    height: calc(62px + env(safe-area-inset-top, 0px));
   }
 }
 
