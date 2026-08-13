@@ -7,7 +7,7 @@ const gradle = read('android-wrapper/app/build.gradle');
 const main = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const release = JSON.parse(read('client/public/release.json'));
 
-assert.equal(release.version, '14.3.73', 'release.json deve anunciar v14.3.73 após o preparo');
+assert.equal(release.version, '14.3.74', 'release.json deve anunciar v14.3.74 após o preparo');
 assert.match(gradle, /generateCrewCheckOfflineAssets/, 'Gradle deve empacotar o dist canônico no APK/AAB');
 assert.match(gradle, /main\.assets\.srcDir generatedCrewCheckAssets/, 'assets gerados devem entrar no sourceSet Android');
 assert.match(gradle, /preBuild\.dependsOn generateCrewCheckOfflineAssets/, 'preBuild deve depender do bundle offline');

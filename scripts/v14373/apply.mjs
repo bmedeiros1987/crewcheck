@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
-const VERSION = '14.3.73';
-const VERSION_CODE = 140373;
+const VERSION = '14.3.74';
+const VERSION_CODE = 140374;
 
 function update(path, transform) {
   if (!fs.existsSync(path)) throw new Error(`[v14373] Arquivo ausente: ${path}`);
