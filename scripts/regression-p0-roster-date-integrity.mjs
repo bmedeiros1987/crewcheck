@@ -74,7 +74,10 @@ try {
   assert.equal(patchRosterCacheIntegrityV14380(homeSource), homeSource, 'patch de cache P0 anterior deve respeitar schemas posteriores');
   assert.equal(patchRosterCacheOperationalDateV14381(homeSource), homeSource, 'patch de cache operacional deve ser idempotente');
 
-  assert.match(packageJson.version, /^\d+\.\d+\.\d+/, 'package deve anunciar uma versão P0 válida');
+  // Âncora completa (sem sufixo de build metadata tipo "+build.1"): o escape abaixo só
+  // trata pontos, então uma versão com outros metacaracteres de regex quebraria os
+  // asserts de endpoint mais abaixo em vez de simplesmente reprovar aqui.
+  assert.match(packageJson.version, /^\d+\.\d+\.\d+$/, 'package deve anunciar uma versão P0 válida (x.y.z)');
   assert.equal(release.version, packageJson.version, 'release Web/PWA deve acompanhar o package');
   const escapedVersion = packageJson.version.replace(/\./g, '\\.');
   assert.match(runtimeServerSource, new RegExp(`url\\.pathname === '/api/release'[^\\r\\n]*version\\s*:\\s*'${escapedVersion}'`), 'endpoint de release deve acompanhar a versão P0');
