@@ -7,7 +7,11 @@
   padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-block: max(20px, env(safe-area-inset-top)) max(96px, env(safe-area-inset-bottom));
   background:
     linear-gradient(180deg, rgba(248, 250, 252, .76), rgba(241, 245, 249, .9)),
     radial-gradient(circle at 50% -8%, color-mix(in srgb, var(--auth-accent) 12%, transparent), transparent 42%);
@@ -211,6 +215,8 @@ html[data-crew-theme='dark'] .cz-login-card {
     align-content: start;
     gap: 10px;
     padding-inline: 12px;
+    padding-bottom: max(96px, env(safe-area-inset-bottom));
+    scroll-padding-bottom: max(128px, env(safe-area-inset-bottom));
   }
 
   .cz-auth .cz-wallpaper::before,
