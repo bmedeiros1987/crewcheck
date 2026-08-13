@@ -16,7 +16,8 @@
         android:icon="@drawable/crewcheck_icon_site"
         android:roundIcon="@drawable/crewcheck_icon_site"
         android:hardwareAccelerated="true"
-        android:resizeableActivity="true">
+        android:resizeableActivity="true"
+        android:enableOnBackInvokedCallback="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
