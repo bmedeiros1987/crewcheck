@@ -36,9 +36,11 @@ expect(apply.includes("if (!stays.some((event) => event.id === selectedEventId))
 expect(apply.includes("startAt: event.kind === 'stay' ? event.canonical?.startDateTime : null"), 'limite canônico de início do pernoite não é encaminhado.');
 expect(apply.includes("endAt: event.kind === 'stay' ? event.canonical?.endDateTime : null"), 'limite canônico de fim do pernoite não é encaminhado.');
 
-const hotelsStart = apply.indexOf('function HotelsView({ events }');
-expect(hotelsStart >= 0, 'template de HotelsView ausente no apply v14388.');
-const hotelsScope = apply.slice(hotelsStart);
-expect(!/selectedEventId[^\n]*stays\[0\]|selectedEvent[^\n]*stays\[0\]/.test(hotelsScope), 'stays[0] não pode voltar como regra contextual de HotelsView.');
+const runtimeGuardStart = apply.indexOf("const hotelsStart = source.indexOf('function HotelsView(');");
+expect(runtimeGuardStart >= 0, 'guard runtime de HotelsView ausente no apply v14388.');
+const runtimeGuardScope = apply.slice(runtimeGuardStart);
+expect(runtimeGuardScope.includes("const hotelsEnd = source.indexOf('\\nfunction ', hotelsStart + 1);"), 'guard deve delimitar o HotelsView preparado.');
+expect(runtimeGuardScope.includes("const hotelsScope = hotelsStart >= 0 ? source.slice(hotelsStart, hotelsEnd > hotelsStart ? hotelsEnd : undefined) : '';"), 'guard deve inspecionar a saída preparada, não as fixtures históricas.');
+expect(runtimeGuardScope.includes('/selectedEventId[^\\n]*stays\\[0\\]|selectedEvent[^\\n]*stays\\[0\\]/.test(hotelsScope)'), 'saída preparada deve rejeitar fallback contextual stays[0].');
 
 console.log('[hotel-context-selection] OK — seleção protegida: vigente -> hoje -> futuro -> passado, sem mutar stays e sem fallback contextual stays[0].');
