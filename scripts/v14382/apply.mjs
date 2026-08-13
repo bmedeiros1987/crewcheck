@@ -54,6 +54,19 @@ if (!whatsappSource.includes("url.pathname !== '/api/whatsapp/webhook'")) {
   throw new Error('[v14382] Endpoint /api/whatsapp/webhook ausente no handler oficial.');
 }
 
+// A preparação terminal precisa preservar a correlação mínima do MailerSend.
+// Writers posteriores ao v14.2.1 reconstroem delivery.mjs; por isso reaplicamos aqui
+// apenas os dois headers seguros necessários para ligar o 202 aos webhooks posteriores.
+update('server/v139/delivery.mjs', (source) => {
+  const oldResponse = `    const raw = await response.text().catch(() => '');\n    return { ok: response.ok, status: response.status, raw };`;
+  const newResponse = `    const raw = await response.text().catch(() => '');\n    const messageId = cleanText(response.headers.get('x-message-id') || '', 180);\n    const sendPaused = /^true$/i.test(String(response.headers.get('x-send-paused') || '').trim());\n    const accepted = response.ok;\n    return {\n      ok: accepted && !sendPaused,\n      accepted,\n      status: response.status,\n      raw: sendPaused && !raw\n        ? 'O provedor aceitou a solicitação, mas pausou o envio (x-send-paused=true).'\n        : raw,\n      messageId,\n      sendPaused,\n    };`;
+  if (source.includes(oldResponse)) return source.replace(oldResponse, newResponse);
+  if (!source.includes("response.headers.get('x-message-id')") || !source.includes("response.headers.get('x-send-paused')")) {
+    throw new Error('[v14382] Correlação segura do MailerSend não pôde ser aplicada.');
+  }
+  return source;
+});
+
 // A cadeia Android executa todos os patches antes de derivar versionCode/versionName.
 // v14.3.81 é um writer de release anterior; v14.3.82 deve deixar o valor final
 // monotônico para que o Play não reutilize o código já emitido pelo artefato anterior.
@@ -73,4 +86,4 @@ update('package.json', (source) => {
 });
 update('server/platform.mjs', (source) => source.replace(/(app\s*:\s*'CrewCheck',\s*version\s*:\s*)'[^']+'/g, `$1'${VERSION}'`));
 
-console.log(`[v14382] CrewCheck ${VERSION} (${VERSION_CODE}): webhook oficial preparado e release Android/Play alinhada.`);
+console.log(`[v14382] CrewCheck ${VERSION} (${VERSION_CODE}): webhook oficial preparado, correlação MailerSend preservada e release Android/Play alinhada.`);
