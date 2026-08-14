@@ -98,6 +98,38 @@ function sanitizedDeliverySnapshot(body = {}) {
   };
 }
 
+export function authDeliveryStateForMailerSendEvent(value) {
+  const type = String(value || '').trim().toLowerCase();
+  if (type === 'sent') return 'sent';
+  if (type === 'delivered') return 'delivered';
+  if (type === 'hard_bounced' || type === 'rejected') return 'rejected';
+  if (type === 'soft_bounced' || type === 'failed') return 'failed';
+  return null;
+}
+
+async function reconcileAuthArtifactDelivery(db, { messageId, eventType }) {
+  const deliveryMessageId = safeString(messageId, 160) || null;
+  const nextState = authDeliveryStateForMailerSendEvent(eventType);
+  if (!deliveryMessageId || !nextState) return { matched: false, state: null };
+
+  const [result] = await db.query(
+    `UPDATE crewcheck_platform_auth_artifacts
+     SET delivery_state = CASE
+       WHEN delivery_state='delivered' THEN delivery_state
+       WHEN ?='delivered' THEN 'delivered'
+       WHEN delivery_state='rejected' THEN delivery_state
+       WHEN ?='rejected' THEN 'rejected'
+       WHEN ?='failed' AND delivery_state IN ('created','accepted','sent') THEN 'failed'
+       WHEN ?='sent' AND delivery_state IN ('created','accepted') THEN 'sent'
+       ELSE delivery_state
+     END,
+     delivery_provider=COALESCE(delivery_provider,'mailersend')
+     WHERE delivery_message_id=?`,
+    [nextState, nextState, nextState, nextState, deliveryMessageId],
+  );
+  return { matched: Number(result?.affectedRows || 0) > 0, state: nextState };
+}
+
 async function ensureTable(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_email_events (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -171,6 +203,8 @@ export async function handleMailerSendWebhook(req, res, url) {
         ON DUPLICATE KEY UPDATE message_id=VALUES(message_id),email_id=VALUES(email_id),recipient=VALUES(recipient),subject=VALUES(subject),payload_json=VALUES(payload_json),provider_created_at=VALUES(provider_created_at)`,
         [type, eventId, messageId, emailId, recipient.stored, null, JSON.stringify(snapshot), snapshot.providerCreatedAt]);
 
+      const authDelivery = await reconcileAuthArtifactDelivery(db, { messageId, eventType: type });
+
       console.info('[crewcheck:email:delivery]', JSON.stringify({
         type,
         status: type,
@@ -178,6 +212,8 @@ export async function handleMailerSendWebhook(req, res, url) {
         recipientDomain: snapshot.recipientDomain,
         errorCodes: snapshot.errorCodes,
         errorTitles: snapshot.errorTitles,
+        authArtifactMatched: authDelivery.matched,
+        authDeliveryState: authDelivery.state,
       }));
     } catch (error) {
       console.error('[mailersend:webhook]', safeString(error?.message || error, 300));
