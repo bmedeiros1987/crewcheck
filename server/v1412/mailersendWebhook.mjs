@@ -99,7 +99,8 @@ function sanitizedDeliverySnapshot(body = {}) {
 }
 
 export function authDeliveryStateForMailerSendEvent(value) {
-  const type = String(value || '').trim().toLowerCase();
+  const rawType = String(value || '').trim().toLowerCase();
+  const type = rawType.startsWith('activity.') ? rawType.slice('activity.'.length) : rawType;
   if (type === 'sent') return 'sent';
   if (type === 'delivered') return 'delivered';
   if (type === 'hard_bounced' || type === 'rejected') return 'rejected';
@@ -191,7 +192,7 @@ export async function handleMailerSendWebhook(req, res, url) {
       const type = safeString(body?.type || body?.event || 'unknown', 80);
       const data = body?.data || {};
       const eventId = safeString(data?.id || body?.id || `${Date.now()}-${Math.random()}`, 190);
-      const messageId = safeString(data?.message_id || data?.message?.id, 190) || null;
+      const messageId = safeString(data?.message_id || data?.message?.id || data?.email?.message?.id, 190) || null;
       const emailId = safeString(data?.email_id || data?.email?.id, 190) || null;
       const recipientRaw = data?.email || data?.recipient?.email || data?.recipient || '';
       const recipient = recipientIdentity(recipientRaw);
