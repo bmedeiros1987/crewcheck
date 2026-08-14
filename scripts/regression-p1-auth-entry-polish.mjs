@@ -61,4 +61,19 @@ if (!/\.cz-auth\s+\.cz-wallpaper\s*\{[^}]*display:\s*block\s*!important/s.test(c
   throw new Error('Auth cabin wallpaper must remain visible on the auth page');
 }
 
+// index.css has a legacy ".cz-login-card label div svg { position:absolute; right:15px;
+// top:29px }" rule (2 classes + 3 elements = higher specificity than a bare
+// ".cz-password-toggle svg") that decenters the show/hide-password eye icon - measured
+// live: ~18px vertical, ~5px horizontal offset from the button's true center. The override
+// must be scoped through .cz-login-card too (2 classes) to actually win the cascade, not
+// just declare the right properties.
+const passwordToggleIconMatch = css.match(/\.cz-login-card \.cz-password-toggle svg\s*\{([^}]*)\}/s);
+if (!passwordToggleIconMatch) {
+  throw new Error('Password-toggle icon centering override missing (or under-specific: must be scoped through .cz-login-card to beat the legacy "label div svg" rule)');
+}
+const passwordToggleIconBlock = passwordToggleIconMatch[1];
+if (!/position:\s*static\s*!important/.test(passwordToggleIconBlock)) {
+  throw new Error('Password-toggle icon must reset position to static, or the legacy absolute offset keeps applying');
+}
+
 console.log('P-1 Auth entry polish regression OK');
