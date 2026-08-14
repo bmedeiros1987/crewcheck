@@ -17,10 +17,12 @@ import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
 import AboutUsPage from "./pages/AboutUsPage";
 import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
-import { getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
+import GuardianPublicPage from './pages/GuardianPublicPage';
+import { AuthClientError, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
+import PartnerWelcome from "./components/PartnerWelcome";
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
 
@@ -49,7 +51,7 @@ function applyCrewThemeMode(mode: CrewThemeMode) {
 }
 
 function CrewCheckOpeningSplash({ label = "CrewCheck Premium" }: { label?: string }) {
-  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><span className="cc1270-loader-logo">✈</span><strong>CrewCheck</strong><small>Carregando CrewCheck Premium</small></div></div>;
+  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><small>Carregando CrewCheck Premium</small></div></div>;
 }
 
 async function enablePartnerDemoRoster() {
@@ -78,7 +80,16 @@ function Protected({ children }: { children: ReactNode }) {
     const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
     if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
     if (!isAuthenticated() && demoMode) { setReady(true); return; }
-    getMe().then(() => enablePartnerDemoRoster()).catch(() => setLocation('/login')).finally(() => mounted && setReady(true));
+    getMe().then(() => enablePartnerDemoRoster()).catch((error) => {
+      // Only a confirmed-invalid session (reason 'session_expired', i.e. the backend
+      // itself rejected the token) should ever send someone back to /login. Everything
+      // else - a rate limit, an account-state signal, a network hiccup, a timeout, a 5xx -
+      // means we simply don't know the session is invalid, so the existing local session
+      // and cached data stay exactly as they were; the user keeps working from what's
+      // already on the device instead of being bounced out by a transient backend issue.
+      const reason = error instanceof AuthClientError ? error.reason : 'backend_unavailable';
+      if (reason === 'session_expired') setLocation('/login');
+    }).finally(() => mounted && setReady(true));
     return () => { mounted = false; };
   }, [setLocation]);
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
@@ -99,6 +110,7 @@ function CrewCheckGlobalBottomMenu() { return null; }
 function Router() {
   return <Switch>
     <Route path="/login" component={AuthPage} />
+    <Route path="/guardian" component={GuardianPublicPage} />
     <Route path="/visitor" component={VisitorAccessPage} />
     <Route path="/share/:token">{(params) => <SharedRosterPage token={params.token} />}</Route>
     <Route path="/admin/partners">{() => <Protected><AdminOnly><AdminPartnerAccountsPage /></AdminOnly></Protected>}</Route>
@@ -144,7 +156,7 @@ export default function App() {
     const applySavedTheme = () => applyCrewThemeMode(loadCrewThemeMode());
     applyDocumentLanguage(); installGlobalStaticTranslations(); applySavedTheme();
     try {
-      window.localStorage.setItem('crewcheck_last_loaded_version', '14.3.56');
+      window.localStorage.setItem('crewcheck_last_loaded_version', '14.3.74');
     } catch {}
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     const handleSystemTheme = () => { if (loadCrewThemeMode() === 'system') applySavedTheme(); };
@@ -181,7 +193,7 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const publicPaths = ['/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/visitor', '/share/'];
+  const publicPaths = ['/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
   const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !publicPaths.some((path) => currentPath.startsWith(path)));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;

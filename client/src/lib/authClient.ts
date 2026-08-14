@@ -95,16 +95,32 @@ export function clearSession() {
   } catch {}
 }
 
+/**
+ * session_expired: the backend confirmed the credential/token itself is invalid - the
+ *   only reason that should ever clear a stored session.
+ * invalid_credentials: a login/register attempt was rejected (wrong password, etc.) -
+ *   not a session problem, there was no session yet.
+ * rate_limited: too many requests (429). The account and session are still fine.
+ * account_state: the account exists and the token may be valid, but something about the
+ *   account itself needs attention (403). Recoverable - must not look like a logout.
+ * backend_unavailable: network failure, timeout/abort, or a 5xx/0-status response. No
+ *   information about the session was obtained either way.
+ * other: anything not covered above (400, 404, 402, ...).
+ */
+export type AuthErrorReason = 'session_expired' | 'invalid_credentials' | 'rate_limited' | 'account_state' | 'backend_unavailable' | 'other';
+
 export class AuthClientError extends Error {
   status?: number;
   code?: string;
   payload?: any;
-  constructor(message: string, status?: number, code?: string, payload?: any) {
+  reason: AuthErrorReason;
+  constructor(message: string, status?: number, code?: string, payload?: any, reason: AuthErrorReason = 'other') {
     super(message);
     this.name = 'AuthClientError';
     this.status = status;
     this.code = code;
     this.payload = payload;
+    this.reason = reason;
   }
 }
 
@@ -121,34 +137,57 @@ function isPublicAuthRequest(url: string): boolean {
   return PUBLIC_AUTH_ENDPOINTS.has(requestPath(url));
 }
 
-function publicApiErrorMessage(payload: any, status: number, protectedRequest: boolean): string {
-  const code = String(payload?.code || '').toUpperCase();
-  if (code === 'DATABASE_REQUIRED' || code === 'DATABASE_MIGRATION_REQUIRED') {
-    return 'A sincronização em nuvem está temporariamente indisponível. Seus dados continuam protegidos neste dispositivo e a operação poderá ser tentada novamente.';
+// status 0 is the sentinel used below for "no HTTP response was ever received" (network
+// failure, DNS, connection refused, or an aborted/timed-out request) - never a real
+// server-issued status, so it can't collide with an actual response code.
+function classifyAuthErrorReason(status: number, code: string, protectedRequest: boolean): AuthErrorReason {
+  if (code === 'DATABASE_REQUIRED' || code === 'DATABASE_MIGRATION_REQUIRED' || code === 'BACKEND_UNAVAILABLE' || status === 0 || status >= 500) {
+    return 'backend_unavailable';
   }
-  if (code === 'AUTH_REQUIRED' || (status === 401 && protectedRequest)) return 'Sua sessão expirou. Entre novamente para continuar.';
-  if (status === 401) return String(payload?.message || 'E-mail ou senha inválidos. Confira os dados e tente novamente.');
+  if (status === 401) return (code === 'AUTH_REQUIRED' || protectedRequest) ? 'session_expired' : 'invalid_credentials';
+  if (status === 429) return 'rate_limited';
+  if (status === 403) return 'account_state';
+  return 'other';
+}
+
+function publicApiErrorMessage(payload: any, status: number, reason: AuthErrorReason): string {
+  if (reason === 'backend_unavailable') {
+    return String(payload?.message || 'O CrewCheck não conseguiu se conectar ao servidor agora. Seus dados locais continuam disponíveis; tente novamente em alguns instantes.');
+  }
+  if (reason === 'rate_limited') return String(payload?.message || 'Muitas tentativas em pouco tempo. Aguarde um instante e tente novamente.');
+  if (reason === 'account_state') return String(payload?.message || 'Sua conta precisa de atenção antes de continuar. Confira as instruções enviadas ou contate o suporte.');
+  if (reason === 'session_expired') return 'Sua sessão expirou. Entre novamente para continuar.';
+  if (reason === 'invalid_credentials') return String(payload?.message || 'E-mail ou senha inválidos. Confira os dados e tente novamente.');
+  const code = String(payload?.code || '').toUpperCase();
   if (code === 'PREMIUM_REQUIRED' || status === 402) return String(payload?.message || 'Este recurso requer uma assinatura Premium.');
-  if (status >= 500) return String(payload?.message || 'O CrewCheck não conseguiu concluir esta operação agora. Tente novamente em alguns instantes.');
   return String(payload?.message || (`Erro HTTP ${status}`));
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const protectedRequest = !isPublicAuthRequest(url);
   const token = protectedRequest ? getToken() : null;
-  const response = await fetch(url, {
-    ...init,
-    credentials: init?.credentials || 'same-origin',
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      credentials: init?.credentials || 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers || {}),
+      },
+    });
+  } catch {
+    // fetch() itself rejected: offline, DNS/connection failure, or an aborted (timed out)
+    // request. There is no response and no session information either way - this must
+    // never be confused with a confirmed-invalid session.
+    throw new AuthClientError(publicApiErrorMessage(null, 0, 'backend_unavailable'), 0, 'BACKEND_UNAVAILABLE', null, 'backend_unavailable');
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
-    if (response.status === 401 && protectedRequest) expireSession();
-    throw new AuthClientError(publicApiErrorMessage(payload, response.status, protectedRequest), response.status, payload?.code, payload);
+    const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
+    if (reason === 'session_expired') expireSession();
+    throw new AuthClientError(publicApiErrorMessage(payload, response.status, reason), response.status, payload?.code, payload, reason);
   }
   return payload as T;
 }
@@ -224,10 +263,21 @@ export async function confirmPasswordReset(payload: { email: string; code: strin
   return jsonFetch('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+const GET_ME_TIMEOUT_MS = 10_000;
+
 export async function getMe(): Promise<AuthUser> {
-  const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me');
-  localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
-  return payload.user;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GET_ME_TIMEOUT_MS);
+  try {
+    // An aborted fetch rejects inside jsonFetch's own try/catch and is classified as
+    // backend_unavailable there, the same as any other network failure - a slow backend
+    // must fail fast into "try again", not hang the app shell indefinitely.
+    const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me', { signal: controller.signal });
+    localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
+    return payload.user;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function logout(): Promise<void> {
@@ -240,3 +290,4 @@ export async function logout(): Promise<void> {
 export async function authFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return jsonFetch<T>(url, init);
 }
+// delivery: 'email' | 'telegram' | 'both' | 'telegram-call'

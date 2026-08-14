@@ -316,12 +316,23 @@ async function me(req, res, db) {
   }
   const email = safeEmail(payload?.email);
   if (!email) return sendJson(res, 401, { ok: false, authenticated: false, message: 'Sessão expirada.' });
-  const [accounts] = await db.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [email]);
-  return sendJson(res, 200, {
-    ok: true,
-    authenticated: true,
-    user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
-  });
+  // A valid token means the session itself is fine - a query failure here is a transient
+  // backend problem (connection drop, deadlock, restart mid-request), not proof the
+  // session is invalid. Without this, an unhandled rejection here reaches only the
+  // process-level uncaughtException logger (no HTTP response ever gets sent), so the
+  // client's request hangs indefinitely instead of failing fast with a status the client
+  // can classify as "backend unavailable" rather than "log out".
+  try {
+    const [accounts] = await db.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [email]);
+    return sendJson(res, 200, {
+      ok: true,
+      authenticated: true,
+      user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
+    });
+  } catch (error) {
+    console.error('[crewcheck:auth:me]', String(error?.code || error?.message || 'ME_QUERY_FAILED'));
+    return sendJson(res, 503, { ok: false, authenticated: false, code: 'BACKEND_UNAVAILABLE', message: 'Não foi possível confirmar sua sessão agora. Tente novamente.' });
+  }
 }
 
 export async function handleAuthRoute(req, res, url) {
