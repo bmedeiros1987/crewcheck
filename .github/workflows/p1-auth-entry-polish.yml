@@ -6,6 +6,7 @@ on:
       - 'client/src/main.tsx'
       - 'client/src/styles/auth-p1-entry-polish.css'
       - 'scripts/regression-p1-auth-entry-polish.mjs'
+      - 'scripts/regression-auth-primary-button-contrast.mjs'
       - '.github/workflows/p1-auth-entry-polish.yml'
 
 jobs:
@@ -17,3 +18,4 @@ jobs:
         with:
           node-version: 20
       - run: node scripts/regression-p1-auth-entry-polish.mjs
+      - run: node scripts/regression-auth-primary-button-contrast.mjs
