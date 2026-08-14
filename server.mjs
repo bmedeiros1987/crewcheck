@@ -3365,7 +3365,39 @@ function weatherAlertSchedulerAuthorized(req) {
 }
 const criticalWeatherMonitorMemory = new Map();
 let criticalWeatherMonitorRunning = false;
+const WEATHER_MONITOR_HEARTBEAT_KEY = 'scheduler:weather-monitor:heartbeat';
+// Never-run, in-progress and stuck all look identical from the outside without a
+// persisted heartbeat: nothing today records when a cycle last started/finished, so
+// Admin/health cannot distinguish "worker never executed" from "silently stuck".
+const WEATHER_MONITOR_STALE_MS = 40 * 60_000;
+function weatherMonitorHealthState(heartbeat, now = Date.now()) {
+  if (!heartbeat?.lastStartedAt) return 'never_run';
+  const startedAt = Date.parse(heartbeat.lastStartedAt);
+  const finishedAt = heartbeat.lastFinishedAt ? Date.parse(heartbeat.lastFinishedAt) : NaN;
+  const inProgress = !Number.isFinite(finishedAt) || finishedAt < startedAt;
+  if (inProgress) return Number.isFinite(startedAt) && now - startedAt > WEATHER_MONITOR_STALE_MS ? 'stuck' : 'running';
+  return heartbeat.lastStatus === 'error' ? 'last_failure' : 'completed';
+}
+async function recordWeatherMonitorHeartbeat(patch) {
+  const current = (await conciergeDbGet(WEATHER_MONITOR_HEARTBEAT_KEY)) || {};
+  await conciergeDbPut(WEATHER_MONITOR_HEARTBEAT_KEY, { ...current, ...patch });
+}
 async function runCriticalWeatherMonitor(now = new Date()) {
+  await recordWeatherMonitorHeartbeat({ lastStartedAt: now.toISOString(), lastFinishedAt: null });
+  try {
+    const summary = await runCriticalWeatherMonitorCycle(now);
+    await recordWeatherMonitorHeartbeat({
+      lastFinishedAt: new Date().toISOString(),
+      lastStatus: 'ok',
+      lastSummary: { monitored: summary.monitored, alerts: summary.alerts, failures: summary.failures },
+    });
+    return summary;
+  } catch (error) {
+    await recordWeatherMonitorHeartbeat({ lastFinishedAt: new Date().toISOString(), lastStatus: 'error' });
+    throw error;
+  }
+}
+async function runCriticalWeatherMonitorCycle(now = new Date()) {
   const localSnapshots = Object.values(telegramRostersRead().snapshots || {});
   const databaseSnapshots = await conciergeDbListSnapshots(250);
   const snapshots = [...new Map([...databaseSnapshots, ...localSnapshots].filter(Boolean).map((snapshot) => [snapshot.key || snapshot.email || snapshot.chatId, snapshot])).values()];
@@ -3432,6 +3464,34 @@ async function handleCriticalWeatherMonitor(req, res) {
   if (!['GET', 'POST'].includes(String(req.method || '').toUpperCase())) return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   const summary = await runCriticalWeatherMonitor(new Date());
   return sendJson(res, 200, { ok: true, configured: true, summary, policy: { originWindowMinutes: 180, destinationWindowMinutes: 120, afterEventMinutes: 45, cooldownMinutes: 90, recoveryNotifications: false, minimumSeverity: 2 }, message: 'Monitor meteorológico concluído sem notificações repetidas.' });
+}
+async function handleCriticalWeatherMonitorHealth(req, res) {
+  const authorization = weatherAlertSchedulerAuthorized(req);
+  if (!authorization.configured) return sendJson(res, 503, { ok: false, configured: false, message: 'Configure CREWCHECK_SCHEDULER_SECRET para ativar o monitor meteorológico.' });
+  if (!authorization.ok) return sendJson(res, 401, { ok: false, configured: true, message: 'Monitor não autorizado.' });
+  if (String(req.method || '').toUpperCase() !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  // Read-only: never triggers a cycle and only returns the sanitized heartbeat
+  // classification plus already-aggregated counters - no per-user or per-flight detail.
+  const heartbeat = await conciergeDbGet(WEATHER_MONITOR_HEARTBEAT_KEY);
+  const state = weatherMonitorHealthState(heartbeat);
+  return sendJson(res, 200, {
+    ok: true,
+    configured: true,
+    state,
+    lastStartedAt: heartbeat?.lastStartedAt || null,
+    lastFinishedAt: heartbeat?.lastFinishedAt || null,
+    lastStatus: heartbeat?.lastStatus || null,
+    lastSummary: heartbeat?.lastSummary || null,
+    message: state === 'never_run'
+      ? 'Monitor meteorológico ainda não executou um ciclo.'
+      : state === 'stuck'
+        ? 'Monitor meteorológico iniciou um ciclo e não concluiu dentro da janela esperada.'
+        : state === 'running'
+          ? 'Monitor meteorológico está executando um ciclo agora.'
+          : state === 'last_failure'
+            ? 'Último ciclo do monitor meteorológico falhou.'
+            : 'Monitor meteorológico concluiu o último ciclo normalmente.',
+  });
 }
 function scheduleCriticalWeatherMonitor() {
   if (String(envAny(['CREWCHECK_WEATHER_MONITOR_ENABLED']) || 'false').toLowerCase() !== 'true') return;
@@ -3893,6 +3953,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/telegram/diagnostic') return handleTelegramDiagnostic(req, res, url);
   if (url.pathname === '/api/telegram/webhook') return handleTelegramWebhook(req, res, url);
   if (url.pathname === '/api/telegram/weather-monitor/run') return handleCriticalWeatherMonitor(req, res, url);
+  if (url.pathname === '/api/telegram/weather-monitor/health') return handleCriticalWeatherMonitorHealth(req, res, url);
   if (url.pathname === '/api/telegram/send') return handleTelegramSend(req, res, url);
   if (url.pathname === '/api/telegram/setup-webhook') return handleTelegramSetupWebhook(req, res, url);
   if (url.pathname === '/api/alarm/health') return handleAlarmHealth(req, res, url);
