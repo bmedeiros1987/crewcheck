@@ -47,9 +47,18 @@ export function patchAuthPageV14378(source) {
     );
   }
 
-  const oldEffect = `  useEffect(() => {\n    const saved = localStorage.getItem('crewcheck_theme_mode');\n    const themeMode = saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';\n    const light = themeMode === 'light' || (themeMode === 'system' && !window.matchMedia?.('(prefers-color-scheme: dark)').matches);\n    document.documentElement.dataset.crewThemeMode = themeMode;\n    document.documentElement.dataset.crewTheme = light ? 'light' : 'dark';\n    document.documentElement.classList.toggle('dark', !light);\n    document.documentElement.style.colorScheme = light ? 'light' : 'dark';\n    localStorage.setItem('crewcheck_theme_mode', themeMode);\n    localStorage.setItem('crewcheck_last_loaded_version', '14.0.6');\n  }, []);`;
   const newEffect = `  useEffect(() => {\n    const media = window.matchMedia?.('(prefers-color-scheme: dark)');\n    const applyTheme = () => {\n      const light = themeMode === 'light' || (themeMode === 'system' && !media?.matches);\n      document.documentElement.dataset.crewThemeMode = themeMode;\n      document.documentElement.dataset.crewTheme = light ? 'light' : 'dark';\n      document.documentElement.classList.toggle('dark', !light);\n      document.documentElement.style.colorScheme = light ? 'light' : 'dark';\n      localStorage.setItem('crewcheck_theme_mode', themeMode);\n      localStorage.setItem('crewcheck_last_loaded_version', '${VERSION}');\n    };\n    applyTheme();\n    if (themeMode !== 'system' || !media) return undefined;\n    media.addEventListener?.('change', applyTheme);\n    return () => media.removeEventListener?.('change', applyTheme);\n  }, [themeMode]);`;
-  if (patched.includes(oldEffect)) patched = patched.replace(oldEffect, newEffect);
+  if (!patched.includes('}, [themeMode]);')) {
+    // The old effect embeds a hard-coded release version string (was '14.0.6') that earlier
+    // scripts in the v139 chain (e.g. v14343's blanket /14\.3\.\d+/g bump) rewrite before this
+    // script ever runs. A literal string match on that anchor silently never matched in the
+    // real chain, so themeMode/the theme buttons got wired in but the effect that actually
+    // applies the change to the DOM/localStorage stayed mounted with an empty [] dependency
+    // array - clicking a button updated only its own active state, never the page's theme.
+    const oldEffectPattern = /  useEffect\(\(\) => \{\n {4}const saved = localStorage\.getItem\('crewcheck_theme_mode'\);\n {4}const themeMode = saved === 'light' \|\| saved === 'dark' \|\| saved === 'system' \? saved : 'system';\n {4}const light = themeMode === 'light' \|\| \(themeMode === 'system' && !window\.matchMedia\?\.\('\(prefers-color-scheme: dark\)'\)\.matches\);\n {4}document\.documentElement\.dataset\.crewThemeMode = themeMode;\n {4}document\.documentElement\.dataset\.crewTheme = light \? 'light' : 'dark';\n {4}document\.documentElement\.classList\.toggle\('dark', !light\);\n {4}document\.documentElement\.style\.colorScheme = light \? 'light' : 'dark';\n {4}localStorage\.setItem\('crewcheck_theme_mode', themeMode\);\n {4}localStorage\.setItem\('crewcheck_last_loaded_version', '[^']+'\);\n {2}\}, \[\]\);/;
+    if (!oldEffectPattern.test(patched)) throw new Error('[v14378] Efeito de tema (âncora antiga) não localizado para substituição.');
+    patched = patched.replace(oldEffectPattern, newEffect);
+  }
 
   patched = patched
     .replace(/className="cz-auth cc-auth-compact" data-version="[^"]+"/, `className="cz-auth cc-auth-compact cc-auth-premium" data-version="${VERSION}"`)
