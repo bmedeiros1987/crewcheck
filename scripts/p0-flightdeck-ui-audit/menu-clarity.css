@@ -1,0 +1,53 @@
+/* CrewCheck P0 — FlightDeck naming and overflow-safe desktop menu */
+@media (hover: hover) and (pointer: fine) {
+  .cz-menu-section.cz-menu-group {
+    grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)) !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button {
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+    place-items: center stretch !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 76px !important;
+    max-height: none !important;
+    padding: 11px 12px !important;
+    overflow: hidden !important;
+    text-align: left !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button:hover,
+  .cz-menu-section.cz-menu-group > button:focus-visible {
+    z-index: 1 !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button > svg:first-child {
+    width: 24px !important;
+    height: 24px !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button > span,
+  .cz-menu-section.cz-menu-group > button:nth-of-type(1) > span,
+  .cz-menu-section.cz-menu-group > button:last-child > span {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: none !important;
+  }
+
+  .cz-menu-section.cz-menu-group > button > span strong,
+  .cz-menu-section.cz-menu-group > button > span small {
+    overflow-wrap: anywhere !important;
+  }
+}
