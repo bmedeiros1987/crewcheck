@@ -14,6 +14,7 @@ import "./styles/auth-premium-v2.css";
 import "./styles/ipad-shell-v14-3-94.css";
 import "./styles/auth-p1-entry-polish.css";
 import "./styles/web-desktop-shell.css";
+import "./styles/light-bottom-nav-premium.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
