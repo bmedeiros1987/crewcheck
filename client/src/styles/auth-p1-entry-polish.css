@@ -140,6 +140,20 @@
   width: 100%;
 }
 
+/* index.css has a v12.5.73-era rule, ".cz-login-card label div svg { position:absolute;
+   right:15px; top:29px }", written for an older password field where the icon sat
+   directly in the wrapper div. The eye icon now lives one level deeper, inside
+   .cz-password-toggle (a real button with its own centering), but the old selector's
+   "div svg" descendant combinator still reaches it - measured live in the browser: the
+   icon rendered ~18px below and ~5px left of the button's true center. .cz-password-toggle
+   already centers its own content (display:grid; place-items:center); this only needs to
+   stop the legacy absolute offset from applying, not add new positioning. */
+.cz-login-card .cz-password-toggle svg {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+}
+
 /* .cz-login-card label > input above targets every direct-child input generically
    (grid-column: 1 / -1, meant for the email/password full-width row) and unintentionally
    also matches the terms checkbox, which is a checkbox + running <span> row, not an
