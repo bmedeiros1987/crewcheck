@@ -44,7 +44,7 @@ export function patchMenuIdentity(source) {
     `  const storedUser = getStoredUser();
   const admin = isAdmin();
   const authenticatedName = String(storedUser?.name || '').trim();
-  const [profileName] = useState(() => authenticatedName || storage.get('crewcheck_profile_display_name', String(storedUser?.email || 'Tripulante CrewCheck')));
+  const [profileName] = useState(() => authenticatedName || storage.get('crewcheck_profile_display_name', String(storedUser?.email?.split('@')[0] || 'Tripulante CrewCheck')));
   const [profileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
   const profileEmail = String(storedUser?.email || '').trim();
   const roleSource = String(storedUser?.rank || storedUser?.role || '').trim();

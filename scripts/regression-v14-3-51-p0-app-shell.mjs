@@ -41,6 +41,10 @@ expect(identityOnce === identityTwice, 'Transformação da identidade não é id
 expect(identityOnce.includes("authenticatedName || storage.get("), 'Conta autenticada não tem prioridade sobre nome local.');
 expect(identityOnce.includes('data-menu-profile-email="true"'), 'E-mail autenticado não foi incluído.');
 expect(identityOnce.includes('profileBase ? `Base ${profileBase}`'), 'Base do tripulante não foi incluída no contexto.');
+// Contas sem "name" cadastrado caíam para o e-mail completo como pseudo-nome no cabeçalho
+// do menu (ex.: "bmedeiros1987@gmail.com" truncado visualmente para "bme..."). A tela de
+// Configurações já usava só a parte local do e-mail como reserva; alinhado aqui também.
+expect(identityOnce.includes("storedUser?.email?.split('@')[0] || 'Tripulante CrewCheck'"), 'Reserva de nome deve usar apenas a parte local do e-mail, não o e-mail completo.');
 
 const shellFixture = '<main className="cz-app" data-view={view} data-layout-v14344="web-icon-menu">';
 const markedOnce = transforms.markStableAppShell(shellFixture);
@@ -77,6 +81,10 @@ expect(
 expect(
   !home.includes("storage.get('crewcheck_profile_display_name', String(storedUser?.name"),
   'Precedência antiga do nome local ainda está presente.',
+);
+expect(
+  home.includes("storedUser?.email?.split('@')[0] || 'Tripulante CrewCheck'"),
+  'Menu final ainda usa o e-mail completo como reserva de nome (deve usar só a parte local).',
 );
 
 expect(
