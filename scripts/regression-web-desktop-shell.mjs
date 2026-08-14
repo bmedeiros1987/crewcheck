@@ -17,6 +17,9 @@ assert.ok(css.includes('height: calc(100dvh - 24px) !important;'), 'drawer deve 
 assert.match(css, /\.cz-menu-header\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 48px !important;/, 'perfil e fechamento devem ter colunas estáveis');
 assert.match(css, /\.cz-menu-section,[\s\S]*?grid-template-columns: minmax\(0, 1fr\) !important;/, 'opções do drawer desktop devem formar lista de uma coluna');
 assert.ok(css.includes('overflow-y: auto !important;'), 'menu longo deve rolar dentro do drawer');
+assert.match(css, /\[data-theme='light'\] \.cc-flydeck-briefing\s*\{[\s\S]*?--briefing-ink: #f8fbff !important;[\s\S]*?linear-gradient\(145deg, #0f1b30, #071426\) !important;/, 'briefing escuro deve manter texto claro e fundo escuro no shell claro');
+assert.match(css, /\.cc-flydeck-briefing \.cc-flydeck-program h2\s*\{[\s\S]*?color: #ffffff !important;/, 'identificador da próxima programação deve permanecer legível');
+assert.match(css, /\.cc-flydeck-briefing \.cc-flydeck-actions button\.primary\s*\{[\s\S]*?color: #ffffff !important;/, 'ação primária deve preservar contraste branco sobre azul');
 assert.ok(!css.includes('pointer: coarse'), 'override desktop não pode alterar tablets touch');
 
-console.log('Web desktop shell regression passed: compact header, controlled lateral drawer, mobile bottom navigation hidden and touch tablets preserved.');
+console.log('Web desktop shell regression passed: compact header, controlled lateral drawer, legible briefing, mobile bottom navigation hidden and touch tablets preserved.');
