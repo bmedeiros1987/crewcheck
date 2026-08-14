@@ -177,6 +177,30 @@
   box-shadow: 0 12px 28px color-mix(in srgb, var(--auth-accent) 22%, transparent) !important;
 }
 
+/* .cz-auth.cc-auth-compact .cz-primary (auth-compact.css), the legacy bare .cz-primary
+   rules (index.css, auth-premium-v2.css), and a generic [class*="primary"] color rule
+   (theme-v14-3-17/18.css, meant for the newer "cc-" button system but matched by
+   "cz-primary" too since it contains the substring "primary") each disagree on this
+   button's background/text - measured live in the browser, in dark mode background and
+   text computed to the same near-white color (contrast 1.00, primary CTA on Login
+   effectively invisible). .cz-auth[data-version] compounds the class the button's
+   ancestor already carries with its own data-version attribute (NOT a descendant - they
+   are the same element) to reach 4 specificity components, ahead of every competing rule
+   found so far (max 3); appearance:none stops the native <button> chrome from painting
+   over the declared background. */
+.cz-auth[data-version] .cz-login-card .cz-primary,
+.cz-auth[data-version] .cz-login-card .cz-primary:disabled {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: var(--auth-accent, #087ea4) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+}
+
+.cz-auth[data-version] .cz-login-card .cz-primary:disabled {
+  opacity: .55;
+}
+
 /* Demo remains an explicit choice, never an auth-error fallback, but no longer competes with Login. */
 .cz-secondary {
   min-height: 40px !important;
