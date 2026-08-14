@@ -1,0 +1,71 @@
+/* CrewCheck Web desktop shell — final override after legacy responsive layers. */
+@media (pointer: fine) and (min-width: 901px) {
+  .cz-app > .cz-global-header {
+    top: max(10px, env(safe-area-inset-top, 0px)) !important;
+    left: 50% !important;
+    right: auto !important;
+    width: min(calc(100vw - 48px), 1120px) !important;
+    max-width: 1120px !important;
+    transform: translateX(-50%) !important;
+    border-radius: 22px !important;
+  }
+
+  .cz-global-header > .cz-brand-row {
+    min-height: 0 !important;
+    padding: 10px 16px !important;
+    gap: 12px !important;
+  }
+
+  .cz-global-header .cz-menu-btn {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 14px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup {
+    min-height: 52px !important;
+    gap: 9px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup .cz-logo {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    border-radius: 13px !important;
+  }
+
+  .cz-global-header .cz-brand-lockup strong {
+    font-size: 1.05rem !important;
+    line-height: 1.05 !important;
+  }
+
+  .cz-global-header .cz-brand-lockup small {
+    font-size: .62rem !important;
+    line-height: 1 !important;
+    letter-spacing: .16em !important;
+  }
+
+  .cz-global-header-spacer {
+    height: calc(88px + env(safe-area-inset-top, 0px)) !important;
+  }
+
+  .cz-bottom-nav {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  .cz-app,
+  .cz-app[data-view],
+  [data-view="alerts"],
+  [data-view="hotels"],
+  [data-view="presentation"],
+  [data-view="routine"],
+  [data-view="wakeup"] {
+    padding-bottom: 34px !important;
+    scroll-padding-bottom: 34px !important;
+  }
+}
