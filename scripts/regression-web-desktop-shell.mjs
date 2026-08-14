@@ -12,6 +12,11 @@ assert.ok(css.includes('height: calc(88px + env(safe-area-inset-top, 0px)) !impo
 assert.match(css, /\.cz-bottom-nav\s*\{[\s\S]*?display: none !important;[\s\S]*?visibility: hidden !important;/, 'navegação mobile não pode aparecer no desktop');
 assert.ok(css.includes('width: 48px !important;') && css.includes('height: 48px !important;'), 'botão Menu deve manter alvo confortável no desktop');
 assert.ok(css.includes('padding-bottom: 34px !important;'), 'desktop não deve reservar espaço para a navegação mobile');
+assert.ok(css.includes('width: min(560px, calc(100vw - 24px)) !important;'), 'menu desktop deve usar drawer lateral de largura controlada');
+assert.ok(css.includes('height: calc(100dvh - 24px) !important;'), 'drawer deve caber integralmente na viewport');
+assert.match(css, /\.cz-menu-header\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 48px !important;/, 'perfil e fechamento devem ter colunas estáveis');
+assert.match(css, /\.cz-menu-section,[\s\S]*?grid-template-columns: minmax\(0, 1fr\) !important;/, 'opções do drawer desktop devem formar lista de uma coluna');
+assert.ok(css.includes('overflow-y: auto !important;'), 'menu longo deve rolar dentro do drawer');
 assert.ok(!css.includes('pointer: coarse'), 'override desktop não pode alterar tablets touch');
 
-console.log('Web desktop shell regression passed: compact centered header, accessible Menu target, mobile bottom navigation hidden and touch tablets preserved.');
+console.log('Web desktop shell regression passed: compact header, controlled lateral drawer, mobile bottom navigation hidden and touch tablets preserved.');
