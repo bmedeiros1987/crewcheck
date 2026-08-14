@@ -82,7 +82,15 @@
     inset: 0 !important;
   }
 
-  .cz-menu-panel {
+  /* .cz-app[data-version] (rather than plain .cz-menu-panel) is required here: an old
+     rule in components/v1399/premium.css ("[data-version] .cz-menu-panel") carries
+     higher specificity from its attribute selector and otherwise still wins the width/
+     position cascade even though this file loads last - both sides use !important, so
+     specificity (not load order) decides. Measured effect before this fix: the panel
+     rendered at width:980px (from the old rule) at a 1024px-wide desktop/tablet-landscape
+     viewport, positioned ~188px off-screen to the left. This does not touch or remove
+     the legacy rule. */
+  .cz-app[data-version] .cz-menu-panel {
     position: relative !important;
     right: auto !important;
     left: auto !important;
