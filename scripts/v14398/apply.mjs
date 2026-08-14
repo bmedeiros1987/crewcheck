@@ -6,6 +6,7 @@ const source = fs.readFileSync(path, 'utf8');
 const marker = 'async function issueAuthArtifact(db, {';
 if (source.includes(marker)) {
   console.log('[crewcheck:prepare] v14.3.98 auth artifact helpers already applied.');
+  await import('../v14399/apply.mjs');
   process.exit(0);
 }
 
@@ -16,3 +17,4 @@ const helpers = `${anchor}\nconst AUTH_ARTIFACT_PURPOSES = new Set(['email_verif
 
 fs.writeFileSync(path, source.replace(anchor, helpers), 'utf8');
 console.log('[crewcheck:prepare] v14.3.98 auth artifact runtime helpers applied.');
+await import('../v14399/apply.mjs');

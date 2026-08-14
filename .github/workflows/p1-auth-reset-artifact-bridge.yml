@@ -1,0 +1,20 @@
+name: P-1 Auth reset artifact bridge
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14398/apply.mjs'
+      - 'scripts/v14399/**'
+      - 'scripts/regression-p1-auth-reset-artifact-bridge.mjs'
+      - '.github/workflows/p1-auth-reset-artifact-bridge.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/regression-p1-auth-reset-artifact-bridge.mjs
