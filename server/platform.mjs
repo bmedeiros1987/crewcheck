@@ -897,14 +897,20 @@ async function asaasRequest(path, init = {}) {
 }
 
 async function requireMain(req, res, body = {}) {
-  const identity = mainIdentity(req, body);
-  if (!identity.email) {
-    sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Faça login para continuar.' });
-    return null;
-  }
+  // Database availability is checked before identity so an outage is never masked as
+  // AUTH_REQUIRED: identity.email being empty means "no credentials", not "invalid
+  // credentials", and without a working database we can't tell the two apart from a
+  // real session problem either. Checking the DB first guarantees every request made
+  // during an outage gets a classifiable 503 (matches jsonFetch's backend_unavailable
+  // handling), never a 401 that would make the client clear a possibly-valid session.
   const db = await pool();
   if (!db) {
     sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível. Seus dados locais continuam protegidos.' });
+    return null;
+  }
+  const identity = mainIdentity(req, body);
+  if (!identity.email) {
+    sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Faça login para continuar.' });
     return null;
   }
   const profile = await ensureProfile(db, identity);
