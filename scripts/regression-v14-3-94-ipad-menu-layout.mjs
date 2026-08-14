@@ -39,6 +39,7 @@ for (const marker of [
   '@media (min-width: 700px) and (max-width: 1600px)',
   '@media (pointer: coarse) and (min-width: 700px)',
   '@media (pointer: fine) and (min-width: 1181px)',
+  '@media (min-width: 1601px)',
   'width: 100vw !important;',
   'max-width: none !important;',
   'grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
@@ -59,6 +60,10 @@ assert.ok(coarseRange.includes('width: 0 !important;'), 'tablet touch deve zerar
 assert.ok(coarseRange.includes('flex-basis: 0 !important;'), 'tablet touch não pode reservar flex-basis para sidebar');
 assert.ok(coarseRange.includes('margin-left: 0 !important;'), 'conteúdo tablet não pode herdar offset lateral desktop');
 assert.ok(coarseRange.includes('transform: none !important;'), 'conteúdo tablet não pode herdar transformação lateral desktop');
+
+const wideDesktopRange = cssSource.match(/@media \(min-width: 1601px\) \{([\s\S]*?)\n\}/)?.[1] || '';
+assert.ok(wideDesktopRange.includes('max-width: 1180px !important;'), 'desktop largo deve restaurar o limite de 1180px');
+assert.ok(wideDesktopRange.includes('margin-inline: auto !important;'), 'desktop largo deve permanecer centralizado');
 
 const fineDesktopRange = cssSource.match(/@media \(pointer: fine\) and \(min-width: 1181px\) \{([\s\S]*?)\n\}/)?.[1] || '';
 assert.ok(fineDesktopRange.includes('width: 220px !important;'), 'desktop fino mantém sidebar intencional de 220px');
@@ -85,4 +90,4 @@ assert.equal(reapplied.status, 0, reapplied.stderr || reapplied.stdout || 'reapl
 assert.equal(read('client/src/pages/Home.tsx'), afterFirst.home, 'v14.3.94 deve ser idempotente em Home.tsx');
 assert.equal(read('client/src/main.tsx'), afterFirst.main, 'v14.3.94 deve ser idempotente em main.tsx');
 
-console.log('v14.3.94 iPad/Android landscape P0 regression passed: no tablet rail reservation, content zero-offset, drawer overlay, logout horizontal and protected engines untouched.');
+console.log('v14.3.94 iPad/Android landscape P0 regression passed: tablet overlay preserved, wide desktop re-contained, logout horizontal and protected engines untouched.');
