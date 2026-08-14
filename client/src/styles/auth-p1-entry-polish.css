@@ -140,6 +140,26 @@
   width: 100%;
 }
 
+/* .cz-login-card label > input above targets every direct-child input generically
+   (grid-column: 1 / -1, meant for the email/password full-width row) and unintentionally
+   also matches the terms checkbox, which is a checkbox + running <span> row, not an
+   icon-then-field row. Once the checkbox spans the full grid row, the <span> auto-places
+   into row 2 / column 1 - the 20px icon column - and wraps almost letter by letter.
+   Pin both cells explicitly instead of fighting the surrounding display:grid !important
+   (several stylesheets, including the compact-mode one, set that at higher specificity
+   than a display:flex override here would have). */
+.cz-auth .cz-auth-terms > input {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+}
+
+.cz-auth .cz-auth-terms > span {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  width: auto;
+  min-width: 0;
+}
+
 .cz-login-card input,
 .cz-login-card select {
   min-height: 48px;

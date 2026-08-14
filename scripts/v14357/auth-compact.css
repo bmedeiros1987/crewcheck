@@ -147,7 +147,11 @@
 }
 
 .cz-auth.cc-auth-compact .cz-login-card label > svg {
-  display: none !important;
+  /* display:none removes the icon from the grid item list entirely, which shifts the
+     label's text (an anonymous grid item auto-placed into the next free cell) into the
+     20px icon column instead of the wide content column - causing severe word-by-word
+     wrapping. visibility:hidden keeps the icon's grid cell reserved while still hiding it. */
+  visibility: hidden !important;
 }
 
 .cz-auth.cc-auth-compact .cz-login-card input,
