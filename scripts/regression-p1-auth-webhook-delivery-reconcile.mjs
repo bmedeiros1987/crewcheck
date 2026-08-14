@@ -8,11 +8,18 @@ assert.equal(authDeliveryStateForMailerSendEvent('hard_bounced'), 'rejected');
 assert.equal(authDeliveryStateForMailerSendEvent('rejected'), 'rejected');
 assert.equal(authDeliveryStateForMailerSendEvent('soft_bounced'), 'failed');
 assert.equal(authDeliveryStateForMailerSendEvent('failed'), 'failed');
+assert.equal(authDeliveryStateForMailerSendEvent('activity.sent'), 'sent');
+assert.equal(authDeliveryStateForMailerSendEvent('activity.delivered'), 'delivered');
+assert.equal(authDeliveryStateForMailerSendEvent('activity.hard_bounced'), 'rejected');
+assert.equal(authDeliveryStateForMailerSendEvent('activity.soft_bounced'), 'failed');
+assert.equal(authDeliveryStateForMailerSendEvent('activity.spam_complaint'), null);
 assert.equal(authDeliveryStateForMailerSendEvent('spam_complaint'), null);
 assert.equal(authDeliveryStateForMailerSendEvent('unsubscribed'), null);
 assert.equal(authDeliveryStateForMailerSendEvent('unknown'), null);
 
 const source = fs.readFileSync(new URL('../server/v1412/mailersendWebhook.mjs', import.meta.url), 'utf8');
+assert.match(source, /rawType\.startsWith\('activity\.'\)/, 'MailerSend activity.* event prefix must be normalized before the allowlist');
+assert.match(source, /data\?\.email\?\.message\?\.id/, 'real MailerSend nested provider message id must be accepted');
 assert.match(source, /safeString\(messageId, 160\)/, 'provider message id must stay bounded to the auth artifact column');
 assert.match(source, /WHERE delivery_message_id=\?/, 'webhook lifecycle must correlate only by provider message id');
 assert.match(source, /WHEN delivery_state='delivered' THEN delivery_state/, 'delivered must never be downgraded');
