@@ -6,10 +6,12 @@ on:
       - 'client/src/main.tsx'
       - 'client/src/styles/ipad-shell-v14-3-94.css'
       - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/components/v1399/premium.css'
       - 'scripts/v14394/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-v14-3-94-ipad-menu-layout.mjs'
       - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/regression-web-desktop-menu-panel-specificity.mjs'
       - '.github/workflows/ipad-menu-layout-p0.yml'
   push:
     branches: [main]
@@ -17,10 +19,12 @@ on:
       - 'client/src/main.tsx'
       - 'client/src/styles/ipad-shell-v14-3-94.css'
       - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/components/v1399/premium.css'
       - 'scripts/v14394/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-v14-3-94-ipad-menu-layout.mjs'
       - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/regression-web-desktop-menu-panel-specificity.mjs'
       - '.github/workflows/ipad-menu-layout-p0.yml'
 
 permissions:
@@ -39,7 +43,10 @@ jobs:
         run: |
           node --check scripts/v14394/apply.mjs
           node --check scripts/regression-v14-3-94-ipad-menu-layout.mjs
+          node --check scripts/regression-web-desktop-menu-panel-specificity.mjs
       - name: Run iPad menu regression
         run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
       - name: Run Web desktop shell regression
         run: node scripts/regression-web-desktop-shell.mjs
+      - name: Run Web desktop menu-panel specificity regression
+        run: node scripts/regression-web-desktop-menu-panel-specificity.mjs
