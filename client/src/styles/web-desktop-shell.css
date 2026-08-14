@@ -163,4 +163,41 @@
     min-height: 66px !important;
   }
 
+
+  /* Keep the deliberately dark briefing legible when the surrounding Web shell uses the light theme. */
+  [data-theme='light'] .cc-flydeck-briefing {
+    --briefing-ink: #f8fbff !important;
+    --briefing-muted: #b9c8da !important;
+    color: #f8fbff !important;
+    background:
+      radial-gradient(circle at 92% 2%, rgba(34, 211, 238, .18), transparent 38%),
+      linear-gradient(145deg, #0f1b30, #071426) !important;
+  }
+
+  [data-theme='light'] .cc-flydeck-briefing .cc-flydeck-program h2 {
+    color: #ffffff !important;
+  }
+
+  [data-theme='light'] .cc-flydeck-briefing .cc-flydeck-program p,
+  [data-theme='light'] .cc-flydeck-briefing .cc-flydeck-roster-link {
+    color: #bfeeff !important;
+  }
+
+  [data-theme='light'] .cc-flydeck-briefing .cc-flydeck-facts {
+    background: rgba(2, 8, 23, .44) !important;
+  }
+
+  [data-theme='light'] .cc-flydeck-briefing .cc-flydeck-actions button {
+    border-color: rgba(203, 213, 225, .36) !important;
+    background: #f8fafc !important;
+    color: #10243a !important;
+  }
+
+  [data-theme='light'] .cc-flydeck-briefing .cc-flydeck-actions button.primary {
+    border-color: rgba(103, 232, 249, .68) !important;
+    background: linear-gradient(135deg, #0e7490, #1d4ed8) !important;
+    color: #ffffff !important;
+  }
+
+
 }
