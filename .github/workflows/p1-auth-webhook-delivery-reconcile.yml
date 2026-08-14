@@ -1,0 +1,20 @@
+name: P-1 Auth webhook delivery reconciliation
+
+on:
+  pull_request:
+    paths:
+      - 'server/v1412/mailersendWebhook.mjs'
+      - 'scripts/regression-p1-auth-webhook-delivery-reconcile.mjs'
+      - '.github/workflows/p1-auth-webhook-delivery-reconcile.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check server/v1412/mailersendWebhook.mjs
+      - run: node scripts/regression-p1-auth-webhook-delivery-reconcile.mjs
