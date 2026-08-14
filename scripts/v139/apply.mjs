@@ -146,3 +146,4 @@ await import('../v14396/apply.mjs');
 await import('../p0-maps-embed-preview/apply.mjs');
 await import('../p0-flightdeck-ui-audit/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');
+await import('../ci/sync-service-worker-version.mjs');
