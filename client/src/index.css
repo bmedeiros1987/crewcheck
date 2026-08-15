@@ -18440,3 +18440,89 @@ body.crewcheck-menu-open .cz-bottom-nav {
   .cz-parking-form label.wide{grid-column:auto!important}
   .cz-place-map,.cz-parking-map{height:330px!important}
 }
+
+/* ── MENU GRID CONSOLIDATION ──────────────────────────────────────────────
+   .cz-menu-section/.cz-menu-group had accumulated 15+ conflicting
+   !important grid-template-columns declarations across many past @media
+   patches (narrow/wide, coarse/fine pointer, hover/no-hover), producing an
+   unpredictable cascade: some groups rendered as squeezed 67px-wide,
+   578px-tall columns instead of cards, and the "hover reveals label in a
+   floating tooltip" behavior caused the reported text-shift-on-hover.
+   This block is intentionally unscoped by any @media condition. The highest
+   pre-existing competitor was ".cz-menu-panel > .cz-menu-scroll >
+   .cz-menu-section:first-child" (specificity 0,4,0, (min-width:1024px)) -
+   the reason only the first group ("Hoje") broke while the others didn't.
+   This rule chains five selectors (specificity 0,5,0) to beat every prior
+   declaration regardless of viewport/pointer/hover state or source order,
+   without deleting the pre-existing rules. Labels stay visible in the card
+   at all times instead of hiding behind a hover-only popup. */
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+  gap: 10px !important;
+  width: 100% !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button {
+  position: static !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 66px !important;
+  max-height: none !important;
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) 20px !important;
+  align-items: center !important;
+  gap: 12px !important;
+  text-align: left !important;
+  padding: 12px !important;
+  margin: 0 !important;
+  border-radius: 20px !important;
+  overflow: visible !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button:hover,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button:focus-visible {
+  transform: translateY(-1px) !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:first-child {
+  width: 20px !important;
+  height: 20px !important;
+  margin: 0 !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:last-child {
+  display: block !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span {
+  position: static !important;
+  display: block !important;
+  width: auto !important;
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  transform: none !important;
+  text-align: left !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span strong {
+  display: block !important;
+  font-size: .98rem !important;
+  line-height: 1.2 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span small {
+  display: block !important;
+  margin-top: 2px !important;
+  color: rgba(226, 232, 240, .68) !important;
+  font-size: .78rem !important;
+  line-height: 1.15 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
