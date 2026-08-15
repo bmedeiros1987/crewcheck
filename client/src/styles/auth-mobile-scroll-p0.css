@@ -1,0 +1,31 @@
+/* P0 #475 — Auth mobile scroll hardening.
+ * The auth root previously had min-height + overflow:auto, which still allowed it to
+ * expand with its content instead of becoming a real scroll container when body/root
+ * scrolling was unavailable. Constrain the auth viewport itself so the full signup
+ * form, terms and CTA remain reachable on mobile and with the virtual keyboard open.
+ */
+.cz-auth {
+  box-sizing: border-box;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@supports not (height: 100dvh) {
+  .cz-auth {
+    height: 100vh;
+    max-height: 100vh;
+  }
+}
+
+@media (max-width: 560px) {
+  .cz-auth {
+    /* Keep the final CTA above Android/iOS safe areas and browser chrome. */
+    padding-bottom: max(112px, calc(env(safe-area-inset-bottom) + 32px));
+    scroll-padding-bottom: max(144px, calc(env(safe-area-inset-bottom) + 64px));
+  }
+}
