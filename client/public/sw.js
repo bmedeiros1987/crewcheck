@@ -1,5 +1,9 @@
 const CACHE_NAME = 'crewcheck-v14.3-offline-shell';
 const RUNTIME_CACHE = 'crewcheck-v14.3-offline-runtime';
+const SHARED_PDF_CACHE = 'crewcheck-pwa-shared-pdf-v1';
+const SHARED_PDF_ROUTE = '/__crewcheck_shared_pdf/';
+const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
+const SHARED_PDF_MAX_BYTES = 20 * 1024 * 1024;
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/crewcheck-icon-v2.png'];
 
 async function trimCache(cacheName, maxEntries = 160) {
@@ -44,6 +48,71 @@ async function precachePreparedShell() {
   }));
 }
 
+async function cleanupSharedPdfs() {
+  const cache = await caches.open(SHARED_PDF_CACHE);
+  const keys = await cache.keys();
+  const now = Date.now();
+  const keep = [];
+
+  for (const request of keys) {
+    const response = await cache.match(request);
+    const createdAt = Number(response?.headers.get('x-crewcheck-created-at') || 0);
+    if (!response || !createdAt || now - createdAt > SHARED_PDF_TTL_MS) {
+      await cache.delete(request);
+      continue;
+    }
+    keep.push(request);
+  }
+
+  if (keep.length > 3) {
+    await Promise.all(keep.slice(0, keep.length - 3).map((request) => cache.delete(request)));
+  }
+}
+
+function sharedPdfErrorRedirect(reason) {
+  const target = new URL('/?view=import', self.location.origin);
+  target.searchParams.set('crewcheckShareError', reason);
+  return Response.redirect(target.toString(), 303);
+}
+
+async function receiveSharedPdf(request) {
+  try {
+    const form = await request.formData();
+    const file = form.get('pdf');
+    if (!file || typeof file.arrayBuffer !== 'function') return sharedPdfErrorRedirect('missing_pdf');
+    if (!file.size || file.size > SHARED_PDF_MAX_BYTES) return sharedPdfErrorRedirect('invalid_size');
+
+    const bytes = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+    const signature = new TextDecoder('ascii').decode(bytes);
+    if (signature !== '%PDF-') return sharedPdfErrorRedirect('invalid_pdf');
+
+    const shareId = self.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const cache = await caches.open(SHARED_PDF_CACHE);
+    const storageUrl = new URL(`${SHARED_PDF_ROUTE}${encodeURIComponent(shareId)}`, self.location.origin).toString();
+    const filename = String(file.name || 'CrewCheck-escala.pdf').slice(0, 180);
+
+    await cache.put(
+      new Request(storageUrl),
+      new Response(file, {
+        status: 200,
+        headers: {
+          'content-type': 'application/pdf',
+          'cache-control': 'no-store',
+          'x-crewcheck-created-at': String(Date.now()),
+          'x-crewcheck-filename': encodeURIComponent(filename),
+        },
+      }),
+    );
+    await cleanupSharedPdfs();
+
+    const target = new URL('/?view=import', self.location.origin);
+    target.searchParams.set('crewcheckSharedPdf', shareId);
+    return Response.redirect(target.toString(), 303);
+  } catch {
+    return sharedPdfErrorRedirect('share_failed');
+  }
+}
+
 self.addEventListener('install', (event) => {
   // Do not call skipWaiting here. The client coordinator decides when an update
   // can activate without interrupting an active operational session.
@@ -55,9 +124,10 @@ self.addEventListener('activate', (event) => {
     const names = await caches.keys();
     await Promise.all(
       names
-        .filter((name) => /crewcheck|workbox|vite/i.test(name) && ![CACHE_NAME, RUNTIME_CACHE].includes(name))
+        .filter((name) => /crewcheck|workbox|vite/i.test(name) && ![CACHE_NAME, RUNTIME_CACHE, SHARED_PDF_CACHE].includes(name))
         .map((name) => caches.delete(name)),
     );
+    await cleanupSharedPdfs();
     await self.clients.claim();
   })().catch(() => self.clients.claim()));
 });
@@ -80,9 +150,24 @@ function isApiRequest(url) {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (request.method === 'POST' && url.pathname === '/share-target') {
+    event.respondWith(receiveSharedPdf(request));
+    return;
+  }
+
+  if (request.method !== 'GET') return;
+
+  if (url.pathname.startsWith(SHARED_PDF_ROUTE)) {
+    event.respondWith((async () => {
+      await cleanupSharedPdfs();
+      const cache = await caches.open(SHARED_PDF_CACHE);
+      return (await cache.match(request)) || new Response('', { status: 404 });
+    })());
+    return;
+  }
 
   if (isApiRequest(url)) {
     event.respondWith(
