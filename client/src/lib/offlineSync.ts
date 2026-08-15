@@ -21,7 +21,6 @@ function offlineQueueKey(): string { return `crewcheck_offline_queue_v11_${stora
 function savedChecksumsKey(): string { return `crewcheck_saved_checksums_v11_${storageScope()}`; }
 export function localHistoryKey(): string { return `crewcheck_local_history_v11_${storageScope()}`; }
 
-
 export interface OfflineRosterPayload {
   id: string;
   checksum: string;
@@ -65,28 +64,17 @@ export async function checksumRoster(payload: unknown): Promise<string> {
   return `fallback-${Math.abs(hash)}`;
 }
 
-
 const LEGACY_LOCAL_HISTORY_MIGRATED_KEY = 'crewcheck_local_history_legacy_migrated_v11';
 
-// One-shot, removable migration of the pre-scoping legacy history key into
-// whichever scope asks for it first. Deleting the legacy key immediately
-// after the first claim is what makes this safe: no later scope (a
-// different user on the same device, or an anon session after a different
-// person logs out) can ever read it again, so this can never turn into a
-// permanent cross-scope merge - only a single one-time handoff.
+// The pre-scoping legacy key has no trustworthy owner binding. Never promote it
+// into whichever authenticated identity happens to boot first. Mark it handled and
+// remove it so server truth / an explicit re-import wins instead of risking A -> B
+// roster leakage on a shared or reused device.
 function migrateLegacyLocalHistoryOnce(): void {
   try {
     if (localStorage.getItem(LEGACY_LOCAL_HISTORY_MIGRATED_KEY) === '1') return;
-    const legacyRaw = localStorage.getItem(LEGACY_LOCAL_HISTORY_KEY);
     localStorage.setItem(LEGACY_LOCAL_HISTORY_MIGRATED_KEY, '1');
     localStorage.removeItem(LEGACY_LOCAL_HISTORY_KEY);
-    if (!legacyRaw) return;
-    const legacyList = JSON.parse(legacyRaw);
-    if (!Array.isArray(legacyList) || !legacyList.length) return;
-    const currentKey = localHistoryKey();
-    const currentList = JSON.parse(localStorage.getItem(currentKey) || '[]');
-    const merged = [...(Array.isArray(currentList) ? currentList : []), ...legacyList];
-    localStorage.setItem(currentKey, JSON.stringify(merged));
   } catch {}
 }
 
