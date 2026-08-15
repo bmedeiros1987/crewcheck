@@ -66,15 +66,37 @@ export async function checksumRoster(payload: unknown): Promise<string> {
 }
 
 
-function localHistoryKeys(): string[] {
-  const keys = new Set<string>([localHistoryKey(), `crewcheck_local_history_v11_${storageScope()}`, 'crewcheck_local_history_v11_anon', LEGACY_LOCAL_HISTORY_KEY]);
+const LEGACY_LOCAL_HISTORY_MIGRATED_KEY = 'crewcheck_local_history_legacy_migrated_v11';
+
+// One-shot, removable migration of the pre-scoping legacy history key into
+// whichever scope asks for it first. Deleting the legacy key immediately
+// after the first claim is what makes this safe: no later scope (a
+// different user on the same device, or an anon session after a different
+// person logs out) can ever read it again, so this can never turn into a
+// permanent cross-scope merge - only a single one-time handoff.
+function migrateLegacyLocalHistoryOnce(): void {
   try {
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i) || '';
-      if (/^crewcheck_local_history_/i.test(key)) keys.add(key);
-    }
+    if (localStorage.getItem(LEGACY_LOCAL_HISTORY_MIGRATED_KEY) === '1') return;
+    const legacyRaw = localStorage.getItem(LEGACY_LOCAL_HISTORY_KEY);
+    localStorage.setItem(LEGACY_LOCAL_HISTORY_MIGRATED_KEY, '1');
+    localStorage.removeItem(LEGACY_LOCAL_HISTORY_KEY);
+    if (!legacyRaw) return;
+    const legacyList = JSON.parse(legacyRaw);
+    if (!Array.isArray(legacyList) || !legacyList.length) return;
+    const currentKey = localHistoryKey();
+    const currentList = JSON.parse(localStorage.getItem(currentKey) || '[]');
+    const merged = [...(Array.isArray(currentList) ? currentList : []), ...legacyList];
+    localStorage.setItem(currentKey, JSON.stringify(merged));
   } catch {}
-  return Array.from(keys).filter(Boolean);
+}
+
+// Scoped strictly to the current identity's own key. Never scan localStorage
+// for other 'crewcheck_local_history_*' keys and never fold in the 'anon'
+// key while a real user is authenticated - either of those reintroduces a
+// different identity's roster history into the active session (see #440).
+function localHistoryKeys(): string[] {
+  migrateLegacyLocalHistoryOnce();
+  return [localHistoryKey()];
 }
 
 function normalizeOfflineHistoryItem(raw: any, index = 0): OfflineRosterPayload | null {
