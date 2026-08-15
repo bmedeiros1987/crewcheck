@@ -108,6 +108,49 @@ async function ensureCommuteTables(db) {
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 }
 
+async function ensureSchedulerHeartbeatTable(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_scheduler_heartbeat (
+    scheduler_key VARCHAR(64) NOT NULL PRIMARY KEY,
+    last_started_at DATETIME(3) NULL,
+    last_finished_at DATETIME(3) NULL,
+    last_status VARCHAR(24) NULL,
+    last_summary_json TEXT NULL,
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+}
+
+// lastCycle/schedulerRunning above are in-memory only, so a restart/redeploy always
+// resets them to null/false - the same gap the weather monitor had before it gained a
+// persisted heartbeat (see recordWeatherMonitorHeartbeat/weatherMonitorHealthState in
+// server.mjs). Without persistence, "never ran a cycle since this deploy" and "ran
+// fine for days before this restart" are indistinguishable from the outside, and a
+// scheduler that's silently broken looks identical to one that just started.
+const SCHEDULER_STALE_MS = Math.max(5 * 60_000, INTERVAL_MS * 6);
+function schedulerHealthState(heartbeat, now = Date.now()) {
+  if (!heartbeat?.last_started_at) return 'never_run';
+  const startedAt = new Date(heartbeat.last_started_at).getTime();
+  const finishedAt = heartbeat.last_finished_at ? new Date(heartbeat.last_finished_at).getTime() : NaN;
+  const inProgress = !Number.isFinite(finishedAt) || finishedAt < startedAt;
+  if (inProgress) return Number.isFinite(startedAt) && now - startedAt > SCHEDULER_STALE_MS ? 'stuck' : 'running';
+  return heartbeat.last_status === 'error' ? 'last_failure' : 'completed';
+}
+async function recordSchedulerHeartbeat(db, patch) {
+  try {
+    await ensureSchedulerHeartbeatTable(db);
+    const [rows] = await db.query("SELECT * FROM crewcheck_scheduler_heartbeat WHERE scheduler_key='notifications' LIMIT 1");
+    const current = rows[0] || {};
+    const next = {
+      last_started_at: patch.lastStartedAt !== undefined ? patch.lastStartedAt : current.last_started_at,
+      last_finished_at: patch.lastFinishedAt !== undefined ? patch.lastFinishedAt : current.last_finished_at,
+      last_status: patch.lastStatus !== undefined ? patch.lastStatus : current.last_status,
+      last_summary_json: patch.lastSummary !== undefined ? JSON.stringify(patch.lastSummary) : current.last_summary_json,
+    };
+    await db.query(`INSERT INTO crewcheck_scheduler_heartbeat (scheduler_key,last_started_at,last_finished_at,last_status,last_summary_json) VALUES ('notifications',?,?,?,?)
+      ON DUPLICATE KEY UPDATE last_started_at=VALUES(last_started_at),last_finished_at=VALUES(last_finished_at),last_status=VALUES(last_status),last_summary_json=VALUES(last_summary_json)`,
+      [next.last_started_at, next.last_finished_at, next.last_status, next.last_summary_json]);
+  } catch {}
+}
+
 async function sendInfobipPhone(phone, message) {
   const request = buildInfobipTtsRequest({ phone, text: message });
   if (!request.ok) return request;
@@ -296,9 +339,14 @@ async function runSchedulerCycle() {
   if (schedulerRunning) return;
   schedulerRunning = true;
   const summary = { startedAt: new Date().toISOString(), selected: 0, sent: 0, failed: 0 };
+  // db is resolved INSIDE the try (not before it): dbPool() rejecting/throwing here
+  // must still hit the finally below, or schedulerRunning would stay true forever and
+  // block every future cycle until a restart.
+  let db = null;
   try {
-    const db = await dbPool();
+    db = await dbPool();
     if (!db) throw new Error('Banco indisponível para notificações.');
+    await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
     await db.query("UPDATE crewcheck_notification_jobs SET status='pending',locked_at=NULL WHERE status='processing' AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
     const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 24 HOUR) ORDER BY scheduled_at ASC LIMIT 50");
@@ -325,6 +373,7 @@ async function runSchedulerCycle() {
     summary.finishedAt = new Date().toISOString();
     lastCycle = summary;
     schedulerRunning = false;
+    if (db) await recordSchedulerHeartbeat(db, { lastFinishedAt: summary.finishedAt, lastStatus: summary.error ? 'error' : 'ok', lastSummary: { selected: summary.selected, sent: summary.sent, failed: summary.failed } });
   }
 }
 
@@ -457,10 +506,31 @@ async function cancelCommuteMonitor(req, res) {
 
 async function runtimeHealth(_req, res) {
   let database = false;
-  try { const db = await dbPool(); if (db) { await ensureNotificationTable(db); await ensureCommuteTables(db); database = true; } } catch {}
+  let heartbeat = null;
+  try {
+    const db = await dbPool();
+    if (db) {
+      await ensureNotificationTable(db);
+      await ensureCommuteTables(db);
+      database = true;
+      await ensureSchedulerHeartbeatTable(db);
+      const [rows] = await db.query("SELECT * FROM crewcheck_scheduler_heartbeat WHERE scheduler_key='notifications' LIMIT 1");
+      heartbeat = rows[0] || null;
+    }
+  } catch {}
   return sendJson(res, 200, {
     ok: database && Boolean(lastWebhookCheck?.ok), version: RUNTIME_VERSION, database,
-    scheduler: { running: schedulerRunning, intervalMs: INTERVAL_MS, lastCycle },
+    // persistedState/persistedLastStartedAt/persistedLastFinishedAt survive a restart;
+    // running/lastCycle stay in-memory for immediate same-process visibility. Both are
+    // exposed together on purpose: after a fresh deploy, in-memory alone would say
+    // "never ran" even if the scheduler had been healthy for days beforehand.
+    scheduler: {
+      running: schedulerRunning, intervalMs: INTERVAL_MS, lastCycle,
+      persistedState: schedulerHealthState(heartbeat),
+      persistedLastStartedAt: heartbeat?.last_started_at || null,
+      persistedLastFinishedAt: heartbeat?.last_finished_at || null,
+      persistedLastStatus: heartbeat?.last_status || null,
+    },
     commute: { enabled: true, lastCycle: lastCommuteCycle, learningWindowDays: 90 },
     telegram: lastWebhookCheck,
     infobip: infobipPublicStatus(),
