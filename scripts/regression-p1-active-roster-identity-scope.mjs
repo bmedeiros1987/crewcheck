@@ -20,8 +20,15 @@ import fs from 'node:fs';
 // this issue calls "teletransporte".
 //
 // Fixed the same way as the parallel bug already fixed in client/src/lib/offlineSync.ts:
-// scope reads to the current identity's own keys only, and replace the permanent
-// legacy-key scan with a true one-shot, removable migration.
+// scope reads to the current identity's own keys only.
+//
+// #303 follow-up: the original fix here (and in offlineSync.ts) still promoted the
+// ownerless legacy key into whichever scope asked for it *first* - a "first-claimer
+// wins" migration. PR #493 closed that same leak in offlineSync.ts by discarding the
+// legacy key outright instead of ever attaching it to an identity; this test now
+// verifies databaseClient.ts's two legacy migrations (ACTIVE_ROSTER_LEGACY_KEYS and
+// LEGACY_LOCAL_HISTORY_KEY) were brought in line the same way - ownerless data is
+// always discarded, never adopted by the first bootstrap.
 //
 // This test extracts and actually executes the real functions from the current
 // source (not a reimplementation), the same technique used by
@@ -182,25 +189,44 @@ function activeSnapshot(crewName, year, month) {
   assert.equal(summary, undefined, 'an authenticated session must not inherit the anon-scope active-roster snapshot');
 }
 
-// --- Scenario 3: legacy version-numbered active-roster keys migrate exactly once,
-// into whichever scope asks first, and are gone afterward. ---
+// --- Scenario 3: legacy version-numbered active-roster keys (ownerless, pre-scoping)
+// must be discarded fail-closed - never adopted by whichever scope boots first. This
+// is the exact fallback openActiveRoster() uses when the live GET /api/rosters/active
+// call fails, so this scenario simulates that failure by exercising the same fallback
+// candidate directly. ---
 {
   const storage = new LocalStorageMock();
   storage.setItem('crewcheck_last_roster_bundle_v11108', JSON.stringify(activeSnapshot('Crew Legacy', 2026, 7)));
 
   const aHarness = buildHarness(storage, () => ({ id: 'user-a' }));
   const aSummary = aHarness.getSmartLocalActiveRosterSummary();
-  assert.ok(aSummary, 'the first scope to bootstrap should receive the one-shot legacy migration');
-  assert.equal(aSummary.crewName, 'Crew Legacy');
-  assert.equal(storage.getItem('crewcheck_last_roster_bundle_v11108'), null, 'legacy key must be deleted immediately after being claimed');
+  assert.equal(aSummary, undefined, 'no scope may ever adopt an ownerless legacy active-roster snapshot as its active roster fallback');
+  assert.equal(storage.getItem('crewcheck_last_roster_bundle_v11108'), null, 'ownerless legacy key must still be discarded (marked handled) the first time it is seen');
 
   const bHarness = buildHarness(storage, () => ({ id: 'user-b' }));
   const bSummary = bHarness.getSmartLocalActiveRosterSummary();
-  assert.equal(bSummary, undefined, 'a second scope must never receive the already-claimed legacy active-roster snapshot');
+  assert.equal(bSummary, undefined, 'a second scope must not receive the discarded legacy active-roster snapshot either');
+}
+
+// --- Scenario 3b: the general legacy local-history key (crewcheck_local_history_v1,
+// consumed via readLocalHistory()->localHistoryKeys()) is the *other* ownerless
+// source getSmartLocalActiveRosterSummary() draws from - must be fail-closed too. ---
+{
+  const storage = new LocalStorageMock();
+  storage.setItem('crewcheck_local_history_v1', JSON.stringify([activeSnapshot('Crew Legacy History', 2026, 6)]));
+
+  const aHarness = buildHarness(storage, () => ({ id: 'user-a' }));
+  const aSummary = aHarness.getSmartLocalActiveRosterSummary();
+  assert.equal(aSummary, undefined, 'no scope may ever adopt ownerless legacy local-history entries as its active roster fallback');
+  assert.equal(storage.getItem('crewcheck_local_history_v1'), null, 'ownerless legacy history key must still be discarded the first time it is seen');
+
+  const bHarness = buildHarness(storage, () => ({ id: 'user-b' }));
+  assert.equal(bHarness.getSmartLocalActiveRosterSummary(), undefined, 'a second scope must not receive the discarded legacy history either');
 }
 
 // --- Scenario 4: A's own current-scope snapshot still works normally (the fix must
-// not break the legitimate same-user fallback path). ---
+// not break the legitimate same-user fallback path) - data already correctly scoped
+// to the current identity is preserved, only ownerless legacy data is discarded. ---
 {
   const storage = new LocalStorageMock();
   const aHarness = buildHarness(storage, () => ({ id: 'user-a' }));
@@ -210,10 +236,25 @@ function activeSnapshot(crewName, year, month) {
   assert.equal(summary.crewName, 'Crew A');
 }
 
-// --- Guards against regressing to a permissive localStorage scan. ---
+// --- Scenario 4b: same preservation guarantee for the current-scope local-history
+// key (not the legacy/ownerless one). ---
+{
+  const storage = new LocalStorageMock();
+  const aHarness = buildHarness(storage, () => ({ id: 'user-a' }));
+  storage.setItem('crewcheck_local_history_v11_user-a', JSON.stringify([{ ...activeSnapshot('Crew A History', 2026, 5), isActive: true }]));
+  const summary = aHarness.getSmartLocalActiveRosterSummary();
+  assert.ok(summary, "A's own correctly-scoped local-history entry must still be usable as a fallback");
+  assert.equal(summary.crewName, 'Crew A History');
+}
+
+// --- Guards against regressing to a permissive localStorage scan or to promoting
+// ownerless legacy content into any scope. ---
 for (const [label, fnSource] of [['localHistoryKeys', extracted.localHistoryKeys], ['readLocalActiveRosterSnapshots', extracted.readLocalActiveRosterSnapshots]]) {
   assert.doesNotMatch(fnSource, /for\s*\(\s*let\s+i\s*=\s*0\s*;\s*i\s*<\s*localStorage\.length/, `${label}() must not regress to scanning all of localStorage`);
 }
 assert.doesNotMatch(extracted.readLocalActiveRosterSnapshots, /'crewcheck_active_roster_snapshot_anon'/, 'must not unconditionally include the anon active-roster snapshot key');
+assert.doesNotMatch(extracted.migrateLegacyActiveRosterSnapshotsOnce, /setItem\(targetKey/, 'ownerless legacy active-roster snapshots must never be written into any scope\'s target key (first-claimer-wins regression)');
+assert.doesNotMatch(extracted.migrateLegacyLocalHistoryOnce, /localHistoryKey\(/, 'ownerless legacy history must never be promoted into the current identity (first-claimer-wins regression)');
+assert.doesNotMatch(extracted.migrateLegacyLocalHistoryOnce, /JSON\.parse\(legacyRaw\)/, 'ownerless legacy history payload must not be consumed as active history');
 
-console.log('[p1-active-roster-identity-scope] OK — the active-roster bootstrap fallback never crosses user identities, and legacy snapshot keys migrate exactly once.');
+console.log('[p1-active-roster-identity-scope] OK — the active-roster bootstrap fallback never crosses user identities, and ownerless legacy keys are discarded fail-closed, never adopted.');
