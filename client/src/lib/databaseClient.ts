@@ -487,26 +487,16 @@ function safeStorageScope(): string {
 
 const LOCAL_HISTORY_LEGACY_MIGRATED_KEY = 'crewcheck_local_history_legacy_migrated_v11';
 
-// One-shot, removable migration of the pre-scoping legacy history key into
-// whichever scope asks for it first. Deleting the legacy key immediately
-// after the first claim is what makes this safe: no later scope (a
-// different user on the same device, or an anon session after a different
-// person logs out) can ever read it again, so this can never turn into a
-// permanent cross-scope merge - only a single one-time handoff. Mirrors the
-// same fix in client/src/lib/offlineSync.ts (see #440).
+// The pre-scoping legacy key has no trustworthy owner binding. Never promote it
+// into whichever authenticated identity happens to boot first. Mark it handled and
+// remove it so server truth / an explicit re-import wins instead of risking A -> B
+// roster leakage on a shared or reused device. Mirrors the same fix in
+// client/src/lib/offlineSync.ts (see #440, #493).
 function migrateLegacyLocalHistoryOnce(): void {
   try {
     if (localStorage.getItem(LOCAL_HISTORY_LEGACY_MIGRATED_KEY) === '1') return;
-    const legacyRaw = localStorage.getItem(LEGACY_LOCAL_HISTORY_KEY);
     localStorage.setItem(LOCAL_HISTORY_LEGACY_MIGRATED_KEY, '1');
     localStorage.removeItem(LEGACY_LOCAL_HISTORY_KEY);
-    if (!legacyRaw) return;
-    const legacyList = JSON.parse(legacyRaw);
-    if (!Array.isArray(legacyList) || !legacyList.length) return;
-    const currentKey = localHistoryKey();
-    const currentList = JSON.parse(localStorage.getItem(currentKey) || '[]');
-    const merged = [...(Array.isArray(currentList) ? currentList : []), ...legacyList];
-    localStorage.setItem(currentKey, JSON.stringify(merged));
   } catch {}
 }
 
@@ -599,31 +589,29 @@ const ACTIVE_ROSTER_LEGACY_KEYS = [
 ];
 const ACTIVE_ROSTER_LEGACY_MIGRATED_KEY = 'crewcheck_active_roster_legacy_migrated_v11';
 
-// One-shot, removable migration of the pre-scoping active-roster snapshot keys
-// into the current scope's own snapshot slot. Each legacy key is deleted as
-// soon as it's inspected, whether or not it had content, so - exactly like
-// migrateLegacyLocalHistoryOnce() above - no later scope can ever read any of
-// them again. This closes the concrete mechanism behind #440 ("erro de
-// carregamento no APK mistura escala antiga e gera teletransporte"):
-// openActiveRoster() falls back to this snapshot data whenever the live
-// /api/rosters/active call fails, so a stale/foreign snapshot surfacing here
-// was exactly what produced a different identity's roster on a failed load.
-function migrateLegacyActiveRosterSnapshotsOnce(scope: string): void {
+// The pre-scoping active-roster snapshot keys have no trustworthy owner binding,
+// exactly like the legacy history key above. Never promote their content into any
+// scope's snapshot slot - just discard each one the first time it's seen. This
+// closes the concrete mechanism behind #440 ("erro de carregamento no APK mistura
+// escala antiga e gera teletransporte"): openActiveRoster() falls back to this
+// snapshot data whenever the live /api/rosters/active call fails, so a stale/
+// foreign snapshot surfacing here was exactly what produced a different identity's
+// roster on a failed load. Data already correctly scoped to the current identity
+// (crewcheck_active_roster_snapshot_<scope> etc., written by that identity's own
+// prior sync) is untouched - only these unscoped pre-migration keys are discarded.
+function migrateLegacyActiveRosterSnapshotsOnce(): void {
   try {
     if (localStorage.getItem(ACTIVE_ROSTER_LEGACY_MIGRATED_KEY) === '1') return;
     localStorage.setItem(ACTIVE_ROSTER_LEGACY_MIGRATED_KEY, '1');
-    const targetKey = `crewcheck_active_roster_snapshot_${scope}`;
     for (const legacyKey of ACTIVE_ROSTER_LEGACY_KEYS) {
-      const raw = localStorage.getItem(legacyKey);
       localStorage.removeItem(legacyKey);
-      if (raw && !localStorage.getItem(targetKey)) localStorage.setItem(targetKey, raw);
     }
   } catch {}
 }
 
 function readLocalActiveRosterSnapshots(): LocalHistoryItem[] {
   const scope = safeStorageScope();
-  migrateLegacyActiveRosterSnapshotsOnce(scope);
+  migrateLegacyActiveRosterSnapshotsOnce();
   // Scoped strictly to the current identity: these three keys are different
   // storage generations for the *same* user's own snapshot, never scanned
   // from other scopes or folded in from 'anon' while authenticated (see #440).
