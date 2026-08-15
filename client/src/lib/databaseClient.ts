@@ -485,23 +485,38 @@ function safeStorageScope(): string {
   }
 }
 
-function localHistoryKeys(): string[] {
-  const scope = safeStorageScope();
-  const keys = new Set<string>([
-    localHistoryKey(),
-    `crewcheck_local_history_v11_${scope}`,
-    'crewcheck_local_history_v11_anon',
-    LEGACY_LOCAL_HISTORY_KEY,
-  ]);
+const LOCAL_HISTORY_LEGACY_MIGRATED_KEY = 'crewcheck_local_history_legacy_migrated_v11';
+
+// One-shot, removable migration of the pre-scoping legacy history key into
+// whichever scope asks for it first. Deleting the legacy key immediately
+// after the first claim is what makes this safe: no later scope (a
+// different user on the same device, or an anon session after a different
+// person logs out) can ever read it again, so this can never turn into a
+// permanent cross-scope merge - only a single one-time handoff. Mirrors the
+// same fix in client/src/lib/offlineSync.ts (see #440).
+function migrateLegacyLocalHistoryOnce(): void {
   try {
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i) || '';
-      if (/^crewcheck_local_history_/i.test(key)) keys.add(key);
-    }
-  } catch {
-    // iOS modo privado pode bloquear enumeração do localStorage.
-  }
-  return Array.from(keys).filter(Boolean);
+    if (localStorage.getItem(LOCAL_HISTORY_LEGACY_MIGRATED_KEY) === '1') return;
+    const legacyRaw = localStorage.getItem(LEGACY_LOCAL_HISTORY_KEY);
+    localStorage.setItem(LOCAL_HISTORY_LEGACY_MIGRATED_KEY, '1');
+    localStorage.removeItem(LEGACY_LOCAL_HISTORY_KEY);
+    if (!legacyRaw) return;
+    const legacyList = JSON.parse(legacyRaw);
+    if (!Array.isArray(legacyList) || !legacyList.length) return;
+    const currentKey = localHistoryKey();
+    const currentList = JSON.parse(localStorage.getItem(currentKey) || '[]');
+    const merged = [...(Array.isArray(currentList) ? currentList : []), ...legacyList];
+    localStorage.setItem(currentKey, JSON.stringify(merged));
+  } catch {}
+}
+
+// Scoped strictly to the current identity's own key. Never scan localStorage
+// for other 'crewcheck_local_history_*' keys and never fold in the 'anon'
+// key while a real user is authenticated - either of those reintroduces a
+// different identity's roster history into the active session (see #440).
+function localHistoryKeys(): string[] {
+  migrateLegacyLocalHistoryOnce();
+  return [localHistoryKey()];
 }
 
 function normalizeLocalHistoryItem(raw: any, index = 0): LocalHistoryItem | null {
@@ -567,29 +582,56 @@ function deleteLocalRoster(id: string): void {
   }
 }
 
+// Deliberately excludes the '_anon' variants: those are the anon scope's own,
+// genuinely current data (readable normally by whichever session's scope is
+// literally 'anon'), not ownerless pre-scoping artifacts - migrating them into
+// an *authenticated* scope would itself reintroduce the #440 cross-identity
+// leak this migration exists to close. Only keys that predate per-user scoping
+// entirely (so there is unambiguously at most one legitimate value) belong here.
+const ACTIVE_ROSTER_LEGACY_KEYS = [
+  'crewcheck_last_roster_bundle_v11108',
+  'crewcheck_last_roster_bundle_v11102',
+  'crewcheck_last_roster_bundle_v11101',
+  'crewcheck_last_roster_bundle_v11100',
+  'crewcheck_last_roster_bundle_v11099',
+  'crewcheck_last_roster_bundle_v11098',
+  'crewcheck_latest_roster_bundle',
+];
+const ACTIVE_ROSTER_LEGACY_MIGRATED_KEY = 'crewcheck_active_roster_legacy_migrated_v11';
+
+// One-shot, removable migration of the pre-scoping active-roster snapshot keys
+// into the current scope's own snapshot slot. Each legacy key is deleted as
+// soon as it's inspected, whether or not it had content, so - exactly like
+// migrateLegacyLocalHistoryOnce() above - no later scope can ever read any of
+// them again. This closes the concrete mechanism behind #440 ("erro de
+// carregamento no APK mistura escala antiga e gera teletransporte"):
+// openActiveRoster() falls back to this snapshot data whenever the live
+// /api/rosters/active call fails, so a stale/foreign snapshot surfacing here
+// was exactly what produced a different identity's roster on a failed load.
+function migrateLegacyActiveRosterSnapshotsOnce(scope: string): void {
+  try {
+    if (localStorage.getItem(ACTIVE_ROSTER_LEGACY_MIGRATED_KEY) === '1') return;
+    localStorage.setItem(ACTIVE_ROSTER_LEGACY_MIGRATED_KEY, '1');
+    const targetKey = `crewcheck_active_roster_snapshot_${scope}`;
+    for (const legacyKey of ACTIVE_ROSTER_LEGACY_KEYS) {
+      const raw = localStorage.getItem(legacyKey);
+      localStorage.removeItem(legacyKey);
+      if (raw && !localStorage.getItem(targetKey)) localStorage.setItem(targetKey, raw);
+    }
+  } catch {}
+}
+
 function readLocalActiveRosterSnapshots(): LocalHistoryItem[] {
   const scope = safeStorageScope();
+  migrateLegacyActiveRosterSnapshotsOnce(scope);
+  // Scoped strictly to the current identity: these three keys are different
+  // storage generations for the *same* user's own snapshot, never scanned
+  // from other scopes or folded in from 'anon' while authenticated (see #440).
   const keys = new Set<string>([
     `crewcheck_active_roster_snapshot_${scope}`,
     `crewcheck_latest_roster_bundle_${scope}`,
     `crewcheck_roster_sync_latest_v11_${scope}`,
-    'crewcheck_last_roster_bundle_v11108',
-    'crewcheck_last_roster_bundle_v11102',
-    'crewcheck_last_roster_bundle_v11101',
-    'crewcheck_last_roster_bundle_v11100',
-    'crewcheck_last_roster_bundle_v11099',
-    'crewcheck_last_roster_bundle_v11098',
-    'crewcheck_roster_sync_latest_v11_anon',
-    'crewcheck_latest_roster_bundle_anon',
-    'crewcheck_active_roster_snapshot_anon',
-    'crewcheck_latest_roster_bundle',
   ]);
-  try {
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i) || '';
-      if (/crewcheck_(active_roster_snapshot|latest_roster_bundle|last_roster_bundle|roster_sync_latest)/i.test(key)) keys.add(key);
-    }
-  } catch {}
   const seen = new Set<string>();
   const out: LocalHistoryItem[] = [];
   Array.from(keys).forEach((key, index) => {
