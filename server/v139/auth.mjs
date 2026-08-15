@@ -168,8 +168,26 @@ async function login(req, res, db) {
   if (!account && isAdminEmail(email) && emergencyPassword && secureCompare(password, emergencyPassword)) {
     return loginResponse(res, await enrichCrewFunction(db, email, await userFromAccount(db, email)), 'Administrador conectado.');
   }
-  if (!account || !passwordMatches(password, account.password_salt, account.password_hash)) {
-    return sendJson(res, 401, { ok: false, message: 'E-mail ou senha inválidos.' });
+  if (!account) {
+    // Uma conta antiga (identidade com perfil, mas sem hash de senha no padrão
+    // atual) não tem nenhuma senha conhecida para validar. Aceitar qualquer valor
+    // enfraqueceria a autenticação; negar com a mesma mensagem genérica de senha
+    // incorreta engana quem acredita ter digitado a senha certa. A identidade é
+    // preservada (nada é criado/alterado aqui) e o usuário é direcionado à
+    // recuperação verificada, que já cria a credencial no padrão atual somente
+    // após confirmação (ver requestReset/resetPassword).
+    const [profiles] = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]);
+    if (profiles[0]) {
+      return sendJson(res, 401, {
+        ok: false,
+        code: 'legacy_credential',
+        message: 'Esta conta existe, mas ainda não tem uma senha definida no padrão atual. Toque em "Esqueci minha senha" para criar uma nova senha e continuar.',
+      });
+    }
+    return sendJson(res, 401, { ok: false, code: 'account_not_found', message: 'E-mail ou senha inválidos.' });
+  }
+  if (!passwordMatches(password, account.password_salt, account.password_hash)) {
+    return sendJson(res, 401, { ok: false, code: 'password_mismatch', message: 'E-mail ou senha inválidos.' });
   }
   await db.query('UPDATE crewcheck_platform_accounts SET last_login_at=CURRENT_TIMESTAMP(3) WHERE email=?', [email]);
   const user = await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(account.must_change_password)));
