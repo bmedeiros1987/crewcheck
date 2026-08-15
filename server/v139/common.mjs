@@ -273,14 +273,20 @@ export async function requireIdentity(req, res) {
     sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
     return null;
   }
-  const email = safeEmail(payload?.email);
-  if (!email) {
-    sendJson(res, 401, { ok: false, message: 'Faça login para continuar.' });
-    return null;
-  }
+  // Database availability is checked before identity so an outage is never masked as a
+  // 401: identity.email being empty means "no credentials", not "invalid credentials",
+  // and without a working database we can't tell the two apart from a real session
+  // problem either. Checking the DB first guarantees every request made during an
+  // outage gets a classifiable 503, never a 401 that could be mistaken for a real
+  // invalid session. Same pattern as requireMain() in server/platform.mjs.
   const db = await dbPool();
   if (!db) {
     sendJson(res, 503, { ok: false, message: 'Banco Aiven indisponível.' });
+    return null;
+  }
+  const email = safeEmail(payload?.email);
+  if (!email) {
+    sendJson(res, 401, { ok: false, message: 'Faça login para continuar.' });
     return null;
   }
   const profile = await ensureProfile(db, email, payload?.name);
