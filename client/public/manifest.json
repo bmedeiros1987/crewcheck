@@ -23,6 +23,22 @@
   ],
   "prefer_related_applications": false,
   "version": "13.9.10",
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "pdf",
+          "accept": [
+            "application/pdf",
+            ".pdf"
+          ]
+        }
+      ]
+    }
+  },
   "icons": [
     {
       "src": "/icons/crewcheck-icon-v2.png?v=13910",
