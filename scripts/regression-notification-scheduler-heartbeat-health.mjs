@@ -93,16 +93,95 @@ assert.notEqual(runCycleStart, -1, 'runSchedulerCycle não encontrada');
 const runCycleEnd = source.indexOf('\n}\n', runCycleStart);
 const runCycleBody = source.slice(runCycleStart, runCycleEnd + 2);
 
-// dbPool() precisa ser resolvido ANTES do try/if(!db) throw, senão o heartbeat de
-// início nunca é gravado quando o banco está indisponível logo no início do ciclo.
+// dbPool() precisa ser resolvido DENTRO do try (não antes dele): se dbPool()
+// rejeitar/lançar antes do try, a função sai sem passar pelo finally e
+// schedulerRunning fica travado em true para sempre, bloqueando todo ciclo
+// seguinte até um restart. Ver teste comportamental abaixo, que força essa
+// falha e prova que o bloqueio não acontece.
 assert.ok(
-  /const db = await dbPool\(\);\s*\n\s*if \(db\) await recordSchedulerHeartbeat\(db, \{ lastStartedAt: summary\.startedAt, lastFinishedAt: null \}\);\s*\n\s*try \{/.test(runCycleBody),
-  'início do ciclo deve resolver dbPool() e gravar heartbeat de início antes do try/throw',
+  /const summary = \{[^}]*\};\s*\n(?:\s*\/\/[^\n]*\n)*\s*let db = null;\s*\n\s*try \{\s*\n\s*db = await dbPool\(\);\s*\n\s*if \(!db\) throw new Error/.test(runCycleBody),
+  'db deve ser inicializado como null antes do try e resolvido (await dbPool()) somente dentro do try, para que uma rejeição também caia no finally',
+);
+assert.ok(
+  /db = await dbPool\(\);\s*\n\s*if \(!db\) throw new Error\('Banco indisponível para notificações\.'\);\s*\n\s*await recordSchedulerHeartbeat\(db, \{ lastStartedAt: summary\.startedAt, lastFinishedAt: null \}\);/.test(runCycleBody),
+  'heartbeat de início só deve ser gravado depois de confirmar que db existe (dentro do try)',
 );
 assert.ok(
   /finally \{[\s\S]*if \(db\) await recordSchedulerHeartbeat\(db, \{ lastFinishedAt: summary\.finishedAt, lastStatus: summary\.error \? 'error' : 'ok'/.test(runCycleBody),
   'fim do ciclo (sucesso ou falha) deve gravar heartbeat de término no finally, com status derivado de summary.error',
 );
+assert.ok(
+  /finally \{\s*\n\s*summary\.finishedAt = new Date\(\)\.toISOString\(\);\s*\n\s*lastCycle = summary;\s*\n\s*schedulerRunning = false;/.test(runCycleBody),
+  'finally deve sempre resetar schedulerRunning=false e publicar lastCycle, independentemente de dbPool() ter lançado',
+);
+
+// Teste comportamental (não apenas estático): executa o corpo REAL de
+// runSchedulerCycle extraído do arquivo-fonte contra um dbPool() mockado que
+// pode rejeitar, resolver null ou resolver um "banco" fake. Prova que uma
+// falha em dbPool() não deixa schedulerRunning travado em true e que o ciclo
+// seguinte não fica bloqueado.
+const cycleTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-scheduler-cycle-'));
+const cycleTempFile = path.join(cycleTempDir, 'run-scheduler-cycle.mjs');
+try {
+  const harness = `
+export let schedulerRunning = false;
+export let lastCycle = null;
+export let dbPoolCalls = 0;
+export let heartbeatCalls = [];
+let dbPoolResult = 'reject';
+export function setDbPoolResult(value) { dbPoolResult = value; }
+
+async function dbPool() {
+  dbPoolCalls += 1;
+  if (dbPoolResult === 'reject') throw new Error('ECONNREFUSED simulado (dbPool indisponível)');
+  return dbPoolResult;
+}
+async function ensureNotificationTable() {}
+async function runCommuteMonitorCycle() { return { ok: true }; }
+async function recordSchedulerHeartbeat(db, patch) { heartbeatCalls.push(patch); }
+async function deliverJob() { return { ok: true }; }
+
+${runCycleBody}
+
+export { runSchedulerCycle };
+`;
+  fs.writeFileSync(cycleTempFile, harness, 'utf8');
+  const mod = await import(pathToFileURL(cycleTempFile).href);
+
+  // 1) dbPool() rejeita logo no início do ciclo.
+  mod.setDbPoolResult('reject');
+  await mod.runSchedulerCycle();
+  assert.equal(mod.dbPoolCalls, 1, 'dbPool() deve ter sido chamado no primeiro ciclo');
+  assert.equal(mod.schedulerRunning, false, 'após dbPool() rejeitar, schedulerRunning deve voltar a false (finally deve rodar mesmo com throw antes do try)');
+  assert.ok(mod.lastCycle?.error, 'ciclo com dbPool() rejeitando deve registrar summary.error');
+  assert.equal(mod.heartbeatCalls.length, 0, 'sem db resolvido, nenhum heartbeat (início ou fim) deve ser gravado');
+
+  // 2) Um segundo ciclo, chamado logo em seguida, não pode ficar bloqueado
+  // pelo schedulerRunning=true que o bug antigo deixava travado.
+  mod.setDbPoolResult(null);
+  await mod.runSchedulerCycle();
+  assert.equal(mod.dbPoolCalls, 2, 'segundo ciclo não pode ser bloqueado: dbPool() deve ser chamado novamente');
+  assert.equal(mod.schedulerRunning, false, 'segundo ciclo (banco indisponível) também deve liberar schedulerRunning=false ao final');
+  assert.equal(mod.lastCycle?.error, 'Banco indisponível para notificações.', 'dbPool() resolvendo null deve preservar a mensagem original de banco indisponível');
+  assert.equal(mod.heartbeatCalls.length, 0, 'db=null também não deve gravar heartbeat (mesma regra: só grava com db confirmado)');
+
+  // 3) Terceiro ciclo com "banco" disponível: prova que a cadeia continua
+  // funcionando após duas falhas seguidas e que o heartbeat de início/fim é
+  // gravado somente quando db existe de fato.
+  const fakeDb = { query: async () => [[]] };
+  mod.setDbPoolResult(fakeDb);
+  await mod.runSchedulerCycle();
+  assert.equal(mod.dbPoolCalls, 3, 'terceiro ciclo também não pode ficar bloqueado pelos dois anteriores');
+  assert.equal(mod.schedulerRunning, false, 'ciclo bem-sucedido deve terminar com schedulerRunning=false');
+  assert.equal(mod.lastCycle?.error, undefined, 'ciclo bem-sucedido não deve registrar summary.error');
+  assert.equal(mod.heartbeatCalls.length, 2, 'ciclo bem-sucedido deve gravar heartbeat de início e de fim (db existe)');
+  assert.equal(mod.heartbeatCalls[0].lastFinishedAt, null, 'heartbeat de início deve marcar lastFinishedAt=null');
+  assert.equal(mod.heartbeatCalls[1].lastStatus, 'ok', 'heartbeat de fim de ciclo bem-sucedido deve ter lastStatus=ok');
+
+  console.log('runSchedulerCycle behavioral regression (dbPool reject/null/success não trava schedulerRunning): ok');
+} finally {
+  fs.rmSync(cycleTempDir, { recursive: true, force: true });
+}
 
 // Endpoint de leitura já existente (/api/notifications/runtime-health) precisa expor
 // o estado persistido de forma aditiva, sem remover os campos em memória existentes

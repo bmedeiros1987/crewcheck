@@ -339,10 +339,14 @@ async function runSchedulerCycle() {
   if (schedulerRunning) return;
   schedulerRunning = true;
   const summary = { startedAt: new Date().toISOString(), selected: 0, sent: 0, failed: 0 };
-  const db = await dbPool();
-  if (db) await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
+  // db is resolved INSIDE the try (not before it): dbPool() rejecting/throwing here
+  // must still hit the finally below, or schedulerRunning would stay true forever and
+  // block every future cycle until a restart.
+  let db = null;
   try {
+    db = await dbPool();
     if (!db) throw new Error('Banco indisponível para notificações.');
+    await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
     await db.query("UPDATE crewcheck_notification_jobs SET status='pending',locked_at=NULL WHERE status='processing' AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
     const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 24 HOUR) ORDER BY scheduled_at ASC LIMIT 50");
