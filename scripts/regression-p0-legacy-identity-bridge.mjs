@@ -4,8 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// #399 legacy identity bridge (v14.4.00): a legacy crewcheck_users row with no
-// current crewcheck_platform_profiles/accounts row must never get a modern account
+// #399 legacy identity bridge (v14.4.00) + artifact-canonical reset consumption
+// (v14.4.01): a legacy crewcheck_users row with no current
+// crewcheck_platform_profiles/accounts row must never get a modern account
 // created just because its email matches - the modern identity is only ever
 // materialized after the user proves possession of that email through the SAME
 // single-use code flow already used for every other password reset
@@ -13,13 +14,26 @@ import { pathToFileURL } from 'node:url';
 // recovery; ownership of any legacy roster is preserved purely because this bridge
 // never references crewcheck_rosters/crewcheck_platform_rosters at all.
 //
+// v14.4.01 fixes a real production E2E failure: requestReset() issues the
+// canonical code via issueAuthArtifact() into crewcheck_platform_auth_artifacts
+// (since v14.3.99), but resetPassword() kept validating exclusively against the
+// OLDER crewcheck_platform_password_resets/resetHash() pair - two sources of
+// truth for the same code, with the canonical artifact never actually consumed.
+// resetPassword() now calls consumeAuthArtifact() (extended with the same
+// optional connection-sharing issueAuthArtifact() already had) inside the SAME
+// transaction that locks profiles/accounts and creates the identity;
+// password_resets is still marked used_at afterward for compatibility only.
+//
 // Static guards below prove the *shape* of the materialized code. Because this
 // slice can - for the first time - create crewcheck_platform_profiles/accounts for
-// a legacy-only identity, shape alone isn't enough: the dynamic harness further
-// down actually EXECUTES the real materialized requestReset()/resetPassword()/
-// login(), against a stateful mock DB with real per-email row-locking, to prove the
-// end-to-end behavior (issuance, invalid/expired code, valid consumption,
-// single-use, real concurrent interleaving, and post-recovery login).
+// a legacy-only identity, and because a reset can now fail AFTER a successful
+// artifact consume, shape alone isn't enough: the dynamic harness further down
+// actually EXECUTES the real materialized requestReset()/resetPassword()/login()/
+// consumeAuthArtifact(), against a stateful mock DB with real per-email row-locking
+// AND real transactional rollback (a snapshot/restore of the mutated state, not
+// just a lock release), to prove the end-to-end behavior (issuance, invalid/
+// expired code, valid consumption, single-use, real concurrent interleaving,
+// rollback-safe non-consumption on a later failure, and post-recovery login).
 
 const source = fs.readFileSync('server/v139/auth.mjs', 'utf8').replace(/\r\n/g, '\n');
 
@@ -94,6 +108,7 @@ const legacyIdentityExistsSrc = extractFunction('legacyIdentityExists');
 const requestResetSrc = extractFunction('requestReset');
 const resetPasswordSrc = extractFunction('resetPassword');
 const loginSrc = extractFunction('login');
+const consumeAuthArtifactSrc = extractFunction('consumeAuthArtifact');
 
 // ============================================================================
 // Guards estáticos (forma do código materializado)
@@ -146,20 +161,38 @@ assert.ok(
   'código não pode ser consumido se não houver identidade atual NEM ponte legada elegível',
 );
 
-// --- Regra 3: só materializa o profile DEPOIS da verificação do código, e só cria a
-// account DEPOIS do profile - ordem no texto prova a ordem de execução, já que é
-// tudo sequencial dentro da mesma função/transação. ---------------------------------
-const codeVerificationIndex = resetPasswordSrc.indexOf('secureCompare(reset.code_hash');
+// --- v14.4.01: resetPassword() não pode mais decidir autenticação usando
+// resetHash()/reset.code_hash - a fonte canônica agora é exclusivamente
+// consumeAuthArtifact() (crewcheck_platform_auth_artifacts). Nenhum fallback que
+// aceite o código só porque ele existe na tabela antiga de password_resets. ---------
+assert.doesNotMatch(
+  resetPasswordSrc,
+  /resetHash\(|reset\.code_hash/,
+  'resetPassword() não pode mais usar resetHash()/reset.code_hash para decidir autenticação - isso reintroduziria a tabela antiga como fonte de verdade',
+);
+assert.ok(
+  resetPasswordSrc.includes("await consumeAuthArtifact(db, { purpose: 'password_reset', email, code, connection })"),
+  "resetPassword() deve consumir o artifact canônico via consumeAuthArtifact(db, { purpose: 'password_reset', email, code, connection }), passando sua própria conexão/transação",
+);
+
+// --- Regra 3: só materializa o profile DEPOIS do consumo do artifact canônico, e
+// só cria a account DEPOIS do profile - ordem no texto prova a ordem de execução,
+// já que é tudo sequencial dentro da mesma função/transação. ------------------------
+const consumePointIndex = resetPasswordSrc.indexOf("await consumeAuthArtifact(db, { purpose: 'password_reset'");
 const profileMaterializationIndex = resetPasswordSrc.indexOf('ensureProfile(connection, email)');
 const accountInsertIndex = resetPasswordSrc.indexOf('INSERT INTO crewcheck_platform_accounts');
 const consumeIndex = resetPasswordSrc.indexOf('used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL');
-assert.ok(codeVerificationIndex >= 0, 'resetPassword() deve verificar o code_hash antes de qualquer escrita de identidade');
-assert.ok(profileMaterializationIndex > codeVerificationIndex, 'ensureProfile() só pode ser chamado depois da verificação do código - nunca antes');
+assert.ok(consumePointIndex >= 0, 'resetPassword() deve consumir o artifact canônico antes de qualquer escrita de identidade');
+assert.ok(profileMaterializationIndex > consumePointIndex, 'ensureProfile() só pode ser chamado depois do consumo do artifact - nunca antes');
 assert.ok(profileMaterializationIndex < accountInsertIndex, 'o profile deve existir antes do INSERT/UPSERT da account, para nunca duplicar identidade');
-assert.ok(accountInsertIndex < consumeIndex, 'o código só pode ser marcado como consumido (used_at) depois que a conta já foi criada/atualizada com sucesso - tudo na mesma transação atômica');
+assert.ok(accountInsertIndex < consumeIndex, 'a marcação de compatibilidade em password_resets (used_at) só pode acontecer depois que a conta já foi criada/atualizada com sucesso - tudo na mesma transação atômica, num único commit');
 assert.ok(
   resetPasswordSrc.includes('if (!lockedProfiles[0]) {\n      await ensureProfile(connection, email);\n    }'),
   'profile só deve ser materializado quando ainda não existir sob o mesmo lock - nunca duplicado',
+);
+assert.ok(
+  resetPasswordSrc.includes('if (!consumed.ok) {\n      await connection.rollback();\n      return sendJson(res, 400, { ok: false, message: \'Código inválido ou expirado. Solicite outro.\' });\n    }'),
+  'falha no consumo do artifact deve fazer rollback e retornar a MESMA mensagem pública de sempre - sem novo formato de resposta e sem fallback',
 );
 
 // must_change_password=0 preservado - a senha definida na recuperação já é a senha
@@ -169,18 +202,46 @@ assert.ok(
   'senha recuperada nunca pode deixar must_change_password pendente',
 );
 
-// Single-use / concorrência: o mecanismo já testado (PR #417) de FOR UPDATE +
-// used_at IS NULL continua absolutamente intocado - a ponte só adiciona um gate de
-// elegibilidade ANTES dele, nunca substitui ou enfraquece a trava transacional.
+// Single-use / concorrência: os locks de identidade (profiles/accounts) e o lock
+// próprio de crewcheck_platform_auth_artifacts (dentro de consumeAuthArtifact, sob
+// a MESMA transação/conexão) continuam garantindo no máximo uma identidade final -
+// a troca de fonte de verdade não enfraquece a trava transacional, só move ONDE
+// ela mora.
 for (const lock of [
   "SELECT email FROM crewcheck_platform_profiles WHERE email=? LIMIT 1 FOR UPDATE",
   "SELECT email FROM crewcheck_platform_accounts WHERE email=? LIMIT 1 FOR UPDATE",
-  'SELECT * FROM crewcheck_platform_password_resets WHERE email=? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1 FOR UPDATE',
 ]) assert.ok(resetPasswordSrc.includes(lock), `trava transacional ausente em resetPassword(): ${lock}`);
 assert.ok(
-  resetPasswordSrc.includes("UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL"),
-  'consumo single-use (used_at) deve permanecer intocado - garante no máximo uma identidade final mesmo sob duas tentativas concorrentes',
+  consumeAuthArtifactSrc.includes('FROM crewcheck_platform_auth_artifacts WHERE') && consumeAuthArtifactSrc.includes('FOR UPDATE'),
+  'consumeAuthArtifact() deve continuar travando a própria linha do artifact com FOR UPDATE, mesmo compartilhando conexão',
 );
+assert.ok(
+  resetPasswordSrc.includes("UPDATE crewcheck_platform_password_resets SET used_at=CURRENT_TIMESTAMP(3) WHERE email=? AND used_at IS NULL"),
+  'password_resets ainda deve ser marcado como usado - só não é mais lido para decidir nada (compatibilidade/observabilidade apenas)',
+);
+
+// --- consumeAuthArtifact(): connection-sharing no MESMO padrão de
+// issueAuthArtifact() - nunca abre conexão própria, nunca gerencia a transação,
+// quando recebe uma conexão externa. --------------------------------------------
+assert.ok(
+  consumeAuthArtifactSrc.includes("connection: providedConnection = null }) {"),
+  'consumeAuthArtifact() deve aceitar connection opcional, no mesmo padrão de issueAuthArtifact()',
+);
+assert.ok(consumeAuthArtifactSrc.includes('const ownsConnection = !providedConnection;'), 'deve seguir o padrão ownsConnection já estabelecido por issueAuthArtifact()');
+assert.ok(consumeAuthArtifactSrc.includes('const connection = providedConnection || await db.getConnection();'), 'nunca pode abrir uma nova conexão quando uma é fornecida');
+for (const guarded of [
+  'if (ownsConnection) await connection.beginTransaction();',
+  'if (ownsConnection) await connection.rollback();',
+  'if (ownsConnection) connection.release();',
+]) {
+  assert.ok(consumeAuthArtifactSrc.includes(guarded), `consumeAuthArtifact() deve guardar "${guarded}" - nunca gerenciar a transação/conexão quando recebe uma conexão externa`);
+}
+assert.ok(
+  consumeAuthArtifactSrc.includes('if (ownsConnection) { try { await connection.rollback(); } catch {} }'),
+  'o rollback no catch também deve ser guardado por ownsConnection',
+);
+const commitGuardCount = (consumeAuthArtifactSrc.match(/if \(ownsConnection\) await connection\.commit\(\);/g) || []).length;
+assert.equal(commitGuardCount, 2, 'os DOIS pontos de commit (código errado com attempts incrementado, e sucesso) devem estar guardados por ownsConnection - nenhum commit por conta própria quando a conexão é do chamador');
 
 // Ownership de roster preservado: a ponte não pode, em nenhuma circunstância,
 // referenciar tabelas de roster (legado ou moderno) - preservado estruturalmente
@@ -189,6 +250,7 @@ for (const [name, src] of [
   ['legacyIdentityExists', legacyIdentityExistsSrc],
   ['requestReset', requestResetSrc],
   ['resetPassword', resetPasswordSrc],
+  ['consumeAuthArtifact', consumeAuthArtifactSrc],
 ]) {
   assert.doesNotMatch(src, /crewcheck_rosters|crewcheck_platform_rosters/, `${name}() nunca pode tocar tabelas de roster - ownership é preservado por nunca ser alcançado`);
 }
@@ -262,6 +324,7 @@ ${authArtifactPurposesSrc}
 ${authArtifactHashSrc}
 ${authArtifactCodeHashSrc}
 ${issueAuthArtifactSrc}
+${consumeAuthArtifactSrc}
 ${resetHashSrc}
 ${resetMessageSrc}
 ${passwordDigestSrc}
@@ -276,7 +339,7 @@ ${requestResetSrc}
 ${resetPasswordSrc}
 ${loginSrc}
 
-export { legacyIdentityExists, requestReset, resetPassword, login, passwordDigest };
+export { legacyIdentityExists, requestReset, resetPassword, login, passwordDigest, consumeAuthArtifact };
 
 // --- Stand-ins fiéis para common.mjs/delivery.mjs (mesma convenção do resto da
 // suíte - nunca importa o módulo real, para não arrastar dbPool/mysql2). ----------
@@ -429,6 +492,34 @@ export function makeDb({
     if (sql.includes('SELECT created_at FROM crewcheck_platform_password_resets WHERE email=?')) {
       return [[]];
     }
+    // Ordem importa: a invalidação de "irmãos" do consumeAuthArtifact() (id<>?, 3
+    // params) e a invalidação de artifacts anteriores do issueAuthArtifact() (2
+    // params) usam a MESMA substring 'SET invalidated_at' - a mais específica
+    // (id<>?) precisa ser checada primeiro.
+    if (sql.includes('crewcheck_platform_auth_artifacts') && sql.includes('id<>?')) {
+      const [email, purpose, excludeId] = params;
+      for (const a of state.authArtifacts) {
+        if (a.email === email && a.purpose === purpose && a.id !== excludeId && !a.used_at && !a.invalidated_at) a.invalidated_at = new Date();
+      }
+      return [{}];
+    }
+    if (sql.includes('crewcheck_platform_auth_artifacts') && sql.includes('SET used_at=CURRENT_TIMESTAMP(3) WHERE id=? AND used_at IS NULL AND invalidated_at IS NULL')) {
+      const artifact = state.authArtifacts.find((a) => a.id === params[0]);
+      if (artifact && !artifact.used_at && !artifact.invalidated_at) artifact.used_at = new Date();
+      return [{}];
+    }
+    if (sql.includes('UPDATE crewcheck_platform_auth_artifacts SET attempts=attempts+1')) {
+      const artifact = state.authArtifacts.find((a) => a.id === params[0]);
+      if (artifact) artifact.attempts = (artifact.attempts || 0) + 1;
+      return [{}];
+    }
+    if (sql.includes('SELECT * FROM crewcheck_platform_auth_artifacts WHERE')) {
+      const [purpose, email] = params;
+      const rows = state.authArtifacts
+        .filter((a) => a.purpose === purpose && a.email === email)
+        .sort((a, b) => b.created_at - a.created_at);
+      return [rows.slice(0, 1)];
+    }
     if (sql.includes('UPDATE crewcheck_platform_auth_artifacts') && sql.includes('SET invalidated_at')) {
       for (const artifact of state.authArtifacts) {
         if (artifact.email === params[0] && artifact.purpose === params[1] && !artifact.used_at && !artifact.invalidated_at) artifact.invalidated_at = new Date();
@@ -464,6 +555,9 @@ export function makeDb({
     }
     if (sql.includes('INSERT INTO crewcheck_platform_accounts')) {
       const [email, hash, salt] = params;
+      if (state.failAccountInsertFor && state.failAccountInsertFor === email) {
+        throw new Error('SIMULATED_FAILURE_AFTER_CONSUME');
+      }
       state.accounts.set(email, { email, password_hash: hash, password_salt: salt, must_change_password: 0 });
       return [{}];
     }
@@ -477,19 +571,48 @@ export function makeDb({
     throw new Error('Unexpected query in test harness: ' + sql + ' | params=' + JSON.stringify(params));
   }
 
+  // Real transactional undo, not just a lock release: v14.4.01 can fail AFTER a
+  // successful artifact consume (e.g. the account INSERT throwing), and rollback()
+  // must leave the artifact genuinely un-consumed - a mock that only released the
+  // mutex would let that mutation leak through. beginTransaction() itself is a
+  // no-op; the snapshot is taken lazily, the moment THIS connection acquires the
+  // per-email lock (i.e. right after any earlier winner has already committed and
+  // released) - never earlier - so a loser's rollback in the concurrency scenario
+  // restores exactly the winner's already-committed state, never wiping it out.
+  function cloneState(s) {
+    return {
+      profiles: new Map(s.profiles),
+      accounts: new Map(s.accounts),
+      passwordResets: s.passwordResets.map((r) => ({ ...r })),
+      authArtifacts: s.authArtifacts.map((a) => ({ ...a })),
+    };
+  }
+  function restoreState(s, snapshot) {
+    s.profiles.clear();
+    for (const [k, v] of snapshot.profiles) s.profiles.set(k, v);
+    s.accounts.clear();
+    for (const [k, v] of snapshot.accounts) s.accounts.set(k, v);
+    s.passwordResets.length = 0;
+    s.passwordResets.push(...snapshot.passwordResets);
+    s.authArtifacts.length = 0;
+    s.authArtifacts.push(...snapshot.authArtifacts);
+  }
+
   function makeConnection() {
     let unlock = null;
+    let snapshot = null;
     return {
       __state: state,
       async beginTransaction() {},
       async query(sql, params) {
         if (sql.includes('crewcheck_platform_profiles') && sql.includes('FOR UPDATE') && !unlock) {
           unlock = await mutex(params[0]);
+          snapshot = cloneState(state);
         }
         return runQuery(sql, params);
       },
-      async commit() { if (unlock) { unlock(); unlock = null; } },
-      async rollback() { if (unlock) { unlock(); unlock = null; } },
+      async commit() { snapshot = null; if (unlock) { unlock(); unlock = null; } },
+      async rollback() { if (snapshot) { restoreState(state, snapshot); snapshot = null; } if (unlock) { unlock(); unlock = null; } },
       async release() { if (unlock) { unlock(); unlock = null; } },
     };
   }
@@ -578,12 +701,15 @@ export function makeDb({
     assert.equal(db.state.profiles.size, 0, 'código errado não pode criar profile');
     assert.equal(db.state.accounts.size, 0, 'código errado não pode criar account');
 
-    // 2b) código certo, mas expirado (avança o relógio manualmente no registro).
-    db.state.passwordResets[0].expires_at = new Date(Date.now() - 60_000);
+    // 2b) código certo, mas expirado - agora a fonte de verdade é o artifact em
+    // crewcheck_platform_auth_artifacts, não mais password_resets.
+    const artifact = db.state.authArtifacts.find((a) => a.email === target);
+    artifact.expires_at = new Date(Date.now() - 60_000);
     const expired = await callResetPassword(db, target, code, 'SenhaNovaValida1');
     assert.equal(expired.status, 400);
     assert.equal(db.state.profiles.size, 0, 'código expirado não pode criar profile');
     assert.equal(db.state.accounts.size, 0, 'código expirado não pode criar account');
+    assert.equal(artifact.used_at, null, 'artifact expirado nunca pode ser marcado como consumido');
   }
 
   // ---------------------------------------------------------------------------
@@ -606,6 +732,72 @@ export function makeDb({
     assert.match(account.password_salt, /^[0-9a-f]{32}$/i);
     assert.match(account.password_hash, /^[0-9a-f]{128}$/i);
     assert.equal(mod.passwordDigest('SenhaRecuperada123', account.password_salt).hash, account.password_hash, 'o hash gravado deve corresponder exatamente à senha enviada, com o salt gravado');
+    const artifact = db.state.authArtifacts.find((a) => a.email === target);
+    assert.ok(artifact.used_at, 'crewcheck_platform_auth_artifacts.used_at deve ser preenchido no sucesso - essa é agora a fonte canônica de consumo');
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3b) código errado incrementa attempts em crewcheck_platform_auth_artifacts.
+  // Isso é verdade para consumeAuthArtifact() standalone (conexão própria, contrato
+  // inalterado). Via resetPassword() especificamente, o incremento acontece dentro
+  // da MESMA transação compartilhada que é revertida por inteiro em qualquer falha
+  // (regra explícita do pedido: "se falhar, rollback"), então esse incremento é
+  // desfeito junto com o resto - trade-off direto e intencional das regras 2/3
+  // pedidas (consumeAuthArtifact nunca commita sozinho quando recebe uma conexão),
+  // não uma lacuna deste patch. Documentado aqui, não escondido.
+  // ---------------------------------------------------------------------------
+  {
+    const target = 'attempts-standalone@example.com';
+    const db = mod.makeDb({ legacyEmails: [target], collations });
+    const code = await issueCodeFor(db, target);
+    const wrongCode = code === '000000' ? '111111' : '000000';
+
+    const standalone = await mod.consumeAuthArtifact(db, { purpose: 'password_reset', email: target, code: wrongCode });
+    assert.equal(standalone.ok, false);
+    assert.equal(db.state.authArtifacts.find((a) => a.email === target).attempts, 1, 'consumeAuthArtifact() chamado standalone (conexão própria) deve persistir o incremento de attempts em código errado - contrato inalterado para qualquer chamador que não compartilhe conexão');
+    assert.equal(db.state.authArtifacts.find((a) => a.email === target).used_at, null);
+
+    const viaResetPassword = await callResetPassword(db, target, wrongCode, 'SenhaQualquerAqui1');
+    assert.equal(viaResetPassword.status, 400);
+    // Rollback substitui os objetos em memória pelo snapshot restaurado - qualquer
+    // referência obtida ANTES do rollback fica obsoleta, exatamente como uma leitura
+    // real do banco feita antes de um ROLLBACK real não reflete o estado revertido.
+    // Por isso a releitura é obrigatória aqui, não um detalhe incidental do teste.
+    assert.equal(
+      db.state.authArtifacts.find((a) => a.email === target).attempts,
+      1,
+      'via resetPassword() o incremento feito DENTRO da transação compartilhada é desfeito pelo rollback total em qualquer falha (regra 3 do pedido) - não sobe além do que já tinha sido persistido pela chamada standalone acima',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3c) falha simulada DEPOIS de um consume bem-sucedido (ex.: o INSERT da account
+  // lança) deve fazer rollback de TUDO - inclusive do consumo do artifact - e o
+  // mesmo código deve continuar utilizável depois.
+  // ---------------------------------------------------------------------------
+  {
+    const target = 'falha-pos-consume@example.com';
+    const db = mod.makeDb({ legacyEmails: [target], collations });
+    const code = await issueCodeFor(db, target);
+
+    db.state.failAccountInsertFor = target;
+    await assert.rejects(
+      () => callResetPassword(db, target, code, 'SenhaQueVaiFalhar1'),
+      /SIMULATED_FAILURE_AFTER_CONSUME/,
+      'uma falha depois do consume deve propagar (mesmo catch/rethrow de sempre), nunca ser engolida silenciosamente',
+    );
+    assert.equal(db.state.profiles.size, 0, 'rollback deve desfazer o profile criado antes da falha');
+    assert.equal(db.state.accounts.size, 0, 'rollback deve desfazer a tentativa de criar a account');
+    const artifact = db.state.authArtifacts.find((a) => a.email === target);
+    assert.equal(artifact.used_at, null, 'rollback deve deixar o artifact NÃO consumido - regra 4 do pedido');
+    assert.equal(artifact.invalidated_at, null);
+
+    db.state.failAccountInsertFor = null;
+    const retry = await callResetPassword(db, target, code, 'SenhaFinalAposRetry1');
+    assert.equal(retry.status, 200, 'o mesmo código deve continuar utilizável depois de um rollback - nada foi realmente consumido antes');
+    assert.equal(db.state.profiles.size, 1);
+    assert.equal(db.state.accounts.size, 1);
+    assert.ok(artifact.used_at, 'agora sim, na tentativa que realmente completa, o artifact deve ficar consumido');
   }
 
   // ---------------------------------------------------------------------------
@@ -762,7 +954,7 @@ export function makeDb({
     }
   }
 
-  console.log('[p0-legacy-identity-bridge] OK — harness dinâmico prova: emissão sem criação prematura; código inválido/expirado sem writes; código válido cria exatamente 1 profile+1 account com must_change_password=0; single-use; concorrência real via mutex por e-mail deixa no máximo 1 identidade final; dois logins consecutivos pós-recuperação funcionam sem repedir troca; identidade atual/profile-only/ambíguo/desconhecido continuam corretos; nenhuma query tocou tabelas de roster.');
+  console.log('[p0-legacy-identity-bridge] OK — harness dinâmico prova: emissão sem criação prematura; código inválido/expirado sem writes; código emitido por requestReset() é aceito por resetPassword() via consumeAuthArtifact() (não mais resetHash()/password_resets); auth_artifacts.used_at preenchido no sucesso; código errado incrementa attempts (standalone) e o incremento é revertido junto com o rollback total via resetPassword(); falha simulada depois do consume reverte tudo e deixa o código utilizável de novo; single-use; concorrência real via mutex por e-mail deixa no máximo 1 identidade final; dois logins consecutivos pós-recuperação funcionam sem repedir troca; identidade atual/profile-only/ambíguo/desconhecido continuam corretos; nenhuma query tocou tabelas de roster.');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
