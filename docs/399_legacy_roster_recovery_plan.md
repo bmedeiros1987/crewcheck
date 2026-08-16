@@ -1,8 +1,13 @@
 # #399 — Legacy roster recovery: schema mapping and conversion proposal
 
-Status: **proposal only, nothing here is implemented or executed**. No migration
-code exists yet. `POST /api/auth/admin/legacy-recovery-candidate` (admin-only,
-read-only, per-e-mail) is the only new runtime behavior in this slice.
+Status: the pilot write path described below (§4a/§6) is now **implemented and
+tested, but not executed against production by this change**. `POST
+/api/auth/admin/legacy-roster-recovery-dry-run` (always read-only, no writes) and
+`POST /api/auth/admin/legacy-roster-recovery-execute` (the real write path -
+transactional per user, `active=false` only, idempotent) exist as of this revision.
+Running the dry-run and reviewing its output is the required first step before
+`execute` is ever called against a real e-mail; nothing in this repository calls
+`execute` automatically.
 
 ## 1. Production evidence (2026-08-16, via `legacy-table-audit`/`rosterBridge`)
 
@@ -92,15 +97,12 @@ crewcheck_users.id  →  crewcheck_users.email  →  safeEmail() normalize
                                                                       the legacy password_hash.
 ```
 
-## 4. Required invariants for the future migration (not yet implemented)
-
-Per explicit instruction, the migration itself is **not** part of this PR. When it is
-written, it must satisfy all of the following:
+## 4. Invariants for the recovery write path (now implemented)
 
 ### 4a. `saveRosterMysql()` cannot be called as-is — blocking constraint
 
 `saveRosterMysql()` (`server/platform.mjs:1620`) is not safe to call directly from a
-recovery routine. Today it unconditionally:
+recovery routine. It unconditionally:
 
 1. runs `UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1` for
    **every** existing roster the owner has, then
@@ -108,54 +110,76 @@ recovery routine. Today it unconditionally:
 
 Called with a recovered June/early-July legacy roster, this would deactivate whatever
 schedule the user is using **today** and activate the old one in its place — the exact
-opposite of the invariant this plan requires ("never silently overwrite a current
-active roster"). This is why recovered rosters must always be written **inactive**
-(§4, "never silently overwrite") and why the future migration slice needs a different
-write path, not a direct call to this function.
+opposite of the invariant this plan requires.
 
-The future migration slice must choose one of:
+**Decision taken: option (b) — a separate internal recovery write path.**
+`legacyRosterRecoveryExecute()` (`server/v139/auth.mjs`) never calls
+`saveRosterMysql()` and never runs an `UPDATE ... active=FALSE` against any of the
+owner's existing rosters. It inserts each recovered roster directly with
+`active=FALSE` and nothing else. Content validation/normalization is still shared,
+not duplicated as a second parsing engine — `legacySanitizeRoster()`,
+`legacyDeriveRosterKey()`, and `legacyRosterFingerprint()` are intentional
+byte-for-byte copies of `sanitizeRoster()`/`rosterKey()`/`rosterFingerprint()` (never
+exported from `platform.mjs`), kept as copies rather than a new cross-module import
+into that file during this investigation.
+`regression-p0-legacy-roster-recovery.mjs` runs both the canonical and the copied
+versions against the same sample inputs and asserts identical output, so a future
+change to the canonical functions that isn't mirrored here fails CI instead of
+silently drifting.
 
-- **Refactor `saveRosterMysql()`** to accept an explicit `activate` option (default
-  `true`, preserving today's behavior for every existing caller), skipping the
-  deactivate-and-activate steps entirely when `activate: false` is passed; or
-- **Add a separate, internal recovery write path** that reuses the same
-  validation/normalization and persistence logic `saveRosterMysql()` uses, but never
-  executes the `UPDATE ... active=FALSE` step and always inserts with `active=FALSE`.
+**A second architectural finding this PR surfaced:** this codebase's compliance/gym
+scoring has no server-side implementation — it's computed client-side (see
+`client/src/lib/*`) and `handleRosterSync()` simply persists whatever the browser
+sends. There is no server engine to "recompute compliance/gym by current rules"
+against, on the server, for a recovered legacy roster. Given that, recovered rosters
+are inserted with `compliance: {}` and `gym: []`, and the execute response says so
+explicitly — the user is expected to reopen/reprocess the recovered roster through
+the existing, normal import screen once their access is restored, which runs the
+real (client-side) compliance/gym engine the same way it does for any newly-imported
+roster today. `fingerprint` **is** recomputed server-side, since (unlike compliance/
+gym) it's a pure function of `{year, month, crewId, days}` with no client dependency.
 
-Either way, the recovered roster must still pass through the **same content
-validators/normalizers** `saveRosterMysql()` uses today (matching §4's "respect
-current invariants" below) — only the activation behavior differs. Which of the two
-options to take is a decision for the migration PR itself, not this one.
+- **Idempotent.** ✅ `crewcheck_platform_roster_recovery_log.legacy_roster_id` has a
+  `UNIQUE KEY` (migration `20260816_018`); `legacyRosterRecoveryPlan()` checks it
+  before classifying a roster as recoverable, so a second dry-run or execute reports
+  `already_recovered` instead of re-processing.
+- **Transactional per user.** ✅ `legacyRosterRecoveryExecute()` wraps every
+  recoverable roster for one e-mail in a single `beginTransaction()`/`commit()`, with
+  `rollback()` on any failure — partial success for one user is never committed.
+- **Auditable.** ✅ `crewcheck_platform_roster_recovery_log` (append-only by
+  application discipline, not schema enforcement — the execute path only ever
+  `INSERT`s into it, never `UPDATE`/`DELETE`) records the legacy roster id, resolved
+  `owner_email`, derived `roster_key`, resulting current roster id, status, and
+  reason for every attempt.
+- **Never silently overwrite a current active roster.** ✅ Every insert is
+  `active=FALSE`; no query in the execute path ever sets `active=TRUE` or updates an
+  existing row.
+- **Detect duplicity.** ✅ `classifyLegacyRoster()` checks both `roster_key` and
+  `fingerprint` against the owner's current rosters before classifying anything
+  `recoverable`; a match becomes `conflict` with a specific reason instead of a write.
+- **Keep the legacy record intact.** ✅ Every query against `crewcheck_users`/
+  `crewcheck_rosters` in this slice is a `SELECT`; grep of the new functions confirms
+  no `INSERT`/`UPDATE`/`DELETE`/`ALTER`/`DROP`/`TRUNCATE` targets either table.
+- **Respect current invariants.** ✅ Recovered roster content passes through
+  `legacySanitizeRoster()` before storage (same truncation/`rawText`-stripping rules
+  as the live import path) — never a raw, unvalidated `INSERT`.
+- **No credential reuse.** ✅ Nothing in the recovery path selects, reads, or
+  references `crewcheck_users.password_hash`. A missing current identity blocks the
+  whole plan (`blockedReason: 'no_current_identity'`) rather than creating one — the
+  user still has to complete `requestReset()`/`resetPassword()` first.
 
-- **Idempotent.** Re-running the migration against the same legacy row must never
-  create a duplicate or double-count. The derived `roster_key` (see table above) plus
-  a dedicated recovery-log table (below) make re-runs a no-op for rows already
-  processed.
-- **Transactional per user.** All rosters recovered for one legacy user must commit
-  or roll back together, matching `saveRosterMysql()`'s existing `BEGIN`/`COMMIT`
-  pattern — never a partial import for one person.
-- **Auditable.** Every converted row must be traceable back to its legacy origin. This
-  needs a new, append-only table (e.g. `crewcheck_platform_roster_recovery_log`) with
-  the legacy roster id, the resolved current `owner_email`, a conversion timestamp, and
-  outcome — never smuggled as extra columns into `crewcheck_platform_rosters` itself.
-- **Never silently overwrite a current active roster.** Every recovered legacy roster
-  is inserted **inactive** (see §4a — this is not optional, `saveRosterMysql()`'s
-  default behavior would violate it), never auto-activated over what the user is using
-  today. Activation, if wanted, is a separate, explicit, reviewed step.
-- **Detect duplicity.** Before inserting, check whether an equivalent roster (same
-  `owner_email` + derived `roster_key`, or same recomputed `fingerprint`) already
-  exists in `crewcheck_platform_rosters`; skip and log rather than duplicate.
-- **Keep the legacy record intact.** The migration may only ever `SELECT` from
-  `crewcheck_users`/`crewcheck_rosters` — no `UPDATE`, `DELETE`, or `ALTER` against
-  them, ever. They remain the durable historical record.
-- **Respect current invariants.** Roster content must pass through the same
-  validation/normalization logic `saveRosterMysql()` uses today — but never through
-  `saveRosterMysql()`'s activation behavior itself (§4a). Never a raw `INSERT` that
-  bypasses content validation either.
-- **No credential reuse.** The migration never reads, copies, or authenticates against
-  `crewcheck_users.password_hash`. A missing current identity is only ever created
-  through the existing self-service recovery flow, which requires proving e-mail
-  ownership first.
+### 4b. Execute is fail-closed against direct/accidental calls
+
+`legacy-roster-recovery-execute` never accepts a bare `{email}` and goes and
+recovers whatever it finds. It additionally requires a `confirmationToken` minted by
+`legacy-roster-recovery-dry-run` for the **exact same plan** — same e-mail, same set
+of recoverable rosters' `roster_key`+`fingerprint` pairs. The token is a stateless
+HMAC (via `authSecret()`, same mechanism this file already uses for password-reset
+codes and auth artifacts), expires after 15 minutes, and stops verifying the instant
+the underlying plan changes (a new conflict appears, a roster gets recovered by
+another call, etc.) — forcing a fresh dry-run rather than executing against a stale
+preview. A request to execute without ever having called dry-run for that e-mail has
+no way to produce a valid token.
 
 ## 5. Suggested pilot
 
