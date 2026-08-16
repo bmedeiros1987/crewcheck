@@ -568,6 +568,201 @@ async function identityAudit(req, res, db) {
   });
 }
 
+// #399 follow-up: identity-audit found unexpectedTables in production
+// (auth_accounts, crewcheck_users, crewcheck_rosters) sitting in the SAME schema as
+// the current crewcheck_platform_* tables. This is a read-only, admin-only inspector
+// for exactly that class of table: it never trusts a table/column name from the
+// request - every identifier it ever interpolates into SQL was read moments earlier
+// from information_schema itself, never from req.url or req.body. It reports schema
+// (column names/types only), row counts, a date range when a created-at-shaped column
+// exists, and - when an email-shaped column exists - whether stored values are already
+// normalized and how many distinct values do/don't match a current account or profile.
+// It never selects a raw row, a password/hash/salt/token value, or an individual email.
+const LEGACY_CUTOVER_TIMESTAMP = '2026-07-15 00:00:00';
+const LEGACY_EMAIL_COLUMN_PATTERN = /email/i;
+const LEGACY_DATE_COLUMN_PATTERN = /created_at|inserted_at|registered_at|signup_at|joined_at/i;
+const LEGACY_SENSITIVE_COLUMN_PATTERN = /password|hash|salt|token|secret|cipher|senha/i;
+const LEGACY_TEXT_TYPES = new Set(['varchar', 'char', 'text', 'tinytext', 'mediumtext', 'longtext']);
+const LEGACY_DATE_TYPES = new Set(['datetime', 'timestamp', 'date']);
+
+async function legacyTableColumns(db, table) {
+  const [rows] = await db.query(
+    'SELECT COLUMN_NAME AS name, DATA_TYPE AS dataType, IS_NULLABLE AS isNullable, COLUMN_KEY AS columnKey FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',
+    [table],
+  );
+  return rows.map((row) => ({ name: row.name, dataType: String(row.dataType || '').toLowerCase(), nullable: row.isNullable === 'YES', key: row.columnKey || null }));
+}
+
+async function legacyTableEmailAnalysis(db, table, column) {
+  const [statRows] = await db.query(
+    `SELECT COUNT(*) AS totalRows, COUNT(DISTINCT \`${column}\`) AS distinctValues,
+            SUM(CASE WHEN \`${column}\` IS NOT NULL AND \`${column}\`<>LOWER(TRIM(\`${column}\`)) THEN 1 ELSE 0 END) AS nonNormalizedCount
+     FROM \`${table}\``,
+  );
+  const [matchRows] = await db.query(
+    `SELECT COUNT(DISTINCT LOWER(TRIM(t.\`${column}\`))) AS matchingCurrentIdentity
+     FROM \`${table}\` t
+     LEFT JOIN crewcheck_platform_accounts a ON a.email=LOWER(TRIM(t.\`${column}\`))
+     LEFT JOIN crewcheck_platform_profiles p ON p.email=LOWER(TRIM(t.\`${column}\`))
+     WHERE t.\`${column}\` IS NOT NULL AND (a.email IS NOT NULL OR p.email IS NOT NULL)`,
+  );
+  const [orphanRows] = await db.query(
+    `SELECT COUNT(DISTINCT LOWER(TRIM(t.\`${column}\`))) AS orphanedFromCurrentIdentity
+     FROM \`${table}\` t
+     LEFT JOIN crewcheck_platform_accounts a ON a.email=LOWER(TRIM(t.\`${column}\`))
+     LEFT JOIN crewcheck_platform_profiles p ON p.email=LOWER(TRIM(t.\`${column}\`))
+     WHERE t.\`${column}\` IS NOT NULL AND a.email IS NULL AND p.email IS NULL`,
+  );
+  return {
+    column,
+    totalRows: Number(statRows[0]?.totalRows || 0),
+    distinctValues: Number(statRows[0]?.distinctValues || 0),
+    nonNormalizedCount: Number(statRows[0]?.nonNormalizedCount || 0),
+    matchingCurrentIdentity: Number(matchRows[0]?.matchingCurrentIdentity || 0),
+    orphanedFromCurrentIdentity: Number(orphanRows[0]?.orphanedFromCurrentIdentity || 0),
+  };
+}
+
+// #399 follow-up: the legacy model links crewcheck_rosters to crewcheck_users by
+// user_id (a UUID), never by e-mail - so the "recreate the identity with the same
+// e-mail and everything reconnects" guarantee that holds for the owner_email-scoped
+// crewcheck_platform_* tables (see identityAudit) does NOT hold for legacy rosters.
+// Recovering them needs the bridge legacy user_id -> crewcheck_users.email
+// (normalized) -> current identity to still be intact. This measures exactly that,
+// read-only and admin-only, before any bridging/migration routine is written.
+const LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN = '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$';
+
+async function legacyRosterBridgeAudit(db, tables) {
+  const usersEntry = tables.find((entry) => entry.table === 'crewcheck_users');
+  const rostersEntry = tables.find((entry) => entry.table === 'crewcheck_rosters');
+  if (!usersEntry || !rostersEntry) {
+    return { available: false, reason: 'crewcheck_users e/ou crewcheck_rosters não encontrados no schema atual.' };
+  }
+  const hasUsersId = usersEntry.columns.some((column) => column.name === 'id');
+  const hasUsersEmail = usersEntry.columns.some((column) => column.name === 'email');
+  const hasRostersUserId = rostersEntry.columns.some((column) => column.name === 'user_id');
+  if (!hasUsersId || !hasUsersEmail || !hasRostersUserId) {
+    return { available: false, reason: 'crewcheck_users.id/email ou crewcheck_rosters.user_id não encontrados - o schema ao vivo difere do modelo legado esperado.' };
+  }
+
+  const pattern = LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN;
+  const [matchedRosterRows] = await db.query(
+    'SELECT COUNT(*) AS matchingRosters, COUNT(DISTINCT r.user_id) AS distinctUsersWithRoster FROM crewcheck_rosters r JOIN crewcheck_users u ON u.id=r.user_id',
+  );
+  const [orphanedRosterRows] = await db.query(
+    'SELECT COUNT(*) AS orphanedRosters FROM crewcheck_rosters r LEFT JOIN crewcheck_users u ON u.id=r.user_id WHERE u.id IS NULL',
+  );
+  const [normalizableRows] = await db.query(
+    'SELECT COUNT(*) AS normalizableEmailCount FROM crewcheck_users WHERE email IS NOT NULL AND email REGEXP ?',
+    [pattern],
+  );
+  const [matchingIdentityRows] = await db.query(
+    `SELECT COUNT(*) AS matchingCount FROM crewcheck_users u
+     WHERE u.email IS NOT NULL AND u.email REGEXP ?
+       AND (EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
+         OR EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email))))`,
+    [pattern],
+  );
+  const [notMatchingIdentityRows] = await db.query(
+    `SELECT COUNT(*) AS notMatchingCount FROM crewcheck_users u
+     WHERE u.email IS NOT NULL AND u.email REGEXP ?
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email)))`,
+    [pattern],
+  );
+  const [notMatchingWithRosterRows] = await db.query(
+    `SELECT COUNT(DISTINCT u.id) AS count FROM crewcheck_users u
+     JOIN crewcheck_rosters r ON r.user_id=u.id
+     WHERE u.email IS NOT NULL AND u.email REGEXP ?
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email)))`,
+    [pattern],
+  );
+
+  return {
+    available: true,
+    totalLegacyUsers: usersEntry.totalRows,
+    totalLegacyRosters: rostersEntry.totalRows,
+    distinctLegacyUsersWithRoster: Number(matchedRosterRows[0]?.distinctUsersWithRoster || 0),
+    rostersMatchingLegacyUser: Number(matchedRosterRows[0]?.matchingRosters || 0),
+    rostersWithoutLegacyUser: Number(orphanedRosterRows[0]?.orphanedRosters || 0),
+    legacyUsersWithNormalizableEmail: Number(normalizableRows[0]?.normalizableEmailCount || 0),
+    legacyUsersMatchingCurrentIdentity: Number(matchingIdentityRows[0]?.matchingCount || 0),
+    legacyUsersNotMatchingCurrentIdentity: Number(notMatchingIdentityRows[0]?.notMatchingCount || 0),
+    legacyUsersNotMatchingCurrentIdentityWithRoster: Number(notMatchingWithRosterRows[0]?.count || 0),
+    rosterDateRange: rostersEntry.dateRange,
+  };
+}
+
+async function legacyTableAudit(req, res, db) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    return sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+  }
+  const adminEmail = safeEmail(payload?.email);
+  if (!adminEmail || !(payload?.admin || isAdminEmail(adminEmail))) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
+  }
+
+  const [allTableRows] = await db.query('SELECT TABLE_NAME AS name FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE()');
+  const unexpectedTables = allTableRows.map((row) => row.name).filter((name) => !IDENTITY_AUDIT_KNOWN_TABLES.has(name));
+
+  const tables = [];
+  for (const table of unexpectedTables) {
+    const columns = await legacyTableColumns(db, table);
+    const [countRows] = await db.query(`SELECT COUNT(*) AS totalRows FROM \`${table}\``);
+    const totalRows = Number(countRows[0]?.totalRows || 0);
+
+    const dateColumn = columns.find((column) => LEGACY_DATE_COLUMN_PATTERN.test(column.name) && LEGACY_DATE_TYPES.has(column.dataType));
+    let dateRange = null;
+    if (dateColumn && totalRows > 0) {
+      const [rangeRows] = await db.query(
+        `SELECT MIN(\`${dateColumn.name}\`) AS minCreatedAt, MAX(\`${dateColumn.name}\`) AS maxCreatedAt,
+                SUM(CASE WHEN \`${dateColumn.name}\`<? THEN 1 ELSE 0 END) AS beforeCutover
+         FROM \`${table}\``,
+        [LEGACY_CUTOVER_TIMESTAMP],
+      );
+      dateRange = {
+        column: dateColumn.name,
+        minCreatedAt: rangeRows[0]?.minCreatedAt || null,
+        maxCreatedAt: rangeRows[0]?.maxCreatedAt || null,
+        beforeCutover: Number(rangeRows[0]?.beforeCutover || 0),
+      };
+    }
+
+    const emailColumns = columns.filter((column) => LEGACY_EMAIL_COLUMN_PATTERN.test(column.name) && LEGACY_TEXT_TYPES.has(column.dataType));
+    const emailAnalysis = [];
+    for (const column of emailColumns) {
+      emailAnalysis.push(await legacyTableEmailAnalysis(db, table, column.name));
+    }
+
+    const sensitiveColumnNames = columns.filter((column) => LEGACY_SENSITIVE_COLUMN_PATTERN.test(column.name)).map((column) => column.name);
+
+    tables.push({
+      table,
+      totalRows,
+      columns: columns.map((column) => ({ name: column.name, dataType: column.dataType, nullable: column.nullable, key: column.key })),
+      sensitiveColumnNames,
+      dateRange,
+      emailAnalysis,
+    });
+  }
+
+  const rosterBridge = await legacyRosterBridgeAudit(db, tables);
+
+  return sendJson(res, 200, {
+    ok: true,
+    cutoverTimestamp: LEGACY_CUTOVER_TIMESTAMP,
+    tables,
+    rosterBridge,
+    note: 'orphanedFromCurrentIdentity conta valores distintos que não batem, por e-mail normalizado, com nenhuma conta/perfil atual - são os candidatos mais fortes a identidade "encalhada" dentro deste mesmo banco. sensitiveColumnNames lista apenas nomes de coluna (metadado de schema), nunca valores. rosterBridge mede especificamente o vínculo crewcheck_rosters.user_id -> crewcheck_users.id -> e-mail atual, que é por UUID e não por e-mail - a mesma garantia de reconexão automática das tabelas owner_email não se aplica a ele.',
+    message: 'Auditoria somente leitura de tabelas fora do schema conhecido - nenhuma senha, hash, salt, token, UUID ou e-mail individual é retornado, apenas contagens agregadas, datas e nomes de coluna.',
+  });
+}
+
 export async function handleAuthRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/auth/')) return false;
   if (url.pathname === '/api/auth/config') {
@@ -586,6 +781,7 @@ export async function handleAuthRoute(req, res, url) {
   else if (url.pathname === '/api/auth/me') await me(req, res, db);
   else if (url.pathname === '/api/auth/admin/diagnose-credential') await diagnoseCredentialState(req, res, db);
   else if (url.pathname === '/api/auth/admin/identity-audit') await identityAudit(req, res, db);
+  else if (url.pathname === '/api/auth/admin/legacy-table-audit') await legacyTableAudit(req, res, db);
   else if (url.pathname === '/api/auth/logout') {
     clearAuthCookie(res);
     sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
