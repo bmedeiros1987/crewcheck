@@ -77,4 +77,5 @@ update('server.mjs', (source) => {
   return next;
 }, { optional: true });
 
-console.log('[p0-build-identity] rodapé de versão dinâmico e buildTimestamp expostos em /api/health e /api/release.');
+await import('../p0-fast-logout/apply.mjs');
+console.log('[p0-build-identity] rodapé de versão dinâmico, buildTimestamp exposto e fast logout reafirmado no estado materializado final.');
