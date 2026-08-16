@@ -455,6 +455,119 @@ async function diagnoseCredentialState(req, res, db) {
   });
 }
 
+// #399 identity-loss audit: curated list of owner_email/email-scoped tables most
+// relevant to roster/importações, assinatura, preferências and ownership. Read-only -
+// nothing here ever writes, drops, truncates, or repairs anything. It only reports
+// aggregate, sanitized counts so a human can decide the recovery strategy.
+const IDENTITY_AUDIT_TABLES = [
+  { table: 'crewcheck_platform_rosters', ownerColumn: 'owner_email', label: 'roster/importações' },
+  { table: 'crewcheck_platform_subscriptions', ownerColumn: 'email', label: 'assinatura' },
+  { table: 'crewcheck_platform_usage', ownerColumn: 'email', label: 'uso mensal' },
+  { table: 'crewcheck_platform_stays', ownerColumn: 'owner_email', label: 'pernoite' },
+  { table: 'crewcheck_platform_routine_preferences', ownerColumn: 'owner_email', label: 'preferências de rotina' },
+  { table: 'crewcheck_platform_addresses', ownerColumn: 'owner_email', label: 'endereços/ownership' },
+];
+
+// Every table this codebase's migrations are known to create (accounts/profiles plus
+// the full platform + v139/v1391/v1395/v14316/p1-auth families). Anything present in
+// the live schema but absent here is worth a human look - it could be a stray table
+// from an incomplete migration, not necessarily anything wrong.
+const IDENTITY_AUDIT_KNOWN_TABLES = new Set([
+  'crewcheck_schema_migrations', 'crewcheck_platform_profiles', 'crewcheck_platform_accounts',
+  'crewcheck_platform_subscriptions', 'crewcheck_platform_usage', 'crewcheck_platform_rosters',
+  'crewcheck_platform_hotel_rules', 'crewcheck_platform_stays', 'crewcheck_platform_shares',
+  'crewcheck_platform_visitors', 'crewcheck_platform_connections', 'crewcheck_platform_chat_threads',
+  'crewcheck_platform_chat_messages', 'crewcheck_platform_gym_checkins', 'crewcheck_platform_webhook_events',
+  'crewcheck_platform_emergencies', 'crewcheck_telegram_state', 'crewcheck_platform_auth_attempts',
+  'crewcheck_platform_addresses', 'crewcheck_platform_user_hotels', 'crewcheck_platform_gym_preferences',
+  'crewcheck_platform_routine_preferences', 'crewcheck_platform_parking_positions', 'crewcheck_platform_finance_configs',
+  'crewcheck_platform_flight_follows', 'crewcheck_platform_swap_analyses', 'crewcheck_platform_schedule_comparisons',
+  'crewcheck_platform_terms', 'crewcheck_platform_terms_acceptances', 'crewcheck_platform_password_resets',
+  'crewcheck_platform_profile_functions', 'crewcheck_platform_crewlock_blobs', 'crewcheck_platform_emergency_profiles',
+  'crewcheck_platform_emergency_preferences', 'crewcheck_platform_emergency_alerts', 'crewcheck_platform_emergency_sessions',
+  'crewcheck_platform_emergency_responses', 'crewcheck_guardian_cards', 'crewcheck_support_tickets',
+  'crewcheck_aggregate_metrics', 'crewcheck_telegram_locations', 'crewcheck_platform_auth_artifacts',
+  'crewcheck_platform_email_identity_state', 'crewcheck_scheduler_heartbeat',
+]);
+
+async function dateRangeAndMonthlyDistribution(db, table) {
+  const [rangeRows] = await db.query(`SELECT MIN(created_at) AS minCreatedAt, MAX(created_at) AS maxCreatedAt, COUNT(*) AS total FROM ${table}`);
+  const range = rangeRows[0] || {};
+  const [byMonth] = await db.query(
+    `SELECT DATE_FORMAT(created_at, '%Y-%m') AS monthKey, COUNT(*) AS count FROM ${table} GROUP BY monthKey ORDER BY monthKey`,
+  );
+  return { total: Number(range.total || 0), minCreatedAt: range.minCreatedAt || null, maxCreatedAt: range.maxCreatedAt || null, byMonth };
+}
+
+async function identityAudit(req, res, db) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    return sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+  }
+  const adminEmail = safeEmail(payload?.email);
+  if (!adminEmail || !(payload?.admin || isAdminEmail(adminEmail))) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
+  }
+
+  const accounts = await dateRangeAndMonthlyDistribution(db, 'crewcheck_platform_accounts');
+  const profiles = await dateRangeAndMonthlyDistribution(db, 'crewcheck_platform_profiles');
+
+  const [profilesWithoutAccountRows] = await db.query(
+    'SELECT COUNT(*) AS count FROM crewcheck_platform_profiles p LEFT JOIN crewcheck_platform_accounts a ON a.email=p.email WHERE a.email IS NULL',
+  );
+  const [accountsWithoutProfileRows] = await db.query(
+    'SELECT COUNT(*) AS count FROM crewcheck_platform_accounts a LEFT JOIN crewcheck_platform_profiles p ON p.email=a.email WHERE p.email IS NULL',
+  );
+
+  const ownership = [];
+  for (const entry of IDENTITY_AUDIT_TABLES) {
+    const [existsRows] = await db.query(
+      'SELECT TABLE_NAME AS name FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? LIMIT 1',
+      [entry.table],
+    );
+    if (!existsRows[0]) {
+      ownership.push({ table: entry.table, label: entry.label, exists: false });
+      continue;
+    }
+    const [totalsRows] = await db.query(
+      `SELECT COUNT(*) AS totalRows, COUNT(DISTINCT ${entry.ownerColumn}) AS distinctOwners FROM ${entry.table}`,
+    );
+    const [orphanedRows] = await db.query(
+      `SELECT COUNT(DISTINCT t.${entry.ownerColumn}) AS orphanedOwners
+       FROM ${entry.table} t
+       LEFT JOIN crewcheck_platform_profiles p ON p.email=t.${entry.ownerColumn}
+       LEFT JOIN crewcheck_platform_accounts a ON a.email=t.${entry.ownerColumn}
+       WHERE p.email IS NULL AND a.email IS NULL`,
+    );
+    ownership.push({
+      table: entry.table,
+      label: entry.label,
+      exists: true,
+      totalRows: Number(totalsRows[0]?.totalRows || 0),
+      distinctOwners: Number(totalsRows[0]?.distinctOwners || 0),
+      orphanedOwners: Number(orphanedRows[0]?.orphanedOwners || 0),
+    });
+  }
+
+  const [allTableRows] = await db.query('SELECT TABLE_NAME AS name FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE()');
+  const unexpectedTables = allTableRows.map((row) => row.name).filter((name) => !IDENTITY_AUDIT_KNOWN_TABLES.has(name));
+
+  return sendJson(res, 200, {
+    ok: true,
+    accounts,
+    profiles,
+    profilesWithoutAccount: Number(profilesWithoutAccountRows[0]?.count || 0),
+    accountsWithoutProfile: Number(accountsWithoutProfileRows[0]?.count || 0),
+    ownership,
+    unexpectedTables,
+    note: 'Vínculo entre identidade e dados é feito por e-mail normalizado (não por ID) em todas as tabelas listadas - recriar a identidade com o mesmo e-mail reconecta automaticamente qualquer linha em "orphanedOwners" acima, dentro deste banco. Isso não alcança dados que possam ainda existir fora deste banco (ex.: um datastore anterior à migração para Aiven MySQL).',
+    message: 'Auditoria somente leitura - nenhuma senha, hash, salt, token ou e-mail individual é retornado, apenas contagens agregadas e nomes de tabela.',
+  });
+}
+
 export async function handleAuthRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/auth/')) return false;
   if (url.pathname === '/api/auth/config') {
@@ -472,6 +585,7 @@ export async function handleAuthRoute(req, res, url) {
   else if (url.pathname === '/api/auth/reset-password') await resetPassword(req, res, db);
   else if (url.pathname === '/api/auth/me') await me(req, res, db);
   else if (url.pathname === '/api/auth/admin/diagnose-credential') await diagnoseCredentialState(req, res, db);
+  else if (url.pathname === '/api/auth/admin/identity-audit') await identityAudit(req, res, db);
   else if (url.pathname === '/api/auth/logout') {
     clearAuthCookie(res);
     sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
