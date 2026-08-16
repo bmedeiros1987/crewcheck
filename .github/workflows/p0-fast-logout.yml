@@ -7,6 +7,7 @@ on:
       - 'client/src/lib/authClient.ts'
       - 'client/src/index.css'
       - 'scripts/p0-fast-logout/**'
+      - 'scripts/p0-build-identity/apply.mjs'
       - 'scripts/v14387d/apply.mjs'
       - 'scripts/regression-p0-fast-logout.mjs'
       - '.github/workflows/p0-fast-logout.yml'
