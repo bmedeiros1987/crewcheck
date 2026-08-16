@@ -585,6 +585,54 @@ const LEGACY_SENSITIVE_COLUMN_PATTERN = /password|hash|salt|token|secret|cipher|
 const LEGACY_TEXT_TYPES = new Set(['varchar', 'char', 'text', 'tinytext', 'mediumtext', 'longtext']);
 const LEGACY_DATE_TYPES = new Set(['datetime', 'timestamp', 'date']);
 
+// Production hit ER_CANT_AGGREGATE_2COLLATIONS the first time this audit compared a
+// legacy-era text column against a current one: crewcheck_users/crewcheck_rosters
+// predate the crewcheck_platform_* schema and can carry a different charset/collation
+// on CHAR/VARCHAR columns, including id/user_id (never assume it's only e-mail).
+// MySQL refuses to compare two explicit-collation strings that disagree, so every
+// cross-era comparison below goes through CONVERT(... USING <charset>) COLLATE
+// <collation> on BOTH sides, forcing them onto one common, explicitly-resolved target
+// - resolved from crewcheck_platform_accounts.email's REAL live collation (falling
+// back to profiles.email, then a hardcoded default), never guessed. This never
+// touches schema or data - it only changes how the comparison is expressed inside a
+// read-only query.
+const LEGACY_COLLATION_REPORT_COLUMNS = [
+  { table: 'crewcheck_users', column: 'id' },
+  { table: 'crewcheck_users', column: 'email' },
+  { table: 'crewcheck_rosters', column: 'user_id' },
+  { table: 'crewcheck_platform_accounts', column: 'email' },
+  { table: 'crewcheck_platform_profiles', column: 'email' },
+];
+const LEGACY_DEFAULT_COLLATION = { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci' };
+
+async function legacyColumnCollationReport(db) {
+  const report = [];
+  for (const entry of LEGACY_COLLATION_REPORT_COLUMNS) {
+    const [rows] = await db.query(
+      'SELECT CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=? LIMIT 1',
+      [entry.table, entry.column],
+    );
+    const row = rows[0];
+    report.push({ table: entry.table, column: entry.column, exists: Boolean(row), charset: row?.charset || null, collation: row?.collation || null });
+  }
+  return report;
+}
+
+function resolveCommonCollation(collationReport) {
+  const accounts = collationReport.find((entry) => entry.table === 'crewcheck_platform_accounts' && entry.column === 'email');
+  const profiles = collationReport.find((entry) => entry.table === 'crewcheck_platform_profiles' && entry.column === 'email');
+  const source = (accounts?.collation && accounts) || (profiles?.collation && profiles) || null;
+  return source ? { charset: source.charset || LEGACY_DEFAULT_COLLATION.charset, collation: source.collation } : LEGACY_DEFAULT_COLLATION;
+}
+
+function collateEq(leftExpr, rightExpr, common) {
+  return `CONVERT(${leftExpr} USING ${common.charset}) COLLATE ${common.collation}=CONVERT(${rightExpr} USING ${common.charset}) COLLATE ${common.collation}`;
+}
+
+function legacyAuditErrorCode(error) {
+  return String(error?.code) === 'ER_CANT_AGGREGATE_2COLLATIONS' ? 'COLLATION_MISMATCH' : 'QUERY_FAILED';
+}
+
 async function legacyTableColumns(db, table) {
   const [rows] = await db.query(
     'SELECT COLUMN_NAME AS name, DATA_TYPE AS dataType, IS_NULLABLE AS isNullable, COLUMN_KEY AS columnKey FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',
@@ -593,24 +641,26 @@ async function legacyTableColumns(db, table) {
   return rows.map((row) => ({ name: row.name, dataType: String(row.dataType || '').toLowerCase(), nullable: row.isNullable === 'YES', key: row.columnKey || null }));
 }
 
-async function legacyTableEmailAnalysis(db, table, column) {
+async function legacyTableEmailAnalysis(db, table, column, commonCollation) {
   const [statRows] = await db.query(
     `SELECT COUNT(*) AS totalRows, COUNT(DISTINCT \`${column}\`) AS distinctValues,
             SUM(CASE WHEN \`${column}\` IS NOT NULL AND \`${column}\`<>LOWER(TRIM(\`${column}\`)) THEN 1 ELSE 0 END) AS nonNormalizedCount
      FROM \`${table}\``,
   );
+  const accountsEq = collateEq('a.email', `LOWER(TRIM(t.\`${column}\`))`, commonCollation);
+  const profilesEq = collateEq('p.email', `LOWER(TRIM(t.\`${column}\`))`, commonCollation);
   const [matchRows] = await db.query(
     `SELECT COUNT(DISTINCT LOWER(TRIM(t.\`${column}\`))) AS matchingCurrentIdentity
      FROM \`${table}\` t
-     LEFT JOIN crewcheck_platform_accounts a ON a.email=LOWER(TRIM(t.\`${column}\`))
-     LEFT JOIN crewcheck_platform_profiles p ON p.email=LOWER(TRIM(t.\`${column}\`))
+     LEFT JOIN crewcheck_platform_accounts a ON ${accountsEq}
+     LEFT JOIN crewcheck_platform_profiles p ON ${profilesEq}
      WHERE t.\`${column}\` IS NOT NULL AND (a.email IS NOT NULL OR p.email IS NOT NULL)`,
   );
   const [orphanRows] = await db.query(
     `SELECT COUNT(DISTINCT LOWER(TRIM(t.\`${column}\`))) AS orphanedFromCurrentIdentity
      FROM \`${table}\` t
-     LEFT JOIN crewcheck_platform_accounts a ON a.email=LOWER(TRIM(t.\`${column}\`))
-     LEFT JOIN crewcheck_platform_profiles p ON p.email=LOWER(TRIM(t.\`${column}\`))
+     LEFT JOIN crewcheck_platform_accounts a ON ${accountsEq}
+     LEFT JOIN crewcheck_platform_profiles p ON ${profilesEq}
      WHERE t.\`${column}\` IS NOT NULL AND a.email IS NULL AND p.email IS NULL`,
   );
   return {
@@ -632,11 +682,14 @@ async function legacyTableEmailAnalysis(db, table, column) {
 // read-only and admin-only, before any bridging/migration routine is written.
 const LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN = '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$';
 
-async function legacyRosterBridgeAudit(db, tables) {
+async function legacyRosterBridgeAudit(db, tables, commonCollation) {
   const usersEntry = tables.find((entry) => entry.table === 'crewcheck_users');
   const rostersEntry = tables.find((entry) => entry.table === 'crewcheck_rosters');
   if (!usersEntry || !rostersEntry) {
     return { available: false, reason: 'crewcheck_users e/ou crewcheck_rosters não encontrados no schema atual.' };
+  }
+  if (usersEntry.auditError || rostersEntry.auditError) {
+    return { available: false, reason: 'crewcheck_users e/ou crewcheck_rosters retornaram erro ao inspecionar o schema - a ponte não pôde ser medida com segurança.' };
   }
   const hasUsersId = usersEntry.columns.some((column) => column.name === 'id');
   const hasUsersEmail = usersEntry.columns.some((column) => column.name === 'email');
@@ -646,11 +699,14 @@ async function legacyRosterBridgeAudit(db, tables) {
   }
 
   const pattern = LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN;
+  const idEq = collateEq('u.id', 'r.user_id', commonCollation);
+  const accountsEq = collateEq('a.email', 'LOWER(TRIM(u.email))', commonCollation);
+  const profilesEq = collateEq('p.email', 'LOWER(TRIM(u.email))', commonCollation);
   const [matchedRosterRows] = await db.query(
-    'SELECT COUNT(*) AS matchingRosters, COUNT(DISTINCT r.user_id) AS distinctUsersWithRoster FROM crewcheck_rosters r JOIN crewcheck_users u ON u.id=r.user_id',
+    `SELECT COUNT(*) AS matchingRosters, COUNT(DISTINCT r.user_id) AS distinctUsersWithRoster FROM crewcheck_rosters r JOIN crewcheck_users u ON ${idEq}`,
   );
   const [orphanedRosterRows] = await db.query(
-    'SELECT COUNT(*) AS orphanedRosters FROM crewcheck_rosters r LEFT JOIN crewcheck_users u ON u.id=r.user_id WHERE u.id IS NULL',
+    `SELECT COUNT(*) AS orphanedRosters FROM crewcheck_rosters r LEFT JOIN crewcheck_users u ON ${idEq} WHERE u.id IS NULL`,
   );
   const [normalizableRows] = await db.query(
     'SELECT COUNT(*) AS normalizableEmailCount FROM crewcheck_users WHERE email IS NOT NULL AND email REGEXP ?',
@@ -659,23 +715,23 @@ async function legacyRosterBridgeAudit(db, tables) {
   const [matchingIdentityRows] = await db.query(
     `SELECT COUNT(*) AS matchingCount FROM crewcheck_users u
      WHERE u.email IS NOT NULL AND u.email REGEXP ?
-       AND (EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
-         OR EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email))))`,
+       AND (EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE ${accountsEq})
+         OR EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE ${profilesEq}))`,
     [pattern],
   );
   const [notMatchingIdentityRows] = await db.query(
     `SELECT COUNT(*) AS notMatchingCount FROM crewcheck_users u
      WHERE u.email IS NOT NULL AND u.email REGEXP ?
-       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
-       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email)))`,
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE ${accountsEq})
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE ${profilesEq})`,
     [pattern],
   );
   const [notMatchingWithRosterRows] = await db.query(
     `SELECT COUNT(DISTINCT u.id) AS count FROM crewcheck_users u
-     JOIN crewcheck_rosters r ON r.user_id=u.id
+     JOIN crewcheck_rosters r ON ${collateEq('r.user_id', 'u.id', commonCollation)}
      WHERE u.email IS NOT NULL AND u.email REGEXP ?
-       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
-       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email)))`,
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE ${accountsEq})
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE ${profilesEq})`,
     [pattern],
   );
 
@@ -710,55 +766,78 @@ async function legacyTableAudit(req, res, db) {
   const [allTableRows] = await db.query('SELECT TABLE_NAME AS name FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE()');
   const unexpectedTables = allTableRows.map((row) => row.name).filter((name) => !IDENTITY_AUDIT_KNOWN_TABLES.has(name));
 
-  const tables = [];
-  for (const table of unexpectedTables) {
-    const columns = await legacyTableColumns(db, table);
-    const [countRows] = await db.query(`SELECT COUNT(*) AS totalRows FROM \`${table}\``);
-    const totalRows = Number(countRows[0]?.totalRows || 0);
-
-    const dateColumn = columns.find((column) => LEGACY_DATE_COLUMN_PATTERN.test(column.name) && LEGACY_DATE_TYPES.has(column.dataType));
-    let dateRange = null;
-    if (dateColumn && totalRows > 0) {
-      const [rangeRows] = await db.query(
-        `SELECT MIN(\`${dateColumn.name}\`) AS minCreatedAt, MAX(\`${dateColumn.name}\`) AS maxCreatedAt,
-                SUM(CASE WHEN \`${dateColumn.name}\`<? THEN 1 ELSE 0 END) AS beforeCutover
-         FROM \`${table}\``,
-        [LEGACY_CUTOVER_TIMESTAMP],
-      );
-      dateRange = {
-        column: dateColumn.name,
-        minCreatedAt: rangeRows[0]?.minCreatedAt || null,
-        maxCreatedAt: rangeRows[0]?.maxCreatedAt || null,
-        beforeCutover: Number(rangeRows[0]?.beforeCutover || 0),
-      };
-    }
-
-    const emailColumns = columns.filter((column) => LEGACY_EMAIL_COLUMN_PATTERN.test(column.name) && LEGACY_TEXT_TYPES.has(column.dataType));
-    const emailAnalysis = [];
-    for (const column of emailColumns) {
-      emailAnalysis.push(await legacyTableEmailAnalysis(db, table, column.name));
-    }
-
-    const sensitiveColumnNames = columns.filter((column) => LEGACY_SENSITIVE_COLUMN_PATTERN.test(column.name)).map((column) => column.name);
-
-    tables.push({
-      table,
-      totalRows,
-      columns: columns.map((column) => ({ name: column.name, dataType: column.dataType, nullable: column.nullable, key: column.key })),
-      sensitiveColumnNames,
-      dateRange,
-      emailAnalysis,
-    });
+  let columnCollations = [];
+  let commonCollation = LEGACY_DEFAULT_COLLATION;
+  try {
+    columnCollations = await legacyColumnCollationReport(db);
+    commonCollation = resolveCommonCollation(columnCollations);
+  } catch {
+    // Metadata is best-effort and never blocks the rest of the audit - fall back to
+    // the hardcoded default collation target if information_schema itself errors.
   }
 
-  const rosterBridge = await legacyRosterBridgeAudit(db, tables);
+  const tables = [];
+  for (const table of unexpectedTables) {
+    try {
+      const columns = await legacyTableColumns(db, table);
+      const [countRows] = await db.query(`SELECT COUNT(*) AS totalRows FROM \`${table}\``);
+      const totalRows = Number(countRows[0]?.totalRows || 0);
+
+      const dateColumn = columns.find((column) => LEGACY_DATE_COLUMN_PATTERN.test(column.name) && LEGACY_DATE_TYPES.has(column.dataType));
+      let dateRange = null;
+      if (dateColumn && totalRows > 0) {
+        const [rangeRows] = await db.query(
+          `SELECT MIN(\`${dateColumn.name}\`) AS minCreatedAt, MAX(\`${dateColumn.name}\`) AS maxCreatedAt,
+                  SUM(CASE WHEN \`${dateColumn.name}\`<? THEN 1 ELSE 0 END) AS beforeCutover
+           FROM \`${table}\``,
+          [LEGACY_CUTOVER_TIMESTAMP],
+        );
+        dateRange = {
+          column: dateColumn.name,
+          minCreatedAt: rangeRows[0]?.minCreatedAt || null,
+          maxCreatedAt: rangeRows[0]?.maxCreatedAt || null,
+          beforeCutover: Number(rangeRows[0]?.beforeCutover || 0),
+        };
+      }
+
+      const emailColumns = columns.filter((column) => LEGACY_EMAIL_COLUMN_PATTERN.test(column.name) && LEGACY_TEXT_TYPES.has(column.dataType));
+      const emailAnalysis = [];
+      for (const column of emailColumns) {
+        emailAnalysis.push(await legacyTableEmailAnalysis(db, table, column.name, commonCollation));
+      }
+
+      const sensitiveColumnNames = columns.filter((column) => LEGACY_SENSITIVE_COLUMN_PATTERN.test(column.name)).map((column) => column.name);
+
+      tables.push({
+        table,
+        totalRows,
+        columns: columns.map((column) => ({ name: column.name, dataType: column.dataType, nullable: column.nullable, key: column.key })),
+        sensitiveColumnNames,
+        dateRange,
+        emailAnalysis,
+      });
+    } catch (error) {
+      // One incompatible legacy table (unexpected charset/collation, or anything else
+      // that fails a read-only query) must never take down the whole audit - it's
+      // reported and the rest of the tables/rosterBridge still run normally.
+      tables.push({ table, auditError: legacyAuditErrorCode(error) });
+    }
+  }
+
+  let rosterBridge;
+  try {
+    rosterBridge = await legacyRosterBridgeAudit(db, tables, commonCollation);
+  } catch (error) {
+    rosterBridge = { available: false, reason: legacyAuditErrorCode(error) };
+  }
 
   return sendJson(res, 200, {
     ok: true,
     cutoverTimestamp: LEGACY_CUTOVER_TIMESTAMP,
+    columnCollations,
     tables,
     rosterBridge,
-    note: 'orphanedFromCurrentIdentity conta valores distintos que não batem, por e-mail normalizado, com nenhuma conta/perfil atual - são os candidatos mais fortes a identidade "encalhada" dentro deste mesmo banco. sensitiveColumnNames lista apenas nomes de coluna (metadado de schema), nunca valores. rosterBridge mede especificamente o vínculo crewcheck_rosters.user_id -> crewcheck_users.id -> e-mail atual, que é por UUID e não por e-mail - a mesma garantia de reconexão automática das tabelas owner_email não se aplica a ele.',
+    note: 'orphanedFromCurrentIdentity conta valores distintos que não batem, por e-mail normalizado, com nenhuma conta/perfil atual - são os candidatos mais fortes a identidade "encalhada" dentro deste mesmo banco. sensitiveColumnNames lista apenas nomes de coluna (metadado de schema), nunca valores. rosterBridge mede especificamente o vínculo crewcheck_rosters.user_id -> crewcheck_users.id -> e-mail atual, que é por UUID e não por e-mail - a mesma garantia de reconexão automática das tabelas owner_email não se aplica a ele. columnCollations é metadado de schema (charset/collation), nunca um valor de linha; comparações entre eras diferentes são explicitamente convertidas para um collation comum dentro da própria query - nenhuma tabela ou dado de produção é alterado. auditError numa tabela (ex.: "COLLATION_MISMATCH") não impede o restante da auditoria de ser retornado.',
     message: 'Auditoria somente leitura de tabelas fora do schema conhecido - nenhuma senha, hash, salt, token, UUID ou e-mail individual é retornado, apenas contagens agregadas, datas e nomes de coluna.',
   });
 }

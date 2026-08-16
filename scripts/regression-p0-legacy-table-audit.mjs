@@ -20,9 +20,14 @@ import { pathToFileURL } from 'node:url';
 const source = fs.readFileSync('server/v139/auth.mjs', 'utf8').replace(/\r\n/g, '\n');
 
 function extractFunction(name) {
-  const marker = `async function ${name}(`;
-  const start = source.indexOf(marker);
+  // "function NAME(" is a substring of "async function NAME(" too, so this one
+  // marker locates both plain and async functions without needing two extractors -
+  // but the slice must still start at "async " (not just "function") or an
+  // extracted async function's internal await calls become a syntax error.
+  const marker = `function ${name}(`;
+  let start = source.indexOf(marker);
   assert.ok(start >= 0, `${name}() não encontrada em server/v139/auth.mjs`);
+  if (source.slice(Math.max(0, start - 6), start) === 'async ') start -= 6;
   const braceOpen = source.indexOf('{', start);
   let depth = 0;
   for (let i = braceOpen; i < source.length; i += 1) {
@@ -42,10 +47,10 @@ function extractConst(name) {
   const valueStart = start + marker.length;
   const first = source[valueStart];
   let end;
-  if (first === '[' || source.startsWith('new Set(', valueStart)) {
-    const openIdx = first === '[' ? valueStart : source.indexOf('(', valueStart);
+  if (first === '[' || first === '{' || source.startsWith('new Set(', valueStart)) {
+    const openIdx = (first === '[' || first === '{') ? valueStart : source.indexOf('(', valueStart);
     const openChar = source[openIdx];
-    const closeChar = openChar === '[' ? ']' : ')';
+    const closeChar = openChar === '[' ? ']' : openChar === '{' ? '}' : ')';
     let depth = 0;
     for (let i = openIdx; i < source.length; i += 1) {
       if (source[i] === openChar) depth += 1;
@@ -85,6 +90,12 @@ const datePatternSrc = extractConst('LEGACY_DATE_COLUMN_PATTERN');
 const sensitivePatternSrc = extractConst('LEGACY_SENSITIVE_COLUMN_PATTERN');
 const textTypesSrc = extractConst('LEGACY_TEXT_TYPES');
 const dateTypesSrc = extractConst('LEGACY_DATE_TYPES');
+const collationReportColumnsSrc = extractConst('LEGACY_COLLATION_REPORT_COLUMNS');
+const defaultCollationSrc = extractConst('LEGACY_DEFAULT_COLLATION');
+const collationReportFnSrc = extractFunction('legacyColumnCollationReport');
+const resolveCollationSrc = extractFunction('resolveCommonCollation');
+const collateEqSrc = extractFunction('collateEq');
+const errorCodeSrc = extractFunction('legacyAuditErrorCode');
 const columnsSrc = extractFunction('legacyTableColumns');
 const emailAnalysisSrc = extractFunction('legacyTableEmailAnalysis');
 const bridgeEmailPatternSrc = extractConst('LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN');
@@ -95,7 +106,7 @@ const auditSrc = extractFunction('legacyTableAudit');
 // crucialmente - nenhum nome de tabela/coluna pode vir da requisição (isso é o que
 // torna seguro interpolar esses nomes direto no SQL: eles só podem vir do próprio
 // information_schema, nunca de req.url/req.body).
-const fullSrc = `${columnsSrc}\n${emailAnalysisSrc}\n${bridgeSrc}\n${auditSrc}`;
+const fullSrc = `${collationReportFnSrc}\n${resolveCollationSrc}\n${collateEqSrc}\n${errorCodeSrc}\n${columnsSrc}\n${emailAnalysisSrc}\n${bridgeSrc}\n${auditSrc}`;
 for (const forbidden of ['INSERT INTO', 'UPDATE ', 'DELETE FROM', 'DROP ', 'TRUNCATE', 'ALTER TABLE']) {
   assert.doesNotMatch(fullSrc, new RegExp(forbidden, 'i'), `legacyTableAudit() nunca pode conter "${forbidden}" - é somente leitura`);
 }
@@ -108,6 +119,15 @@ assert.doesNotMatch(fullSrc, /SELECT\s+\*/i, 'auditoria de tabelas legadas nunca
 // A ponte user_id -> crewcheck_users.id só pode expor contagens/EXISTS - nunca uma
 // coluna individual (id, email, user_id) diretamente no SELECT.
 assert.doesNotMatch(bridgeSrc, /SELECT\s+(?!COUNT|1\b)/i, 'legacyRosterBridgeAudit() só pode fazer SELECT COUNT(...) ou SELECT 1 (dentro de EXISTS) - nunca uma coluna individual');
+// A auditoria de collation só pode ler metadado de schema (information_schema.columns),
+// nunca uma tabela de dados.
+assert.doesNotMatch(collationReportFnSrc, /FROM\s+(?!information_schema)/i, 'legacyColumnCollationReport() só pode consultar information_schema, nunca uma tabela de dados');
+// Uma tabela problemática (ex.: collation incompatível) precisa virar auditError por
+// tabela, nunca derrubar a requisição inteira com 500.
+assert.match(auditSrc, /catch \(error\) \{\s*[\s\S]*?auditError: legacyAuditErrorCode\(error\)/, 'uma falha em uma tabela deve virar {table, auditError}, nunca propagar e quebrar a resposta inteira');
+// rosterBridge também precisa degradar para {available:false, reason} em vez de
+// propagar um erro e derrubar a resposta inteira.
+assert.match(auditSrc, /rosterBridge = \{ available: false, reason: legacyAuditErrorCode\(error\) \}/, 'rosterBridge deve degradar para {available:false, reason} se a própria ponte falhar, nunca derrubar a resposta inteira');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-legacy-table-audit-'));
 const tempFile = path.join(tempDir, 'legacy-table-audit.mjs');
@@ -120,6 +140,12 @@ ${datePatternSrc}
 ${sensitivePatternSrc}
 ${textTypesSrc}
 ${dateTypesSrc}
+${collationReportColumnsSrc}
+${defaultCollationSrc}
+${collationReportFnSrc}
+${resolveCollationSrc}
+${collateEqSrc}
+${errorCodeSrc}
 ${columnsSrc}
 ${emailAnalysisSrc}
 ${bridgeEmailPatternSrc}
@@ -138,7 +164,11 @@ export function setJwtPayload(value) { jwtPayload = value; }
 export function setAdminEmails(list) { adminEmails = list; }
 export { legacyTableAudit };
 
-export function makeDb({ allTables = [], byTable = {}, rosterBridge = {} } = {}) {
+function collationMismatchError() {
+  return Object.assign(new Error('Illegal mix of collations'), { code: 'ER_CANT_AGGREGATE_2COLLATIONS' });
+}
+
+export function makeDb({ allTables = [], byTable = {}, rosterBridge = {}, collations = {}, throwOnTable = null, throwOnBridge = false } = {}) {
   const calls = [];
   return {
     calls,
@@ -147,30 +177,41 @@ export function makeDb({ allTables = [], byTable = {}, rosterBridge = {} } = {})
       if (sql.includes('information_schema.tables') && sql.includes('TABLE_SCHEMA=DATABASE()') && !sql.includes('TABLE_NAME=')) {
         return [allTables.map((name) => ({ name }))];
       }
+      if (sql.includes('information_schema.columns') && sql.includes('COLUMN_NAME=?')) {
+        const [table, column] = params;
+        const found = collations[\`\${table}.\${column}\`];
+        return [found ? [{ charset: found.charset, collation: found.collation }] : []];
+      }
       if (sql.includes('information_schema.columns')) {
         const table = params[0];
         return [(byTable[table]?.columns || []).map((c) => ({ name: c.name, dataType: c.dataType, isNullable: c.nullable ? 'YES' : 'NO', columnKey: c.key || null }))];
       }
       if (sql.includes('matchingRosters')) {
+        if (throwOnBridge) throw collationMismatchError();
         return [[{ matchingRosters: rosterBridge.matchingRosters ?? 0, distinctUsersWithRoster: rosterBridge.distinctUsersWithRoster ?? 0 }]];
       }
       if (sql.includes('orphanedRosters')) {
+        if (throwOnBridge) throw collationMismatchError();
         return [[{ orphanedRosters: rosterBridge.orphanedRosters ?? 0 }]];
       }
       if (sql.includes('normalizableEmailCount')) {
         return [[{ normalizableEmailCount: rosterBridge.normalizableEmailCount ?? 0 }]];
       }
-      if (sql.includes('JOIN crewcheck_rosters r ON r.user_id=u.id')) {
+      if (sql.includes('JOIN crewcheck_rosters r ON')) {
+        if (throwOnBridge) throw collationMismatchError();
         return [[{ count: rosterBridge.notMatchingWithRosterCount ?? 0 }]];
       }
       if (sql.includes('matchingCount')) {
+        if (throwOnBridge) throw collationMismatchError();
         return [[{ matchingCount: rosterBridge.matchingCount ?? 0 }]];
       }
       if (sql.includes('notMatchingCount')) {
+        if (throwOnBridge) throw collationMismatchError();
         return [[{ notMatchingCount: rosterBridge.notMatchingCount ?? 0 }]];
       }
       const fromMatch = sql.match(/FROM \\\`([^\\\`]+)\\\`/);
       const table = fromMatch ? fromMatch[1] : null;
+      if (throwOnTable && table === throwOnTable) throw collationMismatchError();
       const config = byTable[table] || {};
       if (sql.includes('COUNT(*) AS totalRows FROM')) {
         return [[{ totalRows: config.totalRows ?? 0 }]];
@@ -270,10 +311,31 @@ export function makeDb({ allTables = [], byTable = {}, rosterBridge = {} } = {})
         notMatchingCount: 36,
         notMatchingWithRosterCount: 29,
       },
+      // Legado (era pré-Aiven-clean-install) num collation diferente do atual -
+      // exatamente o cenário real de produção que gerou ER_CANT_AGGREGATE_2COLLATIONS.
+      collations: {
+        'crewcheck_users.id': { charset: 'utf8', collation: 'utf8_general_ci' },
+        'crewcheck_users.email': { charset: 'utf8', collation: 'utf8_general_ci' },
+        'crewcheck_rosters.user_id': { charset: 'utf8', collation: 'utf8_general_ci' },
+        'crewcheck_platform_accounts.email': { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci' },
+        'crewcheck_platform_profiles.email': { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci' },
+      },
     });
     const result = await callAudit(db);
     assert.equal(result.status, 200);
     assert.equal(result.payload.ok, true);
+
+    // columnCollations: metadado de schema sanitizado para as 5 colunas pedidas -
+    // nunca um valor de linha, só charset/collation.
+    const collationsReport = result.payload.columnCollations;
+    assert.equal(collationsReport.length, 5);
+    const usersId = collationsReport.find((c) => c.table === 'crewcheck_users' && c.column === 'id');
+    assert.equal(usersId.collation, 'utf8_general_ci', 'collation real de crewcheck_users.id deve ser reportada');
+    const accountsEmail = collationsReport.find((c) => c.table === 'crewcheck_platform_accounts' && c.column === 'email');
+    assert.equal(accountsEmail.collation, 'utf8mb4_unicode_ci');
+    // A query de comparação entre eras deve ter sido explicitamente convertida para
+    // um collation comum - não pode ter disparado ER_CANT_AGGREGATE_2COLLATIONS.
+    assert.ok(db.calls.some((call) => call.sql.includes('CONVERT(') && call.sql.includes('COLLATE utf8mb4_unicode_ci')), 'comparações entre eras devem usar CONVERT(...) COLLATE <collation comum>');
     assert.equal(result.payload.tables.length, 3, 'apenas as 3 tabelas inesperadas devem aparecer, nunca as tabelas conhecidas');
     assert.ok(!result.payload.tables.some((t) => t.table.startsWith('crewcheck_platform_')), 'tabelas conhecidas não podem aparecer como inesperadas');
 
@@ -328,7 +390,64 @@ export function makeDb({ allTables = [], byTable = {}, rosterBridge = {} } = {})
     assert.ok(result.payload.rosterBridge.reason, 'indisponibilidade da ponte deve vir com um motivo legível');
   }
 
-  console.log('[p0-legacy-table-audit] OK — auditoria de tabelas legadas admin-only, somente leitura, sem interpolar identificadores vindos da requisição, sem vazar e-mail/UUID/hash individual, incluindo a ponte crewcheck_rosters.user_id -> crewcheck_users.id.');
+  // D) crewcheck_users dispara ER_CANT_AGGREGATE_2COLLATIONS mesmo depois da
+  // correção (ex.: uma terceira collation nunca vista antes) - a tabela deve virar
+  // {table, auditError:"COLLATION_MISMATCH"}, as OUTRAS tabelas devem continuar
+  // completas, a resposta inteira deve continuar 200 (nunca 500), e rosterBridge deve
+  // degradar para available:false em vez de tentar usar um usersEntry incompleto.
+  {
+    const db = mod.makeDb({
+      allTables: ['crewcheck_platform_accounts', 'crewcheck_platform_profiles', 'auth_accounts', 'crewcheck_users', 'crewcheck_rosters'],
+      byTable: {
+        auth_accounts: {
+          totalRows: 9,
+          columns: [{ name: 'id', dataType: 'char' }, { name: 'email', dataType: 'varchar' }],
+          emailStats: { email: { totalRows: 9, distinctValues: 9, nonNormalizedCount: 0, matchingCurrentIdentity: 1, orphanedFromCurrentIdentity: 8 } },
+        },
+        crewcheck_users: {
+          totalRows: 40,
+          columns: [{ name: 'id', dataType: 'char' }, { name: 'email', dataType: 'varchar' }],
+        },
+        crewcheck_rosters: {
+          totalRows: 120,
+          columns: [{ name: 'id', dataType: 'char' }, { name: 'user_id', dataType: 'char' }],
+        },
+      },
+      throwOnTable: 'crewcheck_users',
+    });
+    const result = await callAudit(db);
+    assert.equal(result.status, 200, 'uma tabela incompatível nunca pode derrubar o endpoint inteiro com 500');
+    assert.equal(result.payload.ok, true);
+    const failing = result.payload.tables.find((t) => t.table === 'crewcheck_users');
+    assert.deepEqual(failing, { table: 'crewcheck_users', auditError: 'COLLATION_MISMATCH' }, 'tabela incompatível deve virar {table, auditError} sanitizado, sem schema/contagem parcial nem stack trace');
+    const stillOk = result.payload.tables.find((t) => t.table === 'auth_accounts');
+    assert.equal(stillOk.totalRows, 9, 'outras tabelas devem continuar totalmente auditadas mesmo com uma falhando');
+    assert.equal(result.payload.rosterBridge.available, false, 'rosterBridge deve degradar quando crewcheck_users falhou, nunca tentar ler .columns de uma entrada com auditError');
+    assert.ok(result.payload.rosterBridge.reason);
+    const payloadStr = JSON.stringify(result.payload);
+    assert.doesNotMatch(payloadStr, /at Object\.query|node_modules|\.mjs:\d+/, 'erro sanitizado não pode vazar stack trace ou detalhe interno do driver');
+  }
+
+  // E) A própria ponte (não uma tabela individual) dispara erro de collation mesmo
+  // com ambas as tabelas OK - rosterBridge deve degradar sozinho, sem afetar `tables`.
+  {
+    const db = mod.makeDb({
+      allTables: ['crewcheck_platform_accounts', 'crewcheck_platform_profiles', 'crewcheck_users', 'crewcheck_rosters'],
+      byTable: {
+        crewcheck_users: { totalRows: 5, columns: [{ name: 'id', dataType: 'char' }, { name: 'email', dataType: 'varchar' }] },
+        crewcheck_rosters: { totalRows: 8, columns: [{ name: 'id', dataType: 'char' }, { name: 'user_id', dataType: 'char' }] },
+      },
+      throwOnBridge: true,
+    });
+    const result = await callAudit(db);
+    assert.equal(result.status, 200);
+    assert.equal(result.payload.tables.length, 2, 'tabelas individuais continuam OK mesmo se só a ponte falhar');
+    assert.equal(result.payload.tables.every((t) => !t.auditError), true);
+    assert.equal(result.payload.rosterBridge.available, false);
+    assert.equal(result.payload.rosterBridge.reason, 'COLLATION_MISMATCH');
+  }
+
+  console.log('[p0-legacy-table-audit] OK — auditoria de tabelas legadas admin-only, somente leitura, sem interpolar identificadores vindos da requisição, sem vazar e-mail/UUID/hash individual, com comparações entre eras collation-safe e uma tabela incompatível nunca derrubando o endpoint inteiro.');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
