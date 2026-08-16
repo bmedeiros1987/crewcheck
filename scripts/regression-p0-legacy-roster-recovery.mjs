@@ -143,6 +143,10 @@ assert.match(executeSrc, /VALUES\(\?,\?,\?,\?,\?,\?,\?,\?,FALSE\)/, 'INSERT de r
 assert.match(executeSrc, /confirmationToken/, 'execute() deve exigir confirmationToken');
 assert.match(executeSrc, /if \(!confirmationToken\)/, 'execute() deve recusar chamadas sem confirmationToken (400) antes de qualquer leitura de plano');
 assert.match(executeSrc, /legacyRosterRecoveryTokenValid\(/, 'execute() deve validar o confirmationToken contra o plano recomputado, não apenas aceitar qualquer valor');
+// Hardening from independent review: the plan signature must represent not just
+// "what content" (rosterKey:fingerprint) but "from which legacy row" - closes the
+// theoretical case of two legacy rows with identical content but different ids.
+assert.match(planSignatureSrc, /entry\.row\.id/, 'legacyRosterRecoveryPlanSignature deve incluir legacy_roster_id (entry.row.id), não só rosterKey/fingerprint');
 
 // Requirement 4 (identity gate): both endpoints must require an existing current
 // identity - never create one.
@@ -563,6 +567,36 @@ export function makeDb(config = {}) {
     assert.equal(result.payload.blockedReason, 'confirmation_token_invalid_or_expired');
     assert.equal(db.currentRosters.length, 0);
     assert.equal(db.recoveryLog.length, 0);
+  }
+
+  // J2) Endurecimento da revisão independente: trocar SOMENTE o legacy_roster_id de
+  // origem - mantendo rosterKey e fingerprint (mesmo conteúdo: mesmo período,
+  // crewId e days) idênticos - deve invalidar um token já emitido. Isso prova que
+  // a assinatura do plano representa "de qual roster legada veio", não só "qual
+  // conteúdo seria gravado".
+  {
+    const rowA = { ...soraiaLegacyRosters[0], id: 'legacy-origin-A' };
+    const rowB = { ...soraiaLegacyRosters[0], id: 'legacy-origin-B' }; // mesmo period_year/period_month/crew_id/days -> mesmo rosterKey e fingerprint
+
+    const dryDb = mod.makeDb({ accountExists: true, collations, variantCount: 1, legacyRosterRows: [rowA] });
+    const dry = await callDryRun(dryDb, target);
+    assert.equal(dry.payload.recoverableCount, 1);
+    const tokenForRowA = dry.payload.confirmationToken;
+    assert.ok(tokenForRowA);
+
+    const execDb = mod.makeDb({ accountExists: true, collations, variantCount: 1, legacyRosterRows: [rowB] });
+    const result = await callExecute(execDb, target, tokenForRowA);
+    assert.equal(result.payload.executed, false, 'token emitido para a linha legada A não pode autorizar a recuperação da linha B, mesmo com rosterKey/fingerprint idênticos');
+    assert.equal(result.payload.blockedReason, 'confirmation_token_invalid_or_expired');
+    assert.equal(execDb.currentRosters.length, 0);
+    assert.equal(execDb.recoveryLog.length, 0);
+
+    // Controle: o MESMO token, contra a MESMA linha (A), continua válido - a
+    // mudança não quebrou o caminho legítimo.
+    const controlDb = mod.makeDb({ accountExists: true, collations, variantCount: 1, legacyRosterRows: [rowA] });
+    const controlResult = await callExecute(controlDb, target, tokenForRowA);
+    assert.equal(controlResult.payload.executed, true);
+    assert.equal(controlResult.payload.recoveredCount, 1);
   }
 
   // K) Identidade legada duplicada/ambígua: bloqueia, nenhuma escrita.

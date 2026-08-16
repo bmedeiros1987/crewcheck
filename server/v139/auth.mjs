@@ -1129,7 +1129,11 @@ function sanitizedPlanRosters(rosters) {
 const LEGACY_ROSTER_RECOVERY_TOKEN_TTL_MS = 15 * 60 * 1000;
 
 function legacyRosterRecoveryPlanSignature(recoverable) {
-  const parts = recoverable.map((entry) => `${entry.rosterKeyValue}:${entry.fingerprintValue}`).sort();
+  // legacy_roster_id is included alongside content (rosterKey:fingerprint) so the
+  // token represents not just "what content" but "from which legacy row" - closing
+  // even the theoretical case of two legacy rows sharing identical content
+  // (same fingerprint) but a different source id.
+  const parts = recoverable.map((entry) => `${entry.row.id}:${entry.rosterKeyValue}:${entry.fingerprintValue}`).sort();
   return legacySha256(parts.join('|'));
 }
 
