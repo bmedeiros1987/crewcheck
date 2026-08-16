@@ -842,6 +842,110 @@ async function legacyTableAudit(req, res, db) {
   });
 }
 
+// #399 recovery prep: legacyTableAudit()/rosterBridge give aggregate counts; this is
+// the per-e-mail drill-down a human needs before deciding whether ONE specific
+// account is actually recoverable. Admin-only, read-only, POST (email in body, same
+// as diagnoseCredentialState). Never returns password_hash, salt, a legacy UUID, raw
+// roster content, or any data belonging to an e-mail other than the one requested.
+async function legacyRecoveryCandidate(req, res, db) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    return sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+  }
+  const adminEmail = safeEmail(payload?.email);
+  if (!adminEmail || !(payload?.admin || isAdminEmail(adminEmail))) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
+  }
+  const body = await readBody(req, 2_000);
+  const email = safeEmail(body.email);
+  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+
+  const emptyResult = {
+    ok: true,
+    legacyUserExists: false,
+    currentIdentityExists: false,
+    legacyRosterCount: 0,
+    legacyRosterMinCreatedAt: null,
+    legacyRosterMaxCreatedAt: null,
+    currentRosterCount: 0,
+    recoveryCandidate: false,
+    conflict: null,
+  };
+
+  try {
+    // Never presume the legacy shape is there - confirm both tables AND the exact
+    // columns this diagnostic depends on exist before referencing any of them
+    // (same discipline as legacyRosterBridgeAudit's guard).
+    const [columnRows] = await db.query(
+      `SELECT TABLE_NAME AS tbl, COLUMN_NAME AS col FROM information_schema.columns
+       WHERE TABLE_SCHEMA=DATABASE()
+         AND ((TABLE_NAME='crewcheck_users' AND COLUMN_NAME IN ('id','email'))
+           OR (TABLE_NAME='crewcheck_rosters' AND COLUMN_NAME IN ('user_id','created_at')))`,
+    );
+    const cols = new Set(columnRows.map((row) => `${row.tbl}.${row.col}`));
+    const legacySchemaReady = ['crewcheck_users.id', 'crewcheck_users.email', 'crewcheck_rosters.user_id', 'crewcheck_rosters.created_at']
+      .every((entry) => cols.has(entry));
+    if (!legacySchemaReady) {
+      return sendJson(res, 200, { ...emptyResult, message: 'Schema legado não encontrado ou difere do formato esperado - diagnóstico não pôde ser concluído.' });
+    }
+
+    const collationReport = await legacyColumnCollationReport(db);
+    const commonCollation = resolveCommonCollation(collationReport);
+
+    const [variantRows] = await db.query(
+      `SELECT COUNT(*) AS variantCount FROM crewcheck_users WHERE ${collateEq('LOWER(TRIM(email))', '?', commonCollation)}`,
+      [email],
+    );
+    const variantCount = Number(variantRows[0]?.variantCount || 0);
+    const legacyUserExists = variantCount > 0;
+    const conflict = variantCount > 1 ? { type: 'duplicate_legacy_user', count: variantCount } : null;
+
+    let legacyRosterCount = 0;
+    let legacyRosterMinCreatedAt = null;
+    let legacyRosterMaxCreatedAt = null;
+    if (legacyUserExists) {
+      const idEq = collateEq('u.id', 'r.user_id', commonCollation);
+      const emailEq = collateEq('LOWER(TRIM(u.email))', '?', commonCollation);
+      const [rosterRows] = await db.query(
+        `SELECT COUNT(*) AS total, MIN(r.created_at) AS minCreatedAt, MAX(r.created_at) AS maxCreatedAt
+         FROM crewcheck_rosters r
+         JOIN crewcheck_users u ON ${idEq}
+         WHERE ${emailEq}`,
+        [email],
+      );
+      legacyRosterCount = Number(rosterRows[0]?.total || 0);
+      legacyRosterMinCreatedAt = rosterRows[0]?.minCreatedAt || null;
+      legacyRosterMaxCreatedAt = rosterRows[0]?.maxCreatedAt || null;
+    }
+
+    const [accountRows] = await db.query('SELECT email FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [email]);
+    const [profileRows] = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]);
+    const currentIdentityExists = Boolean(accountRows[0] || profileRows[0]);
+    const [currentRosterRows] = await db.query('SELECT COUNT(*) AS total FROM crewcheck_platform_rosters WHERE owner_email=?', [email]);
+    const currentRosterCount = Number(currentRosterRows[0]?.total || 0);
+
+    const recoveryCandidate = legacyUserExists && legacyRosterCount > 0 && !conflict;
+
+    return sendJson(res, 200, {
+      ok: true,
+      legacyUserExists,
+      currentIdentityExists,
+      legacyRosterCount,
+      legacyRosterMinCreatedAt,
+      legacyRosterMaxCreatedAt,
+      currentRosterCount,
+      recoveryCandidate,
+      conflict,
+      message: 'Diagnóstico somente leitura, restrito a um único e-mail - nenhuma senha, hash, salt, UUID legado ou conteúdo de roster é retornado.',
+    });
+  } catch (error) {
+    return sendJson(res, 200, { ...emptyResult, error: legacyAuditErrorCode(error), message: 'Não foi possível concluir o diagnóstico com segurança.' });
+  }
+}
+
 export async function handleAuthRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/auth/')) return false;
   if (url.pathname === '/api/auth/config') {
@@ -861,6 +965,7 @@ export async function handleAuthRoute(req, res, url) {
   else if (url.pathname === '/api/auth/admin/diagnose-credential') await diagnoseCredentialState(req, res, db);
   else if (url.pathname === '/api/auth/admin/identity-audit') await identityAudit(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-table-audit') await legacyTableAudit(req, res, db);
+  else if (url.pathname === '/api/auth/admin/legacy-recovery-candidate') await legacyRecoveryCandidate(req, res, db);
   else if (url.pathname === '/api/auth/logout') {
     clearAuthCookie(res);
     sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
