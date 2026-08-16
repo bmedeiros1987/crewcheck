@@ -12,11 +12,10 @@ import fs from 'node:fs';
 // reappears" / "teleport" symptoms reported in #440, entirely separate from the
 // canonical parser.
 //
-// Fixed by scoping localHistoryKeys() to exactly the current identity's own key, and
-// replacing the permanent cross-scope scan with a one-shot, removable migration of the
-// legacy unscoped key: migrateLegacyLocalHistoryOnce() claims it (if present) into
-// whichever scope asks first, then deletes it - so it can never be read by a second
-// scope later, i.e. it can never become a permanent merge.
+// The current contract is stricter than the original #490 migration: history remains
+// scoped to the current identity and the pre-scoping legacy key is fail-closed because
+// it has no trustworthy owner binding. Legacy ownerless data is removed, never claimed
+// by the first authenticated identity to boot. Server truth / explicit re-import wins.
 //
 // This test extracts and actually executes the real functions from the current source
 // (not a reimplementation), the same technique already used by
@@ -140,8 +139,9 @@ function buildHarness(localStorage, getStoredUser) {
   assert.equal(authedHistory.length, 0, 'an authenticated session must not inherit the anon-scope history');
 }
 
-// --- Scenario 3: the legacy unscoped key is migrated exactly once, into whichever
-// scope asks first, and is gone afterward - never merged into a second scope. ---
+// --- Scenario 3: ownerless legacy history is fail-closed. The first authenticated
+// identity must not receive it, and neither may any later identity. The legacy payload
+// is deleted and only the migration marker remains. ---
 {
   const storage = new LocalStorageMock();
   storage.setItem('crewcheck_local_history_v1', JSON.stringify([historyEntry('Crew Legacy', 2026, 7)]));
@@ -149,20 +149,28 @@ function buildHarness(localStorage, getStoredUser) {
   let currentUser = { id: 'user-a' };
   const aHarness = buildHarness(storage, () => currentUser);
   const aHistory = aHarness.readLocalHistory();
-  assert.equal(aHistory.length, 1, 'the first scope to read history should receive the one-shot legacy migration');
-  assert.equal(aHistory[0].roster.crewName, 'Crew Legacy');
-  assert.equal(storage.getItem('crewcheck_local_history_v1'), null, 'legacy key must be deleted immediately after being claimed');
+  assert.equal(aHistory.length, 0, 'ownerless legacy history must never be claimed by the first authenticated scope');
+  assert.equal(storage.getItem('crewcheck_local_history_v1'), null, 'ownerless legacy key must be deleted after fail-closed handling');
+  assert.equal(storage.getItem('crewcheck_local_history_legacy_migrated_v11'), '1', 'migration marker must prevent reprocessing');
 
   currentUser = { id: 'user-b' };
   const bHarness = buildHarness(storage, () => currentUser);
   const bHistory = bHarness.readLocalHistory();
-  assert.equal(bHistory.length, 0, 'a second scope must never receive the already-claimed legacy history');
+  assert.equal(bHistory.length, 0, 'a later scope must also receive no ownerless legacy history');
+
+  // Correctly scoped data still works after ownerless legacy cleanup.
+  storage.setItem(bHarness.localHistoryKey(), JSON.stringify([historyEntry('Crew B', 2026, 8)]));
+  const bScopedHistory = bHarness.readLocalHistory();
+  assert.equal(bScopedHistory.length, 1, 'current-owner scoped history must remain available');
+  assert.equal(bScopedHistory[0].roster.crewName, 'Crew B');
 }
 
-// --- Guard against regressing to a permissive localStorage scan or an unconditional
-// anon/legacy inclusion. ---
+// --- Guard against regressing to a permissive localStorage scan, unconditional
+// anon/legacy inclusion, or first-claimer-wins migration. ---
 assert.doesNotMatch(keysSrc, /for\s*\(\s*let\s+i\s*=\s*0\s*;\s*i\s*<\s*localStorage\.length/, 'must not regress to scanning all of localStorage for history keys');
 assert.doesNotMatch(keysSrc, /'crewcheck_local_history_v11_anon'/, 'must not unconditionally include the anon scope key');
-assert.doesNotMatch(keysSrc, /LEGACY_LOCAL_HISTORY_KEY\)/, 'legacy key must go through the one-shot migration, not be read directly in localHistoryKeys()');
+assert.doesNotMatch(keysSrc, /LEGACY_LOCAL_HISTORY_KEY\)/, 'legacy key must go through fail-closed handling, not be read directly in localHistoryKeys()');
+assert.doesNotMatch(migrateSrc, /localHistoryKey\s*\(/, 'ownerless legacy migration must never target the current identity history key');
+assert.doesNotMatch(migrateSrc, /JSON\.parse\s*\(\s*legacyRaw/, 'ownerless legacy payload must never be parsed/promoted');
 
-console.log('[p1-offline-history-identity-scope] OK — local roster history never crosses user identities, and the legacy key migrates exactly once.');
+console.log('[p1-offline-history-identity-scope] OK — local roster history is identity-scoped and ownerless legacy data fails closed.');
