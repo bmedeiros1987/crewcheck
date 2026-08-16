@@ -488,6 +488,7 @@ const IDENTITY_AUDIT_KNOWN_TABLES = new Set([
   'crewcheck_platform_emergency_responses', 'crewcheck_guardian_cards', 'crewcheck_support_tickets',
   'crewcheck_aggregate_metrics', 'crewcheck_telegram_locations', 'crewcheck_platform_auth_artifacts',
   'crewcheck_platform_email_identity_state', 'crewcheck_scheduler_heartbeat',
+  'crewcheck_platform_roster_recovery_log',
 ]);
 
 async function dateRangeAndMonthlyDistribution(db, table) {
@@ -946,6 +947,348 @@ async function legacyRecoveryCandidate(req, res, db) {
   }
 }
 
+// #399 pilot recovery: converts ONE legacy user's rosters into the current schema.
+// Every recovered roster is written active=false and the write path never touches
+// the owner's current active roster - it deliberately does NOT call
+// saveRosterMysql() (server/platform.mjs:1620), which unconditionally deactivates
+// every existing roster for the owner before activating the new one. See
+// docs/399_legacy_roster_recovery_plan.md §4a for why that function is unsafe here.
+//
+// legacySanitizeRoster()/legacyDeriveRosterKey()/legacyRosterFingerprint() below are
+// intentionally byte-for-byte copies of platform.mjs's sanitizeRoster()/rosterKey()/
+// rosterFingerprint() (never exported there) rather than a new cross-module import
+// into that file during this investigation - regression-p0-legacy-roster-recovery.mjs
+// asserts both copies stay behaviorally identical on the same inputs, so any future
+// change to the canonical versions is caught here instead of silently drifting into
+// "two independent engines".
+//
+// compliance/gym are stored empty ({}/[]) for every recovered roster: this
+// codebase's compliance/gym scoring is computed client-side (see client/src/lib/*)
+// and applied to whatever the browser sends in handleRosterSync() - there is no
+// server-side engine to "recompute" them against. A recovered roster's compliance/
+// gym are only ever populated once the user reopens/reprocesses it through the
+// normal, existing import flow after their access is restored.
+function legacySha256(value = '') {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+function legacySanitizeRoster(roster) {
+  const clone = JSON.parse(JSON.stringify(roster || {}));
+  clone.rawText = '';
+  clone.days = Array.isArray(clone.days) ? clone.days.slice(0, 370).map((day) => ({
+    ...day,
+    rawText: '',
+    legs: Array.isArray(day?.legs) ? day.legs.slice(0, 16) : [],
+  })) : [];
+  return clone;
+}
+
+function legacyDeriveRosterKey(roster) {
+  return `${Number(roster?.year || 0)}-${String(Number(roster?.month || 0)).padStart(2, '0')}`;
+}
+
+function legacyRosterFingerprint(roster) {
+  return legacySha256(JSON.stringify({ year: roster?.year, month: roster?.month, crewId: roster?.crewId, days: roster?.days }));
+}
+
+async function legacyRecoveryLogTableReady(db) {
+  const [rows] = await db.query(
+    "SELECT TABLE_NAME AS name FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crewcheck_platform_roster_recovery_log' LIMIT 1",
+  );
+  return Boolean(rows[0]);
+}
+
+async function classifyLegacyRoster(db, { row, ordinal, ownerEmail }) {
+  const periodLabel = `${row.period_year || '????'}-${String(row.period_month || 0).padStart(2, '0')}`;
+  if (row.deleted_at) {
+    return { ordinal, periodLabel, status: 'skipped', reason: 'legacy_deleted', row };
+  }
+  const [logRows] = await db.query(
+    'SELECT status FROM crewcheck_platform_roster_recovery_log WHERE legacy_roster_id=? LIMIT 1',
+    [row.id],
+  );
+  if (logRows[0]) {
+    return { ordinal, periodLabel, status: 'already_recovered', reason: null, row };
+  }
+
+  let parsedContent = row.roster_json;
+  if (typeof parsedContent === 'string') {
+    try { parsedContent = JSON.parse(parsedContent); } catch { parsedContent = null; }
+  }
+  const hasUsableDays = parsedContent && Array.isArray(parsedContent.days) && parsedContent.days.length > 0
+    && parsedContent.days.every((day) => day && typeof day === 'object' && day.date);
+  if (!hasUsableDays) {
+    const reason = !parsedContent && row.storage_provider ? 'external_storage_unavailable' : 'unrecognized_legacy_shape';
+    return { ordinal, periodLabel, status: 'needs_manual_review', reason, row };
+  }
+  if (!row.period_year || !row.period_month) {
+    return { ordinal, periodLabel, status: 'needs_manual_review', reason: 'missing_period', row };
+  }
+
+  const rosterForConversion = { year: Number(row.period_year), month: Number(row.period_month), crewId: row.crew_id || null, days: parsedContent.days };
+  const rosterKeyValue = legacyDeriveRosterKey(rosterForConversion);
+  const fingerprintValue = legacyRosterFingerprint(rosterForConversion);
+
+  const [conflictRows] = await db.query(
+    'SELECT roster_key, fingerprint FROM crewcheck_platform_rosters WHERE owner_email=? AND (roster_key=? OR fingerprint=?) LIMIT 1',
+    [ownerEmail, rosterKeyValue, fingerprintValue],
+  );
+  if (conflictRows[0]) {
+    const reason = conflictRows[0].roster_key === rosterKeyValue ? 'roster_key_exists' : 'fingerprint_exists';
+    return { ordinal, periodLabel, status: 'conflict', reason, row };
+  }
+
+  return { ordinal, periodLabel, status: 'recoverable', reason: null, row, rosterForConversion, rosterKeyValue, fingerprintValue };
+}
+
+async function legacyRosterRecoveryPlan(db, ownerEmail) {
+  const [accountRows] = await db.query('SELECT email FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [ownerEmail]);
+  const [profileRows] = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [ownerEmail]);
+  const currentIdentityExists = Boolean(accountRows[0] || profileRows[0]);
+  if (!currentIdentityExists) {
+    return { blocked: true, reason: 'no_current_identity', currentIdentityExists: false, legacyUserExists: false, rosters: [] };
+  }
+
+  const recoveryLogReady = await legacyRecoveryLogTableReady(db);
+  if (!recoveryLogReady) {
+    return { blocked: true, reason: 'recovery_log_migration_pending', currentIdentityExists, legacyUserExists: false, rosters: [] };
+  }
+
+  const [columnRows] = await db.query(
+    `SELECT TABLE_NAME AS tbl, COLUMN_NAME AS col FROM information_schema.columns
+     WHERE TABLE_SCHEMA=DATABASE()
+       AND ((TABLE_NAME='crewcheck_users' AND COLUMN_NAME IN ('id','email'))
+         OR (TABLE_NAME='crewcheck_rosters' AND COLUMN_NAME IN ('id','user_id','created_at','deleted_at','period_year','period_month','crew_id','roster_json','source_file_name','storage_provider')))`,
+  );
+  const cols = new Set(columnRows.map((row) => `${row.tbl}.${row.col}`));
+  const requiredCols = [
+    'crewcheck_users.id', 'crewcheck_users.email',
+    'crewcheck_rosters.id', 'crewcheck_rosters.user_id', 'crewcheck_rosters.created_at', 'crewcheck_rosters.deleted_at',
+    'crewcheck_rosters.period_year', 'crewcheck_rosters.period_month', 'crewcheck_rosters.crew_id',
+    'crewcheck_rosters.roster_json', 'crewcheck_rosters.source_file_name', 'crewcheck_rosters.storage_provider',
+  ];
+  const legacySchemaReady = requiredCols.every((entry) => cols.has(entry));
+  if (!legacySchemaReady) {
+    return { blocked: true, reason: 'legacy_schema_unavailable', currentIdentityExists, legacyUserExists: false, rosters: [] };
+  }
+
+  const collationReport = await legacyColumnCollationReport(db);
+  const commonCollation = resolveCommonCollation(collationReport);
+
+  const [variantRows] = await db.query(
+    `SELECT COUNT(*) AS variantCount FROM crewcheck_users WHERE ${collateEq('LOWER(TRIM(email))', '?', commonCollation)}`,
+    [ownerEmail],
+  );
+  const variantCount = Number(variantRows[0]?.variantCount || 0);
+  if (variantCount === 0) {
+    return { blocked: true, reason: 'no_legacy_user', currentIdentityExists, legacyUserExists: false, rosters: [] };
+  }
+  if (variantCount > 1) {
+    return { blocked: true, reason: 'duplicate_legacy_user', currentIdentityExists, legacyUserExists: true, rosters: [] };
+  }
+
+  const idEq = collateEq('u.id', 'r.user_id', commonCollation);
+  const emailEq = collateEq('LOWER(TRIM(u.email))', '?', commonCollation);
+  const [legacyRosterRows] = await db.query(
+    `SELECT r.id, r.created_at, r.deleted_at, r.period_year, r.period_month, r.crew_id,
+            r.roster_json, r.source_file_name, r.storage_provider
+     FROM crewcheck_rosters r
+     JOIN crewcheck_users u ON ${idEq}
+     WHERE ${emailEq}
+     ORDER BY r.created_at ASC`,
+    [ownerEmail],
+  );
+
+  const rosters = [];
+  for (const [index, row] of legacyRosterRows.entries()) {
+    rosters.push(await classifyLegacyRoster(db, { row, ordinal: index + 1, ownerEmail }));
+  }
+
+  return {
+    blocked: false,
+    reason: null,
+    currentIdentityExists: true,
+    legacyUserExists: true,
+    rosters,
+    recoverableCount: rosters.filter((entry) => entry.status === 'recoverable').length,
+  };
+}
+
+function sanitizedPlanRosters(rosters) {
+  return rosters.map(({ ordinal, periodLabel, status, reason }) => ({ ordinal, periodLabel, status, reason }));
+}
+
+// Fail-closed gate: execute() must never accept a bare {email} and go recover
+// whatever it finds - it requires a token minted by a prior dry-run call for the
+// EXACT SAME plan (same e-mail, same set of recoverable roster keys/fingerprints).
+// If the plan changed since the dry-run (a conflict appeared, a roster was already
+// recovered by another call, etc.) the signature changes and the token stops
+// verifying, forcing a fresh dry-run rather than executing against a stale preview.
+// Stateless by design (no extra table) - HMAC via authSecret(), same pattern this
+// file already uses for password-reset/auth-artifact tokens.
+const LEGACY_ROSTER_RECOVERY_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+function legacyRosterRecoveryPlanSignature(recoverable) {
+  // legacy_roster_id is included alongside content (rosterKey:fingerprint) so the
+  // token represents not just "what content" but "from which legacy row" - closing
+  // even the theoretical case of two legacy rows sharing identical content
+  // (same fingerprint) but a different source id.
+  const parts = recoverable.map((entry) => `${entry.row.id}:${entry.rosterKeyValue}:${entry.fingerprintValue}`).sort();
+  return legacySha256(parts.join('|'));
+}
+
+function legacyRosterRecoveryConfirmationMac(email, planSignature, issuedAtMs) {
+  return crypto.createHmac('sha256', authSecret()).update(`legacy-roster-recovery|${email}|${planSignature}|${issuedAtMs}`).digest('hex');
+}
+
+function legacyRosterRecoveryConfirmationToken(email, planSignature, issuedAtMs = Date.now()) {
+  return `${issuedAtMs}.${legacyRosterRecoveryConfirmationMac(email, planSignature, issuedAtMs)}`;
+}
+
+function legacyRosterRecoveryTokenValid(token, email, planSignature) {
+  const raw = String(token || '');
+  const dot = raw.indexOf('.');
+  if (dot <= 0) return false;
+  const issuedAtMs = Number(raw.slice(0, dot));
+  const mac = raw.slice(dot + 1);
+  if (!Number.isFinite(issuedAtMs) || !mac) return false;
+  const age = Date.now() - issuedAtMs;
+  if (age < 0 || age > LEGACY_ROSTER_RECOVERY_TOKEN_TTL_MS) return false;
+  return secureCompare(mac, legacyRosterRecoveryConfirmationMac(email, planSignature, issuedAtMs));
+}
+
+// Read-only. Never writes. Shares legacyRosterRecoveryPlan() with the execute
+// endpoint below, so "what would happen" and "what actually happens" can never
+// silently diverge into two different code paths.
+async function legacyRosterRecoveryDryRun(req, res, db) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    return sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+  }
+  const adminEmail = safeEmail(payload?.email);
+  if (!adminEmail || !(payload?.admin || isAdminEmail(adminEmail))) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
+  }
+  const body = await readBody(req, 2_000);
+  const email = safeEmail(body.email);
+  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+
+  try {
+    const plan = await legacyRosterRecoveryPlan(db, email);
+    const recoverable = plan.blocked ? [] : plan.rosters.filter((entry) => entry.status === 'recoverable');
+    const confirmationToken = recoverable.length > 0
+      ? legacyRosterRecoveryConfirmationToken(email, legacyRosterRecoveryPlanSignature(recoverable))
+      : null;
+    return sendJson(res, 200, {
+      ok: true,
+      blocked: plan.blocked,
+      blockedReason: plan.reason,
+      currentIdentityExists: plan.currentIdentityExists,
+      legacyUserExists: plan.legacyUserExists,
+      recoverableCount: plan.blocked ? 0 : plan.recoverableCount,
+      rosters: sanitizedPlanRosters(plan.rosters),
+      confirmationToken,
+      confirmationExpiresInSeconds: confirmationToken ? LEGACY_ROSTER_RECOVERY_TOKEN_TTL_MS / 1000 : null,
+      message: confirmationToken
+        ? 'Simulação somente leitura - nenhuma escrita foi realizada. Para executar, reenvie este confirmationToken em legacy-roster-recovery-execute dentro do prazo indicado; se o plano mudar, ele deixa de valer. Nenhuma senha, hash, salt, UUID legado ou conteúdo de roster é retornado.'
+        : 'Simulação somente leitura - nenhuma escrita foi realizada. Nenhuma senha, hash, salt, UUID legado ou conteúdo de roster é retornado.',
+    });
+  } catch (error) {
+    return sendJson(res, 200, { ok: false, blocked: true, blockedReason: legacyAuditErrorCode(error), rosters: [], message: 'Não foi possível concluir a simulação com segurança.' });
+  }
+}
+
+// The only function in this file that writes a recovered roster. Requires an
+// existing current identity (never creates one), requires the legacy bridge to
+// resolve unambiguously, and commits all of one user's recoverable rosters in a
+// single transaction - partial success for one user is never left committed.
+async function legacyRosterRecoveryExecute(req, res, db) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    return sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+  }
+  const adminEmail = safeEmail(payload?.email);
+  if (!adminEmail || !(payload?.admin || isAdminEmail(adminEmail))) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
+  }
+  const body = await readBody(req, 2_000);
+  const email = safeEmail(body.email);
+  const confirmationToken = String(body.confirmationToken || '');
+  if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+  if (!confirmationToken) {
+    return sendJson(res, 400, { ok: false, message: 'confirmationToken obrigatório - rode legacy-roster-recovery-dry-run primeiro e reenvie o token retornado.' });
+  }
+
+  try {
+    const plan = await legacyRosterRecoveryPlan(db, email);
+    if (plan.blocked) {
+      return sendJson(res, 200, { ok: true, executed: false, blockedReason: plan.reason, recoveredCount: 0, results: [] });
+    }
+
+    const recoverable = plan.rosters.filter((entry) => entry.status === 'recoverable');
+    const nonRecoverable = sanitizedPlanRosters(plan.rosters.filter((entry) => entry.status !== 'recoverable'));
+
+    if (recoverable.length === 0) {
+      return sendJson(res, 200, { ok: true, executed: true, recoveredCount: 0, results: nonRecoverable, message: 'Nenhuma roster recuperável para este e-mail no momento.' });
+    }
+
+    if (!legacyRosterRecoveryTokenValid(confirmationToken, email, legacyRosterRecoveryPlanSignature(recoverable))) {
+      return sendJson(res, 200, {
+        ok: false, executed: false, blockedReason: 'confirmation_token_invalid_or_expired', recoveredCount: 0, results: [],
+        message: 'Token de confirmação inválido, expirado, ou o plano mudou desde a simulação - rode um novo dry-run.',
+      });
+    }
+
+    const connection = await db.getConnection();
+    const recoveredResults = [];
+    try {
+      await connection.beginTransaction();
+      for (const entry of recoverable) {
+        const currentRosterId = crypto.randomUUID();
+        const logId = crypto.randomUUID();
+        const sanitizedRoster = legacySanitizeRoster(entry.rosterForConversion);
+        await connection.query(
+          `INSERT INTO crewcheck_platform_rosters(id,owner_email,roster_key,roster,compliance,gym,source_name,fingerprint,active)
+           VALUES(?,?,?,?,?,?,?,?,FALSE)`,
+          [
+            currentRosterId, email, entry.rosterKeyValue,
+            JSON.stringify(sanitizedRoster), JSON.stringify({}), JSON.stringify([]),
+            String(entry.row.source_file_name || '').slice(0, 180), entry.fingerprintValue,
+          ],
+        );
+        await connection.query(
+          `INSERT INTO crewcheck_platform_roster_recovery_log(id,legacy_roster_id,owner_email,roster_key,current_roster_id,status,reason)
+           VALUES(?,?,?,?,?,?,?)`,
+          [logId, entry.row.id, email, entry.rosterKeyValue, currentRosterId, 'recovered', 'pilot_recovery'],
+        );
+        recoveredResults.push({ ordinal: entry.ordinal, periodLabel: entry.periodLabel, status: 'recovered', reason: null });
+      }
+      await connection.commit();
+    } catch (error) {
+      try { await connection.rollback(); } catch {}
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+    return sendJson(res, 200, {
+      ok: true,
+      executed: true,
+      recoveredCount: recoveredResults.length,
+      results: [...recoveredResults, ...nonRecoverable],
+      message: 'Rosters recuperadas gravadas como active=false - a escala atual do usuário não foi alterada. compliance/gym ficam vazios até o usuário reabrir/reprocessar a escala pelo fluxo de importação normal.',
+    });
+  } catch (error) {
+    return sendJson(res, 200, { ok: false, executed: false, error: legacyAuditErrorCode(error), recoveredCount: 0, results: [] });
+  }
+}
+
 export async function handleAuthRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/auth/')) return false;
   if (url.pathname === '/api/auth/config') {
@@ -966,6 +1309,8 @@ export async function handleAuthRoute(req, res, url) {
   else if (url.pathname === '/api/auth/admin/identity-audit') await identityAudit(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-table-audit') await legacyTableAudit(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-recovery-candidate') await legacyRecoveryCandidate(req, res, db);
+  else if (url.pathname === '/api/auth/admin/legacy-roster-recovery-dry-run') await legacyRosterRecoveryDryRun(req, res, db);
+  else if (url.pathname === '/api/auth/admin/legacy-roster-recovery-execute') await legacyRosterRecoveryExecute(req, res, db);
   else if (url.pathname === '/api/auth/logout') {
     clearAuthCookie(res);
     sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
