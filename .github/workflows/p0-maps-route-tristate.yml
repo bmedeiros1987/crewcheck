@@ -10,6 +10,7 @@ on:
       - 'scripts/p0-maps-route-tristate/**'
       - 'scripts/regression-p0-maps-route-tristate.mjs'
       - 'scripts/regression-p0-maps-terminal-incidents.mjs'
+      - 'scripts/regression-p0-maps-active-first-alert.mjs'
       - 'scripts/p0-maps-embed-preview/**'
       - 'scripts/regression-p0-maps-embed-preview.mjs'
       - '.github/workflows/p0-maps-route-tristate.yml'
@@ -35,6 +36,8 @@ jobs:
         run: node scripts/regression-p0-maps-route-tristate.mjs
       - name: Reject terminal route incidents
         run: node scripts/regression-p0-maps-terminal-incidents.mjs
+      - name: Alert first active route incident once
+        run: node scripts/regression-p0-maps-active-first-alert.mjs
       - name: Validate embedded route preview fallback
         run: node scripts/regression-p0-maps-embed-preview.mjs
       - name: TypeScript check
