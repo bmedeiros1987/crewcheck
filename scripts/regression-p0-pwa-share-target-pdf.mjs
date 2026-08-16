@@ -21,6 +21,9 @@ assert(sw.includes('SHARED_PDF_MAX_BYTES'), 'service worker deve limitar tamanho
 assert(sw.includes('SHARED_PDF_TTL_MS'), 'arquivo compartilhado deve expirar');
 assert(sw.includes("'cache-control': 'no-store'"), 'PDF temporário não deve ser tratado como cache público');
 assert(sw.includes("url.pathname.startsWith(SHARED_PDF_ROUTE)"), 'service worker deve servir somente a rota temporária dedicada');
+assert(sw.includes('const response = await cache.match(request);'), 'handoff temporário deve ler uma única resposta dedicada');
+assert(sw.includes('if (!response) return new Response(\'\', { status: 404 });'), 'segunda tentativa do mesmo handoff deve falhar de forma fechada');
+assert(sw.includes('await cache.delete(request);\n      return response;'), 'handoff PWA deve ser single-use e apagar o PDF temporário após entrega');
 assert(!sw.includes("mimeType=\"*/*\""), 'não ampliar aceite para wildcard');
 
 assert(main.includes("import './lib/pwaSharedPdfRuntime';"), 'runtime PWA deve carregar no bootstrap');
@@ -30,4 +33,4 @@ assert(runtime.includes("crewcheck:native-pdf"), 'PWA deve reutilizar o mesmo ev
 assert(runtime.includes('window.history.replaceState'), 'query com id temporário deve ser removida após consumo');
 assert(!runtime.includes('handleFile('), 'runtime PWA não deve implementar parser/importador paralelo');
 
-console.log('[p0-pwa-share-target] contrato PWA PDF share target protegido.');
+console.log('[p0-pwa-share-target] contrato PWA PDF share target protegido, incluindo handoff single-use.');

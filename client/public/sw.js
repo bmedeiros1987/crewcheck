@@ -164,7 +164,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       await cleanupSharedPdfs();
       const cache = await caches.open(SHARED_PDF_CACHE);
-      return (await cache.match(request)) || new Response('', { status: 404 });
+      const response = await cache.match(request);
+      if (!response) return new Response('', { status: 404 });
+      await cache.delete(request);
+      return response;
     })());
     return;
   }
