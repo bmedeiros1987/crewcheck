@@ -2,6 +2,7 @@ import './lib/crewcheckPremiumRuntime';
 import './lib/themeRuntime';
 import './lib/offlineRuntime';
 import './lib/pwaSharedPdfRuntime';
+import './lib/buildIdentityRuntime';
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
