@@ -49,6 +49,17 @@ function passwordMatches(password, salt, expected) {
   }
 }
 
+// Structural check only - never used to infer WHICH algorithm produced a
+// non-conforming hash, only whether this row's shape matches what the current
+// passwordDigest() always produces (32 hex chars from crypto.randomBytes(16),
+// 128 hex chars from scryptSync(...,64)). A row that doesn't conform can only have
+// been written outside this code path (direct SQL, an external migration, a prior
+// scheme) - passwordMatches() would never succeed against it no matter what the
+// user types, so failing it should not be reported as "wrong password".
+function isCurrentScryptFormat(salt, hash) {
+  return /^[0-9a-f]{32}$/i.test(String(salt || '')) && /^[0-9a-f]{128}$/i.test(String(hash || ''));
+}
+
 function resetHash(email, code) {
   return crypto.createHmac('sha256', authSecret()).update(`password-reset|${safeEmail(email)}|${String(code)}`).digest('hex');
 }
@@ -187,6 +198,30 @@ async function login(req, res, db) {
     return sendJson(res, 401, { ok: false, code: 'account_not_found', message: 'E-mail ou senha inválidos.' });
   }
   if (!passwordMatches(password, account.password_salt, account.password_hash)) {
+    // An account row existing is not enough to prove a "wrong password" - two other
+    // structural states collapse into the same passwordMatches() failure and deserve
+    // their own classification, never a fallback accept:
+    //  - must_change_password=1: the stored hash is a KNOWN placeholder (requestReset's
+    //    account-creation-on-request path) or a system-generated temp password
+    //    (partner invite) that the user could never legitimately type. Whatever they
+    //    enter will correctly fail forever until they complete recovery.
+    //  - a hash/salt that doesn't match the current scheme's own shape can only have
+    //    been written outside this code path; passwordMatches() can never succeed
+    //    against it regardless of what password is correct.
+    if (account.must_change_password) {
+      return sendJson(res, 401, {
+        ok: false,
+        code: 'account_state',
+        message: 'Esta conta precisa concluir a definição de senha. Toque em "Esqueci minha senha" para criar uma nova senha e continuar.',
+      });
+    }
+    if (!isCurrentScryptFormat(account.password_salt, account.password_hash)) {
+      return sendJson(res, 401, {
+        ok: false,
+        code: 'unknown_hash_state',
+        message: 'Não foi possível validar esta senha no padrão atual. Toque em "Esqueci minha senha" para criar uma nova senha e continuar.',
+      });
+    }
     return sendJson(res, 401, { ok: false, code: 'password_mismatch', message: 'E-mail ou senha inválidos.' });
   }
   await db.query('UPDATE crewcheck_platform_accounts SET last_login_at=CURRENT_TIMESTAMP(3) WHERE email=?', [email]);
@@ -353,6 +388,73 @@ async function me(req, res, db) {
   }
 }
 
+// Structural classification only - no password, full hash, full salt, or token is
+// ever included in the response. `recognized_legacy` is intentionally not a possible
+// return value: no legacy password scheme is referenced anywhere in this repository's
+// history, so implementing a verifier for one would be guessing, and #399's own rule
+// is that an unidentified scheme must classify as unknown_hash_state/legacy_credential
+// instead of ever being treated as a match.
+function classifyCredentialState(profile, account) {
+  if (!profile && !account) return 'no_identity';
+  if (!account) return 'profile_only_legacy';
+  if (account.must_change_password) return 'account_state';
+  if (!isCurrentScryptFormat(account.password_salt, account.password_hash)) return 'unknown_hash_state';
+  return 'current_scrypt';
+}
+
+async function diagnoseCredentialState(req, res, db) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  let payload = null;
+  try {
+    payload = verifyJwt(requestToken(req));
+  } catch (error) {
+    return sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' });
+  }
+  const adminEmail = safeEmail(payload?.email);
+  if (!adminEmail || !(payload?.admin || isAdminEmail(adminEmail))) {
+    return sendJson(res, 403, { ok: false, message: 'Acesso restrito ao administrador.' });
+  }
+  const body = await readBody(req, 2_000);
+  const target = safeEmail(body.email);
+  if (!target) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
+
+  const [profiles] = await db.query('SELECT email, public_id, created_at FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [target]);
+  const [accounts] = await db.query(
+    'SELECT email, password_hash, password_salt, must_change_password, created_at, updated_at, last_login_at FROM crewcheck_platform_accounts WHERE email=? LIMIT 1',
+    [target],
+  );
+  const profile = profiles[0] || null;
+  const account = accounts[0] || null;
+
+  // Duplicate-identity signal: rows a case/whitespace-insensitive comparison would
+  // treat as "the same" but whose stored value differs byte-for-byte from the app's
+  // own canonical safeEmail() output (login()/register() always query by the exact
+  // normalized value, so this can only happen via a write path outside this module).
+  const [profileVariants] = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE LOWER(TRIM(email))=LOWER(TRIM(?))', [target]);
+  const [accountVariants] = await db.query('SELECT email FROM crewcheck_platform_accounts WHERE LOWER(TRIM(email))=LOWER(TRIM(?))', [target]);
+  const duplicateIdentity = profileVariants.some((row) => row.email !== target) || accountVariants.some((row) => row.email !== target);
+
+  return sendJson(res, 200, {
+    ok: true,
+    normalizedEmail: target,
+    state: duplicateIdentity ? 'duplicate_identity' : classifyCredentialState(profile, account),
+    profileExists: Boolean(profile),
+    accountExists: Boolean(account),
+    profileCreatedAt: profile?.created_at || null,
+    accountCreatedAt: account?.created_at || null,
+    accountUpdatedAt: account?.updated_at || null,
+    lastLoginAt: account?.last_login_at || null,
+    mustChangePassword: Boolean(account?.must_change_password),
+    credentialFormat: account ? {
+      hashLength: String(account.password_hash || '').length,
+      saltLength: String(account.password_salt || '').length,
+      recognizedCurrentScheme: isCurrentScryptFormat(account.password_salt, account.password_hash),
+    } : null,
+    duplicateIdentity,
+    message: 'Diagnóstico sanitizado - nenhuma senha, hash completo, salt completo ou token é retornado.',
+  });
+}
+
 export async function handleAuthRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/auth/')) return false;
   if (url.pathname === '/api/auth/config') {
@@ -369,6 +471,7 @@ export async function handleAuthRoute(req, res, url) {
   else if (url.pathname === '/api/auth/request-reset') await requestReset(req, res, db);
   else if (url.pathname === '/api/auth/reset-password') await resetPassword(req, res, db);
   else if (url.pathname === '/api/auth/me') await me(req, res, db);
+  else if (url.pathname === '/api/auth/admin/diagnose-credential') await diagnoseCredentialState(req, res, db);
   else if (url.pathname === '/api/auth/logout') {
     clearAuthCookie(res);
     sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
