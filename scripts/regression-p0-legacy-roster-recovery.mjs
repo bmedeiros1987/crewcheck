@@ -231,6 +231,11 @@ export function makeDb(config = {}) {
     collations = {},
     existingCurrentRosters = [],
     failOnRosterInsertNumber = null,
+    // Models a genuine race: another concurrent execute() call already committed
+    // this legacy_roster_id between THIS call's in-memory pre-check (which can't
+    // see it) and its INSERT - only the database's real UNIQUE KEY constraint on
+    // legacy_roster_id catches this, not the app-level SELECT pre-check.
+    existingRecoveryLogAtDbLevel = [],
   } = config;
 
   const currentRosters = existingCurrentRosters.map((row) => ({ ...row }));
@@ -300,6 +305,9 @@ export function makeDb(config = {}) {
       }
       if (sql.includes('INSERT INTO crewcheck_platform_roster_recovery_log')) {
         const [id, legacyRosterId, ownerEmail, rosterKeyValue, currentRosterId, status, reason] = params;
+        if (existingRecoveryLogAtDbLevel.includes(legacyRosterId)) {
+          throw Object.assign(new Error("Duplicate entry for key 'crewcheck_roster_recovery_legacy_uq'"), { code: 'ER_DUP_ENTRY' });
+        }
         transactionLogInserts.push({ id, legacy_roster_id: legacyRosterId, owner_email: ownerEmail, roster_key: rosterKeyValue, current_roster_id: currentRosterId, status, reason });
         return [{}];
       }
@@ -522,6 +530,28 @@ export function makeDb(config = {}) {
     assert.equal(result.payload.executed, false);
     assert.equal(db.currentRosters.length, 0, 'rollback total: a primeira roster que já tinha sido inserida na transação não pode sobreviver');
     assert.equal(db.recoveryLog.length, 0, 'rollback total: nenhuma entrada de log pode sobreviver');
+  }
+
+  // I2) Corrida real entre duas execuções concorrentes: o pré-check em memória
+  // (SELECT ... WHERE legacy_roster_id=?) não enxerga a outra transação que ainda
+  // não commitou, então ambas as rosters ainda parecem recoverable no dry-run -
+  // mas a UNIQUE KEY real do banco (crewcheck_roster_recovery_legacy_uq) rejeita
+  // a segunda tentativa de INSERT no momento em que ela de fato acontece. Isso
+  // prova que a idempotência não depende só do pré-check da aplicação: mesmo numa
+  // corrida que o pré-check não veria, o banco ainda impede duplicidade, e a
+  // falha ainda causa ROLLBACK total (nunca uma linha órfã), nunca 500.
+  {
+    const db = mod.makeDb({
+      accountExists: true, collations, variantCount: 1, legacyRosterRows: soraiaLegacyRosters,
+      existingRecoveryLogAtDbLevel: ['legacy-roster-2'],
+    });
+    const dry = await callDryRun(db, target);
+    assert.equal(dry.payload.recoverableCount, 2, 'o pré-check em memória não enxerga a corrida - as duas ainda parecem recuperáveis no dry-run');
+    const result = await callExecute(db, target, dry.payload.confirmationToken);
+    assert.equal(result.status, 200, 'uma violação real de UNIQUE KEY nunca pode virar 500');
+    assert.equal(result.payload.executed, false);
+    assert.equal(db.currentRosters.length, 0, 'rollback total: a legacy-roster-1 já inserida na mesma transação não pode sobreviver à falha da segunda');
+    assert.equal(db.recoveryLog.length, 0, 'rollback total: nenhuma entrada de log pode sobreviver a uma corrida perdida');
   }
 
   // J) Token de confirmação stale/inválido (plano mudou ou token forjado): execute
