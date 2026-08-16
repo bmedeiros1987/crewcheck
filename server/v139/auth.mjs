@@ -865,7 +865,6 @@ async function legacyRecoveryCandidate(req, res, db) {
 
   const emptyResult = {
     ok: true,
-    email,
     legacyUserExists: false,
     currentIdentityExists: false,
     legacyRosterCount: 0,
@@ -932,7 +931,6 @@ async function legacyRecoveryCandidate(req, res, db) {
 
     return sendJson(res, 200, {
       ok: true,
-      email,
       legacyUserExists,
       currentIdentityExists,
       legacyRosterCount,

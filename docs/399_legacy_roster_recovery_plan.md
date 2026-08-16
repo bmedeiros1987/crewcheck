@@ -16,9 +16,12 @@ read-only, per-e-mail) is the only new runtime behavior in this slice.
 - All 60 legacy rosters were created between 2026-06-01 and 2026-07-04, i.e. entirely
   before the Aiven MySQL cutover commit (`9cf5fad2`, 2026-07-15).
 
-**Conclusion this data supports:** for this June/early-July generation of users, the
-critical data was never lost and never left the current Aiven MySQL database. This is
-an identity-reconnection problem, not a data-recovery-from-Supabase problem.
+**Conclusion this data supports:** for this June/early-July generation, the legacy
+user/roster data is present and intact in the current MySQL datastore; recovery can
+therefore start from the current database rather than depending on Supabase. (This
+doesn't prove the data's full history — e.g. whether it arrived via continuous
+residence in one instance or some out-of-Git import/manual step — only that it's
+reachable here now, which is what recovery actually depends on.)
 
 ## 2. Column-by-column schema comparison
 
@@ -41,7 +44,7 @@ an identity-reconnection problem, not a data-recovery-from-Supabase problem.
 | `compliance_json JSON NULL`, `gym_json JSON NULL` | `compliance JSON NOT NULL`, `gym JSON NOT NULL` | Same shape concern as above, plus current requires `NOT NULL` — these should be **recomputed by the current compliance/gym engines** after the roster is re-parsed, not copied from the legacy blob. |
 | `checksum VARCHAR(128)` | `fingerprint CHAR(64) NOT NULL` | Different algorithm/length. Must be **recomputed** by the current fingerprinting logic against the converted roster, since it's derived from content that itself needs re-parsing. |
 | `source_file_name VARCHAR(255)` | `source_name VARCHAR(180)` | Direct copy, truncated to 180 chars if needed. Metadata only. |
-| `is_active TINYINT(1)`, `active_at`, `deleted_at` | `active TINYINT(1) NOT NULL DEFAULT 1` | Current enforces **one active roster per `owner_email`** via an explicit `UPDATE ... SET active=FALSE WHERE owner_email=?` before every insert (`saveRosterMysql()`, `server/platform.mjs:1620`). A converted legacy roster must go through that *same* function/invariant, never a raw `INSERT ... active=1` that could silently deactivate or shadow a roster the user is using today. Rows with `deleted_at IS NOT NULL` in the legacy table were explicitly deleted by the user and must be **excluded from recovery entirely**. |
+| `is_active TINYINT(1)`, `active_at`, `deleted_at` | `active TINYINT(1) NOT NULL DEFAULT 1` | Current enforces **one active roster per `owner_email`**, but it does so via `saveRosterMysql()` (`server/platform.mjs:1620`) unconditionally deactivating every existing roster for that owner and inserting the new one as `active=TRUE`. **A recovered legacy roster must never go through `saveRosterMysql()` as-is** — see §4a, this is a blocking constraint, not a detail. Rows with `deleted_at IS NOT NULL` in the legacy table were explicitly deleted by the user and must be **excluded from recovery entirely**. |
 | `storage_provider`, `source_storage_path`, `source_file_size_bytes`, `storage_uploaded_at` | *(none)* | Some legacy rows may have stored the roster in external storage with only a pointer here, rather than inline JSON. Any row where `roster_json` is empty/absent and `storage_provider` is set is **not recoverable from this table alone** — it depends on whether that storage still exists, which is out of scope for this proposal and must be checked case by case before a user is told their data is recoverable. |
 | `period_year INT`, `period_month INT`, `crew_name`, `crew_id`, `base`, `` `rank` ``, `airline` | *(none as separate columns — folded into `roster`/profile in the current model)* | Informational / derivable from the re-parsed roster content, not migrated as standalone columns. |
 | `score`, `intensity_score`, `alerts_count`, `critical_alerts_count` | *(none stored — computed at read time in the current architecture)* | Not migrated as stored values; recomputed live by the current engine once the roster is converted. |
@@ -80,11 +83,11 @@ crewcheck_users.id  →  crewcheck_users.email  →  safeEmail() normalize
       already has this normalized e-mail)                                    this normalized e-mail
                           │                                                             │
       import roster(s) into the existing                            user must complete the MODERN
-      identity via the same saveRosterMysql()                       self-service recovery flow
-      invariants used today (§4) - no new                           (requestReset/resetPassword,
-      account created, no credential touched                        already built, already tested)
-                                                                      to PROVE e-mail ownership before
-                                                                      any current account is created.
+      identity, INACTIVE by default, via                            self-service recovery flow
+      the safe recovery write path (§4a)                            (requestReset/resetPassword,
+      - no new account created, no                                  already built, already tested)
+      credential touched, current active                            to PROVE e-mail ownership before
+      roster left untouched                                         any current account is created.
                                                                       Never authenticate with, or copy,
                                                                       the legacy password_hash.
 ```
@@ -93,6 +96,36 @@ crewcheck_users.id  →  crewcheck_users.email  →  safeEmail() normalize
 
 Per explicit instruction, the migration itself is **not** part of this PR. When it is
 written, it must satisfy all of the following:
+
+### 4a. `saveRosterMysql()` cannot be called as-is — blocking constraint
+
+`saveRosterMysql()` (`server/platform.mjs:1620`) is not safe to call directly from a
+recovery routine. Today it unconditionally:
+
+1. runs `UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1` for
+   **every** existing roster the owner has, then
+2. inserts the new roster with `active=TRUE`.
+
+Called with a recovered June/early-July legacy roster, this would deactivate whatever
+schedule the user is using **today** and activate the old one in its place — the exact
+opposite of the invariant this plan requires ("never silently overwrite a current
+active roster"). This is why recovered rosters must always be written **inactive**
+(§4, "never silently overwrite") and why the future migration slice needs a different
+write path, not a direct call to this function.
+
+The future migration slice must choose one of:
+
+- **Refactor `saveRosterMysql()`** to accept an explicit `activate` option (default
+  `true`, preserving today's behavior for every existing caller), skipping the
+  deactivate-and-activate steps entirely when `activate: false` is passed; or
+- **Add a separate, internal recovery write path** that reuses the same
+  validation/normalization and persistence logic `saveRosterMysql()` uses, but never
+  executes the `UPDATE ... active=FALSE` step and always inserts with `active=FALSE`.
+
+Either way, the recovered roster must still pass through the **same content
+validators/normalizers** `saveRosterMysql()` uses today (matching §4's "respect
+current invariants" below) — only the activation behavior differs. Which of the two
+options to take is a decision for the migration PR itself, not this one.
 
 - **Idempotent.** Re-running the migration against the same legacy row must never
   create a duplicate or double-count. The derived `roster_key` (see table above) plus
@@ -105,20 +138,20 @@ written, it must satisfy all of the following:
   needs a new, append-only table (e.g. `crewcheck_platform_roster_recovery_log`) with
   the legacy roster id, the resolved current `owner_email`, a conversion timestamp, and
   outcome — never smuggled as extra columns into `crewcheck_platform_rosters` itself.
-- **Never silently overwrite a current active roster.** If an active roster already
-  exists for that `owner_email` with a conflicting derived `roster_key`, the recovered
-  legacy roster is inserted **inactive**, never auto-activated over what the user is
-  using today. Activation, if wanted, is a separate, explicit, reviewed step.
+- **Never silently overwrite a current active roster.** Every recovered legacy roster
+  is inserted **inactive** (see §4a — this is not optional, `saveRosterMysql()`'s
+  default behavior would violate it), never auto-activated over what the user is using
+  today. Activation, if wanted, is a separate, explicit, reviewed step.
 - **Detect duplicity.** Before inserting, check whether an equivalent roster (same
   `owner_email` + derived `roster_key`, or same recomputed `fingerprint`) already
   exists in `crewcheck_platform_rosters`; skip and log rather than duplicate.
 - **Keep the legacy record intact.** The migration may only ever `SELECT` from
   `crewcheck_users`/`crewcheck_rosters` — no `UPDATE`, `DELETE`, or `ALTER` against
   them, ever. They remain the durable historical record.
-- **Respect current invariants.** Roster creation/activation must go through the same
-  functions `saveRosterMysql()` already uses today (single-active-per-owner
-  enforcement, hotel_rules/stays population where derivable) — never a parallel raw
-  `INSERT` that bypasses that logic.
+- **Respect current invariants.** Roster content must pass through the same
+  validation/normalization logic `saveRosterMysql()` uses today — but never through
+  `saveRosterMysql()`'s activation behavior itself (§4a). Never a raw `INSERT` that
+  bypasses content validation either.
 - **No credential reuse.** The migration never reads, copies, or authenticates against
   `crewcheck_users.password_hash`. A missing current identity is only ever created
   through the existing self-service recovery flow, which requires proving e-mail

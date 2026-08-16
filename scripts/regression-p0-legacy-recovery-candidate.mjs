@@ -223,7 +223,7 @@ export function makeDb({
     });
     const result = await callCandidate(db, target);
     assert.equal(result.status, 200);
-    assert.equal(result.payload.email, target);
+    assert.equal(Object.hasOwn(result.payload, 'email'), false, 'o caller já sabe qual e-mail enviou - a resposta não deve ecoá-lo de volta (minimização de dados)');
     assert.equal(result.payload.legacyUserExists, true);
     assert.equal(result.payload.currentIdentityExists, false);
     assert.equal(result.payload.legacyRosterCount, 3);
@@ -305,14 +305,24 @@ export function makeDb({
     assert.doesNotMatch(payloadStr, /at Object\.query|node_modules|\.mjs:\d+/, 'erro sanitizado não pode vazar stack trace');
   }
 
-  // J) Nunca vaza dado de outra pessoa nem UUID/hash em nenhum cenário acima.
+  // J) Nunca vaza dado de outra pessoa, UUID/hash, nem o próprio e-mail consultado
+  // (minimização: o caller já sabe qual e-mail enviou), em nenhum cenário acima -
+  // inclusive nos caminhos de schema ausente (H) e erro de query (I).
   {
     const db = mod.makeDb({ collations, variantCount: 1, rosterStats: { total: 1, minCreatedAt: '2026-06-01T00:00:00Z', maxCreatedAt: '2026-06-01T00:00:00Z' } });
     const result = await callCandidate(db, target);
+    assert.equal(Object.hasOwn(result.payload, 'email'), false);
     const payloadStr = JSON.stringify(result.payload);
     assert.equal(payloadStr.includes('outra-pessoa@'), false);
+    assert.equal(payloadStr.includes(target), false, 'e-mail consultado não pode aparecer em nenhum campo da resposta');
     assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(payloadStr), false, 'nunca um UUID individual');
     assert.equal(/[0-9a-f]{40,}/i.test(payloadStr), false, 'nunca algo com formato de hash longo');
+
+    const schemaMissing = await callCandidate(mod.makeDb({ legacySchemaReady: false }), target);
+    assert.equal(Object.hasOwn(schemaMissing.payload, 'email'), false, 'resposta de schema ausente também não pode ecoar o e-mail');
+
+    const errored = await callCandidate(mod.makeDb({ collations, throwOn: 'variantCount' }), target);
+    assert.equal(Object.hasOwn(errored.payload, 'email'), false, 'resposta de erro também não pode ecoar o e-mail');
   }
 
   console.log('[p0-legacy-recovery-candidate] OK — diagnóstico admin-only, somente leitura, por e-mail único, com conflito/ambiguidade sinalizado, sem vazar senha/hash/UUID/roster/dado de outra pessoa, e sem derrubar a resposta em falha de query.');
