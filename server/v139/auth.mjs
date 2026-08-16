@@ -623,6 +623,77 @@ async function legacyTableEmailAnalysis(db, table, column) {
   };
 }
 
+// #399 follow-up: the legacy model links crewcheck_rosters to crewcheck_users by
+// user_id (a UUID), never by e-mail - so the "recreate the identity with the same
+// e-mail and everything reconnects" guarantee that holds for the owner_email-scoped
+// crewcheck_platform_* tables (see identityAudit) does NOT hold for legacy rosters.
+// Recovering them needs the bridge legacy user_id -> crewcheck_users.email
+// (normalized) -> current identity to still be intact. This measures exactly that,
+// read-only and admin-only, before any bridging/migration routine is written.
+const LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN = '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$';
+
+async function legacyRosterBridgeAudit(db, tables) {
+  const usersEntry = tables.find((entry) => entry.table === 'crewcheck_users');
+  const rostersEntry = tables.find((entry) => entry.table === 'crewcheck_rosters');
+  if (!usersEntry || !rostersEntry) {
+    return { available: false, reason: 'crewcheck_users e/ou crewcheck_rosters não encontrados no schema atual.' };
+  }
+  const hasUsersId = usersEntry.columns.some((column) => column.name === 'id');
+  const hasUsersEmail = usersEntry.columns.some((column) => column.name === 'email');
+  const hasRostersUserId = rostersEntry.columns.some((column) => column.name === 'user_id');
+  if (!hasUsersId || !hasUsersEmail || !hasRostersUserId) {
+    return { available: false, reason: 'crewcheck_users.id/email ou crewcheck_rosters.user_id não encontrados - o schema ao vivo difere do modelo legado esperado.' };
+  }
+
+  const pattern = LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN;
+  const [matchedRosterRows] = await db.query(
+    'SELECT COUNT(*) AS matchingRosters, COUNT(DISTINCT r.user_id) AS distinctUsersWithRoster FROM crewcheck_rosters r JOIN crewcheck_users u ON u.id=r.user_id',
+  );
+  const [orphanedRosterRows] = await db.query(
+    'SELECT COUNT(*) AS orphanedRosters FROM crewcheck_rosters r LEFT JOIN crewcheck_users u ON u.id=r.user_id WHERE u.id IS NULL',
+  );
+  const [normalizableRows] = await db.query(
+    'SELECT COUNT(*) AS normalizableEmailCount FROM crewcheck_users WHERE email IS NOT NULL AND email REGEXP ?',
+    [pattern],
+  );
+  const [matchingIdentityRows] = await db.query(
+    `SELECT COUNT(*) AS matchingCount FROM crewcheck_users u
+     WHERE u.email IS NOT NULL AND u.email REGEXP ?
+       AND (EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
+         OR EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email))))`,
+    [pattern],
+  );
+  const [notMatchingIdentityRows] = await db.query(
+    `SELECT COUNT(*) AS notMatchingCount FROM crewcheck_users u
+     WHERE u.email IS NOT NULL AND u.email REGEXP ?
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email)))`,
+    [pattern],
+  );
+  const [notMatchingWithRosterRows] = await db.query(
+    `SELECT COUNT(DISTINCT u.id) AS count FROM crewcheck_users u
+     JOIN crewcheck_rosters r ON r.user_id=u.id
+     WHERE u.email IS NOT NULL AND u.email REGEXP ?
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_accounts a WHERE a.email=LOWER(TRIM(u.email)))
+       AND NOT EXISTS (SELECT 1 FROM crewcheck_platform_profiles p WHERE p.email=LOWER(TRIM(u.email)))`,
+    [pattern],
+  );
+
+  return {
+    available: true,
+    totalLegacyUsers: usersEntry.totalRows,
+    totalLegacyRosters: rostersEntry.totalRows,
+    distinctLegacyUsersWithRoster: Number(matchedRosterRows[0]?.distinctUsersWithRoster || 0),
+    rostersMatchingLegacyUser: Number(matchedRosterRows[0]?.matchingRosters || 0),
+    rostersWithoutLegacyUser: Number(orphanedRosterRows[0]?.orphanedRosters || 0),
+    legacyUsersWithNormalizableEmail: Number(normalizableRows[0]?.normalizableEmailCount || 0),
+    legacyUsersMatchingCurrentIdentity: Number(matchingIdentityRows[0]?.matchingCount || 0),
+    legacyUsersNotMatchingCurrentIdentity: Number(notMatchingIdentityRows[0]?.notMatchingCount || 0),
+    legacyUsersNotMatchingCurrentIdentityWithRoster: Number(notMatchingWithRosterRows[0]?.count || 0),
+    rosterDateRange: rostersEntry.dateRange,
+  };
+}
+
 async function legacyTableAudit(req, res, db) {
   if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   let payload = null;
@@ -680,12 +751,15 @@ async function legacyTableAudit(req, res, db) {
     });
   }
 
+  const rosterBridge = await legacyRosterBridgeAudit(db, tables);
+
   return sendJson(res, 200, {
     ok: true,
     cutoverTimestamp: LEGACY_CUTOVER_TIMESTAMP,
     tables,
-    note: 'orphanedFromCurrentIdentity conta valores distintos que não batem, por e-mail normalizado, com nenhuma conta/perfil atual - são os candidatos mais fortes a identidade "encalhada" dentro deste mesmo banco. sensitiveColumnNames lista apenas nomes de coluna (metadado de schema), nunca valores.',
-    message: 'Auditoria somente leitura de tabelas fora do schema conhecido - nenhuma senha, hash, salt, token ou e-mail individual é retornado, apenas contagens agregadas, datas e nomes de coluna.',
+    rosterBridge,
+    note: 'orphanedFromCurrentIdentity conta valores distintos que não batem, por e-mail normalizado, com nenhuma conta/perfil atual - são os candidatos mais fortes a identidade "encalhada" dentro deste mesmo banco. sensitiveColumnNames lista apenas nomes de coluna (metadado de schema), nunca valores. rosterBridge mede especificamente o vínculo crewcheck_rosters.user_id -> crewcheck_users.id -> e-mail atual, que é por UUID e não por e-mail - a mesma garantia de reconexão automática das tabelas owner_email não se aplica a ele.',
+    message: 'Auditoria somente leitura de tabelas fora do schema conhecido - nenhuma senha, hash, salt, token, UUID ou e-mail individual é retornado, apenas contagens agregadas, datas e nomes de coluna.',
   });
 }
 

@@ -87,13 +87,15 @@ const textTypesSrc = extractConst('LEGACY_TEXT_TYPES');
 const dateTypesSrc = extractConst('LEGACY_DATE_TYPES');
 const columnsSrc = extractFunction('legacyTableColumns');
 const emailAnalysisSrc = extractFunction('legacyTableEmailAnalysis');
+const bridgeEmailPatternSrc = extractConst('LEGACY_ROSTER_BRIDGE_EMAIL_PATTERN');
+const bridgeSrc = extractFunction('legacyRosterBridgeAudit');
 const auditSrc = extractFunction('legacyTableAudit');
 
 // Guards estáticos: somente leitura, somente agregados/schema, sempre admin, e -
 // crucialmente - nenhum nome de tabela/coluna pode vir da requisição (isso é o que
 // torna seguro interpolar esses nomes direto no SQL: eles só podem vir do próprio
 // information_schema, nunca de req.url/req.body).
-const fullSrc = `${columnsSrc}\n${emailAnalysisSrc}\n${auditSrc}`;
+const fullSrc = `${columnsSrc}\n${emailAnalysisSrc}\n${bridgeSrc}\n${auditSrc}`;
 for (const forbidden of ['INSERT INTO', 'UPDATE ', 'DELETE FROM', 'DROP ', 'TRUNCATE', 'ALTER TABLE']) {
   assert.doesNotMatch(fullSrc, new RegExp(forbidden, 'i'), `legacyTableAudit() nunca pode conter "${forbidden}" - é somente leitura`);
 }
@@ -103,6 +105,9 @@ for (const forbidden of ['req.body', 'req.url', 'url.searchParams', 'req.query',
   assert.doesNotMatch(fullSrc, new RegExp(forbidden.replace('.', '\\.'), 'i'), `nome de tabela/coluna nunca pode vir de "${forbidden}" - todo identificador interpolado deve vir do information_schema`);
 }
 assert.doesNotMatch(fullSrc, /SELECT\s+\*/i, 'auditoria de tabelas legadas nunca pode fazer SELECT * (linhas individuais)');
+// A ponte user_id -> crewcheck_users.id só pode expor contagens/EXISTS - nunca uma
+// coluna individual (id, email, user_id) diretamente no SELECT.
+assert.doesNotMatch(bridgeSrc, /SELECT\s+(?!COUNT|1\b)/i, 'legacyRosterBridgeAudit() só pode fazer SELECT COUNT(...) ou SELECT 1 (dentro de EXISTS) - nunca uma coluna individual');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-legacy-table-audit-'));
 const tempFile = path.join(tempDir, 'legacy-table-audit.mjs');
@@ -117,6 +122,8 @@ ${textTypesSrc}
 ${dateTypesSrc}
 ${columnsSrc}
 ${emailAnalysisSrc}
+${bridgeEmailPatternSrc}
+${bridgeSrc}
 ${auditSrc}
 
 let jwtPayload = null;
@@ -131,7 +138,7 @@ export function setJwtPayload(value) { jwtPayload = value; }
 export function setAdminEmails(list) { adminEmails = list; }
 export { legacyTableAudit };
 
-export function makeDb({ allTables = [], byTable = {} } = {}) {
+export function makeDb({ allTables = [], byTable = {}, rosterBridge = {} } = {}) {
   const calls = [];
   return {
     calls,
@@ -143,6 +150,24 @@ export function makeDb({ allTables = [], byTable = {} } = {}) {
       if (sql.includes('information_schema.columns')) {
         const table = params[0];
         return [(byTable[table]?.columns || []).map((c) => ({ name: c.name, dataType: c.dataType, isNullable: c.nullable ? 'YES' : 'NO', columnKey: c.key || null }))];
+      }
+      if (sql.includes('matchingRosters')) {
+        return [[{ matchingRosters: rosterBridge.matchingRosters ?? 0, distinctUsersWithRoster: rosterBridge.distinctUsersWithRoster ?? 0 }]];
+      }
+      if (sql.includes('orphanedRosters')) {
+        return [[{ orphanedRosters: rosterBridge.orphanedRosters ?? 0 }]];
+      }
+      if (sql.includes('normalizableEmailCount')) {
+        return [[{ normalizableEmailCount: rosterBridge.normalizableEmailCount ?? 0 }]];
+      }
+      if (sql.includes('JOIN crewcheck_rosters r ON r.user_id=u.id')) {
+        return [[{ count: rosterBridge.notMatchingWithRosterCount ?? 0 }]];
+      }
+      if (sql.includes('matchingCount')) {
+        return [[{ matchingCount: rosterBridge.matchingCount ?? 0 }]];
+      }
+      if (sql.includes('notMatchingCount')) {
+        return [[{ notMatchingCount: rosterBridge.notMatchingCount ?? 0 }]];
       }
       const fromMatch = sql.match(/FROM \\\`([^\\\`]+)\\\`/);
       const table = fromMatch ? fromMatch[1] : null;
@@ -236,6 +261,15 @@ export function makeDb({ allTables = [], byTable = {} } = {}) {
           dateRange: { minCreatedAt: '2026-06-21T15:49:00Z', maxCreatedAt: '2026-07-10T02:24:00Z', beforeCutover: 120 },
         },
       },
+      rosterBridge: {
+        matchingRosters: 110,
+        distinctUsersWithRoster: 33,
+        orphanedRosters: 10,
+        normalizableEmailCount: 39,
+        matchingCount: 3,
+        notMatchingCount: 36,
+        notMatchingWithRosterCount: 29,
+      },
     });
     const result = await callAudit(db);
     assert.equal(result.status, 200);
@@ -254,12 +288,47 @@ export function makeDb({ allTables = [], byTable = {} } = {}) {
     assert.equal(rosters.emailAnalysis.length, 0, 'crewcheck_rosters não tem coluna de e-mail (liga por user_id) - análise de e-mail deve ficar vazia, não quebrar');
     assert.equal(rosters.totalRows, 120);
 
+    // rosterBridge: crewcheck_rosters liga por user_id (UUID), não por e-mail - a
+    // reconexão automática das tabelas owner_email não vale aqui. Isso mede
+    // especificamente essa ponte, sempre em contagens agregadas.
+    const { rosterBridge } = result.payload;
+    assert.equal(rosterBridge.available, true);
+    assert.equal(rosterBridge.totalLegacyUsers, 40);
+    assert.equal(rosterBridge.totalLegacyRosters, 120);
+    assert.equal(rosterBridge.distinctLegacyUsersWithRoster, 33);
+    assert.equal(rosterBridge.rostersMatchingLegacyUser, 110);
+    assert.equal(rosterBridge.rostersWithoutLegacyUser, 10, 'rosters cujo user_id não bate com nenhum crewcheck_users - órfãs mesmo dentro da camada legada');
+    assert.equal(rosterBridge.legacyUsersWithNormalizableEmail, 39);
+    assert.equal(rosterBridge.legacyUsersMatchingCurrentIdentity, 3);
+    assert.equal(rosterBridge.legacyUsersNotMatchingCurrentIdentity, 36);
+    assert.equal(rosterBridge.legacyUsersNotMatchingCurrentIdentityWithRoster, 29, 'usuários legados fora da identidade atual mas com roster - candidatos fortes a recuperação dentro do próprio banco');
+    assert.deepEqual(rosterBridge.rosterDateRange, rosters.dateRange, 'rosterDateRange deve reaproveitar o dateRange já calculado para crewcheck_rosters, não reconsultar');
+
     const payloadStr = JSON.stringify(result.payload);
     assert.equal(payloadStr.includes('@example.com'), false, 'resposta nunca pode conter um e-mail individual');
     assert.equal(/[0-9a-f]{64,}/i.test(payloadStr), false, 'resposta nunca pode conter algo com formato de hash/token longo');
+    assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(payloadStr), false, 'resposta nunca pode conter um UUID individual');
   }
 
-  console.log('[p0-legacy-table-audit] OK — auditoria de tabelas legadas admin-only, somente leitura, sem interpolar identificadores vindos da requisição, sem vazar e-mail/hash individual.');
+  // C) crewcheck_users ausente (ex.: schema diferente do esperado): rosterBridge
+  // deve reportar indisponibilidade com motivo, nunca quebrar a resposta inteira.
+  {
+    const db = mod.makeDb({
+      allTables: ['crewcheck_platform_accounts', 'crewcheck_platform_profiles', 'crewcheck_rosters'],
+      byTable: {
+        crewcheck_rosters: {
+          totalRows: 5,
+          columns: [{ name: 'id', dataType: 'char' }, { name: 'user_id', dataType: 'char' }],
+        },
+      },
+    });
+    const result = await callAudit(db);
+    assert.equal(result.status, 200);
+    assert.equal(result.payload.rosterBridge.available, false);
+    assert.ok(result.payload.rosterBridge.reason, 'indisponibilidade da ponte deve vir com um motivo legível');
+  }
+
+  console.log('[p0-legacy-table-audit] OK — auditoria de tabelas legadas admin-only, somente leitura, sem interpolar identificadores vindos da requisição, sem vazar e-mail/UUID/hash individual, incluindo a ponte crewcheck_rosters.user_id -> crewcheck_users.id.');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
