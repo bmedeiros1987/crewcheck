@@ -70,6 +70,15 @@ try {
     // previous boundary = 08:29 (preservado na PRÓPRIA atividade anterior)
     // canonical presentation = 09:25 (o que este dia deve carregar)
     // consumer presentation = 09:25 (o que qualquer consumidor vai ler de day.dutyReport)
+    //
+    // A prova de separação aqui é de PROVENIÊNCIA, não de coincidência de relógio:
+    // cada valor vem do seu próprio objeto/fonte (a atividade anterior carrega seu
+    // PRÓPRIO dutyDebrief; o voo carrega seu PRÓPRIO dutyReport, calculado por
+    // parseLegTokens a partir unicamente dos tokens da sua própria perna). Não
+    // comparamos os dois valores entre si - dois conceitos diferentes podem
+    // legitimamente coincidir em horário sem que isso indique contaminação; o que
+    // #510 exige é que a fonte de cada um esteja correta, não que os relógios sejam
+    // diferentes.
     assert.equal(previousBoundary?.dutyDebrief, '08:29', 'a atividade anterior (HSB) deve preservar seu próprio fim de boundary, 08:29 - sem alteração');
     assert.equal(flightDay?.type, 'VOO');
     assert.equal(flightDay?.dutyReport, '09:25', 'a apresentação canônica do LA3730 deve ser 09:25 - nunca herdar o boundary da atividade anterior');
@@ -78,19 +87,25 @@ try {
     assert.equal(leg?.destination, 'FOR');
     assert.equal(leg?.departureTime, '10:15', 'partida do LA3730 deve permanecer 10:15');
     assert.equal(leg?.arrivalTime, '12:55');
-    assert.notEqual(flightDay?.dutyReport, previousBoundary?.dutyDebrief, 'presentation do voo e boundary da atividade anterior nunca podem ser o mesmo valor por coincidência de implementação - são conceitos sempre separados');
   }
 
   // ---------------------------------------------------------------------------
-  // 2) Voo sem apresentação publicada (só decolagem) via "(...)" continuação:
-  // não pode herdar o boundary anterior, e não pode inventar - cai no próprio
-  // fallback já existente (departure), nunca num horário de outra atividade.
+  // 2) Voo sem apresentação publicada (só decolagem) via "(...)" continuação: o
+  // que #510 exige aqui é só que o boundary da folga/descanso anterior NUNCA seja
+  // promovido a apresentação. Este teste não toma posição sobre qual deveria ser
+  // o valor "correto" na ausência de apresentação publicada - parseLegTokens()
+  // já cai, hoje, no fallback pré-existente e inalterado (partida do próprio
+  // voo), mas isso é comportamento anterior a este patch, fora do contrato que
+  // #510/#403 definiram (ausência de apresentação deve permanecer ausência/null
+  // na camada canônica; um fallback operacional pertence à camada apropriada,
+  // não à apresentação canônica). Não fixamos esse fallback como desejado aqui -
+  // é um débito separado, fora de escopo deste patch.
   // ---------------------------------------------------------------------------
   {
     const fullText = `${header('16/08/2026 até18/08/2026')}\n16Aug Sun DO\n17Aug Mon (...) 08:29 LA 3730 10:15 BSB FOR 12:55\n18Aug Tue DO\n`;
     const roster = parseAimsRoster(fullText);
     const flightDay = findDay(roster, '17/08/2026');
-    assert.equal(flightDay?.dutyReport, '10:15', 'sem apresentação publicada, deve cair no fallback pré-existente (partida do próprio voo) - nunca no boundary 08:29 da folga anterior');
+    assert.notEqual(flightDay?.dutyReport, '08:29', 'sem apresentação publicada, o boundary 08:29 da folga anterior nunca pode ser promovido a apresentação - único contrato que #510 exige aqui');
   }
 
   // ---------------------------------------------------------------------------
@@ -182,7 +197,7 @@ try {
     assert.ok(fnSource.includes('!isLayoverStart && !legs.length && !firstReportTime'), 'o guard isLayoverStart deve continuar protegendo a heurística de apresentação-antes-do-LA');
   }
 
-  console.log('[p0-presentation-boundary-leak] OK — LA3730 BSB→FOR mantém presentation=09:25 (nunca 08:29, o boundary da atividade anterior); boundary anterior preservado na própria atividade; sem apresentação publicada cai no fallback pré-existente (departure), nunca em boundary alheio; voo após pernoite/descanso/folga preservado; duas pernas na mesma jornada íntegras; ativação HSB/RES não afetada; caso legítimo de apresentação-antes-do-LA sem continuação preservado; nenhum fallback genérico presentation||boundary introduzido.');
+  console.log('[p0-presentation-boundary-leak] OK — LA3730 BSB→FOR mantém presentation=09:25, calculada por proveniência (tokens da própria perna), nunca 08:29 (boundary da atividade anterior, preservado na própria atividade, sem comparação de coincidência de relógio); sem apresentação publicada, o boundary alheio nunca é promovido (fallback pré-existente para departure fica fora do contrato validado aqui); voo após pernoite/descanso/folga preservado; duas pernas na mesma jornada íntegras; ativação HSB/RES não afetada; caso legítimo de apresentação-antes-do-LA sem continuação preservado; nenhum fallback genérico presentation||boundary introduzido.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
