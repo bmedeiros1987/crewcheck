@@ -2567,8 +2567,14 @@ function parseFlightDay(lines: string[], homeBase: string, isLayoverStart: boole
     }
 
     // Alguns PDFs extraídos no Android/iOS trazem a apresentação antes do primeiro "LA".
-    // Preservar esse horário para não usar a decolagem como apresentação.
-    if (!legs.length && !firstReportTime && isAimsTime(token)) {
+    // Preservar esse horário para não usar a decolagem como apresentação. MAS: quando
+    // este bloco chegou via continuação "(...)" (isLayoverStart=true), o token antes do
+    // "LA" pode ser o boundary de folga/descanso/pernoite de OUTRO dia que ficou colado
+    // no mesmo bloco visual (ver flightContextStartIndex) - nunca é seguro promovê-lo a
+    // apresentação deste voo (#510). Nesse caso a apresentação publicada de verdade, se
+    // existir, já é encontrada por parseLegTokens via reportFromBefore (linha ~2512),
+    // escopada aos próprios tokens da perna - não precisa deste atalho.
+    if (!isLayoverStart && !legs.length && !firstReportTime && isAimsTime(token)) {
       firstReportTime = cleanTime(token);
       i++;
       continue;
