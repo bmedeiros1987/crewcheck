@@ -1,6 +1,7 @@
 import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import { getActRulesForProfile, getLegalProfile, type CrewRoleSelection, type LegalProfileSummary } from './actRules';
 import { getRosterCodeDefinition } from './rosterCodes';
+import { buildCanonicalRosterEvents } from './canonicalRoster';
 
 export interface ComplianceAlert {
   id: string;
@@ -34,6 +35,14 @@ export interface Metrics {
   reserveCount: number;
   averageTurnaround: number;
   maxConsecutiveNights: number;
+  /**
+   * Maior número de ocorrências de madrugada qualificáveis numa janela móvel
+   * de 168h — não confundir com `maxNightOps168h`, que é o LIMITE regulatório
+   * (4), não o valor observado. Conta por jornada, não por dateKey: duas
+   * jornadas qualificáveis na mesma noite civil contam 2 aqui, mesmo somando
+   * 1 em `maxConsecutiveNights` (as duas métricas são regras independentes).
+   */
+  maxNightOps168hCount: number;
   totalGroundHours: number;
   maxGroundIntervalMinutes: number;
   groundLimitExceedances: number;
@@ -684,49 +693,97 @@ function formatDate(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
-function getMadrugadaKeys(days: RosterDay[]): number[] {
-  const sorted = sortDays(days);
-  const keys: number[] = [];
-  let previousDay: RosterDay | null = null;
+/**
+ * Uma ocorrência de madrugada qualificável. `instant` é o horário real de
+ * início (usado pela janela móvel de 168h, que conta OCORRÊNCIAS reais).
+ * `nightAnchor` é a noite civil a que a ocorrência pertence (usado pelo
+ * streak de consecutivas, que conta NOITES em sequência — duas jornadas na
+ * mesma noite não inflam o streak, mas continuam sendo 2 ocorrências na
+ * janela de 168h). As duas métricas são regras independentes por desenho.
+ */
+type NightOccurrence = { instant: number; nightAnchor: number };
 
-  for (const day of sorted) {
-    if (!hasMadrugadaDuty(day)) {
-      previousDay = day;
-      continue;
-    }
-
-    const date = parseDate(day.date);
-    const firstStart = getFirstOperationalStart(day).time;
-    const startsBeforeSix = (minutesOfDay(firstStart) ?? 9999) < 6 * 60;
-    const sameNightAsPrevious = Boolean(previousDay && hasMadrugadaDuty(previousDay) && previousDay.isNextDay && startsBeforeSix && !isRecoveryDay(previousDay));
-    const keyDate = sameNightAsPrevious ? parseDate(previousDay!.date) : date;
-    const key = keyDate.getTime();
-    if (!keys.includes(key)) keys.push(key);
-    previousDay = day;
+/**
+ * Jornadas de voo, agrupadas por `journeyId` (a mesma identidade que
+ * `buildCanonicalRosterEvents` já usa para apresentação/Saída Inteligente,
+ * evitando reimplementar aqui uma segunda heurística de fronteira de jornada
+ * que poderia divergir da primeira — essa duplicação foi a causa estrutural
+ * apontada na investigação original de #512).
+ *
+ * Uma jornada que atravessa 00:00 mantém um `journeyId` só, então vira uma
+ * única ocorrência mesmo que suas pernas caiam em `RosterDay`s de datas civis
+ * diferentes (carry-over sem duplicação). Duas jornadas publicadas no mesmo
+ * `RosterDay.legs` — a forma que motivou "Apresentação —"/"Conexão/Solo
+ * 1070 min" no #512 original — recebem `journeyId` distintos e viram 2
+ * ocorrências.
+ */
+function buildFlightJourneyNightOccurrences(roster: CrewRoster): NightOccurrence[] {
+  const events = buildCanonicalRosterEvents(roster).filter((event) => event.kind === 'flight');
+  const byJourney = new Map<string, typeof events>();
+  for (const event of events) {
+    const group = byJourney.get(event.journeyId);
+    if (group) group.push(event);
+    else byJourney.set(event.journeyId, [event]);
   }
 
-  return keys.sort((a, b) => a - b);
+  const occurrences: NightOccurrence[] = [];
+  for (const group of byJourney.values()) {
+    const opening = group[0];
+    const day = opening.publishedDay;
+    if (!day || isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) continue;
+    const touchesMadrugada = group.some((event) => event.leg && legTouchesMadrugada(event.leg));
+    if (!touchesMadrugada) continue;
+    occurrences.push({
+      instant: Math.min(...group.map((event) => new Date(event.startDateTime).getTime())),
+      nightAnchor: parseDate(opening.date).getTime(),
+    });
+  }
+  return occurrences;
 }
 
-function countNightOpsInRolling168h(days: RosterDay[]): number {
-  const nightDates = getMadrugadaKeys(days);
+/**
+ * Sobreaviso/reserva/treinamento sem pernas: sem identidade de jornada no
+ * modelo canônico, então mantém a heurística por `RosterDay` já existente e
+ * testada (`hasMadrugadaDuty`) — RES/HSB preserva a semântica própria.
+ */
+function buildNonFlightNightOccurrences(days: RosterDay[]): NightOccurrence[] {
+  const occurrences: NightOccurrence[] = [];
+  for (const day of days) {
+    if ((day.legs || []).length > 0) continue; // coberto por buildFlightJourneyNightOccurrences
+    if (!hasMadrugadaDuty(day)) continue;
+    const firstStart = getFirstOperationalStart(day).time;
+    const startMinutes = minutesOfDay(firstStart) ?? 0;
+    occurrences.push({
+      instant: parseDate(day.date).getTime() + startMinutes * 60_000,
+      nightAnchor: parseDate(day.date).getTime(),
+    });
+  }
+  return occurrences;
+}
+
+function buildNightOccurrences(roster: CrewRoster, days: RosterDay[]): NightOccurrence[] {
+  return [...buildFlightJourneyNightOccurrences(roster), ...buildNonFlightNightOccurrences(days)];
+}
+
+function countNightOpsInRolling168h(occurrences: NightOccurrence[]): number {
+  const instants = occurrences.map((occurrence) => occurrence.instant).sort((a, b) => a - b);
   let max = 0;
-  for (let i = 0; i < nightDates.length; i++) {
-    const start = nightDates[i];
+  for (let i = 0; i < instants.length; i++) {
+    const start = instants[i];
     const end = start + 168 * 60 * 60 * 1000;
-    const count = nightDates.filter(value => value >= start && value <= end).length;
+    const count = instants.filter((value) => value >= start && value <= end).length;
     max = Math.max(max, count);
   }
   return max;
 }
 
-function countMaxConsecutiveMadrugadas(days: RosterDay[]): number {
-  const keys = getMadrugadaKeys(days);
-  if (!keys.length) return 0;
+function countMaxConsecutiveMadrugadas(occurrences: NightOccurrence[]): number {
+  const nights = Array.from(new Set(occurrences.map((occurrence) => occurrence.nightAnchor))).sort((a, b) => a - b);
+  if (!nights.length) return 0;
   let current = 1;
   let max = 1;
-  for (let i = 1; i < keys.length; i++) {
-    const dayGap = Math.round((keys[i] - keys[i - 1]) / (24 * 60 * 60 * 1000));
+  for (let i = 1; i < nights.length; i++) {
+    const dayGap = Math.round((nights[i] - nights[i - 1]) / (24 * 60 * 60 * 1000));
     if (dayGap === 1) current += 1;
     else current = 1;
     max = Math.max(max, current);
@@ -1577,6 +1634,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     reserveCount: 0,
     averageTurnaround: 0,
     maxConsecutiveNights: 0,
+    maxNightOps168hCount: 0,
     totalGroundHours: 0,
     maxGroundIntervalMinutes: 0,
     groundLimitExceedances: 0,
@@ -1831,8 +1889,10 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   metrics.weekendPairs = calculateWeekendPairs(sortedDays);
   metrics.averageTurnaround = restCount > 0 ? restTotal / restCount : 0;
-  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(sortedDays);
-  const maxNightOpsWindow = countNightOpsInRolling168h(sortedDays);
+  const nightOccurrences = buildNightOccurrences(roster, sortedDays);
+  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(nightOccurrences);
+  const maxNightOpsWindow = countNightOpsInRolling168h(nightOccurrences);
+  metrics.maxNightOps168hCount = maxNightOpsWindow;
 
   if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;
   // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode
