@@ -39,6 +39,14 @@ export interface FlightLeg {
   duration?: number;
   aircraftType?: string;
   isNextDay?: boolean;
+  /**
+   * Apresentação publicada para ESTA etapa, quando a fonte a informa.
+   * Nas escalas AIMS/CrewRosterReport só a primeira etapa de cada jornada
+   * carrega horário de apresentação; as etapas seguintes são continuação.
+   * A presença deste campo é, portanto, evidência publicada de início de
+   * jornada — e não uma inferência por intervalo de tempo (#440, #512).
+   */
+  presentationTime?: string;
   crew?: CrewMember[];
   ccmLead?: CrewMember | null;
   ccmBonusStatus?: 'confirmed' | 'not_applicable' | 'pending';
@@ -1148,6 +1156,10 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
         aircraftType,
         duration: diffHours(cleanTime(departureTime), arrivalTime, isNextDay),
         isNextDay,
+        // A apresentação publicada desta etapa marca o início de uma jornada.
+        // Antes ela só sobrevivia na primeira jornada do dia, o que apagava a
+        // apresentação das jornadas seguintes do mesmo dia civil (#512).
+        presentationTime: reportTime ? cleanTime(reportTime) : undefined,
       });
     }
 

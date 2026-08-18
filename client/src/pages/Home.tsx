@@ -1673,9 +1673,20 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
   return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Planejador de Saída</h2><p>Calcula quando sair usando trânsito, margem e apresentação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>Trânsito</b></div></div></article>;
 }
 
+/**
+ * Apresentação realmente publicada para o evento, ou null.
+ * "Conexão/Solo" é rótulo de continuação DENTRO de uma jornada: não é horário
+ * de apresentação e não pode alimentar planejamento de saída nem despertador.
+ */
+function publishedPresentationOf(event: ZeroLeg): string | null {
+  const presentation = String(event.presentation || '').trim();
+  if (!presentation || presentation === '—' || presentation === 'Conexão/Solo') return null;
+  return /\d{1,2}:\d{2}/.test(presentation) ? presentation : null;
+}
+
 function smartDepartureEligible(event: ZeroLeg): boolean {
   const code = rosterCode(event.day).toUpperCase();
-  return !event.placeholder && event.presentation !== '—' && (event.kind === 'flight' || ['ASB', 'RES', 'RSV', 'HSB', 'SA', 'RCFI', 'CRM', 'MCK', 'TRE', 'TRN'].includes(code));
+  return !event.placeholder && publishedPresentationOf(event) !== null && (event.kind === 'flight' || ['ASB', 'RES', 'RSV', 'HSB', 'SA', 'RCFI', 'CRM', 'MCK', 'TRE', 'TRN'].includes(code));
 }
 
 
@@ -3645,7 +3656,9 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   const admin = isAdmin();
   const planned = wakeupDateForEvent(event);
   const hotel = safe(event.hotel, event.kind === 'stay' ? `Hotel em ${city(event.destination || event.origin)}` : 'Sem hotel informado');
-  const presentation = safe(event.presentation, 'A confirmar');
+  // Continuação de jornada não tem apresentação própria; o despertador usa a
+  // decolagem em vez de anunciar "Conexão/Solo" como horário (#512).
+  const presentation = publishedPresentationOf(event) || safe(event.departure, 'A confirmar');
 
   useEffect(() => {
     Promise.all([

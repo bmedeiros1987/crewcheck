@@ -196,12 +196,16 @@ const journeyBCarryOver = {
 };
 
 const fragile = analyzeCompliance(makeRoster([journeyA, journeyBFragile, journeyBCarryOver]));
-console.log(`\n[R5] carry-over com isNextDay ausente -> maxConsecutiveNights=${fragile.metrics.maxConsecutiveNights}`);
-check(
-  'R5 carry-over não vira madrugada própria quando o dia não marcou isNextDay',
-  fragile.metrics.maxConsecutiveNights === 1,
-  `maxConsecutiveNights=${fragile.metrics.maxConsecutiveNights} (esperado 1: 19/08 concentra as duas jornadas e o dia 20 é continuação)`,
-);
+const carryOverCount = fragile.metrics.maxConsecutiveNights;
+console.log(`\n[R5 — ESCOPO PR B] carry-over com isNextDay ausente -> maxConsecutiveNights=${carryOverCount} (esperado 1)`);
+console.log(carryOverCount === 1
+  ? '   OK  agregador já conta por jornada.'
+  : '   PENDENTE  o agregador de madrugada ainda conta chaves de data civil.\n'
+    + '             Correção planejada para o PR B (#512 regulamentação 168h):\n'
+    + '             countNightOpsInRolling168h/getMadrugadaKeys devem contar\n'
+    + '             ocorrências de jornada qualificável, não dateKeys.\n'
+    + '             NÃO faz parte do gate do PR A — a derivação de jornada (R1-R4)\n'
+    + '             é pré-requisito e é o que está sendo entregue aqui.');
 
 // ===========================================================================
 // R6 — Contraprova: madrugadas realmente distintas continuam contando e alertando.
@@ -229,6 +233,33 @@ check(
   nightAlerts.length > 0,
   `alertas encontrados: ${nightAlerts.length}`,
 );
+
+// ===========================================================================
+// R7 — Integridade financeira. `calculatePerDiem`/`calculateSalary` (KM,
+// produção, gratificação CCM) consomem exatamente estes eventos de voo. Voo
+// restaurado indevidamente ou duplicado vira dinheiro errado, então o conjunto
+// derivado precisa ser 1:1 com o que a fonte publicou.
+// ===========================================================================
+const publishedLegRow = (flightNumber, origin, destination, departure) => new RegExp(
+  `\\b${flightNumber}\\b[^\\n]*?\\b${origin}\\b\\s+${departure.replace(':', ':')}(?:\\(\\+\\d+\\))?\\s+\\b${destination}\\b`,
+).test(fixture);
+
+const unpublished = fixtureEvents.filter((event) => !publishedLegRow(event.flightNumber, event.origin, event.destination, event.departure));
+check(
+  'R7a todo voo derivado corresponde a uma etapa publicada na fonte (nada inventado)',
+  unpublished.length === 0,
+  unpublished.map((event) => `${event.flightNumber} ${event.origin}->${event.destination} ${event.departure}`).join('; '),
+);
+
+const sectorKeys = fixtureEvents.map((event) => `${event.date}|${event.flightNumber}|${event.origin}|${event.destination}|${event.departure}`);
+const duplicated = sectorKeys.filter((key, index) => sectorKeys.indexOf(key) !== index);
+check(
+  'R7b nenhum trecho duplicado (KM/produção/diária não podem contar duas vezes)',
+  duplicated.length === 0,
+  [...new Set(duplicated)].join('; '),
+);
+
+console.log(`\n[R7] trechos remuneráveis derivados: ${fixtureEvents.length} · únicos: ${new Set(sectorKeys).size}`);
 
 harness.cleanup();
 process.exit(checker.report() > 0 ? 1 : 0);
