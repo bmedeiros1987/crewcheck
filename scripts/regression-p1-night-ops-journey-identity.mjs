@@ -73,9 +73,13 @@ console.log(`\n[caso real 19->20/08] maxConsecutiveNights=${realCase.metrics.max
 // em sequência conta 1 (não há uma segunda noite), mas a janela 168h — que
 // conta OCORRÊNCIAS, não noites — precisa refletir as 2 jornadas reais.
 // Isso é literalmente "regras independentes", como pedido.
+// journeyA toca a madrugada do 19 (01:40-06:10). journeyB (22:43->03:00,
+// isNextDay) só toca a janela 00:00-06:00 do dia SEGUINTE — 22:43 é depois
+// das 06:00 do 19, então a apresentação tardia não conta como "noite do 19".
+// São duas noites civis DISTINTAS e adjacentes: streak = 2, corretamente.
 check(
-  'streak de noites civis conta 1 (mesma noite, não empilha por jornada)',
-  realCase.metrics.maxConsecutiveNights === 1,
+  'streak de noites civis conta 2 (19 e 20 são noites distintas e adjacentes, não a mesma)',
+  realCase.metrics.maxConsecutiveNights === 2,
   `maxConsecutiveNights=${realCase.metrics.maxConsecutiveNights}`,
 );
 check(
@@ -99,8 +103,8 @@ const mergedDay = {
 const mergedCase = analyzeCompliance(makeRoster([mergedDay, journeyBCarryOver]));
 console.log(`[caso real, pernas mescladas no mesmo RosterDay] maxConsecutiveNights=${mergedCase.metrics.maxConsecutiveNights}, maxNightOps168hCount=${mergedCase.metrics.maxNightOps168hCount}`);
 check(
-  'mesmo com as pernas mescladas num RosterDay só, o streak de noites continua 1',
-  mergedCase.metrics.maxConsecutiveNights === 1,
+  'mesmo com as pernas mescladas num RosterDay só, o streak de noites continua 2 (19 e 20)',
+  mergedCase.metrics.maxConsecutiveNights === 2,
   `maxConsecutiveNights=${mergedCase.metrics.maxConsecutiveNights}`,
 );
 check(
@@ -134,11 +138,12 @@ const dayC = {
 };
 const sameNightTwice = analyzeCompliance(makeRoster([dayC, journeyA, journeyB, journeyBCarryOver]));
 console.log(`[3 jornadas, 19/08 com 2] maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`);
-// 17/08 e 19/08 são noites distintas mas não adjacentes (18/08 sem madrugada
-// entre elas) => o streak de noites civis fica em 1, mesmo com 3 ocorrências.
+// 17/08 (dayC) não é adjacente a 19/08 (journeyA) - 18/08 fica sem madrugada
+// entre elas, quebrando o streak. Mas 19/08 (journeyA) e 20/08 (journeyB,
+// que só toca a janela do dia seguinte) SÃO adjacentes => streak de 2, não 1.
 check(
-  'streak de noites civis não conta 17/08 e 19/08 como consecutivas (há um dia sem madrugada entre elas)',
-  sameNightTwice.metrics.maxConsecutiveNights === 1,
+  'streak não emenda 17/08 (isolado) com 19/08+20/08 (adjacentes entre si) => maior sequência é 2',
+  sameNightTwice.metrics.maxConsecutiveNights === 2,
   `maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`,
 );
 
@@ -154,12 +159,11 @@ const dayD = {
 };
 const threeConsecutive = analyzeCompliance(makeRoster([journeyA, journeyB, journeyBCarryOver, dayD]));
 console.log(`[19/08 com 2 jornadas + 21/08] maxConsecutiveNights=${threeConsecutive.metrics.maxConsecutiveNights}, maxNightOps168hCount=${threeConsecutive.metrics.maxNightOps168hCount}`);
-// Noites civis distintas: 19/08 e 21/08 (20/08 é carry-over, não noite
-// própria). Gap de 2 dias entre elas => não são consecutivas => streak 1.
-// A janela 168h, por ocorrência, continua vendo as 3 jornadas reais.
+// Noites civis tocadas: 19 (journeyA), 20 (journeyB toca só a janela do dia
+// seguinte + carry-over), 21 (dayD) — três noites adjacentes em sequência.
 check(
-  '19/08 (2 jornadas) + 21/08 não são noites consecutivas (gap de 2 dias) => streak 1',
-  threeConsecutive.metrics.maxConsecutiveNights === 1,
+  '19+20 (2 jornadas, 2 noites adjacentes) + 21 (adjacente a 20) => streak de 3 noites em sequência',
+  threeConsecutive.metrics.maxConsecutiveNights === 3,
   `maxConsecutiveNights=${threeConsecutive.metrics.maxConsecutiveNights}`,
 );
 check(
@@ -219,9 +223,13 @@ const hsbDay = {
 };
 const hsbCase = analyzeCompliance(makeRoster([hsbDay]));
 console.log(`[HSB isolado, report 02:00] maxConsecutiveNights=${hsbCase.metrics.maxConsecutiveNights}`);
+// Sobreaviso SEM acionamento é disponibilidade, não madrugada trabalhada —
+// o CrewCheck já trata isso como contexto separado (alerta próprio de HSB),
+// não como ocorrência do streak/janela de madrugada trabalhada. RES/HSB
+// ACIONADO (com pernas) segue outro caminho e não é afetado por esta regra.
 check(
-  'HSB com apresentação antes das 06:00 continua contando para madrugada (semântica preservada)',
-  hsbCase.metrics.maxConsecutiveNights === 1,
+  'HSB sem acionamento não conta como madrugada trabalhada (é disponibilidade, não trabalho — semântica já existente preservada)',
+  hsbCase.metrics.maxConsecutiveNights === 0,
   `maxConsecutiveNights=${hsbCase.metrics.maxConsecutiveNights}`,
 );
 

@@ -65,7 +65,7 @@ if (!source.includes(marker)) {
   replaceRequired(`\n    if (hasMadrugada) metrics.nightOperations += 1;\n`, '\n', 'contador de madrugada por objeto');
 
   replaceRequired(
-    `  const nightOccurrences = buildNightOccurrences(roster, sortedDays);\n  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(nightOccurrences);\n  const maxNightOpsWindow = countNightOpsInRolling168h(nightOccurrences);\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
+    `  const nightData = buildNightData(roster, sortedDays);\n  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(nightData.nightKeys);\n  const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
     `  const nightSummary = summarizeRegulatoryNightEvents(sortedDays, actRules.nightOps.resetAfterFreeHours, roster);\n  metrics.nightOperations = nightSummary.workedEvents.length;\n  metrics.maxConsecutiveNights = nightSummary.maxConsecutiveWorked;\n  const maxNightOpsWindow = nightSummary.maxWorkedIn168h;\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
     'resumo de madrugadas',
   );
