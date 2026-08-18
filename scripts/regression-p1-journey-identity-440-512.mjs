@@ -29,6 +29,7 @@ const harness = loadClientModules({
     'client/src/lib/rosterCodes.ts',
     'client/src/lib/actRules.ts',
     'client/src/lib/embeddedFormalDaysOff.ts',
+    'client/src/lib/scheduleActivityClassification.ts',
     'client/src/lib/rosterContinuity.ts',
     'client/src/lib/canonicalRoster.ts',
     'client/src/lib/complianceEngine.ts',
@@ -37,6 +38,7 @@ const harness = loadClientModules({
 
 const { buildCanonicalRosterEvents, normalizeRosterDays } = harness.load('canonicalRoster');
 const { analyzeCompliance } = harness.load('complianceEngine');
+const classification = harness.load('scheduleActivityClassification');
 
 /**
  * O parser V3 do servidor é a única implementação do formato CrewRosterReport
@@ -261,6 +263,33 @@ check(
 );
 
 console.log(`\n[R7] trechos remuneráveis derivados: ${fixtureEvents.length} · únicos: ${new Set(sectorKeys).size}`);
+
+// ===========================================================================
+// R8 — Saída Inteligente: "Conexão/Solo" é tempo em solo de uma jornada já
+// aberta, não apresentação. Planejar saída a partir dele levaria o tripulante
+// a um horário que não existe. Apresentação apenas AUSENTE não decide nada
+// nesta camada — quem sabe disso é a camada de eventos.
+// ===========================================================================
+const eligible = (presentation) => classification.isSmartDepartureEligible({
+  kind: 'flight', flightNumber: 'LA3382', canonical: { kind: 'flight' },
+  ...(presentation === undefined ? {} : { presentation }),
+});
+
+check(
+  'R8a apresentação publicada continua elegível para planejar saída',
+  eligible('22:43') === true,
+  `elegível=${eligible('22:43')}`,
+);
+check(
+  'R8b "Conexão/Solo" nunca vira horário de saída',
+  eligible('Conexão/Solo') === false,
+  `elegível=${eligible('Conexão/Solo')}`,
+);
+check(
+  'R8c apresentação ausente não é rejeitada por esta camada (voo segue elegível)',
+  eligible(undefined) === true,
+  `elegível=${eligible(undefined)}`,
+);
 
 harness.cleanup();
 process.exit(checker.report() > 0 ? 1 : 0);
