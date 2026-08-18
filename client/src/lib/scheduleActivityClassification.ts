@@ -293,8 +293,38 @@ function isRemoteActivity(activity: ScheduleActivityLike): boolean {
  * HSB não acionado e atividade remota continuam contando como programação,
  * mas não podem abrir cálculo de saída.
  */
+/**
+ * Apresentação realmente publicada da atividade, ou null.
+ *
+ * "Conexão/Solo" é o rótulo de uma etapa que continua DENTRO de uma jornada já
+ * iniciada: descreve espera em solo, não apresentação. Planejar saída a partir
+ * dele levaria o tripulante a um horário que não existe (#512).
+ */
+export function publishedPresentationOf(activity: ScheduleActivityLike): string | null {
+  const presentation = String(activity?.presentation || '').trim();
+  if (!presentation || presentation === '—' || presentation === CONTINUATION_PRESENTATION) return null;
+  return /\d{1,2}:\d{2}/.test(presentation) ? presentation : null;
+}
+
+/**
+ * Rótulo que a etapa recebe quando continua dentro de uma jornada já aberta.
+ * Distingue-se de apresentação AUSENTE: ausência é apenas desconhecimento
+ * nesta camada, enquanto este rótulo é evidência positiva de que a etapa não
+ * tem apresentação própria.
+ */
+const CONTINUATION_PRESENTATION = 'Conexão/Solo';
+
+function hasContinuationPresentation(activity: ScheduleActivityLike): boolean {
+  const presentation = String(activity?.presentation || '').trim();
+  return presentation === CONTINUATION_PRESENTATION;
+}
+
 export function isSmartDepartureEligible(activity: ScheduleActivityLike): boolean {
   if (!isProgramScheduleActivity(activity)) return false;
+  // Continuação de jornada carrega tempo de solo, não apresentação: planejar
+  // saída a partir dela levaria a um horário que não existe (#512). Apresentação
+  // apenas ausente não decide nada aqui — quem sabe disso é a camada de eventos.
+  if (hasContinuationPresentation(activity)) return false;
   if (isFlightScheduleActivity(activity)) return true;
   if (isStandby(activity) && !isActivated(activity)) return false;
   if (isRemoteActivity(activity)) return false;

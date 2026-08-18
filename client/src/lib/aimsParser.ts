@@ -276,6 +276,10 @@ function parseOneAimsHumanLeg(flightNumber: string, tokens: string[], forcedWork
       aircraftType: cleanTokens.map((token) => token.toUpperCase()).find((token) => /^\(?(?:32S|31R|39R|328|319|320|321|32N|767|777|789|788|350|359)\)?$/.test(token))?.replace(/[()]/g, ''),
       isNextDay: minutesOfDay(arrivalTime) < minutesOfDay(departureTime),
       duration: Math.round(duration * 100) / 100,
+      // Só há apresentação publicada quando a fonte traz um horário ANTES da
+      // decolagem. Com um único horário, `reportTime` é a própria decolagem e
+      // não pode ser tratado como início de jornada (#512).
+      presentationTime: beforeOrigin.length >= 2 ? reportTime : undefined,
     },
   };
 }

@@ -1,15 +1,13 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-import ts from 'typescript';
+import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
-const source = fs.readFileSync('client/src/lib/canonicalRoster.ts', 'utf8');
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-v1335-'));
-const out = path.join(dir, 'canonicalRoster.cjs');
-fs.writeFileSync(out, compiled);
-const { normalizeRosterDays, buildCanonicalRosterEvents, selectPhysicalLegSequence } = createRequire(import.meta.url)(out);
+// canonicalRoster passou a importar rosterContinuity, o que quebrava o harness
+// original (compilava um módulo só). O harness compartilhado resolve o grafo.
+const harness = loadClientModules({
+  prefix: 'cc-v1335-',
+  stubs: TYPE_ONLY_PDF_PARSER_STUB,
+  files: ['client/src/lib/rosterContinuity.ts', 'client/src/lib/canonicalRoster.ts'],
+});
+const { normalizeRosterDays, buildCanonicalRosterEvents, selectPhysicalLegSequence } = harness.load('canonicalRoster');
 
 const legs = [
   { flightNumber: 'LA3838', origin: 'GRU', destination: 'CXJ', departureTime: '09:50', arrivalTime: '11:30', workType: 'OP' },

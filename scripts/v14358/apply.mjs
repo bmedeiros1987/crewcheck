@@ -76,10 +76,10 @@ function reconcileCompetingFlightActivities(days: RosterDay[]): RosterDay[] {
 }
 
 const oldBlock = `  const collectedDays = Array.from(byActivity.values())
-    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [])) }))
+    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport)) }))
     .sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());`;
 const newBlock = `  const collectedDays = reconcileCompetingFlightActivities(Array.from(byActivity.values())
-    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [])) })))
+    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport)) })))
     .sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());`;
 
 if (source.includes(oldBlock)) source = source.replace(oldBlock, newBlock);

@@ -23,6 +23,14 @@ export type CanonicalRosterEvent = {
   showPresentation: boolean;
   groundBeforeMinutes: number | null;
   leg?: FlightLeg;
+  /**
+   * Identidade da jornada a que este evento pertence. Derivada, nunca
+   * persistida: a mesma jornada mantém o mesmo valor ao atravessar 00:00 e
+   * duas jornadas no mesmo dia civil recebem valores diferentes (#512).
+   */
+  journeyId: string;
+  /** Por que esta etapa abriu uma jornada. `null` quando é continuação. */
+  journeyBoundary: JourneyBoundaryReason | null;
 };
 
 const MONTHS: Record<string, number> = {
@@ -96,20 +104,140 @@ function legKey(day: RosterDay, leg: FlightLeg) {
   ].join('|');
 }
 
-function sortLegs(legs: FlightLeg[]) {
-  const published = [...legs];
-  const alreadyConnected = published.length > 1
-    && published.every((leg, index) => index === 0 || airportCode(published[index - 1].destination) === airportCode(leg.origin));
-  if (alreadyConnected) return published;
-  return [...legs].sort((a, b) => (minutes(a.departureTime) ?? 99999) - (minutes(b.departureTime) ?? 99999));
+/**
+ * Deslocamento de dia publicado no próprio horário ("15:35(+1)").
+ * O parser do servidor preserva esse marcador; o do cliente já o consome ao
+ * normalizar o horário. Por isso ele é lido quando existe e reconstruído por
+ * progressão monótona quando não existe.
+ */
+function publishedDayOffset(value?: string | null): number | null {
+  const match = String(value || '').match(/\(\+(\d+)\)/);
+  return match ? Number(match[1]) || 0 : null;
 }
 
-function groundBeforeMinutes(previous: FlightLeg | undefined, leg: FlightLeg): number | null {
-  if (!previous) return null;
-  const arrival = minutes(previous.arrivalTime);
-  const departure = minutes(leg.departureTime);
-  if (arrival == null || departure == null) return null;
-  return departure >= arrival ? departure - arrival : departure + 1440 - arrival;
+/**
+ * Minuto absoluto de cada etapa dentro do RosterDay, contando a virada de dia.
+ * Um dia pode carregar mais de uma jornada e, com elas, mais de uma data civil;
+ * ordenar só pelo relógio embaralha as etapas e faz uma cadeia contínua parecer
+ * teletransporte — que era o que levava o filtro físico a apagar jornadas (#440).
+ */
+function absoluteLegMinutes(legs: FlightLeg[]): Map<FlightLeg, number> {
+  const absolute = new Map<FlightLeg, number>();
+  // Quando a fonte marca a virada de dia, a ausência do marcador significa dia
+  // base — nunca "o mesmo dia da etapa anterior". Herdar o deslocamento
+  // embaralharia a ordem, porque as etapas podem chegar fora de sequência.
+  const hasPublishedOffsets = legs.some((leg) => publishedDayOffset(leg.departureTime) != null);
+
+  let reconstructedOffset = 0;
+  let previousClock: number | null = null;
+  for (const leg of legs) {
+    const clock = minutes(leg.departureTime) ?? 0;
+    if (hasPublishedOffsets) {
+      absolute.set(leg, (publishedDayOffset(leg.departureTime) ?? 0) * 1440 + clock);
+      continue;
+    }
+    // Sem marcadores (o parser do cliente os consome ao normalizar), a ordem
+    // publicada é a única evidência: o relógio andar para trás indica virada.
+    if (previousClock != null && clock < previousClock) reconstructedOffset += 1;
+    absolute.set(leg, reconstructedOffset * 1440 + clock);
+    previousClock = clock;
+  }
+  return absolute;
+}
+
+/**
+ * Reconstrói a ordem física quando o relógio sozinho não basta.
+ *
+ * Alguns parsers entregam as etapas de um pairing de vários dias ordenadas
+ * apenas pelo relógio e sem o marcador de virada de dia. Nesse estado a
+ * sequência publicada parece teletransporte, e o filtro físico respondia
+ * apagando jornadas inteiras (#440). Aqui a cadeia é refeita seguindo
+ * destino -> origem e escolhendo sempre a próxima decolagem mais cedo a partir
+ * da chegada anterior, o que resolve as estações repetidas (ex.: dois trechos
+ * saindo de GRU em dias diferentes).
+ *
+ * Retorna null quando não existe cadeia que cubra todas as etapas: sem prova
+ * de continuidade, a ordem publicada é preservada como está.
+ */
+function reconstructPhysicalOrder(legs: FlightLeg[]): FlightLeg[] | null {
+  if (legs.length < 2) return null;
+
+  const follow = (startIndex: number): FlightLeg[] => {
+    const used = new Array(legs.length).fill(false);
+    const chain: FlightLeg[] = [legs[startIndex]];
+    used[startIndex] = true;
+    let station = airportCode(legs[startIndex].destination);
+    let clock = minutes(legs[startIndex].arrivalTime) ?? 0;
+
+    for (let step = 1; step < legs.length; step += 1) {
+      let bestIndex = -1;
+      let bestWait = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < legs.length; index += 1) {
+        if (used[index] || airportCode(legs[index].origin) !== station) continue;
+        const departure = minutes(legs[index].departureTime) ?? 0;
+        // Espera até a próxima decolagem, aceitando a virada de dia.
+        const wait = departure >= clock ? departure - clock : departure + 1440 - clock;
+        if (wait < bestWait) { bestWait = wait; bestIndex = index; }
+      }
+      if (bestIndex < 0) break;
+      used[bestIndex] = true;
+      chain.push(legs[bestIndex]);
+      station = airportCode(legs[bestIndex].destination);
+      clock = minutes(legs[bestIndex].arrivalTime) ?? 0;
+    }
+    return chain;
+  };
+
+  // Uma sequência de ida e volta fecha em circuito, então mais de uma etapa
+  // pode iniciar uma cadeia completa. A etapa inicial verdadeira é a que vem
+  // depois do maior intervalo: o dia começa após o repouso mais longo, não no
+  // meio de uma conexão curta.
+  let best: FlightLeg[] = [];
+  let bestLead = -1;
+  for (let index = 0; index < legs.length; index += 1) {
+    const chain = follow(index);
+    if (chain.length < legs.length) {
+      if (chain.length > best.length && best.length < legs.length) { best = chain; bestLead = -1; }
+      continue;
+    }
+    const closing = minutes(chain[chain.length - 1].arrivalTime) ?? 0;
+    const opening = minutes(chain[0].departureTime) ?? 0;
+    const lead = opening >= closing ? opening - closing : opening + 1440 - closing;
+    if (best.length < legs.length || lead > bestLead) { best = chain; bestLead = lead; }
+  }
+  return best.length === legs.length ? best : null;
+}
+
+/**
+ * Uma ida e volta fecha em circuito, e um circuito não tem começo próprio: as
+ * mesmas etapas podem ser lidas a partir de qualquer ponto. Quando o dia
+ * publica a própria apresentação, ela diz qual etapa abre o dia — sem isso, o
+ * meio de um pairing pode ser lido como início e o repouso vira "conexão".
+ */
+function rotateToPublishedStart(sequence: FlightLeg[], anchorTime?: string | null): FlightLeg[] {
+  const anchor = normalizeTime(anchorTime);
+  if (!anchor || sequence.length < 2) return sequence;
+  if (airportCode(sequence[sequence.length - 1].destination) !== airportCode(sequence[0].origin)) return sequence;
+  const at = sequence.findIndex((leg) => normalizeTime(leg.departureTime) === anchor);
+  if (at <= 0) return sequence;
+  return [...sequence.slice(at), ...sequence.slice(0, at)];
+}
+
+function sortLegs(legs: FlightLeg[], anchorTime?: string | null) {
+  const published = [...legs];
+  const isConnected = (sequence: FlightLeg[]) => sequence.length > 1
+    && sequence.every((leg, index) => index === 0 || airportCode(sequence[index - 1].destination) === airportCode(leg.origin));
+  if (isConnected(published)) return rotateToPublishedStart(published, anchorTime);
+
+  const absolute = absoluteLegMinutes(published);
+  const byClock = published
+    .map((leg, index) => ({ leg, index }))
+    .sort((a, b) => (absolute.get(a.leg) ?? 99999) - (absolute.get(b.leg) ?? 99999) || a.index - b.index)
+    .map((item) => item.leg);
+  if (isConnected(byClock)) return rotateToPublishedStart(byClock, anchorTime);
+
+  const reconstructed = reconstructPhysicalOrder(published);
+  return reconstructed ? rotateToPublishedStart(reconstructed, anchorTime) : byClock;
 }
 
 export function legCrossesNextDay(leg: FlightLeg): boolean {
@@ -202,9 +330,27 @@ function chainScore(chain: FlightLeg[]): number {
   return chain.length * 1000 + continuity * 100 + uniqueAirports * 10 + completeness;
 }
 
+/**
+ * Um dia pode conter mais de uma jornada (ex.: jornada da madrugada + jornada
+ * da noite). Nesse caso as etapas continuam encadeadas fisicamente, apenas com
+ * um repouso no meio. Se a cadeia publicada já fecha destino -> origem do
+ * começo ao fim, ela é íntegra por definição e nenhuma etapa pode ser
+ * descartada: o corte por tempo de conexão descartava jornadas inteiras da
+ * escala (#440).
+ */
+function formsContinuousChain(legs: FlightLeg[]): boolean {
+  return legs.length > 1
+    && legs.every((leg, index) => index === 0 || airportCode(legs[index - 1].destination) === airportCode(leg.origin));
+}
+
 export function selectPhysicalLegSequence(legs: FlightLeg[]): FlightLeg[] {
   const clean = dedupeSimilarLegs(legs || []);
   if (clean.length <= 2) return clean;
+
+  // Continuidade física completa: preserva a escala publicada inteira. A seleção
+  // por cadeia abaixo existe para contaminação do parser (etapas de outra escala
+  // sobrepostas no mesmo dia), não para separar jornadas legítimas.
+  if (formsContinuousChain(clean)) return clean;
 
   const chains: FlightLeg[][] = [];
   for (let i = 0; i < clean.length; i += 1) {
@@ -224,6 +370,59 @@ export function selectPhysicalLegSequence(legs: FlightLeg[]): FlightLeg[] {
   // preserva os dados para não apagar programação rara/múltipla sem evidência.
   if (best.length >= 2 && best.length < clean.length) return sortLegs(best);
   return clean;
+}
+
+/**
+ * Intervalo a partir do qual dois voos encadeados deixam de ser conexão e
+ * passam a ser jornadas separadas por repouso. Alinhado ao corte já usado pelo
+ * parser AIMS (`splitAimsDayIntoPhysicalDutyGroups`) para manter um contrato só.
+ */
+const MIN_REST_BETWEEN_JOURNEYS_MINUTES = 12 * 60;
+
+export type JourneyBoundaryReason =
+  | 'primeira-etapa'
+  | 'apresentacao-publicada-da-etapa'
+  | 'apresentacao-publicada-do-dia'
+  | 'descontinuidade-fisica'
+  | 'repouso-entre-jornadas';
+
+/**
+ * Os parsers preenchem `dutyReport` com a decolagem da primeira etapa quando a
+ * fonte não publica apresentação. Nesse caso o horário não é evidência de
+ * início de jornada — é apenas um valor padrão — e não pode transformar a
+ * continuação de uma jornada que atravessou 00:00 em jornada nova (#512).
+ */
+function dayReportIsPublished(day: RosterDay): boolean {
+  const report = normalizeTime(day.dutyReport);
+  if (!report) return false;
+  const firstDeparture = normalizeTime(day.legs?.[0]?.departureTime);
+  return report !== firstDeparture;
+}
+
+/**
+ * Decide se `leg` inicia uma nova jornada. A ordem importa: evidência publicada
+ * vence sempre; continuidade física e intervalo são apenas fallback para as
+ * fontes que não publicam apresentação por etapa.
+ */
+function legPresentationIsPublished(leg: FlightLeg): boolean {
+  const presentation = normalizeTime(leg.presentationTime);
+  // Igual à decolagem significa valor padrão do parser, não apresentação publicada.
+  return Boolean(presentation) && presentation !== normalizeTime(leg.departureTime);
+}
+
+function journeyBoundaryReason(
+  previous: FlightLeg | null,
+  leg: FlightLeg,
+  gapMinutes: number | null,
+  isFirstLegOfDay: boolean,
+  day: RosterDay,
+): JourneyBoundaryReason | null {
+  if (!previous) return 'primeira-etapa';
+  if (legPresentationIsPublished(leg)) return 'apresentacao-publicada-da-etapa';
+  if (isFirstLegOfDay && dayReportIsPublished(day)) return 'apresentacao-publicada-do-dia';
+  if (airportCode(previous.destination) !== airportCode(leg.origin)) return 'descontinuidade-fisica';
+  if (gapMinutes != null && gapMinutes >= MIN_REST_BETWEEN_JOURNEYS_MINUTES) return 'repouso-entre-jornadas';
+  return null;
 }
 
 function parsePublishedRangeDate(day: string, monthToken: string, year: string): Date | null {
@@ -314,7 +513,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     const parsed = parseRosterDate(sourceDay.date, sourceDay.month || defaultMonth, sourceDay.year || defaultYear);
     const date = formatDate(parsed.day, parsed.month, parsed.year);
     const day = cloneDay({ ...sourceDay, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year });
-    day.legs = selectPhysicalLegSequence(sortLegs(day.legs || []));
+    day.legs = selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport));
 
     const activityKey = day.legs?.length
       ? `${date}|VOO|${day.dutyReport || ''}|${day.legs[0]?.flightNumber || day.pairingCode || ''}`
@@ -341,7 +540,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
       }
     }
 
-    current.legs = selectPhysicalLegSequence(sortLegs(current.legs || []));
+    current.legs = selectPhysicalLegSequence(sortLegs(current.legs || [], current.dutyReport));
     current.rawText = [current.rawText, day.rawText].filter(Boolean).join(' ');
     current.type = current.legs.length ? 'VOO' : current.type;
     current.pairingCode = current.pairingCode || day.pairingCode;
@@ -352,7 +551,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   }
 
   const collectedDays = Array.from(byActivity.values())
-    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [])) }))
+    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport)) }))
     .sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
   const period = inferCanonicalRosterPeriod(roster, collectedDays, defaultMonth, defaultYear);
   const completedDays = completeContinuityDays(collectedDays, roster);
@@ -370,17 +569,27 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   const normalized = normalizeRosterDays(roster);
   const events: CanonicalRosterEvent[] = [];
 
+  // Estado da jornada corrente. Vive fora do laço de dias porque uma jornada que
+  // atravessa 00:00 continua no dia civil seguinte com a mesma identidade: a
+  // virada de data não abre jornada nem apresentação nova (#512).
+  let currentJourneyId = '';
+  let journeyPreviousLeg: FlightLeg | null = null;
+  let journeyPreviousEndMs: number | null = null;
+
+  const closeJourney = () => {
+    currentJourneyId = '';
+    journeyPreviousLeg = null;
+    journeyPreviousEndMs = null;
+  };
+
   normalized.days.forEach((day) => {
     if (day.legs?.length) {
-      const legs = sortLegs(day.legs);
+      const legs = sortLegs(day.legs, day.dutyReport);
       let physicalDayOffset = 0;
       let previousArrivalAbsolute: number | null = null;
       legs.forEach((leg, index) => {
         const departure = normalizeTime(leg.departureTime) || '00:00';
         const arrival = normalizeTime(leg.arrivalTime) || departure;
-        const rawPresentation = normalizeTime(day.dutyReport) || normalizeTime((leg as any).presentationTime) || departure;
-        const showPresentation = index === 0;
-        const presentation = showPresentation && !presentationIsUnsafe(rawPresentation, departure) ? rawPresentation : departure;
         const start = dateAt(day, departure, 0);
         const end = dateAt(day, arrival, 23);
         const departureMinute = minutes(departure) || 0;
@@ -391,6 +600,22 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
         end.setDate(end.getDate() + arrivalOffset);
         previousArrivalAbsolute = arrivalMinute + arrivalOffset * 1440;
         const isNextDay = physicalDayOffset > 0 || arrivalOffset > 0;
+
+        const gapMinutes = journeyPreviousEndMs != null
+          ? Math.round((start.getTime() - journeyPreviousEndMs) / 60_000)
+          : null;
+        const boundary = journeyBoundaryReason(journeyPreviousLeg, leg, gapMinutes, index === 0, day);
+        const showPresentation = boundary !== null;
+        if (showPresentation) {
+          currentJourneyId = `jornada|${start.toISOString()}|${leg.flightNumber}|${leg.origin}`;
+        }
+
+        // Apresentação da jornada: evidência publicada da etapa, senão a do dia
+        // quando o dia realmente publica uma, senão a própria decolagem.
+        const publishedPresentation = normalizeTime(leg.presentationTime)
+          || (index === 0 && dayReportIsPublished(day) ? normalizeTime(day.dutyReport) : null);
+        const rawPresentation = publishedPresentation || departure;
+        const presentation = showPresentation && !presentationIsUnsafe(rawPresentation, departure) ? rawPresentation : departure;
 
         events.push({
           id: `${day.date}|${index}|${leg.flightNumber}|${leg.origin}|${leg.destination}|${departure}|${arrival}`,
@@ -410,12 +635,23 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
           legIndex: index,
           legCount: legs.length,
           showPresentation,
-          groundBeforeMinutes: groundBeforeMinutes(legs[index - 1], leg),
+          // Tempo em solo só descreve espera DENTRO de uma jornada. Entre
+          // jornadas o intervalo é repouso, não conexão (#440, #512).
+          groundBeforeMinutes: boundary === null ? gapMinutes : null,
           leg,
+          journeyId: currentJourneyId,
+          journeyBoundary: boundary,
         });
+
+        journeyPreviousLeg = leg;
+        journeyPreviousEndMs = end.getTime();
       });
       return;
     }
+
+    // Folga, pernoite, reserva ou treinamento encerram a jornada anterior:
+    // a próxima etapa de voo recomeça com apresentação própria.
+    closeJourney();
 
     const type = String(day.type || day.pairingCode || '').toUpperCase();
     const continuity = day as RosterDay & { continuityInferred?: boolean; continuityStart?: string; continuityEnd?: string };
@@ -451,6 +687,8 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
       legCount: 1,
       showPresentation: true,
       groundBeforeMinutes: null,
+      journeyId: `${kind}|${day.date}|${day.pairingCode || day.type || 'event'}`,
+      journeyBoundary: 'primeira-etapa',
     });
   });
 

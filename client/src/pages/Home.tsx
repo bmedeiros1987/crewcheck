@@ -68,6 +68,7 @@ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSe
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
+import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
@@ -1675,7 +1676,7 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
 
 function smartDepartureEligible(event: ZeroLeg): boolean {
   const code = rosterCode(event.day).toUpperCase();
-  return !event.placeholder && event.presentation !== '—' && (event.kind === 'flight' || ['ASB', 'RES', 'RSV', 'HSB', 'SA', 'RCFI', 'CRM', 'MCK', 'TRE', 'TRN'].includes(code));
+  return !event.placeholder && publishedPresentationOf(event) !== null && (event.kind === 'flight' || ['ASB', 'RES', 'RSV', 'HSB', 'SA', 'RCFI', 'CRM', 'MCK', 'TRE', 'TRN'].includes(code));
 }
 
 
@@ -3645,7 +3646,9 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   const admin = isAdmin();
   const planned = wakeupDateForEvent(event);
   const hotel = safe(event.hotel, event.kind === 'stay' ? `Hotel em ${city(event.destination || event.origin)}` : 'Sem hotel informado');
-  const presentation = safe(event.presentation, 'A confirmar');
+  // Continuação de jornada não tem apresentação própria; o despertador usa a
+  // decolagem em vez de anunciar "Conexão/Solo" como horário (#512).
+  const presentation = publishedPresentationOf(event) || safe(event.departure, 'A confirmar');
 
   useEffect(() => {
     Promise.all([

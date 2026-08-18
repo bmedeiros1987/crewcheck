@@ -229,6 +229,7 @@ function parseFlightsFromRosterTextV3(day, text) {
   }
  }
  if (day.legs.length) {
+  assignPublishedLegPresentationsV3(day.legs, normalized);
   day.type = 'VOO';
   day.pairingCode = day.legs[0].flightNumber;
   const firstIdx = normalized.indexOf(day.legs[0].flightNumber);
@@ -241,6 +242,43 @@ function parseFlightsFromRosterTextV3(day, text) {
   day.isNextDay = day.legs.some((leg) => leg.isNextDay) || diffHours(day.dutyReport, day.dutyDebrief) > 18;
   day.flyingHours = day.legs.reduce((sum, leg) => sum + (leg.duration || diffHours(leg.departureTime, leg.arrivalTime)), 0);
   day.dutyHours = diffHours(day.dutyReport, day.dutyDebrief);
+ }
+}
+
+/**
+ * Nas escalas CrewRosterReport as colunas de cada etapa terminam em
+ * `<bloco> <jornada> <aeronave>`. Quando uma NOVA jornada começa no mesmo dia,
+ * a apresentação publicada aparece depois do código de aeronave, imediatamente
+ * antes do próximo número de voo. Esse é o único horário posterior à aeronave,
+ * o que o distingue com segurança dos tempos de bloco/jornada.
+ *
+ * Preservar essa apresentação é o que impede a jornada seguinte de ser lida
+ * como conexão da anterior e de perder a própria apresentação (#440, #512).
+ */
+function assignPublishedLegPresentationsV3(legs, normalized) {
+ const aircraftRe = /\b(32S|31R|39R|328|319|320|321|32N)\b/g;
+ const timeRe = /\b\d{1,2}:\d{2}(?:\(\+\d+\))?\b/g;
+ for (let index = 1; index < legs.length; index += 1) {
+  const previous = legs[index - 1];
+  const current = legs[index];
+  const previousArrivalAt = normalized.indexOf(previous.arrivalTime);
+  if (previousArrivalAt < 0) continue;
+  const currentFlightAt = normalized.indexOf(current.flightNumber, previousArrivalAt);
+  if (currentFlightAt <= previousArrivalAt) continue;
+  const between = normalized.slice(previousArrivalAt + previous.arrivalTime.length, currentFlightAt);
+  aircraftRe.lastIndex = 0;
+  let lastAircraftEnd = -1;
+  let aircraftMatch;
+  while ((aircraftMatch = aircraftRe.exec(between)) !== null) lastAircraftEnd = aircraftMatch.index + aircraftMatch[0].length;
+  if (lastAircraftEnd < 0) continue;
+  const afterAircraft = between.slice(lastAircraftEnd);
+  timeRe.lastIndex = 0;
+  const candidate = [...afterAircraft.matchAll(timeRe)].map((match) => normalizeTimeToken(match[0])).at(-1);
+  if (!candidate) continue;
+  // Apresentação precede a decolagem e nunca por mais de 3h.
+  const lead = toMin(current.departureTime) - toMin(candidate);
+  if (lead <= 0 || lead > 180) continue;
+  current.presentationTime = candidate;
  }
 }
 
