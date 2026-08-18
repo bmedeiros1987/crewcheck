@@ -116,10 +116,13 @@ check(
 const clientRows = clientBundle.journeySummary(roster);
 const byFlight = (flightNumber) => clientRows.find((row) => row.flightNumber === flightNumber);
 
+// A contagem depende do estado do parser (o preparado lê a fixture inteira),
+// então o invariante é "nada se perde", não um número mágico.
+const parsedLegTotal = days.reduce((sum, day) => sum + (day.legs || []).length, 0);
 check(
-  'nenhuma perna publicada some no caminho do cliente (22 pernas)',
-  clientRows.length === 22,
-  `pernas derivadas: ${clientRows.length}`,
+  'nenhuma perna publicada some entre parser e derivação no caminho do cliente',
+  clientRows.length === parsedLegTotal,
+  `parser=${parsedLegTotal} derivadas=${clientRows.length}`,
 );
 check(
   'LA3899/LA3861/LA3308 (evidência #440) sobrevivem no caminho do cliente',

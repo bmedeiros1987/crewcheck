@@ -188,11 +188,22 @@ function reconstructPhysicalOrder(legs: FlightLeg[]): FlightLeg[] | null {
     return chain;
   };
 
+  // Uma sequência de ida e volta fecha em circuito, então mais de uma etapa
+  // pode iniciar uma cadeia completa. A etapa inicial verdadeira é a que vem
+  // depois do maior intervalo: o dia começa após o repouso mais longo, não no
+  // meio de uma conexão curta.
   let best: FlightLeg[] = [];
+  let bestLead = -1;
   for (let index = 0; index < legs.length; index += 1) {
     const chain = follow(index);
-    if (chain.length > best.length) best = chain;
-    if (best.length === legs.length) break;
+    if (chain.length < legs.length) {
+      if (chain.length > best.length && best.length < legs.length) { best = chain; bestLead = -1; }
+      continue;
+    }
+    const closing = minutes(chain[chain.length - 1].arrivalTime) ?? 0;
+    const opening = minutes(chain[0].departureTime) ?? 0;
+    const lead = opening >= closing ? opening - closing : opening + 1440 - closing;
+    if (best.length < legs.length || lead > bestLead) { best = chain; bestLead = lead; }
   }
   return best.length === legs.length ? best : null;
 }
