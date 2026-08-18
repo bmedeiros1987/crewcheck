@@ -145,16 +145,72 @@ function absoluteLegMinutes(legs: FlightLeg[]): Map<FlightLeg, number> {
   return absolute;
 }
 
+/**
+ * Reconstrói a ordem física quando o relógio sozinho não basta.
+ *
+ * Alguns parsers entregam as etapas de um pairing de vários dias ordenadas
+ * apenas pelo relógio e sem o marcador de virada de dia. Nesse estado a
+ * sequência publicada parece teletransporte, e o filtro físico respondia
+ * apagando jornadas inteiras (#440). Aqui a cadeia é refeita seguindo
+ * destino -> origem e escolhendo sempre a próxima decolagem mais cedo a partir
+ * da chegada anterior, o que resolve as estações repetidas (ex.: dois trechos
+ * saindo de GRU em dias diferentes).
+ *
+ * Retorna null quando não existe cadeia que cubra todas as etapas: sem prova
+ * de continuidade, a ordem publicada é preservada como está.
+ */
+function reconstructPhysicalOrder(legs: FlightLeg[]): FlightLeg[] | null {
+  if (legs.length < 2) return null;
+
+  const follow = (startIndex: number): FlightLeg[] => {
+    const used = new Array(legs.length).fill(false);
+    const chain: FlightLeg[] = [legs[startIndex]];
+    used[startIndex] = true;
+    let station = airportCode(legs[startIndex].destination);
+    let clock = minutes(legs[startIndex].arrivalTime) ?? 0;
+
+    for (let step = 1; step < legs.length; step += 1) {
+      let bestIndex = -1;
+      let bestWait = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < legs.length; index += 1) {
+        if (used[index] || airportCode(legs[index].origin) !== station) continue;
+        const departure = minutes(legs[index].departureTime) ?? 0;
+        // Espera até a próxima decolagem, aceitando a virada de dia.
+        const wait = departure >= clock ? departure - clock : departure + 1440 - clock;
+        if (wait < bestWait) { bestWait = wait; bestIndex = index; }
+      }
+      if (bestIndex < 0) break;
+      used[bestIndex] = true;
+      chain.push(legs[bestIndex]);
+      station = airportCode(legs[bestIndex].destination);
+      clock = minutes(legs[bestIndex].arrivalTime) ?? 0;
+    }
+    return chain;
+  };
+
+  let best: FlightLeg[] = [];
+  for (let index = 0; index < legs.length; index += 1) {
+    const chain = follow(index);
+    if (chain.length > best.length) best = chain;
+    if (best.length === legs.length) break;
+  }
+  return best.length === legs.length ? best : null;
+}
+
 function sortLegs(legs: FlightLeg[]) {
   const published = [...legs];
-  const alreadyConnected = published.length > 1
-    && published.every((leg, index) => index === 0 || airportCode(published[index - 1].destination) === airportCode(leg.origin));
-  if (alreadyConnected) return published;
+  const isConnected = (sequence: FlightLeg[]) => sequence.length > 1
+    && sequence.every((leg, index) => index === 0 || airportCode(sequence[index - 1].destination) === airportCode(leg.origin));
+  if (isConnected(published)) return published;
+
   const absolute = absoluteLegMinutes(published);
-  return published
+  const byClock = published
     .map((leg, index) => ({ leg, index }))
     .sort((a, b) => (absolute.get(a.leg) ?? 99999) - (absolute.get(b.leg) ?? 99999) || a.index - b.index)
     .map((item) => item.leg);
+  if (isConnected(byClock)) return byClock;
+
+  return reconstructPhysicalOrder(published) || byClock;
 }
 
 export function legCrossesNextDay(leg: FlightLeg): boolean {
