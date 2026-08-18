@@ -123,16 +123,22 @@ function publishedDayOffset(value?: string | null): number | null {
  */
 function absoluteLegMinutes(legs: FlightLeg[]): Map<FlightLeg, number> {
   const absolute = new Map<FlightLeg, number>();
+  // Quando a fonte marca a virada de dia, a ausência do marcador significa dia
+  // base — nunca "o mesmo dia da etapa anterior". Herdar o deslocamento
+  // embaralharia a ordem, porque as etapas podem chegar fora de sequência.
+  const hasPublishedOffsets = legs.some((leg) => publishedDayOffset(leg.departureTime) != null);
+
   let reconstructedOffset = 0;
   let previousClock: number | null = null;
   for (const leg of legs) {
     const clock = minutes(leg.departureTime) ?? 0;
-    const published = publishedDayOffset(leg.departureTime);
-    if (published != null) {
-      reconstructedOffset = published;
-    } else if (previousClock != null && clock < previousClock) {
-      reconstructedOffset += 1;
+    if (hasPublishedOffsets) {
+      absolute.set(leg, (publishedDayOffset(leg.departureTime) ?? 0) * 1440 + clock);
+      continue;
     }
+    // Sem marcadores (o parser do cliente os consome ao normalizar), a ordem
+    // publicada é a única evidência: o relógio andar para trás indica virada.
+    if (previousClock != null && clock < previousClock) reconstructedOffset += 1;
     absolute.set(leg, reconstructedOffset * 1440 + clock);
     previousClock = clock;
   }
