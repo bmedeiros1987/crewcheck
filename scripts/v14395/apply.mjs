@@ -69,7 +69,7 @@ if (!compliance.includes(`const competenceKey = \`${'${roster.year || \'\'}'}-${
 if (compliance.includes('  metrics.nightOperations = nightSummary.workedEvents.length;')) {
   compliance = compliance.replace(
     '  metrics.nightOperations = nightSummary.workedEvents.length;',
-    `  metrics.nightOperations = summarizeRegulatoryNightEvents(competenceDays, actRules.nightOps.resetAfterFreeHours).workedEvents.length;`,
+    `  metrics.nightOperations = summarizeRegulatoryNightEvents(competenceDays, actRules.nightOps.resetAfterFreeHours, roster).workedEvents.length;`,
   );
 }
 
