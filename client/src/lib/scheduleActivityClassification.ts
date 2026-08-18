@@ -293,8 +293,23 @@ function isRemoteActivity(activity: ScheduleActivityLike): boolean {
  * HSB não acionado e atividade remota continuam contando como programação,
  * mas não podem abrir cálculo de saída.
  */
+/**
+ * Apresentação realmente publicada da atividade, ou null.
+ *
+ * "Conexão/Solo" é o rótulo de uma etapa que continua DENTRO de uma jornada já
+ * iniciada: descreve espera em solo, não apresentação. Planejar saída a partir
+ * dele levaria o tripulante a um horário que não existe (#512).
+ */
+export function publishedPresentationOf(activity: ScheduleActivityLike): string | null {
+  const presentation = String(activity?.presentation || '').trim();
+  if (!presentation || presentation === '—' || presentation === 'Conexão/Solo') return null;
+  return /\d{1,2}:\d{2}/.test(presentation) ? presentation : null;
+}
+
 export function isSmartDepartureEligible(activity: ScheduleActivityLike): boolean {
   if (!isProgramScheduleActivity(activity)) return false;
+  // Sem apresentação publicada não há alvo para planejar a saída.
+  if (publishedPresentationOf(activity) === null) return false;
   if (isFlightScheduleActivity(activity)) return true;
   if (isStandby(activity) && !isActivated(activity)) return false;
   if (isRemoteActivity(activity)) return false;

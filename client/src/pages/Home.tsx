@@ -68,6 +68,7 @@ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSe
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
+import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
@@ -1671,17 +1672,6 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
   }
   if (!smartDepartureEligible(event)) return null;
   return <article className="cz-smart-card" onClick={() => setView('departure')}><div className="cz-smart-title"><span><Car size={26}/></span><div><h2>Planejador de Saída</h2><p>Calcula quando sair usando trânsito, margem e apresentação</p></div><ChevronRight/></div><div className="cz-smart-content"><strong>{event.presentation !== '—' ? event.presentation : 'Calcular'}</strong><em>ROTA</em><p>Localização atual / hotel → {event.origin}</p><div><small>Tempo real</small><b>Trânsito</b></div></div></article>;
-}
-
-/**
- * Apresentação realmente publicada para o evento, ou null.
- * "Conexão/Solo" é rótulo de continuação DENTRO de uma jornada: não é horário
- * de apresentação e não pode alimentar planejamento de saída nem despertador.
- */
-function publishedPresentationOf(event: ZeroLeg): string | null {
-  const presentation = String(event.presentation || '').trim();
-  if (!presentation || presentation === '—' || presentation === 'Conexão/Solo') return null;
-  return /\d{1,2}:\d{2}/.test(presentation) ? presentation : null;
 }
 
 function smartDepartureEligible(event: ZeroLeg): boolean {
