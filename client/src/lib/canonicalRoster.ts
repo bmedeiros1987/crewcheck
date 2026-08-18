@@ -208,20 +208,36 @@ function reconstructPhysicalOrder(legs: FlightLeg[]): FlightLeg[] | null {
   return best.length === legs.length ? best : null;
 }
 
-function sortLegs(legs: FlightLeg[]) {
+/**
+ * Uma ida e volta fecha em circuito, e um circuito não tem começo próprio: as
+ * mesmas etapas podem ser lidas a partir de qualquer ponto. Quando o dia
+ * publica a própria apresentação, ela diz qual etapa abre o dia — sem isso, o
+ * meio de um pairing pode ser lido como início e o repouso vira "conexão".
+ */
+function rotateToPublishedStart(sequence: FlightLeg[], anchorTime?: string | null): FlightLeg[] {
+  const anchor = normalizeTime(anchorTime);
+  if (!anchor || sequence.length < 2) return sequence;
+  if (airportCode(sequence[sequence.length - 1].destination) !== airportCode(sequence[0].origin)) return sequence;
+  const at = sequence.findIndex((leg) => normalizeTime(leg.departureTime) === anchor);
+  if (at <= 0) return sequence;
+  return [...sequence.slice(at), ...sequence.slice(0, at)];
+}
+
+function sortLegs(legs: FlightLeg[], anchorTime?: string | null) {
   const published = [...legs];
   const isConnected = (sequence: FlightLeg[]) => sequence.length > 1
     && sequence.every((leg, index) => index === 0 || airportCode(sequence[index - 1].destination) === airportCode(leg.origin));
-  if (isConnected(published)) return published;
+  if (isConnected(published)) return rotateToPublishedStart(published, anchorTime);
 
   const absolute = absoluteLegMinutes(published);
   const byClock = published
     .map((leg, index) => ({ leg, index }))
     .sort((a, b) => (absolute.get(a.leg) ?? 99999) - (absolute.get(b.leg) ?? 99999) || a.index - b.index)
     .map((item) => item.leg);
-  if (isConnected(byClock)) return byClock;
+  if (isConnected(byClock)) return rotateToPublishedStart(byClock, anchorTime);
 
-  return reconstructPhysicalOrder(published) || byClock;
+  const reconstructed = reconstructPhysicalOrder(published);
+  return reconstructed ? rotateToPublishedStart(reconstructed, anchorTime) : byClock;
 }
 
 export function legCrossesNextDay(leg: FlightLeg): boolean {
@@ -497,7 +513,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     const parsed = parseRosterDate(sourceDay.date, sourceDay.month || defaultMonth, sourceDay.year || defaultYear);
     const date = formatDate(parsed.day, parsed.month, parsed.year);
     const day = cloneDay({ ...sourceDay, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year });
-    day.legs = selectPhysicalLegSequence(sortLegs(day.legs || []));
+    day.legs = selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport));
 
     const activityKey = day.legs?.length
       ? `${date}|VOO|${day.dutyReport || ''}|${day.legs[0]?.flightNumber || day.pairingCode || ''}`
@@ -524,7 +540,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
       }
     }
 
-    current.legs = selectPhysicalLegSequence(sortLegs(current.legs || []));
+    current.legs = selectPhysicalLegSequence(sortLegs(current.legs || [], current.dutyReport));
     current.rawText = [current.rawText, day.rawText].filter(Boolean).join(' ');
     current.type = current.legs.length ? 'VOO' : current.type;
     current.pairingCode = current.pairingCode || day.pairingCode;
@@ -535,7 +551,7 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   }
 
   const collectedDays = Array.from(byActivity.values())
-    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [])) }))
+    .map((day) => ({ ...day, legs: selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport)) }))
     .sort((a, b) => dateAt(a, '00:00', 0).getTime() - dateAt(b, '00:00', 0).getTime());
   const period = inferCanonicalRosterPeriod(roster, collectedDays, defaultMonth, defaultYear);
   const completedDays = completeContinuityDays(collectedDays, roster);
@@ -568,7 +584,7 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
 
   normalized.days.forEach((day) => {
     if (day.legs?.length) {
-      const legs = sortLegs(day.legs);
+      const legs = sortLegs(day.legs, day.dutyReport);
       let physicalDayOffset = 0;
       let previousArrivalAbsolute: number | null = null;
       legs.forEach((leg, index) => {
