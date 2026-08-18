@@ -28,6 +28,7 @@ const harness = loadClientModules({
   files: [
     'client/src/lib/rosterCodes.ts',
     'client/src/lib/actRules.ts',
+    'client/src/lib/embeddedFormalDaysOff.ts',
     'client/src/lib/rosterContinuity.ts',
     'client/src/lib/canonicalRoster.ts',
     'client/src/lib/complianceEngine.ts',

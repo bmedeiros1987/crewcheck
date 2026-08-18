@@ -104,12 +104,51 @@ function legKey(day: RosterDay, leg: FlightLeg) {
   ].join('|');
 }
 
+/**
+ * Deslocamento de dia publicado no próprio horário ("15:35(+1)").
+ * O parser do servidor preserva esse marcador; o do cliente já o consome ao
+ * normalizar o horário. Por isso ele é lido quando existe e reconstruído por
+ * progressão monótona quando não existe.
+ */
+function publishedDayOffset(value?: string | null): number | null {
+  const match = String(value || '').match(/\(\+(\d+)\)/);
+  return match ? Number(match[1]) || 0 : null;
+}
+
+/**
+ * Minuto absoluto de cada etapa dentro do RosterDay, contando a virada de dia.
+ * Um dia pode carregar mais de uma jornada e, com elas, mais de uma data civil;
+ * ordenar só pelo relógio embaralha as etapas e faz uma cadeia contínua parecer
+ * teletransporte — que era o que levava o filtro físico a apagar jornadas (#440).
+ */
+function absoluteLegMinutes(legs: FlightLeg[]): Map<FlightLeg, number> {
+  const absolute = new Map<FlightLeg, number>();
+  let reconstructedOffset = 0;
+  let previousClock: number | null = null;
+  for (const leg of legs) {
+    const clock = minutes(leg.departureTime) ?? 0;
+    const published = publishedDayOffset(leg.departureTime);
+    if (published != null) {
+      reconstructedOffset = published;
+    } else if (previousClock != null && clock < previousClock) {
+      reconstructedOffset += 1;
+    }
+    absolute.set(leg, reconstructedOffset * 1440 + clock);
+    previousClock = clock;
+  }
+  return absolute;
+}
+
 function sortLegs(legs: FlightLeg[]) {
   const published = [...legs];
   const alreadyConnected = published.length > 1
     && published.every((leg, index) => index === 0 || airportCode(published[index - 1].destination) === airportCode(leg.origin));
   if (alreadyConnected) return published;
-  return [...legs].sort((a, b) => (minutes(a.departureTime) ?? 99999) - (minutes(b.departureTime) ?? 99999));
+  const absolute = absoluteLegMinutes(published);
+  return published
+    .map((leg, index) => ({ leg, index }))
+    .sort((a, b) => (absolute.get(a.leg) ?? 99999) - (absolute.get(b.leg) ?? 99999) || a.index - b.index)
+    .map((item) => item.leg);
 }
 
 export function legCrossesNextDay(leg: FlightLeg): boolean {

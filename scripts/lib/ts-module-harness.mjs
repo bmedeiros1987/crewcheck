@@ -22,6 +22,10 @@ export function loadClientModules({ files, stubs = {}, prefix = 'crewcheck-harne
   }
 
   for (const relative of files) {
+    // A preparação canônica (scripts/v139/apply.mjs) materializa módulos extras.
+    // Ausentes no estado base, presentes no preparado: os dois estados precisam
+    // rodar, então um arquivo que não existe é apenas ignorado.
+    if (!fs.existsSync(path.join(ROOT, relative))) continue;
     const source = fs.readFileSync(path.join(ROOT, relative), 'utf8');
     const compiled = ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
