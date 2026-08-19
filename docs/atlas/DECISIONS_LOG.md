@@ -101,3 +101,23 @@ evidence_ref: "#527, #531, docs/atlas/CORPUS.md"
 recorded_by: claude
 date: 2026-08-19
 ```
+
+```yaml
+claim: "Bruno decidiu não promover as duas exportações de julho deslocadas em ~3h a revisões reais/republicações; classificação rebaixada para REVIEW/A_CONFIRMAR até confirmação, sem 'corrigir' o deslocamento por hipótese. Autorizado prosseguir direto com #527 (fixtures de agosto) sem esperar revisão final do PR #529."
+status: CONFIRMADO
+source: "Instrução direta do Bruno no chat, refletindo comentário próprio no PR #529 (2026-08-19T21:05:43Z)"
+validated_by: Bruno
+evidence_ref: "#527, #531, PR #529, docs/atlas/CORPUS.md"
+recorded_by: claude
+date: 2026-08-19
+```
+
+```yaml
+claim: "Rodando o parser real de produção (server/rosterParser.mjs::parsePdfOnServer) contra os bytes reais dos PDFs das Revisões A e B, confirmado bug real e reproduzível na apresentação (dutyReport) do formato Escala AIMS/Crewtopia — o formato nativo CrewRosterReport passa nos mesmos casos. Achado feito autonomamente por Claude durante a continuação do #527, sem instrução específica do Bruno para essa checagem — decisão de trabalho dentro do escopo já autorizado."
+status: CONFIRMADO
+source: "Execução direta do pipeline de produção contra bytes reais, nesta sessão"
+validated_by: "Saída determinística do próprio pipeline"
+evidence_ref: "#510, #527, docs/atlas/QA_ORACLES.md, docs/atlas/CORPUS.md"
+recorded_by: claude
+date: 2026-08-19
+```

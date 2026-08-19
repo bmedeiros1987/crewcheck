@@ -32,6 +32,40 @@ recorded_by: claude
 date: 2026-08-19
 ```
 
+## Resultado CrewCheck contra o pipeline real (#527, 19/08/2026)
+
+Diferente das entradas acima (que documentam a fonte primária), esta seção documenta o **comportamento real do parser de produção** (`server/rosterParser.mjs::parsePdfOnServer`) rodado diretamente contra os bytes reais dos PDFs desta sessão — não uma fixture, não uma hipótese. Formato: fonte original -> esperado -> resultado CrewCheck.
+
+```yaml
+claim: "O formato nativo CrewRosterReport importa corretamente a apresentação (dutyReport) para LA3730 (09:25) e LA3246 (23:03) na Revisão A, batendo com o oracle confirmado acima."
+status: CONFIRMADO
+source: "Execução direta de server/rosterParser.mjs::parsePdfOnServer contra os bytes reais do PDF CrewRosterReport12 (Revisão A) nesta sessão"
+primary_source_examined_by: [claude]
+validated_by: "Saída determinística do próprio pipeline de produção — não depende de leitura humana"
+reproducible_by_agent: false   # rodado contra os bytes reais efêmeros desta sessão, não uma fixture persistida no repo ainda
+evidence_ref: "#527"
+recorded_by: claude
+date: 2026-08-19
+resultado_crewcheck: "PASS — CrewRosterReport nativo"
+```
+
+```yaml
+claim: "O formato Escala AIMS/Crewtopia (o mesmo Bruno recebe convertido) tem bug real na apresentação, confirmado em duas revisões diferentes de duas formas diferentes: (1) Revisão A — LA4712 e LA3246 são fundidos no mesmo dia/pairing, com dutyReport 08:29 herdado da DR anterior em vez de 09:25 para o LA3730 seguinte, e a apresentação real do LA3246 (23:03) desaparece; (2) Revisão B — sem fusão de dia, mas dutyReport errado do mesmo jeito: 20/08 mostra 00:15 (chegada em LDB, não a apresentação real 18:50 do LA3463) e 21/08 mostra 02:30 (chegada em REC, não a apresentação real 15:40 do LA3171)."
+status: CONFIRMADO
+source: "Execução direta de server/rosterParser.mjs::parsePdfOnServer contra os bytes reais dos PDFs escala22 (Revisão A) e escala12 (Revisão B) nesta sessão"
+primary_source_examined_by: [claude]
+validated_by: "Saída determinística do próprio pipeline de produção — não depende de leitura humana; comparado diretamente contra os oracles CONFIRMADO acima e contra a leitura da fonte primária para a Revisão B"
+reproducible_by_agent: false   # rodado contra os bytes reais efêmeros desta sessão, não uma fixture persistida no repo ainda
+evidence_ref: "#510, #527"
+recorded_by: claude
+date: 2026-08-19
+resultado_crewcheck: "FAIL — Escala AIMS/Crewtopia, em 2/2 revisões testadas até agora"
+```
+
+**Implicação para #510:** isso não é mais hipótese relayada — é o comportamento real e reproduzível do parser de produção no caminho de importação do formato que o Bruno mais usa no dia a dia (escala convertida). O bug é estrutural na extração de apresentação desse formato específico, não um caso isolado — apareceu de duas formas diferentes em duas revisões diferentes. Isso deveria pesar na priorização/escopo do #510.
+
+**Próximo passo para tornar isso `reproducible_by_agent: true` de forma permanente:** gerar a partir desta saída real uma fixture sanitizada (RosterDay[] com nome/matrícula substituídos, sem PII) e commitar como regressão — assim qualquer agente reconfirma sem precisar dos PDFs originais.
+
 ## A confirmar (relatados, ainda sem validação direta do Bruno contra a fonte original)
 
 Estes vieram de um comentário relayado via GitHub (identidade não separável do autor do PR no momento em que chegou) e ainda não passaram pelo mesmo processo de comparação direta que os dois casos acima. Tratar como hipótese de investigação, não como oracle fechado, até confirmação.
@@ -62,9 +96,9 @@ date: 2026-08-19
 
 ```yaml
 claim: "Jornadas de 18->19 e 19->20/08 são distintas; o relatório atual as funde e gera durações artificiais de 19h-25h."
-status: A_CONFIRMAR   # a parte "jornadas são distintas" está confirmada pela fonte primária; a parte "CrewCheck funde e gera duração artificial" ainda não foi checada contra a saída real do parser
+status: A_CONFIRMAR   # a parte geral do relato bate com evidência real; mantido A_CONFIRMAR porque o par exato de datas citado (18->19, 19->20) não é o mesmo par onde a fusão foi observada rodando o parser (ver achado abaixo)
 source: "Comentário relayado via GitHub (#524, id 5335699431), atribuído a análise do ChatGPT sobre os PDFs do Bruno"
-primary_source_examined_by: [chatgpt, claude]   # Claude confirmou na fonte primária que 18-Aug (LA3246/LA3347, GRU-BPS-GRU) e 19-Aug (LA3382/LA3123, GRU-REC-BSB) são duas jornadas fisicamente distintas na Revisão A — mas essa jornada de 18-Aug some em revisões posteriores (ver nota LA3246 acima), o que por si só já é uma fonte de fusão/duração artificial se o parser não tratar republicação corretamente. A alegação específica sobre o comportamento do CrewCheck ainda não foi testada rodando o parser real.
+primary_source_examined_by: [chatgpt, claude]   # ACHADO CONFIRMADO RODANDO O PARSER REAL (não mais hipótese): na Revisão A, formato Escala, LA4712 (18/08) e LA3246 (18/08, GRU-BPS) são fundidos pelo pipeline de produção num único dia/pairing, dutyReport 06:40 -> dutyDebrief 01:40(+1) = ~19h de duração de dia, exatamente a ordem de grandeza citada no comentário. Ver entrada CONFIRMADO em "Resultado CrewCheck" acima para o detalhe completo. O par de datas exato citado no comentário (18->19, 19->20) é aproximado, não idêntico ao par observado (a fusão real é 18/08 LA4712+LA3246; 19/08 e 20/08 também aparecem fundidos de forma distinta na Revisão A pura leitura de fonte, mas isso ainda não foi re-testado rodando o parser).
 validated_by: null
 reproducible_by_agent: false
 evidence_ref: "#510, #527"
