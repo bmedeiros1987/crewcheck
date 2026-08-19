@@ -8,7 +8,8 @@
 |---|---|---|
 | PR #513 — P-1 Integridade da Escala: identidade de jornada (`journeyId`/`journeyBoundary` em `canonicalRoster.ts`) | **Mesclado** em `b26a05c` | #440, #512 |
 | PR #524 — P-1 Regulamentação: madrugadas por jornada qualificável, não por `dateKey` | **Mesclado** em `2755145` (merge feito pelo Bruno diretamente no GitHub, após veredito técnico MERGE do Claude) | #512, #513 |
-| #527 — corpus AIMS/Crewtopia real + auditoria diferencial | **Bloqueado** — aguardando entrega dos PDFs reais na sessão (ver `CORPUS.md`) | #510, #512, #513, #519, #525, #526, #233 |
+| #527 — corpus AIMS/Crewtopia real + auditoria diferencial | **Desbloqueado** — 16 PDFs reais recebidos e auditados em 19/08 (ver `CORPUS.md`); fixtures sanitizadas ainda não geradas | #510, #512, #513, #519, #525, #526, #233 |
+| #531 — detectar horário UTC vs. local na importação | **Aberto**, não iniciado. Achado durante a auditoria do #527 (ver `CORPUS.md`); escopo próprio, não misturar com #527 | #527, #531 |
 | #510 — APZ/apresentação canônica em todos os consumidores | Autorizado, não iniciado. Escopo: auditoria/correção de apresentação/APZ; não pode virar refatoração ampla | #510 |
 | #525 — boundaries, tempo em solo, pernoite/stays | Não iniciado | #525 |
 | #526 — horas de voo 90h NB / 100h WB, separado de 176h de trabalho | Não iniciado | #526 |

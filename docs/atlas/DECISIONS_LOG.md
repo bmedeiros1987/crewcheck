@@ -81,3 +81,23 @@ evidence_ref: "docs/atlas/"
 recorded_by: claude
 date: 2026-08-19
 ```
+
+```yaml
+claim: "Bruno anexou os 16 PDFs reais AIMS/CrewRoster diretamente no chat (canal de anexo funcionando), desbloqueando o corpus real do #527."
+status: CONFIRMADO
+source: "Anexo direto no chat"
+validated_by: Bruno
+evidence_ref: "#527, docs/atlas/CORPUS.md"
+recorded_by: claude
+date: 2026-08-19
+```
+
+```yaml
+claim: "Achado de diferença de fuso (UTC vs. local) entre duas exportações do CrewRoster Report de julho/2026 registrado no Atlas e desmembrado como issue própria (#531), separada do #527."
+status: CONFIRMADO
+source: "Instrução direta do Bruno no chat: 'Registre no Atlas e abra como item separado'"
+validated_by: Bruno
+evidence_ref: "#527, #531, docs/atlas/CORPUS.md"
+recorded_by: claude
+date: 2026-08-19
+```

@@ -25,7 +25,25 @@ date: 2026-08-19
 
 ### Inventário (canal de anexo confirmado funcional — o teste pendente da nota anterior está resolvido)
 
-- **Período julho/2026** (29/06 a 01/08): 2 pares CrewRoster Report + Escala, mais 1 CrewRoster Report avulso — **3 revisões distintas** do mesmo mês. Duas delas têm todos os horários do mês inteiro deslocados por um valor quase constante (~3h) mantendo os mesmos voos/estações — mais provável ser diferença de referência de exportação do que republicação real; **precisa ser confirmado com o Bruno antes de virar 2 fixtures separadas**, para não fabricar uma "revisão" que não existiu operacionalmente.
+- **Período julho/2026** (29/06 a 01/08): 2 pares CrewRoster Report + Escala, mais 1 CrewRoster Report avulso — **3 revisões distintas** do mesmo mês. Duas dessas exportações do CrewRoster Report nativo **não são uma republicação real** — ver achado UTC abaixo.
+
+### Achado: diferença de fuso horário (UTC vs. local) entre duas exportações do mesmo mês, não republicação
+
+```yaml
+claim: "As duas exportações do CrewRoster Report nativo de julho/2026 têm todos os horários do mês deslocados em exatamente +3h00, sem exceção, mantendo os mesmos voos/estações/pernas — o mesmo delta de America/Sao_Paulo (UTC-3, sem horário de verão) em relação a UTC. Não é uma republicação operacional real; é a mesma escala exportada em dois fusos horários diferentes pelo AIMS."
+status: CONFIRMADO
+source: "Comparação direta e mecânica entre as duas exportações do CrewRoster Report nativo de julho/2026 (mesmos voos, mesmas datas, delta constante em todo o mês)"
+primary_source_examined_by: [claude]
+validated_by: "Checagem aritmética reprodutível por qualquer agente com acesso aos dois PDFs — não depende de julgamento de domínio; Bruno pediu o registro do achado sem contestar a leitura"
+reproducible_by_agent: true   # qualquer agente com os dois PDFs originais recalcula o mesmo delta a partir da fonte primária, sem precisar de fixture
+evidence_ref: "#527, #531"
+recorded_by: claude
+date: 2026-08-19
+```
+
+Motivo para não ser republicação: uma república real muda pernas/voos/atividades pontualmente (é o que se vê nas 5 revisões de agosto); aqui **cada atividade do mês inteiro** — voos, DO, DR, ASB, RCFI — está deslocada pelo mesmo valor exato. Isso é a assinatura de diferença de fuso na exportação, não de mudança operacional. As páginas convertidas para o padrão AIMS/Crewtopia (formato "Escala") sempre trazem o rodapé `Timezone -3 : Brasília`; o formato nativo "Roster Report" do CrewRoster **não traz essa marcação explícita**, então o parser não tem como saber o fuso a partir do próprio arquivo — só cruzando com outra fonte, como aconteceu aqui.
+
+Item de investigação/produto separado aberto para tratar isso na importação: **#531**.
 - **Período agosto/2026** (30/07 a 01/09): 4 pares CrewRoster Report + Escala, mais 2 Escala avulsas — **pelo menos 5 revisões distintas** do mesmo mês, todas cobrindo o mesmo intervalo de datas.
 
 ### Achado principal: o bloco 09–21/08 é o que mais varia entre revisões
@@ -44,10 +62,9 @@ Numa revisão (chamando de Revisão A — é onde estão os casos `LA3730` e `LA
 
 ### Próximos passos (aguardando confirmação de escopo antes de gerar fixtures permanentes)
 
-1. Confirmar com o Bruno se as 2 revisões de julho com horário deslocado são de fato republicações reais ou artefato de exportação (evita fixture espúria).
-2. Formar o mapa revisão -> pares CrewRoster Report <-> Escala, com um identificador de revisão estável (não o nome do arquivo, que é só um upload id).
-3. Sanitizar (identificador sintético de tripulante, remover nomes de terceiros) e gerar fixture pré-parser por revisão.
-4. Produzir oracle explícito por fixture (atividades, APZ, STD/STA, boundaries, tempo em solo, pernoite, RES/HSB/ASB/DO/DR, continuidade física) — ver schema em `QA_ORACLES.md`.
-5. Rodar o pipeline real de importação AIMS (não funções intermediárias) contra cada fixture.
-6. Gerar matriz PASS/FAIL/REVIEW comparando artifact canônico x oracle, com foco em como o parser atual se comporta com o bloco 11-21/08 quando revisões diferentes coexistem.
-7. Nunca ajustar a fixture/oracle para o teste passar — divergência vira causa-raiz investigada no parser/derivação.
+1. Formar o mapa revisão -> pares CrewRoster Report <-> Escala, com um identificador de revisão estável (não o nome do arquivo, que é só um upload id) — a exportação UTC de julho não entra como revisão própria, é a mesma revisão que a exportação local equivalente.
+2. Sanitizar (identificador sintético de tripulante, remover nomes de terceiros) e gerar fixture pré-parser por revisão.
+3. Produzir oracle explícito por fixture (atividades, APZ, STD/STA, boundaries, tempo em solo, pernoite, RES/HSB/ASB/DO/DR, continuidade física) — ver schema em `QA_ORACLES.md`.
+4. Rodar o pipeline real de importação AIMS (não funções intermediárias) contra cada fixture.
+5. Gerar matriz PASS/FAIL/REVIEW comparando artifact canônico x oracle, com foco em como o parser atual se comporta com o bloco 11-21/08 quando revisões diferentes coexistem.
+6. Nunca ajustar a fixture/oracle para o teste passar — divergência vira causa-raiz investigada no parser/derivação.
