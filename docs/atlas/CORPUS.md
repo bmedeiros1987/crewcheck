@@ -27,21 +27,30 @@ date: 2026-08-19
 
 - **Período julho/2026** (29/06 a 01/08): 2 pares CrewRoster Report + Escala, mais 1 CrewRoster Report avulso — **3 revisões distintas** do mesmo mês. Duas dessas exportações do CrewRoster Report nativo **não são uma republicação real** — ver achado UTC abaixo.
 
-### Achado: diferença de fuso horário (UTC vs. local) entre duas exportações do mesmo mês, não republicação
+### Achado: possível diferença de fuso horário (UTC vs. local) entre duas exportações do mesmo mês — REVIEW, não promovido a republicação nem a fato fechado
+
+**Decisão do Bruno (PR #529, comentário 2026-08-19T21:05:43Z):** não tratar ainda as duas exportações deslocadas como revisões operacionais reais nem "corrigir" o deslocamento por hipótese. Ficam como `A_CONFIRMAR` (estado de trabalho: REVIEW) até confirmação, preservadas como evidência separada, fora do conjunto de revisões operacionais confirmadas e sem contar como cobertura independente.
 
 ```yaml
-claim: "As duas exportações do CrewRoster Report nativo de julho/2026 têm todos os horários do mês deslocados em exatamente +3h00, sem exceção, mantendo os mesmos voos/estações/pernas — o mesmo delta de America/Sao_Paulo (UTC-3, sem horário de verão) em relação a UTC. Não é uma republicação operacional real; é a mesma escala exportada em dois fusos horários diferentes pelo AIMS."
-status: CONFIRMADO
-source: "Comparação direta e mecânica entre as duas exportações do CrewRoster Report nativo de julho/2026 (mesmos voos, mesmas datas, delta constante em todo o mês)"
+claim: "As duas exportações do CrewRoster Report nativo de julho/2026 têm todos os horários do mês deslocados em exatamente +3h00, mantendo os mesmos voos/estações/pernas — o mesmo delta de America/Sao_Paulo (UTC-3, sem horário de verão) em relação a UTC. Hipótese de trabalho: mesma escala exportada em duas referências de fuso, não republicação operacional real."
+status: A_CONFIRMAR   # rebaixado de CONFIRMADO por decisão explícita do Bruno — ver acima
+source: "Comparação direta e mecânica entre as duas exportações do CrewRoster Report nativo de julho/2026"
 primary_source_examined_by: [claude]
-validated_by: "Checagem aritmética reprodutível por qualquer agente com acesso aos dois PDFs — não depende de julgamento de domínio; Bruno pediu o registro do achado sem contestar a leitura"
+validated_by: null   # aguardando confirmação do Bruno; a checagem abaixo é evidência de apoio, não substitui a validação
 reproducible_by_agent: true   # qualquer agente com os dois PDFs originais recalcula o mesmo delta a partir da fonte primária, sem precisar de fixture
 evidence_ref: "#527, #531"
 recorded_by: claude
 date: 2026-08-19
 ```
 
-Motivo para não ser republicação: uma república real muda pernas/voos/atividades pontualmente (é o que se vê nas 5 revisões de agosto); aqui **cada atividade do mês inteiro** — voos, DO, DR, ASB, RCFI — está deslocada pelo mesmo valor exato. Isso é a assinatura de diferença de fuso na exportação, não de mudança operacional. As páginas convertidas para o padrão AIMS/Crewtopia (formato "Escala") sempre trazem o rodapé `Timezone -3 : Brasília`; o formato nativo "Roster Report" do CrewRoster **não traz essa marcação explícita**, então o parser não tem como saber o fuso a partir do próprio arquivo — só cruzando com outra fonte, como aconteceu aqui.
+**Verificação adicional feita a pedido do Bruno** (deslocamento uniforme por atividade, viradas de meia-noite, duração preservada) — evidência de apoio à hipótese, sem promovê-la:
+
+1. **Delta uniforme por atividade**, não só por dia: conferido ponto a ponto em várias linhas (Duty Report, Dep/Arr, ACY Deb) — sempre exatamente +3h00, sem exceção nas amostras checadas.
+2. **Duração preservada**: as colunas `Flying Hrs`/`Duty Hrs` são idênticas entre as duas exportações para a mesma atividade (ex.: LA3804 de 29/06 — `Duty Hrs 02:49` nas duas; LA3730 de 05/07 — `Flying Hrs 02:26` / `Duty Hrs 03:34` nas duas). Consistente com deslocamento de referência (não muda duração), inconsistente com reprogramação real (que tende a mudar duração).
+3. **Metadado de sistema idêntico**: as colunas `Updated By`/`Updated Date` (quando o registro foi tocado pela última vez no AIMS) são as mesmas nas duas exportações para as mesmas atividades — sugere que ambas vêm do mesmo estado de banco, só renderizado em referências de horário diferentes.
+4. **Virada de meia-noite confirmada**: a jornada de 06/07 (LA3394, Duty Report 22:48 na primeira exportação) desloca +3h00 para 01:48 e **muda de coluna de data** na segunda exportação — passa a ser listada em 07/07 em vez de 06/07, porque o deslocamento empurrou o início para depois da meia-noite. O horário de chegada (PMW) também desloca +3h00 mantendo a mesma duração. Isso é o comportamento esperado de uma diferença de fuso na exportação, não de uma mudança operacional pontual.
+
+Motivo para a hipótese (ainda não fato confirmado): uma republicação real muda pernas/voos/atividades pontualmente (é o que se vê nas ~5 revisões reais de agosto); aqui **cada atividade do mês inteiro** está deslocada pelo mesmo valor exato, com duração e metadado de sistema preservados. As páginas convertidas para o padrão AIMS/Crewtopia ("Escala") sempre trazem o rodapé `Timezone -3 : Brasília`; o formato nativo "Roster Report" **não traz essa marcação explícita**, então o parser não tem como saber o fuso a partir de um único arquivo isolado — só cruzando com outra fonte, como aconteceu aqui.
 
 Item de investigação/produto separado aberto para tratar isso na importação: **#531**.
 - **Período agosto/2026** (30/07 a 01/09): 4 pares CrewRoster Report + Escala, mais 2 Escala avulsas — **pelo menos 5 revisões distintas** do mesmo mês, todas cobrindo o mesmo intervalo de datas.
