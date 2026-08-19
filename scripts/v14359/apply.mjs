@@ -18,9 +18,11 @@ function replaceRequired(oldValue, newValue, label) {
 if (!source.includes(marker)) {
   replaceRequired("const COMPLIANCE_ENGINE_VERSION = '13.8.1';", "const COMPLIANCE_ENGINE_VERSION = '13.8.2';", 'versão do motor');
 
-  const nightStart = source.indexOf('function getMadrugadaKeys(days: RosterDay[]): number[] {');
+  const nightStartAfterMarker = "function formatDate(date: Date): string {\n  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;\n}\n\n";
+  const nightStartAfterIndex = source.indexOf(nightStartAfterMarker);
+  const nightStart = nightStartAfterIndex < 0 ? -1 : nightStartAfterIndex + nightStartAfterMarker.length;
   const nightEnd = source.indexOf('\nfunction pushAlert(', nightStart);
-  if (nightStart < 0 || nightEnd < 0) throw new Error('[v14.3.59] Bloco antigo de madrugadas não encontrado.');
+  if (nightStartAfterIndex < 0 || nightEnd < 0) throw new Error('[v14.3.59] Bloco antigo de madrugadas não encontrado.');
   source = `${source.slice(0, nightStart)}${helpers}\n${source.slice(nightEnd + 1)}`;
 
   replaceRequired(
@@ -63,8 +65,8 @@ if (!source.includes(marker)) {
   replaceRequired(`\n    if (hasMadrugada) metrics.nightOperations += 1;\n`, '\n', 'contador de madrugada por objeto');
 
   replaceRequired(
-    `  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(sortedDays);\n  const maxNightOpsWindow = countNightOpsInRolling168h(sortedDays);`,
-    `  const nightSummary = summarizeRegulatoryNightEvents(sortedDays, actRules.nightOps.resetAfterFreeHours);\n  metrics.nightOperations = nightSummary.workedEvents.length;\n  metrics.maxConsecutiveNights = nightSummary.maxConsecutiveWorked;\n  const maxNightOpsWindow = nightSummary.maxWorkedIn168h;`,
+    `  const nightData = buildNightData(roster, sortedDays);\n  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(nightData.nightKeys);\n  const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
+    `  const nightSummary = summarizeRegulatoryNightEvents(sortedDays, actRules.nightOps.resetAfterFreeHours, roster);\n  metrics.nightOperations = nightSummary.workedEvents.length;\n  metrics.maxConsecutiveNights = nightSummary.maxConsecutiveWorked;\n  const maxNightOpsWindow = nightSummary.maxWorkedIn168h;\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
     'resumo de madrugadas',
   );
 

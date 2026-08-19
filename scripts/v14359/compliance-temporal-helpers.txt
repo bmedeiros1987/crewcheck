@@ -7,6 +7,7 @@ type RegulatoryNightEvent = {
   kind: RegulatoryNightKind;
   source: string;
   segment: number;
+  journeyId: string;
 };
 
 type OperationalInterval = { start: number; end: number };
@@ -119,7 +120,7 @@ function analyzeConsecutiveOperationalWindow(days: RosterDay[]): ConsecutiveOper
   return best;
 }
 
-function nightEventsForInterval(start: number, end: number, date: string, kind: RegulatoryNightKind, source: string): RegulatoryNightEvent[] {
+function nightEventsForInterval(start: number, end: number, date: string, kind: RegulatoryNightKind, source: string, journeyId: string): RegulatoryNightEvent[] {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
   const events: RegulatoryNightEvent[] = [];
   const cursor = new Date(start);
@@ -128,14 +129,14 @@ function nightEventsForInterval(start: number, end: number, date: string, kind: 
     const windowStart = nightKey;
     const windowEnd = nightKey + 6 * HOUR_MS;
     if (start < windowEnd && end > windowStart) {
-      events.push({ timestamp: Math.max(start, windowStart), nightKey, date, kind, source, segment: 0 });
+      events.push({ timestamp: Math.max(start, windowStart), nightKey, date, kind, source, segment: 0, journeyId });
     }
   }
   return events;
 }
 
-function getLegOperationalIntervals(day: RosterDay): OperationalInterval[] {
-  const intervals: OperationalInterval[] = [];
+function getLegOperationalIntervals(day: RosterDay): Array<OperationalInterval & { leg: FlightLeg }> {
+  const intervals: Array<OperationalInterval & { leg: FlightLeg }> = [];
   let inferredOffset = 0;
   let previousDepartureMinutes: number | null = null;
 
@@ -152,7 +153,7 @@ function getLegOperationalIntervals(day: RosterDay): OperationalInterval[] {
     const base = parseDate(day.date).getTime();
     const start = base + departureOffset * DAY_MS + departure.minutes * 60 * 1000;
     const end = base + arrivalOffset * DAY_MS + arrival.minutes * 60 * 1000;
-    if (end > start) intervals.push({ start, end });
+    if (end > start) intervals.push({ start, end, leg });
 
     inferredOffset = Math.max(inferredOffset, departureOffset, arrivalOffset);
     previousDepartureMinutes = departure.minutes;
@@ -161,20 +162,51 @@ function getLegOperationalIntervals(day: RosterDay): OperationalInterval[] {
   return intervals;
 }
 
-function getRegulatoryNightEventsForDay(day: RosterDay): RegulatoryNightEvent[] {
+/**
+ * Identidade de jornada por etapa de voo, reaproveitada de
+ * `buildCanonicalRosterEvents` (a mesma fonte usada para apresentação/Saída
+ * Inteligente). Evita reimplementar aqui uma segunda heurística de fronteira
+ * de jornada que poderia divergir da primeira — essa duplicação de
+ * heurísticas entre consumidores foi a causa estrutural apontada na
+ * investigação original de #512.
+ */
+function flightLegJourneyKey(date: string, leg: FlightLeg): string {
+  return [date, leg.flightNumber, leg.origin, leg.destination, leg.departureTime, leg.arrivalTime].join('|');
+}
+
+function buildFlightLegJourneyIndex(roster: CrewRoster): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const event of buildCanonicalRosterEvents(roster)) {
+    if (event.kind !== 'flight' || !event.leg) continue;
+    index.set(flightLegJourneyKey(event.date, event.leg), event.journeyId);
+  }
+  return index;
+}
+
+function getRegulatoryNightEventsForDay(day: RosterDay, journeyIndex: Map<string, string>): RegulatoryNightEvent[] {
   if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) return [];
 
   const legIntervals = getLegOperationalIntervals(day);
   if (legIntervals.length) {
-    return legIntervals.flatMap((interval, index) => nightEventsForInterval(interval.start, interval.end, day.date, 'worked', 'voo ' + (index + 1)));
+    return legIntervals.flatMap((interval, index) => {
+      // Sem correspondência no índice canônico (ex.: etapa filtrada por
+      // continuidade física), cada etapa vira sua própria jornada isolada em
+      // vez de silenciosamente desaparecer da contagem.
+      const journeyId = journeyIndex.get(flightLegJourneyKey(day.date, interval.leg)) || `leg|${day.date}|${index}|${interval.leg.flightNumber}`;
+      return nightEventsForInterval(interval.start, interval.end, day.date, 'worked', 'voo ' + (index + 1), journeyId);
+    });
   }
 
   const start = getOperationalStartTimestamp(day);
   const end = getOperationalEndTimestamp(day);
   if (start === null || end === null) return [];
-  if (isStandby(day)) return nightEventsForInterval(start, end, day.date, 'standby', 'HSB/HSBE');
+  // Sobreaviso/reserva/treinamento não têm identidade de jornada no modelo
+  // canônico (só pernas de voo têm journeyId): cada RosterDay é sua própria
+  // ocorrência, preservando a semântica já existente para RES/HSB.
+  const journeyId = `day|${day.date}|${day.type}|${day.pairingCode || ''}`;
+  if (isStandby(day)) return nightEventsForInterval(start, end, day.date, 'standby', 'HSB/HSBE', journeyId);
   if (isReserve(day) || !isActiveDuty(day)) return [];
-  return nightEventsForInterval(start, end, day.date, 'worked', 'atividade operacional');
+  return nightEventsForInterval(start, end, day.date, 'worked', 'atividade operacional', journeyId);
 }
 
 function mergeOperationalIntervals(days: RosterDay[]): OperationalInterval[] {
@@ -195,20 +227,26 @@ function mergeOperationalIntervals(days: RosterDay[]): OperationalInterval[] {
   return merged;
 }
 
-function getRegulatoryNightEvents(days: RosterDay[], resetAfterFreeHours = 48): RegulatoryNightEvent[] {
-  const preferredByNight = new Map<number, RegulatoryNightEvent>();
-  for (const event of sortDays(days).flatMap(getRegulatoryNightEventsForDay)) {
-    const previous = preferredByNight.get(event.nightKey);
-    if (!previous || (previous.kind === 'standby' && event.kind === 'worked')) preferredByNight.set(event.nightKey, event);
+/**
+ * Deduplica preferindo `worked` sobre `standby` (RES/HSB acionado vira
+ * trabalhado), agrupando pela chave informada. `byNight` usa a noite civil —
+ * correto para o streak de consecutivas, onde duas jornadas na mesma noite
+ * não podem inflar a sequência. `byJourney` usa a identidade de jornada —
+ * correto para contagem de OCORRÊNCIAS (168h e total), onde duas jornadas
+ * distintas na mesma noite continuam sendo 2, e uma jornada só (mesmo
+ * espalhada em RosterDays por causa do carry-over após 00:00) continua 1.
+ */
+function dedupeRegulatoryNightEvents(events: RegulatoryNightEvent[], keyOf: (event: RegulatoryNightEvent) => number | string): RegulatoryNightEvent[] {
+  const preferred = new Map<number | string, RegulatoryNightEvent>();
+  for (const event of events) {
+    const key = keyOf(event);
+    const previous = preferred.get(key);
+    if (!previous || (previous.kind === 'standby' && event.kind === 'worked')) preferred.set(key, event);
   }
+  return [...preferred.values()].sort((a, b) => a.timestamp - b.timestamp);
+}
 
-  const events = [...preferredByNight.values()].sort((a, b) => a.timestamp - b.timestamp);
-  const intervals = mergeOperationalIntervals(days);
-  const resetBoundaries: number[] = [];
-  for (let index = 1; index < intervals.length; index += 1) {
-    if (intervals[index].start - intervals[index - 1].end >= resetAfterFreeHours * HOUR_MS) resetBoundaries.push(intervals[index].start);
-  }
-
+function applySegments(events: RegulatoryNightEvent[], resetBoundaries: number[]): RegulatoryNightEvent[] {
   return events.map((event) => ({
     ...event,
     segment: resetBoundaries.filter((boundary) => event.timestamp >= boundary).length,
@@ -225,8 +263,8 @@ function maxEventsInRolling168h(events: RegulatoryNightEvent[]): number {
   return max;
 }
 
-function maxConsecutiveWorkedNights(events: RegulatoryNightEvent[]): number {
-  const worked = events.filter((event) => event.kind === 'worked').sort((a, b) => a.nightKey - b.nightKey);
+function maxConsecutiveWorkedNights(nightDedupedEvents: RegulatoryNightEvent[]): number {
+  const worked = nightDedupedEvents.filter((event) => event.kind === 'worked').sort((a, b) => a.nightKey - b.nightKey);
   if (!worked.length) return 0;
   let current = 1;
   let max = 1;
@@ -239,20 +277,31 @@ function maxConsecutiveWorkedNights(events: RegulatoryNightEvent[]): number {
   return max;
 }
 
-function summarizeRegulatoryNightEvents(days: RosterDay[], resetAfterFreeHours = 48) {
-  const events = getRegulatoryNightEvents(days, resetAfterFreeHours);
-  const workedEvents = events.filter((event) => event.kind === 'worked');
-  const standbyEvents = events.filter((event) => event.kind === 'standby');
+function summarizeRegulatoryNightEvents(days: RosterDay[], resetAfterFreeHours = 48, roster?: CrewRoster) {
+  const journeyIndex = roster ? buildFlightLegJourneyIndex(roster) : new Map<string, string>();
+  const rawEvents = sortDays(days).flatMap((day) => getRegulatoryNightEventsForDay(day, journeyIndex));
+
+  const intervals = mergeOperationalIntervals(days);
+  const resetBoundaries: number[] = [];
+  for (let index = 1; index < intervals.length; index += 1) {
+    if (intervals[index].start - intervals[index - 1].end >= resetAfterFreeHours * HOUR_MS) resetBoundaries.push(intervals[index].start);
+  }
+
+  const nightDeduped = applySegments(dedupeRegulatoryNightEvents(rawEvents, (event) => event.nightKey), resetBoundaries);
+  const journeyDeduped = applySegments(dedupeRegulatoryNightEvents(rawEvents, (event) => event.journeyId), resetBoundaries);
+  const workedEvents = journeyDeduped.filter((event) => event.kind === 'worked');
+  const standbyEvents = journeyDeduped.filter((event) => event.kind === 'standby');
+
   return {
-    events,
+    events: journeyDeduped,
     workedEvents,
     standbyEvents,
     maxWorkedIn168h: maxEventsInRolling168h(workedEvents),
-    maxCombinedIn168h: maxEventsInRolling168h(events),
-    maxConsecutiveWorked: maxConsecutiveWorkedNights(events),
+    maxCombinedIn168h: maxEventsInRolling168h(journeyDeduped),
+    maxConsecutiveWorked: maxConsecutiveWorkedNights(nightDeduped),
   };
 }
 
 function hasMadrugadaDuty(day: RosterDay): boolean {
-  return getRegulatoryNightEventsForDay(day).some((event) => event.kind === 'worked');
+  return getRegulatoryNightEventsForDay(day, new Map()).some((event) => event.kind === 'worked');
 }
