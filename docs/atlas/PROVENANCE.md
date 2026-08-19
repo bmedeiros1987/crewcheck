@@ -8,15 +8,19 @@ Todo registro relevante em `docs/atlas/` (decisão, oracle, estado de engenharia
 claim: "afirmação objetiva, uma frase"
 status: CONFIRMADO   # ver vocabulário abaixo
 source: "de onde veio — PDF real, comentário do Bruno, comentário relayado via GitHub, inferência de código"
-validated_by: "quem confirmou, e como"
+primary_source_examined_by: [bruno]   # quem teve os olhos no documento original de fato — pessoa e/ou agente, nunca presumido
+validated_by: "quem confirmou a leitura como correta, e como"
+reproducible_by_agent: false   # true só quando existir fixture sanitizada que QUALQUER agente (Claude, ChatGPT, outro) possa abrir e conferir de novo
 evidence_ref: "issue/PR/commit/arquivo relevante"
 recorded_by: claude   # ou chatgpt
 date: AAAA-MM-DD
 ```
 
+`primary_source_examined_by` e `reproducible_by_agent` existem para separar duas coisas que não são a mesma: **quem viu o documento original** (pode ser só uma pessoa/agente específico — a fonte primária examinada por um agente não é a mesma coisa que a fonte primária examinada por outro) e **se qualquer agente consegue reproduzir a checagem hoje** (só verdadeiro quando existe artefato sanitizado equivalente, não quando alguém apenas relatou o resultado).
+
 ## Vocabulário de status
 
-- **CONFIRMADO** — validado diretamente por Bruno contra material real (PDF AIMS/CrewRoster, produção, teste manual), ou verificado objetivamente em código/CI. Pode virar oracle/regressão.
+- **CONFIRMADO** — a fonte primária foi examinada por alguém identificado em `primary_source_examined_by`, e Bruno validou essa leitura como correta (`validated_by`). **Isso não significa que qualquer agente consegue reproduzir a checagem agora** — só significa que a afirmação é confiável. Reprodutibilidade por outro agente é rastreada separadamente em `reproducible_by_agent`, e só vira `true` quando existir fixture sanitizada equivalente (`#527`). Um `CONFIRMADO` com `reproducible_by_agent: false` pode virar oracle/regressão assim que a fixture existir — não antes.
 - **INFERÊNCIA** — conclusão de um agente (Claude ou ChatGPT) a partir de evidência indireta (ex.: leitura de código, comentário relayado sem validação direta). Não vira oracle sozinha.
 - **A_CONFIRMAR** — afirmação relatada mas ainda sem validação direta do Bruno contra a fonte original. Tratar como hipótese de trabalho, não como fato.
 - **DIVERGENTE** — duas fontes (ex.: Claude e ChatGPT, ou duas revisões da escala) discordam. Registrar as duas versões lado a lado com suas fontes; não escolher uma silenciosamente.
