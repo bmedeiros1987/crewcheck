@@ -47,3 +47,14 @@ A indisponibilidade de qualquer fonte externa não deve impedir o uso completo d
 ## Método BMT
 
 Observar → Entender → Simplificar → Construir → Evoluir continuamente.
+
+## Camada operacional (memória do desenvolvimento)
+
+Esta seção existe para reduzir a fragmentação entre Bruno, ChatGPT e Claude — cada um frequentemente sabe algo que o outro não recebeu (ver `#527`). Não substitui o GitHub (continua sendo a verdade para código/PR/CI); registra o que fica perdido entre conversas, com procedência explícita.
+
+- `PROVENANCE.md` — schema e regras de procedência: como registrar uma afirmação e como saber se ela pode virar oracle.
+- `DECISIONS_LOG.md` — decisões do Bruno e mudanças de prioridade.
+- `ENGINEERING_STATE.md` — estado atual de issues/PRs/dependências/dívida técnica (ponteiro para o GitHub, não cópia).
+- `QA_ORACLES.md` — casos reais confirmados contra PDFs AIMS/CrewRoster, para uso como oracle/regressão.
+- `CORPUS.md` — corpus iFlight x corpus AIMS/Crewtopia, e a regra de que material privado nunca entra sanitizado.
+- `ARCHITECTURE_CONTRACT.md` — a cadeia canônica (fonte -> parser -> canonical roster -> journeyId -> consumidores) e por que ela já quebrou mais de uma vez quando um consumidor reimplementa sua própria heurística.
