@@ -45,7 +45,14 @@ function dayOn(roster, date, pairingCode) {
 }
 
 function legsOf(day) {
-  return (day?.legs || []).map((leg) => `${leg.flightNumber} ${leg.origin}${leg.departureTime}->${leg.destination}${leg.arrivalTime}${leg.isNextDay ? '(+1)' : ''}`);
+  // O estado preparado (scripts/v139/apply.mjs) normaliza arrivalTime/departureTime
+  // removendo o sufixo "(+1)" e deixando isNextDay como única fonte da virada de
+  // dia; o estado base ainda carrega o sufixo dentro da própria string. Ambos os
+  // estados concordam em isNextDay e nos horários em si — só a representação
+  // textual difere, então normalizamos aqui para a comparação ser estável nos
+  // dois estados.
+  const stripSuffix = (value) => String(value || '').replace(/\(\+\d+\)$/, '');
+  return (day?.legs || []).map((leg) => `${leg.flightNumber} ${leg.origin}${stripSuffix(leg.departureTime)}->${leg.destination}${stripSuffix(leg.arrivalTime)}${leg.isNextDay ? '(+1)' : ''}`);
 }
 
 try {
@@ -65,7 +72,7 @@ try {
     const la3246 = dayOn(roster, '18/08/2026', 'LA3246');
     assert.ok(la3246, 'Revisão A nativo: dia do LA3246 (18/08) não encontrado');
     assert.equal(la3246.dutyReport, '23:03', 'Revisão A nativo: apresentação do LA3246 deve ser 23:03 (oracle confirmado)');
-    assert.deepEqual(legsOf(la3246), ['LA3246 GRU23:50->BPS01:40(+1)(+1)', 'LA3347 BPS03:35(+1)->GRU05:40(+1)'], 'Revisão A nativo: pernas do LA3246/LA3347 devem permanecer no dia do LA3246, sem se misturar com o LA4712');
+    assert.deepEqual(legsOf(la3246), ['LA3246 GRU23:50->BPS01:40(+1)', 'LA3347 BPS03:35->GRU05:40'], 'Revisão A nativo: pernas do LA3246/LA3347 devem permanecer no dia do LA3246, sem se misturar com o LA4712');
 
     // LA4712 (18/08, apresentação 06:40) deve continuar como jornada própria, não fundida com o LA3246.
     const la4712 = dayOn(roster, '18/08/2026', 'LA4712');
