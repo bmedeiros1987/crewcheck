@@ -392,12 +392,18 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
  for (let k = 0; k < laIndexes.length; k++) {
   const i = laIndexes[k];
   const nextLaIndex = k < laIndexes.length - 1 ? laIndexes[k + 1] : normalized.length;
-  const seq = normalized.slice(i + 2, nextLaIndex);
+  // Um marcador EXTRA/PS/PAX/PASSAGEIRO colado ao FIM da janela desta perna
+  // (logo antes do próximo "LA") descreve a PRÓXIMA perna, não esta — excluir
+  // do seq evita que parseAimsFlightSeq contamine o workType da perna errada
+  // (a perna anterior não pode virar PS só porque a seguinte é).
+  let seqEnd = nextLaIndex;
+  while (seqEnd > i + 2 && ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO'].includes(upperTokens[seqEnd - 1])) seqEnd -= 1;
+  const seq = normalized.slice(i + 2, seqEnd);
   const leg = parseAimsFlightSeq('LA' + upperTokens[i + 1], seq);
-  // O marcador EXTRA/PS pertence ao token "LA" que ele precede, então este
-  // olhar é sempre absoluto na coluna inteira — nunca relativo a um segmento
-  // já decidido, senão um marcador colado numa perna que abre jornada nova
-  // fica preso ao segmento anterior e corrompe o workType da perna errada.
+  // O marcador pertence ao "LA" que ele precede, então este olhar é sempre
+  // absoluto na coluna inteira — nunca relativo a um segmento já decidido,
+  // senão um marcador colado numa perna que abre jornada nova fica preso ao
+  // segmento anterior e corrompe o workType da perna errada.
   const hasLeadingExtraMarker = upperTokens
    .slice(Math.max(0, i - 4), i)
    .some((token) => ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO'].includes(token));
@@ -405,25 +411,44 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
 
   let reportEquivalent = null;
   if (leg) {
-   const originIdx = upperTokens.findIndex((token, idx) => idx >= i + 2 && idx < nextLaIndex && token === leg.origin);
+   const originIdx = upperTokens.findIndex((token, idx) => idx >= i + 2 && idx < seqEnd && token === leg.origin);
    if (originIdx >= 0) {
     const timesBeforeOrigin = normalized.slice(i + 2, originIdx).filter(isTimeToken).map(normalizeTimeToken);
     if (timesBeforeOrigin.length >= 2) reportEquivalent = timesBeforeOrigin[0];
    }
   }
+  // Apresentação também pode vir impressa ANTES do "LA", não só entre o "LA" e
+  // a origem. Só é seguro reconhecer isso quando não há perna anterior
+  // disputando o mesmo token (o primeiro "LA" da coluna inteira): a partir da
+  // segunda perna em diante, o token imediatamente anterior ao "LA" já
+  // pertence à janela da perna anterior (pode ser sua chegada/debrief, como
+  // em LA3559→LA4631) e reivindicá-lo de novo reintroduziria a fusão/
+  // fragmentação indevida já corrigida para esse caso real.
+  if (!reportEquivalent && k === 0 && i > 0 && isTimeToken(tokens[i - 1])) {
+   reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+  }
 
   const current = segments[segments.length - 1];
+  const sameStation = Boolean(current && current.legs.length && leg && current.legs.at(-1).destination === leg.origin);
   let opensNewSegment;
   if (!current) {
    opensNewSegment = true;
-  } else if (!reportEquivalent) {
-   // Sem apresentação própria comprovada: é sempre continuação da jornada aberta.
-   opensNewSegment = false;
   } else if (!leg || !current.lastArrival) {
    opensNewSegment = true;
+  } else if (!sameStation) {
+   // Descontinuidade física: a perna não pode ser conexão da jornada aberta,
+   // não importa o intervalo — nunca fundir jornada fisicamente impossível.
+   opensNewSegment = true;
   } else {
+   // Com estação compatível, o sinal de nova jornada é o intervalo físico
+   // desde o fim da perna anterior. Usa a apresentação própria quando
+   // comprovada; sem ela, usa a partida real da própria perna só para medir
+   // o intervalo (nunca como dutyReport — #510) — assim uma perna sem APZ
+   // publicada depois de um descanso longo ainda abre jornada própria em vez
+   // de herdar silenciosamente a apresentação da jornada anterior.
+   const comparisonTime = reportEquivalent || leg.departureTime;
    const prevMin = toMin(current.lastArrival);
-   let candMin = toMin(reportEquivalent);
+   let candMin = toMin(comparisonTime);
    if (candMin < prevMin) candMin += 1440;
    opensNewSegment = (candMin - prevMin) >= 12 * 60;
   }
@@ -433,7 +458,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   if (leg) {
    segment.legs.push(leg);
    segment.lastArrival = leg.arrivalTime;
-   segment.tokenEnd = nextLaIndex;
+   segment.tokenEnd = seqEnd;
   }
  }
 

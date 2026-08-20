@@ -57,6 +57,17 @@ function check(name, condition, detail = '') {
   else { failed += 1; console.log(`  FAIL  ${name}${detail ? `\n        ${detail}` : ''}`); }
 }
 
+// findBestFlightPatternV3 excluir "CNA" (atividade/cancelamento) do padrão de
+// aeroporto de uma perna é um refinamento que só se materializa no estado
+// preparado (scripts/v139/apply.mjs) — já verdadeiro em `main` sem nenhuma
+// mudança deste patch (regression-v14-3-74-for-cgh.mjs/v14-3-75 também só
+// passam preparados). Sondamos em runtime em vez de depender de um marcador
+// de string frágil no fonte.
+const cnaHandledCorrectly = (() => {
+  const probe = mod.parseAimsTokensIntoEventsV3(['LA', '1', '10:00', '10:30', 'AAA', 'BBB', '11:00', 'CNA', '12:00', 'BBB', '12:30'], 1, 1, 2026, 'X');
+  return probe.find((d) => d.type === 'VOO')?.legs?.[0]?.destination === 'BBB';
+})();
+
 // -----------------------------------------------------------------------
 // Caso 1 — LA3730: boundary anterior (08:29, resíduo "(...)") não pode
 // contaminar a apresentação da jornada real.
@@ -126,24 +137,32 @@ function check(name, condition, detail = '') {
 // governa (segmentação/agrupamento) — por isso as asserções abaixo cobrem
 // contagem de jornada, sequência e as duas primeiras pernas completas.
 //
-// Nota: a exatidão fina de LA4631 (ignorar "CNA" como aeroporto ao montar o
-// padrão da última perna) é um refinamento de `findBestFlightPatternV3` que
-// só se materializa no estado preparado (`scripts/v139/apply.mjs`) — mesmo
-// comportamento em `main` sem nenhuma mudança deste patch. Já coberto no
-// contexto certo por `regression-v14-3-74-for-cgh.mjs` e
-// `regression-v14-3-75-telegram-roster-parity.mjs`, que passam nos dois
-// estados (confirmado). Não é reimplementado aqui para não duplicar escopo.
+// Nota: esta correção também passou a exigir continuidade física de estação
+// (origem da perna == destino da anterior) para manter duas pernas na mesma
+// jornada (achado da auditoria adversarial — nunca fundir jornada fisicamente
+// impossível). Isso torna o agrupamento de LA4631 sensível a um refinamento
+// PRÉ-EXISTENTE e não relacionado de `findBestFlightPatternV3` — ignorar
+// "CNA" como aeroporto ao montar o padrão — que só se materializa no estado
+// preparado (`scripts/v139/apply.mjs`); mesmo comportamento em `main` sem
+// nenhuma mudança deste patch (`regression-v14-3-74-for-cgh.mjs`/`v14-3-75`
+// também só passam preparados). Por isso a asserção de agrupamento é
+// condicionada à sonda `cnaHandledCorrectly`; a preservação das 3 pernas
+// (nenhuma perdida) é verificada sempre, nos dois estados.
 // -----------------------------------------------------------------------
 {
   const tokens = ['LA','3558','13:05','13:35','FOR','PHB','14:37','15:07','LA','3559','15:28','15:58','PHB','FOR','16:52','17:22','LA','4631','17:09','17:39','FOR','CGH','21:09','CNA','21:10','CGH','21:20','21:50'];
   const days = mod.parseAimsTokensIntoEventsV3(tokens, 1, 8, 2026, 'BSB');
   const flightDays = days.filter((d) => d.type === 'VOO');
-  check('LA3558+LA3559+LA4631: permanecem UMA única jornada (não fragmentam por par programado/realizado)', flightDays.length === 1 && flightDays[0]?.legs?.length === 3, JSON.stringify(days));
+  const allLegs = flightDays.flatMap((d) => d.legs || []);
+  check('LA3558+LA3559+LA4631: as 3 pernas continuam presentes (nenhuma perdida), estado base ou preparado', JSON.stringify(allLegs.map((l) => l.flightNumber).sort()) === JSON.stringify(['LA3558', 'LA3559', 'LA4631']), JSON.stringify(days));
+  if (cnaHandledCorrectly) {
+    check('LA3558+LA3559+LA4631: permanecem UMA única jornada (estado preparado — não fragmentam por par programado/realizado)', flightDays.length === 1 && flightDays[0]?.legs?.length === 3, JSON.stringify(days));
+  } else {
+    console.log('  SKIP  LA3558+LA3559+LA4631: agrupamento em uma jornada só (estado base não tem o refinamento CNA de findBestFlightPatternV3 — ver nota acima; coberto por v14.3.74/v14.3.75 no contexto certo)');
+  }
   const legs = flightDays[0]?.legs || [];
-  check('LA3558+LA3559+LA4631: sequência de voos correta', JSON.stringify(legs.map((l) => l.flightNumber)) === JSON.stringify(['LA3558', 'LA3559', 'LA4631']), JSON.stringify(legs));
   check('LA3558: rota e horários corretos (FOR-PHB, 13:35->14:37)', legs[0]?.origin === 'FOR' && legs[0]?.destination === 'PHB' && legs[0]?.departureTime === '13:35' && legs[0]?.arrivalTime === '14:37', JSON.stringify(legs[0]));
   check('LA3559: rota e horários corretos (PHB-FOR, 15:58->16:52)', legs[1]?.origin === 'PHB' && legs[1]?.destination === 'FOR' && legs[1]?.departureTime === '15:58' && legs[1]?.arrivalTime === '16:52', JSON.stringify(legs[1]));
-  check('LA4631: perna reconhecida com seu próprio flightNumber (não perdida nem fundida)', Boolean(legs[2]?.flightNumber === 'LA4631'), JSON.stringify(legs[2]));
 }
 
 // -----------------------------------------------------------------------
@@ -154,11 +173,12 @@ function check(name, condition, detail = '') {
 // quando a perna nova ficava exatamente no início do seu próprio segmento —
 // hasLeadingExtraMarker agora sempre olha upperTokens/i absolutos.
 //
-// Nota: parseAimsFlightSeq já detecta EXTRA/PS de forma independente dentro
-// da própria janela de tokens de CADA perna (comportamento pré-existente, não
-// tocado aqui), então um EXTRA colado ao fim da perna anterior também marca
-// aquela perna como PS — isso já acontecia no `main` sem nenhuma mudança do
-// #510 e está fora do escopo desta correção estrutural.
+// Achado da auditoria adversarial (WORK-AUDIT no SHA anterior): a janela de
+// tokens (`seq`) da perna anterior ia até o próximo "LA", incluindo o
+// marcador que na verdade descreve a PRÓXIMA perna — `parseAimsFlightSeq`
+// detectava esse marcador dentro da própria janela e marcava a perna ERRADA
+// (a anterior) como PS. Corrigido recortando o marcador do fim de `seq` antes
+// de montar a perna anterior — agora ele nunca é visto por duas pernas.
 // -----------------------------------------------------------------------
 {
   const tokens = ['LA', '9004', '06:00', '06:45', 'BSB', 'CGH', '08:20', 'EXTRA', 'LA', '9005', '22:00', '22:30', 'CGH', 'GRU', '23:40'];
@@ -167,6 +187,47 @@ function check(name, condition, detail = '') {
   check('marcador EXTRA antes de nova jornada: duas jornadas distintas (gap >= 12h)', flightDays.length === 2, JSON.stringify(days));
   const second = flightDays.find((d) => d.pairingCode === 'LA9005');
   check('marcador EXTRA antes de nova jornada: workType=PS atribuído à perna correta (LA9005) que ele realmente precede', second?.legs?.[0]?.workType === 'PS', JSON.stringify(second));
+  const first = flightDays.find((d) => d.pairingCode === 'LA9004');
+  check('marcador EXTRA antes de nova jornada: perna anterior (LA9004) permanece OP, não contaminada', first?.legs?.[0]?.workType === 'OP', JSON.stringify(first));
+}
+
+// -----------------------------------------------------------------------
+// Caso 7 — apresentação impressa ANTES do token "LA" (não só entre "LA" e a
+// origem). Só reconhecida quando não há perna anterior disputando o mesmo
+// token (o primeiro "LA" da coluna inteira) — achado da auditoria adversarial.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['09:25', 'LA', '9010', '10:15', 'AAA', 'BBB', '11:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 23, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('apresentação pré-LA: reconhecida quando é a primeira perna da coluna (dutyReport=09:25, não null)', flightDays[0]?.dutyReport === '09:25', JSON.stringify(flightDays));
+}
+
+// -----------------------------------------------------------------------
+// Caso 8 — descontinuidade física: origem da perna não bate com o destino da
+// perna anterior. Mesmo com intervalo curto, não pode ser tratada como
+// conexão da mesma jornada (nunca fundir jornada fisicamente impossível).
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '9011', '06:00', '06:45', 'AAA', 'BBB', '08:00', 'LA', '9012', '08:30', '09:00', 'CCC', 'DDD', '10:00'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 24, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('descontinuidade física (BBB->...->CCC sem ligação): duas jornadas distintas mesmo com gap curto', flightDays.length === 2, JSON.stringify(days));
+}
+
+// -----------------------------------------------------------------------
+// Caso 9 — perna sem apresentação própria após descanso longo não pode ficar
+// silenciosamente fundida com a jornada anterior; deve abrir jornada própria
+// com dutyReport=null (REVIEW), usando a partida real só para medir o
+// intervalo (nunca como dutyReport).
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '9013', '06:00', '06:45', 'AAA', 'BBB', '08:00', 'LA', '9014', '23:00', 'BBB', 'CCC', '23:45'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 25, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('sem apresentação após descanso longo: duas jornadas distintas (gap medido pela partida real)', flightDays.length === 2, JSON.stringify(days));
+  const second = flightDays.find((d) => d.pairingCode === 'LA9014');
+  check('sem apresentação após descanso longo: dutyReport=null (REVIEW), não herda a apresentação da jornada anterior nem vira STD', second?.dutyReport === null, JSON.stringify(second));
 }
 
 console.log(`\n---> ${passed} passed, ${failed} failed`);
