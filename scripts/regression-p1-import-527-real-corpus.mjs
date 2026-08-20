@@ -80,25 +80,29 @@ try {
     assert.equal(la4712.dutyReport, '06:40', 'Revisão A nativo: apresentação do LA4712 deve ser 06:40, sem herdar/contaminar o LA3246');
   }
 
-  // --- Revisão A: Escala AIMS/Crewtopia -> FAIL, comportamento real e atual do bug (#510) ---
-  // ATENÇÃO: estas asserções documentam o BUG ATUAL, não o comportamento correto.
-  // Quando o #510 corrigir a extração de apresentação deste formato, os valores
-  // abaixo devem mudar para bater com o oracle (09:25 / 23:03, sem fusão de dia)
-  // — é esperado que este bloco precise ser reescrito nesse momento.
+  // --- Revisão A: Escala AIMS/Crewtopia -> PASS, corrigido pelo #510 ---
+  // Antes do #510 estas asserções falhavam (LA3730 herdava 08:29 da DR
+  // anterior; LA4712+LA3246 apareciam fundidos num único dia). A causa raiz
+  // era a ausência de segmentação por nova apresentação dentro da coluna de
+  // um dia civil — corrigido em parseAimsTokensIntoEventsV3.
   {
     const roster = parseFixture(mod, loadFixture('official-roster-2026-08-revA-escala-anonymized.json'));
 
     const la3730 = dayOn(roster, '17/08/2026', 'LA3730');
     assert.ok(la3730, 'Revisão A escala: dia do LA3730 (17/08) não encontrado');
-    assert.equal(la3730.dutyReport, '08:29', 'BUG ATUAL (#510): apresentação do LA3730 no formato Escala está contaminada pelo debrief da DR anterior (08:29) em vez de 09:25');
+    assert.equal(la3730.dutyReport, '09:25', 'Revisão A escala (pós-#510): apresentação do LA3730 deve convergir com o oracle (09:25), sem contaminação da DR anterior (08:29)');
 
-    // LA4712 e LA3246 (18/08) aparecem FUNDIDOS num único dia/pairing no formato Escala.
-    const merged = dayOn(roster, '18/08/2026', 'LA4712');
-    assert.ok(merged, 'Revisão A escala: dia fundido de 18/08 não encontrado');
-    assert.equal(merged.dutyReport, '06:40', 'BUG ATUAL (#510): dia fundido herda a apresentação do LA4712 (06:40)');
-    assert.equal(merged.dutyDebrief, '01:40', 'BUG ATUAL (#510): dia fundido termina no debrief do LA3246 (01:40+1) — apresentação real do LA3246 (23:03) desaparece');
-    assert.deepEqual(legsOf(merged), ['LA4712 CNF07:10->GRU08:35', 'LA3246 GRU23:50->BPS01:40(+1)'], 'BUG ATUAL (#510): pernas do LA4712 e do LA3246 aparecem no mesmo dia/pairing');
-    assert.equal(dayOn(roster, '18/08/2026', 'LA3246'), undefined, 'BUG ATUAL (#510): o LA3246 não existe mais como jornada própria — foi engolido pelo dia fundido');
+    // LA4712 e LA3246 (18/08) devem existir como jornadas próprias, não fundidas.
+    const la4712 = dayOn(roster, '18/08/2026', 'LA4712');
+    assert.ok(la4712, 'Revisão A escala: dia do LA4712 (18/08) não encontrado');
+    assert.equal(la4712.dutyReport, '06:40', 'Revisão A escala (pós-#510): apresentação do LA4712 deve ser 06:40');
+    assert.equal(la4712.dutyDebrief, '09:05', 'Revisão A escala (pós-#510): debrief do LA4712 deve ser o seu próprio (09:05), não herdar o do LA3246');
+    assert.deepEqual(legsOf(la4712), ['LA4712 CNF07:10->GRU08:35'], 'Revisão A escala (pós-#510): LA4712 não pode carregar a perna do LA3246');
+
+    const la3246 = dayOn(roster, '18/08/2026', 'LA3246');
+    assert.ok(la3246, 'Revisão A escala (pós-#510): LA3246 deve existir como jornada própria, não fundida com o LA4712');
+    assert.equal(la3246.dutyReport, '23:03', 'Revisão A escala (pós-#510): apresentação do LA3246 deve convergir com o oracle (23:03)');
+    assert.deepEqual(legsOf(la3246), ['LA3246 GRU23:50->BPS01:40(+1)'], 'Revisão A escala (pós-#510): LA3246 deve manter sua própria perna');
   }
 
   // --- Revisão B: CrewRosterReport nativo -> PASS, bate com a leitura direta da fonte primária ---
@@ -114,23 +118,26 @@ try {
     assert.equal(la3171.dutyReport, '15:40', 'Revisão B nativo: apresentação do LA3171 deve ser 15:40');
   }
 
-  // --- Revisão B: Escala AIMS/Crewtopia -> FAIL, segunda forma do mesmo bug (#510) ---
-  // ATENÇÃO: mesma ressalva do bloco da Revisão A — documenta o bug atual.
-  // Aqui não há fusão de dia, mas o valor de dutyReport está errado do mesmo jeito:
-  // o parser pega um horário de chegada em vez da apresentação real.
+  // --- Revisão B: Escala AIMS/Crewtopia -> PASS, corrigido pelo #510 ---
+  // Antes do #510, dutyReport pegava o horário de chegada da perna anterior
+  // (resíduo "(...)" do dia civil anterior) em vez da apresentação real.
   {
     const roster = parseFixture(mod, loadFixture('official-roster-2026-08-revB-escala-anonymized.json'));
 
     const la3463 = dayOn(roster, '20/08/2026', 'LA3463');
     assert.ok(la3463, 'Revisão B escala: dia do LA3463 (20/08) não encontrado');
-    assert.equal(la3463.dutyReport, '00:15', 'BUG ATUAL (#510): apresentação mostrada é 00:15 (chegada em LDB da perna anterior), não a apresentação real 18:50');
+    assert.equal(la3463.dutyReport, '18:50', 'Revisão B escala (pós-#510): apresentação do LA3463 deve convergir com o oracle (18:50), não a chegada em LDB (00:15)');
 
     const la3171 = dayOn(roster, '21/08/2026', 'LA3171');
     assert.ok(la3171, 'Revisão B escala: dia do LA3171 (21/08) não encontrado');
-    assert.equal(la3171.dutyReport, '02:30', 'BUG ATUAL (#510): apresentação mostrada é 02:30 (chegada em REC da perna anterior), não a apresentação real 15:40');
+    assert.equal(la3171.dutyReport, '15:40', 'Revisão B escala (pós-#510): apresentação do LA3171 deve convergir com o oracle (15:40), não a chegada em REC (02:30)');
+
+    // LA3382 (perna de continuação, sem apresentação própria) deve permanecer
+    // junto do LA3463 — a segmentação não pode fragmentar uma jornada real.
+    assert.deepEqual(legsOf(la3463), ['LA3463 LDB19:20->GRU20:35', 'LA3382 GRU23:30->REC02:30(+1)'], 'Revisão B escala (pós-#510): LA3382 deve continuar como perna do LA3463, não virar jornada própria');
   }
 
-  console.log('#527 corpus real (Revisões A/B, nativo x Escala): OK — PASS do nativo e FAIL atual da Escala reproduzidos e documentados como regressão para o #510.');
+  console.log('#527/#510 corpus real (Revisões A/B, nativo x Escala): OK — nativo e Escala convergem com o oracle, sem fusão de jornada nem contaminação de apresentação.');
 } finally {
   fs.unlinkSync(tmpPath);
 }
