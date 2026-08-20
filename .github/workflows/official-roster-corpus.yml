@@ -6,6 +6,8 @@ on:
     paths:
       - 'scripts/fixtures/official-roster-*-anonymized.json'
       - 'scripts/regression-official-roster-corpus.mjs'
+      - 'scripts/regression-official-roster-corpus-privacy.mjs'
+      - 'scripts/lib/official-roster-corpus-validator.mjs'
       - '.github/workflows/official-roster-corpus.yml'
       - 'client/src/lib/canonicalRoster.ts'
       - 'client/src/lib/**/compliance*'
@@ -22,5 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Validate corpus privacy guard contract
+        run: node scripts/regression-official-roster-corpus-privacy.mjs
       - name: Validate all official anonymized roster fixtures
         run: node scripts/regression-official-roster-corpus.mjs

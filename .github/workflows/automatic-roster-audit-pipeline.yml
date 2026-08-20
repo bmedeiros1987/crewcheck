@@ -7,6 +7,8 @@ on:
       - 'server/rosterParser.mjs'
       - 'scripts/fixtures/official-roster-*-anonymized.json'
       - 'scripts/regression-official-roster-corpus.mjs'
+      - 'scripts/regression-official-roster-corpus-privacy.mjs'
+      - 'scripts/lib/official-roster-corpus-validator.mjs'
       - '.github/workflows/automatic-roster-audit-pipeline.yml'
   workflow_dispatch:
 
@@ -22,5 +24,7 @@ jobs:
       - run: npm ci
       - name: Validate CLI contract
         run: node scripts/audit-roster-pdf.mjs --help
+      - name: Validate corpus privacy guard contract
+        run: node scripts/regression-official-roster-corpus-privacy.mjs
       - name: Validate official corpus
         run: node scripts/regression-official-roster-corpus.mjs
