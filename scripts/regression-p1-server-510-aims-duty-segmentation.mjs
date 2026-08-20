@@ -116,6 +116,59 @@ function check(name, condition, detail = '') {
   check('"(...)" genérico: dutyReport = 14:00 (não 05:10/05:40 do resíduo anterior)', day?.dutyReport === '14:00', JSON.stringify(day));
 }
 
+// -----------------------------------------------------------------------
+// Caso 5 — LA3558 + LA3559 + LA4631 (mesmo caso real do gate
+// v14.3.74/v14.3.75): jornada com conexões curtas onde CADA perna imprime
+// seu próprio par de horários (programado + realizado), não só a primeira.
+// Contar "dois horários antes do aeroporto" sozinho fragmentaria as 3 pernas
+// em 3 jornadas; o intervalo físico entre pernas (minutos, não pernoite)
+// deve mantê-las na mesma jornada. Isto é o que esta correção estrutural
+// governa (segmentação/agrupamento) — por isso as asserções abaixo cobrem
+// contagem de jornada, sequência e as duas primeiras pernas completas.
+//
+// Nota: a exatidão fina de LA4631 (ignorar "CNA" como aeroporto ao montar o
+// padrão da última perna) é um refinamento de `findBestFlightPatternV3` que
+// só se materializa no estado preparado (`scripts/v139/apply.mjs`) — mesmo
+// comportamento em `main` sem nenhuma mudança deste patch. Já coberto no
+// contexto certo por `regression-v14-3-74-for-cgh.mjs` e
+// `regression-v14-3-75-telegram-roster-parity.mjs`, que passam nos dois
+// estados (confirmado). Não é reimplementado aqui para não duplicar escopo.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA','3558','13:05','13:35','FOR','PHB','14:37','15:07','LA','3559','15:28','15:58','PHB','FOR','16:52','17:22','LA','4631','17:09','17:39','FOR','CGH','21:09','CNA','21:10','CGH','21:20','21:50'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 1, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('LA3558+LA3559+LA4631: permanecem UMA única jornada (não fragmentam por par programado/realizado)', flightDays.length === 1 && flightDays[0]?.legs?.length === 3, JSON.stringify(days));
+  const legs = flightDays[0]?.legs || [];
+  check('LA3558+LA3559+LA4631: sequência de voos correta', JSON.stringify(legs.map((l) => l.flightNumber)) === JSON.stringify(['LA3558', 'LA3559', 'LA4631']), JSON.stringify(legs));
+  check('LA3558: rota e horários corretos (FOR-PHB, 13:35->14:37)', legs[0]?.origin === 'FOR' && legs[0]?.destination === 'PHB' && legs[0]?.departureTime === '13:35' && legs[0]?.arrivalTime === '14:37', JSON.stringify(legs[0]));
+  check('LA3559: rota e horários corretos (PHB-FOR, 15:58->16:52)', legs[1]?.origin === 'PHB' && legs[1]?.destination === 'FOR' && legs[1]?.departureTime === '15:58' && legs[1]?.arrivalTime === '16:52', JSON.stringify(legs[1]));
+  check('LA4631: perna reconhecida com seu próprio flightNumber (não perdida nem fundida)', Boolean(legs[2]?.flightNumber === 'LA4631'), JSON.stringify(legs[2]));
+}
+
+// -----------------------------------------------------------------------
+// Caso 6 — marcador EXTRA/PS logo antes do "LA" que abre uma NOVA jornada
+// (não a primeira da coluna) precisa ser atribuído à perna certa. Ler o
+// marcador de forma relativa ao segmento (em vez da coluna inteira, como o
+// SHA anterior fazia) o deixava invisível para findAimsVisualFlightBlockEnd
+// quando a perna nova ficava exatamente no início do seu próprio segmento —
+// hasLeadingExtraMarker agora sempre olha upperTokens/i absolutos.
+//
+// Nota: parseAimsFlightSeq já detecta EXTRA/PS de forma independente dentro
+// da própria janela de tokens de CADA perna (comportamento pré-existente, não
+// tocado aqui), então um EXTRA colado ao fim da perna anterior também marca
+// aquela perna como PS — isso já acontecia no `main` sem nenhuma mudança do
+// #510 e está fora do escopo desta correção estrutural.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '9004', '06:00', '06:45', 'BSB', 'CGH', '08:20', 'EXTRA', 'LA', '9005', '22:00', '22:30', 'CGH', 'GRU', '23:40'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 22, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('marcador EXTRA antes de nova jornada: duas jornadas distintas (gap >= 12h)', flightDays.length === 2, JSON.stringify(days));
+  const second = flightDays.find((d) => d.pairingCode === 'LA9005');
+  check('marcador EXTRA antes de nova jornada: workType=PS atribuído à perna correta (LA9005) que ele realmente precede', second?.legs?.[0]?.workType === 'PS', JSON.stringify(second));
+}
+
 console.log(`\n---> ${passed} passed, ${failed} failed`);
 fs.rmSync(tempDir, { recursive: true, force: true });
 process.exit(failed > 0 ? 1 : 0);

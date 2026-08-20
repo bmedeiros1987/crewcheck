@@ -347,22 +347,6 @@ function findBestFlightPatternV3(tokens) {
  return candidates[0] || null;
 }
 
-/**
- * Um "LA <num>" abre uma jornada nova quando o próprio formato imprime dois
- * horários antes do primeiro código de aeroporto (apresentação + partida);
- * quando só existe o horário de partida, é apenas a perna seguinte da mesma
- * jornada em andamento (continuação, sem apresentação própria).
- */
-function startsNewAimsDutyV3(tokens, upperTokens, laIndex) {
- let timeCount = 0;
- for (let i = laIndex + 2; i < Math.min(upperTokens.length, laIndex + 8); i++) {
-  if (isAirportCodeToken(upperTokens[i])) break;
-  if (upperTokens[i] === 'LA') break;
-  if (isTimeToken(tokens[i])) timeCount++;
- }
- return timeCount >= 2;
-}
-
 function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
  const normalized = tokens.map((token) => String(token || '').trim()).filter(Boolean);
  const upperTokens = normalized.map((token) => token.toUpperCase());
@@ -387,65 +371,88 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
  }
  // Uma coluna de dia civil no AIMS/Escala pode conter mais de um bloco de
  // jornada: um resíduo "(...)" da jornada da madrugada anterior (que não é
- // apresentação de hoje) e, no mesmo dia, mais de um "LA" com apresentação
- // própria (duas jornadas civis reais no mesmo dia). Sem segmentar por nova
- // apresentação, a coluna inteira era tratada como uma única jornada: o
- // primeiro horário antes de qualquer "LA" (mesmo vindo do resíduo "(...)" do
- // dia anterior) virava dutyReport, e todos os "LA" da coluna eram agrupados
- // como pernas de um só dia — contaminando a apresentação (#510, ex. LA3730
- // herdando 08:29 da DR anterior) e fundindo jornadas distintas (ex. LA4712 +
- // LA3246 no mesmo "dia"). O sinal para uma NOVA jornada é estrutural no
- // próprio formato: um "LA" com apresentação própria impressa tem dois
- // horários antes do primeiro aeroporto (apresentação + partida); um "LA" que
- // é apenas continuação da jornada anterior tem só um (a partida).
+ // apresentação de hoje), duas jornadas civis reais no mesmo dia, e pernas de
+ // CONEXÃO de uma mesma jornada que também imprimem dois horários (programado
+ // + realizado) antes da própria origem — não só a primeira perna da jornada.
+ // Contar "dois horários antes do aeroporto" sozinho não basta: isso fundia
+ // corretamente LA4712+LA3246 (jornadas diferentes) mas também fragmentava
+ // LA3558+LA3559+LA4631 (uma única jornada com conexões curtas), porque cada
+ // perna de conexão também imprime seu próprio par de horários.
+ //
+ // O sinal real de NOVA jornada é físico: o intervalo desde o fim da perna
+ // anterior até a apresentação/horário desta perna. Conexão = minutos; nova
+ // jornada = pernoite/folga real. Usamos o mesmo limiar de 12h já validado no
+ // cliente (aimsParser.ts::buildAimsHumanFlightDays) para a mesma decisão.
  const laIndexes = [];
  for (let i = 0; i < upperTokens.length; i++) {
   if (upperTokens[i] === 'LA' && /^\d{3,4}$/.test(upperTokens[i + 1] || '')) laIndexes.push(i);
  }
- const segmentStarts = laIndexes.filter((i) => startsNewAimsDutyV3(normalized, upperTokens, i));
- // Um resíduo "(...)" do dia anterior nunca deve virar segmento próprio, mas
- // se nenhum "LA" da coluna tiver apresentação própria (ex.: perna isolada que
- // só continua uma jornada iniciada ontem), ainda assim segmentar a partir do
- // primeiro "LA" real evita perder a perna inteira. Esse segmento forçado não
- // tem apresentação comprovável: dutyReport fica null/REVIEW abaixo, nunca o
- // horário de partida (#510 — ausência não pode virar STD inventado).
- if (laIndexes.length && !segmentStarts.includes(laIndexes[0])) segmentStarts.unshift(laIndexes[0]);
 
- for (let s = 0; s < segmentStarts.length; s++) {
-  const start = segmentStarts[s];
-  const end = s < segmentStarts.length - 1 ? segmentStarts[s + 1] : normalized.length;
-  const segNormalized = normalized.slice(start, end);
-  const segUpper = upperTokens.slice(start, end);
+ const segments = [];
+ for (let k = 0; k < laIndexes.length; k++) {
+  const i = laIndexes[k];
+  const nextLaIndex = k < laIndexes.length - 1 ? laIndexes[k + 1] : normalized.length;
+  const seq = normalized.slice(i + 2, nextLaIndex);
+  const leg = parseAimsFlightSeq('LA' + upperTokens[i + 1], seq);
+  // O marcador EXTRA/PS pertence ao token "LA" que ele precede, então este
+  // olhar é sempre absoluto na coluna inteira — nunca relativo a um segmento
+  // já decidido, senão um marcador colado numa perna que abre jornada nova
+  // fica preso ao segmento anterior e corrompe o workType da perna errada.
+  const hasLeadingExtraMarker = upperTokens
+   .slice(Math.max(0, i - 4), i)
+   .some((token) => ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO'].includes(token));
+  if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
 
-  const flightDay = makeDay(dayNum, month, year, base);
-  flightDay.rawText = normalized.join(' ');
-  for (let i = 0; i < segUpper.length; i++) {
-   if (segUpper[i] === 'LA' && /^\d{3,4}$/.test(segUpper[i + 1] || '')) {
-    const next = segUpper.findIndex((token, idx) => idx > i + 1 && token === 'LA');
-    const seq = segNormalized.slice(i + 2, next > 0 ? next : segNormalized.length);
-    const leg = parseAimsFlightSeq('LA' + segUpper[i + 1], seq);
-    const hasLeadingExtraMarker = segUpper
-     .slice(Math.max(0, i - 4), i)
-     .some((token) => ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO'].includes(token));
-    if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
-    if (leg) flightDay.legs.push(leg);
+  let reportEquivalent = null;
+  if (leg) {
+   const originIdx = upperTokens.findIndex((token, idx) => idx >= i + 2 && idx < nextLaIndex && token === leg.origin);
+   if (originIdx >= 0) {
+    const timesBeforeOrigin = normalized.slice(i + 2, originIdx).filter(isTimeToken).map(normalizeTimeToken);
+    if (timesBeforeOrigin.length >= 2) reportEquivalent = timesBeforeOrigin[0];
    }
   }
-  if (!flightDay.legs.length) continue;
+
+  const current = segments[segments.length - 1];
+  let opensNewSegment;
+  if (!current) {
+   opensNewSegment = true;
+  } else if (!reportEquivalent) {
+   // Sem apresentação própria comprovada: é sempre continuação da jornada aberta.
+   opensNewSegment = false;
+  } else if (!leg || !current.lastArrival) {
+   opensNewSegment = true;
+  } else {
+   const prevMin = toMin(current.lastArrival);
+   let candMin = toMin(reportEquivalent);
+   if (candMin < prevMin) candMin += 1440;
+   opensNewSegment = (candMin - prevMin) >= 12 * 60;
+  }
+
+  if (opensNewSegment) segments.push({ reportEquivalent, legs: [], lastArrival: null, tokenStart: i });
+  const segment = segments[segments.length - 1];
+  if (leg) {
+   segment.legs.push(leg);
+   segment.lastArrival = leg.arrivalTime;
+   segment.tokenEnd = nextLaIndex;
+  }
+ }
+
+ for (let s = 0; s < segments.length; s++) {
+  const segment = segments[s];
+  if (!segment.legs.length) continue;
+  const flightDay = makeDay(dayNum, month, year, base);
+  flightDay.rawText = normalized.join(' ');
   flightDay.type = 'VOO';
-  flightDay.pairingCode = flightDay.legs[0].flightNumber;
-  const firstLaIndex = segUpper.findIndex((token) => token === 'LA');
-  const firstSeqStart = firstLaIndex + 2;
-  const firstOrigin = flightDay.legs[0].origin;
-  const firstOriginIdx = segUpper.findIndex((token, idx) => idx >= firstSeqStart && token === firstOrigin);
-  const firstTimesBeforeOrigin = segNormalized.slice(firstSeqStart, firstOriginIdx).filter(isTimeToken).map(normalizeTimeToken);
+  flightDay.pairingCode = segment.legs[0].flightNumber;
+  flightDay.legs = segment.legs;
   // Nenhum fallback para o horário de partida: se a apresentação própria não
-  // está comprovada (menos de dois horários antes da origem), dutyReport fica
-  // null. O consumidor deve tratar como REVIEW, nunca copiar STD (#510).
-  flightDay.dutyReport = firstTimesBeforeOrigin.length >= 2 ? firstTimesBeforeOrigin[0] : null;
-  flightDay.dutyDebrief = inferAimsDebriefV3(segNormalized, flightDay.legs.at(-1)) || flightDay.legs.at(-1).arrivalTime;
-  flightDay.isNextDay = flightDay.legs.some((leg) => leg.isNextDay) || (flightDay.dutyReport ? diffHours(flightDay.dutyReport, flightDay.dutyDebrief) > 18 : false);
-  flightDay.flyingHours = flightDay.legs.reduce((sum, leg) => sum + (leg.duration || diffHours(leg.departureTime, leg.arrivalTime)), 0);
+  // está comprovada, dutyReport fica null. O consumidor deve tratar como
+  // REVIEW, nunca copiar STD (#510).
+  flightDay.dutyReport = segment.reportEquivalent || null;
+  const segmentTokens = normalized.slice(segment.tokenStart, segment.tokenEnd);
+  flightDay.dutyDebrief = inferAimsDebriefV3(segmentTokens, segment.legs.at(-1)) || segment.legs.at(-1).arrivalTime;
+  flightDay.isNextDay = segment.legs.some((leg) => leg.isNextDay) || (flightDay.dutyReport ? diffHours(flightDay.dutyReport, flightDay.dutyDebrief) > 18 : false);
+  flightDay.flyingHours = segment.legs.reduce((sum, leg) => sum + (leg.duration || diffHours(leg.departureTime, leg.arrivalTime)), 0);
   flightDay.dutyHours = flightDay.dutyReport ? diffHours(flightDay.dutyReport, flightDay.dutyDebrief) : null;
   events.push(flightDay);
  }
