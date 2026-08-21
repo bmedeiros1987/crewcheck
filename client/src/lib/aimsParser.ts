@@ -1070,11 +1070,17 @@ function isIncompleteAimsFlightSegment(segment: string[], fullTokens: string[]):
 
 function findAimsContinuationPrefixEnd(tokens: string[]): number {
   let end = 0;
+  // Mesma exceção de findAimsVisualFlightBlockEnd: um aeroporto colidindo com um
+  // código de escala (ex.: REC) ainda é a estação de chegada da perna costurada,
+  // não uma nova atividade, enquanto a perna não tiver origem+destino completos.
+  let airportsSeenInLeg = 0;
   for (let i = 0; i < tokens.length; i += 1) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
     if (token === 'LA' && /^\d{3,4}$/.test(next)) break;
-    if (i > 0 && isAimsVisualStandaloneBoundaryToken(token)) break;
+    const isAirportToken = /^[A-Z]{3}$/.test(token) && isAimsHumanAirport(tokens[i], '');
+    if (i > 0 && isAimsVisualStandaloneBoundaryToken(token) && !(isAirportToken && airportsSeenInLeg < 2)) break;
+    if (isAirportToken) airportsSeenInLeg += 1;
     end = i + 1;
   }
   return end;
@@ -1187,11 +1193,23 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
 
 function findAimsVisualFlightBlockEnd(tokens: string[], start: number): number {
   let i = start + 1;
+  // Alguns códigos IATA colidem com códigos de escala (ex.: REC = Recife e também
+  // "Re standard" em simulador). Dentro de um bloco de voo já aberto, um aeroporto
+  // válido só pode contar como fronteira depois que a perna atual já tem
+  // origem+destino — antes disso, ele é a estação da perna, não uma nova atividade.
+  let airportsSeenInLeg = 0;
   while (i < tokens.length) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
-    if (i > start && isAimsVisualStandaloneBoundaryToken(token)) break;
-    if ((token === 'LA' && /^\d{3,4}$/.test(next)) || isExtraAimsMarker(token) || token === '(...)') {
+    const isAirportToken = /^[A-Z]{3}$/.test(token) && isAimsHumanAirport(tokens[i], '');
+    if (i > start && isAimsVisualStandaloneBoundaryToken(token) && !(isAirportToken && airportsSeenInLeg < 2)) break;
+    if (token === 'LA' && /^\d{3,4}$/.test(next)) {
+      airportsSeenInLeg = 0;
+      i += 1;
+      continue;
+    }
+    if (isAirportToken) airportsSeenInLeg += 1;
+    if (isExtraAimsMarker(token) || token === '(...)') {
       i += 1;
       continue;
     }
