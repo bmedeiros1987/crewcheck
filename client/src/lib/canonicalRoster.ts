@@ -1,7 +1,10 @@
 import type { CrewRoster, FlightLeg, RosterDay } from './pdfParser';
 import { completeContinuityDays } from './rosterContinuity';
 
-export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest';
+// #525: 'journey-rest' representa o intervalo ENTRE jornadas que não satisfaz o
+// contrato de pernoite. Não é tempo em solo (que é intra-jornada) e não é stay
+// (que alimenta hotel/Central de Pernoite) — é uma terceira categoria própria.
+export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest' | 'journey-rest';
 
 export type CanonicalRosterEvent = {
   id: string;
@@ -31,6 +34,12 @@ export type CanonicalRosterEvent = {
   journeyId: string;
   /** Por que esta etapa abriu uma jornada. `null` quando é continuação. */
   journeyBoundary: JourneyBoundaryReason | null;
+  /**
+   * #525: minutos de repouso entre duas jornadas. Presente apenas em eventos
+   * `journey-rest`. Distinto de `groundBeforeMinutes`, que descreve espera
+   * DENTRO de uma jornada.
+   */
+  restMinutes?: number;
 };
 
 const MONTHS: Record<string, number> = {
@@ -608,6 +617,51 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
         const showPresentation = boundary !== null;
         if (showPresentation) {
           currentJourneyId = `jornada|${start.toISOString()}|${leg.flightNumber}|${leg.origin}`;
+        }
+
+        // #525: um intervalo ENTRE jornadas precisa existir na linha do tempo,
+        // mesmo quando não é pernoite. `journeyBoundaryReason` declara boundary
+        // por razões que não exigem intervalo nenhum (apresentação publicada,
+        // descontinuidade física), enquanto o pernoite sintético só nasce com
+        // 12h a 96h. Entre os dois critérios havia uma zona morta: boundary
+        // declarado com intervalo curto zerava `groundBeforeMinutes` (correto —
+        // não é conexão) e não gerava stay, então o intervalo sumia da UI.
+        //
+        // Este evento cobre exatamente essa faixa, e é derivado do BOUNDARY, não
+        // de pares de dias civis — por isso também representa o intervalo entre
+        // duas jornadas dentro do mesmo dia civil, que a varredura por dia civil
+        // nunca alcança.
+        //
+        // `gapMinutes` só é não-nulo quando existe perna anterior na sequência
+        // contínua; um pernoite/folga já emitido encerra a jornada e zera esse
+        // estado, então este evento nunca duplica um stay existente.
+        if (showPresentation && gapMinutes != null && gapMinutes > 0) {
+          const restStart = new Date(journeyPreviousEndMs as number);
+          const station = airportCode(journeyPreviousLeg?.destination) || airportCode(leg.origin);
+          events.push({
+            id: `journey-rest|${restStart.toISOString()}|${station}`,
+            kind: 'journey-rest',
+            date: formatDate(restStart.getDate(), restStart.getMonth() + 1, restStart.getFullYear()),
+            publishedDay: day,
+            startDateTime: restStart.toISOString(),
+            endDateTime: start.toISOString(),
+            flightNumber: '',
+            origin: station,
+            destination: station,
+            presentation: '',
+            departure: '',
+            arrival: '',
+            isNextDay: restStart.toDateString() !== start.toDateString(),
+            sourceConfidence: 'alta',
+            legIndex: -1,
+            legCount: 0,
+            showPresentation: false,
+            // Repouso entre jornadas nunca é tempo em solo: solo é intra-jornada.
+            groundBeforeMinutes: null,
+            restMinutes: gapMinutes,
+            journeyId: currentJourneyId,
+            journeyBoundary: boundary,
+          });
         }
 
         // Apresentação da jornada: evidência publicada da etapa, senão a do dia

@@ -1102,14 +1102,27 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     }
 
     const base = safe((day as any).base || (day as any).airport || (day as any).hotel || event.origin, roster.base || '—');
+    // #525: repouso ENTRE jornadas não é pernoite nem programação operacional.
+    // Fica em `duty` de propósito — mapear para `stay` inflaria a contagem de
+    // pernoites e alimentaria hotel/Central de Pernoite com um repouso que não
+    // satisfaz o contrato de pernoite. O texto abaixo é o que o diferencia.
+    const isJourneyRest = event.kind === 'journey-rest';
+    const restMinutes = Number((event as any).restMinutes || 0);
+    const restLabel = restMinutes >= 60
+      ? `${Math.floor(restMinutes / 60)}h${restMinutes % 60 ? pad2(restMinutes % 60) : ''}`
+      : `${restMinutes} min`;
     const kind = event.kind === 'stay' ? 'stay' : 'duty';
     return {
       id: event.id,
       day,
       kind,
       date: d,
-      title: kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação'),
-      subtitle: kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional'),
+      title: isJourneyRest
+        ? `Repouso entre jornadas · ${city(event.origin) || base}`
+        : (kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação')),
+      subtitle: isJourneyRest
+        ? `${restLabel} entre o fim de uma jornada e a apresentação da seguinte`
+        : (kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional')),
       origin: base,
       destination: base,
       flightNumber: event.flightNumber,
