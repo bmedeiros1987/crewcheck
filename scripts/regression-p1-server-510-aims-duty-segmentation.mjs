@@ -57,20 +57,8 @@ function check(name, condition, detail = '') {
   else { failed += 1; console.log(`  FAIL  ${name}${detail ? `\n        ${detail}` : ''}`); }
 }
 
-// findBestFlightPatternV3 excluir "CNA" (atividade/cancelamento) do padrão de
-// aeroporto de uma perna é um refinamento que só se materializa no estado
-// preparado (scripts/v139/apply.mjs) — já verdadeiro em `main` sem nenhuma
-// mudança deste patch (regression-v14-3-74-for-cgh.mjs/v14-3-75 também só
-// passam preparados). Sondamos em runtime em vez de depender de um marcador
-// de string frágil no fonte.
-const cnaHandledCorrectly = (() => {
-  // "1" não é um número de voo válido (parseAimsTokensIntoEventsV3 exige
-  // /^\d{3,4}$/) — uma versão anterior desta sonda usava isso e sempre
-  // retornava falso, mascarando a divergência base/preparado (achado da
-  // auditoria adversarial). Corrigido para um número de voo real (3-4 dígitos).
-  const probe = mod.parseAimsTokensIntoEventsV3(['LA', '1000', '10:00', '10:30', 'AAA', 'BBB', '11:00', 'CNA', '12:00', 'BBB', '12:30'], 1, 1, 2026, 'X');
-  return probe.find((d) => d.type === 'VOO')?.legs?.[0]?.destination === 'BBB';
-})();
+// CNA é atividade/cancelamento, nunca aeroporto. O contrato abaixo deve ser
+// idêntico no estado base e após a cadeia de preparação.
 
 // -----------------------------------------------------------------------
 // Caso 1 — LA3730: boundary anterior (08:29, resíduo "(...)") não pode
@@ -141,17 +129,11 @@ const cnaHandledCorrectly = (() => {
 // governa (segmentação/agrupamento) — por isso as asserções abaixo cobrem
 // contagem de jornada, sequência e as duas primeiras pernas completas.
 //
-// Nota: esta correção também passou a exigir continuidade física de estação
-// (origem da perna == destino da anterior) para manter duas pernas na mesma
-// jornada (achado da auditoria adversarial — nunca fundir jornada fisicamente
-// impossível). Isso torna o agrupamento de LA4631 sensível a um refinamento
-// PRÉ-EXISTENTE e não relacionado de `findBestFlightPatternV3` — ignorar
-// "CNA" como aeroporto ao montar o padrão — que só se materializa no estado
-// preparado (`scripts/v139/apply.mjs`); mesmo comportamento em `main` sem
-// nenhuma mudança deste patch (`regression-v14-3-74-for-cgh.mjs`/`v14-3-75`
-// também só passam preparados). Por isso a asserção de agrupamento é
-// condicionada à sonda `cnaHandledCorrectly`; a preservação das 3 pernas
-// (nenhuma perdida) é verificada sempre, nos dois estados.
+// CNA é código de atividade/cancelamento, não aeroporto. Esse contrato agora
+// é materializado na base e o preparador v14.3.75 aceita o estado intermediário
+// de forma idempotente; portanto agrupamento, continuidade física e rotas
+// devem ser idênticos antes e depois da preparação.
+//
 // -----------------------------------------------------------------------
 {
   const tokens = ['LA','3558','13:05','13:35','FOR','PHB','14:37','15:07','LA','3559','15:28','15:58','PHB','FOR','16:52','17:22','LA','4631','17:09','17:39','FOR','CGH','21:09','CNA','21:10','CGH','21:20','21:50'];
@@ -159,28 +141,7 @@ const cnaHandledCorrectly = (() => {
   const flightDays = days.filter((d) => d.type === 'VOO');
   const allLegs = flightDays.flatMap((d) => d.legs || []);
   check('LA3558+LA3559+LA4631: as 3 pernas continuam presentes (nenhuma perdida), estado base ou preparado', JSON.stringify(allLegs.map((l) => l.flightNumber).sort()) === JSON.stringify(['LA3558', 'LA3559', 'LA4631']), JSON.stringify(days));
-  if (cnaHandledCorrectly) {
-    check('LA3558+LA3559+LA4631: permanecem UMA única jornada (estado preparado — não fragmentam por par programado/realizado)', flightDays.length === 1 && flightDays[0]?.legs?.length === 3, JSON.stringify(days));
-  } else {
-    // Estado base (sem o refinamento CNA de v14.3.75): em vez de SKIP
-    // silencioso — que a auditoria corretamente apontou como "o gate evita
-    // detectar a falha" — FIXAMOS explicitamente a divergência conhecida.
-    // Causa-raiz PRÉ-EXISTENTE em `main`, fora desta slice: sem 'CNA' em
-    // NON_AIRPORT_TOKEN_V3, `findBestFlightPatternV3` lê LA4631 como
-    // "CGH->CNA" em vez de "FOR->CGH". Com a origem lida como CGH e a perna
-    // anterior chegando em FOR, a continuidade física (correta, exigida por
-    // auditoria anterior) recusa fundir — e a jornada se separa.
-    // Verificado executando `main` puro: lá LA4631 também sai "CGH->CNA";
-    // a diferença é que `main` mantinha as 3 pernas num bloco só por não
-    // checar continuidade nenhuma, ou seja, PRESERVAVA A CONTAGEM CARREGANDO
-    // UMA PERNA CORROMPIDA. Nenhum dos dois estados está correto na base; o
-    // contrato operacional deste caso é definido no estado preparado
-    // (v14.3.74/v14.3.75, ambos verdes).
-    // Esta asserção falha DE PROPÓSITO se alguém corrigir CNA na base sem
-    // atualizar este teste — é um pino da divergência, não um silêncio.
-    const la4631 = allLegs.find((l) => l.flightNumber === 'LA4631');
-    check('LA3558+LA3559+LA4631 (estado base): divergência conhecida e fixada — LA4631 mal-parseado como CGH->CNA por findBestFlightPatternV3 (pré-existente em main, fora desta slice) separa a jornada; contrato real coberto no estado preparado', flightDays.length === 2 && la4631?.origin === 'CGH' && la4631?.destination === 'CNA', JSON.stringify(days));
-  }
+  check('LA3558+LA3559+LA4631: permanecem UMA única jornada com 3 pernas, estado base ou preparado', flightDays.length === 1 && flightDays[0]?.legs?.length === 3, JSON.stringify(days));
   const legs = flightDays[0]?.legs || [];
   check('LA3558: rota e horários corretos (FOR-PHB, 13:35->14:37)', legs[0]?.origin === 'FOR' && legs[0]?.destination === 'PHB' && legs[0]?.departureTime === '13:35' && legs[0]?.arrivalTime === '14:37', JSON.stringify(legs[0]));
   check('LA3559: rota e horários corretos (PHB-FOR, 15:58->16:52)', legs[1]?.origin === 'PHB' && legs[1]?.destination === 'FOR' && legs[1]?.departureTime === '15:58' && legs[1]?.arrivalTime === '16:52', JSON.stringify(legs[1]));
@@ -326,6 +287,21 @@ const cnaHandledCorrectly = (() => {
   const second = flightDays.find((d) => d.pairingCode === 'LA9006');
   check('token intercalado entre horários pós-destino: debrief legítimo da 1ª jornada preservado (08:50), não reduzido à chegada (08:20)', first?.dutyDebrief === '08:50', JSON.stringify(first));
   check('token intercalado entre horários pós-destino: horário excedente atribuído à apresentação da 2ª jornada (23:03), não perdido', second?.dutyReport === '23:03', JSON.stringify(second));
+}
+
+// -----------------------------------------------------------------------
+// Caso 7g — quando a apresentação da nova jornada já está publicada DENTRO
+// do próprio bloco LA, ela não disputa os horários pós-destino da jornada
+// anterior. O recorte anti-vazamento não pode apagar seu debrief legítimo.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '1001', '06:00', '06:45', 'AAA', 'BBB', '08:20', '08:50', 'LA', '1002', '23:03', '23:50', 'BBB', 'CCC', '01:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 29, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  const first = flightDays.find((d) => d.pairingCode === 'LA1001');
+  const second = flightDays.find((d) => d.pairingCode === 'LA1002');
+  check('APZ própria dentro do próximo LA: debrief legítimo anterior preservado (08:50)', first?.dutyDebrief === '08:50', JSON.stringify(first));
+  check('APZ própria dentro do próximo LA: dutyReport da nova jornada preservado (23:03)', second?.dutyReport === '23:03', JSON.stringify(second));
 }
 
 // -----------------------------------------------------------------------
