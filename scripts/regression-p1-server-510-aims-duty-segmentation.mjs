@@ -196,32 +196,33 @@ const cnaHandledCorrectly = (() => {
 }
 
 // -----------------------------------------------------------------------
-// Caso 7 — apresentação impressa ANTES do token "LA" (não só entre "LA" e a
-// origem) não é reconhecida, em nenhuma posição. Achado da auditoria
-// adversarial: uma versão anterior reconhecia isso só para a primeira perna
-// da coluna, mas mesmo essa versão parcial deixava o token acessível ao
-// cálculo de debrief da perna ANTERIOR quando havia mais de uma jornada na
-// coluna — contaminando `dutyDebrief` da jornada anterior com a apresentação
-// da seguinte, e ainda perdendo a apresentação em si (`dutyReport=null`). Sem
-// um sinal estrutural que distinga isso de um debrief legítimo (ex.:
-// LA3559→LA4631, onde o mesmo padrão de token É o debrief real), a
-// apresentação pré-"LA" fica REVIEW (`dutyReport=null`) em qualquer posição —
-// nunca inventada, nunca contaminando a jornada anterior.
+// Caso 7 — apresentação impressa ANTES do token "LA" da PRIMEIRA perna da
+// coluna (k===0) é reconhecida: não existe jornada anterior disputando o
+// token, então é sempre seguro recuperar o valor em vez de descartá-lo.
+// Achado da auditoria adversarial sobre uma versão anterior que descartava
+// isso incondicionalmente (inclusive no k===0, onde a perda é desnecessária
+// porque não há ambiguidade nenhuma).
 // -----------------------------------------------------------------------
 {
   const tokens = ['09:25', 'LA', '9010', '10:15', 'AAA', 'BBB', '11:15'];
   const days = mod.parseAimsTokensIntoEventsV3(tokens, 23, 8, 2026, 'BSB');
   const flightDays = days.filter((d) => d.type === 'VOO');
-  check('apresentação pré-LA (primeira perna da coluna): dutyReport=null (REVIEW), não inventada', flightDays[0]?.dutyReport === null, JSON.stringify(flightDays));
-  check('apresentação pré-LA (primeira perna da coluna): perna preservada mesmo sem dutyReport', flightDays[0]?.legs?.[0]?.flightNumber === 'LA9010', JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna): dutyReport recuperado (09:25), não descartado', flightDays[0]?.dutyReport === '09:25', JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna): perna preservada', flightDays[0]?.legs?.[0]?.flightNumber === 'LA9010', JSON.stringify(flightDays));
 }
 
 // -----------------------------------------------------------------------
-// Caso 7b — apresentação pré-LA da SEGUNDA jornada não pode contaminar o
-// dutyDebrief da jornada anterior (achado direto da auditoria adversarial:
-// `06:00 LA9001 ... 08:20 23:03 LA9002 23:50 ...` produzia
-// LA9001.dutyDebrief=23:03 e LA9002.dutyReport=null — a apresentação da
-// segunda jornada virava debrief inventado da primeira).
+// Caso 7b — apresentação pré-LA da SEGUNDA jornada, quando a perna anterior
+// tem EXATAMENTE 2 horários após o próprio destino, é um caso estruturalmente
+// irresolúvel: o mesmo padrão de token (2 horários após o destino) é
+// indistinguível do debrief legítimo real de LA3559→LA4631 (Caso 5). Sem um
+// sinal que distinga os dois casos, a apresentação da 2ª jornada fica REVIEW
+// (dutyReport=null) — aceito conscientemente como limitação, não como bug:
+// o essencial é que o debrief da 1ª jornada não seja contaminado pelo token
+// ambíguo (achado direto da auditoria adversarial: `06:00 LA9001 ... 08:20
+// 23:03 LA9002 23:50 ...` produzia LA9001.dutyDebrief=23:03 e
+// LA9002.dutyReport=null — a apresentação da segunda jornada virava debrief
+// inventado da primeira; agora nem um nem outro acontece).
 // -----------------------------------------------------------------------
 {
   const tokens = ['LA', '9001', '06:00', '06:45', 'AAA', 'BBB', '08:20', '23:03', 'LA', '9002', '23:50', 'BBB', 'CCC', '01:15'];
@@ -229,8 +230,30 @@ const cnaHandledCorrectly = (() => {
   const flightDays = days.filter((d) => d.type === 'VOO');
   const first = flightDays.find((d) => d.pairingCode === 'LA9001');
   const second = flightDays.find((d) => d.pairingCode === 'LA9002');
-  check('apresentação pré-LA da 2ª jornada: dutyDebrief da 1ª jornada não é contaminado pela apresentação da 2ª (não é 23:03)', first?.dutyDebrief !== '23:03', JSON.stringify(first));
-  check('apresentação pré-LA da 2ª jornada: dutyReport da 2ª fica null (REVIEW), não inventado nem perdido silenciosamente', second?.dutyReport === null, JSON.stringify(second));
+  check('apresentação pré-LA da 2ª jornada (2 horários, caso irresolúvel): dutyDebrief da 1ª jornada não é contaminado pela apresentação da 2ª (não é 23:03)', first?.dutyDebrief !== '23:03', JSON.stringify(first));
+  check('apresentação pré-LA da 2ª jornada (2 horários, caso irresolúvel): dutyDebrief da 1ª jornada preservado corretamente (08:20)', first?.dutyDebrief === '08:20', JSON.stringify(first));
+  check('apresentação pré-LA da 2ª jornada (2 horários, caso irresolúvel): dutyReport da 2ª fica null (REVIEW), não inventado nem perdido silenciosamente', second?.dutyReport === null, JSON.stringify(second));
+}
+
+// -----------------------------------------------------------------------
+// Caso 7c — apresentação pré-LA da SEGUNDA jornada, quando a perna anterior
+// tem 3+ horários após o próprio destino: os dois primeiros formam o par
+// chegada+debrief legítimo dela; o 3º é estruturalmente excedente e
+// pertence à apresentação da jornada seguinte. Achado da auditoria
+// adversarial: `... BBB 08:20 08:50 23:03 LA9006 23:50 ...` — o recorte
+// anti-vazamento de uma versão anterior descartava sempre o 2º horário (não
+// só o excedente), reduzindo o debrief legítimo (08:50) à mera chegada
+// (08:20) e ainda perdia o 23:03 por completo em vez de atribuí-lo à
+// LA9006.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '9005', '07:00', '07:30', 'AAA', 'BBB', '08:20', '08:50', '23:03', 'LA', '9006', '23:50', 'BBB', 'CCC', '01:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 26, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  const first = flightDays.find((d) => d.pairingCode === 'LA9005');
+  const second = flightDays.find((d) => d.pairingCode === 'LA9006');
+  check('3 horários pós-destino: debrief legítimo da 1ª jornada preservado (08:50), não reduzido à chegada', first?.dutyDebrief === '08:50', JSON.stringify(first));
+  check('3 horários pós-destino: horário excedente (3º) atribuído à apresentação da 2ª jornada (23:03), não perdido', second?.dutyReport === '23:03', JSON.stringify(second));
 }
 
 // -----------------------------------------------------------------------

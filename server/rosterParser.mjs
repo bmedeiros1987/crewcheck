@@ -421,20 +421,29 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
     if (destIdx >= 0) afterDestCount = normalized.slice(destIdx + 1, seqEnd).filter(isTimeToken).length;
    }
   }
-  // Apresentação impressa ANTES do "LA" (não só entre "LA" e a origem) não é
-  // reconhecida: o token imediatamente anterior a um "LA" é estruturalmente
-  // indistinguível entre "apresentação da perna seguinte" e "chegada/debrief
-  // já reivindicado pela perna anterior" (ex.: LA3559→LA4631, onde o 2º
-  // horário à direita do destino É o debrief legítimo de LA3559). Uma
-  // tentativa anterior reconhecia isso só para a primeira perna da coluna,
-  // mas a auditoria mostrou que mesmo essa versão parcial deixava o token
-  // acessível a `inferAimsDebriefV3` da perna anterior quando havia mais de
-  // uma jornada na coluna, contaminando o debrief anterior. Sem um sinal
-  // estrutural que resolva a ambiguidade, a apresentação pré-"LA" fica
-  // REVIEW (dutyReport=null) — nunca inventada, nunca contaminando a jornada
-  // anterior (#510).
 
   const current = segments[segments.length - 1];
+  // Apresentação impressa ANTES do "LA" (não entre "LA" e a origem) só é
+  // reconhecida quando há um sinal estrutural que a distingue de um debrief
+  // legítimo da jornada anterior:
+  // - k===0 (primeira perna da coluna): não existe jornada anterior disputando
+  //   o token, então é sempre seguro reconhecer.
+  // - k>0: só quando a perna anterior tem 3+ horários após o próprio destino.
+  //   Os dois primeiros formam o par chegada+debrief legítimo dela; o 3º é
+  //   estruturalmente excedente e pertence a esta apresentação.
+  // Com exatamente 2 horários na perna anterior (ex.: LA3559→LA4631) a
+  // ambiguidade é irresolúvel: o 2º pode ser tanto o debrief legítimo da
+  // perna anterior quanto a apresentação desta. Sem um sinal que distinga os
+  // dois casos, fica REVIEW (dutyReport=null) — nunca inventada, nunca
+  // contaminando a jornada anterior (#510).
+  if (!reportEquivalent && i > 0 && isTimeToken(tokens[i - 1])) {
+   if (k === 0) {
+    reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+   } else if (current && current.lastLegAfterDestCount >= 3) {
+    reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+   }
+  }
+
   const sameStation = Boolean(current && current.legs.length && leg && current.legs.at(-1).destination === leg.origin);
   let opensNewSegment;
   if (!current) {
@@ -461,15 +470,15 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
 
   if (opensNewSegment) {
    // Ao abrir uma jornada nova, a anterior não pode reter, como se fosse seu
-   // próprio debrief, um horário solto que pode na verdade pertencer a esta
+   // próprio debrief, o horário ambíguo que pode na verdade pertencer a esta
    // jornada que está começando (a mesma ambiguidade estrutural documentada
-   // acima). Só recorta quando a última perna da jornada anterior tinha MAIS
-   // de um horário após o próprio destino (a chegada é sempre preservada; só
-   // o(s) horário(s) extra(s) e ambíguo(s) além dela é que são descartados do
-   // cálculo de debrief) — jornadas de perna única com só a chegada (ex.:
-   // LA4712) não são afetadas.
+   // acima). Descarta sempre exatamente o ÚLTIMO horário pós-destino quando
+   // há 2 ou mais — o par chegada+debrief legítimo (os primeiros N-1) nunca é
+   // tocado, só o excedente final é que é removido do cálculo de debrief.
+   // Jornadas de perna única com só a chegada (ex.: LA4712, afterDestCount=1)
+   // não são afetadas.
    if (current && current.lastLegDestIdx >= 0 && current.lastLegAfterDestCount >= 2) {
-    current.tokenEnd = Math.min(current.tokenEnd, current.lastLegDestIdx + 2);
+    current.tokenEnd = Math.min(current.tokenEnd, current.lastLegDestIdx + current.lastLegAfterDestCount);
    }
    segments.push({ reportEquivalent, legs: [], lastArrival: null, tokenStart: i });
   }
