@@ -1590,22 +1590,55 @@ function sanitizeComplianceAlertsForProduction(alerts: ComplianceAlert[]): Compl
   });
 }
 
-function complianceDayMonthKey(day: RosterDay): string {
-  try {
-    const parsed = parseDate(String(day.date || ''));
-    if (Number.isFinite(parsed.getTime())) return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
-  } catch {}
-  return 'unknown';
+
+// #526: o limite da ACT (cl. 3.3.17) é de horas de VOO em 28 DIAS, não no mês
+// civil. Agrupar por mês civil produz dois erros de sinal oposto: conta 29-31
+// dias contra um teto de 28 e — o mais grave — deixa de detectar violação real
+// que atravessa a virada do mês (ex.: 50h no fim de janeiro + 50h no início de
+// fevereiro somam 100h numa janela de 28 dias, mas cada mês isolado mostra 50h
+// e nenhum alerta dispara).
+//
+// O índice vem de Date.UTC(ano, mês, dia), não da diferença em milissegundos
+// entre datas locais: `parseDate` devolve meia-noite local, e uma transição de
+// horário de verão dentro da janela faria a diferença deixar de ser múltiplo
+// exato de 24h, deslocando a fronteira em um dia.
+function flightHoursDayEntries(days: RosterDay[]): Array<{ dayIndex: number; date: string; flightHours: number }> {
+  const entries: Array<{ dayIndex: number; date: string; flightHours: number }> = [];
+  for (const day of days) {
+    const raw = String(day.date || '');
+    try {
+      const parsed = parseDate(raw);
+      if (!Number.isFinite(parsed.getTime())) continue;
+      const dayIndex = Math.floor(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) / 86400000);
+      entries.push({ dayIndex, date: raw, flightHours: getFlightHours(day) });
+    } catch {}
+  }
+  return entries.sort((a, b) => a.dayIndex - b.dayIndex);
 }
 
-function flightHoursByRosterMonth(days: RosterDay[]): Array<{ key: string; flightHours: number }> {
-  const map = new Map<string, number>();
-  for (const day of days) {
-    const key = complianceDayMonthKey(day);
-    if (key === 'unknown') continue;
-    map.set(key, round1((map.get(key) || 0) + getFlightHours(day)));
+export function worstFlightHoursWindow28Days(days: RosterDay[]): { flightHours: number; from: string; to: string; spansMonthBoundary: boolean } {
+  const entries = flightHoursDayEntries(days);
+  const empty = { flightHours: 0, from: '', to: '', spansMonthBoundary: false };
+  if (!entries.length) return empty;
+  const WINDOW_DAYS = 28;
+  let best = empty;
+  for (let i = 0; i < entries.length; i++) {
+    const start = entries[i].dayIndex;
+    let sum = 0;
+    let lastIndex = i;
+    for (let j = i; j < entries.length; j++) {
+      if (entries[j].dayIndex - start >= WINDOW_DAYS) break;
+      sum += entries[j].flightHours;
+      lastIndex = j;
+    }
+    const rounded = round1(sum);
+    if (rounded > best.flightHours) {
+      const from = entries[i].date;
+      const to = entries[lastIndex].date;
+      best = { flightHours: rounded, from, to, spansMonthBoundary: from.slice(3) !== to.slice(3) };
+    }
   }
-  return Array.from(map.entries()).map(([key, flightHours]) => ({ key, flightHours })).sort((a, b) => a.key.localeCompare(b.key));
+  return best;
 }
 
 
@@ -1936,25 +1969,28 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   // automático porque escalas com pernoite/continuação e reservas podem distorcer
   // a janela móvel e gerar falsos positivos.
 
-  const monthlyFlightBuckets = flightHoursByRosterMonth(sortedDays);
-  const isMultiMonthRoster = monthlyFlightBuckets.length > 1;
-  const monthlyBucketToEvaluate = isMultiMonthRoster
-    ? monthlyFlightBuckets.reduce((best, item) => item.flightHours > best.flightHours ? item : best, { key: '', flightHours: 0 })
-    : { key: `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`, flightHours: metrics.totalFlightHours };
-  const monthlyFlightHoursForAlert = monthlyBucketToEvaluate.flightHours;
+  // #526: a avaliação usa a PIOR janela móvel de 28 dias, não o mês civil.
+  // A janela nunca soma mais de 28 dias, então ela própria já protege contra o
+  // falso positivo que a separação por mês existia para evitar (escala atual +
+  // subsequente anexadas nunca caem juntas numa janela de 28 dias).
+  const worstFlightWindow = worstFlightHoursWindow28Days(sortedDays);
+  const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to
+    ? `${worstFlightWindow.from} a ${worstFlightWindow.to}`
+    : '';
+  const monthlyFlightHoursForAlert = worstFlightWindow.flightHours;
 
   const monthlyFlightRatio = limits.maxFlightHoursMonth ? monthlyFlightHoursForAlert / limits.maxFlightHoursMonth : 0;
   if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth) {
     const suspiciousTotal = monthlyFlightRatio > 1.35 || monthlyFlightHoursForAlert > 140;
     pushAlert(alerts, {
       severity: suspiciousTotal ? 'warning' : 'error',
-      title: suspiciousTotal ? 'Horas de voo mensais — revisar base de cálculo' : 'Limite mensal de horas de voo excedido',
+      title: suspiciousTotal ? 'Horas de voo em 28 dias — revisar base de cálculo' : 'Limite de horas de voo em 28 dias excedido',
       description: suspiciousTotal
-        ? `O PDF retornou ${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}, valor incompatível com uma leitura operacional normal. O CrewCheck marcou para revisão em vez de confirmar irregularidade.`
-        : `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
+        ? `O PDF retornou ${monthlyFlightHoursForAlert.toFixed(1)}h de voo na janela de 28 dias${flightWindowRange ? ` (${flightWindowRange})` : ''}, valor incompatível com uma leitura operacional normal. O CrewCheck marcou para revisão em vez de confirmar irregularidade.`
+        : `${monthlyFlightHoursForAlert.toFixed(1)}h de voo em 28 dias${flightWindowRange ? ` (${flightWindowRange})` : ''}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
       details: suspiciousTotal
         ? 'Possível duplicidade de mês, continuação de escala, total acumulado do PDF ou trecho interpretado em duplicidade. Não use este item como irregularidade confirmada sem revisar o PDF oficial.'
-        : (isMultiMonthRoster ? `A escala visual pode estar com mês atual + subsequente anexado. O CrewCheck avaliou cada mês separadamente e não somou os meses para gerar este alerta.` : undefined),
+        : (worstFlightWindow.spansMonthBoundary ? 'Esta janela de 28 dias atravessa a virada do mês. O limite da ACT é por 28 dias corridos, não por mês civil — avaliar mês a mês deixaria de detectar este caso.' : undefined),
       legalReference: actRules.flightLimits.legalReference,
       confidence: suspiciousTotal ? 'media' : 'alta',
       classification: suspiciousTotal ? 'atencao' : 'confirmada',
@@ -1962,9 +1998,9 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
-      title: 'Horas de voo próximas do limite mensal',
-      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
-      details: isMultiMonthRoster ? 'Cálculo separado por mês para evitar falso positivo ao visualizar escala atual + subsequente.' : undefined,
+      title: 'Horas de voo próximas do limite de 28 dias',
+      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo em 28 dias${flightWindowRange ? ` (${flightWindowRange})` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
+      details: worstFlightWindow.spansMonthBoundary ? 'Esta janela de 28 dias atravessa a virada do mês.' : undefined,
       legalReference: actRules.flightLimits.legalReference,
     });
   }
