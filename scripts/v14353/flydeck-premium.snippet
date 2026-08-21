@@ -11,6 +11,9 @@ function flyDeckProgramMomentV14353(event: ZeroLeg): Date {
   if (presentation.getTime() > start.getTime() + 6 * 60 * 60 * 1000) presentation.setDate(presentation.getDate() - 1);
   return presentation;
 }
+function flyDeckProgramDayV14353(event: ZeroLeg): string {
+  return String(flyDeckProgramMomentV14353(event).getDate()).padStart(2, '0');
+}
 function flyDeckCountdownV14353(event: ZeroLeg, nowMs: number): string {
   const start = flyDeckProgramMomentV14353(event).getTime();
   const end = eventEndDateTime(event).getTime();
@@ -70,6 +73,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const countdown = flyDeckCountdownV14353(event, nowMs);
   const phase = flyDeckBriefingPhaseV14353(event, nowMs);
   const gateLine = terminal && terminal !== 'A confirmar' ? `${gate} · T${terminal}` : gate;
+  const programDay = flyDeckProgramDayV14353(event);
 
   return <><Brand onMenu={openMenu}/><main className="cc-flydeck-premium-v14353" data-flydeck-v14353="premium-briefing">
     <header className="cc-flydeck-topline">
@@ -80,7 +84,10 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
     <article className="cc-flydeck-briefing">
       <header>
         <div className="cc-flydeck-phase"><span>{phase}</span><strong>{countdown}</strong></div>
-        <button className="cc-flydeck-roster-link" onClick={() => setView('roster')}>Ver escala <ChevronRight size={18}/></button>
+        <button className="cc-flydeck-roster-link" onClick={() => setView('roster')} aria-label={`Abrir escala da programação de ${programDateLabel(event)}`}>
+          <span className="cc-flydeck-calendar-icon" aria-hidden="true"><CalendarDays/><b>{programDay}</b></span>
+          <span className="cc-flydeck-calendar-label">Escala</span>
+        </button>
       </header>
       <div className="cc-flydeck-program">
         <small>{programDateLabel(event)}</small>
