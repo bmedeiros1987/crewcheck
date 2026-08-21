@@ -388,6 +388,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   if (upperTokens[i] === 'LA' && /^\d{3,4}$/.test(upperTokens[i + 1] || '')) laIndexes.push(i);
  }
 
+ const leadingWorkMarkers = new Set(['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']);
  const segments = [];
  for (let k = 0; k < laIndexes.length; k++) {
   const i = laIndexes[k];
@@ -397,7 +398,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // do seq evita que parseAimsFlightSeq contamine o workType da perna errada
   // (a perna anterior não pode virar PS só porque a seguinte é).
   let seqEnd = nextLaIndex;
-  while (seqEnd > i + 2 && ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO'].includes(upperTokens[seqEnd - 1])) seqEnd -= 1;
+  while (seqEnd > i + 2 && leadingWorkMarkers.has(upperTokens[seqEnd - 1])) seqEnd -= 1;
   const seq = normalized.slice(i + 2, seqEnd);
   const leg = parseAimsFlightSeq('LA' + upperTokens[i + 1], seq);
   // O marcador pertence ao "LA" que ele precede, então este olhar é sempre
@@ -406,7 +407,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // segmento anterior e corrompe o workType da perna errada.
   const hasLeadingExtraMarker = upperTokens
    .slice(Math.max(0, i - 4), i)
-   .some((token) => ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO'].includes(token));
+   .some((token) => leadingWorkMarkers.has(token));
   if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
 
   let reportEquivalent = null;
@@ -454,20 +455,22 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // perna anterior quanto a apresentação desta. Sem um sinal que distinga os
   // dois casos, fica REVIEW (dutyReport=null) — nunca inventada, nunca
   // contaminando a jornada anterior (#510).
-  if (!reportEquivalent && i > 0 && isTimeToken(tokens[i - 1])) {
+  let preLaReportIdx = i - 1;
+  while (preLaReportIdx >= 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx])) preLaReportIdx -= 1;
+  if (!reportEquivalent && preLaReportIdx >= 0 && isTimeToken(tokens[preLaReportIdx])) {
    if (k === 0) {
     let lastBoundaryIdx = -1;
     for (let b = i - 1; b >= 0; b--) {
      if (/^\(\.{3}\)$/.test(upperTokens[b])) { lastBoundaryIdx = b; break; }
     }
     if (lastBoundaryIdx < 0) {
-     reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     } else {
      const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
-     if (timesSinceBoundary >= 3) reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+     if (timesSinceBoundary >= 3) reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     }
    } else if (current && current.lastLegAfterDestCount >= 3) {
-    reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+    reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
    }
   }
 
