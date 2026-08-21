@@ -13,9 +13,11 @@ if (!source.includes(marker)) {
   );
 
   const oldNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
+  const baseNonAirportWithCna = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
   const newNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','MCK','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
-  if (!source.includes(oldNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
-  source = source.replace(oldNonAirport, newNonAirport);
+  if (source.includes(oldNonAirport)) source = source.replace(oldNonAirport, newNonAirport);
+  else if (source.includes(baseNonAirportWithCna)) source = source.replace(baseNonAirportWithCna, newNonAirport);
+  else if (!source.includes(newNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
 
   const oldScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
   const newScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(originIdx + 1, destIdx).some((token) => routeBoundaries.has(token))) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
