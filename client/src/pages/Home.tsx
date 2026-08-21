@@ -4551,7 +4551,16 @@ body.crewcheck-menu-open {
 export default function Home() {
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const [view, setViewState] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  // #548: dia que a escala deve abrir focada. Só atalhos de data preenchem;
+  // qualquer outra navegação (menu, bottom nav, cards) limpa e a escala abre do topo.
+  const [rosterFocusIso, setRosterFocusIso] = useState<string | null>(null);
+  // Sem useCallback de propósito: o import do react em Home.tsx é âncora literal
+  // de scripts/v1432/apply.mjs, e alterá-lo tornaria aquele passo um no-op silencioso.
+  const setView = (next: ZeroView, focusIso: string | null = null) => {
+    setRosterFocusIso(focusIso);
+    setViewState(next);
+  };
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
