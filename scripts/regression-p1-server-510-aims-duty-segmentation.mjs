@@ -64,7 +64,11 @@ function check(name, condition, detail = '') {
 // passam preparados). Sondamos em runtime em vez de depender de um marcador
 // de string frágil no fonte.
 const cnaHandledCorrectly = (() => {
-  const probe = mod.parseAimsTokensIntoEventsV3(['LA', '1', '10:00', '10:30', 'AAA', 'BBB', '11:00', 'CNA', '12:00', 'BBB', '12:30'], 1, 1, 2026, 'X');
+  // "1" não é um número de voo válido (parseAimsTokensIntoEventsV3 exige
+  // /^\d{3,4}$/) — uma versão anterior desta sonda usava isso e sempre
+  // retornava falso, mascarando a divergência base/preparado (achado da
+  // auditoria adversarial). Corrigido para um número de voo real (3-4 dígitos).
+  const probe = mod.parseAimsTokensIntoEventsV3(['LA', '1000', '10:00', '10:30', 'AAA', 'BBB', '11:00', 'CNA', '12:00', 'BBB', '12:30'], 1, 1, 2026, 'X');
   return probe.find((d) => d.type === 'VOO')?.legs?.[0]?.destination === 'BBB';
 })();
 
@@ -193,14 +197,40 @@ const cnaHandledCorrectly = (() => {
 
 // -----------------------------------------------------------------------
 // Caso 7 — apresentação impressa ANTES do token "LA" (não só entre "LA" e a
-// origem). Só reconhecida quando não há perna anterior disputando o mesmo
-// token (o primeiro "LA" da coluna inteira) — achado da auditoria adversarial.
+// origem) não é reconhecida, em nenhuma posição. Achado da auditoria
+// adversarial: uma versão anterior reconhecia isso só para a primeira perna
+// da coluna, mas mesmo essa versão parcial deixava o token acessível ao
+// cálculo de debrief da perna ANTERIOR quando havia mais de uma jornada na
+// coluna — contaminando `dutyDebrief` da jornada anterior com a apresentação
+// da seguinte, e ainda perdendo a apresentação em si (`dutyReport=null`). Sem
+// um sinal estrutural que distinga isso de um debrief legítimo (ex.:
+// LA3559→LA4631, onde o mesmo padrão de token É o debrief real), a
+// apresentação pré-"LA" fica REVIEW (`dutyReport=null`) em qualquer posição —
+// nunca inventada, nunca contaminando a jornada anterior.
 // -----------------------------------------------------------------------
 {
   const tokens = ['09:25', 'LA', '9010', '10:15', 'AAA', 'BBB', '11:15'];
   const days = mod.parseAimsTokensIntoEventsV3(tokens, 23, 8, 2026, 'BSB');
   const flightDays = days.filter((d) => d.type === 'VOO');
-  check('apresentação pré-LA: reconhecida quando é a primeira perna da coluna (dutyReport=09:25, não null)', flightDays[0]?.dutyReport === '09:25', JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna): dutyReport=null (REVIEW), não inventada', flightDays[0]?.dutyReport === null, JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna): perna preservada mesmo sem dutyReport', flightDays[0]?.legs?.[0]?.flightNumber === 'LA9010', JSON.stringify(flightDays));
+}
+
+// -----------------------------------------------------------------------
+// Caso 7b — apresentação pré-LA da SEGUNDA jornada não pode contaminar o
+// dutyDebrief da jornada anterior (achado direto da auditoria adversarial:
+// `06:00 LA9001 ... 08:20 23:03 LA9002 23:50 ...` produzia
+// LA9001.dutyDebrief=23:03 e LA9002.dutyReport=null — a apresentação da
+// segunda jornada virava debrief inventado da primeira).
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '9001', '06:00', '06:45', 'AAA', 'BBB', '08:20', '23:03', 'LA', '9002', '23:50', 'BBB', 'CCC', '01:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 1, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  const first = flightDays.find((d) => d.pairingCode === 'LA9001');
+  const second = flightDays.find((d) => d.pairingCode === 'LA9002');
+  check('apresentação pré-LA da 2ª jornada: dutyDebrief da 1ª jornada não é contaminado pela apresentação da 2ª (não é 23:03)', first?.dutyDebrief !== '23:03', JSON.stringify(first));
+  check('apresentação pré-LA da 2ª jornada: dutyReport da 2ª fica null (REVIEW), não inventado nem perdido silenciosamente', second?.dutyReport === null, JSON.stringify(second));
 }
 
 // -----------------------------------------------------------------------
