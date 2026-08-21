@@ -103,9 +103,44 @@
   font-weight: 800;
 }
 .cc-flydeck-roster-link {
+  gap: 8px;
+  min-width: 66px;
+  min-height: 48px;
+  padding: 4px 6px;
   border: 0;
   background: transparent;
   color: #a5f3fc;
+}
+.cc-flydeck-calendar-icon {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.cc-flydeck-calendar-icon svg {
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.8;
+}
+.cc-flydeck-calendar-icon b {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  transform: translate(-50%, -50%);
+  color: currentColor;
+  font-size: .62rem;
+  line-height: 1;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.04em;
+}
+.cc-flydeck-calendar-label {
+  font-size: .72rem;
+  font-weight: 850;
+  letter-spacing: .01em;
 }
 .cc-flydeck-program small {
   color: var(--briefing-muted);
@@ -140,7 +175,7 @@
   border-right: 1px solid var(--briefing-line);
 }
 .cc-flydeck-facts > div:last-child { border-right: 0; }
-.cc-flydeck-facts svg { flex: 0 0 auto; width: 18px; color: #22d3ee; }
+.cc-flydeck-facts svg { flex: 0 0 auto; width: 18px; color: #67e8f9; opacity: 1; filter: drop-shadow(0 0 7px rgba(34, 211, 238, .18)); }
 .cc-flydeck-facts span {
   display: grid;
   gap: 3px;
@@ -162,12 +197,15 @@
   flex-wrap: wrap;
 }
 .cc-flydeck-actions button { padding: 0 14px; }
+.cc-flydeck-actions button svg { color: #c4f1ff; opacity: 1; }
 .cc-flydeck-actions button.primary {
   border-color: rgba(34, 211, 238, .45);
   background: linear-gradient(135deg, #0891b2, #2563eb);
   color: #fff;
 }
+.cc-flydeck-actions button.primary svg { color: #fff; }
 .cc-flydeck-actions button.warning { color: #fde68a; }
+.cc-flydeck-actions button.warning svg { color: #fde68a; }
 .cc-flydeck-no-route {
   display: inline-flex;
   align-items: center;
@@ -176,7 +214,7 @@
   font-size: .8rem;
   font-weight: 700;
 }
-.cc-flydeck-no-route svg { width: 17px; color: #34d399; }
+.cc-flydeck-no-route svg { width: 17px; color: #6ee7b7; }
 .cc-flydeck-official-note {
   display: flex;
   align-items: flex-start;
@@ -187,7 +225,7 @@
   background: rgba(30, 64, 175, .07);
   color: var(--briefing-muted);
 }
-.cc-flydeck-official-note svg { flex: 0 0 auto; width: 18px; color: #60a5fa; }
+.cc-flydeck-official-note svg { flex: 0 0 auto; width: 18px; color: #93c5fd; opacity: 1; }
 .cc-flydeck-official-note p { margin: 0; font-size: .76rem; line-height: 1.45; }
 .cc-flydeck-official-note strong { color: #cbd5e1; }
 .cc-flydeck-empty {
@@ -197,7 +235,7 @@
   gap: 16px;
   padding: 24px;
 }
-.cc-flydeck-empty > svg { color: #22d3ee; }
+.cc-flydeck-empty > svg { color: #67e8f9; }
 .cc-flydeck-empty h2 { margin: 0; color: var(--briefing-ink); }
 .cc-flydeck-empty p { margin: 4px 0 0; color: var(--briefing-muted); }
 .cc-flydeck-empty button { padding: 0 16px; }
@@ -217,7 +255,10 @@
 [data-theme='light'] .cc-flydeck-program h2 { color: #0f172a; }
 [data-theme='light'] .cc-flydeck-program p { color: #0369a1; }
 [data-theme='light'] .cc-flydeck-facts { background: rgba(255, 255, 255, .66); }
+[data-theme='light'] .cc-flydeck-facts svg { color: #0476a8; filter: none; }
+[data-theme='light'] .cc-flydeck-actions button svg { color: currentColor; }
 [data-theme='light'] .cc-flydeck-roster-link { color: #0369a1; }
+[data-theme='light'] .cc-flydeck-official-note svg { color: #2563eb; }
 [data-theme='light'] .cc-flydeck-official-note strong { color: #1e3a8a; }
 
 @media (max-width: 760px) {
@@ -239,6 +280,8 @@
   .cc-flydeck-briefing > header { align-items: flex-start; }
   .cc-flydeck-phase { display: grid; }
   .cc-flydeck-facts > div { padding: 12px 10px; }
+  .cc-flydeck-calendar-label { display: none; }
+  .cc-flydeck-roster-link { min-width: 42px; padding-inline: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cc-flydeck-live i { animation: none; }
