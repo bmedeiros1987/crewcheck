@@ -293,6 +293,25 @@ const cnaHandledCorrectly = (() => {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7f — igual ao Caso 7c, mas com um token NÃO-horário (ex.: matrícula de
+// aeronave) intercalado entre o 1º e o 2º horário pós-destino. O recorte
+// anti-vazamento não pode usar "destIdx + contagem de horários" como posição
+// de corte — um token intercalado quebra essa aritmética e corta também um
+// horário legítimo. O corte precisa usar a posição REAL do penúltimo
+// horário, não uma contagem. Achado técnico avaliado por mérito próprio
+// (reproduzido de forma independente antes de corrigir).
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA', '9005', '07:00', '07:30', 'AAA', 'BBB', '08:20', '320', '08:50', '23:03', 'LA', '9006', '23:50', 'BBB', 'CCC', '01:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 26, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  const first = flightDays.find((d) => d.pairingCode === 'LA9005');
+  const second = flightDays.find((d) => d.pairingCode === 'LA9006');
+  check('token intercalado entre horários pós-destino: debrief legítimo da 1ª jornada preservado (08:50), não reduzido à chegada (08:20)', first?.dutyDebrief === '08:50', JSON.stringify(first));
+  check('token intercalado entre horários pós-destino: horário excedente atribuído à apresentação da 2ª jornada (23:03), não perdido', second?.dutyReport === '23:03', JSON.stringify(second));
+}
+
+// -----------------------------------------------------------------------
 // Caso 8 — descontinuidade física: origem da perna não bate com o destino da
 // perna anterior. Mesmo com intervalo curto, não pode ser tratada como
 // conexão da mesma jornada (nunca fundir jornada fisicamente impossível).

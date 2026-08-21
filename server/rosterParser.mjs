@@ -411,16 +411,21 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
 
   let reportEquivalent = null;
   let destIdx = -1;
-  let afterDestCount = 0;
+  let afterDestTimeIndexes = [];
   if (leg) {
    const originIdx = upperTokens.findIndex((token, idx) => idx >= i + 2 && idx < seqEnd && token === leg.origin);
    if (originIdx >= 0) {
     const timesBeforeOrigin = normalized.slice(i + 2, originIdx).filter(isTimeToken).map(normalizeTimeToken);
     if (timesBeforeOrigin.length >= 2) reportEquivalent = timesBeforeOrigin[0];
     destIdx = upperTokens.findIndex((token, idx) => idx > originIdx && idx < seqEnd && token === leg.destination);
-    if (destIdx >= 0) afterDestCount = normalized.slice(destIdx + 1, seqEnd).filter(isTimeToken).length;
+    if (destIdx >= 0) {
+     for (let idx = destIdx + 1; idx < seqEnd; idx++) {
+      if (isTimeToken(normalized[idx])) afterDestTimeIndexes.push(idx);
+     }
+    }
    }
   }
+  const afterDestCount = afterDestTimeIndexes.length;
 
   const current = segments[segments.length - 1];
   // Apresentação impressa ANTES do "LA" (não entre "LA" e a origem) só é
@@ -493,9 +498,13 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    // há 2 ou mais — o par chegada+debrief legítimo (os primeiros N-1) nunca é
    // tocado, só o excedente final é que é removido do cálculo de debrief.
    // Jornadas de perna única com só a chegada (ex.: LA4712, afterDestCount=1)
-   // não são afetadas.
-   if (current && current.lastLegDestIdx >= 0 && current.lastLegAfterDestCount >= 2) {
-    current.tokenEnd = Math.min(current.tokenEnd, current.lastLegDestIdx + current.lastLegAfterDestCount);
+   // não são afetadas. O corte usa a POSIÇÃO REAL do penúltimo horário (não
+   // "destIdx + contagem"), porque um token não-horário intercalado entre os
+   // horários (ex.: matrícula de aeronave) quebraria essa aritmética e
+   // cortaria também um horário legítimo antes do excedente real.
+   if (current && current.lastLegAfterDestTimeIndexes && current.lastLegAfterDestTimeIndexes.length >= 2) {
+    const keepUpToIdx = current.lastLegAfterDestTimeIndexes[current.lastLegAfterDestTimeIndexes.length - 2];
+    current.tokenEnd = Math.min(current.tokenEnd, keepUpToIdx + 1);
    }
    segments.push({ reportEquivalent, legs: [], lastArrival: null, tokenStart: i });
   }
@@ -506,6 +515,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    segment.tokenEnd = seqEnd;
    segment.lastLegDestIdx = destIdx;
    segment.lastLegAfterDestCount = afterDestCount;
+   segment.lastLegAfterDestTimeIndexes = afterDestTimeIndexes;
   }
  }
 
