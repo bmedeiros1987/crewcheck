@@ -27,6 +27,7 @@ function versionAtLeast(actual, expected) {
 const home = read('client/src/pages/Home.tsx');
 const css = read('client/src/index.css');
 const snippet = read('scripts/v14353/flydeck-premium.snippet');
+const sourceCss = read('scripts/v14353/flydeck-premium.css');
 const patch = read('scripts/v14353/apply.mjs');
 const applyChain = read('scripts/v139/apply.mjs');
 const packageJson = JSON.parse(read('package.json'));
@@ -48,11 +49,19 @@ expect(cockpit.includes("event.kind === 'flight'"), 'Briefing não diferencia vo
 expect(cockpit.includes("setView('departure')"), 'Ação de planejar saída está ausente.');
 expect(cockpit.includes("setView('roster')"), 'Ação de consultar a escala está ausente.');
 
+expect(snippet.includes('function flyDeckProgramDayV14353(event: ZeroLeg)'), 'Calendário dinâmico não deriva o dia da programação exibida.');
+expect(snippet.includes('cc-flydeck-calendar-icon'), 'Botão de escala não usa o calendário dinâmico.');
+expect(snippet.includes('Abrir escala da programação de ${programDateLabel(event)}'), 'Calendário dinâmico perdeu descrição acessível da programação atual.');
+expect(!snippet.includes('>Ver escala <ChevronRight'), 'Rótulo textual antigo Ver escala ainda permanece no briefing.');
+
 expect(css.includes('CrewCheck v14.3.53 — FlyDeck Premium'), 'CSS do FlyDeck Premium está ausente.');
 expect(css.includes('@media (max-width: 760px)'), 'Layout mobile do briefing está ausente.');
 expect(css.includes("[data-theme='light']"), 'Tema claro do briefing está ausente.');
 expect(css.includes('@media (prefers-reduced-motion: reduce)'), 'Movimento reduzido não está respeitado.');
 expect(css.includes('grid-template-columns: repeat(2, minmax(0, 1fr))'), 'Fatos essenciais não se reorganizam no mobile.');
+expect(sourceCss.includes('.cc-flydeck-calendar-icon b'), 'Número do dia não está posicionado dentro do ícone de calendário.');
+expect(sourceCss.includes("[data-theme='light'] .cc-flydeck-facts svg"), 'Tema claro não preserva contraste próprio dos ícones.');
+expect(sourceCss.includes('filter: drop-shadow'), 'Tema escuro não reforça visualmente os ícones do FlyDeck.');
 
 const transpiled = ts.transpileModule(snippet, {
   compilerOptions: {
