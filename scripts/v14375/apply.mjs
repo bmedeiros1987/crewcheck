@@ -12,7 +12,7 @@ if (!source.includes(marker)) {
     "'PDP','PET','PFB','PHB','PIN','PMW'",
   );
 
-  const oldNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
+  const oldNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
   const newNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','MCK','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
   if (!source.includes(oldNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
   source = source.replace(oldNonAirport, newNonAirport);
