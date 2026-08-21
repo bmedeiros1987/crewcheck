@@ -305,6 +305,21 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7h — o limiar de 12h entre jornadas é descanso após o fim/debrief da
+// jornada anterior, não após a chegada. A apresentação pode se sobrepor em
+// poucos minutos ao fim publicado; isso não é virada de dia nem nova jornada.
+// -----------------------------------------------------------------------
+{
+  const below = ['LA','1101','06:00','06:45','AAA','BBB','08:00','08:30','LA','1102','20:00','20:30','BBB','CCC','21:30'];
+  const belowFlightDays = mod.parseAimsTokensIntoEventsV3(below, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('limiar de descanso: 11h30 após debrief permanece uma jornada', belowFlightDays.length === 1 && belowFlightDays[0]?.legs?.length === 2, JSON.stringify(belowFlightDays));
+
+  const exact = ['LA','1101','06:00','06:45','AAA','BBB','08:00','08:30','LA','1102','20:30','21:00','BBB','CCC','22:00'];
+  const exactFlightDays = mod.parseAimsTokensIntoEventsV3(exact, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('limiar de descanso: exatamente 12h após debrief abre nova jornada', exactFlightDays.length === 2, JSON.stringify(exactFlightDays));
+}
+
+// -----------------------------------------------------------------------
 // Caso 8 — descontinuidade física: origem da perna não bate com o destino da
 // perna anterior. Mesmo com intervalo curto, não pode ser tratada como
 // conexão da mesma jornada (nunca fundir jornada fisicamente impossível).
