@@ -1,0 +1,49 @@
+/* FlightDeck Web: keep the hero on the same desktop content rail and honor light theme. */
+@media (pointer: fine) and (min-width: 901px) {
+  .cc-flydeck-briefing {
+    width: min(calc(100vw - 48px), 1120px) !important;
+    max-width: 1120px !important;
+    margin-inline: auto !important;
+    box-sizing: border-box !important;
+  }
+
+  [data-crew-theme='light'] .cc-flydeck-briefing {
+    --briefing-ink: #10243a !important;
+    --briefing-muted: #5d7084 !important;
+    color: var(--briefing-ink) !important;
+    background:
+      radial-gradient(circle at 92% 2%, rgba(34, 211, 238, .10), transparent 36%),
+      linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(244, 248, 252, .94)) !important;
+    border-color: rgba(95, 121, 148, .20) !important;
+    box-shadow: 0 20px 55px rgba(36, 55, 78, .12) !important;
+  }
+
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-program h2,
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-phase strong,
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-facts strong {
+    color: var(--briefing-ink) !important;
+  }
+
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-program p,
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-program small,
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-roster-link {
+    color: var(--briefing-muted) !important;
+  }
+
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-facts {
+    background: rgba(255, 255, 255, .72) !important;
+    border-color: rgba(95, 121, 148, .18) !important;
+  }
+
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-actions button {
+    border-color: rgba(95, 121, 148, .24) !important;
+    background: rgba(255, 255, 255, .92) !important;
+    color: var(--briefing-ink) !important;
+  }
+
+  [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-actions button.primary {
+    border-color: rgba(103, 232, 249, .72) !important;
+    background: linear-gradient(135deg, #0e7490, #1d4ed8) !important;
+    color: #ffffff !important;
+  }
+}
