@@ -1,0 +1,97 @@
+/* CrewCheck visual roadmap — bottom navigation clarity */
+.cc-bottom-nav {
+  justify-content: stretch;
+  gap: 0;
+  padding-left: max(0.2rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.2rem, env(safe-area-inset-right, 0px));
+}
+
+.cc-bottom-nav-item {
+  flex: 1 1 20%;
+  min-width: 0;
+  max-width: none;
+  padding: 0.45rem 0.15rem;
+  overflow: visible;
+}
+
+.cc-bottom-nav-icon {
+  position: relative;
+  width: 2rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.cc-bottom-nav-icon > svg {
+  display: block;
+  transition: color 160ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.cc-bottom-nav-badge {
+  position: absolute;
+  top: -0.28rem;
+  left: calc(50% + 0.38rem);
+  z-index: 2;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.22rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sidebar-bg);
+  border-radius: 999px;
+  background: var(--event-alert);
+  color: #fff;
+  font-size: 0.5rem;
+  line-height: 1;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.cc-bottom-nav-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  line-height: 1.05;
+}
+
+/* Semantic icon tint: calm when idle, stronger when active. */
+.cc-bottom-nav-item[data-nav-id='cockpit'] { --cc-nav-icon: var(--event-flight); }
+.cc-bottom-nav-item[data-nav-id='roster'] { --cc-nav-icon: var(--event-reserve); }
+.cc-bottom-nav-item[data-nav-id='departure'] { --cc-nav-icon: var(--event-conforme); }
+.cc-bottom-nav-item[data-nav-id='alerts'] { --cc-nav-icon: var(--event-alert); }
+.cc-bottom-nav-item[data-nav-id='settings'] { --cc-nav-icon: var(--foreground-muted); }
+
+.cc-bottom-nav-item:not(.active) .cc-bottom-nav-icon > svg {
+  color: var(--cc-nav-icon, var(--foreground-muted));
+  opacity: 0.82;
+}
+
+.cc-bottom-nav-item.active .cc-bottom-nav-icon > svg {
+  color: var(--cc-nav-icon, var(--accent));
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+[data-crew-theme='dark'] .cc-bottom-nav-item:not(.active) .cc-bottom-nav-icon > svg {
+  opacity: 0.95;
+  filter: brightness(1.14) saturate(1.08);
+}
+
+@media (max-width: 360px) {
+  .cc-bottom-nav-item { padding-inline: 0.05rem; }
+  .cc-bottom-nav-label { font-size: 0.58rem; letter-spacing: 0; }
+  .cc-bottom-nav-icon { width: 1.8rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-bottom-nav-icon > svg { transition: none; transform: none !important; }
+}
