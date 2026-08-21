@@ -162,7 +162,24 @@ const cnaHandledCorrectly = (() => {
   if (cnaHandledCorrectly) {
     check('LA3558+LA3559+LA4631: permanecem UMA única jornada (estado preparado — não fragmentam por par programado/realizado)', flightDays.length === 1 && flightDays[0]?.legs?.length === 3, JSON.stringify(days));
   } else {
-    console.log('  SKIP  LA3558+LA3559+LA4631: agrupamento em uma jornada só (estado base não tem o refinamento CNA de findBestFlightPatternV3 — ver nota acima; coberto por v14.3.74/v14.3.75 no contexto certo)');
+    // Estado base (sem o refinamento CNA de v14.3.75): em vez de SKIP
+    // silencioso — que a auditoria corretamente apontou como "o gate evita
+    // detectar a falha" — FIXAMOS explicitamente a divergência conhecida.
+    // Causa-raiz PRÉ-EXISTENTE em `main`, fora desta slice: sem 'CNA' em
+    // NON_AIRPORT_TOKEN_V3, `findBestFlightPatternV3` lê LA4631 como
+    // "CGH->CNA" em vez de "FOR->CGH". Com a origem lida como CGH e a perna
+    // anterior chegando em FOR, a continuidade física (correta, exigida por
+    // auditoria anterior) recusa fundir — e a jornada se separa.
+    // Verificado executando `main` puro: lá LA4631 também sai "CGH->CNA";
+    // a diferença é que `main` mantinha as 3 pernas num bloco só por não
+    // checar continuidade nenhuma, ou seja, PRESERVAVA A CONTAGEM CARREGANDO
+    // UMA PERNA CORROMPIDA. Nenhum dos dois estados está correto na base; o
+    // contrato operacional deste caso é definido no estado preparado
+    // (v14.3.74/v14.3.75, ambos verdes).
+    // Esta asserção falha DE PROPÓSITO se alguém corrigir CNA na base sem
+    // atualizar este teste — é um pino da divergência, não um silêncio.
+    const la4631 = allLegs.find((l) => l.flightNumber === 'LA4631');
+    check('LA3558+LA3559+LA4631 (estado base): divergência conhecida e fixada — LA4631 mal-parseado como CGH->CNA por findBestFlightPatternV3 (pré-existente em main, fora desta slice) separa a jornada; contrato real coberto no estado preparado', flightDays.length === 2 && la4631?.origin === 'CGH' && la4631?.destination === 'CNA', JSON.stringify(days));
   }
   const legs = flightDays[0]?.legs || [];
   check('LA3558: rota e horários corretos (FOR-PHB, 13:35->14:37)', legs[0]?.origin === 'FOR' && legs[0]?.destination === 'PHB' && legs[0]?.departureTime === '13:35' && legs[0]?.arrivalTime === '14:37', JSON.stringify(legs[0]));
