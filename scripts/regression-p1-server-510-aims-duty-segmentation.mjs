@@ -320,6 +320,25 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7i — marcadores de trabalho reconhecidos podem ficar entre a APZ e o
+// token LA. A recuperação pré-LA atravessa somente esses marcadores, preserva
+// APZ/debrief e ainda atribui PS à perna correta.
+// -----------------------------------------------------------------------
+{
+  const firstTokens = ['09:25','EXTRA','LA','9010','10:15','AAA','BBB','11:15'];
+  const firstFlightDays = mod.parseAimsTokensIntoEventsV3(firstTokens, 31, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('APZ pré-LA com EXTRA na primeira jornada: dutyReport=09:25', firstFlightDays[0]?.dutyReport === '09:25', JSON.stringify(firstFlightDays));
+  check('APZ pré-LA com EXTRA na primeira jornada: workType=PS', firstFlightDays[0]?.legs?.[0]?.workType === 'PS', JSON.stringify(firstFlightDays));
+
+  const laterTokens = ['LA','9005','07:00','07:30','AAA','BBB','08:20','08:50','23:03','EXTRA','LA','9006','23:50','BBB','CCC','01:15'];
+  const laterFlightDays = mod.parseAimsTokensIntoEventsV3(laterTokens, 31, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  const first = laterFlightDays.find((d) => d.pairingCode === 'LA9005');
+  const second = laterFlightDays.find((d) => d.pairingCode === 'LA9006');
+  check('APZ pré-LA com EXTRA em jornada posterior: debrief anterior=08:50', first?.dutyDebrief === '08:50', JSON.stringify(first));
+  check('APZ pré-LA com EXTRA em jornada posterior: dutyReport=23:03 e workType=PS', second?.dutyReport === '23:03' && second?.legs?.[0]?.workType === 'PS', JSON.stringify(second));
+}
+
+// -----------------------------------------------------------------------
 // Caso 8 — descontinuidade física: origem da perna não bate com o destino da
 // perna anterior. Mesmo com intervalo curto, não pode ser tratada como
 // conexão da mesma jornada (nunca fundir jornada fisicamente impossível).
