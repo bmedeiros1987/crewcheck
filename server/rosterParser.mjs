@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const AIRPORTS = new Set(['AAX','AEP','AFL','AJU','AMS','ARU','ASU','ATL','ATM','BCN','BEL','BOG','BOS','BPS','BRA','BSB','BVB','CAC','CAW','CCS','CDG','CFB','CGB','CGH','CKS','CLO','CMG','CNF','COR','CPT','CPV','CTG','CUN','CUR','CUZ','CWB','CXJ','DFW','DOH','DXB','EPA','ERM','EWR','EZE','FCO','FEC','FEN','FLL','FLN','FOR','FRA','GIG','GPB','GRU','GVR','GYE','GYN','HAV','IAH','IGU','IMP','IOS','IPN','IST','IZA','JDO','JFK','JIA','JJD','JJG','JNB','JOI','JPA','JPR','JTC','LAS','LAX','LAZ','LDB','LEC','LGW','LHR','LIM','LIS','LPB','MAB','MAD','MAO','MCO','MCP','MCZ','MDE','MDZ','MEA','MEX','MGF','MIA','MOC','MUC','MVD','MXP','NAT','NVT','OAL','OPO','OPS','ORD','ORY','PDP','PET','PFB','PIN','PMW','PNZ','POA','PPB','PTY','PUJ','PVH','QNS','RAO','RBR','REC','RIA','ROO','ROS','RVD','SCL','SDQ','SDU','SFO','SJK','SJO','SJP','SLZ','SSA','STM','TBT','TFF','THE','UDI','UIO','URG','VCP','VDC','VIX','VVI','XAP','ZRH']);
 const MONTHS = { jan:1, feb:2, fev:2, mar:3, apr:4, abr:4, may:5, mai:5, ma:5, jun:6, jul:7, aug:8, ago:8, sep:9, set:9, oct:10, out:10, nov:11, dec:12, dez:12 };
 
-const NON_AIRPORT_TOKEN_V3 = new Set(['LA','OP','PS','DH','PAX','EXTRA','PASSAGEIRO','APRES','APRESENTA','APRESENTACAO','APRESENTAÇÃO','REPORT','CHECKIN','CHECK-IN','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH']);
+const NON_AIRPORT_TOKEN_V3 = new Set(['LA','OP','PS','DH','PAX','EXTRA','PASSAGEIRO','APRES','APRESENTA','APRESENTACAO','APRESENTAÇÃO','REPORT','CHECKIN','CHECK-IN','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH']);
 const WEEKDAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 function isAirportCodeToken(value) {
@@ -426,6 +426,11 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    }
   }
   const afterDestCount = afterDestTimeIndexes.length;
+  // Quando a apresentação já está impressa dentro do bloco LA atual, ela não
+  // disputa nenhum horário pós-destino da perna anterior. Preserve o debrief
+  // legítimo anterior; o recorte anti-vazamento só se aplica ao fallback
+  // ambíguo imediatamente antes de LA.
+  const reportResolvedInsideCurrentLaBlock = Boolean(reportEquivalent);
 
   const current = segments[segments.length - 1];
   // Apresentação impressa ANTES do "LA" (não entre "LA" e a origem) só é
@@ -491,10 +496,10 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   }
 
   if (opensNewSegment) {
-   // Ao abrir uma jornada nova, a anterior não pode reter, como se fosse seu
-   // próprio debrief, o horário ambíguo que pode na verdade pertencer a esta
-   // jornada que está começando (a mesma ambiguidade estrutural documentada
-   // acima). Descarta sempre exatamente o ÚLTIMO horário pós-destino quando
+   // Quando a apresentação da nova jornada não está resolvida dentro do seu
+   // próprio bloco LA, a anterior não pode reter, como se fosse debrief, o
+   // horário ambíguo que pode pertencer à jornada que começa. Nesse fallback,
+   // descarta exatamente o ÚLTIMO horário pós-destino quando
    // há 2 ou mais — o par chegada+debrief legítimo (os primeiros N-1) nunca é
    // tocado, só o excedente final é que é removido do cálculo de debrief.
    // Jornadas de perna única com só a chegada (ex.: LA4712, afterDestCount=1)
@@ -502,7 +507,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    // "destIdx + contagem"), porque um token não-horário intercalado entre os
    // horários (ex.: matrícula de aeronave) quebraria essa aritmética e
    // cortaria também um horário legítimo antes do excedente real.
-   if (current && current.lastLegAfterDestTimeIndexes && current.lastLegAfterDestTimeIndexes.length >= 2) {
+   if (!reportResolvedInsideCurrentLaBlock && current && current.lastLegAfterDestTimeIndexes && current.lastLegAfterDestTimeIndexes.length >= 2) {
     const keepUpToIdx = current.lastLegAfterDestTimeIndexes[current.lastLegAfterDestTimeIndexes.length - 2];
     current.tokenEnd = Math.min(current.tokenEnd, keepUpToIdx + 1);
    }
