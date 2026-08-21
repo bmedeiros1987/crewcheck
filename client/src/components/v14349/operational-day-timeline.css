@@ -375,3 +375,19 @@
     backdrop-filter: none;
   }
 }
+
+/* #548: o calendário é o atalho para a escala do dia exibido. Botão sem
+   moldura própria — a identidade visual é o próprio calendário. */
+.cc14349-dayline-calendar-link {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 14px;
+  flex: 0 0 auto;
+}
+.cc14349-dayline-calendar-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

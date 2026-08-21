@@ -295,25 +295,31 @@ export default function OperationalDayTimeline({
   onNavigate,
 }: {
   events: RosterEvent[];
-  onNavigate: (view: string) => void;
+  onNavigate: (view: string, focusIso?: string) => void;
 }) {
   const now = new Date();
   const timeline = buildOperationalDayTimeline(events, now);
   const current = timeline.find((item) => item.at.getTime() <= now.getTime() && (item.endAt?.getTime() || item.at.getTime()) >= now.getTime());
   const next = timeline.find((item) => item.at.getTime() > now.getTime());
-  const focusDate = timeline[0]?.at || new Date();
+  const focusDate = (current ?? next)?.at ?? new Date();
+  const focusIso = `${focusDate.getFullYear()}-${String(focusDate.getMonth() + 1).padStart(2, '0')}-${String(focusDate.getDate()).padStart(2, '0')}`;
+  const focusLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(focusDate);
 
   return <section className="cc14349-dayline cc14357-dayline" aria-labelledby="cc14349-dayline-title">
     <header className="cc14349-dayline-head">
       <span className="cc14349-dayline-heading">
-        <CrewCheckDynamicCalendar date={focusDate} compact/>
         <span>
           <small>ROTINA OPERACIONAL</small>
           <h2 id="cc14349-dayline-title">Linha do Dia</h2>
           <p>Agora, próximo compromisso e sequência operacional.</p>
         </span>
       </span>
-      <button type="button" onClick={() => onNavigate('roster')}>Ver escala <ChevronRight aria-hidden="true"/></button>
+      <button
+        type="button"
+        className="cc14349-dayline-calendar-link"
+        onClick={() => onNavigate('roster', focusIso)}
+        aria-label={`Abrir escala de ${focusLabel}`}
+      ><CrewCheckDynamicCalendar date={focusDate} compact decorative/></button>
     </header>
 
     {timeline.length ? <>
