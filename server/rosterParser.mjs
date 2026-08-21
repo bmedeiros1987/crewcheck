@@ -471,6 +471,20 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    }
   }
 
+  // Se a apresentação atual é inequívoca, os dois primeiros horários após o
+  // destino anterior também são inequívocos: chegada + fim da jornada. Meça
+  // o descanso desde esse fim/debrief, como faz o parser canônico. No caso
+  // pré-LA de exatamente dois horários a ambiguidade permanece; ali seguimos
+  // usando a chegada para não transformar a possível APZ em debrief.
+  const previousDebriefIsUnambiguous = Boolean(
+   current
+   && current.lastLegAfterDestTimeIndexes?.length >= 2
+   && (reportResolvedInsideCurrentLaBlock || (reportEquivalent && current.lastLegAfterDestTimeIndexes.length >= 3))
+  );
+  const previousDutyEndForGap = previousDebriefIsUnambiguous
+   ? normalizeTimeToken(normalized[current.lastLegAfterDestTimeIndexes[1]])
+   : current?.lastArrival;
+
   const sameStation = Boolean(current && current.legs.length && leg && current.legs.at(-1).destination === leg.origin);
   let opensNewSegment;
   if (!current) {
@@ -489,9 +503,14 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    // publicada depois de um descanso longo ainda abre jornada própria em vez
    // de herdar silenciosamente a apresentação da jornada anterior.
    const comparisonTime = reportEquivalent || leg.departureTime;
-   const prevMin = toMin(current.lastArrival);
+   const prevArrivalMin = toMin(current.lastArrival);
+   let prevMin = toMin(previousDutyEndForGap);
+   if (prevMin < prevArrivalMin) prevMin += 1440;
    let candMin = toMin(comparisonTime);
-   if (candMin < prevMin) candMin += 1440;
+   // Ancore o próximo horário após a chegada, não após o debrief: em escalas
+   // com pares programado/realizado a próxima apresentação pode anteceder em
+   // poucos minutos o fim publicado (sobreposição, não virada de dia).
+   if (candMin < prevArrivalMin) candMin += 1440;
    opensNewSegment = (candMin - prevMin) >= 12 * 60;
   }
 
