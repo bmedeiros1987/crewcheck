@@ -731,7 +731,16 @@ function clearPresentationLearning(event: ZeroLeg) {
   writeJsonRecord(PRESENTATION_RULES_KEY, rules);
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
+// #525: repouso entre jornadas não tem apresentação por definição — ele descreve
+// justamente o intervalo ANTES da apresentação da jornada seguinte. Consumidores
+// que exibem apresentação, despertador ou hotel precisam saber disso, senão o
+// card de repouso mostra dado fictício ("A confirmar") ou herda o hotel do dia do
+// voo seguinte, virando pernoite inventado por outro caminho.
+function isJourneyRestEvent(event: ZeroLeg): boolean {
+  return event.canonical?.kind === 'journey-rest';
+}
 function applyPresentationManagement(event: ZeroLeg): ZeroLeg {
+  if (isJourneyRestEvent(event)) return event;
   const managed = managedPresentationForEvent(event);
   if (!managed.presentation || managed.presentation === event.presentation) {
     return { ...event, presentationSource: managed.source };
@@ -1129,8 +1138,12 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       presentation: event.presentation,
       departure: event.departure,
       arrival: event.arrival,
-      hotel: safe((day as any).hotel, ''),
-      timeRange: `${event.departure} → ${event.arrival}`,
+      // #525: o repouso entre jornadas usa o dia do voo SEGUINTE como
+      // `publishedDay`. Herdar o hotel desse dia faria o card de repouso exibir
+      // hotel — pernoite inventado por outro caminho, justamente o que o
+      // contrato proíbe.
+      hotel: isJourneyRest ? '' : safe((day as any).hotel, ''),
+      timeRange: isJourneyRest ? restLabel : `${event.departure} → ${event.arrival}`,
       canonical: event,
     };
   });
@@ -2080,9 +2093,14 @@ function LayoverWeatherBadge({ event }: { event: ZeroLeg }) {
 
 function RosterEventChips({ event }: { event: ZeroLeg }) {
   const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
-  const isStay = event.kind === 'stay' || Boolean(event.hotel);
+  const journeyRest = isJourneyRestEvent(event);
+  const isStay = !journeyRest && (event.kind === 'stay' || Boolean(event.hotel));
   return <div className="cz-roster-linked-chips" onClick={(click) => click.stopPropagation()}>
-    <span><Clock size={14}/> Apresentação {safe(presentation, 'A confirmar')}</span>
+    {/* #525: repouso entre jornadas não tem apresentação; exibir "A confirmar"
+        aqui inventaria um dado que não existe. O chip mostra a duração real. */}
+    {journeyRest
+      ? <span><Clock size={14}/> Repouso {safe(event.subtitle.split(' entre ')[0], '—')}</span>
+      : <span><Clock size={14}/> Apresentação {safe(presentation, 'A confirmar')}</span>}
     {isStay && <span><Hotel size={14}/> {safe(event.hotel, `Hotel em ${city(event.destination || event.origin)}`)}</span>}
     <span><CloudSun size={14}/> {compactWeatherLine(event)}</span>
     {event.kind === 'flight' && <span><Radar size={14}/> Alertas até pouso</span>}
