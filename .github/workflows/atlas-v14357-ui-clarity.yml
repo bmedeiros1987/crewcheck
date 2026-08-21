@@ -10,6 +10,7 @@ on:
       - 'scripts/regression-v14-3-47-smart-departure-operational-airport.mjs'
       - 'scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs'
       - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - 'scripts/regression-p1-548-dynamic-calendar.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -23,6 +24,7 @@ on:
       - 'scripts/regression-v14-3-47-smart-departure-operational-airport.mjs'
       - 'scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs'
       - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - 'scripts/regression-p1-548-dynamic-calendar.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -56,6 +58,8 @@ jobs:
         run: npx vite build 2>&1 | tee "$RUNNER_TEMP/v14357-build.log"
       - name: Validate UI clarity
         run: node scripts/regression-v14-3-57-ui-clarity.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-ui-clarity.log"
+      - name: Validate dynamic calendar survives the prepare chain
+        run: node scripts/regression-p1-548-dynamic-calendar.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-dynamic-calendar.log"
       - name: Preserve Smart Departure airport handoff
         run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs
       - name: Preserve Daniel and Bruno voices
@@ -72,5 +76,6 @@ jobs:
             ${{ runner.temp }}/v14357-typescript.log
             ${{ runner.temp }}/v14357-build.log
             ${{ runner.temp }}/v14357-ui-clarity.log
+            ${{ runner.temp }}/v14357-dynamic-calendar.log
           if-no-files-found: ignore
           retention-days: 7
