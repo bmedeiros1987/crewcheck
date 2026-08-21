@@ -1,5 +1,4 @@
 import {
-  CalendarDays,
   ChevronRight,
   Clock3,
   Hotel,
@@ -14,6 +13,7 @@ import {
   isProgramScheduleActivity,
   type ScheduleActivityLike,
 } from '../../lib/scheduleActivityClassification';
+import CrewCheckDynamicCalendar from '../ui/CrewCheckDynamicCalendar';
 import './operational-day-timeline.css';
 
 type RosterEvent = ScheduleActivityLike & {
@@ -301,11 +301,12 @@ export default function OperationalDayTimeline({
   const timeline = buildOperationalDayTimeline(events, now);
   const current = timeline.find((item) => item.at.getTime() <= now.getTime() && (item.endAt?.getTime() || item.at.getTime()) >= now.getTime());
   const next = timeline.find((item) => item.at.getTime() > now.getTime());
+  const focusDate = timeline[0]?.at || new Date();
 
   return <section className="cc14349-dayline cc14357-dayline" aria-labelledby="cc14349-dayline-title">
     <header className="cc14349-dayline-head">
       <span className="cc14349-dayline-heading">
-        <span className="cc14349-dayline-heading-icon" aria-hidden="true"><CalendarDays/></span>
+        <CrewCheckDynamicCalendar date={focusDate} compact/>
         <span>
           <small>ROTINA OPERACIONAL</small>
           <h2 id="cc14349-dayline-title">Linha do Dia</h2>

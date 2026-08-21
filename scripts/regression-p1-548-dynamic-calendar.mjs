@@ -5,6 +5,7 @@ const component = fs.readFileSync('client/src/components/ui/CrewCheckDynamicCale
 const css = fs.readFileSync('client/src/components/ui/crewcheck-dynamic-calendar.css', 'utf8');
 const timeline = fs.readFileSync('client/src/components/v14349/OperationalDayTimeline.tsx', 'utf8');
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+const pinnedTimeline = fs.readFileSync('scripts/v14357/OperationalDayTimeline.tsx', 'utf8');
 
 assert.ok(component.includes('date.getDate()'), 'dia deve nascer da data recebida');
 assert.ok(component.includes('aria-label={decorative ? undefined : `Programação de ${fullDate(date)}`}'), 'calendário deve anunciar data completa');
@@ -17,6 +18,12 @@ assert.ok(timeline.includes('<CrewCheckDynamicCalendar date={focusDate} compact/
 assert.ok(home.includes('const programDay = flyDeckProgramDayV14353(event);'), 'FlightDeck deve continuar derivando o dia da programação');
 assert.ok(home.includes('<span className="cc-flydeck-calendar-icon" aria-hidden="true"><CalendarDays/><b>{programDay}</b></span>'), 'FlightDeck deve manter o dia dinâmico existente');
 assert.ok(css.includes('.cc-flydeck-calendar-icon'), 'FlightDeck deve receber a mesma linguagem visual CrewCheck');
+// scripts/v14357/apply.mjs sobrescreve o arquivo inteiro com esta cópia fixada
+// (`update(..., () => timelineSource)`), então uma divergência apaga o calendário no
+// estado preparado sem que a cadeia acuse erro. Mantê-los idênticos torna a
+// sobrescrita um no-op e impede que o #548 volte a ficar verde e inerte.
+assert.equal(timeline, pinnedTimeline, 'client/src/components/v14349/OperationalDayTimeline.tsx e scripts/v14357/OperationalDayTimeline.tsx precisam ser idênticos, senão a cadeia de preparação descarta a integração do calendário');
+
 for (const forbidden of ['pdfParser', 'rosterParser', 'financialRules', 'canonicalRoster']) assert.ok(!component.includes(forbidden) && !css.includes(forbidden), `slice visual não pode tocar ${forbidden}`);
 
 console.log('P1 #548 dynamic calendar: program date, timeline, FlightDeck skin, dark mode, accessibility and reduced motion locked.');
