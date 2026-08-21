@@ -1591,6 +1591,17 @@ function sanitizeComplianceAlertsForProduction(alerts: ComplianceAlert[]): Compl
 }
 
 
+// Mantida porque a cadeia de preparação depende dela: o passo v14.3.95 injeta
+// `competenceDays` usando `complianceDayMonthKey`. Não é código morto — removê-la
+// quebra a materialização do estado preparado.
+function complianceDayMonthKey(day: RosterDay): string {
+  try {
+    const parsed = parseDate(String(day.date || ''));
+    if (Number.isFinite(parsed.getTime())) return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  } catch {}
+  return 'unknown';
+}
+
 // #526: o limite da ACT (cl. 3.3.17) é de horas de VOO em 28 DIAS, não no mês
 // civil. Agrupar por mês civil produz dois erros de sinal oposto: conta 29-31
 // dias contra um teto de 28 e — o mais grave — deixa de detectar violação real
@@ -1616,21 +1627,32 @@ function flightHoursDayEntries(days: RosterDay[]): Array<{ dayIndex: number; dat
   return entries.sort((a, b) => a.dayIndex - b.dayIndex);
 }
 
-export function worstFlightHoursWindow28Days(days: RosterDay[]): { flightHours: number; from: string; to: string; spansMonthBoundary: boolean } {
+// `mustOverlapMonthKey` (formato YYYY-MM) restringe o resultado a janelas que
+// tocam pelo menos um dia daquela competência. O estado preparado usa isso: dias
+// adjacentes seguem no bundle para continuidade, então sem a restrição uma escala
+// com o mês subsequente anexado poderia alertar sobre uma janela inteiramente
+// dentro do mês seguinte, que não é a competência exibida. A janela ainda pode
+// ATRAVESSAR a virada do mês — que é justamente o caso que o #526 precisa
+// detectar; ela só não pode ficar inteiramente fora da competência.
+export function worstFlightHoursWindow28Days(days: RosterDay[], mustOverlapMonthKey?: string): { flightHours: number; from: string; to: string; spansMonthBoundary: boolean } {
   const entries = flightHoursDayEntries(days);
   const empty = { flightHours: 0, from: '', to: '', spansMonthBoundary: false };
   if (!entries.length) return empty;
   const WINDOW_DAYS = 28;
+  const monthKeyOf = (date: string) => `${date.slice(6)}-${date.slice(3, 5)}`;
   let best = empty;
   for (let i = 0; i < entries.length; i++) {
     const start = entries[i].dayIndex;
     let sum = 0;
     let lastIndex = i;
+    let overlaps = !mustOverlapMonthKey;
     for (let j = i; j < entries.length; j++) {
       if (entries[j].dayIndex - start >= WINDOW_DAYS) break;
       sum += entries[j].flightHours;
       lastIndex = j;
+      if (mustOverlapMonthKey && monthKeyOf(entries[j].date) === mustOverlapMonthKey) overlaps = true;
     }
+    if (!overlaps) continue;
     const rounded = round1(sum);
     if (rounded > best.flightHours) {
       const from = entries[i].date;
