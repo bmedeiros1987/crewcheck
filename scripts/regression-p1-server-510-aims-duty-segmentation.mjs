@@ -197,18 +197,38 @@ const cnaHandledCorrectly = (() => {
 
 // -----------------------------------------------------------------------
 // Caso 7 — apresentação impressa ANTES do token "LA" da PRIMEIRA perna da
-// coluna (k===0) é reconhecida: não existe jornada anterior disputando o
-// token, então é sempre seguro recuperar o valor em vez de descartá-lo.
-// Achado da auditoria adversarial sobre uma versão anterior que descartava
-// isso incondicionalmente (inclusive no k===0, onde a perda é desnecessária
-// porque não há ambiguidade nenhuma).
+// coluna (k===0), com a coluna genuinamente limpa (sem nenhum "(...)" antes
+// do "LA"), é reconhecida: não existe jornada anterior nem boundary
+// disputando o token, então é sempre seguro recuperar o valor em vez de
+// descartá-lo. Achado da auditoria adversarial sobre uma versão anterior que
+// descartava isso incondicionalmente (inclusive neste caso limpo, onde a
+// perda é desnecessária porque não há ambiguidade nenhuma).
 // -----------------------------------------------------------------------
 {
   const tokens = ['09:25', 'LA', '9010', '10:15', 'AAA', 'BBB', '11:15'];
   const days = mod.parseAimsTokensIntoEventsV3(tokens, 23, 8, 2026, 'BSB');
   const flightDays = days.filter((d) => d.type === 'VOO');
-  check('apresentação pré-LA (primeira perna da coluna): dutyReport recuperado (09:25), não descartado', flightDays[0]?.dutyReport === '09:25', JSON.stringify(flightDays));
-  check('apresentação pré-LA (primeira perna da coluna): perna preservada', flightDays[0]?.legs?.[0]?.flightNumber === 'LA9010', JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna, sem boundary): dutyReport recuperado (09:25), não descartado', flightDays[0]?.dutyReport === '09:25', JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna, sem boundary): perna preservada', flightDays[0]?.legs?.[0]?.flightNumber === 'LA9010', JSON.stringify(flightDays));
+}
+
+// -----------------------------------------------------------------------
+// Caso 7d — apresentação pré-LA da PRIMEIRA perna da coluna (k===0) NÃO pode
+// ser reconhecida quando a coluna abre com resíduo de boundary "(...)"
+// (mesmo marcador estrutural que stitchServerAimsMidnightColumns já usa para
+// resíduo de virada de meia-noite, regex /^\(\.{3}\)$/ — não é convenção só
+// de teste). Achado da auditoria adversarial: "primeiro LA da coluna" não é
+// o mesmo que "início limpo da coluna"; `(...) AAA 08:29 08:29 LA9101 ...`
+// tem o horário 08:29 pertencente ao boundary anterior, não a uma
+// apresentação própria de LA9101 — reconhecê-lo reabre exatamente a classe
+// de contaminação boundary→APZ que o #510 existe para impedir.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['(...)', 'AAA', '08:29', '08:29', 'LA', '9101', '10:15', 'AAA', 'BBB', '11:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 27, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('apresentação pré-LA (primeira perna da coluna, COM boundary "(...)"): dutyReport=null (REVIEW), nunca herda o horário do boundary (08:29)', flightDays[0]?.dutyReport === null, JSON.stringify(flightDays));
+  check('apresentação pré-LA (primeira perna da coluna, COM boundary "(...)"): perna preservada mesmo sem dutyReport', flightDays[0]?.legs?.[0]?.flightNumber === 'LA9101', JSON.stringify(flightDays));
 }
 
 // -----------------------------------------------------------------------

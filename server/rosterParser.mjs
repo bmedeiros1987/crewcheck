@@ -425,9 +425,14 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   const current = segments[segments.length - 1];
   // Apresentação impressa ANTES do "LA" (não entre "LA" e a origem) só é
   // reconhecida quando há um sinal estrutural que a distingue de um debrief
-  // legítimo da jornada anterior:
-  // - k===0 (primeira perna da coluna): não existe jornada anterior disputando
-  //   o token, então é sempre seguro reconhecer.
+  // legítimo da jornada anterior ou de um resíduo de boundary:
+  // - k===0 (primeiro "LA" da coluna): só é seguro quando a coluna também
+  //   começa "limpa" — sem nenhum marcador "(...)" (mesmo regex usado por
+  //   stitchServerAimsMidnightColumns para resíduo de virada de meia-noite)
+  //   antes deste "LA". "Primeiro LA" não é o mesmo que "início limpo da
+  //   coluna": a própria coluna pode abrir com o resíduo "(...)" da jornada
+  //   anterior, e o horário logo antes do "LA" pertence a esse boundary, não
+  //   a uma apresentação própria (achado da auditoria adversarial).
   // - k>0: só quando a perna anterior tem 3+ horários após o próprio destino.
   //   Os dois primeiros formam o par chegada+debrief legítimo dela; o 3º é
   //   estruturalmente excedente e pertence a esta apresentação.
@@ -438,7 +443,8 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // contaminando a jornada anterior (#510).
   if (!reportEquivalent && i > 0 && isTimeToken(tokens[i - 1])) {
    if (k === 0) {
-    reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+    const hasBoundaryResidueBeforeFirstLa = upperTokens.slice(0, i).some((token) => /^\(\.{3}\)$/.test(token));
+    if (!hasBoundaryResidueBeforeFirstLa) reportEquivalent = normalizeTimeToken(normalized[i - 1]);
    } else if (current && current.lastLegAfterDestCount >= 3) {
     reportEquivalent = normalizeTimeToken(normalized[i - 1]);
    }
