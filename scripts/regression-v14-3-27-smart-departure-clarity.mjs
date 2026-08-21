@@ -12,6 +12,9 @@ const chain = fs.readFileSync(path.join(root, 'scripts/v139/apply.mjs'), 'utf8')
 
 assert.ok(css.includes('.cz-depart-when'), 'layout da data ausente');
 assert.ok(css.includes('.cz-depart-detail'), 'layout sem sobreposição ausente');
+assert.match(css, /\.cz-depart-time\s*\{[\s\S]*?white-space:\s*nowrap;/, 'horário principal não pode quebrar linha');
+assert.match(css, /\.cz-depart-time\s*\{[\s\S]*?word-break:\s*keep-all;/, 'horário principal deve preservar HH:MM como unidade visual');
+assert.match(css, /font-variant-numeric:\s*tabular-nums;/, 'horário principal deve usar numerais estáveis');
 assert.ok(chain.includes("await import('../v14327/apply.mjs');"), 'patch não conectado à preparação');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-v14327-'));
