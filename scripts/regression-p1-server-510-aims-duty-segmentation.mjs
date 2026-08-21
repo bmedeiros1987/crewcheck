@@ -232,6 +232,22 @@ const cnaHandledCorrectly = (() => {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7e — apresentação pré-LA da PRIMEIRA perna da coluna (k===0) É
+// reconhecida quando há um 3º horário distinto além dos 2 que o boundary
+// "(...)" já consome (chegada + debrief da jornada anterior, exatamente o
+// formato que stitchServerAimsMidnightColumns produz ao substituir o
+// "(...)"). Um 3º horário além desses dois não pode pertencer ao boundary —
+// só pode ser a apresentação própria desta perna. Distingue do Caso 7d
+// (exatamente 2 horários desde o boundary, todos pertencentes a ele).
+// -----------------------------------------------------------------------
+{
+  const tokens = ['(...)', 'AAA', '08:29', '08:29', '09:25', 'LA', '9102', '10:15', 'AAA', 'BBB', '11:15'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 28, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('apresentação pré-LA (primeira perna da coluna, boundary + 3º horário distinto): dutyReport recuperado (09:25), não descartado como se fosse boundary', flightDays[0]?.dutyReport === '09:25', JSON.stringify(flightDays));
+}
+
+// -----------------------------------------------------------------------
 // Caso 7b — apresentação pré-LA da SEGUNDA jornada, quando a perna anterior
 // tem EXATAMENTE 2 horários após o próprio destino, é um caso estruturalmente
 // irresolúvel: o mesmo padrão de token (2 horários após o destino) é

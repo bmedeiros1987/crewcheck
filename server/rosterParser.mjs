@@ -426,13 +426,16 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // Apresentação impressa ANTES do "LA" (não entre "LA" e a origem) só é
   // reconhecida quando há um sinal estrutural que a distingue de um debrief
   // legítimo da jornada anterior ou de um resíduo de boundary:
-  // - k===0 (primeiro "LA" da coluna): só é seguro quando a coluna também
-  //   começa "limpa" — sem nenhum marcador "(...)" (mesmo regex usado por
-  //   stitchServerAimsMidnightColumns para resíduo de virada de meia-noite)
-  //   antes deste "LA". "Primeiro LA" não é o mesmo que "início limpo da
-  //   coluna": a própria coluna pode abrir com o resíduo "(...)" da jornada
-  //   anterior, e o horário logo antes do "LA" pertence a esse boundary, não
-  //   a uma apresentação própria (achado da auditoria adversarial).
+  // - k===0 (primeiro "LA" da coluna) sem nenhum "(...)" antes dele: coluna
+  //   genuinamente limpa, sempre seguro.
+  // - k===0 COM "(...)" antes: o resíduo de boundary (mesmo marcador que
+  //   stitchServerAimsMidnightColumns usa via regex /^\(\.{3}\)$/ para
+  //   virada de meia-noite) sempre contribui NO MÁXIMO 2 horários própios
+  //   (chegada + debrief opcional) logo após a estação — é exatamente o
+  //   formato que essa função produz ao substituir o "(...)". Um 3º horário
+  //   além desses dois não pode pertencer ao boundary; só pode ser a
+  //   apresentação própria desta perna. Com 2 ou menos horários desde o
+  //   último "(...)", todos pertencem ao boundary — fica REVIEW.
   // - k>0: só quando a perna anterior tem 3+ horários após o próprio destino.
   //   Os dois primeiros formam o par chegada+debrief legítimo dela; o 3º é
   //   estruturalmente excedente e pertence a esta apresentação.
@@ -443,8 +446,16 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // contaminando a jornada anterior (#510).
   if (!reportEquivalent && i > 0 && isTimeToken(tokens[i - 1])) {
    if (k === 0) {
-    const hasBoundaryResidueBeforeFirstLa = upperTokens.slice(0, i).some((token) => /^\(\.{3}\)$/.test(token));
-    if (!hasBoundaryResidueBeforeFirstLa) reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+    let lastBoundaryIdx = -1;
+    for (let b = i - 1; b >= 0; b--) {
+     if (/^\(\.{3}\)$/.test(upperTokens[b])) { lastBoundaryIdx = b; break; }
+    }
+    if (lastBoundaryIdx < 0) {
+     reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+    } else {
+     const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
+     if (timesSinceBoundary >= 3) reportEquivalent = normalizeTimeToken(normalized[i - 1]);
+    }
    } else if (current && current.lastLegAfterDestCount >= 3) {
     reportEquivalent = normalizeTimeToken(normalized[i - 1]);
    }
