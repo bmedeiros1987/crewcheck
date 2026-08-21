@@ -148,6 +148,18 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 5b — CNA é boundary de cancelamento/atividade, não um token
+// transparente entre dois aeroportos. A base e o preparado não podem criar
+// uma perna fictícia AAA→BBB atravessando CNA.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA','1234','09:00','AAA','10:00','CNA','11:00','BBB','12:00'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 1, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('CNA boundary: nenhuma perna fictícia atravessa cancelamento, estado base ou preparado', flightDays.length === 0, JSON.stringify(days));
+}
+
+// -----------------------------------------------------------------------
 // Caso 6 — marcador EXTRA/PS logo antes do "LA" que abre uma NOVA jornada
 // (não a primeira da coluna) precisa ser atribuído à perna certa. Ler o
 // marcador de forma relativa ao segmento (em vez da coluna inteira, como o
