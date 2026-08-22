@@ -23,7 +23,7 @@ home = home.replace(/const DEFAULT_VERSION = '[^']+';/, `const DEFAULT_VERSION =
 home = home.replace(/const CREWCHECK_UI_CORE_NOTE = '[^']+';/, "const CREWCHECK_UI_CORE_NOTE = 'v13.9.7: escala premium com diárias e produção por KM em cada programação';");
 home = home.replace(
   '<RosterLaunchView events={events} setView={setView}/>',
-  '<RosterLaunchView events={events} finance={financeSnapshot(bundle.roster)} setView={setView}/>'
+  '<RosterLaunchView events={events} finance={financeSnapshot(bundle.roster)} setView={setView} focusIso={rosterFocusIso}/>'
 );
 if (!home.includes('eventId: string;\n  date: string;')) {
   home = home.replace('type PerDiemRow = {\n  date: string;', 'type PerDiemRow = {\n  eventId: string;\n  date: string;');

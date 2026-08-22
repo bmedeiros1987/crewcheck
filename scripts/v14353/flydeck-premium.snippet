@@ -40,7 +40,7 @@ function flyDeckLiveClockV14353(nowMs: number): string {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(nowMs));
 }
 
-function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
+function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView, focusIso?: string | null) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
   const radar = useRadarSnapshot(event);
   const loaded = events.some((item) => !item.placeholder);
@@ -107,7 +107,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
       </footer>
     </article>
 
-    <OperationalDayTimeline events={events} onNavigate={(target) => setView(target as ZeroView)}/>
+    <OperationalDayTimeline events={events} onNavigate={(target, focusIso) => setView(target as ZeroView, focusIso ?? null)}/>
 
     <aside className="cc-flydeck-official-note"><ShieldCheck aria-hidden="true"/><p><strong>Confirmação obrigatória</strong> Consulte sempre a escala oficial e as comunicações da empresa antes de cada programação. O CrewCheck é uma camada de organização; em caso de divergência, prevalece a fonte oficial.</p></aside>
   </main></>;

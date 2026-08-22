@@ -62,7 +62,7 @@ update('client/src/pages/Home.tsx', (source) => {
   next = insertAfterRequired(
     next,
     '    <SmartCard event={departureEvent} setView={setView}/>',
-    "    <OperationalDayTimeline events={events} onNavigate={(target) => setView(target as ZeroView)}/>",
+    "    <OperationalDayTimeline events={events} onNavigate={(target, focusIso) => setView(target as ZeroView, focusIso ?? null)}/>",
     'Linha do Dia após Saída Inteligente',
   );
 

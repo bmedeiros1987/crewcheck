@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import {
   Banknote,
   BedDouble,
@@ -198,7 +199,7 @@ function readableHours(value: number) {
   return `${hours ? `${hours}h` : ''}${minutes ? ` ${minutes}min` : ''}`.trim();
 }
 
-export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
+export default function RosterLaunchView({ events, finance, setView, focusIso }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void; focusIso?: string | null }) {
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
     .sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id))), [events]);
@@ -234,11 +235,30 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   const dutyHours = ordered.filter((event) => !['stay', 'rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
   const todayIso = isoOf({ id: 'today', date: new Date() });
 
-  function goToday() {
-    const month = todayIso.slice(0, 7);
+  function goToDate(iso: string, { announceEmpty = false } = {}) {
+    const month = iso.slice(0, 7);
     if (months.includes(month) && selectedMonth !== month) setSelectedMonth(month);
-    window.setTimeout(() => document.querySelector(`[data-roster-iso="${todayIso}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    // O mês pode acabar de mudar; o alvo só existe no DOM depois do próximo render.
+    window.setTimeout(() => {
+      const target = document.querySelector(`[data-roster-iso="${iso}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      // #548: o atalho nunca é bloqueado — a escala abre e o dia vazio é anunciado.
+      if (announceEmpty) toast.info('Não há programação publicada para esse dia nesta escala.');
+    }, 60);
   }
+
+  function goToday() {
+    goToDate(todayIso);
+  }
+
+  // Entrada por atalho de data (calendário da Linha do Dia / FlightDeck).
+  useEffect(() => {
+    if (!focusIso) return;
+    goToDate(focusIso, { announceEmpty: true });
+  }, [focusIso]);
 
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
