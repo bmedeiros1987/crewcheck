@@ -400,7 +400,7 @@ function check(name, condition, detail = '') {
 
   const exact = ['LA','1121','06:00','06:45','AAA','BBB','08:00','08:45','LA','1122','20:45','BBB','CCC','22:15'];
   const exactFlightDays = mod.parseAimsTokensIntoEventsV3(exact, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
-  check('debrief explícito + próxima perna sem APZ: exatamente 12h abre nova jornada com dutyReport=null', exactFlightDays.length === 2 && exactFlightDays[1]?.dutyReport === null, JSON.stringify(exactFlightDays));
+  check('debrief explícito + próxima perna sem APZ: exatamente 12h abre nova jornada, preserva 08:45 e mantém dutyReport=null', exactFlightDays.length === 2 && exactFlightDays[0]?.dutyDebrief === '08:45' && exactFlightDays[1]?.dutyReport === null, JSON.stringify(exactFlightDays));
 }
 
 // -----------------------------------------------------------------------
