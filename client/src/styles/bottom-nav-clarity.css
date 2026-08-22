@@ -108,7 +108,11 @@
    Escopo deliberado: só propriedades de estilo. Posição, z-index, bottom, largura,
    transform, display/grid e min-height continuam sendo decididos por
    premium-audit-v13-8-8.css e v1432/homologation.css, nesta ordem.
+   O bloco é delimitado por sentinelas para que a regressão audite exatamente
+   estas regras: qualquer seção acrescentada depois de shell-1a:end fica fora
+   do escopo do gate e segue as próprias regras.
    ========================================================================== */
+/* shell-1a:start */
 
 body > .cz-bottom-nav,
 .cz-bottom-nav {
@@ -191,3 +195,4 @@ body > .cz-bottom-nav,
   }
   .cz-bottom-nav > button.active svg { transform: none !important; }
 }
+/* shell-1a:end */
