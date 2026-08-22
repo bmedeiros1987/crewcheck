@@ -66,6 +66,6 @@ requireAnyMarker('server.mjs', [
   'message?.location && await handleV139Telegram(update, sendTelegramMessage)',
 ]);
 requireMarker('server/v1396/infobip.mjs', 'INFOBIP_PHONE_FROM');
-requireAnyMarker('render.yaml', ['value: infobip', 'value: callmebot']);
+requireMarker('render.yaml', 'value: infobip');
 
 console.log(`CrewCheck v${VERSION} Infobip Premium revinculada com diagnóstico seguro.`);
