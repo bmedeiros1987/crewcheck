@@ -95,3 +95,99 @@
 @media (prefers-reduced-motion: reduce) {
   .cc-bottom-nav-icon > svg { transition: none; transform: none !important; }
 }
+
+/* =============================================================================
+   Rodapé renderizado — .cz-bottom-nav (Home.tsx)
+   -----------------------------------------------------------------------------
+   As regras acima miram .cc-bottom-nav (CanonicalBottomNav/SideDrawer), que hoje
+   não tem consumidores. A navegação que o usuário toca é .cz-bottom-nav, servida
+   por Home.tsx nas rotas /, /app e /home, e portada para document.body pela
+   cadeia de preparação (scripts/v1432/apply.mjs) — por isso o seletor `body >`,
+   que também iguala a especificidade de components/v1432/homologation.css.
+
+   Escopo deliberado: só propriedades de estilo. Posição, z-index, bottom, largura,
+   transform, display/grid e min-height continuam sendo decididos por
+   premium-audit-v13-8-8.css e v1432/homologation.css, nesta ordem.
+   ========================================================================== */
+
+body > .cz-bottom-nav,
+.cz-bottom-nav {
+  /* Contrato explícito entre o raio externo e o respiro interno: o raio do botão
+     é derivado, não um segundo número solto. Antes: contêiner 8px (--cc-radius,
+     genérico) contra botões de 21px. */
+  --cc-nav-radius: 20px;
+  --cc-nav-pad: 6px;
+
+  padding: var(--cc-nav-pad) !important;
+  gap: 4px !important;
+  border-radius: var(--cc-nav-radius) !important;
+}
+
+.cz-bottom-nav > button {
+  border-radius: calc(var(--cc-nav-radius) - var(--cc-nav-pad)) !important;
+  padding: 6px 4px !important;
+  gap: 3px !important;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.cz-bottom-nav > button span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap !important;
+  font-size: .6875rem !important;
+  line-height: 1.05 !important;
+  letter-spacing: .01em;
+}
+
+.cz-bottom-nav > button svg {
+  transition: opacity 160ms ease, transform 160ms ease;
+  opacity: .78;
+}
+
+.cz-bottom-nav > button.active svg {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+/* Estados coerentes nos dois temas: --cc-accent e --cc-surface já são
+   redefinidos por premium-audit-v13-8-8.css em :root e em
+   html.dark / html[data-crew-theme="dark"]. */
+.cz-bottom-nav > button:hover:not(.active) {
+  background: color-mix(in srgb, var(--cc-accent) 8%, transparent) !important;
+}
+
+.cz-bottom-nav > button:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: -2px;
+}
+
+.cz-bottom-nav > button:disabled {
+  opacity: .45;
+  pointer-events: none;
+}
+
+/* Badge de alertas: proporção e alinhamento. A cor continua vindo de
+   index.css:17501 — trocá-la exige decidir a família de tokens (1A-T). */
+.cz-bottom-nav > button em {
+  min-width: 18px !important;
+  height: 18px !important;
+  padding: 0 4px !important;
+  font-size: .625rem !important;
+  font-weight: 800 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 360px) {
+  .cz-bottom-nav > button span { font-size: .625rem !important; letter-spacing: 0; }
+  .cz-bottom-nav > button { padding-inline: 2px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-bottom-nav > button,
+  .cz-bottom-nav > button svg {
+    transition: none !important;
+  }
+  .cz-bottom-nav > button.active svg { transform: none !important; }
+}
