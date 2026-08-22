@@ -171,6 +171,18 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 5d — CNA também invalida o candidato quando aparece antes da origem
+// selecionada dentro do mesmo bloco LA. O boundary não pode ficar fora da
+// janela apenas porque o scorer encontrou um aeroporto posterior.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA','1234','09:00','CNA','AAA','10:00','BBB','12:00'];
+  const days = mod.parseAimsTokensIntoEventsV3(tokens, 1, 8, 2026, 'BSB');
+  const flightDays = days.filter((d) => d.type === 'VOO');
+  check('CNA antes da origem selecionada: nenhuma perna fictícia, estado base ou preparado', flightDays.length === 0, JSON.stringify(days));
+}
+
+// -----------------------------------------------------------------------
 // Caso 6 — marcador EXTRA/PS logo antes do "LA" que abre uma NOVA jornada
 // (não a primeira da coluna) precisa ser atribuído à perna certa. Ler o
 // marcador de forma relativa ao segmento (em vez da coluna inteira, como o
