@@ -401,6 +401,12 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // (a perna anterior não pode virar PS só porque a seguinte é).
   let seqEnd = nextLaIndex;
   while (seqEnd > i + 2 && leadingWorkMarkers.has(upperTokens[seqEnd - 1])) seqEnd -= 1;
+  const preLaTimeIdx = seqEnd - 1;
+  if (preLaTimeIdx > i + 2 && isTimeToken(normalized[preLaTimeIdx])) {
+   let markerStart = preLaTimeIdx;
+   while (markerStart > i + 2 && leadingWorkMarkers.has(upperTokens[markerStart - 1])) markerStart -= 1;
+   if (markerStart < preLaTimeIdx) seqEnd = markerStart;
+  }
   const seq = normalized.slice(i + 2, seqEnd);
   const leg = parseAimsFlightSeq('LA' + upperTokens[i + 1], seq);
   // O marcador pertence ao "LA" que ele precede, então este olhar é sempre
