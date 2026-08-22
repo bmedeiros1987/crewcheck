@@ -509,7 +509,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    // de herdar silenciosamente a apresentação da jornada anterior.
    const comparisonTime = reportEquivalent || leg.departureTime;
    const prevArrivalMin = toMin(current.lastArrival);
-   let prevMin = toMin(previousDutyEndForGap);
+   let prevMin = toMin(previousDutyEndForGap) + (previousDebriefIsUnambiguous ? 0 : 30);
    if (prevMin < prevArrivalMin) prevMin += 1440;
    let candMin = toMin(comparisonTime);
    // Ancore o próximo horário após a chegada, não após o debrief: em escalas
