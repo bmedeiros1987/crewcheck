@@ -8,7 +8,6 @@ import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
 import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
-import { buildCallMeBotPhoneRequest, callMeBotPhoneConfiguration, selectWakeupPhoneProvider } from './server/wakeup-call-provider.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
@@ -3517,14 +3516,19 @@ function telegramCallProviderEnabled() {
   return String(process.env.CALLMEBOT_TELEGRAM_CALL_ENABLED || 'true').toLowerCase() !== 'false';
 }
 function callMeBotPhoneConfigured() {
-  return callMeBotPhoneConfiguration().configured;
+  return Boolean(envAny(['CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
 }
 function infobipPhoneConfigured() {
   return infobipConfiguration().configured;
 }
 let infobipLastAttempt = null;
 function preferredPhoneCallProvider() {
-  return selectWakeupPhoneProvider();
+  const preferred = String(envAny(['CREWCHECK_WAKEUP_CALL_PROVIDER']) || 'auto').trim().toLowerCase();
+  if (preferred.includes('infobip')) return 'infobip';
+  if (preferred.includes('callmebot')) return 'callmebot';
+  if (infobipPhoneConfigured()) return 'infobip';
+  if (callMeBotPhoneConfigured()) return 'callmebot';
+  return 'none';
 }
 function phoneProviderStatus() {
   const infobip = infobipPublicStatus();
@@ -3568,9 +3572,15 @@ async function sendTelegramVoiceCall(username, text) {
   return { ...result, provider: 'callmebot-telegram', message: result.ok ? `Ligação via Telegram iniciada para @${user}.` : result.message || 'A ligação via Telegram não foi aceita. Autorize o CallMeBot e tente novamente.' };
 }
 async function sendCallMeBotPhoneCall(phone, text) {
-  const request = buildCallMeBotPhoneRequest({ phone, text });
-  if (!request.ok) return request;
-  const result = await fetchVoiceProvider(request.url, {}, 18_000);
+  const apiKey = envAny(['CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']);
+  const destination = String(phone || envAny(['CALLMEBOT_PHONE', 'CREWCHECK_ADMIN_PHONE']) || '').trim().replace(/[^+\d]/g, '');
+  if (!apiKey) return { ok: false, configured: false, provider: 'callmebot-phone', message: 'Ligação telefônica aguardando chave do CallMeBot.' };
+  if (!destination) return { ok: false, configured: true, provider: 'callmebot-phone', message: 'Informe o telefone do administrador com DDI.' };
+  const url = new URL('https://api.callmebot.com/call.php');
+  url.searchParams.set('phone', destination);
+  url.searchParams.set('text', cleanVoiceCallText(text) || 'Teste de ligação CrewCheck.');
+  url.searchParams.set('apikey', apiKey);
+  const result = await fetchVoiceProvider(url.toString(), {}, 18_000);
   return { ...result, provider: 'callmebot-phone', message: result.ok ? 'Ligação telefônica de teste iniciada.' : result.message || 'A ligação telefônica não foi aceita agora.' };
 }
 async function sendInfobipPhoneCall(phone, text) {
