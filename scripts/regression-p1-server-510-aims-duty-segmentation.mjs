@@ -389,6 +389,21 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7h3 — chegada + debrief explícitos continuam governando o limiar
+// quando a próxima perna omite APZ. Um horário 11h45 antes do STD não é uma
+// apresentação plausível (janela máxima de 3h), portanto é debrief.
+// -----------------------------------------------------------------------
+{
+  const below = ['LA','1121','06:00','06:45','AAA','BBB','08:00','08:45','LA','1122','20:30','BBB','CCC','22:00'];
+  const belowFlightDays = mod.parseAimsTokensIntoEventsV3(below, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('debrief explícito + próxima perna sem APZ: 11h45 permanece uma jornada', belowFlightDays.length === 1 && belowFlightDays[0]?.legs?.length === 2, JSON.stringify(belowFlightDays));
+
+  const exact = ['LA','1121','06:00','06:45','AAA','BBB','08:00','08:45','LA','1122','20:45','BBB','CCC','22:15'];
+  const exactFlightDays = mod.parseAimsTokensIntoEventsV3(exact, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('debrief explícito + próxima perna sem APZ: exatamente 12h abre nova jornada com dutyReport=null', exactFlightDays.length === 2 && exactFlightDays[1]?.dutyReport === null, JSON.stringify(exactFlightDays));
+}
+
+// -----------------------------------------------------------------------
 // Caso 7i — marcadores de trabalho reconhecidos podem ficar entre a APZ e o
 // token LA. A recuperação pré-LA atravessa somente esses marcadores, preserva
 // APZ/debrief e ainda atribui PS à perna correta.
