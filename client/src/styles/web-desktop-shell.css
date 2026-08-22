@@ -172,51 +172,43 @@
   }
 
 
-  /* Keep the deliberately dark briefing legible when the surrounding Web shell uses the
-     light theme. Measured live in the browser: the app only ever sets data-crew-theme on
-     <html> (never data-theme), so this whole block never matched - the card kept its dark
-     background but the headline/body text fell through to a light-theme text rule (dark
-     navy on dark navy, effectively invisible). */
+  /* The Web shell and briefing share the same effective theme. Semantic cyan, blue and
+     CrewCheck accents remain alive; only surface, contrast and depth adapt. */
   [data-crew-theme='light'] .cc-flydeck-briefing {
-    --briefing-ink: #f8fbff !important;
-    --briefing-muted: #b9c8da !important;
-    color: #f8fbff !important;
-    background:
-      radial-gradient(circle at 92% 2%, rgba(34, 211, 238, .18), transparent 38%),
-      linear-gradient(145deg, #0f1b30, #071426) !important;
+    --briefing-ink: var(--cc-ink, #0f172a) !important;
+    --briefing-muted: var(--cc-muted, #526174) !important;
+    --briefing-line: var(--cc-line-soft, rgba(15, 23, 42, .12)) !important;
+    color: var(--briefing-ink) !important;
+    background: var(--cc-surface-premium-strong, #ffffff) !important;
+    box-shadow: var(--cc-shadow-premium, 0 22px 55px rgba(15, 23, 42, .10)) !important;
   }
 
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-program h2 {
-    color: #ffffff !important;
+    color: var(--briefing-ink) !important;
   }
 
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-program p,
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-roster-link {
-    color: #bfeeff !important;
+    color: var(--ccr-blue, #2563eb) !important;
   }
 
-  /* The card's own color:#f8fbff is inherited by plain text, but <strong>/<small> inside
-     the countdown, date badge and the 4 fact values (Apresentação/Partida/Chegada/Portão)
-     each carry their own more specific color rule from elsewhere in the app (generic
-     bold-value / eyebrow-label styling) that otherwise wins over the inherited white -
-     measured live: rgb(22,48,71) navy text on this same dark card. */
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-phase strong,
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-facts strong {
-    color: var(--briefing-ink, #f8fbff) !important;
+    color: var(--briefing-ink) !important;
   }
 
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-program small {
-    color: var(--briefing-muted, #b9c8da) !important;
+    color: var(--briefing-muted) !important;
   }
 
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-facts {
-    background: rgba(2, 8, 23, .44) !important;
+    background: var(--cc-surface-premium, rgba(255, 255, 255, .72)) !important;
   }
 
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-actions button {
-    border-color: rgba(203, 213, 225, .36) !important;
-    background: #f8fafc !important;
-    color: #10243a !important;
+    border-color: var(--briefing-line) !important;
+    background: var(--cc-surface-premium, #f8fafc) !important;
+    color: var(--briefing-ink) !important;
   }
 
   [data-crew-theme='light'] .cc-flydeck-briefing .cc-flydeck-actions button.primary {

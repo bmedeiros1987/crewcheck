@@ -1,0 +1,74 @@
+name: Atlas 1D Web roster and theme coherence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1397/roster-premium.css'
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'scripts/v14353/flydeck-premium.css'
+      - 'scripts/v14353/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-p1-atlas-1d-web-roster-theme.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
+      - '.github/workflows/atlas-1d-web-roster-theme.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1397/roster-premium.css'
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'scripts/v14353/flydeck-premium.css'
+      - 'scripts/v14353/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-p1-atlas-1d-web-roster-theme.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
+      - '.github/workflows/atlas-1d-web-roster-theme.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlas-1d-web-roster-theme-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-web-roster-theme:
+    name: Published times and coherent themes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare CrewCheck
+        run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1d-prepare.log"
+      - name: TypeScript
+        run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/atlas-1d-typescript.log"
+      - name: Build Web
+        run: npx vite build 2>&1 | tee "$RUNNER_TEMP/atlas-1d-build.log"
+      - name: Validate published times and theme contract
+        run: node scripts/regression-p1-atlas-1d-web-roster-theme.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1d-regression.log"
+      - name: Validate final Web shell theme precedence
+        run: node scripts/regression-web-desktop-shell.mjs
+      - name: Preserve base-rest classification
+        run: node scripts/regression-p0-base-rest-vs-overnight.mjs
+      - name: Test server
+        run: node test-server.mjs
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Atlas-1D-web-roster-theme-diagnostics
+          path: |
+            ${{ runner.temp }}/atlas-1d-prepare.log
+            ${{ runner.temp }}/atlas-1d-typescript.log
+            ${{ runner.temp }}/atlas-1d-build.log
+            ${{ runner.temp }}/atlas-1d-regression.log
+          if-no-files-found: ignore
+          retention-days: 7
