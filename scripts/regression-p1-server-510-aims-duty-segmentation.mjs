@@ -375,6 +375,20 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7h2 — sem debrief publicado, o fim inferido da jornada anterior é
+// chegada + 30 minutos, em paridade com o parser canônico do cliente.
+// -----------------------------------------------------------------------
+{
+  const below = ['LA','1111','06:00','06:45','AAA','BBB','08:00','LA','1112','20:15','20:45','BBB','CCC','21:45'];
+  const belowFlightDays = mod.parseAimsTokensIntoEventsV3(below, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('fim inferido sem debrief: 20:15 fica 11h45 após chegada+30 e permanece uma jornada', belowFlightDays.length === 1 && belowFlightDays[0]?.legs?.length === 2, JSON.stringify(belowFlightDays));
+
+  const exact = ['LA','1111','06:00','06:45','AAA','BBB','08:00','LA','1112','20:30','21:00','BBB','CCC','22:00'];
+  const exactFlightDays = mod.parseAimsTokensIntoEventsV3(exact, 30, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  check('fim inferido sem debrief: 20:30 fica exatamente 12h após chegada+30 e abre nova jornada', exactFlightDays.length === 2, JSON.stringify(exactFlightDays));
+}
+
+// -----------------------------------------------------------------------
 // Caso 7i — marcadores de trabalho reconhecidos podem ficar entre a APZ e o
 // token LA. A recuperação pré-LA atravessa somente esses marcadores, preserva
 // APZ/debrief e ainda atribui PS à perna correta.
