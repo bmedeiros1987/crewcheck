@@ -64,6 +64,7 @@ assert.match(render, /CREWCHECK_WAKEUP_CALL_PROVIDER\s*\n\s*value: callmebot/);
 assert.match(render, /key: INFOBIP_PHONE_FROM/);
 assert.match(example, /CREWCHECK_WAKEUP_CALL_PROVIDER=callmebot/);
 assert.match(safeguards, /requireAnyMarker/);
+assert.match(safeguards, /'value: infobip', 'value: callmebot'/);
 assert.match(safeguards, /message\?\.location/);
 assert.match(safeguards, /versionCode\\s\+\\d\+\\b/);
 assert.match(safeguards, /manifest\.version = VERSION/);
