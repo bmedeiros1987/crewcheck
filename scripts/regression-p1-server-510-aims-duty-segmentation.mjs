@@ -423,6 +423,19 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7j — marcador antes da APZ pré-LA pertence somente à próxima perna.
+// A ordem EXTRA 23:03 LA não pode contaminar a perna anterior.
+// -----------------------------------------------------------------------
+{
+  const tokens = ['LA','1131','06:00','06:45','AAA','BBB','08:20','08:50','EXTRA','23:03','LA','1132','23:50','BBB','CCC','01:15'];
+  const flightDays = mod.parseAimsTokensIntoEventsV3(tokens, 31, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  const first = flightDays.find((d) => d.pairingCode === 'LA1131');
+  const second = flightDays.find((d) => d.pairingCode === 'LA1132');
+  check('EXTRA antes da APZ pré-LA: perna anterior permanece OP e preserva debrief 08:50', first?.legs?.[0]?.workType === 'OP' && first?.dutyDebrief === '08:50', JSON.stringify(first));
+  check('EXTRA antes da APZ pré-LA: próxima perna recebe PS e APZ 23:03', second?.legs?.[0]?.workType === 'PS' && second?.dutyReport === '23:03', JSON.stringify(second));
+}
+
+// -----------------------------------------------------------------------
 // Caso 8 — descontinuidade física: origem da perna não bate com o destino da
 // perna anterior. Mesmo com intervalo curto, não pode ser tratada como
 // conexão da mesma jornada (nunca fundir jornada fisicamente impossível).
