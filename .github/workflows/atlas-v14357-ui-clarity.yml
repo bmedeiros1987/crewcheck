@@ -11,6 +11,7 @@ on:
       - 'scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs'
       - 'scripts/regression-v14-3-57-ui-clarity.mjs'
       - 'scripts/regression-p1-548-dynamic-calendar.mjs'
+      - 'scripts/regression-p1-atlas-1c-semantic-themes.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -25,6 +26,7 @@ on:
       - 'scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs'
       - 'scripts/regression-v14-3-57-ui-clarity.mjs'
       - 'scripts/regression-p1-548-dynamic-calendar.mjs'
+      - 'scripts/regression-p1-atlas-1c-semantic-themes.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -60,6 +62,8 @@ jobs:
         run: node scripts/regression-v14-3-57-ui-clarity.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-ui-clarity.log"
       - name: Validate dynamic calendar survives the prepare chain
         run: node scripts/regression-p1-548-dynamic-calendar.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-dynamic-calendar.log"
+      - name: Validate Atlas 1C semantic themes after prepare
+        run: node scripts/regression-p1-atlas-1c-semantic-themes.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-semantic-themes.log"
       - name: Preserve Smart Departure airport handoff
         run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs
       - name: Preserve Daniel and Bruno voices
@@ -77,5 +81,6 @@ jobs:
             ${{ runner.temp }}/v14357-build.log
             ${{ runner.temp }}/v14357-ui-clarity.log
             ${{ runner.temp }}/v14357-dynamic-calendar.log
+            ${{ runner.temp }}/atlas-1c-semantic-themes.log
           if-no-files-found: ignore
           retention-days: 7
