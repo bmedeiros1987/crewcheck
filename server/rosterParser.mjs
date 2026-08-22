@@ -541,7 +541,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    // "destIdx + contagem"), porque um token não-horário intercalado entre os
    // horários (ex.: matrícula de aeronave) quebraria essa aritmética e
    // cortaria também um horário legítimo antes do excedente real.
-   if (!reportResolvedInsideCurrentLaBlock && current && current.lastLegAfterDestTimeIndexes && current.lastLegAfterDestTimeIndexes.length >= 2) {
+   if (!reportResolvedInsideCurrentLaBlock && current && current.lastLegAfterDestTimeIndexes && current.lastLegAfterDestTimeIndexes.length >= 2 && !(current.lastLegAfterDestTimeIndexes.length === 2 && previousDebriefIsUnambiguous)) {
     const keepUpToIdx = current.lastLegAfterDestTimeIndexes[current.lastLegAfterDestTimeIndexes.length - 2];
     current.tokenEnd = Math.min(current.tokenEnd, keepUpToIdx + 1);
    }
