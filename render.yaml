@@ -110,7 +110,7 @@ services:
       - key: CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES
         value: 10
       - key: CREWCHECK_WAKEUP_CALL_PROVIDER
-        value: infobip
+        value: callmebot
       - key: ELEVENLABS_STT_API_KEY
         sync: false
       - key: INFOBIP_API_KEY

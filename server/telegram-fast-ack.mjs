@@ -4,6 +4,7 @@ import { URL } from 'node:url';
 import { dbPool, requestToken, safeEmail, verifyJwt } from './v139/common.mjs';
 import { sendTelegram, callTelegram } from './v139/delivery.mjs';
 import { buildInfobipTtsRequest, infobipPublicStatus } from './v1396/infobip.mjs';
+import { buildCallMeBotPhoneRequest, selectWakeupPhoneProvider } from './wakeup-call-provider.mjs';
 
 const originalCreateServer = http.createServer.bind(http);
 const RUNTIME_VERSION = '14.1.7-operational-intelligence';
@@ -167,14 +168,36 @@ async function sendInfobipPhone(phone, message) {
   } finally { clearTimeout(timer); }
 }
 
+async function sendCallMeBotPhone(phone, message) {
+  const request = buildCallMeBotPhoneRequest({ phone, text: message });
+  if (!request.ok) return request;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(request.url, { signal: controller.signal });
+    const raw = await response.text().catch(() => '');
+    const ok = response.ok && !/(error|invalid|unauthor)/i.test(raw);
+    return { ok, configured: true, provider: 'callmebot-phone', status: response.status, raw: raw.slice(0, 500) };
+  } catch (error) {
+    return { ok: false, configured: true, provider: 'callmebot-phone', raw: error?.name === 'AbortError' ? 'Tempo limite na ligação VoIP.' : 'Falha na ligação VoIP.' };
+  } finally { clearTimeout(timer); }
+}
+
+async function sendWakeupPhone(phone, message) {
+  const provider = selectWakeupPhoneProvider();
+  if (provider === 'callmebot') return sendCallMeBotPhone(phone, message);
+  if (provider === 'infobip') return sendInfobipPhone(phone, message);
+  return { ok: false, configured: false, provider: 'none', raw: 'Nenhum provedor de ligação VoIP está configurado.' };
+}
+
 async function deliverJob(job) {
   const channel = String(job.channel || 'telegram').toLowerCase();
   if (channel === 'telegram') return sendTelegram(job.chat_id, job.message);
   if (channel === 'telegram-call') return callTelegram(job.telegram_username, job.message);
-  if (channel === 'phone' || channel === 'phone-call' || channel === 'infobip') return sendInfobipPhone(job.phone, job.message);
+  if (channel === 'phone' || channel === 'phone-call' || channel === 'infobip') return sendWakeupPhone(job.phone, job.message);
   if (channel === 'both') {
     const telegram = await sendTelegram(job.chat_id, job.message);
-    const phone = await sendInfobipPhone(job.phone, job.message);
+    const phone = await sendWakeupPhone(job.phone, job.message);
     return { ok: Boolean(telegram.ok || phone.ok), configured: Boolean(telegram.configured || phone.configured), provider: 'both', results: [telegram, phone] };
   }
   return { ok: false, configured: false, provider: channel, raw: 'Canal de notificação inválido.' };

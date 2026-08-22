@@ -60,9 +60,9 @@ assert.match(server, /message\?\.document && await handleV139Telegram\(message, 
 assert.match(server, /message\?\.location && await handleV139Telegram\(update, sendTelegramMessage\)/);
 assert.match(server, /async function processTelegramUpdate/);
 assert.doesNotMatch(server, /if \(chatId && await handleV139Telegram\(update, sendTelegramMessage\)/);
-assert.match(render, /CREWCHECK_WAKEUP_CALL_PROVIDER\s*\n\s*value: infobip/);
+assert.match(render, /CREWCHECK_WAKEUP_CALL_PROVIDER\s*\n\s*value: callmebot/);
 assert.match(render, /key: INFOBIP_PHONE_FROM/);
-assert.match(example, /CREWCHECK_WAKEUP_CALL_PROVIDER=infobip/);
+assert.match(example, /CREWCHECK_WAKEUP_CALL_PROVIDER=callmebot/);
 assert.match(safeguards, /requireAnyMarker/);
 assert.match(safeguards, /message\?\.location/);
 assert.match(safeguards, /versionCode\\s\+\\d\+\\b/);

@@ -114,6 +114,7 @@
     "db:migrate:v13.9.5": "node scripts/apply-v13-9-5-migration.mjs",
     "regression:v13.9.5:medical-emergency": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-5-medical-emergency-care.mjs",
     "regression:v13.9.6:infobip-calls": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-6-infobip-premium-calls.mjs",
+    "regression:wakeup-voip": "node scripts/regression-wakeup-voip-restore.mjs",
     "regression:v13.9.7:premium-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-7-premium-roster-finance.mjs",
     "regression:v13.9.8:act-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs",
     "regression:v13.9.9:monthly-premium": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-9-month-base-menu-admin-infobip.mjs",
@@ -158,4 +159,3 @@
   },
   "check:1264-futuristic-premium": "node -e \"console.log('CrewCheck v12.5.65 futuristic premium design OK')\""
 }
-
