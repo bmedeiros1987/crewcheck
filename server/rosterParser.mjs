@@ -481,10 +481,20 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // o descanso desde esse fim/debrief, como faz o parser canônico. No caso
   // pré-LA de exatamente dois horários a ambiguidade permanece; ali seguimos
   // usando a chegada para não transformar a possível APZ em debrief.
+  let preLaCouldBePresentation = false;
+  if (k > 0 && preLaReportIdx >= 0 && isTimeToken(normalized[preLaReportIdx]) && leg?.departureTime) {
+   let presentationLead = toMin(leg.departureTime) - toMin(normalized[preLaReportIdx]);
+   if (presentationLead < 0) presentationLead += 1440;
+   preLaCouldBePresentation = presentationLead > 0 && presentationLead <= 180;
+  }
   const previousDebriefIsUnambiguous = Boolean(
    current
    && current.lastLegAfterDestTimeIndexes?.length >= 2
-   && (reportResolvedInsideCurrentLaBlock || (reportEquivalent && current.lastLegAfterDestTimeIndexes.length >= 3))
+   && (
+    reportResolvedInsideCurrentLaBlock
+    || (reportEquivalent && current.lastLegAfterDestTimeIndexes.length >= 3)
+    || (current.lastLegAfterDestTimeIndexes.length === 2 && !preLaCouldBePresentation)
+   )
   );
   const previousDutyEndForGap = previousDebriefIsUnambiguous
    ? normalizeTimeToken(normalized[current.lastLegAfterDestTimeIndexes[1]])
