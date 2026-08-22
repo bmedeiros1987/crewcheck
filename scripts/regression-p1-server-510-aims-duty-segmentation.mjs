@@ -33,6 +33,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -42,6 +43,25 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tempDir = fs.mkdtempSync(path.join('/tmp', 'crewcheck-510-server-regression-'));
 const src = fs.readFileSync(path.join(ROOT, 'server/rosterParser.mjs'), 'utf8');
 assert.ok(src.includes('export { parsePdfOnServer };'), 'ponto de export esperado não encontrado — arquivo mudou de forma inesperada');
+const currentBaseGuard = "  const routeBoundaries = new Set(['CNA']);\n  if (upper.slice(0, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+const currentPreparedGuard = "  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(0, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+const priorPreparedGuard = "  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(originIdx + 1, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+let legacyPreparedSource = src;
+if (legacyPreparedSource.includes(currentBaseGuard)) legacyPreparedSource = legacyPreparedSource.replace(currentBaseGuard, priorPreparedGuard);
+else if (legacyPreparedSource.includes(currentPreparedGuard)) legacyPreparedSource = legacyPreparedSource.replace(currentPreparedGuard, priorPreparedGuard);
+else assert.fail('guard CNA atual não localizado para construir estado preparado legado');
+const legacyMarker = '// [v14.3.75] Telegram/server AIMS parity with canonical client parser';
+if (!legacyPreparedSource.includes(legacyMarker)) legacyPreparedSource = `${legacyPreparedSource.trimEnd()}\n\n${legacyMarker}\n`;
+const legacyDir = path.join(tempDir, 'legacy-prepared');
+fs.mkdirSync(path.join(legacyDir, 'server'), { recursive: true });
+fs.mkdirSync(path.join(legacyDir, 'scripts', 'v14375'), { recursive: true });
+fs.writeFileSync(path.join(legacyDir, 'server', 'rosterParser.mjs'), legacyPreparedSource);
+fs.copyFileSync(path.join(ROOT, 'scripts', 'v14375', 'apply.mjs'), path.join(legacyDir, 'scripts', 'v14375', 'apply.mjs'));
+execFileSync(process.execPath, ['scripts/v14375/apply.mjs'], { cwd: legacyDir, stdio: 'pipe' });
+const migratedLegacySource = fs.readFileSync(path.join(legacyDir, 'server', 'rosterParser.mjs'), 'utf8');
+assert.ok(migratedLegacySource.includes(currentPreparedGuard), 'estado já marcado precisa persistir migração do guard até o início do bloco');
+assert.ok(!migratedLegacySource.includes(priorPreparedGuard), 'guard legado não pode sobreviver ao short-circuit do marker');
+
 const patched = src.replace(
   'export { parsePdfOnServer };',
   'export { parsePdfOnServer, parseAimsTokensIntoEventsV3 };',
