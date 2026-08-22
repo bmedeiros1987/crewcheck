@@ -240,26 +240,26 @@
 .cc-flydeck-empty p { margin: 4px 0 0; color: var(--briefing-muted); }
 .cc-flydeck-empty button { padding: 0 16px; }
 
-[data-theme='light'] .cc-flydeck-premium-v14353 {
+html[data-crew-theme='light'] .cc-flydeck-premium-v14353 {
   --briefing-ink: #0f172a;
   --briefing-muted: #526174;
   --briefing-line: rgba(15, 23, 42, .12);
 }
-[data-theme='light'] .cc-flydeck-briefing,
-[data-theme='light'] .cc-flydeck-empty {
+html[data-crew-theme='light'] .cc-flydeck-briefing,
+html[data-crew-theme='light'] .cc-flydeck-empty {
   background:
     radial-gradient(circle at 92% 2%, rgba(6, 182, 212, .14), transparent 38%),
     linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(240, 249, 255, .96));
   box-shadow: 0 22px 55px rgba(15, 23, 42, .1);
 }
-[data-theme='light'] .cc-flydeck-program h2 { color: #0f172a; }
-[data-theme='light'] .cc-flydeck-program p { color: #0369a1; }
-[data-theme='light'] .cc-flydeck-facts { background: rgba(255, 255, 255, .66); }
-[data-theme='light'] .cc-flydeck-facts svg { color: #0476a8; filter: none; }
-[data-theme='light'] .cc-flydeck-actions button svg { color: currentColor; }
-[data-theme='light'] .cc-flydeck-roster-link { color: #0369a1; }
-[data-theme='light'] .cc-flydeck-official-note svg { color: #2563eb; }
-[data-theme='light'] .cc-flydeck-official-note strong { color: #1e3a8a; }
+html[data-crew-theme='light'] .cc-flydeck-program h2 { color: #0f172a; }
+html[data-crew-theme='light'] .cc-flydeck-program p { color: #0369a1; }
+html[data-crew-theme='light'] .cc-flydeck-facts { background: rgba(255, 255, 255, .66); }
+html[data-crew-theme='light'] .cc-flydeck-facts svg { color: #0476a8; filter: none; }
+html[data-crew-theme='light'] .cc-flydeck-actions button svg { color: currentColor; }
+html[data-crew-theme='light'] .cc-flydeck-roster-link { color: #0369a1; }
+html[data-crew-theme='light'] .cc-flydeck-official-note svg { color: #2563eb; }
+html[data-crew-theme='light'] .cc-flydeck-official-note strong { color: #1e3a8a; }
 
 @media (max-width: 760px) {
   .cc-flydeck-topline { align-items: flex-start; }
