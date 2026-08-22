@@ -465,6 +465,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // contaminando a jornada anterior (#510).
   let preLaReportIdx = i - 1;
   while (preLaReportIdx >= 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx])) preLaReportIdx -= 1;
+  const preLaReportHasLeadingMarker = preLaReportIdx > 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx - 1]);
   if (!reportEquivalent && preLaReportIdx >= 0 && isTimeToken(tokens[preLaReportIdx])) {
    if (k === 0) {
     let lastBoundaryIdx = -1;
@@ -477,7 +478,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
      const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
      if (timesSinceBoundary >= 3) reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     }
-   } else if (current && current.lastLegAfterDestCount >= 3) {
+   } else if (current && (current.lastLegAfterDestCount >= 3 || preLaReportHasLeadingMarker)) {
     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
    }
   }
@@ -498,6 +499,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
    && current.lastLegAfterDestTimeIndexes?.length >= 2
    && (
     reportResolvedInsideCurrentLaBlock
+    || preLaReportHasLeadingMarker
     || (reportEquivalent && current.lastLegAfterDestTimeIndexes.length >= 3)
     || (current.lastLegAfterDestTimeIndexes.length === 2 && !preLaCouldBePresentation)
    )
