@@ -62,6 +62,15 @@ const migratedLegacySource = fs.readFileSync(path.join(legacyDir, 'server', 'ros
 assert.ok(migratedLegacySource.includes(currentPreparedGuard), 'estado já marcado precisa persistir migração do guard até o início do bloco');
 assert.ok(!migratedLegacySource.includes(priorPreparedGuard), 'guard legado não pode sobreviver ao short-circuit do marker');
 
+// Idempotência do ramo de migração: `oldScoreGuard` é prefixo literal de
+// `newScoreGuard`, então uma árvore já migrada ainda casaria aquele ramo e o
+// bloco de boundaries seria reinjetado. Reaplicar precisa ser no-op.
+execFileSync(process.execPath, ['scripts/v14375/apply.mjs'], { cwd: legacyDir, stdio: 'pipe' });
+const reappliedLegacySource = fs.readFileSync(path.join(legacyDir, 'server', 'rosterParser.mjs'), 'utf8');
+assert.equal(reappliedLegacySource, migratedLegacySource, 'reaplicar v14.3.75 sobre árvore já migrada precisa ser no-op byte a byte');
+assert.equal((reappliedLegacySource.match(/const routeBoundaries = new Set\(/g) || []).length, 1, 'reaplicar v14.3.75 não pode duplicar a declaração de routeBoundaries');
+execFileSync(process.execPath, ['--check', path.join(legacyDir, 'server', 'rosterParser.mjs')], { stdio: 'pipe' });
+
 const patched = src.replace(
   'export { parsePdfOnServer };',
   'export { parsePdfOnServer, parseAimsTokensIntoEventsV3 };',
