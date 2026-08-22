@@ -5,6 +5,7 @@ if (!fs.existsSync(file)) throw new Error('[v14.3.75] server roster parser ausen
 
 let source = fs.readFileSync(file, 'utf8');
 const marker = '// [v14.3.75] Telegram/server AIMS parity with canonical client parser';
+const originalSource = source;
 
 const oldScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
 const legacyBaseScoreGuardWithCna = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  const routeBoundaries = new Set(['CNA']);\n  if (upper.slice(originIdx + 1, destIdx).some((token) => routeBoundaries.has(token))) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
@@ -72,6 +73,9 @@ if (!source.includes(marker)) {
   source = `${source.trimEnd()}\n\n${marker}\n`;
   fs.writeFileSync(file, source, 'utf8');
   console.log('[v14.3.75] Telegram/server: AIMS preserva MCK/RCFI, CNA não vira aeroporto e o rebuilder de offsets fica restrito ao CrewRosterReport.');
+} else if (source !== originalSource) {
+  fs.writeFileSync(file, source, 'utf8');
+  console.log('[v14.3.75] guard legado de rota migrado no estado já preparado.');
 } else {
   console.log('[v14.3.75] paridade AIMS Telegram/server já aplicada.');
 }
