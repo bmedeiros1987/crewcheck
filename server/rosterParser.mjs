@@ -309,7 +309,7 @@ function findBestFlightPatternV3(tokens) {
   if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;
   if (!depItem || !arrItem || arrItem.idx <= destIdx) return;
   const routeBoundaries = new Set(['CNA']);
-  if (upper.slice(originIdx + 1, arrItem.idx).some((token) => routeBoundaries.has(token))) return;
+  if (upper.slice(0, arrItem.idx).some((token) => routeBoundaries.has(token))) return;
   const departureTime = normalizeTimeToken(depItem.token);
   const arrivalTime = normalizeTimeToken(arrItem.token);
   const duration = diffHours(departureTime, arrivalTime);
