@@ -15,6 +15,60 @@ function patchFile(path, transform) {
 patchFile('server.mjs', (source) => {
   let next = source;
 
+  next = next.replace(`function callMeBotPhoneConfigured() {
+  return Boolean(envAny(['CALLMEBOT_API_KEY', 'CALLMEBOT_KEY']));
+}
+`, '');
+  next = replaceOnce(
+    next,
+    `function preferredPhoneCallProvider() {
+  const preferred = String(envAny(['CREWCHECK_WAKEUP_CALL_PROVIDER']) || 'auto').trim().toLowerCase();
+  if (preferred.includes('infobip')) return 'infobip';
+  if (preferred.includes('callmebot')) return 'callmebot';
+  if (infobipPhoneConfigured()) return 'infobip';
+  if (callMeBotPhoneConfigured()) return 'callmebot';
+  return 'none';
+}
+function phoneProviderStatus() {
+  const infobip = infobipPublicStatus();
+  const callmebot = { provider: 'callmebot', configured: callMeBotPhoneConfigured() };
+  const selected = preferredPhoneCallProvider();
+  const configured = selected === 'infobip' ? infobip.configured : selected === 'callmebot' ? callmebot.configured : false;
+  return { selected, configured, infobip, callmebot, lastInfobipAttempt: infobipLastAttempt };
+}`,
+    `function phoneProviderStatus() {
+  const infobip = infobipPublicStatus();
+  return { selected: 'infobip', configured: infobip.configured, infobip, lastInfobipAttempt: infobipLastAttempt };
+}`,
+    'Infobip como unico provedor telefonico',
+  );
+  next = next.replace(/async function sendCallMeBotPhoneCall\(phone, text\) \{[\s\S]*?\n\}\nasync function sendInfobipPhoneCall/, 'async function sendInfobipPhoneCall');
+  next = replaceOnce(
+    next,
+    `async function sendAdminPhoneCall(phone, text) {
+  const preferred = preferredPhoneCallProvider();
+  if (preferred === 'infobip') return sendInfobipPhoneCall(phone, text);
+  if (preferred === 'callmebot') {
+    if (callMeBotPhoneConfigured()) return sendCallMeBotPhoneCall(phone, text);
+    return { ok: false, configured: false, provider: 'callmebot-phone', message: 'CallMeBot selecionado, mas CALLMEBOT_API_KEY não está configurada.' };
+  }
+  return { ok: false, configured: false, provider: '', message: 'Nenhum provedor de ligação telefônica está configurado.' };
+}`,
+    `async function sendAdminPhoneCall(phone, text) {
+  return sendInfobipPhoneCall(phone, text);
+}`,
+    'envio telefonico exclusivo Infobip',
+  );
+  next = next.replace(
+    /  const phoneCallMessage = phoneCall[\s\S]*?;\n  return sendJson\(res, 200, \{/,
+    `  const phoneCallMessage = phoneCall
+    ? 'Infobip conectada para ligações telefônicas Premium.'
+    : \`Infobip aguardando: ${'${phoneProvider.infobip.missing.join(\', \')}'} .\`.replace(' .', '.');
+  return sendJson(res, 200, {`,
+  );
+  if (!next.includes('Infobip conectada para ligações telefônicas Premium.')) throw new Error('[v14403] Mensagem exclusiva da Infobip nao aplicada.');
+  next = next.replace("'INFOBIP_PHONE_FROM','INFOBIP_FROM','CALLMEBOT_API_KEY','CALLMEBOT_TELEGRAM_CALL_USER'", "'INFOBIP_PHONE_FROM','INFOBIP_FROM','CALLMEBOT_TELEGRAM_CALL_USER'");
+
   next = replaceOnce(
     next,
     `async function handleTelegramLinkStatus(req, res, url) {`,
@@ -170,6 +224,17 @@ async function handleTelegramLinkStatus(req, res, url) {`,
 
   return next;
 });
+
+patchFile('render.yaml', (source) => source
+  .replace(`      - key: CALLMEBOT_MODE
+        sync: false
+      - key: CALLMEBOT_PHONE
+        sync: false
+      - key: CALLMEBOT_API_KEY
+        sync: false
+`, ''));
+
+patchFile('.env.example', (source) => source.replace('CALLMEBOT_API_KEY=\n', ''));
 
 patchFile('client/src/pages/TelegramConnectPage.tsx', (source) => {
   let next = source;
