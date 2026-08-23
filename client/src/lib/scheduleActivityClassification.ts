@@ -130,22 +130,46 @@ function normalize(value: unknown): string {
     .toUpperCase();
 }
 
-function activityCodeValues(activity: ScheduleActivityLike): string[] {
+// #303 — hierarquia de fontes de código.
+//
+// Nem todo campo tem o mesmo peso. `type` e `code` carregam o código formal
+// publicado na escala; `pairingCode`, `title` e `flightNumber` são rótulo humano
+// ou agrupamento, e mudam de redação sem que a escala mude. Quando as duas
+// camadas discordam, o código formal decide: um dia publicado como DO cujo rótulo
+// diz "Descanso" é folga, não repouso — antes desta separação ele era contado em
+// Descansos, porque o conjunto de repouso era consultado sobre todos os campos de
+// uma vez e "DESCANSO" saía do título.
+function formalCodeValues(activity: ScheduleActivityLike): string[] {
   const published = activity.canonical?.publishedDay;
   return [
     activity.canonical?.code,
     activity.code,
-    activity.pairingCode,
     activity.type,
-    activity.day?.pairingCode,
     activity.day?.type,
-    published?.pairingCode,
     published?.type,
+  ]
+    .map(normalize)
+    .filter(Boolean);
+}
+
+// Rótulo e agrupamento: só decidem quando o código formal não conclui nada.
+// É o caso de "Descanso na base", inferido por continuidade física e sem código
+// de folga publicado — segue sendo repouso.
+function fallbackCodeValues(activity: ScheduleActivityLike): string[] {
+  const published = activity.canonical?.publishedDay;
+  return [
+    activity.pairingCode,
+    activity.day?.pairingCode,
+    published?.pairingCode,
     activity.flightNumber,
     activity.title,
   ]
     .map(normalize)
     .filter(Boolean);
+}
+
+function activityCodeValues(activity: ScheduleActivityLike): string[] {
+  return [...formalCodeValues(activity), ...fallbackCodeValues(activity)];
 }
 
 function activityValues(activity: ScheduleActivityLike): string[] {
@@ -159,9 +183,9 @@ function activityValues(activity: ScheduleActivityLike): string[] {
   ].filter(Boolean);
 }
 
-function activityTokens(activity: ScheduleActivityLike): Set<string> {
+function tokensOfValues(values: readonly string[]): Set<string> {
   const tokens = new Set<string>();
-  for (const value of activityCodeValues(activity)) {
+  for (const value of values) {
     tokens.add(value);
     for (const token of value.match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g) ?? []) {
       tokens.add(token);
@@ -170,11 +194,23 @@ function activityTokens(activity: ScheduleActivityLike): Set<string> {
   return tokens;
 }
 
-function hasCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
-  for (const token of activityTokens(activity)) {
+function activityTokens(activity: ScheduleActivityLike): Set<string> {
+  return tokensOfValues(activityCodeValues(activity));
+}
+
+function matchesCodes(tokens: ReadonlySet<string>, codes: ReadonlySet<string>): boolean {
+  for (const token of tokens) {
     if (codes.has(token)) return true;
   }
   return false;
+}
+
+function hasCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
+  return matchesCodes(activityTokens(activity), codes);
+}
+
+function hasFormalCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
+  return matchesCodes(tokensOfValues(formalCodeValues(activity)), codes);
 }
 
 function activityText(activity: ScheduleActivityLike): string {
@@ -208,6 +244,13 @@ export function classifyScheduleActivity(
 ): ScheduleActivityCategory {
   if (!activity || activity.placeholder) return 'DESCONHECIDA';
 
+  // Código formal publicado decide primeiro, e folga vence repouso quando os dois
+  // aparecem no mesmo nível formal: DO/DOF/FOLGA/DRC são folga ainda que o rótulo
+  // ou o pairingCode digam "Descanso".
+  if (hasFormalCode(activity, DAY_OFF_CODES)) return 'FOLGA';
+  if (hasFormalCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
+
+  // Sem código formal conclusivo, rótulo e pairingCode entram como fallback.
   if (hasCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
   if (hasCode(activity, DAY_OFF_CODES)) return 'FOLGA';
 
