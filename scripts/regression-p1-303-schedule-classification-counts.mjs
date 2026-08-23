@@ -76,6 +76,41 @@ check('classificador expõe isRequestedDayOff para identificar o subtipo', hasRe
 if (hasRequestedDayOffApi) {
   check('DR é reconhecido como folga pedida', classification.isRequestedDayOff(dayWith('DR')));
   check('DO não é folga pedida', !classification.isRequestedDayOff(dayWith('DO')));
+
+  // O subtipo não pode contradizer a categoria. Um dia com código formal de
+  // repouso e um DR vindo de pairingCode ou título era classificado REPOUSO e,
+  // ao mesmo tempo, marcado como folga pedida — o fallback passando por cima do
+  // código formal justamente onde a hierarquia deveria mandar.
+  for (const [nome, activity] of [
+    ['REST formal + pairingCode DR', { kind: 'rest', day: { type: 'REST', pairingCode: 'DR' } }],
+    ['REPOUSO formal + pairingCode DR', { kind: 'rest', day: { type: 'REPOUSO', pairingCode: 'DR' } }],
+    ['REST formal + título DR', { kind: 'rest', day: { type: 'REST' }, title: 'DR' }],
+    ['DESCANSO formal + pairingCode DR', { kind: 'rest', day: { type: 'DESCANSO', pairingCode: 'DR' } }],
+  ]) {
+    check(`${nome} é Descanso`, classify(activity) === 'REPOUSO', `recebido=${classify(activity)}`);
+    check(`${nome} não é marcado como folga pedida`,
+      !classification.isRequestedDayOff(activity),
+      `categoria=${classify(activity)} folgaPedida=${classification.isRequestedDayOff(activity)}`);
+  }
+
+  // Invariante geral: folga pedida implica categoria FOLGA, para qualquer entrada.
+  for (const activity of [
+    dayWith('DR'), dayWith('DO'), dayWith('DRC'), dayWith('REST'),
+    { kind: 'rest', day: { type: 'REST', pairingCode: 'DR' } },
+    { kind: 'rest', day: { type: 'DO', pairingCode: 'DR' } },
+    { kind: 'rest', title: 'DR' },
+    { kind: 'stay', day: { type: 'DESCANSO_BASE_CONTINUIDADE' }, title: 'Descanso na base' },
+  ]) {
+    check('invariante: folga pedida implica categoria FOLGA',
+      !classification.isRequestedDayOff(activity) || classify(activity) === 'FOLGA',
+      JSON.stringify(activity));
+  }
+
+  // Contrapartida: sem código formal, DR no fallback ainda marca folga pedida —
+  // a guarda restringe a contradição, não o caminho legítimo.
+  check('sem código formal, título DR ainda é folga pedida',
+    classify({ kind: 'rest', title: 'DR' }) === 'FOLGA'
+    && classification.isRequestedDayOff({ kind: 'rest', title: 'DR' }));
 }
 
 // ---------------------------------------------------------------------------

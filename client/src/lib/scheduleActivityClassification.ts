@@ -315,6 +315,12 @@ export function isProgramScheduleActivity(activity: ScheduleActivityLike): boole
 
 /** Folga pedida (DR): subtipo de folga, nunca de repouso. */
 export function isRequestedDayOff(activity: ScheduleActivityLike): boolean {
+  // Folga pedida é subtipo de folga: se a classificação não disse FOLGA, não há
+  // subtipo a marcar. Sem esta guarda, um dia com código formal de repouso e um
+  // pairingCode DR era classificado REPOUSO e ao mesmo tempo marcado como folga
+  // pedida — o fallback passava por cima do código formal exatamente no ponto em
+  // que a hierarquia deveria mandar.
+  if (classifyScheduleActivity(activity) !== 'FOLGA') return false;
   return hasFormalCode(activity, REQUESTED_DAY_OFF_CODES)
     || (!hasFormalCode(activity, DAY_OFF_CODES) && hasCode(activity, REQUESTED_DAY_OFF_CODES));
 }
