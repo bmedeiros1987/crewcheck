@@ -107,6 +107,30 @@ export function infobipPublicStatus(environment = process.env) {
   };
 }
 
+function redactInfobipDiagnostic(value = '') {
+  return String(value || '')
+    .replace(/\bApp\s+\S+/gi, '[credencial]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[número]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220);
+}
+
+export function infobipProviderErrorDetail(raw = '') {
+  const source = String(raw || '').trim();
+  if (!source) return '';
+  let parsed = null;
+  try { parsed = JSON.parse(source); } catch {}
+  const exception = parsed?.requestError?.serviceException || parsed?.serviceException || null;
+  const code = redactInfobipDiagnostic(exception?.messageId || parsed?.errorCode || parsed?.code || '');
+  const description = redactInfobipDiagnostic(exception?.text || parsed?.message || parsed?.error || source);
+  const validation = exception?.validationErrors || parsed?.validationErrors;
+  const validationText = validation && typeof validation === 'object'
+    ? redactInfobipDiagnostic(Object.entries(validation).map(([field, reason]) => `${field}: ${reason}`).join('; '))
+    : '';
+  return [code, description, validationText].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(' — ').slice(0, 320);
+}
+
 export function buildInfobipTtsRequest({ environment = process.env, phone = '', text = '' } = {}) {
   const configuration = infobipConfiguration(environment);
   if (!configuration.configured) {
