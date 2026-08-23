@@ -57,6 +57,8 @@ export type ScheduleActivityCounts = {
   nonFlightProgramming: number;
   rest: number;
   daysOff: number;
+  /** Subconjunto de daysOff: folgas pedidas (DR). Não soma duas vezes. */
+  requestedDaysOff: number;
   recoveryRest: number;
   overnights: number;
   unknown: number;
@@ -64,6 +66,7 @@ export type ScheduleActivityCounts = {
 
 const DAY_OFF_CODES = new Set([
   'DB',
+  'DR',
   'DBC',
   'DC',
   'DCH',
@@ -88,12 +91,22 @@ const DAY_OFF_CODES = new Set([
   'FERIAS',
 ]);
 
+// DR não entra aqui: em rosterCodes.ts:108 ele é
+// { code: 'DR', description: 'Folga Pedida', category: 'DAY_OFF' }. Enquanto este
+// módulo o tratava como repouso, a tabela canônica de códigos e a classificação da
+// interface diziam coisas diferentes sobre o mesmo dia, e o preview contava as
+// folgas pedidas na coluna errada.
 const RECOVERY_REST_CODES = new Set([
-  'DR',
   'REST',
   'REPOUSO',
   'DESCANSO',
   'DESCANSO_REGULAMENTAR',
+]);
+
+// Folga pedida pelo tripulante. É folga para efeito de contagem, e continua
+// identificável para quem precisar separar folga publicada de folga solicitada.
+const REQUESTED_DAY_OFF_CODES = new Set([
+  'DR',
 ]);
 
 const OVERNIGHT_CODES = new Set([
@@ -300,6 +313,12 @@ export function isProgramScheduleActivity(activity: ScheduleActivityLike): boole
   return classifyScheduleActivity(activity) === 'PROGRAMACAO';
 }
 
+/** Folga pedida (DR): subtipo de folga, nunca de repouso. */
+export function isRequestedDayOff(activity: ScheduleActivityLike): boolean {
+  return hasFormalCode(activity, REQUESTED_DAY_OFF_CODES)
+    || (!hasFormalCode(activity, DAY_OFF_CODES) && hasCode(activity, REQUESTED_DAY_OFF_CODES));
+}
+
 export function isRestScheduleActivity(activity: ScheduleActivityLike): boolean {
   const category = classifyScheduleActivity(activity);
   return category === 'FOLGA' || category === 'REPOUSO';
@@ -383,6 +402,7 @@ export function countScheduleCategories(
     nonFlightProgramming: 0,
     rest: 0,
     daysOff: 0,
+    requestedDaysOff: 0,
     recoveryRest: 0,
     overnights: 0,
     unknown: 0,
@@ -399,6 +419,7 @@ export function countScheduleCategories(
     if (category === 'FOLGA') {
       counts.rest += 1;
       counts.daysOff += 1;
+      if (isRequestedDayOff(activity)) counts.requestedDaysOff += 1;
       continue;
     }
     if (category === 'REPOUSO') {

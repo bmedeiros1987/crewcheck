@@ -5,19 +5,24 @@
  * é textual: afirma que Home.tsx contém `Folgas: ${scheduleCounts.daysOff}` e
  * `Descansos: ${scheduleCounts.recoveryRest}`. Ele fixa a fiação, e por construção
  * não consegue perceber um número errado — foi exatamente esse o buraco quando o
- * preview passou a mostrar Folgas e Descansos divergentes.
+ * preview mostrou 7 Folgas para uma escala que publica 11 Off Days.
  *
  * Este teste executa o agregador de produção, countScheduleCategories, sobre casos
  * sintéticos no nível de campo. Nenhum PDF, fixture mensal ou dado pessoal é
  * carregado (ver #533).
  *
- * REGRA (decidida no #303): o código formal publicado prevalece sobre título e
- * pairingCode quando houver conflito.
- *   - DO, DOF, FOLGA, DRC  -> Folga, mesmo que o rótulo diga "Descanso";
- *   - DR e códigos formais de repouso -> Descanso;
- *   - título e pairingCode só decidem quando não há código formal conclusivo;
- *   - "Descanso na base", inferido por continuidade e sem código formal de folga,
- *     segue sendo Descanso.
+ * CONTRATO SEMÂNTICO (#303):
+ *   1. DR é Day Off Requested — folga pedida. É FOLGA, nunca Descanso. A tabela
+ *      canônica do projeto já dizia isso: rosterCodes.ts declara DR como
+ *      { description: 'Folga Pedida', category: 'DAY_OFF' }. O classificador é que
+ *      divergia, listando DR entre os códigos de repouso.
+ *   2. DR continua identificável como subtipo, via isRequestedDayOff e do contador
+ *      requestedDaysOff, que é subconjunto de daysOff e não soma duas vezes.
+ *   3. O código formal publicado prevalece sobre título e pairingCode: um dia
+ *      publicado como DO/DOF/FOLGA/DR/DRC é folga ainda que o rótulo diga
+ *      "Descanso".
+ *   4. Repouso verdadeiro continua Descanso quando não há código formal de folga —
+ *      "Descanso na base", inferido por continuidade física, é o caso.
  */
 
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB, createChecker } from './lib/ts-module-harness.mjs';
@@ -30,40 +35,78 @@ const { load, cleanup } = loadClientModules({
   stubs: TYPE_ONLY_PDF_PARSER_STUB,
   prefix: 'crewcheck-303-counts-',
   expose: {
-    scheduleActivityClassification: ['countScheduleCategories', 'classifyScheduleActivity'],
+    scheduleActivityClassification: ['countScheduleCategories', 'classifyScheduleActivity', 'isRequestedDayOff'],
   },
 });
 const classification = load('scheduleActivityClassification');
+const rosterCodes = load('rosterCodes');
 const classify = (activity) => classification.classifyScheduleActivity(activity);
+const dayWith = (type, extra = {}) => ({ kind: 'rest', day: { type }, ...extra });
 
 // ---------------------------------------------------------------------------
-// 1. Código formal sozinho — a base da regra.
+// 0. Premissa — o contrato não é invenção deste teste: está na tabela canônica.
+//    Se alguém reclassificar DR em rosterCodes.ts, este gate falha primeiro.
 // ---------------------------------------------------------------------------
-check('DO publicado é Folga', classify({ kind: 'rest', day: { type: 'DO' } }) === 'FOLGA');
-check('DR publicado é Descanso', classify({ kind: 'rest', day: { type: 'DR' } }) === 'REPOUSO');
-check('DRC publicado é Folga', classify({ kind: 'rest', day: { type: 'DRC' } }) === 'FOLGA');
+{
+  const dr = rosterCodes.getRosterCodeDefinition('DR');
+  check('premissa: rosterCodes.ts declara DR como DAY_OFF',
+    dr?.category === 'DAY_OFF', `categoria=${dr?.category} descrição=${dr?.description}`);
+  check('premissa: a descrição canônica de DR é folga pedida',
+    /FOLGA/i.test(String(dr?.description || '')), `descrição=${dr?.description}`);
+}
 
 // ---------------------------------------------------------------------------
-// 2. Conflito entre código formal e rótulo — o defeito reproduzido no #303.
-//    Antes da correção, o rótulo "Descanso" movia o dia para Descansos porque o
-//    conjunto de repouso era consultado sobre todos os campos ao mesmo tempo.
+// 1. Código formal isolado.
 // ---------------------------------------------------------------------------
-for (const code of ['DO', 'DOF', 'FOLGA', 'DRC']) {
+check('DO publicado é Folga', classify(dayWith('DO')) === 'FOLGA');
+check('DR publicado é Folga, não Descanso', classify(dayWith('DR')) === 'FOLGA',
+  `recebido=${classify(dayWith('DR'))}`);
+check('DRC publicado é Folga', classify(dayWith('DRC')) === 'FOLGA');
+check('REST publicado é Descanso', classify(dayWith('REST')) === 'REPOUSO');
+
+// ---------------------------------------------------------------------------
+// 2. DR segue distinguível como subtipo, sem sair de Folgas.
+// ---------------------------------------------------------------------------
+check('DR é reconhecido como folga pedida', classification.isRequestedDayOff(dayWith('DR')));
+check('DO não é folga pedida', !classification.isRequestedDayOff(dayWith('DO')));
+
+// ---------------------------------------------------------------------------
+// 3. O caso que motivou o #303 — 7 DO + 4 DR devem somar 11 Folgas.
+// ---------------------------------------------------------------------------
+{
+  const mes = [
+    ...Array.from({ length: 7 }, () => dayWith('DO')),
+    ...Array.from({ length: 4 }, () => dayWith('DR')),
+  ];
+  const counts = classification.countScheduleCategories(mes);
+  check('7 DO + 4 DR = 11 Folgas',
+    counts.daysOff === 11, `daysOff=${counts.daysOff} recoveryRest=${counts.recoveryRest}`);
+  check('7 DO + 4 DR = 0 Descansos',
+    counts.recoveryRest === 0, `recoveryRest=${counts.recoveryRest}`);
+  check('das 11 folgas, 4 são folgas pedidas',
+    counts.requestedDaysOff === 4, `requestedDaysOff=${counts.requestedDaysOff}`);
+  check('o subtipo não soma duas vezes: requestedDaysOff ⊆ daysOff',
+    counts.requestedDaysOff <= counts.daysOff && counts.rest === 11,
+    `rest=${counts.rest} daysOff=${counts.daysOff}`);
+}
+
+// ---------------------------------------------------------------------------
+// 4. Conflito entre código formal e rótulo — o rótulo não sobrescreve a folga.
+// ---------------------------------------------------------------------------
+for (const code of ['DO', 'DOF', 'FOLGA', 'DR', 'DRC']) {
   for (const label of ['Descanso', 'Descanso na base', 'DESCANSO REGULAMENTAR']) {
+    const activity = dayWith(code, { title: label });
     check(`${code} publicado continua Folga com o rótulo "${label}"`,
-      classify({ kind: 'rest', day: { type: code }, title: label }) === 'FOLGA',
-      `recebido=${classify({ kind: 'rest', day: { type: code }, title: label })}`);
+      classify(activity) === 'FOLGA', `recebido=${classify(activity)}`);
   }
 }
 
-check('DO publicado vence pairingCode DR',
-  classify({ kind: 'rest', day: { type: 'DO', pairingCode: 'DR' } }) === 'FOLGA');
-check('DO publicado vence pairingCode textual de descanso',
+check('DO publicado vence pairingCode de descanso',
   classify({ kind: 'rest', day: { type: 'DO', pairingCode: 'DESCANSO ENTRE JORNADAS' } }) === 'FOLGA');
 
 // ---------------------------------------------------------------------------
-// 3. Contraprova — a regra não silencia o rótulo, apenas o rebaixa. Sem código
-//    formal conclusivo ele continua decidindo.
+// 5. Contraprova — a regra rebaixa o rótulo, não o silencia. Sem código formal de
+//    folga, repouso verdadeiro continua Descanso.
 // ---------------------------------------------------------------------------
 check('sem código formal, rótulo "Descanso na base" ainda é Descanso',
   classify({
@@ -73,24 +116,24 @@ check('sem código formal, rótulo "Descanso na base" ainda é Descanso',
     canonical: { kind: 'stay', publishedDay: { type: 'DESCANSO_BASE_CONTINUIDADE', pairingCode: 'DESCANSO BASE ENTRE JORNADAS', legs: [] } },
   }) === 'REPOUSO');
 
+check('sem código formal, rótulo "Repouso" ainda é Descanso',
+  classify({ kind: 'rest', title: 'Repouso' }) === 'REPOUSO');
+
 check('sem código formal, rótulo "Folga" ainda é Folga',
   classify({ kind: 'rest', title: 'Folga' }) === 'FOLGA');
 
-check('DR publicado com rótulo "Folga" continua Descanso',
-  classify({ kind: 'rest', day: { type: 'DR' }, title: 'Folga' }) === 'REPOUSO');
-
 // ---------------------------------------------------------------------------
-// 4. Efeito agregado — é o número que o preview mostra.
+// 6. Mês misto — folgas publicadas, folgas pedidas e um repouso inferido.
 // ---------------------------------------------------------------------------
 {
   const mes = [
-    { kind: 'rest', day: { type: 'DO' }, title: 'Folga' },
-    { kind: 'rest', day: { type: 'DO' }, title: 'Descanso' },
-    { kind: 'rest', day: { type: 'DOF' }, title: 'Descanso na base' },
-    { kind: 'rest', day: { type: 'FOLGA' }, title: 'Descanso' },
-    { kind: 'rest', day: { type: 'DRC' } },
-    { kind: 'rest', day: { type: 'DR' } },
-    { kind: 'rest', day: { type: 'DR' }, title: 'Folga' },
+    dayWith('DO', { title: 'Folga' }),
+    dayWith('DO', { title: 'Descanso' }),
+    dayWith('DOF', { title: 'Descanso na base' }),
+    dayWith('FOLGA', { title: 'Descanso' }),
+    dayWith('DRC'),
+    dayWith('DR'),
+    dayWith('DR', { title: 'Descanso' }),
     {
       kind: 'stay',
       title: 'Descanso na base',
@@ -99,14 +142,15 @@ check('DR publicado com rótulo "Folga" continua Descanso',
     },
   ];
   const counts = classification.countScheduleCategories(mes);
-  check('agregado: 5 folgas publicadas contadas como Folgas',
-    counts.daysOff === 5, `daysOff=${counts.daysOff} recoveryRest=${counts.recoveryRest}`);
-  check('agregado: 3 repousos contados como Descansos',
-    counts.recoveryRest === 3, `daysOff=${counts.daysOff} recoveryRest=${counts.recoveryRest}`);
-  check('agregado: soma de folga+repouso preservada',
-    counts.rest === mes.length, `rest=${counts.rest} esperado=${mes.length}`);
-  check('agregado: nada cai em DESCONHECIDA',
-    counts.unknown === 0, `unknown=${counts.unknown}`);
+  check('mês misto: 7 folgas publicadas ou pedidas',
+    counts.daysOff === 7, `daysOff=${counts.daysOff} recoveryRest=${counts.recoveryRest}`);
+  check('mês misto: 1 descanso inferido',
+    counts.recoveryRest === 1, `recoveryRest=${counts.recoveryRest}`);
+  check('mês misto: 2 folgas pedidas',
+    counts.requestedDaysOff === 2, `requestedDaysOff=${counts.requestedDaysOff}`);
+  check('mês misto: soma preservada e nada em DESCONHECIDA',
+    counts.rest === mes.length && counts.unknown === 0,
+    `rest=${counts.rest} unknown=${counts.unknown}`);
 }
 
 cleanup();
