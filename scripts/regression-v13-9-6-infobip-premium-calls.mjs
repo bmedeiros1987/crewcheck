@@ -5,6 +5,7 @@ import {
   infobipConfiguration,
   infobipPublicStatus,
   normalizeInfobipBaseUrl,
+  normalizeInfobipLanguage,
 } from '../server/v1396/infobip.mjs';
 
 const currentEnvironment = {
@@ -16,6 +17,7 @@ const currentEnvironment = {
 
 assert.equal(normalizeInfobipBaseUrl('crewcheck.api.infobip.com/'), 'https://crewcheck.api.infobip.com');
 assert.equal(normalizeInfobipBaseUrl('http://crewcheck.api.infobip.com'), '');
+assert.equal(normalizeInfobipLanguage('pt-BR'), 'pt');
 
 const configuration = infobipConfiguration(currentEnvironment);
 assert.equal(configuration.configured, true);
@@ -33,7 +35,7 @@ assert.equal(request.url, 'https://crewcheck.api.infobip.com/tts/3/advanced');
 assert.equal(request.headers.authorization, 'App test-key-not-a-secret');
 assert.deepEqual(request.body.messages[0].destinations, [{ to: '5561999990000' }]);
 assert.equal(request.body.messages[0].from, '556133334444');
-assert.equal(request.body.messages[0].language, 'pt-BR');
+assert.equal(request.body.messages[0].language, 'pt');
 
 const legacyAlias = infobipConfiguration({
   INFOBIP_API_KEY: 'legacy-key',

@@ -66,6 +66,11 @@ export function normalizeInfobipVoice(value = '') {
   return { name: candidate };
 }
 
+export function normalizeInfobipLanguage(value = '') {
+  const primary = String(value || 'pt').trim().toLowerCase().split(/[-_]/)[0];
+  return /^[a-z]{2}$/.test(primary) ? primary : 'pt';
+}
+
 export function infobipConfiguration(environment = process.env) {
   const apiKeyEntry = firstEnvironmentValue(environment, INFOBIP_API_KEY_ALIASES);
   const baseUrlEntry = firstEnvironmentValue(environment, INFOBIP_BASE_URL_ALIASES);
@@ -85,7 +90,7 @@ export function infobipConfiguration(environment = process.env) {
     apiKey,
     baseUrl,
     from,
-    language: firstEnvironmentValue(environment, ['INFOBIP_VOICE_LANGUAGE', 'INFOBIP_LANGUAGE']).value || 'pt-BR',
+    language: normalizeInfobipLanguage(firstEnvironmentValue(environment, ['INFOBIP_VOICE_LANGUAGE', 'INFOBIP_LANGUAGE']).value),
     voice: normalizeInfobipVoice(firstEnvironmentValue(environment, ['INFOBIP_VOICE_NAME', 'INFOBIP_TTS_VOICE']).value),
     sources: {
       apiKey: apiKeyEntry.source,
