@@ -7,7 +7,7 @@ import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
-import { buildInfobipTtsRequest, infobipConfiguration, infobipProviderErrorDetail, infobipPublicStatus } from './server/v1396/infobip.mjs';
+import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, 'dist');
@@ -3606,10 +3606,7 @@ async function sendInfobipPhoneCall(phone, text) {
   if (result.ok && !usedConfiguredVoice) message = 'Ligação Premium iniciada pela Infobip com a voz padrão compatível.';
   if ([401, 403].includes(Number(result.status))) message = 'A Infobip recusou a API key ou a permissão de Voice. Confira a chave no Render e o produto Voice na conta.';
   else if (/credit|balance|saldo/i.test(String(result.providerMessage || ''))) message = 'A Infobip está vinculada, mas a conta não possui saldo suficiente para iniciar a ligação.';
-  else if (Number(result.status) === 400) {
-    const detail = infobipProviderErrorDetail(result.providerMessage);
-    message = `A Infobip recusou a ligação.${detail ? ` Motivo: ${detail}` : ' Confirme o remetente Voice e os números com DDI.'}`;
-  }
+  else if (Number(result.status) === 400) message = 'A Infobip recusou o número de origem/destino, a voz ou o texto da chamada. Use números com DDI e confirme o remetente Voice.';
   infobipLastAttempt = { ok: Boolean(result.ok), status: Number(result.status || 0), at: new Date().toISOString(), message };
   return { ...result, provider: 'infobip', message };
 }
