@@ -211,5 +211,56 @@ for (const code of ['CPT', 'LIS']) {
     phantom(days, 'REC').length === 1, show(days));
 }
 
+// ---------------------------------------------------------------------------
+// 10. Limiar do prefixo de continuação — o contrato aqui NÃO é o do bloco de voo.
+//     Na continuação a origem ficou na coluna anterior, então a primeira estação
+//     desta coluna já é a chegada: só ela pode ser isenta de virar fronteira.
+//     Com o limiar de duas estações, um código colidente que vem DEPOIS de uma
+//     chegada não colidente era consumido no prefixo e a atividade legítima
+//     acabava movida para a data anterior.
+// ---------------------------------------------------------------------------
+for (const code of ['REC', 'CPT', 'LIS']) {
+  const tokens = ['(...)', 'GRU', '02:35', '(320)', code, '14:00', '18:00'];
+  const end = aims.findAimsContinuationPrefixEnd(tokens);
+  check(`continuação: ${code} depois de uma chegada não colidente é fronteira, não estação`,
+    end === 4, `end=${end} esperado=4 prefixo="${tokens.slice(0, end).join(' ')}"`);
+}
+
+// A chegada colidente sem estação anterior continua isenta: é o caso 6, aqui
+// generalizado para os três códigos, para que o limiar não seja endurecido demais.
+for (const code of ['REC', 'CPT', 'LIS']) {
+  const tokens = ['(...)', code, '02:35', '(320)', 'DO'];
+  const end = aims.findAimsContinuationPrefixEnd(tokens);
+  check(`continuação: ${code} como primeira estação segue sendo a chegada costurada`,
+    end === 4, `end=${end} esperado=4 tokens=${JSON.stringify(tokens)}`);
+}
+
+// Efeito observável na costura: a atividade do dia seguinte não pode migrar.
+{
+  const columns = [
+    { page: 1, markerX: 0, date: '15/08/2026', dateObj: new Date(2026, 7, 15), dayOfWeek: 'Sáb', tokens: ['LA', '3382', '22:20', '23:30', 'BSB', '(...)'] },
+    { page: 1, markerX: 1, date: '16/08/2026', dateObj: new Date(2026, 7, 16), dayOfWeek: 'Dom', tokens: ['(...)', 'GRU', '02:35', '(320)', 'REC', '14:00', '18:00'] },
+  ];
+  const stitched = aims.stitchAimsOvernightColumnContinuations(columns);
+  check('costura move só a chegada GRU/02:35 para a coluna de origem',
+    stitched[0].tokens.join(' ').includes('GRU 02:35 (320)'),
+    JSON.stringify(stitched.map((column) => column.tokens)));
+  check('costura não arrasta a atividade REC 14:00 18:00 para a data anterior',
+    !stitched[0].tokens.includes('REC') && stitched[1].tokens.includes('REC'),
+    JSON.stringify(stitched.map((column) => column.tokens)));
+}
+
+// ---------------------------------------------------------------------------
+// 11. Contraprova de separação — o bloco de voo completo mantém o limiar de duas
+//     estações. Se alguém propagar o limiar da continuação para cá, o caso 1
+//     volta a falhar; esta asserção nomeia a razão.
+// ---------------------------------------------------------------------------
+{
+  const tokens = ['LA', '9001', '10:00', 'GRU', 'REC', '12:30', '(320)'];
+  check('bloco de voo completo conserva o limiar de duas estações (origem+destino)',
+    aims.findAimsVisualFlightBlockEnd(tokens, 0) === tokens.length,
+    `end=${aims.findAimsVisualFlightBlockEnd(tokens, 0)} tokens=${JSON.stringify(tokens)}`);
+}
+
 cleanup();
 process.exit(checker.report());

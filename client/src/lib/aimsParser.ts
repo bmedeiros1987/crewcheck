@@ -1070,16 +1070,20 @@ function isIncompleteAimsFlightSegment(segment: string[], fullTokens: string[]):
 
 function findAimsContinuationPrefixEnd(tokens: string[]): number {
   let end = 0;
-  // Mesma exceção de findAimsVisualFlightBlockEnd: um aeroporto colidindo com um
-  // código de escala (ex.: REC) ainda é a estação de chegada da perna costurada,
-  // não uma nova atividade, enquanto a perna não tiver origem+destino completos.
+  // Exceção análoga à de findAimsVisualFlightBlockEnd, mas com o limiar do
+  // contexto de continuação, não o do bloco de voo completo: aqui a perna vem
+  // costurada da coluna anterior, então a origem já ficou lá e a PRIMEIRA estação
+  // desta coluna já é a chegada. Só ela pode ser isenta de virar fronteira.
+  // A partir da segunda, um código colidente (REC/CPT/LIS) é atividade nova — usar
+  // o limiar de duas estações aqui arrastaria essa atividade para a data anterior.
+  const AIRPORTS_BEFORE_ARRIVAL_IN_CONTINUATION = 1;
   let airportsSeenInLeg = 0;
   for (let i = 0; i < tokens.length; i += 1) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
     if (token === 'LA' && /^\d{3,4}$/.test(next)) break;
     const isAirportToken = /^[A-Z]{3}$/.test(token) && isAimsHumanAirport(tokens[i], '');
-    if (i > 0 && isAimsVisualStandaloneBoundaryToken(token) && !(isAirportToken && airportsSeenInLeg < 2)) break;
+    if (i > 0 && isAimsVisualStandaloneBoundaryToken(token) && !(isAirportToken && airportsSeenInLeg < AIRPORTS_BEFORE_ARRIVAL_IN_CONTINUATION)) break;
     if (isAirportToken) airportsSeenInLeg += 1;
     end = i + 1;
   }
