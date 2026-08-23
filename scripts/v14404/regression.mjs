@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildInfobipTtsRequest, infobipProviderErrorDetail } from '../../server/v1396/infobip.mjs';
+import { buildInfobipEnglishFallbackRequest, buildInfobipTtsRequest, infobipProviderErrorDetail, infobipRejectedUnsupportedLanguage } from '../../server/v1396/infobip.mjs';
 
 const detail = infobipProviderErrorDetail(JSON.stringify({
   requestError: {
@@ -25,4 +25,9 @@ const request = buildInfobipTtsRequest({
   text: 'Teste CrewCheck',
 });
 assert.equal(request.body.messages[0].language, 'pt');
+assert.equal(infobipRejectedUnsupportedLanguage('{"name":"REJECTED_UNSUPPORTED_LANGUAGE"}'), true);
+const fallback = buildInfobipEnglishFallbackRequest(request);
+assert.equal(fallback.body.messages[0].language, 'en');
+assert.equal(fallback.body.messages[0].text, 'CrewCheck wake-up alert. Open CrewCheck now.');
+assert.equal(fallback.body.messages[0].voice, undefined);
 console.log('[v14404] regressao ok');

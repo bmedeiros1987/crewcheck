@@ -136,6 +136,21 @@ export function infobipProviderErrorDetail(raw = '') {
   return [code, description, validationText].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(' — ').slice(0, 320);
 }
 
+export function infobipRejectedUnsupportedLanguage(raw = '') {
+  return /REJECTED_UNSUPPORTED_LANGUAGE|Unsupported language/i.test(String(raw || ''));
+}
+
+export function buildInfobipEnglishFallbackRequest(request = {}) {
+  const body = JSON.parse(JSON.stringify(request?.body || {}));
+  const message = body?.messages?.[0];
+  if (message) {
+    message.language = 'en';
+    message.text = 'CrewCheck wake-up alert. Open CrewCheck now.';
+    delete message.voice;
+  }
+  return { ...request, body };
+}
+
 export function buildInfobipTtsRequest({ environment = process.env, phone = '', text = '' } = {}) {
   const configuration = infobipConfiguration(environment);
   if (!configuration.configured) {
