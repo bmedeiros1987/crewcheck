@@ -67,8 +67,16 @@ check('REST publicado é Descanso', classify(dayWith('REST')) === 'REPOUSO');
 // ---------------------------------------------------------------------------
 // 2. DR segue distinguível como subtipo, sem sair de Folgas.
 // ---------------------------------------------------------------------------
-check('DR é reconhecido como folga pedida', classification.isRequestedDayOff(dayWith('DR')));
-check('DO não é folga pedida', !classification.isRequestedDayOff(dayWith('DO')));
+// A API do subtipo é nova nesta slice. Sem a guarda, revertendo a implementação o
+// teste morre aqui com TypeError e esconde as asserções de contagem — que são o
+// que realmente prova o defeito. Com a guarda, o fail-before reporta a lacuna e
+// as contagens seguem sendo medidas.
+const hasRequestedDayOffApi = typeof classification.isRequestedDayOff === 'function';
+check('classificador expõe isRequestedDayOff para identificar o subtipo', hasRequestedDayOffApi);
+if (hasRequestedDayOffApi) {
+  check('DR é reconhecido como folga pedida', classification.isRequestedDayOff(dayWith('DR')));
+  check('DO não é folga pedida', !classification.isRequestedDayOff(dayWith('DO')));
+}
 
 // ---------------------------------------------------------------------------
 // 3. O caso que motivou o #303 — 7 DO + 4 DR devem somar 11 Folgas.

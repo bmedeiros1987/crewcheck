@@ -57,8 +57,6 @@ export type ScheduleActivityCounts = {
   nonFlightProgramming: number;
   rest: number;
   daysOff: number;
-  /** Subconjunto de daysOff: folgas pedidas (DR). Não soma duas vezes. */
-  requestedDaysOff: number;
   recoveryRest: number;
   overnights: number;
   unknown: number;
@@ -66,7 +64,6 @@ export type ScheduleActivityCounts = {
 
 const DAY_OFF_CODES = new Set([
   'DB',
-  'DR',
   'DBC',
   'DC',
   'DCH',
@@ -91,22 +88,12 @@ const DAY_OFF_CODES = new Set([
   'FERIAS',
 ]);
 
-// DR não entra aqui: em rosterCodes.ts:108 ele é
-// { code: 'DR', description: 'Folga Pedida', category: 'DAY_OFF' }. Enquanto este
-// módulo o tratava como repouso, a tabela canônica de códigos e a classificação da
-// interface diziam coisas diferentes sobre o mesmo dia, e o preview contava as
-// folgas pedidas na coluna errada.
 const RECOVERY_REST_CODES = new Set([
+  'DR',
   'REST',
   'REPOUSO',
   'DESCANSO',
   'DESCANSO_REGULAMENTAR',
-]);
-
-// Folga pedida pelo tripulante. É folga para efeito de contagem, e continua
-// identificável para quem precisar separar folga publicada de folga solicitada.
-const REQUESTED_DAY_OFF_CODES = new Set([
-  'DR',
 ]);
 
 const OVERNIGHT_CODES = new Set([
@@ -143,46 +130,22 @@ function normalize(value: unknown): string {
     .toUpperCase();
 }
 
-// #303 — hierarquia de fontes de código.
-//
-// Nem todo campo tem o mesmo peso. `type` e `code` carregam o código formal
-// publicado na escala; `pairingCode`, `title` e `flightNumber` são rótulo humano
-// ou agrupamento, e mudam de redação sem que a escala mude. Quando as duas
-// camadas discordam, o código formal decide: um dia publicado como DO cujo rótulo
-// diz "Descanso" é folga, não repouso — antes desta separação ele era contado em
-// Descansos, porque o conjunto de repouso era consultado sobre todos os campos de
-// uma vez e "DESCANSO" saía do título.
-function formalCodeValues(activity: ScheduleActivityLike): string[] {
+function activityCodeValues(activity: ScheduleActivityLike): string[] {
   const published = activity.canonical?.publishedDay;
   return [
     activity.canonical?.code,
     activity.code,
-    activity.type,
-    activity.day?.type,
-    published?.type,
-  ]
-    .map(normalize)
-    .filter(Boolean);
-}
-
-// Rótulo e agrupamento: só decidem quando o código formal não conclui nada.
-// É o caso de "Descanso na base", inferido por continuidade física e sem código
-// de folga publicado — segue sendo repouso.
-function fallbackCodeValues(activity: ScheduleActivityLike): string[] {
-  const published = activity.canonical?.publishedDay;
-  return [
     activity.pairingCode,
+    activity.type,
     activity.day?.pairingCode,
+    activity.day?.type,
     published?.pairingCode,
+    published?.type,
     activity.flightNumber,
     activity.title,
   ]
     .map(normalize)
     .filter(Boolean);
-}
-
-function activityCodeValues(activity: ScheduleActivityLike): string[] {
-  return [...formalCodeValues(activity), ...fallbackCodeValues(activity)];
 }
 
 function activityValues(activity: ScheduleActivityLike): string[] {
@@ -196,9 +159,9 @@ function activityValues(activity: ScheduleActivityLike): string[] {
   ].filter(Boolean);
 }
 
-function tokensOfValues(values: readonly string[]): Set<string> {
+function activityTokens(activity: ScheduleActivityLike): Set<string> {
   const tokens = new Set<string>();
-  for (const value of values) {
+  for (const value of activityCodeValues(activity)) {
     tokens.add(value);
     for (const token of value.match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g) ?? []) {
       tokens.add(token);
@@ -207,23 +170,11 @@ function tokensOfValues(values: readonly string[]): Set<string> {
   return tokens;
 }
 
-function activityTokens(activity: ScheduleActivityLike): Set<string> {
-  return tokensOfValues(activityCodeValues(activity));
-}
-
-function matchesCodes(tokens: ReadonlySet<string>, codes: ReadonlySet<string>): boolean {
-  for (const token of tokens) {
+function hasCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
+  for (const token of activityTokens(activity)) {
     if (codes.has(token)) return true;
   }
   return false;
-}
-
-function hasCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
-  return matchesCodes(activityTokens(activity), codes);
-}
-
-function hasFormalCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
-  return matchesCodes(tokensOfValues(formalCodeValues(activity)), codes);
 }
 
 function activityText(activity: ScheduleActivityLike): string {
@@ -257,13 +208,6 @@ export function classifyScheduleActivity(
 ): ScheduleActivityCategory {
   if (!activity || activity.placeholder) return 'DESCONHECIDA';
 
-  // Código formal publicado decide primeiro, e folga vence repouso quando os dois
-  // aparecem no mesmo nível formal: DO/DOF/FOLGA/DRC são folga ainda que o rótulo
-  // ou o pairingCode digam "Descanso".
-  if (hasFormalCode(activity, DAY_OFF_CODES)) return 'FOLGA';
-  if (hasFormalCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
-
-  // Sem código formal conclusivo, rótulo e pairingCode entram como fallback.
   if (hasCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
   if (hasCode(activity, DAY_OFF_CODES)) return 'FOLGA';
 
@@ -311,12 +255,6 @@ export function classifyScheduleActivity(
 
 export function isProgramScheduleActivity(activity: ScheduleActivityLike): boolean {
   return classifyScheduleActivity(activity) === 'PROGRAMACAO';
-}
-
-/** Folga pedida (DR): subtipo de folga, nunca de repouso. */
-export function isRequestedDayOff(activity: ScheduleActivityLike): boolean {
-  return hasFormalCode(activity, REQUESTED_DAY_OFF_CODES)
-    || (!hasFormalCode(activity, DAY_OFF_CODES) && hasCode(activity, REQUESTED_DAY_OFF_CODES));
 }
 
 export function isRestScheduleActivity(activity: ScheduleActivityLike): boolean {
@@ -402,7 +340,6 @@ export function countScheduleCategories(
     nonFlightProgramming: 0,
     rest: 0,
     daysOff: 0,
-    requestedDaysOff: 0,
     recoveryRest: 0,
     overnights: 0,
     unknown: 0,
@@ -419,7 +356,6 @@ export function countScheduleCategories(
     if (category === 'FOLGA') {
       counts.rest += 1;
       counts.daysOff += 1;
-      if (isRequestedDayOff(activity)) counts.requestedDaysOff += 1;
       continue;
     }
     if (category === 'REPOUSO') {
