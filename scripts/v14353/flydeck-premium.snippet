@@ -84,9 +84,9 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
     <article className="cc-flydeck-briefing">
       <header>
         <div className="cc-flydeck-phase"><span>{phase}</span><strong>{countdown}</strong></div>
-        <button className="cc-flydeck-roster-link" onClick={() => setView('roster')} aria-label={`Abrir escala da programação de ${programDateLabel(event)}`}>
-          <span className="cc-flydeck-calendar-icon" aria-hidden="true"><CalendarDays/><b>{programDay}</b></span>
-          <span className="cc-flydeck-calendar-label">Escala</span>
+        <button className="cc-flydeck-roster-link" onClick={() => { setPendingRosterFocus(eventStartDateTime(event)); setView('roster'); }} aria-label={`Ver escala na data da programação de ${programDateLabel(event)}`}>
+          <span className="cc-flydeck-roster-label">Ver Escala</span>
+          <ChevronRight aria-hidden="true"/>
         </button>
       </header>
       <div className="cc-flydeck-program">

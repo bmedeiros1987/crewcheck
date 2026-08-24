@@ -78,6 +78,7 @@ import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
+import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
@@ -2152,6 +2153,19 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
   const finance = financeSnapshot(normalizedRoster);
   const todayKey = todayRosterKey();
   const todayGroup = groupedEvents.find((group) => dateChip(parseDate(group.day)) === todayKey);
+  // #560: quem chegou por "Ver Escala" trouxe a data da programação exibida. O
+  // repasse é de uma leitura só, então abrir a escala pelo rodapé ou pelo menu
+  // não herda o foco de uma navegação anterior.
+  useEffect(() => {
+    const focus = consumePendingRosterFocus();
+    if (!focus) return;
+    const key = dateChip(focus);
+    const group = groupedEvents.find((item) => dateChip(parseDate(item.day)) === key);
+    const target = group?.events?.[0];
+    if (target) setExpandedId(target.id);
+    requestAnimationFrame(() => document.querySelector(`[data-roster-day="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, []);
+
   function openToday() {
     const firstToday = todayGroup?.events?.[0];
     if (!firstToday) {

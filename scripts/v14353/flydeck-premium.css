@@ -111,33 +111,7 @@
   background: transparent;
   color: #a5f3fc;
 }
-.cc-flydeck-calendar-icon {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-}
-.cc-flydeck-calendar-icon svg {
-  width: 32px;
-  height: 32px;
-  stroke-width: 1.8;
-}
-.cc-flydeck-calendar-icon b {
-  position: absolute;
-  left: 50%;
-  top: 56%;
-  transform: translate(-50%, -50%);
-  color: currentColor;
-  font-size: .62rem;
-  line-height: 1;
-  font-weight: 950;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.04em;
-}
-.cc-flydeck-calendar-label {
+.cc-flydeck-roster-label {
   font-size: .72rem;
   font-weight: 850;
   letter-spacing: .01em;
@@ -280,7 +254,6 @@ html[data-crew-theme='light'] .cc-flydeck-official-note strong { color: #1e3a8a;
   .cc-flydeck-briefing > header { align-items: flex-start; }
   .cc-flydeck-phase { display: grid; }
   .cc-flydeck-facts > div { padding: 12px 10px; }
-  .cc-flydeck-calendar-label { display: none; }
   .cc-flydeck-roster-link { min-width: 42px; padding-inline: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -13,7 +13,7 @@ import {
   isProgramScheduleActivity,
   type ScheduleActivityLike,
 } from '../../lib/scheduleActivityClassification';
-import CrewCheckDynamicCalendar from '../ui/CrewCheckDynamicCalendar';
+import { setPendingRosterFocus } from '../../lib/rosterFocus';
 import './operational-day-timeline.css';
 
 type RosterEvent = ScheduleActivityLike & {
@@ -306,14 +306,13 @@ export default function OperationalDayTimeline({
   return <section className="cc14349-dayline cc14357-dayline" aria-labelledby="cc14349-dayline-title">
     <header className="cc14349-dayline-head">
       <span className="cc14349-dayline-heading">
-        <CrewCheckDynamicCalendar date={focusDate} compact/>
         <span>
           <small>ROTINA OPERACIONAL</small>
           <h2 id="cc14349-dayline-title">Linha do Dia</h2>
           <p>Agora, próximo compromisso e sequência operacional.</p>
         </span>
       </span>
-      <button type="button" onClick={() => onNavigate('roster')}>Ver escala <ChevronRight aria-hidden="true"/></button>
+      <button type="button" onClick={() => { setPendingRosterFocus(focusDate); onNavigate('roster'); }}>Ver escala <ChevronRight aria-hidden="true"/></button>
     </header>
 
     {timeline.length ? <>
@@ -338,7 +337,7 @@ export default function OperationalDayTimeline({
             type="button"
             key={item.id}
             className={`cc14349-dayline-item tone-${item.tone}${isCurrent ? ' is-current' : ''}${isNext ? ' is-next' : ''}`}
-            onClick={() => onNavigate(item.targetView || 'roster')}
+            onClick={() => { if (!item.targetView || item.targetView === 'roster') setPendingRosterFocus(item.at); onNavigate(item.targetView || 'roster'); }}
           >
             <span className="cc14349-dayline-time"><strong>{timeLabel(item.at)}</strong><small>{dateLabel(item.at)}</small></span>
             <span className="cc14349-dayline-marker" aria-hidden="true"><Icon/></span>
