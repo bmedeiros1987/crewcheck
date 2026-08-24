@@ -50,8 +50,13 @@ expect(cockpit.includes("setView('departure')"), 'Ação de planejar saída est�
 expect(cockpit.includes("setView('roster')"), 'Ação de consultar a escala está ausente.');
 
 expect(snippet.includes('function flyDeckProgramDayV14353(event: ZeroLeg)'), 'Calendário dinâmico não deriva o dia da programação exibida.');
-expect(snippet.includes('cc-flydeck-calendar-icon'), 'Botão de escala não usa o calendário dinâmico.');
-expect(snippet.includes('Abrir escala da programação de ${programDateLabel(event)}'), 'Calendário dinâmico perdeu descrição acessível da programação atual.');
+// #560: o lançador deixou de exibir calendário e passou a ser "Ver Escala", com
+// a data viajando no comportamento. O contrato aqui acompanha essa decisão.
+expect(snippet.includes('cc-flydeck-roster-label'), 'Lançador da escala não usa o rótulo "Ver Escala".');
+expect(snippet.includes('setPendingRosterFocus(eventStartDateTime(event))'), 'Lançador da escala não leva a data da programação exibida.');
+// A redação mudou com o #560; a garantia não. O lançador continua obrigado a
+// anunciar a data da programação, seja qual for a frase.
+expect(/aria-label=\{`[^`]*\$\{programDateLabel\(event\)\}[^`]*`\}/.test(snippet), 'Lançador da escala perdeu descrição acessível com a data da programação atual.');
 expect(!snippet.includes('>Ver escala <ChevronRight'), 'Rótulo textual antigo Ver escala ainda permanece no briefing.');
 
 expect(css.includes('CrewCheck v14.3.53 — FlyDeck Premium'), 'CSS do FlyDeck Premium está ausente.');
@@ -59,7 +64,8 @@ expect(css.includes('@media (max-width: 760px)'), 'Layout mobile do briefing est
 expect(css.includes("[data-theme='light']"), 'Tema claro do briefing está ausente.');
 expect(css.includes('@media (prefers-reduced-motion: reduce)'), 'Movimento reduzido não está respeitado.');
 expect(css.includes('grid-template-columns: repeat(2, minmax(0, 1fr))'), 'Fatos essenciais não se reorganizam no mobile.');
-expect(sourceCss.includes('.cc-flydeck-calendar-icon b'), 'Número do dia não está posicionado dentro do ícone de calendário.');
+expect(sourceCss.includes('.cc-flydeck-roster-label'), 'Rótulo "Ver Escala" não tem estilo próprio no FlightDeck.');
+expect(!sourceCss.includes('.cc-flydeck-calendar-icon'), 'CSS do ícone de calendário sobreviveu à remoção do #560.');
 expect(sourceCss.includes("[data-theme='light'] .cc-flydeck-facts svg"), 'Tema claro não preserva contraste próprio dos ícones.');
 expect(sourceCss.includes('filter: drop-shadow'), 'Tema escuro não reforça visualmente os ícones do FlyDeck.');
 
