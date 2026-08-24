@@ -48,24 +48,52 @@ assert.match(
   'o Pulse precisa não renderizar nada enquanto não houver mensagem publicada',
 );
 
-// 4. Pulse não é cabeçalho: não fixa, não empilha, não disputa o shell. Se
-//    alguém precisar disso um dia, que seja uma decisão explícita e não um
-//    efeito colateral de refino visual.
-const estruturais = ['position:', 'z-index:', 'inset:', 'overflow:'];
-for (const prop of estruturais) {
-  const linhas = cssRules
-    .split('\n')
-    .map((linha) => linha.trim())
-    .filter((linha) => linha.startsWith(prop));
-  // .cc-pulse-dot é o indicador vivo dentro do próprio ícone: position absolute
-  // ali é interno à superfície, não posicionamento no shell.
-  const foraDoIndicador = linhas.filter((linha) => linha !== 'position: absolute;' && linha !== 'position: relative;');
-  assert.deepEqual(
-    foraDoIndicador,
-    [],
-    `crewcheck-pulse.css declara "${prop}" de shell: ${foraDoIndicador[0]}`,
+// 4. Fixação: o Pulse acompanha a tela enquanto está ativo, mas por sticky, não
+//    por fixed. Sticky some junto com o elemento quando não há mensagem e não
+//    reserva espaço; fixed transformaria a superfície em mais uma barra do shell,
+//    que é justamente o que a separação header/Pulse existe para evitar.
+assert.match(
+  cssRules,
+  /\.cc-pulse \{[^}]*position: sticky;/,
+  'o Pulse precisa ser sticky para não sumir com o scroll',
+);
+assert.ok(
+  !/position:\s*fixed/.test(cssRules),
+  'o Pulse não pode ser fixed: isso o transformaria em barra de shell',
+);
+
+// O deslocamento de topo espelha as três alturas do espaçador do cabeçalho, para
+// o banner parar abaixo dele em vez de escorregar por baixo.
+for (const altura of ['116px', '62px', '88px']) {
+  assert.ok(
+    cssRules.includes(`--cc-pulse-offset: calc(${altura} + env(safe-area-inset-top, 0px))`),
+    `deslocamento de ${altura} ausente: o Pulse deixaria de espelhar o espaçador do cabeçalho`,
   );
 }
+
+// 4b. O Pulse não entra na disputa de !important do shell. É classe nova, que
+//     nenhuma outra folha estiliza — não precisa de força bruta para vencer.
+const importantes = cssRules
+  .split('\n')
+  .map((linha) => linha.trim())
+  .filter((linha) => linha.includes('!important'));
+assert.deepEqual(
+  importantes,
+  [],
+  `crewcheck-pulse.css usa !important: ${importantes[0]}`,
+);
+
+// 4c. Alvo de toque de 44x44 no dispensar, sem inchar o visual do ícone.
+assert.match(
+  cssRules,
+  /\.cc-pulse-dismiss::after \{[^}]*inset: -6px;/,
+  'o botão de dispensar precisa expandir o alvo de toque para 44x44 por pseudo-elemento',
+);
+assert.match(
+  cssRules,
+  /\.cc-pulse-dismiss \{[^}]*width: 32px;[^}]*height: 32px;/,
+  'o visual do dispensar deve continuar em 32px — a expansão é só do alvo de toque',
+);
 
 // 5. Tokens antes de hardcoded, nos dois temas.
 const literais = cssRules
@@ -87,4 +115,4 @@ assert.ok(css.includes('prefers-reduced-motion'), 'as animações do Pulse preci
 assert.ok(css.includes(':focus-visible'), 'o botão de dispensar precisa de foco visível');
 assert.ok(tsx.includes("role=\"status\"") && tsx.includes('aria-live="polite"'), 'o Pulse precisa se anunciar como região de status');
 
-console.log('[p1-546] Pulse: superfície própria montada no shell, sem estrutura de cabeçalho, sem cor literal, seis categorias, foco e movimento reduzido.');
+console.log('[p1-546] Pulse: superfície própria montada no shell, sticky sem fixed, sem !important, alvo de toque 44x44, sem cor literal, seis categorias, foco e movimento reduzido.');

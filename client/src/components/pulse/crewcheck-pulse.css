@@ -1,10 +1,21 @@
 /* =============================================================================
    CrewCheck Pulse — camada de comunicação do sistema (#546)
    -----------------------------------------------------------------------------
-   Superfície própria, entre o shell e o conteúdo. Não é cabeçalho: não fixa, não
-   compete com .cz-global-header e não entra na disputa de empilhamento do shell.
-   Ocupa o fluxo normal, logo abaixo do espaçador do cabeçalho, então não cobre
-   conteúdo nem a navegação inferior e não precisa de z-index próprio.
+   Superfície própria, entre o shell e o conteúdo. Não é cabeçalho: não assume a
+   navegação, não altera nenhuma regra de .cz-global-header e não acrescenta um só
+   !important à disputa que já existe naquele arquivo — .cc-pulse é classe nova,
+   que nenhuma outra folha estiliza, então não precisa disputar nada.
+
+   Fixação: sticky, não fixed. Enquanto o banner está ativo ele acompanha a tela;
+   quando não há mensagem, some por completo e não reserva espaço. O deslocamento
+   de topo espelha a altura do espaçador do cabeçalho — 116px base, 62px em telas
+   estreitas, 88px em ponteiro fino a partir de 901px — para o Pulse parar logo
+   abaixo do cabeçalho fixo em vez de escorregar por baixo dele.
+
+   Essa duplicação é consciente: hoje a altura do cabeçalho é número escrito à mão
+   em dois arquivos (internal-global-header.css e web-desktop-shell.css), que são
+   escopo do #558. Quando o #558 transformar isso em token único, os três valores
+   daqui devem passar a lê-lo.
 
    Cores vêm de tokens já definidos e sensíveis a tema:
    --cc-surface / --cc-border / --cc-text / --cc-text-muted / --cc-accent estão em
@@ -14,7 +25,12 @@
 
 .cc-pulse {
   --cc-pulse-accent: var(--cc-accent);
+  /* espelha .cz-global-header-spacer */
+  --cc-pulse-offset: calc(116px + env(safe-area-inset-top, 0px));
 
+  position: sticky;
+  top: calc(var(--cc-pulse-offset) + 8px);
+  z-index: 3;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -89,7 +105,10 @@
   color: var(--cc-text-muted);
 }
 
+/* O ícone continua pequeno; o alvo de toque é expandido por pseudo-elemento até
+   44x44, sem alterar a altura da faixa. */
 .cc-pulse-dismiss {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -110,6 +129,12 @@
   color: var(--cc-text);
 }
 
+.cc-pulse-dismiss::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
 .cc-pulse-dismiss:focus-visible {
   outline: 2px solid var(--cc-pulse-accent);
   outline-offset: 2px;
@@ -128,6 +153,14 @@
 @keyframes cc-pulse-beat {
   0%, 100% { opacity: .45; transform: scale(1); }
   50%      { opacity: 1; transform: scale(1.35); }
+}
+
+@media (max-width: 720px) {
+  .cc-pulse { --cc-pulse-offset: calc(62px + env(safe-area-inset-top, 0px)); }
+}
+
+@media (pointer: fine) and (min-width: 901px) {
+  .cc-pulse { --cc-pulse-offset: calc(88px + env(safe-area-inset-top, 0px)); }
 }
 
 @media (max-width: 420px) {
