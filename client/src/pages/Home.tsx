@@ -78,6 +78,7 @@ import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
+import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
@@ -4683,6 +4684,7 @@ export default function Home() {
       <Brand back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>
     </div>
     <div className="cz-global-header-spacer" aria-hidden="true"/>
+    <CrewCheckPulse/>
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
