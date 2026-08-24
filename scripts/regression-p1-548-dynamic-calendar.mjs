@@ -99,13 +99,23 @@ assert.match(
   /document\.querySelector\(`\[data-roster-day="\$\{key\}"\]`\)/,
   'o Roster precisa rolar até o dia focado',
 );
-// Dia pedido sem programação publicada não pode virar clique morto: a data
-// pedida é preservada na mensagem e o usuário sabe que a escala abriu mesmo
-// assim.
+// Dia pedido sem programação publicada não pode virar clique morto nem parada no
+// topo: o aviso explica, e a escala rola até a data pedida do mesmo jeito.
 assert.match(
   home,
-  /if \(!target\) \{[\s\S]*?toast\.info\(`Sem programação publicada em \$\{pad2\(focus\.getDate\(\)\)\}\/\$\{pad2\(focus\.getMonth\(\) \+ 1\)\}[^`]*`\);[\s\S]*?return;/,
-  'o Roster precisa avisar, com a data pedida, quando o dia não tem programação publicada — em vez de não fazer nada',
+  /toast\.info\(`Sem programação publicada em \$\{pad2\(focus\.getDate\(\)\)\}\/\$\{pad2\(focus\.getMonth\(\) \+ 1\)\}[^`]*`\);/,
+  'o Roster precisa avisar, com a data pedida, quando o dia não tem programação publicada',
+);
+assert.ok(
+  !/toast\.info\(`Sem programação publicada[\s\S]{0,120}?return;/.test(home),
+  'o aviso de dia sem programação não pode interromper a rolagem: a escala precisa abrir na data pedida mesmo assim',
+);
+// A âncora dos dias vazios vive na seção "Todos os dias publicados", que lista
+// todos os dias — inclusive os sem evento. Sem ela o scroll não teria alvo.
+assert.match(
+  home,
+  /<article key=\{`\$\{day\.date\}-\$\{index\}`\} data-roster-day=\{dateChip\(d\)\}/,
+  'os dias publicados sem programação precisam de data-roster-day para o foco contextual encontrar alvo',
 );
 
 // ---------------------------------------------------------------------------
