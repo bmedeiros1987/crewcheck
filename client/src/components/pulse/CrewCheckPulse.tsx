@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, Plane, ShieldAlert, Clock3, X } from 'lucide-react';
+import { createPulseSession, type PulseSessionState } from './pulseSession';
+import type { CrewCheckPulseMessage, CrewCheckPulseTone } from './pulseTypes';
 import './crewcheck-pulse.css';
 
 /**
@@ -18,22 +20,7 @@ import './crewcheck-pulse.css';
  * espaço.
  */
 
-export type CrewCheckPulseTone =
-  | 'informativo'
-  | 'sucesso'
-  | 'atencao'
-  | 'erro'
-  | 'operacional'
-  | 'lembrete';
-
-export type CrewCheckPulseMessage = {
-  id?: string;
-  tone?: CrewCheckPulseTone;
-  title: string;
-  detail?: string;
-  /** Mensagens dispensáveis ganham o botão de fechar. */
-  dismissible?: boolean;
-};
+export type { CrewCheckPulseMessage, CrewCheckPulseTone } from './pulseTypes';
 
 export const CREWCHECK_PULSE_EVENT = 'crewcheck:pulse';
 
@@ -57,25 +44,29 @@ export function publishCrewCheckPulse(message: CrewCheckPulseMessage): void {
 }
 
 export function CrewCheckPulse() {
-  const [message, setMessage] = useState<CrewCheckPulseMessage | null>(null);
-  const [leaving, setLeaving] = useState(false);
+  const [state, setState] = useState<PulseSessionState>({ message: null, leaving: false });
+  // A sessão é dona única do timer de saída. Publicar cancela a saída pendente,
+  // então uma mensagem nova nunca é apagada pela dispensa da anterior.
+  const sessionRef = useRef<ReturnType<typeof createPulseSession> | null>(null);
+  if (!sessionRef.current) sessionRef.current = createPulseSession(setState);
 
   useEffect(() => {
+    const session = sessionRef.current!;
     const onPulse = (event: Event) => {
       const detail = (event as CustomEvent<CrewCheckPulseMessage>).detail;
       if (!detail || !detail.title) return;
-      setLeaving(false);
-      setMessage(detail);
+      session.publish(detail);
     };
     window.addEventListener(CREWCHECK_PULSE_EVENT, onPulse as EventListener);
-    return () => window.removeEventListener(CREWCHECK_PULSE_EVENT, onPulse as EventListener);
+    return () => {
+      window.removeEventListener(CREWCHECK_PULSE_EVENT, onPulse as EventListener);
+      session.dispose();
+    };
   }, []);
 
-  const dismiss = useCallback(() => {
-    setLeaving(true);
-    window.setTimeout(() => setMessage(null), 180);
-  }, []);
+  const dismiss = useCallback(() => sessionRef.current?.dismiss(), []);
 
+  const { message, leaving } = state;
   if (!message) return null;
 
   const tone: CrewCheckPulseTone = message.tone || 'informativo';

@@ -13,6 +13,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', 'utf8');
@@ -115,4 +116,105 @@ assert.ok(css.includes('prefers-reduced-motion'), 'as animações do Pulse preci
 assert.ok(css.includes(':focus-visible'), 'o botão de dispensar precisa de foco visível');
 assert.ok(tsx.includes("role=\"status\"") && tsx.includes('aria-live="polite"'), 'o Pulse precisa se anunciar como região de status');
 
-console.log('[p1-546] Pulse: superfície própria montada no shell, sticky sem fixed, sem !important, alvo de toque 44x44, sem cor literal, seis categorias, foco e movimento reduzido.');
+// ---------------------------------------------------------------------------
+// 8. Comportamento — a corrida entre dispensar e publicar.
+//
+//    Dispensar agenda a limpeza do estado para depois da animação de saída. Se
+//    uma mensagem nova chegasse dentro dessa janela, o timer antigo apagava a
+//    mensagem nova. Num banner operacional o aviso recém-chegado é justamente o
+//    que não pode sumir.
+//
+//    Este bloco executa a sequência de verdade, com relógio injetado — o projeto
+//    não tem jsdom, testing-library nem vitest, e foi por isso que a lógica saiu
+//    do componente para um módulo próprio: um teste que só lesse o texto do
+//    fonte não provaria nada sobre a corrida.
+// ---------------------------------------------------------------------------
+{
+  const { load, cleanup } = loadClientModules({
+    files: ['client/src/components/pulse/pulseTypes.ts', 'client/src/components/pulse/pulseSession.ts'],
+    stubs: TYPE_ONLY_PDF_PARSER_STUB,
+    prefix: 'crewcheck-546-session-',
+  });
+  const { createPulseSession, PULSE_LEAVE_MS } = load('pulseSession');
+
+  // Relógio falso: guarda os agendamentos e só dispara quando mandado.
+  const criarRelogio = () => {
+    const agendados = new Map();
+    let proximo = 1;
+    return {
+      timers: {
+        set: (fn, ms) => { const id = proximo++; agendados.set(id, { fn, ms }); return id; },
+        clear: (id) => { agendados.delete(id); },
+      },
+      pendentes: () => agendados.size,
+      avancar: () => { for (const [id, { fn }] of [...agendados]) { agendados.delete(id); fn(); } },
+    };
+  };
+
+  const A = { title: 'Escala importada com sucesso.', tone: 'sucesso' };
+  const B = { title: 'Há inconsistências na programação importada.', tone: 'atencao' };
+
+  // dismiss A -> publish B antes de PULSE_LEAVE_MS -> B permanece
+  {
+    const relogio = criarRelogio();
+    let estado = null;
+    const sessao = createPulseSession((s) => { estado = s; }, { timers: relogio.timers });
+
+    sessao.publish(A);
+    assert.equal(estado.message.title, A.title, 'A deveria estar visível após publicar');
+
+    sessao.dismiss();
+    assert.equal(estado.leaving, true, 'dispensar deveria iniciar a saída animada');
+    assert.equal(relogio.pendentes(), 1, 'dispensar deveria agendar exatamente uma limpeza');
+
+    sessao.publish(B);
+    assert.equal(relogio.pendentes(), 0, 'publicar deveria cancelar a limpeza pendente de A');
+    assert.equal(estado.message.title, B.title, 'B deveria estar visível');
+    assert.equal(estado.leaving, false, 'B não deveria nascer em estado de saída');
+
+    relogio.avancar();
+    assert.equal(
+      estado.message?.title,
+      B.title,
+      'o timer de saída de A apagou a mensagem B: a corrida do dismiss continua aberta',
+    );
+  }
+
+  // Controle: sem mensagem nova, a dispensa continua limpando o estado.
+  {
+    const relogio = criarRelogio();
+    let estado = null;
+    const sessao = createPulseSession((s) => { estado = s; }, { timers: relogio.timers });
+    sessao.publish(A);
+    sessao.dismiss();
+    relogio.avancar();
+    assert.equal(estado.message, null, 'sem mensagem nova, dispensar precisa limpar o Pulse');
+    assert.equal(estado.leaving, false, 'estado de saída precisa voltar ao normal depois de limpar');
+  }
+
+  // Desmontagem não deixa timer vivo.
+  {
+    const relogio = criarRelogio();
+    const sessao = createPulseSession(() => {}, { timers: relogio.timers });
+    sessao.publish(A);
+    sessao.dismiss();
+    assert.equal(relogio.pendentes(), 1, 'dispensar deveria ter deixado um timer pendente');
+    sessao.dispose();
+    assert.equal(relogio.pendentes(), 0, 'dispose precisa cancelar o timer pendente');
+  }
+
+  assert.equal(PULSE_LEAVE_MS, 180, 'a janela de saída deve continuar alinhada à animação do CSS');
+  cleanup();
+}
+
+// O componente não pode voltar a agendar timer solto: a sessão é dona única.
+assert.ok(
+  !/window\.setTimeout/.test(tsx),
+  'CrewCheckPulse.tsx voltou a agendar timer diretamente: o dono do timer é a sessão',
+);
+assert.ok(
+  tsx.includes('session.dispose()'),
+  'o componente precisa descartar a sessão ao desmontar',
+);
+
+console.log('[p1-546] Pulse: superfície própria montada no shell, sticky sem fixed, sem !important, alvo de toque 44x44, sem cor literal, seis categorias, foco e movimento reduzido; dispensa não apaga mensagem nova.');
