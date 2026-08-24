@@ -46,9 +46,16 @@ assert.ok(
   !timeline.includes('CrewCheckDynamicCalendar'),
   'o calendário voltou à Linha do Dia: a decisão do #560 é que ele sai de vista',
 );
+// A ordem importa: buildOperationalDayTimeline mantém itens já encerrados por
+// até 2 h, então timeline[0] pode ser passado. O CTA precisa levar o compromisso
+// corrente, senão o próximo, e só então o primeiro item relevante.
 assert.ok(
-  timeline.includes('const focusDate = timeline[0]?.at || new Date();'),
-  'a Linha do Dia precisa continuar derivando a data da programação em foco',
+  timeline.includes('const focusDate = current?.at || next?.at || timeline[0]?.at || new Date();'),
+  'o CTA da Linha do Dia precisa priorizar o compromisso corrente, depois o próximo, e só então o primeiro item',
+);
+assert.ok(
+  !/const focusDate = timeline\[0\]\?\.at \|\| new Date\(\);/.test(timeline),
+  'o CTA da Linha do Dia voltou a usar timeline[0] direto: com a janela de 2 h isso abre a data errada',
 );
 assert.match(
   timeline,
@@ -91,6 +98,14 @@ assert.match(
   home,
   /document\.querySelector\(`\[data-roster-day="\$\{key\}"\]`\)/,
   'o Roster precisa rolar até o dia focado',
+);
+// Dia pedido sem programação publicada não pode virar clique morto: a data
+// pedida é preservada na mensagem e o usuário sabe que a escala abriu mesmo
+// assim.
+assert.match(
+  home,
+  /if \(!target\) \{[\s\S]*?toast\.info\(`Sem programação publicada em \$\{pad2\(focus\.getDate\(\)\)\}\/\$\{pad2\(focus\.getMonth\(\) \+ 1\)\}[^`]*`\);[\s\S]*?return;/,
+  'o Roster precisa avisar, com a data pedida, quando o dia não tem programação publicada — em vez de não fazer nada',
 );
 
 // ---------------------------------------------------------------------------

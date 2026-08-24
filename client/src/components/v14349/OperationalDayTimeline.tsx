@@ -301,7 +301,11 @@ export default function OperationalDayTimeline({
   const timeline = buildOperationalDayTimeline(events, now);
   const current = timeline.find((item) => item.at.getTime() <= now.getTime() && (item.endAt?.getTime() || item.at.getTime()) >= now.getTime());
   const next = timeline.find((item) => item.at.getTime() > now.getTime());
-  const focusDate = timeline[0]?.at || new Date();
+  // #560: a data que o CTA leva para a escala é a do compromisso corrente; se
+  // não houver, a do próximo; só então o primeiro item relevante. Usar
+  // timeline[0] direto abre a data errada, porque buildOperationalDayTimeline
+  // mantém itens já encerrados por até 2 h (filtro de now - 2h na montagem).
+  const focusDate = current?.at || next?.at || timeline[0]?.at || new Date();
 
   return <section className="cc14349-dayline cc14357-dayline" aria-labelledby="cc14349-dayline-title">
     <header className="cc14349-dayline-head">

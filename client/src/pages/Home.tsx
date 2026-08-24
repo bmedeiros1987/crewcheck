@@ -2162,7 +2162,15 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     const key = dateChip(focus);
     const group = groupedEvents.find((item) => dateChip(parseDate(item.day)) === key);
     const target = group?.events?.[0];
-    if (target) setExpandedId(target.id);
+    if (!target) {
+      // A data pedida existe, mas não há programação publicada nela. Falhar em
+      // silêncio faria "Ver Escala" parecer quebrado: o usuário clica e nada
+      // acontece. A data é preservada na mensagem, para ele saber o que foi
+      // pedido e que a escala abriu mesmo assim.
+      toast.info(`Sem programação publicada em ${pad2(focus.getDate())}/${pad2(focus.getMonth() + 1)} nesta escala.`);
+      return;
+    }
+    setExpandedId(target.id);
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, []);
 
