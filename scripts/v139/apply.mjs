@@ -149,6 +149,7 @@ await import('../v14402/apply.mjs');
 await import('../v14403/apply.mjs');
 await import('../v14404/apply.mjs');
 await import('../v14405/apply.mjs');
+await import('../v14406/apply.mjs');
 await import('../p0-maps-embed-preview/apply.mjs');
 await import('../p0-flightdeck-ui-audit/apply.mjs');
 await import('../p1-visitor-outage-recovery/apply.mjs');
