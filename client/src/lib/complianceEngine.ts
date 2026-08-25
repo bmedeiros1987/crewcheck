@@ -82,8 +82,24 @@ export interface LoadAnalysis {
   days: DayLoadAnalysis[];
 }
 
+/**
+ * #536: identidade do cálculo. Um snapshot persistido só pode ser reutilizado se
+ * TODOS estes campos baterem com o contexto atual — escala, histórico regulatório,
+ * perfil/regras e versão do motor. Reutilizar por "existe compliance salvo" foi o
+ * caminho pelo qual uma escala reaberta exibia um veredito calculado com histórico
+ * diferente do que está disponível agora.
+ */
+export interface ComplianceProvenance {
+  engineVersion: string;
+  rosterFingerprint: string;
+  regulatoryHistoryFingerprint: string;
+  roleSelection: string;
+  regulatoryHistoryComplete: boolean;
+}
+
 export interface ComplianceResult {
   engineVersion?: string;
+  provenance?: ComplianceProvenance;
   alerts: ComplianceAlert[];
   metrics: Metrics;
   overallStatus: 'compliant' | 'warning' | 'violation';
@@ -1649,6 +1665,64 @@ function flightHoursDayEntries(days: RosterDay[]): Array<{ dayIndex: number; dat
  * nem infla totais. Verificado: com jan+fev no bundle o KPI de horas de voo
  * permanece 50,4h (fevereiro), e o alerta de 100,8h dispara.
  */
+function stableDigest(parts: string[]): string {
+  // FNV-1a: determinístico, sem dependência, suficiente para detectar mudança de
+  // entrada. Não é hash criptográfico e não precisa ser.
+  let hash = 0x811c9dc5;
+  for (const part of parts) {
+    for (let i = 0; i < part.length; i += 1) {
+      hash ^= part.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    hash ^= 0x2c;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${parts.length.toString(36)}-${hash.toString(36)}`;
+}
+
+function dayDigestParts(days: RosterDay[]): string[] {
+  return days
+    .map((day) => [
+      String(day.date || ''),
+      String(day.type || ''),
+      String(day.dutyReport || ''),
+      String(day.dutyDebrief || ''),
+      String(getFlightHours(day)),
+      (day.legs || []).map((leg) => `${leg.flightNumber || ''}:${leg.origin || ''}>${leg.destination || ''}:${leg.departureTime || ''}-${leg.arrivalTime || ''}`).join(','),
+    ].join('|'))
+    .sort();
+}
+
+/** Identidade da escala visível. Muda quando qualquer dia/perna relevante muda. */
+/**
+ * #536: um snapshot persistido só serve se TODOS os eixos baterem. Qualquer campo
+ * ausente (snapshot anterior a esta versão) reprova — fail-closed, recalcula.
+ */
+export function canReuseComplianceSnapshot(
+  snapshot: ComplianceResult | null | undefined,
+  context: { roster: CrewRoster; regulatoryHistoryDays: RosterDay[]; roleSelection: string; regulatoryHistoryComplete: boolean },
+): boolean {
+  const provenance = snapshot?.provenance;
+  if (!provenance) return false;
+  return provenance.engineVersion === COMPLIANCE_ENGINE_VERSION
+    && provenance.rosterFingerprint === rosterFingerprint(context.roster)
+    && provenance.regulatoryHistoryFingerprint === regulatoryHistoryFingerprint(context.regulatoryHistoryDays)
+    && provenance.roleSelection === String(context.roleSelection)
+    && provenance.regulatoryHistoryComplete === context.regulatoryHistoryComplete;
+}
+
+export function rosterFingerprint(roster: CrewRoster): string {
+  return stableDigest([
+    `${roster?.year || ''}-${String(roster?.month || '').padStart(2, '0')}`,
+    ...dayDigestParts(Array.isArray(roster?.days) ? roster.days : []),
+  ]);
+}
+
+/** Identidade do histórico regulatório usado no cálculo — separado da escala. */
+export function regulatoryHistoryFingerprint(days: RosterDay[]): string {
+  return stableDigest(dayDigestParts(Array.isArray(days) ? days : []));
+}
+
 export function selectRegulatoryHistoryDays(
   currentDays: RosterDay[],
   candidateDays: RosterDay[],
@@ -1718,6 +1792,10 @@ export function analyzeCompliance(
   // estado base, onde o filtro `competenceDays` ainda não existe — medido: horas de
   // voo passavam de 50,4h para 100,8h.
   regulatoryHistoryDays: RosterDay[] = [],
+  // #536: `false` significa "ainda não sei se existe mais histórico". Nesse estado a
+  // janela de 28 dias não pode devolver "OK" silencioso — mais histórico só pode
+  // AUMENTAR a soma, então ausência de violação é inconclusiva, não conformidade.
+  regulatoryHistoryComplete = true,
 ): ComplianceResult {
   let alerts: ComplianceAlert[] = [];
   const legalProfile = getLegalProfile(roster, roleSelection);
@@ -2071,6 +2149,16 @@ export function analyzeCompliance(
       confidence: suspiciousTotal ? 'media' : 'alta',
       classification: suspiciousTotal ? 'atencao' : 'confirmada',
     });
+  } else if (!regulatoryHistoryComplete) {
+    // #536: sem cobertura histórica completa, não afirmar conformidade. Uma
+    // violação que dependa do fim da competência anterior ficaria invisível, e o
+    // silêncio seria lido como "dentro do limite".
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Horas de voo em 28 dias — verificação não conclusiva',
+      description: `Foram somadas ${monthlyFlightHoursForAlert.toFixed(1)}h na janela disponível${flightWindowRange ? ` (${flightWindowRange})` : ''}, abaixo do limite de ${limits.maxFlightHoursMonth}h. A escala da competência anterior ainda não foi carregada, então a janela de 28 dias pode estar incompleta.`,
+      details: 'O resultado é recalculado automaticamente assim que o histórico anterior chegar. Até lá, este item não confirma conformidade.',
+    });
   } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
@@ -2171,6 +2259,15 @@ export function analyzeCompliance(
 
   return {
     engineVersion: COMPLIANCE_ENGINE_VERSION,
+    // #536: identidade do cálculo, para que um snapshot só seja reutilizado quando
+    // o contexto for exatamente o mesmo.
+    provenance: {
+      engineVersion: COMPLIANCE_ENGINE_VERSION,
+      rosterFingerprint: rosterFingerprint(roster),
+      regulatoryHistoryFingerprint: regulatoryHistoryFingerprint(regulatoryHistoryDays),
+      roleSelection: String(roleSelection),
+      regulatoryHistoryComplete,
+    },
     alerts,
     metrics: {
       ...metrics,

@@ -56,7 +56,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, selectRegulatoryHistoryDays, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, canReuseComplianceSnapshot, getGymRecommendations, getPublishedDutyLimitSummary, selectRegulatoryHistoryDays, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -65,7 +65,7 @@ import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNati
 import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routinePlanner';
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, saveGoogleCalendarSettings, listGoogleCalendars, googleCalendarIntegrationDiagnostics, type GoogleCalendarOption, type GoogleCalendarSettings } from '@/lib/googleCalendarSync';
-import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus, readRegulatoryHistoryDays } from '@/lib/databaseClient';
+import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus, readRegulatoryHistoryDays, fetchRegulatoryHistoryDays } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
@@ -958,8 +958,39 @@ function analyzeSafe(roster: CrewRoster): ComplianceResult {
     // competência, então `competenceKey` não muda e `competenceDays` segue filtrando
     // os KPIs. Os dias antigos alimentam só o cálculo da janela — não vão para a UI.
     const history = selectRegulatoryHistoryDays(roster.days, readRegulatoryHistoryDays(roster));
-    return analyzeCompliance(roster, 'auto', history);
+    // #536: só o que está no aparelho. A conta pode ter mais, e enquanto isso não
+    // for confirmado a janela de 28 dias fica não conclusiva em vez de "OK".
+    return analyzeCompliance(roster, 'auto', history, false);
   } catch { return neutralCompliance(roster); }
+}
+
+/**
+ * #536: recálculo com o histórico completo, depois que a busca em background
+ * resolve. O motor segue puro e síncrono — a assincronia vive só aqui.
+ */
+function analyzeWithHistory(roster: CrewRoster, historyDays: any[], complete: boolean): ComplianceResult {
+  try {
+    if (!Array.isArray(roster.days) || !roster.days.length) return neutralCompliance(roster);
+    const history = selectRegulatoryHistoryDays(roster.days, historyDays);
+    return analyzeCompliance(roster, 'auto', history, complete);
+  } catch { return neutralCompliance(roster); }
+}
+
+/**
+ * #536: um compliance persistido só é reaproveitado quando escala, histórico
+ * regulatório, perfil e versão do motor batem. Snapshot antigo reaproveitado por
+ * "existe compliance salvo" foi o caminho pelo qual uma escala reaberta exibia um
+ * veredito calculado sobre outro contexto.
+ */
+function complianceForLoadedRoster(roster: CrewRoster, persisted: ComplianceResult | null | undefined): ComplianceResult {
+  const history = (() => {
+    try { return selectRegulatoryHistoryDays(roster.days || [], readRegulatoryHistoryDays(roster)); }
+    catch { return []; }
+  })();
+  const reusable = canReuseComplianceSnapshot(persisted, {
+    roster, regulatoryHistoryDays: history, roleSelection: 'auto', regulatoryHistoryComplete: false,
+  });
+  return reusable ? (persisted as ComplianceResult) : analyzeSafe(roster);
 }
 function loadRoster(): BundleState {
   const candidates = [
@@ -4324,7 +4355,7 @@ function DatabaseView({ setBundle, setView }: { setBundle: (b: BundleState) => v
     try {
       const data = item?.id ? await openSavedRoster(item.id) : await openActiveRoster();
       if (data?.roster) {
-        const compliance = data.compliance || analyzeSafe(data.roster);
+        const compliance = complianceForLoadedRoster(data.roster, data.compliance);
         setBundle({ roster: data.roster, compliance, source: item?.sourceFileName || 'Histórico' });
         saveRoster(data.roster, item?.sourceFileName || 'Histórico');
         setView('cockpit');
@@ -4570,13 +4601,33 @@ export default function Home() {
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
 
+  // #536: o histórico regulatório da competência anterior pode existir só na conta.
+  // A busca roda em background e dispara UM recálculo quando chega — o motor de
+  // compliance continua puro e síncrono. Até resolver, a janela de 28 dias fica
+  // não conclusiva em vez de afirmar conformidade.
+  const regulatoryHistoryProbe = useRef('');
+  useEffect(() => {
+    const days = bundle.roster?.days;
+    if (!Array.isArray(days) || !days.length) return;
+    const probeKey = `${bundle.roster.year || ''}-${bundle.roster.month || ''}|${days.length}`;
+    if (regulatoryHistoryProbe.current === probeKey) return;
+    regulatoryHistoryProbe.current = probeKey;
+    let alive = true;
+    fetchRegulatoryHistoryDays(bundle.roster).then(({ days: historyDays, complete }) => {
+      if (!alive) return;
+      const next = analyzeWithHistory(bundle.roster, historyDays, complete);
+      setBundle((previous) => (previous.roster === bundle.roster ? { ...previous, compliance: next } : previous));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [bundle.roster]);
+
   useEffect(() => {
     // A escala ativa pertence à conta, não ao cache deste dispositivo.
     if (Array.isArray(bundle.roster.days) && bundle.roster.days.length) return;
     let alive = true;
     openActiveRoster().then((active) => {
       if (!alive || !active?.roster?.days?.length) return;
-      const compliance = active.compliance || analyzeSafe(active.roster);
+      const compliance = complianceForLoadedRoster(active.roster, active.compliance);
       saveRoster(active.roster, 'Escala ativa sincronizada');
       setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
     }).catch((error: any) => {
@@ -4677,7 +4728,7 @@ export default function Home() {
     sharePdf: async () => { try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); toast.success(result === 'shared' ? 'PDF compartilhado.' : 'PDF salvo para compartilhar.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
     save: () => { saveRoster(bundle.roster, bundle.source); Promise.allSettled([saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any), syncPlatformRoster(bundle.roster, compliance, bundle.source)]).then((results) => results.some((result) => result.status === 'fulfilled') ? toast.success('Escala salva e sincronização atualizada.') : toast.success('Escala salva neste dispositivo; a nuvem será tentada novamente.')); },
-    openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
+    openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = complianceForLoadedRoster(active.roster, active.compliance); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
     logout: () => { logout().finally(() => { window.location.href = '/login'; }); },
     replayIntro: () => { storage.set('crewcheck_intro_seen_v1278', '0'); setShowIntro(true); },
   };
