@@ -1116,10 +1116,19 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     // pernoites e alimentaria hotel/Central de Pernoite com um repouso que não
     // satisfaz o contrato de pernoite. O texto abaixo é o que o diferencia.
     const isJourneyRest = event.kind === 'journey-rest';
-    const restMinutes = Number((event as any).restMinutes || 0);
-    const restLabel = restMinutes >= 60
-      ? `${Math.floor(restMinutes / 60)}h${restMinutes % 60 ? pad2(restMinutes % 60) : ''}`
-      : `${restMinutes} min`;
+    // #537: a duração só existe quando debrief E apresentação foram provados.
+    // `Number(undefined || 0)` publicaria "0 min" — número fabricado, exatamente o
+    // que o contrato proíbe. Sem duração provada, o card diz o que sabe e cala o
+    // que não sabe.
+    const rawRestMinutes = (event as any).restMinutes;
+    const restMinutes = Number.isFinite(Number(rawRestMinutes)) && Number(rawRestMinutes) > 0
+      ? Number(rawRestMinutes)
+      : null;
+    const restLabel = restMinutes == null
+      ? ''
+      : (restMinutes >= 60
+        ? `${Math.floor(restMinutes / 60)}h${restMinutes % 60 ? pad2(restMinutes % 60) : ''}`
+        : `${restMinutes} min`);
     const kind = event.kind === 'stay' ? 'stay' : 'duty';
     return {
       id: event.id,
@@ -1130,7 +1139,9 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         ? `Repouso entre jornadas · ${city(event.origin) || base}`
         : (kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação')),
       subtitle: isJourneyRest
-        ? `${restLabel} entre o fim de uma jornada e a apresentação da seguinte`
+        ? (restLabel
+          ? `${restLabel} entre o fim de uma jornada e a apresentação da seguinte`
+          : 'Entre o fim de uma jornada e a apresentação da seguinte · duração a confirmar')
         : (kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional')),
       origin: base,
       destination: base,
