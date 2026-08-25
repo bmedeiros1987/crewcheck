@@ -12,4 +12,5 @@ if (!source.includes(canonicalDateBlock)) throw new Error('[v14409-compat] data 
 if (!source.includes('new URLSearchParams({ flight, carrier, date: eventDate')) throw new Error('[v14409-compat] data operacional não está sendo enviada ao backend.');
 
 fs.writeFileSync(file, source, 'utf8');
+await import('./route-match-hardening.mjs');
 console.log('[v14409-compat] Radar/Cirium usa radarEventOperationalDate(event), preservando a identidade da ocorrência inclusive em jornadas que cruzam a meia-noite.');
