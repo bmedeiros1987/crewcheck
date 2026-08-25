@@ -93,10 +93,17 @@ function patchServer(source) {
     );
   }
 
+  next = next.replace(
+    /(url\.pathname === '\/api\/(?:release|health)'[^\r\n]*\bversion\s*:\s*)'\d+\.\d+\.\d+'/g,
+    `$1'${VERSION}'`,
+  );
+
   if (!next.includes('conciergeHumanizeReplyV14408(finalized, text)')) throw new Error(`${TAG} humanização final não foi ligada.`);
   if (!next.includes('conciergeSemanticInputContextV14338(text, currentSnapshot)')) throw new Error(`${TAG} contexto semântico não foi restaurado.`);
   if (!next.includes("form.append('no_verbatim', 'true');")) throw new Error(`${TAG} Scribe v2 continua verbatim.`);
   if (!next.includes('voice_settings: conciergeElevenLabsVoiceSettingsV14408(process.env),')) throw new Error(`${TAG} perfil de voz natural não foi ligado.`);
+  if (!new RegExp(`url\\.pathname === '/api/release'[^\\r\\n]*version\\s*:\\s*'${VERSION.replace(/\./g, '\\.')}'`).test(next)) throw new Error(`${TAG} /api/release não acompanha a versão.`);
+  if (!new RegExp(`url\\.pathname === '/api/health'[^\\r\\n]*version\\s*:\\s*'${VERSION.replace(/\./g, '\\.')}'`).test(next)) throw new Error(`${TAG} /api/health não acompanha a versão.`);
   return next;
 }
 
@@ -160,7 +167,7 @@ update('client/src/lib/crewcheckPremiumRuntime.ts', (source) => source.replace(/
 update('client/index.html', (source) => source
   .replace(/data-crewcheck-release="[^"]+"/g, `data-crewcheck-release="${VERSION}"`)
   .replace(/name="crewcheck-release" content="[^"]+"/g, `name="crewcheck-release" content="${VERSION}"`)
-  .replace(/var currentRelease = '[^']+';/g, `var currentRelease = '${VERSION}';`)
+  .replace(/var currentRelease = '[^']+';/g, `currentRelease = '${VERSION}';`)
   .replace(/manifest\.json\?v=\d+/g, `manifest.json?v=${VERSION_DIGITS}`)
   .replace(/sw\.js\?v=\d+/g, `sw.js?v=${VERSION_DIGITS}`), { optional: true });
 update('client/public/sw.js', (source) => source
