@@ -10,9 +10,10 @@ if (fs.existsSync(serverPath)) {
     if (!source.includes(stableAnchor)) throw new Error('[v14407-preflight] import estável do servidor não encontrado.');
     source = source.replace(stableAnchor, `${stableAnchor}\n${serverImport}`);
   }
-  if (!source.includes('return conciergeRoutineReply(snapshot, value);') && source.includes('return conciergeRoutineReply(snapshot);')) {
-    source = source.replace('return conciergeRoutineReply(snapshot);', 'return conciergeRoutineReply(snapshot, value);');
-  }
+  source = source.split('\n').map((line) => {
+    if (!line.includes('treino hoje') || !line.includes('return conciergeRoutineReply(snapshot);')) return line;
+    return line.replace('return conciergeRoutineReply(snapshot);', 'return conciergeRoutineReply(snapshot, value);');
+  }).join('\n');
   fs.writeFileSync(serverPath, source, 'utf8');
 }
 
