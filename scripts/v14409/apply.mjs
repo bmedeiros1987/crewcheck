@@ -14,15 +14,15 @@ const server = update('server.mjs', (source) => {
   let next = source;
 
   if (!next.includes("from './server/cirium-diagnostic.mjs'")) {
-    const importAnchor = "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';";
-    if (!next.includes(importAnchor)) throw new Error('[v14409] âncora de import do servidor não localizada.');
+    const importBoundary = '\n\nconst __dirname =';
+    if (!next.includes(importBoundary)) throw new Error('[v14409] fronteira de imports do servidor não localizada.');
     next = next.replace(
-      importAnchor,
-      `${importAnchor}\nimport { ciriumConfiguration } from './server/cirium-diagnostic.mjs';\nimport { normalizeCiriumFlightStatus } from './server/cirium-flight-adapter.mjs';`,
+      importBoundary,
+      `\nimport { ciriumConfiguration } from './server/cirium-diagnostic.mjs';\nimport { normalizeCiriumFlightStatus } from './server/cirium-flight-adapter.mjs';${importBoundary}`,
     );
   }
 
-  if (!next.includes("provider: firstKnown(item.provider)")) {
+  if (!next.includes('provider: firstKnown(item.provider)')) {
     const payloadAnchor = '    configured: Boolean(item.configured),\n    flight: firstKnown(item.flight, item.ident),';
     if (!next.includes(payloadAnchor)) throw new Error('[v14409] payload público do radar não localizado.');
     next = next.replace(
@@ -50,7 +50,7 @@ const server = update('server.mjs', (source) => {
   if (!next.includes('async function providerCirium(')) {
     const configuredAnchor = 'function configuredProviders() {';
     if (!next.includes(configuredAnchor)) throw new Error('[v14409] configuredProviders não localizado.');
-    const ciriumProvider = `function ciriumRadarCarrier(ctx, explicitCarrier = '') {\n  const explicit = String(explicitCarrier || '').trim().toUpperCase();\n  if (/^[A-Z0-9]{2,3}$/.test(explicit)) return explicit;\n  const flight = String(ctx?.iata || ctx?.raw || '').trim().toUpperCase();\n  const match = flight.match(/^([A-Z0-9]{2})(\\d{1,4}[A-Z]?)$/);\n  if (match && /[A-Z]/.test(match[1])) return match[1];\n  return /^\\d{1,4}[A-Z]?$/.test(flight) ? 'LA' : '';\n}\nfunction ciriumRadarFlightNumber(ctx) {\n  return String(ctx?.iata || ctx?.raw || '').trim().toUpperCase().match(/(\\d{1,4}[A-Z]?)$/)?.[1] || '';\n}\nfunction ciriumRadarDate(value = '') {\n  const candidate = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(candidate)) {\n    const parsed = new Date(\`${'${candidate}'}T12:00:00Z\`);\n    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate) return candidate;\n  }\n  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());\n}\nasync function providerCirium(ctx, timeoutMs, origin, destination, radarQuery = {}) {\n  const config = ciriumConfiguration();\n  if (!config.configured) return null;\n  const carrier = ciriumRadarCarrier(ctx, radarQuery.carrier);\n  const flightNumber = ciriumRadarFlightNumber(ctx);\n  if (!carrier || !flightNumber) return null;\n  const date = ciriumRadarDate(radarQuery.date);\n  const started = Date.now();\n  let url;\n  let headers = { accept: 'application/json' };\n\n  if (config.mode === 'sky') {\n    url = new URL(\`${'${config.baseUrl}'}/v1/flights/status/airline/${'${encodeURIComponent(carrier)}'}/flight-number/${'${encodeURIComponent(flightNumber)}'}/departure-date/${'${date}'}\`);\n    url.searchParams.set('extendedOptions', 'includeDeltas,includeNewFields');\n    headers = { ...headers, authorization: config.token };\n  } else {\n    const [year, month, day] = date.split('-').map(Number);\n    url = new URL(\`https://api.flightstats.com/flex/flightstatus/rest/v2/json/flight/status/${'${encodeURIComponent(carrier)}'}/${'${encodeURIComponent(flightNumber)}'}/dep/${'${year}'}/${'${month}'}/${'${day}'}\`);\n    url.searchParams.set('appId', config.appId);\n    url.searchParams.set('appKey', config.appKey);\n    url.searchParams.set('extendedOptions', 'useHttpErrors');\n  }\n\n  try {\n    const { response, payload } = await jsonFetch(url, { headers, redirect: 'error' }, timeoutMs);\n    const latencyMs = Date.now() - started;\n    markProvider('cirium', response.ok, { httpStatus: response.status, latencyMs });\n    if (!response.ok) {\n      return { ok: false, configured: true, provider: config.provider, latencyMs, message: 'Cirium configurado, mas sem resposta operacional agora.' };\n    }\n\n    const rows = Array.isArray(payload?.flightStatuses)\n      ? payload.flightStatuses\n      : payload?.flightStatus && typeof payload.flightStatus === 'object'\n        ? [payload.flightStatus]\n        : [];\n    const wantedOrigin = String(origin || '').trim().toUpperCase();\n    const wantedDestination = String(destination || '').trim().toUpperCase();\n    const routeMatch = rows.find((row) => {\n      const departure = String(row?.departureAirportFsCode || '').trim().toUpperCase();\n      const arrival = String(row?.arrivalAirportFsCode || '').trim().toUpperCase();\n      return (!wantedOrigin || departure === wantedOrigin) && (!wantedDestination || arrival === wantedDestination);\n    });\n    const row = routeMatch || rows.find((item) => item?.status !== 'C') || rows[0];\n    if (!row) {\n      return { ok: false, configured: true, provider: config.provider, latencyMs, message: 'Voo não localizado no Cirium para a data consultada.' };\n    }\n\n    const normalized = normalizeCiriumFlightStatus(row, { carrier, flightNumber, origin, destination });\n    return { ...normalized, latencyMs, provider: config.provider, message: 'Radar atualizado via Cirium.' };\n  } catch (error) {\n    const latencyMs = Date.now() - started;\n    markProvider('cirium', false, { latencyMs });\n    return {\n      ok: false,\n      configured: true,\n      provider: config.provider,\n      latencyMs,\n      message: error?.name === 'AbortError' ? 'Cirium excedeu a janela operacional do radar.' : 'Cirium temporariamente indisponível.',\n    };\n  }\n}\n`;
+    const ciriumProvider = `function ciriumRadarCarrier(ctx, explicitCarrier = '') {\n  const explicit = String(explicitCarrier || '').trim().toUpperCase();\n  if (/^[A-Z0-9]{2,3}$/.test(explicit) && /[A-Z]/.test(explicit)) return explicit;\n  const flight = String(ctx?.iata || ctx?.raw || '').trim().toUpperCase();\n  const match = flight.match(/^([A-Z0-9]{2})(\\d{1,5}[A-Z]?)$/);\n  if (match && /[A-Z]/.test(match[1])) return match[1];\n  return /^\\d{1,5}[A-Z]?$/.test(flight) ? 'LA' : '';\n}\nfunction ciriumRadarFlightNumber(ctx) {\n  return String(ctx?.iata || ctx?.raw || '').trim().toUpperCase().match(/(\\d{1,5}[A-Z]?)$/)?.[1] || '';\n}\nfunction ciriumRadarDate(value = '', scheduledDeparture = '') {\n  const candidate = String(value || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(candidate)) {\n    const parsed = new Date(\`${'${candidate}'}T12:00:00Z\`);\n    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate) return candidate;\n  }\n  const scheduled = new Date(String(scheduledDeparture || ''));\n  if (!Number.isNaN(scheduled.getTime())) {\n    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(scheduled);\n  }\n  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());\n}\nasync function providerCirium(ctx, timeoutMs, origin, destination, scheduledDeparture = '', radarQuery = {}) {\n  const config = ciriumConfiguration();\n  if (!config.configured || !providerAvailable('cirium', ['CIRIUM_SKY_API_TOKEN', 'CIRIUM_SKY_SECRET', 'CIRIUM_APP_ID', 'CIRIUM_APP_KEY'])) return null;\n  const carrier = ciriumRadarCarrier(ctx, radarQuery.carrier);\n  const flightNumber = ciriumRadarFlightNumber(ctx);\n  if (!carrier || !flightNumber) return null;\n  const date = ciriumRadarDate(radarQuery.date, scheduledDeparture);\n  const started = Date.now();\n  let url;\n  let headers = { accept: 'application/json' };\n\n  if (config.mode === 'sky') {\n    url = new URL(\`${'${config.baseUrl}'}/v1/flights/status/airline/${'${encodeURIComponent(carrier)}'}/flight-number/${'${encodeURIComponent(flightNumber)}'}/departure-date/${'${date}'}\`);\n    url.searchParams.set('extendedOptions', 'includeDeltas,includeNewFields');\n    headers = { ...headers, authorization: config.token };\n  } else {\n    const [year, month, day] = date.split('-').map(Number);\n    url = new URL(\`https://api.flightstats.com/flex/flightstatus/rest/v2/json/flight/status/${'${encodeURIComponent(carrier)}'}/${'${encodeURIComponent(flightNumber)}'}/dep/${'${year}'}/${'${month}'}/${'${day}'}\`);\n    url.searchParams.set('appId', config.appId);\n    url.searchParams.set('appKey', config.appKey);\n    url.searchParams.set('extendedOptions', 'useHttpErrors');\n  }\n\n  try {\n    const { response, payload } = await jsonFetch(url, { headers, redirect: 'error' }, timeoutMs);\n    const latencyMs = Date.now() - started;\n    markProvider('cirium', response.ok, { httpStatus: response.status, latencyMs });\n    if (!response.ok) {\n      return { ok: false, configured: true, provider: config.provider, latencyMs, message: 'Cirium configurado, mas sem resposta operacional agora.' };\n    }\n\n    const rows = Array.isArray(payload?.flightStatuses)\n      ? payload.flightStatuses\n      : payload?.flightStatus && typeof payload.flightStatus === 'object'\n        ? [payload.flightStatus]\n        : [];\n    const wantedOrigin = radarAirportCode(origin);\n    const wantedDestination = radarAirportCode(destination);\n    const routeMatch = rows.find((row) => {\n      const departure = radarAirportCode(row?.departureAirportFsCode);\n      const arrival = radarAirportCode(row?.arrivalAirportFsCode);\n      return (!wantedOrigin || !departure || departure === wantedOrigin) && (!wantedDestination || !arrival || arrival === wantedDestination);\n    });\n    const row = routeMatch || rows.find((item) => item?.status !== 'C') || rows[0];\n    if (!row) {\n      return { ok: false, configured: true, provider: config.provider, latencyMs, message: 'Voo não localizado no Cirium para a ocorrência consultada.' };\n    }\n\n    const normalized = normalizeCiriumFlightStatus(row, { carrier, flightNumber, origin, destination });\n    return { ...normalized, flight: ctx.raw || normalized.flight, latencyMs, provider: config.provider, message: 'Radar atualizado via Cirium.' };\n  } catch (error) {\n    const latencyMs = Date.now() - started;\n    markProvider('cirium', false, { latencyMs });\n    return {\n      ok: false,\n      configured: true,\n      provider: config.provider,\n      latencyMs,\n      message: error?.name === 'AbortError' ? 'Cirium excedeu a janela operacional do radar.' : 'Cirium temporariamente indisponível.',\n    };\n  }\n}\n`;
     next = next.replace(configuredAnchor, `${ciriumProvider}\n${configuredAnchor}`);
   }
 
@@ -61,38 +61,38 @@ const server = update('server.mjs', (source) => {
     next = next.replace(configuredHeader, configuredReplacement);
   }
 
-  if (!next.includes('async function runRadarRace(ctx, origin, destination, radarQuery = {})')) {
-    const raceSignature = 'async function runRadarRace(ctx, origin, destination) {';
-    if (!next.includes(raceSignature)) throw new Error('[v14409] assinatura de runRadarRace não localizada.');
-    next = next.replace(raceSignature, 'async function runRadarRace(ctx, origin, destination, radarQuery = {}) {');
+  if (!next.includes('async function runRadarRace(ctx, origin, destination, scheduledDeparture = \'\', radarQuery = {})')) {
+    const raceSignature = "async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {";
+    if (!next.includes(raceSignature)) throw new Error('[v14409] assinatura preparada de runRadarRace não localizada.');
+    next = next.replace(raceSignature, "async function runRadarRace(ctx, origin, destination, scheduledDeparture = '', radarQuery = {}) {");
   }
 
   const raceStart = next.indexOf('async function runRadarRace(');
   const raceEnd = next.indexOf('\nasync function handleRadar(', raceStart + 1);
   if (raceStart < 0 || raceEnd < 0) throw new Error('[v14409] escopo de runRadarRace não localizado.');
   const raceScope = next.slice(raceStart, raceEnd);
-  if (!raceScope.includes('providerCirium(ctx, timeoutMs, origin, destination, radarQuery)')) {
-    const providerAnchor = '  const providers = [\n    () => providerFlightAware(ctx, timeoutMs),';
-    if (!next.includes(providerAnchor)) throw new Error('[v14409] lista de provedores do radar não localizada.');
+  if (!raceScope.includes('providerCirium(ctx, timeoutMs, origin, destination, scheduledDeparture, radarQuery)')) {
+    const providerAnchor = '  const providers = [\n    () => providerFlightAware(ctx, timeoutMs, origin, destination, scheduledDeparture),';
+    if (!next.includes(providerAnchor)) throw new Error('[v14409] lista preparada de provedores do radar não localizada.');
     next = next.replace(
       providerAnchor,
-      '  const providers = [\n    () => providerCirium(ctx, timeoutMs, origin, destination, radarQuery),\n    () => providerFlightAware(ctx, timeoutMs),',
+      '  const providers = [\n    () => providerCirium(ctx, timeoutMs, origin, destination, scheduledDeparture, radarQuery),\n    () => providerFlightAware(ctx, timeoutMs, origin, destination, scheduledDeparture),',
     );
   }
 
   if (!next.includes("const carrier = String(url.searchParams.get('carrier') || '').trim().toUpperCase();")) {
-    const queryAnchor = `  const origin = String(url.searchParams.get('origin') || '').trim();\n  const destination = String(url.searchParams.get('destination') || '').trim();`;
-    if (!next.includes(queryAnchor)) throw new Error('[v14409] parâmetros do handleRadar não localizados.');
+    const scheduledAnchor = "  const scheduledDeparture = String(url.searchParams.get('scheduledDeparture') || '').trim();";
+    if (!next.includes(scheduledAnchor)) throw new Error('[v14409] scheduledDeparture preparado não localizado.');
     next = next.replace(
-      queryAnchor,
-      `${queryAnchor}\n  const carrier = String(url.searchParams.get('carrier') || '').trim().toUpperCase();\n  const date = String(url.searchParams.get('date') || '').trim();`,
+      scheduledAnchor,
+      `${scheduledAnchor}\n  const carrier = String(url.searchParams.get('carrier') || '').trim().toUpperCase();\n  const date = String(url.searchParams.get('date') || '').trim();`,
     );
   }
 
-  if (!next.includes('runRadarRace(ctx, origin, destination, { carrier, date })')) {
-    const callAnchor = '  const payload = await runRadarRace(ctx, origin, destination);';
-    if (!next.includes(callAnchor)) throw new Error('[v14409] chamada de runRadarRace não localizada.');
-    next = next.replace(callAnchor, '  const payload = await runRadarRace(ctx, origin, destination, { carrier, date });');
+  if (!next.includes('runRadarRace(ctx, origin, destination, scheduledDeparture, { carrier, date })')) {
+    const callAnchor = '  const payload = await runRadarRace(ctx, origin, destination, scheduledDeparture);';
+    if (!next.includes(callAnchor)) throw new Error('[v14409] chamada preparada de runRadarRace não localizada.');
+    next = next.replace(callAnchor, '  const payload = await runRadarRace(ctx, origin, destination, scheduledDeparture, { carrier, date });');
   }
 
   if (!next.includes('const providerStates = configured.map((item) => {')) {
@@ -116,10 +116,10 @@ const server = update('server.mjs', (source) => {
 
 const home = update('client/src/pages/Home.tsx', (source) => {
   let next = source;
-  if (!next.includes("const eventDate = event.date instanceof Date")) {
-    const paramsAnchor = `  const identity = telegramConciergeIdentity();\n  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });`;
-    const paramsReplacement = `  const identity = telegramConciergeIdentity();\n  const eventDate = event.date instanceof Date && !Number.isNaN(event.date.getTime())\n    ? \`${'${event.date.getFullYear()}'}-${'${pad2(event.date.getMonth() + 1)}'}-${'${pad2(event.date.getDate())}'}\`\n    : '';\n  const carrier = String(event.airlineCode || normalizedAirlineCode(flight) || 'LA').trim().toUpperCase();\n  const params = new URLSearchParams({ flight, carrier, date: eventDate, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });`;
-    if (!next.includes(paramsAnchor)) throw new Error('[v14409] chamada do radar no Home não localizada.');
+  if (!next.includes('new URLSearchParams({ flight, carrier, date: eventDate')) {
+    const paramsAnchor = "  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), scheduledDeparture, force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });";
+    const paramsReplacement = "  const carrier = String(event.airlineCode || normalizedAirlineCode(flight) || 'LA').trim().toUpperCase();\n  const eventDate = radarEventOperationalDate(event);\n  const params = new URLSearchParams({ flight, carrier, date: eventDate, origin: String(event.origin || ''), destination: String(event.destination || ''), scheduledDeparture, force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });";
+    if (!next.includes(paramsAnchor)) throw new Error('[v14409] chamada preparada do radar no Home não localizada.');
     next = next.replace(paramsAnchor, paramsReplacement);
   }
   return next;
@@ -130,16 +130,21 @@ for (const required of [
   "import { normalizeCiriumFlightStatus } from './server/cirium-flight-adapter.mjs';",
   'async function providerCirium(',
   "markProvider('cirium'",
-  "provider: firstKnown(item.provider)",
+  'provider: firstKnown(item.provider)',
   "{ key: 'cirium', available: Boolean(cirium.configured), mode: cirium.mode }",
-  'providerCirium(ctx, timeoutMs, origin, destination, radarQuery)',
-  'runRadarRace(ctx, origin, destination, { carrier, date })',
+  'providerCirium(ctx, timeoutMs, origin, destination, scheduledDeparture, radarQuery)',
+  'runRadarRace(ctx, origin, destination, scheduledDeparture, { carrier, date })',
   'providers: providerStates',
 ]) {
   if (!server.includes(required)) throw new Error(`[v14409] contrato Cirium ausente no servidor: ${required}`);
 }
-for (const required of ['const eventDate = event.date instanceof Date', "const carrier = String(event.airlineCode", 'new URLSearchParams({ flight, carrier, date: eventDate']) {
+for (const required of [
+  'const eventDate = radarEventOperationalDate(event);',
+  "const carrier = String(event.airlineCode || normalizedAirlineCode(flight) || 'LA')",
+  'new URLSearchParams({ flight, carrier, date: eventDate',
+  'scheduledDeparture',
+]) {
   if (!home.includes(required)) throw new Error(`[v14409] contrato Cirium ausente no cliente: ${required}`);
 }
 
-console.log(`[v14409] CrewCheck ${VERSION}: Cirium participa do radar ao vivo com data/companhia da ocorrência e telemetria sanitizada por provedor.`);
+console.log(`[v14409] CrewCheck ${VERSION}: Cirium participa do Radar ao vivo, preservando identidade da ocorrência e telemetria sanitizada por provedor.`);
