@@ -79,8 +79,19 @@ const fixtures = [
     smartDeparture: false,
   },
   {
-    name: 'descanso regulamentar',
+    // #303: DR é Day Off Requested — folga pedida, não descanso. rosterCodes.ts
+    // já declarava { code: 'DR', description: 'Folga Pedida', category: 'DAY_OFF' };
+    // era o classificador que divergia da tabela canônica.
+    name: 'folga pedida (DR)',
     activity: { kind: 'duty', title: 'DR', canonical: { kind: 'rest' } },
+    category: 'FOLGA',
+    smartDeparture: false,
+  },
+  {
+    // Repouso verdadeiro segue coberto, para que a correção acima não reduza a
+    // cobertura de REPOUSO deste fixture.
+    name: 'descanso sem código formal de folga',
+    activity: { kind: 'duty', title: 'Repouso', canonical: { kind: 'rest' } },
     category: 'REPOUSO',
     smartDeparture: false,
   },
@@ -128,8 +139,9 @@ const counts = classification.countScheduleCategories(fixtures.map((fixture) => 
 expect(counts.programming === 5, `Programações esperadas: 5; recebido: ${counts.programming}.`);
 expect(counts.flights === 1, `Voos esperados: 1; recebido: ${counts.flights}.`);
 expect(counts.nonFlightProgramming === 4, `Outras atividades esperadas: 4; recebido: ${counts.nonFlightProgramming}.`);
-expect(counts.rest === 2, `Folgas/descansos esperados: 2; recebido: ${counts.rest}.`);
-expect(counts.daysOff === 1, `Folgas esperadas: 1; recebido: ${counts.daysOff}.`);
+expect(counts.rest === 3, `Folgas/descansos esperados: 3; recebido: ${counts.rest}.`);
+expect(counts.daysOff === 2, `Folgas esperadas: 2 (DO + DR); recebido: ${counts.daysOff}.`);
+expect(counts.requestedDaysOff === 1, `Folgas pedidas esperadas: 1 (DR); recebido: ${counts.requestedDaysOff}.`);
 expect(counts.recoveryRest === 1, `Descansos esperados: 1; recebido: ${counts.recoveryRest}.`);
 expect(counts.overnights === 1, `Pernoites esperados: 1; recebido: ${counts.overnights}.`);
 expect(counts.unknown === 1, `Desconhecidos esperados: 1; recebido: ${counts.unknown}.`);
