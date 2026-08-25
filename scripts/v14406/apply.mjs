@@ -25,7 +25,7 @@ patchFile('client/src/pages/Home.tsx', (source) => {
     next = replaceOnce(
       next,
       `import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';`,
-      `import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';\nimport { downloadWakeupContact, wakeupCallerIdFromHealth } from '@/lib/wakeupContact';`,
+      `import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';\nimport { copyWakeupCallerId, downloadWakeupContact, wakeupCallerIdFromHealth } from '@/lib/wakeupContact';`,
       'import do contato do despertador',
     );
   }
@@ -46,13 +46,13 @@ patchFile('client/src/pages/Home.tsx', (source) => {
 
   if (!block.includes('function addWakeupCallerToContacts()')) {
     const anchor = `  async function testAlarm(testType: 'telegram-message' | 'telegram-call' | 'phone-call') {`;
-    const helper = `  function addWakeupCallerToContacts() {\n    if (!wakeupCallerId) {\n      toast.info('O numero do Despertador CrewCheck ainda nao esta disponivel.');\n      return;\n    }\n    const started = downloadWakeupContact(wakeupCallerId);\n    if (!started) {\n      toast.error('Nao consegui preparar o contato neste dispositivo.');\n      return;\n    }\n    storage.set('crewcheck_wakeup_contact_prompted_v1', '1');\n    toast.success('Contato preparado. Abra o arquivo para adicionar Despertador CrewCheck a agenda.');\n  }\n\n`;
-    block = replaceOnce(block, anchor, helper + anchor, 'acao de adicionar contato');
+    const helper = `  function addWakeupCallerToContacts() {\n    if (!wakeupCallerId) {\n      toast.info('O numero do Despertador CrewCheck ainda nao esta disponivel.');\n      return;\n    }\n    const started = downloadWakeupContact(wakeupCallerId);\n    if (!started) {\n      toast.error('Nao consegui preparar o contato neste dispositivo.');\n      return;\n    }\n    storage.set('crewcheck_wakeup_contact_prompted_v1', '1');\n    toast.success('Contato preparado. Abra o arquivo para adicionar Despertador CrewCheck a agenda.');\n  }\n\n  async function copyWakeupCallerNumber() {\n    const copied = await copyWakeupCallerId(wakeupCallerId);\n    if (copied) toast.success('Numero do despertador copiado.');\n    else toast.error('Nao consegui copiar o numero.');\n  }\n\n`;
+    block = replaceOnce(block, anchor, helper + anchor, 'acoes de contato');
   }
 
   if (!block.includes('Adicionar Despertador CrewCheck aos contatos')) {
     const anchor = `<section className="cz-toolbox"><h2>Despertadores no servidor</h2>`;
-    const card = `{wakeupCallerId && <section className="cz-toolbox"><div className="cz-roster-main"><span className="cz-roster-icon"><Phone/></span><div className="cz-roster-copy"><h2>Identifique a ligacao do despertador</h2><p>Salve <strong>Despertador CrewCheck</strong> na agenda para reconhecer a chamada quando o app estiver fechado.</p><small>{wakeupCallerId} · o CrewCheck nao pede acesso aos seus contatos.</small></div></div><div className="cz-tool-actions"><button className="primary" onClick={addWakeupCallerToContacts}><Plus/> Adicionar Despertador CrewCheck aos contatos</button><button onClick={() => copyToClipboard(wakeupCallerId).then(() => toast.success('Numero do despertador copiado.')).catch(() => toast.error('Nao consegui copiar o numero.'))}><Copy/> Copiar numero</button></div></section>}`;
+    const card = `{wakeupCallerId && <section className="cz-toolbox"><div className="cz-roster-main"><span className="cz-roster-icon"><Phone/></span><div className="cz-roster-copy"><h2>Identifique a ligacao do despertador</h2><p>Salve <strong>Despertador CrewCheck</strong> na agenda para reconhecer a chamada quando o app estiver fechado.</p><small>{wakeupCallerId} · o CrewCheck nao pede acesso aos seus contatos.</small></div></div><div className="cz-tool-actions"><button className="primary" onClick={addWakeupCallerToContacts}><Plus/> Adicionar Despertador CrewCheck aos contatos</button><button onClick={copyWakeupCallerNumber}><Copy/> Copiar numero</button></div></section>}`;
     block = replaceOnce(block, anchor, card + anchor, 'card de sugestao de contato');
   }
 

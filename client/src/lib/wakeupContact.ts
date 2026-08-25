@@ -57,3 +57,14 @@ export function downloadWakeupContact(callerId: unknown): boolean {
   setTimeout(() => URL.revokeObjectURL(href), 1500);
   return true;
 }
+
+export async function copyWakeupCallerId(callerId: unknown): Promise<boolean> {
+  const phone = normalizeWakeupCallerId(callerId);
+  if (!phone || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(phone);
+    return true;
+  } catch {
+    return false;
+  }
+}
