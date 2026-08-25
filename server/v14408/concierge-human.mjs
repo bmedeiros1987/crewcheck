@@ -44,11 +44,12 @@ function isLongRosterNotice(line = '') {
 }
 
 function cleanDisplayLine(line = '') {
-  return String(line || '')
+  const raw = String(line || '').trim();
+  if (/^(?:Contexto usado|Contexto do pernoite|Qualidade da consulta):/i.test(raw)) return '';
+  return raw
     .replace(/^\s*Nota leve:\s*/i, '')
     .replace(/^\s*Resposta operacional(?: contextual)?(?: gerada)?[.:]?\s*/i, '')
-    .replace(/^\s*Contexto usado:\s*/i, '')
-    .replace(/^\s*Qualidade da consulta:[^\n]*$/i, '')
+    .replace(/O horário pode mudar conforme a operação;\s*confirme no Radar e na escala oficial\.?/gi, 'O horário pode mudar conforme a operação.')
     .replace(/[ \t]+/g, ' ')
     .trim();
 }
@@ -154,11 +155,11 @@ export function conciergeVoiceScriptV14408(reply = '', query = '') {
 
 export function conciergeElevenLabsVoiceSettingsV14408(environment = process.env) {
   return {
-    stability: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_STABILITY', 'ELEVENLABS_STABILITY', 'ELEVENLABS_TTS_STABILITY'], 0.52), 0, 1),
-    similarity_boost: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_SIMILARITY_BOOST', 'ELEVENLABS_SIMILARITY_BOOST', 'ELEVENLABS_TTS_SIMILARITY_BOOST'], 0.76), 0, 1),
-    style: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_STYLE', 'ELEVENLABS_STYLE', 'ELEVENLABS_TTS_STYLE'], 0), 0, 1),
-    use_speaker_boost: String(environment?.CREWCHECK_ELEVENLABS_SPEAKER_BOOST ?? environment?.ELEVENLABS_SPEAKER_BOOST ?? environment?.ELEVENLABS_TTS_SPEAKER_BOOST ?? 'true').toLowerCase() !== 'false',
-    speed: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_SPEED', 'ELEVENLABS_SPEED', 'ELEVENLABS_TTS_SPEED'], 0.98), 0.7, 1.2),
+    stability: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_STABILITY', 'CREWCHECK_ELEVENLABS_TTS_STABILITY', 'ELEVENLABS_STABILITY', 'ELEVENLABS_TTS_STABILITY'], 0.52), 0, 1),
+    similarity_boost: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_SIMILARITY_BOOST', 'CREWCHECK_ELEVENLABS_TTS_SIMILARITY_BOOST', 'ELEVENLABS_SIMILARITY_BOOST', 'ELEVENLABS_TTS_SIMILARITY_BOOST'], 0.76), 0, 1),
+    style: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_STYLE', 'CREWCHECK_ELEVENLABS_TTS_STYLE', 'ELEVENLABS_STYLE', 'ELEVENLABS_TTS_STYLE'], 0), 0, 1),
+    use_speaker_boost: String(environment?.CREWCHECK_ELEVENLABS_SPEAKER_BOOST ?? environment?.CREWCHECK_ELEVENLABS_TTS_SPEAKER_BOOST ?? environment?.ELEVENLABS_SPEAKER_BOOST ?? environment?.ELEVENLABS_TTS_SPEAKER_BOOST ?? 'true').toLowerCase() !== 'false',
+    speed: clamp(envNumber(environment, ['CREWCHECK_ELEVENLABS_SPEED', 'CREWCHECK_ELEVENLABS_TTS_SPEED', 'ELEVENLABS_SPEED', 'ELEVENLABS_TTS_SPEED'], 0.98), 0.7, 1.2),
   };
 }
 
