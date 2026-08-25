@@ -83,3 +83,4 @@ fastAfter = replaceOnce(
 if (fastAfter !== fastBefore) fs.writeFileSync(fastPath, fastAfter, 'utf8');
 
 console.log('[v14405] ElevenLabs conectado à Infobip por upload privado na Calls API.');
+await import('../v14406/apply.mjs');
