@@ -82,8 +82,8 @@ compliance = compliance.replace(
 
 compliance = replaceOnce(
   compliance,
-  `  const worstFlightWindow = worstFlightHoursWindow28Days(sortedDays);\n  const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to\n    ? \`${'${worstFlightWindow.from}'} a ${'${worstFlightWindow.to}'}\`\n    : '';\n  const monthlyFlightHoursForAlert = worstFlightWindow.flightHours;\n`,
-  `  // #526: a janela de 28 dias é restrita às que tocam a competência exibida.\n  // Dias adjacentes seguem no bundle para continuidade, então uma janela inteira\n  // dentro do mês subsequente anexado não pode virar alerta desta competência —\n  // mas uma janela que ATRAVESSA a virada do mês continua sendo avaliada.\n  const worstFlightWindow = worstFlightHoursWindow28Days(sortedDays, competenceKey);\n  const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to\n    ? \`${'${worstFlightWindow.from}'} a ${'${worstFlightWindow.to}'}\`\n    : '';\n  const monthlyFlightHoursForAlert = worstFlightWindow.flightHours;\n`,
+  `  const worstFlightWindow = worstFlightHoursWindow28Days([...regulatoryHistoryDays, ...sortedDays]);\n  const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to\n    ? \`${'${worstFlightWindow.from}'} a ${'${worstFlightWindow.to}'}\`\n    : '';\n  const monthlyFlightHoursForAlert = worstFlightWindow.flightHours;\n`,
+  `  // #526: a janela de 28 dias é restrita às que tocam a competência exibida.\n  // Dias adjacentes seguem no bundle para continuidade, então uma janela inteira\n  // dentro do mês subsequente anexado não pode virar alerta desta competência —\n  // mas uma janela que ATRAVESSA a virada do mês continua sendo avaliada.\n  const worstFlightWindow = worstFlightHoursWindow28Days([...regulatoryHistoryDays, ...sortedDays], competenceKey);\n  const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to\n    ? \`${'${worstFlightWindow.from}'} a ${'${worstFlightWindow.to}'}\`\n    : '';\n  const monthlyFlightHoursForAlert = worstFlightWindow.flightHours;\n`,
   'target month flight bucket',
 );
 

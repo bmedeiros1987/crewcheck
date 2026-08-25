@@ -16,7 +16,13 @@ assert.doesNotMatch(compliance, /if \(roster\.totals\?\.flightHours\) metrics\.t
 // o argumento `competenceKey` passado à janela. Sem esse argumento, uma janela
 // inteiramente dentro do mês subsequente anexado viraria alerta desta
 // competência, que é exatamente o que este gate existe para impedir.
-assert.match(compliance, /worstFlightHoursWindow28Days\(sortedDays, competenceKey\)/, 'flight limit must evaluate 28-day windows restricted to the reference competence, not any adjacent-month window');
+// #536: a janela passou a receber o histórico regulatório das competências
+// anteriores — sem ele, uma violação que dependa do fim do mês anterior fica
+// invisível porque cada importação traz só uma competência. O escopo por
+// `competenceKey` continua sendo exigido: o histórico alimenta a janela, nunca
+// os totais da competência.
+assert.match(compliance, /worstFlightHoursWindow28Days\(\[\.\.\.regulatoryHistoryDays, \.\.\.sortedDays\], competenceKey\)/, 'flight limit must evaluate 28-day windows over the regulatory history, restricted to the reference competence');
+assert.doesNotMatch(compliance, /worstFlightHoursWindow28Days\(sortedDays\)/, 'flight limit must not go back to ignoring the regulatory history');
 assert.doesNotMatch(compliance, /const monthlyFlightHoursForAlert = monthlyBucketToEvaluate\.flightHours;/, 'flight limit must not fall back to civil-month bucketing');
 assert.match(compliance, /alerts = alerts\.filter\(\(alert\) => \{[\s\S]*?parsed\.getFullYear\(\) === Number\(roster\.year\)/, 'dated alerts from adjacent months must not become current-month irregularities');
 assert.match(compliance, /const competenceDays = days\.filter\(\(day\) => \{[\s\S]*?parsed\.getMonth\(\) \+ 1 === targetMonth;/, 'routine monthly grade must exclude adjacent context days');

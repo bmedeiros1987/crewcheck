@@ -56,7 +56,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, selectRegulatoryHistoryDays, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -65,7 +65,7 @@ import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNati
 import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routinePlanner';
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, saveGoogleCalendarSettings, listGoogleCalendars, googleCalendarIntegrationDiagnostics, type GoogleCalendarOption, type GoogleCalendarSettings } from '@/lib/googleCalendarSync';
-import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
+import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus, readRegulatoryHistoryDays } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
@@ -952,7 +952,13 @@ function isGroundLimitAlert(alert: any): boolean {
 function analyzeSafe(roster: CrewRoster): ComplianceResult {
   try {
     if (!Array.isArray(roster.days) || !roster.days.length) return neutralCompliance(roster);
-    return analyzeCompliance(roster);
+    // #536: a janela regulatória de 28 dias precisa enxergar o fim da competência
+    // anterior, senão 50h em janeiro + 50h em fevereiro nunca somam na mesma janela.
+    // O histórico entra numa CÓPIA do roster: `month`/`year` continuam os da
+    // competência, então `competenceKey` não muda e `competenceDays` segue filtrando
+    // os KPIs. Os dias antigos alimentam só o cálculo da janela — não vão para a UI.
+    const history = selectRegulatoryHistoryDays(roster.days, readRegulatoryHistoryDays(roster));
+    return analyzeCompliance(roster, 'auto', history);
   } catch { return neutralCompliance(roster); }
 }
 function loadRoster(): BundleState {

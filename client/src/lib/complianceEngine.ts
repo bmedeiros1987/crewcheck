@@ -1634,6 +1634,51 @@ function flightHoursDayEntries(days: RosterDay[]): Array<{ dayIndex: number; dat
 // dentro do mês seguinte, que não é a competência exibida. A janela ainda pode
 // ATRAVESSAR a virada do mês — que é justamente o caso que o #526 precisa
 // detectar; ela só não pode ficar inteiramente fora da competência.
+/**
+ * #526/#536: seleciona o histórico regulatório que precisa acompanhar a competência.
+ *
+ * A janela móvel de 28 dias só enxerga o que está em `roster.days`. Como cada
+ * importação traz uma competência, uma violação que dependa do fim do mês anterior
+ * ficava invisível: com apenas fevereiro no bundle, 50,4h + 50,4h nunca somam na
+ * mesma janela. Medido: jan+fev presentes => alerta dispara; só fevereiro => não.
+ *
+ * Devolve apenas os dias ESTRITAMENTE anteriores ao primeiro dia da competência e
+ * dentro de `windowDays`, sem datas duplicadas. Esses dias entram no cálculo da
+ * janela, nunca em `competenceDays` — os KPIs seguem filtrados por
+ * `complianceDayMonthKey === competenceKey`, então o mês anterior não aparece na UI
+ * nem infla totais. Verificado: com jan+fev no bundle o KPI de horas de voo
+ * permanece 50,4h (fevereiro), e o alerta de 100,8h dispara.
+ */
+export function selectRegulatoryHistoryDays(
+  currentDays: RosterDay[],
+  candidateDays: RosterDay[],
+  windowDays = 27,
+): RosterDay[] {
+  const indexOf = (day: RosterDay): number | null => {
+    try {
+      const parsed = parseDate(String(day.date || ''));
+      if (!Number.isFinite(parsed.getTime())) return null;
+      return Math.floor(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) / 86400000);
+    } catch { return null; }
+  };
+  const currentIndexes = currentDays.map(indexOf).filter((value): value is number => value != null);
+  if (!currentIndexes.length) return [];
+  const firstCurrent = Math.min(...currentIndexes);
+  const taken = new Set(currentDays.map((day) => String(day.date || '')));
+  const picked: Array<{ index: number; day: RosterDay }> = [];
+  for (const day of candidateDays) {
+    const index = indexOf(day);
+    if (index == null) continue;
+    if (index >= firstCurrent) continue;
+    if (firstCurrent - index > windowDays) continue;
+    const key = String(day.date || '');
+    if (taken.has(key)) continue;
+    taken.add(key);
+    picked.push({ index, day });
+  }
+  return picked.sort((a, b) => a.index - b.index).map((entry) => entry.day);
+}
+
 export function worstFlightHoursWindow28Days(days: RosterDay[], mustOverlapMonthKey?: string): { flightHours: number; from: string; to: string; spansMonthBoundary: boolean } {
   const entries = flightHoursDayEntries(days);
   const empty = { flightHours: 0, from: '', to: '', spansMonthBoundary: false };
@@ -1664,7 +1709,16 @@ export function worstFlightHoursWindow28Days(days: RosterDay[], mustOverlapMonth
 }
 
 
-export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): ComplianceResult {
+export function analyzeCompliance(
+  roster: CrewRoster,
+  roleSelection: CrewRoleSelection = 'auto',
+  // #536: dias de competências anteriores que a janela de 28 dias precisa enxergar.
+  // Chegam por parâmetro, e NÃO dentro de `roster.days`, exatamente para não poderem
+  // entrar em nenhum total da competência. Mesclá-los no roster inflaria os KPIs no
+  // estado base, onde o filtro `competenceDays` ainda não existe — medido: horas de
+  // voo passavam de 50,4h para 100,8h.
+  regulatoryHistoryDays: RosterDay[] = [],
+): ComplianceResult {
   let alerts: ComplianceAlert[] = [];
   const legalProfile = getLegalProfile(roster, roleSelection);
   const actRules = getActRulesForProfile(legalProfile);
@@ -1995,7 +2049,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   // A janela nunca soma mais de 28 dias, então ela própria já protege contra o
   // falso positivo que a separação por mês existia para evitar (escala atual +
   // subsequente anexadas nunca caem juntas numa janela de 28 dias).
-  const worstFlightWindow = worstFlightHoursWindow28Days(sortedDays);
+  const worstFlightWindow = worstFlightHoursWindow28Days([...regulatoryHistoryDays, ...sortedDays]);
   const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to
     ? `${worstFlightWindow.from} a ${worstFlightWindow.to}`
     : '';

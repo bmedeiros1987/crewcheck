@@ -1,4 +1,4 @@
-import type { CrewRoster } from './pdfParser';
+import type { CrewRoster, RosterDay } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 import { authFetch, getStoredUser, getToken } from './authClient';
 
@@ -607,6 +607,32 @@ function migrateLegacyActiveRosterSnapshotsOnce(): void {
       localStorage.removeItem(legacyKey);
     }
   } catch {}
+}
+
+/**
+ * #536: dias das competências anteriores que a janela regulatória de 28 dias precisa
+ * enxergar. Reusa `readLocalHistory()` sem alterá-la — ela já é estritamente
+ * escopada à identidade corrente (#440), e o histórico de outro usuário nunca entra.
+ *
+ * Devolve apenas dias; quem decide a janela é `selectRegulatoryHistoryDays`. Não
+ * altera o roster ativo: estes dias entram só no cálculo da janela, nunca em
+ * `competenceDays`, então não aparecem na UI nem inflam KPIs da competência.
+ */
+export function readRegulatoryHistoryDays(active: CrewRoster): RosterDay[] {
+  try {
+    const activeKey = `${active?.year || ''}-${String(active?.month || '').padStart(2, '0')}`;
+    const out: RosterDay[] = [];
+    for (const item of readLocalHistory()) {
+      const roster = item?.roster;
+      if (!roster || !Array.isArray(roster.days)) continue;
+      const key = `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`;
+      if (key === activeKey) continue;
+      out.push(...roster.days);
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 function readLocalActiveRosterSnapshots(): LocalHistoryItem[] {
