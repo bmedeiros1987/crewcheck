@@ -2,6 +2,7 @@ export type CrewLogisticsSource = 'mycrewcare' | 'aims' | 'manual' | 'inferred';
 export type CrewLogisticsKind = 'pickup' | 'presentation' | 'hotel' | 'transport';
 export type CrewLogisticsConfidence = 'alta' | 'media' | 'baixa';
 export type CrewLogisticsProvenance = 'published' | 'user-confirmed' | 'derived';
+export type CrewLogisticsDirection = 'to-hotel' | 'from-hotel';
 
 export type CrewLogisticsFact = {
   id: string;
@@ -9,10 +10,19 @@ export type CrewLogisticsFact = {
   source: CrewLogisticsSource;
   sourceRecordId?: string;
   journeyId?: string;
+  /** Referência externa sanitizável do pairing, sem credenciais ou PII. */
+  pairingRef?: string;
+  /** Identidade da estadia, útil quando chegada/saída atravessam meia-noite. */
+  stayRef?: string;
+  /** Direção publicada pelo provedor: aeroporto->hotel ou hotel->aeroporto. */
+  direction?: CrewLogisticsDirection;
   date: string;
   airport?: string;
   hotel?: string;
   value: string;
+  /** Tempo de trânsito publicado. Nunca deve ser reinterpretado como apresentação. */
+  transitMinutes?: number;
+  provider?: string;
   observedAt: string;
   validFrom?: string;
   confidence: CrewLogisticsConfidence;
@@ -22,6 +32,9 @@ export type CrewLogisticsFact = {
 export type CrewLogisticsTarget = {
   id: string;
   journeyId?: string;
+  pairingRef?: string;
+  stayRef?: string;
+  direction?: CrewLogisticsDirection;
   date: string;
   airport?: string;
   hotel?: string;
@@ -43,6 +56,11 @@ export type CrewLogisticsResolvedField = {
   confidence: CrewLogisticsConfidence;
   observedAt: string;
   factId: string;
+  direction?: CrewLogisticsDirection;
+  transitMinutes?: number;
+  provider?: string;
+  pairingRef?: string;
+  stayRef?: string;
 };
 
 export type CrewLogisticsResolution = {
@@ -58,6 +76,10 @@ const AMBIGUITY_MARGIN = 10;
 
 function normalized(value?: string | null): string {
   return String(value || '').trim().toUpperCase();
+}
+
+function sameOptionalReference(a?: string | null, b?: string | null): boolean {
+  return Boolean(a && b && normalized(a) === normalized(b));
 }
 
 function normalizeDate(value?: string | null): string {
@@ -86,17 +108,24 @@ function circularMinuteDistance(a: number, b: number): number {
 export function scoreCrewLogisticsMatch(fact: CrewLogisticsFact, target: CrewLogisticsTarget): number {
   if (fact.journeyId && target.journeyId && fact.journeyId === target.journeyId) return 100;
 
+  // A direção é evidência semântica forte. Um pickup "to hotel" não pode
+  // enriquecer a jornada de saída e vice-versa, mesmo quando data/hotel coincidem.
+  if (fact.direction && target.direction && fact.direction !== target.direction) return 0;
+
   let score = 0;
-  if (normalizeDate(fact.date) === normalizeDate(target.date)) score += 40;
-  if (fact.airport && target.airport && normalized(fact.airport) === normalized(target.airport)) score += 25;
-  if (fact.hotel && target.hotel && normalized(fact.hotel) === normalized(target.hotel)) score += 20;
+  if (sameOptionalReference(fact.stayRef, target.stayRef)) score += 45;
+  if (sameOptionalReference(fact.pairingRef, target.pairingRef)) score += 35;
+  if (normalizeDate(fact.date) === normalizeDate(target.date)) score += 30;
+  if (fact.airport && target.airport && normalized(fact.airport) === normalized(target.airport)) score += 20;
+  if (fact.hotel && target.hotel && normalized(fact.hotel) === normalized(target.hotel)) score += 15;
+  if (fact.direction && target.direction && fact.direction === target.direction) score += 10;
 
   const factTime = clockMinutes(fact.value);
   const targetTime = clockMinutes(target.referenceTime);
   if (factTime != null && targetTime != null) {
     const distance = circularMinuteDistance(factTime, targetTime);
-    if (distance <= 60) score += 15;
-    else if (distance <= 180) score += 8;
+    if (distance <= 60) score += 10;
+    else if (distance <= 180) score += 5;
   }
 
   return Math.min(100, score);
@@ -164,6 +193,11 @@ function resolvedField(fact?: CrewLogisticsFact): CrewLogisticsResolvedField | u
     confidence: fact.confidence,
     observedAt: fact.observedAt,
     factId: fact.id,
+    direction: fact.direction,
+    transitMinutes: fact.transitMinutes,
+    provider: fact.provider,
+    pairingRef: fact.pairingRef,
+    stayRef: fact.stayRef,
   };
 }
 
