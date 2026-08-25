@@ -79,4 +79,5 @@ update('server.mjs', (source) => {
 
 await import('../p0-fast-logout/apply.mjs');
 await import('../p0-maps-route-tristate/apply-active-incident-first-alert.mjs');
-console.log('[p0-build-identity] rodapé de versão dinâmico, buildTimestamp exposto, fast logout e primeiro alerta ativo de rota reafirmados no estado materializado final.');
+await import('../v14409/apply.mjs');
+console.log('[p0-build-identity] rodapé de versão dinâmico, buildTimestamp exposto, fast logout, rota e radar Cirium reafirmados no estado materializado final.');
