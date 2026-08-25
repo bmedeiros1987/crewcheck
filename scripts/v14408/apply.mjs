@@ -73,7 +73,7 @@ function patchServer(source) {
   next = replaceVoiceSettingsInFunction(
     next,
     'async function generateElevenLabsSpeech(',
-    'async function sendTelegramAudioBuffer(',
+    'async function sendTelegramTtsAudio(',
     'gerador ElevenLabs principal',
   );
 
