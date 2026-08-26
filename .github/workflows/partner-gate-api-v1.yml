@@ -14,6 +14,7 @@ on:
       - 'docs/partner-gate-api-v1.md'
       - 'docs/partner-gate-api-v1.openapi.yaml'
       - 'render.yaml'
+      - 'README.md'
       - '.github/workflows/partner-gate-api-v1.yml'
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - 'docs/partner-gate-api-v1.md'
       - 'docs/partner-gate-api-v1.openapi.yaml'
       - 'render.yaml'
+      - 'README.md'
       - '.github/workflows/partner-gate-api-v1.yml'
 
 permissions:
@@ -59,3 +61,4 @@ jobs:
           grep -q 'flight.gate.updated' docs/partner-gate-api-v1.openapi.yaml
           grep -q 'CREWCHECK_PARTNER_GATE_EXPORT_ENABLED' render.yaml
           grep -q 'CREWCHECK_PARTNER_WEBHOOKS_ENABLED' render.yaml
+          grep -q 'Partner Gate API v1' README.md
