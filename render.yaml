@@ -159,3 +159,17 @@ services:
         sync: false
       - key: EXTRA_FLIGHT_PROVIDER_ORDER
         value: OAG_CONNECTIONS,OAG_FLIGHT_INFO,SABRE,SERPAPI,SEARCHAPI,AMADEUS
+      - key: CREWCHECK_PARTNER_GATE_EXPORT_ENABLED
+        value: false
+      - key: CREWCHECK_PARTNER_WEBHOOKS_ENABLED
+        value: false
+      - key: CREWCHECK_PARTNER_API_RATE_LIMIT
+        value: 60
+      - key: CREWCHECK_PARTNER_RADAR_TIMEOUT_MS
+        value: 4000
+      - key: CREWCHECK_PARTNER_WEBHOOK_MONITOR_SECONDS
+        value: 60
+      - key: CREWCHECK_PARTNER_WEBHOOK_TIMEOUT_MS
+        value: 8000
+      - key: CREWCHECK_PARTNER_WEBHOOK_ENCRYPTION_KEY
+        generateValue: true
