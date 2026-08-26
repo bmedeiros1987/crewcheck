@@ -1,0 +1,35 @@
+name: CrewCheck Wellhub Concierge plan location
+
+on:
+  pull_request:
+    paths:
+      - 'server/v14409/**'
+      - 'scripts/v14409/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-v14-4-09-wellhub-concierge-plan-location.mjs'
+      - '.github/workflows/wellhub-concierge-v14409.yml'
+  workflow_dispatch:
+
+jobs:
+  wellhub-concierge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check server/v14409/wellhub-concierge.mjs
+          node --check scripts/v14409/apply.mjs
+          node --check scripts/regression-v14-4-09-wellhub-concierge-plan-location.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Regression Silver+ and geo fail-closed
+        run: node scripts/regression-v14-4-09-wellhub-concierge-plan-location.mjs
+      - name: Verify materialized server
+        run: |
+          grep -F "cc-v14409:concierge-gyms-plan-location" server.mjs
+          grep -F "isWellhubPlanPreferenceMessage(value)" server.mjs
+          grep -F "filterWellhubPartnersForLocation(candidatePartners" server.mjs
