@@ -4,7 +4,6 @@ import { cleanText, dbPool, env, flag, isAdminEmail, readBody, requestToken, saf
 const API_VERSION = 'v1';
 const DEFAULT_SCOPES = Object.freeze(['gates:read']);
 const ALLOWED_SCOPES = Object.freeze(['gates:read', 'webhooks:manage', 'flights:watch']);
-const rateWindows = new Map();
 
 export function normalizePartnerFlight(value = '') {
   const raw = String(value || '').replace(/\s+/g, '').toUpperCase();
@@ -89,25 +88,27 @@ export async function ensurePartnerApiTable(db) {
     KEY idx_crewcheck_partner_api_prefix (key_prefix),
     KEY idx_crewcheck_partner_api_partner (partner_email)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_partner_api_rate_windows (
+    api_key_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    window_started_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    request_count INT UNSIGNED NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 }
 
-function rateLimitFor(keyId) {
+async function rateLimitFor(db, keyId) {
   const configured = Number(env('CREWCHECK_PARTNER_API_RATE_LIMIT', '60'));
   const limit = Number.isFinite(configured) ? Math.max(1, Math.min(5000, configured)) : 60;
-  const now = Date.now();
-  const windowMs = 60_000;
-  const state = rateWindows.get(keyId);
-  if (!state || now - state.startedAt >= windowMs) {
-    rateWindows.set(keyId, { startedAt: now, count: 1 });
-    return { allowed: true, limit, remaining: Math.max(0, limit - 1), resetAt: now + windowMs };
-  }
-  state.count += 1;
-  return {
-    allowed: state.count <= limit,
-    limit,
-    remaining: Math.max(0, limit - state.count),
-    resetAt: state.startedAt + windowMs,
-  };
+  await db.query(`INSERT INTO crewcheck_partner_api_rate_windows (api_key_id,window_started_at,request_count)
+    VALUES(?,CURRENT_TIMESTAMP(3),1)
+    ON DUPLICATE KEY UPDATE
+      request_count=IF(TIMESTAMPDIFF(SECOND,window_started_at,CURRENT_TIMESTAMP(3))>=60,1,request_count+1),
+      window_started_at=IF(TIMESTAMPDIFF(SECOND,window_started_at,CURRENT_TIMESTAMP(3))>=60,CURRENT_TIMESTAMP(3),window_started_at)`, [keyId]);
+  const [rows] = await db.query('SELECT request_count AS requestCount,UNIX_TIMESTAMP(window_started_at) AS windowStarted FROM crewcheck_partner_api_rate_windows WHERE api_key_id=? LIMIT 1', [keyId]);
+  const state = rows[0] || {};
+  const count = Math.max(1, Number(state.requestCount || 1));
+  const startedMs = Math.floor(Number(state.windowStarted || Date.now() / 1000) * 1000);
+  return { allowed: count <= limit, limit, remaining: Math.max(0, limit - count), resetAt: startedMs + 60_000 };
 }
 
 export async function authenticatePartnerApi(req, db, requiredScope) {
@@ -130,7 +131,7 @@ export async function authenticatePartnerApi(req, db, requiredScope) {
   if (requiredScope && !scopes.includes(requiredScope)) {
     throw Object.assign(new Error('Credencial sem permissão para este recurso.'), { status: 403, code: 'INSUFFICIENT_SCOPE' });
   }
-  const rate = rateLimitFor(String(credential.id));
+  const rate = await rateLimitFor(db, Number(credential.id));
   if (!rate.allowed) {
     throw Object.assign(new Error('Limite de requisições excedido.'), { status: 429, code: 'RATE_LIMITED', rate });
   }
@@ -193,8 +194,7 @@ async function handleGateRead(req, res, url, db, flightSegment) {
     console.error('[crewcheck:partner-gate-api:radar]', cleanText(error?.name === 'AbortError' ? 'RADAR_TIMEOUT' : error?.message || 'RADAR_ERROR', 120));
     return sendJson(res, 502, { ok: false, code: 'RADAR_UNAVAILABLE', message: 'A fonte operacional do CrewCheck não respondeu agora.' });
   }
-  const payload = partnerGatePayload(radar, { flight, origin, destination });
-  return sendJson(res, 200, payload);
+  return sendJson(res, 200, partnerGatePayload(radar, { flight, origin, destination }));
 }
 
 async function listKeys(req, res, db) {
@@ -243,7 +243,7 @@ async function revokeKey(req, res, db, id) {
   if (!Number.isInteger(keyId) || keyId <= 0) return sendJson(res, 400, { ok: false, code: 'INVALID_KEY_ID', message: 'Identificador de credencial inválido.' });
   const [result] = await db.query('UPDATE crewcheck_partner_api_keys SET active=0,revoked_at=CURRENT_TIMESTAMP(3) WHERE id=? AND active=1', [keyId]);
   return sendJson(res, result.affectedRows ? 200 : 404, result.affectedRows
-    ? { ok: true, message: 'Credencial revogada.' }
+    ? { ok: true, message: 'Credencial revogada. Consultas e entregas de webhook vinculadas deixam de ser autorizadas.' }
     : { ok: false, code: 'KEY_NOT_FOUND', message: 'Credencial ativa não localizada.' });
 }
 
