@@ -27,8 +27,9 @@ assert.equal(encrypted.includes(pdf.toString('utf8')), false);
 assert.deepEqual(decryptPartnerRosterPayload(encrypted), pdf);
 
 const pieces = encrypted.split('.');
-const tamperedTail = `${pieces[3].slice(0, -1)}${pieces[3].endsWith('A') ? 'B' : 'A'}`;
-assert.throws(() => decryptPartnerRosterPayload([pieces[0], pieces[1], pieces[2], tamperedTail].join('.')));
+const first = pieces[3][0];
+const tamperedData = `${first === 'A' ? 'B' : 'A'}${pieces[3].slice(1)}`;
+assert.throws(() => decryptPartnerRosterPayload([pieces[0], pieces[1], pieces[2], tamperedData].join('.')));
 
 const link = `rlnk_${'A'.repeat(43)}`;
 assert.equal(normalizeRosterLinkToken(link), link);
