@@ -14,6 +14,9 @@ import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
 import { handleAiswebHealthRoute } from '../v1412/aiswebHealth.mjs';
 import { handleCiriumHealthRoute } from '../v1412/ciriumHealth.mjs';
 import { handlePartnerGateApiRoute } from '../v1413/partnerGateApi.mjs';
+import { handlePartnerGateWebhookRoute, startPartnerGateWebhookMonitor } from '../v1413/partnerGateWebhooks.mjs';
+
+startPartnerGateWebhookMonitor();
 
 function normalizeTelegramIntentText(value = '') {
   return String(value || '')
@@ -36,6 +39,7 @@ export async function handleV139Route(req, res, url) {
     if (await handleAiswebHealthRoute(req, res, url)) return true;
     if (await handleCiriumHealthRoute(req, res, url)) return true;
     if (await handleAuthRoute(req, res, url)) return true;
+    if (await handlePartnerGateWebhookRoute(req, res, url)) return true;
     if (await handlePartnerGateApiRoute(req, res, url)) return true;
     if (await handlePartnerAccountsRoute(req, res, url)) return true;
     if (await handleEmergencyRoute(req, res, url)) return true;
@@ -76,6 +80,6 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 }
 
 export const crewCheckV139 = {
-  version: '14.1.3',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'partner-gate-api-v1', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health', 'cirium-health'],
+  version: '14.1.4',
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'partner-gate-api-v1', 'partner-gate-webhooks-v1', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health', 'cirium-health'],
 };
