@@ -6,14 +6,18 @@ on:
       - feat/partner-gate-api-v1
     paths:
       - 'server/v1413/partnerGateApi.mjs'
+      - 'server/v1413/partnerGateWebhooks.mjs'
       - 'server/v139/index.mjs'
       - 'scripts/regression-partner-gate-api.mjs'
+      - 'scripts/regression-partner-gate-webhooks.mjs'
       - '.github/workflows/partner-gate-api-v1.yml'
   pull_request:
     paths:
       - 'server/v1413/partnerGateApi.mjs'
+      - 'server/v1413/partnerGateWebhooks.mjs'
       - 'server/v139/index.mjs'
       - 'scripts/regression-partner-gate-api.mjs'
+      - 'scripts/regression-partner-gate-webhooks.mjs'
       - '.github/workflows/partner-gate-api-v1.yml'
 
 permissions:
@@ -31,7 +35,11 @@ jobs:
       - name: Syntax check
         run: |
           node --check server/v1413/partnerGateApi.mjs
+          node --check server/v1413/partnerGateWebhooks.mjs
           node --check server/v139/index.mjs
           node --check scripts/regression-partner-gate-api.mjs
+          node --check scripts/regression-partner-gate-webhooks.mjs
       - name: Partner API contract regression
         run: node scripts/regression-partner-gate-api.mjs
+      - name: Partner webhook security regression
+        run: node scripts/regression-partner-gate-webhooks.mjs
