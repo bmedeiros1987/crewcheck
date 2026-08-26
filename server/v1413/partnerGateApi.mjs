@@ -3,7 +3,9 @@ import { cleanText, dbPool, env, flag, isAdminEmail, readBody, requestToken, saf
 
 const API_VERSION = 'v1';
 const DEFAULT_SCOPES = Object.freeze(['gates:read']);
-const ALLOWED_SCOPES = Object.freeze(['gates:read', 'webhooks:manage', 'flights:watch']);
+const ALLOWED_SCOPES = Object.freeze(['gates:read', 'webhooks:manage', 'flights:watch', 'rosters:write']);
+const GATE_SOURCE_CLASSES = Object.freeze(['user_reported', 'crewcheck_verified', 'public_airport_source', 'licensed_provider', 'unclassified']);
+const DEFAULT_SHAREABLE_GATE_SOURCE_CLASSES = Object.freeze(['user_reported', 'crewcheck_verified', 'public_airport_source']);
 
 export function normalizePartnerFlight(value = '') {
   const raw = String(value || '').replace(/\s+/g, '').toUpperCase();
@@ -23,6 +25,25 @@ export function parsePartnerScopes(value = '') {
   return [...new Set(values.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))];
 }
 
+export function normalizeGateSourceClass(value = '') {
+  const sourceClass = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return GATE_SOURCE_CLASSES.includes(sourceClass) ? sourceClass : 'unclassified';
+}
+
+export function partnerGateSourcePolicy(radar = {}) {
+  const sourceClass = normalizeGateSourceClass(
+    radar?.partnerSourceClass
+      || radar?.sourceClass
+      || env('CREWCHECK_PARTNER_GATE_DEFAULT_SOURCE_CLASS', 'unclassified'),
+  );
+  const configured = env('CREWCHECK_PARTNER_SHAREABLE_GATE_SOURCE_CLASSES', DEFAULT_SHAREABLE_GATE_SOURCE_CLASSES.join(','));
+  const shareable = new Set(String(configured || '')
+    .split(/[\s,]+/)
+    .map(normalizeGateSourceClass)
+    .filter((item) => item !== 'unclassified'));
+  return { sourceClass, shareable: shareable.has(sourceClass) };
+}
+
 export function partnerGatePayload(radar = {}, request = {}, now = new Date()) {
   const quality = Math.max(0, Math.min(100, Number(radar?.quality || 0)));
   const gate = cleanText(radar?.gate, 32) || null;
@@ -31,8 +52,11 @@ export function partnerGatePayload(radar = {}, request = {}, now = new Date()) {
   const destination = normalizeAirport(radar?.destination || request?.destination) || null;
   const confidence = Number((quality / 100).toFixed(2));
   const confidenceBand = quality >= 80 ? 'high' : quality >= 55 ? 'medium' : 'low';
+  const sourceClass = normalizeGateSourceClass(radar?.partnerSourceClass || radar?.sourceClass);
+  const restricted = Boolean(radar?.partnerRestricted);
+  const shareable = radar?.partnerShareable === true && !restricted;
   return {
-    ok: Boolean(radar?.ok && gate),
+    ok: Boolean(radar?.ok && gate && shareable),
     apiVersion: API_VERSION,
     flight: normalizePartnerFlight(radar?.flight || request?.flight) || request?.flight || null,
     origin,
@@ -40,10 +64,12 @@ export function partnerGatePayload(radar = {}, request = {}, now = new Date()) {
     gate,
     terminal,
     flightStatus: cleanText(radar?.status, 80) || null,
-    gateStatus: gate ? 'available' : 'unavailable',
+    gateStatus: gate ? 'available' : restricted ? 'restricted' : 'unavailable',
     confidence,
     confidenceBand,
     source: 'crewcheck-radar',
+    sourceClass,
+    shareable,
     retrievedAt: now.toISOString(),
     occurrenceMatch: 'live-flight-route',
   };
@@ -161,7 +187,26 @@ export async function fetchInternalRadar({ flight, origin, destination }) {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload) throw new Error(`RADAR_HTTP_${response.status}`);
-    return payload;
+    const policy = partnerGateSourcePolicy(payload);
+    const hadGate = Boolean(cleanText(payload?.gate, 32));
+    if (hadGate && !policy.shareable) {
+      return {
+        ...payload,
+        gate: '',
+        terminal: '',
+        partnerHadGate: true,
+        partnerRestricted: true,
+        partnerShareable: false,
+        partnerSourceClass: policy.sourceClass,
+      };
+    }
+    return {
+      ...payload,
+      partnerHadGate: hadGate,
+      partnerRestricted: false,
+      partnerShareable: policy.shareable,
+      partnerSourceClass: policy.sourceClass,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -242,8 +287,12 @@ async function revokeKey(req, res, db, id) {
   const keyId = Number(id);
   if (!Number.isInteger(keyId) || keyId <= 0) return sendJson(res, 400, { ok: false, code: 'INVALID_KEY_ID', message: 'Identificador de credencial inválido.' });
   const [result] = await db.query('UPDATE crewcheck_partner_api_keys SET active=0,revoked_at=CURRENT_TIMESTAMP(3) WHERE id=? AND active=1', [keyId]);
+  if (result.affectedRows) {
+    await db.query(`UPDATE crewcheck_partner_roster_links SET active=0,revoked_at=CURRENT_TIMESTAMP(3)
+      WHERE bound_api_key_id=? AND active=1`, [keyId]).catch(() => {});
+  }
   return sendJson(res, result.affectedRows ? 200 : 404, result.affectedRows
-    ? { ok: true, message: 'Credencial revogada. Consultas e entregas de webhook vinculadas deixam de ser autorizadas.' }
+    ? { ok: true, message: 'Credencial revogada. Consultas, webhooks e vínculos de importação associados deixam de ser autorizados.' }
     : { ok: false, code: 'KEY_NOT_FOUND', message: 'Credencial ativa não localizada.' });
 }
 
