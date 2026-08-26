@@ -1,14 +1,28 @@
-# CrewCheck v12.5.78 — UI Safe Functional Core
+# CrewCheck
 
-Correção de rumo: esta versão volta para o layout novo aprovado e **não** restaura o Home/Results antigo.
+Aplicação operacional para tripulantes, com escala, Radar, Concierge e serviços de apoio.
 
-O que foi feito:
-- Base visual: v12.5.76, layout novo premium.
-- Núcleo funcional preservado/conectado sem trocar a interface.
-- `/result` corrigido para abrir diretamente a escala completa no layout novo.
-- Endpoint `/api/aviation-weather` restaurado para METAR/TAF via AviationWeather.gov.
-- Datas reforçadas para DD/MM/YYYY, YYYY-MM-DD e DDMMM.
-- Tema claro/escuro permanece no layout novo.
-- Android versionName 12.5.78 / versionCode 125780.
+## Desenvolvimento
 
-Não usar a v12.5.77 como base visual: ela era apenas referência funcional e voltava o sistema antigo.
+```bash
+npm install
+npm run dev
+```
+
+## Produção
+
+```bash
+npm ci
+npm run build
+npm start
+```
+
+## Partner Gate API v1
+
+A integração B2B de portão está documentada em:
+
+- `docs/partner-gate-api-v1.md` — guia de integração, segurança, webhooks, watches, retries e assinatura HMAC.
+- `docs/partner-gate-api-v1.openapi.yaml` — contrato OpenAPI 3.1.
+- `migrations/20260826_018_partner_gate_api_v1.sql` — esquema MySQL/Aiven.
+
+A exportação de dados para parceiros permanece desabilitada por padrão e depende de autorização expressa das fontes/licenças e dos flags de produção.
