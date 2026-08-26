@@ -1,4 +1,4 @@
-name: Partner Gate API v1
+name: Partner Exchange API v1
 
 on:
   push:
@@ -7,12 +7,17 @@ on:
     paths:
       - 'server/v1413/partnerGateApi.mjs'
       - 'server/v1413/partnerGateWebhooks.mjs'
+      - 'server/v1413/partnerRosterExchange.mjs'
       - 'server/v139/index.mjs'
       - 'scripts/regression-partner-gate-api.mjs'
       - 'scripts/regression-partner-gate-webhooks.mjs'
+      - 'scripts/regression-partner-roster-exchange.mjs'
       - 'migrations/20260826_018_partner_gate_api_v1.sql'
+      - 'migrations/20260826_019_partner_roster_exchange_v1.sql'
       - 'docs/partner-gate-api-v1.md'
       - 'docs/partner-gate-api-v1.openapi.yaml'
+      - 'docs/partner-roster-exchange-v1.md'
+      - 'docs/partner-roster-exchange-v1.openapi.yaml'
       - 'render.yaml'
       - 'README.md'
       - '.github/workflows/partner-gate-api-v1.yml'
@@ -20,12 +25,17 @@ on:
     paths:
       - 'server/v1413/partnerGateApi.mjs'
       - 'server/v1413/partnerGateWebhooks.mjs'
+      - 'server/v1413/partnerRosterExchange.mjs'
       - 'server/v139/index.mjs'
       - 'scripts/regression-partner-gate-api.mjs'
       - 'scripts/regression-partner-gate-webhooks.mjs'
+      - 'scripts/regression-partner-roster-exchange.mjs'
       - 'migrations/20260826_018_partner_gate_api_v1.sql'
+      - 'migrations/20260826_019_partner_roster_exchange_v1.sql'
       - 'docs/partner-gate-api-v1.md'
       - 'docs/partner-gate-api-v1.openapi.yaml'
+      - 'docs/partner-roster-exchange-v1.md'
+      - 'docs/partner-roster-exchange-v1.openapi.yaml'
       - 'render.yaml'
       - 'README.md'
       - '.github/workflows/partner-gate-api-v1.yml'
@@ -36,7 +46,7 @@ permissions:
 jobs:
   contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,19 +56,35 @@ jobs:
         run: |
           node --check server/v1413/partnerGateApi.mjs
           node --check server/v1413/partnerGateWebhooks.mjs
+          node --check server/v1413/partnerRosterExchange.mjs
           node --check server/v139/index.mjs
           node --check scripts/regression-partner-gate-api.mjs
           node --check scripts/regression-partner-gate-webhooks.mjs
-      - name: Partner API contract regression
+          node --check scripts/regression-partner-roster-exchange.mjs
+      - name: Partner gate contract regression
         run: node scripts/regression-partner-gate-api.mjs
       - name: Partner webhook security regression
         run: node scripts/regression-partner-gate-webhooks.mjs
+      - name: Partner raw roster exchange regression
+        run: node scripts/regression-partner-roster-exchange.mjs
       - name: Migration and public contract sanity
         run: |
           grep -q 'crewcheck_partner_api_keys' migrations/20260826_018_partner_gate_api_v1.sql
           grep -q 'crewcheck_partner_webhook_deliveries' migrations/20260826_018_partner_gate_api_v1.sql
+          grep -q 'crewcheck_partner_roster_links' migrations/20260826_019_partner_roster_exchange_v1.sql
+          grep -q 'crewcheck_partner_roster_imports' migrations/20260826_019_partner_roster_exchange_v1.sql
+          grep -q 'crewcheck_partner_roster_parse_attempts' migrations/20260826_019_partner_roster_exchange_v1.sql
           grep -q '^openapi: 3.1.0' docs/partner-gate-api-v1.openapi.yaml
+          grep -q '^openapi: 3.1.0' docs/partner-roster-exchange-v1.openapi.yaml
           grep -q 'flight.gate.updated' docs/partner-gate-api-v1.openapi.yaml
+          grep -q '/api/v1/roster-imports' docs/partner-roster-exchange-v1.openapi.yaml
+          grep -q 'rosters:write' docs/partner-roster-exchange-v1.openapi.yaml
           grep -q 'CREWCHECK_PARTNER_GATE_EXPORT_ENABLED' render.yaml
           grep -q 'CREWCHECK_PARTNER_WEBHOOKS_ENABLED' render.yaml
+          grep -q 'CREWCHECK_PARTNER_ROSTER_IMPORT_ENABLED' render.yaml
+          grep -q 'CREWCHECK_PARTNER_GATE_DEFAULT_SOURCE_CLASS' render.yaml
+          grep -q 'unclassified' render.yaml
           grep -q 'Partner Gate API v1' README.md
+      - name: Protected roster engine boundary
+        run: |
+          git diff --name-only "${{ github.event.pull_request.base.sha || github.event.before }}" "${{ github.sha }}" | grep -E '(^|/)(rosterParser\.mjs|aimsParser\.ts)$' && exit 1 || true
