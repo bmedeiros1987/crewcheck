@@ -12,6 +12,7 @@ import {
 } from './partnerGateApi.mjs';
 
 const WEBHOOK_EVENT = 'flight.gate.updated';
+const WEBHOOK_TEST_EVENT = 'partner.webhook.test';
 const WEBHOOK_MAX_ATTEMPTS = 6;
 const MONITOR_LOCK = 'crewcheck_partner_gate_webhook_monitor_v1';
 let monitorStarted = false;
@@ -110,11 +111,10 @@ function parseDate(value, fallback = null) {
   return Number.isFinite(time) ? new Date(time) : null;
 }
 
-export function gateEventPayload(watch = {}, radar = {}, previousGate = null, now = new Date(), eventId = 'evt_test') {
+export function gateEventPayload(watch = {}, radar = {}, previousGate = null, now = new Date(), eventIdValue = 'evt_test') {
   const gate = partnerGatePayload(radar, watch, now);
-  const reason = previousGate ? 'changed' : 'assigned';
   return {
-    id: eventId,
+    id: eventIdValue,
     type: WEBHOOK_EVENT,
     apiVersion: 'v1',
     createdAt: now.toISOString(),
@@ -129,7 +129,7 @@ export function gateEventPayload(watch = {}, radar = {}, previousGate = null, no
       confidence: gate.confidence,
       confidenceBand: gate.confidenceBand,
       source: 'crewcheck-radar',
-      reason,
+      reason: previousGate ? 'changed' : 'assigned',
       occurrenceMatch: 'live-flight-route',
       watchId: Number(watch.id || 0) || null,
     },
@@ -221,7 +221,6 @@ async function createWebhook(req, res, db) {
   if (events.some((event) => event !== WEBHOOK_EVENT)) return sendJson(res, 400, { ok: false, code: 'INVALID_WEBHOOK_EVENT', message: `Evento permitido nesta versão: ${WEBHOOK_EVENT}.` });
   const description = cleanText(body.description || body.label, 160) || null;
   const material = webhookSecretMaterial();
-  await ensureWebhookTables(db);
   try {
     const [result] = await db.query(`INSERT INTO crewcheck_partner_webhooks (api_key_id,url,url_hash,description,events,secret_prefix,secret_ciphertext) VALUES(?,?,?,?,?,?,?)`, [credential.id, url, sha256(url), description, events.join(' '), material.prefix, material.ciphertext]);
     return sendJson(res, 201, {
@@ -282,6 +281,19 @@ function eventId() {
   return `evt_${Date.now().toString(36)}_${crypto.randomBytes(10).toString('base64url')}`;
 }
 
+async function createTestDelivery(req, res, db, webhookId) {
+  const credential = await auth(req, res, db, 'webhooks:manage');
+  const [hooks] = await db.query('SELECT id FROM crewcheck_partner_webhooks WHERE id=? AND api_key_id=? AND active=1 LIMIT 1', [Number(webhookId), credential.id]);
+  if (!hooks[0]) return sendJson(res, 404, { ok: false, code: 'WEBHOOK_NOT_FOUND', message: 'Webhook ativo não localizado.' });
+  const id = eventId();
+  const payload = JSON.stringify({ id, type: WEBHOOK_TEST_EVENT, apiVersion: 'v1', createdAt: new Date().toISOString(), data: { message: 'CrewCheck webhook test', source: 'crewcheck' } });
+  await db.query('INSERT INTO crewcheck_partner_webhook_events (event_id,api_key_id,watch_id,event_type,payload_json) VALUES(?,?,NULL,?,?)', [id, credential.id, WEBHOOK_TEST_EVENT, payload]);
+  await db.query(`INSERT INTO crewcheck_partner_webhook_deliveries (event_id,webhook_id,status,next_attempt_at) VALUES(?,?,'pending',CURRENT_TIMESTAMP(3))`, [id, Number(webhookId)]);
+  await processDeliveries(db);
+  const [rows] = await db.query('SELECT status,attempts,response_status AS responseStatus,last_error AS lastError,delivered_at AS deliveredAt FROM crewcheck_partner_webhook_deliveries WHERE event_id=? AND webhook_id=? LIMIT 1', [id, Number(webhookId)]);
+  return sendJson(res, 200, { ok: true, eventId: id, delivery: rows[0] || { status: 'pending', attempts: 0 } });
+}
+
 async function createGateEvent(db, watch, radar, previousGate) {
   const payload = gateEventPayload(watch, radar, previousGate, new Date(), eventId());
   const raw = JSON.stringify(payload);
@@ -301,7 +313,7 @@ async function createGateEvent(db, watch, radar, previousGate) {
     const [hooks] = await connection.query('SELECT id,events FROM crewcheck_partner_webhooks WHERE api_key_id=? AND active=1', [watch.apiKeyId]);
     for (const hook of hooks) {
       if (!parseEvents(hook.events).includes(WEBHOOK_EVENT)) continue;
-      await connection.query('INSERT IGNORE INTO crewcheck_partner_webhook_deliveries (event_id,webhook_id,status,next_attempt_at) VALUES(?,?,\'pending\',CURRENT_TIMESTAMP(3))', [payload.id, hook.id]);
+      await connection.query(`INSERT IGNORE INTO crewcheck_partner_webhook_deliveries (event_id,webhook_id,status,next_attempt_at) VALUES(?,?,'pending',CURRENT_TIMESTAMP(3))`, [payload.id, hook.id]);
     }
     await connection.commit();
     return true;
@@ -329,6 +341,7 @@ async function deliverOne(db, row) {
     try {
       response = await fetch(url, {
         method: 'POST',
+        redirect: 'manual',
         signal: controller.signal,
         headers: {
           'content-type': 'application/json; charset=utf-8',
@@ -343,7 +356,7 @@ async function deliverOne(db, row) {
       });
     } finally { clearTimeout(timer); }
     status = Number(response.status || 0);
-    if (!response.ok) errorText = `HTTP_${status}`;
+    if (!response.ok) errorText = status >= 300 && status < 400 ? `REDIRECT_REJECTED_${status}` : `HTTP_${status}`;
   } catch (error) {
     errorText = cleanText(error?.name === 'AbortError' ? 'TIMEOUT' : error?.code || error?.message || 'DELIVERY_ERROR', 500);
   }
@@ -356,18 +369,20 @@ async function deliverOne(db, row) {
   const terminal = attempt >= WEBHOOK_MAX_ATTEMPTS;
   const next = new Date(Date.now() + retryDelayMs(attempt));
   await db.query(`UPDATE crewcheck_partner_webhook_deliveries SET status=?,attempts=?,response_status=?,last_error=?,next_attempt_at=? WHERE id=?`, [terminal ? 'failed' : 'pending', attempt, status || null, errorText || 'DELIVERY_FAILED', next, row.id]);
-  await db.query('UPDATE crewcheck_partner_webhooks SET failure_count=failure_count+1,last_failure_at=CURRENT_TIMESTAMP(3),active=IF(failure_count+1>=20,0,active),disabled_at=IF(failure_count+1>=20,CURRENT_TIMESTAMP(3),disabled_at) WHERE id=?', [row.webhookId]);
+  await db.query('UPDATE crewcheck_partner_webhooks SET failure_count=failure_count+1,last_failure_at=CURRENT_TIMESTAMP(3),active=IF(failure_count>=20,0,active),disabled_at=IF(failure_count>=20,CURRENT_TIMESTAMP(3),disabled_at) WHERE id=?', [row.webhookId]);
   return false;
 }
 
 async function processDeliveries(db) {
-  const [rows] = await db.query(`SELECT d.id,d.event_id AS eventId,d.webhook_id AS webhookId,d.attempts,e.event_type AS eventType,e.payload_json AS payloadJson,w.url,w.secret_ciphertext AS secretCiphertext FROM crewcheck_partner_webhook_deliveries d JOIN crewcheck_partner_webhook_events e ON e.event_id=d.event_id JOIN crewcheck_partner_webhooks w ON w.id=d.webhook_id WHERE d.status='pending' AND d.next_attempt_at<=CURRENT_TIMESTAMP(3) AND d.attempts<? AND w.active=1 ORDER BY d.next_attempt_at ASC LIMIT 100`, [WEBHOOK_MAX_ATTEMPTS]);
+  await db.query(`UPDATE crewcheck_partner_webhook_deliveries d JOIN crewcheck_partner_webhook_events e ON e.event_id=d.event_id JOIN crewcheck_partner_api_keys k ON k.id=e.api_key_id SET d.status='cancelled',d.last_error='API_KEY_REVOKED' WHERE d.status='pending' AND k.active=0`);
+  const [rows] = await db.query(`SELECT d.id,d.event_id AS eventId,d.webhook_id AS webhookId,d.attempts,e.event_type AS eventType,e.payload_json AS payloadJson,w.url,w.secret_ciphertext AS secretCiphertext FROM crewcheck_partner_webhook_deliveries d JOIN crewcheck_partner_webhook_events e ON e.event_id=d.event_id JOIN crewcheck_partner_webhooks w ON w.id=d.webhook_id JOIN crewcheck_partner_api_keys k ON k.id=e.api_key_id WHERE d.status='pending' AND d.next_attempt_at<=CURRENT_TIMESTAMP(3) AND d.attempts<? AND w.active=1 AND k.active=1 ORDER BY d.next_attempt_at ASC LIMIT 100`, [WEBHOOK_MAX_ATTEMPTS]);
   for (const row of rows) await deliverOne(db, row);
 }
 
 async function pollWatches(db) {
   await db.query('UPDATE crewcheck_partner_gate_watches SET active=0 WHERE active=1 AND expires_at<=CURRENT_TIMESTAMP(3)');
-  const [rows] = await db.query(`SELECT id,api_key_id AS apiKeyId,flight,origin,destination,notify_initial AS notifyInitial,last_gate AS lastGate,last_terminal AS lastTerminal FROM crewcheck_partner_gate_watches WHERE active=1 AND starts_at<=CURRENT_TIMESTAMP(3) AND expires_at>CURRENT_TIMESTAMP(3) ORDER BY id ASC LIMIT 250`);
+  await db.query(`UPDATE crewcheck_partner_gate_watches w JOIN crewcheck_partner_api_keys k ON k.id=w.api_key_id SET w.active=0 WHERE w.active=1 AND k.active=0`);
+  const [rows] = await db.query(`SELECT w.id,w.api_key_id AS apiKeyId,w.flight,w.origin,w.destination,w.notify_initial AS notifyInitial,w.last_gate AS lastGate,w.last_terminal AS lastTerminal FROM crewcheck_partner_gate_watches w JOIN crewcheck_partner_api_keys k ON k.id=w.api_key_id WHERE w.active=1 AND k.active=1 AND w.starts_at<=CURRENT_TIMESTAMP(3) AND w.expires_at>CURRENT_TIMESTAMP(3) ORDER BY w.id ASC LIMIT 250`);
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.flight}|${row.origin}|${row.destination}`;
@@ -399,14 +414,18 @@ export async function runPartnerGateWebhookMonitorOnce() {
   const db = await dbPool();
   if (!db) return { ok: false, code: 'DATABASE_UNAVAILABLE' };
   await ensureWebhookTables(db);
-  const [locks] = await db.query('SELECT GET_LOCK(?,0) AS acquired', [MONITOR_LOCK]);
-  if (!Number(locks?.[0]?.acquired)) return { ok: true, skipped: true, reason: 'lock-held' };
+  const lockConnection = await db.getConnection();
+  let acquired = false;
   try {
+    const [locks] = await lockConnection.query('SELECT GET_LOCK(?,0) AS acquired', [MONITOR_LOCK]);
+    acquired = Boolean(Number(locks?.[0]?.acquired));
+    if (!acquired) return { ok: true, skipped: true, reason: 'lock-held' };
     await pollWatches(db);
     await processDeliveries(db);
     return { ok: true, skipped: false };
   } finally {
-    await db.query('SELECT RELEASE_LOCK(?)', [MONITOR_LOCK]).catch(() => {});
+    if (acquired) await lockConnection.query('SELECT RELEASE_LOCK(?)', [MONITOR_LOCK]).catch(() => {});
+    lockConnection.release();
   }
 }
 
@@ -429,15 +448,19 @@ export function startPartnerGateWebhookMonitor() {
 export async function handlePartnerGateWebhookRoute(req, res, url) {
   const webhooks = url.pathname === '/api/v1/webhooks';
   const webhookId = url.pathname.match(/^\/api\/v1\/webhooks\/(\d+)$/);
+  const webhookTest = url.pathname.match(/^\/api\/v1\/webhooks\/(\d+)\/test$/);
   const watches = url.pathname === '/api/v1/watches';
   const watchId = url.pathname.match(/^\/api\/v1\/watches\/(\d+)$/);
   const deliveries = url.pathname === '/api/v1/webhook-deliveries';
-  if (!webhooks && !webhookId && !watches && !watchId && !deliveries) return false;
+  if (!webhooks && !webhookId && !webhookTest && !watches && !watchId && !deliveries) return false;
   try {
     const db = await dbPool();
     if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_UNAVAILABLE', message: 'Banco de dados indisponível.' }), true;
     await ensureWebhookTables(db);
-    if (webhookId) {
+    if (webhookTest) {
+      if (req.method !== 'POST') sendJson(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Método não permitido.' });
+      else await createTestDelivery(req, res, db, webhookTest[1]);
+    } else if (webhookId) {
       if (req.method !== 'DELETE') sendJson(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Método não permitido.' });
       else await deleteWebhook(req, res, db, webhookId[1]);
     } else if (watchId) {
