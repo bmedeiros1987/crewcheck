@@ -3,6 +3,7 @@ import { cleanText, dbPool, env, flag, isAdminEmail, readBody, requestToken, saf
 
 const API_VERSION = 'v1';
 const DEFAULT_SCOPES = Object.freeze(['gates:read']);
+const ALLOWED_SCOPES = Object.freeze(['gates:read', 'webhooks:manage', 'flights:watch']);
 const rateWindows = new Map();
 
 export function normalizePartnerFlight(value = '') {
@@ -71,7 +72,7 @@ function adminIdentity(req) {
   return { payload, email };
 }
 
-async function ensurePartnerApiTable(db) {
+export async function ensurePartnerApiTable(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS crewcheck_partner_api_keys (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     partner_email VARCHAR(190) NULL,
@@ -109,7 +110,7 @@ function rateLimitFor(keyId) {
   };
 }
 
-async function authenticatePartnerApi(req, db, requiredScope) {
+export async function authenticatePartnerApi(req, db, requiredScope) {
   const token = bearer(req);
   if (!/^ck_(?:live|test)_[A-Za-z0-9_-]{20,}$/.test(token)) {
     throw Object.assign(new Error('Credencial de parceiro ausente ou inválida.'), { status: 401, code: 'INVALID_API_KEY' });
@@ -137,14 +138,14 @@ async function authenticatePartnerApi(req, db, requiredScope) {
   return { ...credential, scopes, rate };
 }
 
-function writeRateHeaders(res, rate) {
+export function writeRateHeaders(res, rate) {
   if (!rate) return;
   res.setHeader('x-ratelimit-limit', String(rate.limit));
   res.setHeader('x-ratelimit-remaining', String(rate.remaining));
   res.setHeader('x-ratelimit-reset', String(Math.ceil(rate.resetAt / 1000)));
 }
 
-async function fetchInternalRadar({ flight, origin, destination }) {
+export async function fetchInternalRadar({ flight, origin, destination }) {
   const base = env('CREWCHECK_PARTNER_RADAR_BASE_URL', `http://127.0.0.1:${env('PORT', '4173')}`).replace(/\/$/, '');
   const params = new URLSearchParams({ flight });
   if (origin) params.set('origin', origin);
@@ -211,10 +212,10 @@ async function createKey(req, res, db) {
   const partnerEmail = body.partnerEmail ? safeEmail(body.partnerEmail) : '';
   const label = cleanText(body.label || body.partnerName || body.partnerEmail || 'Parceiro CrewCheck', 120);
   const requestedScopes = parsePartnerScopes(body.scopes || DEFAULT_SCOPES);
-  const allowedScopes = requestedScopes.filter((scope) => DEFAULT_SCOPES.includes(scope));
+  const allowedScopes = requestedScopes.filter((scope) => ALLOWED_SCOPES.includes(scope));
   if (!label) return sendJson(res, 400, { ok: false, code: 'INVALID_LABEL', message: 'Informe um nome para a credencial.' });
   if (body.partnerEmail && !partnerEmail) return sendJson(res, 400, { ok: false, code: 'INVALID_EMAIL', message: 'E-mail do parceiro inválido.' });
-  if (!allowedScopes.length || allowedScopes.length !== requestedScopes.length) return sendJson(res, 400, { ok: false, code: 'INVALID_SCOPE', message: 'Escopo inválido. Nesta versão, use gates:read.' });
+  if (!allowedScopes.length || allowedScopes.length !== requestedScopes.length) return sendJson(res, 400, { ok: false, code: 'INVALID_SCOPE', message: `Escopos permitidos: ${ALLOWED_SCOPES.join(', ')}.` });
   await ensurePartnerApiTable(db);
   if (partnerEmail) {
     const [partnerRows] = await db.query('SELECT email FROM crewcheck_partner_accounts WHERE email=? LIMIT 1', [partnerEmail]);
