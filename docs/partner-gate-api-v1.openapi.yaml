@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: CrewCheck Partner Gate API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     API B2B para consulta de portão e webhooks assinados de mudança de portão.
-    A exportação operacional depende de habilitação explícita do CrewCheck.
+    A exportação operacional depende de habilitação explícita e de política de redistribuição por classe de fonte.
 servers:
   - url: https://crewcheck.online
 security:
@@ -12,7 +12,7 @@ security:
 paths:
   /api/v1/flights/{flight}/gate:
     get:
-      summary: Consultar portão atual
+      summary: Consultar portão atual exportável
       operationId: getFlightGate
       parameters:
         - name: flight
@@ -27,22 +27,20 @@ paths:
           schema: { type: string, minLength: 3, maxLength: 3, examples: [BSB] }
       responses:
         '200':
-          description: Portão disponível ou ainda indisponível
+          description: Portão exportável, indisponível ou restrito por política de fonte
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GateResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
-        '503':
-          description: Exportação desabilitada ou infraestrutura indisponível
+        '503': { description: Exportação desabilitada ou infraestrutura indisponível }
   /api/v1/webhooks:
     get:
       summary: Listar webhooks da credencial
       operationId: listWebhooks
       responses:
-        '200':
-          description: Lista de webhooks
+        '200': { description: Lista de webhooks }
     post:
       summary: Cadastrar webhook
       operationId: createWebhook
@@ -60,16 +58,7 @@ paths:
                   type: array
                   items: { type: string, enum: [flight.gate.updated] }
       responses:
-        '201':
-          description: Webhook criado; signingSecret é retornado uma única vez
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok: { type: boolean, const: true }
-                  signingSecret: { type: string, examples: [whsec_xxxxxxxxxxxxxxxxx] }
-                  webhook: { $ref: '#/components/schemas/Webhook' }
+        '201': { description: Webhook criado; signingSecret retornado uma única vez }
         '400': { description: URL/evento inválido }
         '409': { description: Endpoint já cadastrado }
   /api/v1/webhooks/{id}:
@@ -88,8 +77,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Id'
       responses:
-        '200':
-          description: Evento de teste enfileirado e primeira tentativa processada
+        '200': { description: Evento de teste enfileirado e primeira tentativa processada }
   /api/v1/watches:
     get:
       summary: Listar monitoramentos
@@ -103,11 +91,9 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWatchRequest'
+            schema: { $ref: '#/components/schemas/CreateWatchRequest' }
       responses:
-        '201':
-          description: Watch criado
+        '201': { description: Watch criado }
         '400': { description: Voo, rota ou janela inválidos }
   /api/v1/watches/{id}:
     delete:
@@ -151,10 +137,9 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [gates:read, webhooks:manage, flights:watch]
+                    enum: [gates:read, webhooks:manage, flights:watch, rosters:write]
       responses:
-        '201':
-          description: API key retornada uma única vez
+        '201': { description: API key retornada uma única vez }
   /api/admin/partner-api/keys/{id}:
     delete:
       summary: Revogar credencial
@@ -164,7 +149,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Id'
       responses:
-        '200': { description: Credencial revogada }
+        '200': { description: Credencial revogada e integrações associadas desabilitadas }
         '404': { description: Credencial ativa não localizada }
 components:
   securitySchemes:
@@ -177,7 +162,6 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Sessão administrativa do CrewCheck.
   parameters:
     Id:
       name: id
@@ -185,10 +169,8 @@ components:
       required: true
       schema: { type: integer, minimum: 1 }
   responses:
-    Unauthorized:
-      description: API key ausente, inválida ou revogada
-    Forbidden:
-      description: Escopo insuficiente
+    Unauthorized: { description: API key ausente, inválida ou revogada }
+    Forbidden: { description: Escopo insuficiente }
     RateLimited:
       description: Limite por minuto excedido
       headers:
@@ -198,7 +180,7 @@ components:
   schemas:
     GateResponse:
       type: object
-      required: [ok, apiVersion, flight, gateStatus, confidence, confidenceBand, source, retrievedAt, occurrenceMatch]
+      required: [ok, apiVersion, flight, gateStatus, confidence, confidenceBand, source, sourceClass, shareable, retrievedAt, occurrenceMatch]
       properties:
         ok: { type: boolean }
         apiVersion: { type: string, const: v1 }
@@ -208,10 +190,14 @@ components:
         gate: { type: [string, 'null'] }
         terminal: { type: [string, 'null'] }
         flightStatus: { type: [string, 'null'] }
-        gateStatus: { type: string, enum: [available, unavailable] }
+        gateStatus: { type: string, enum: [available, unavailable, restricted] }
         confidence: { type: number, minimum: 0, maximum: 1 }
         confidenceBand: { type: string, enum: [low, medium, high] }
         source: { type: string, const: crewcheck-radar }
+        sourceClass:
+          type: string
+          enum: [user_reported, crewcheck_verified, public_airport_source, licensed_provider, unclassified]
+        shareable: { type: boolean }
         retrievedAt: { type: string, format: date-time }
         occurrenceMatch: { type: string, const: live-flight-route }
     Webhook:
@@ -220,9 +206,7 @@ components:
         id: { type: integer }
         url: { type: string, format: uri }
         description: { type: [string, 'null'] }
-        events:
-          type: array
-          items: { type: string }
+        events: { type: array, items: { type: string } }
         active: { type: boolean }
         secretPrefix: { type: string }
     CreateWatchRequest:
@@ -262,7 +246,7 @@ components:
 webhooks:
   flightGateUpdated:
     post:
-      summary: Evento enviado pelo CrewCheck ao parceiro
+      summary: Evento enviado pelo CrewCheck ao parceiro somente quando o gate é exportável pela política de fonte
       parameters:
         - name: X-CrewCheck-Event
           in: header
