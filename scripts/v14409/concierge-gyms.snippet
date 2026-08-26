@@ -33,18 +33,11 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const locationCity = String(location.city || airportCity || '').trim();
   const locationState = String(location.state || '').trim();
   const locationText = [locationCity, locationState, stay?.hotel, airport].filter(Boolean).join(' ');
-  const normalizeLocal = (value = '') => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   const query = String(text || '').match(/(?:rede|academia)\s+([\p{L}0-9 .&+-]{2,40})/iu)?.[1]?.replace(/\b(?:com|que|perto|em|no|na)\b[\s\S]*$/i, '').trim() || '';
   const candidatePartners = await searchVerifiedWellhub({ plan: wellhubPlan, query: /meu plano|modalidade|wellhub|gympass/i.test(query) ? '' : query, activity, locationText, limit: 60 });
-  const cityKey = normalizeLocal(locationCity);
-  const stateKey = normalizeLocal(locationState);
-  const partners = candidatePartners.filter((partner) => {
-    if (cityKey) return normalizeLocal(partner.city) === cityKey;
-    if (stateKey) return normalizeLocal(partner.state) === stateKey;
-    return true;
-  }).slice(0, 8);
+  const partners = filterWellhubPartnersForLocation(candidatePartners, { city: locationCity, state: locationState }).slice(0, 8);
 
-  if (detectedPlan && !/academia|treino|modalidade|gympass|wellhub/i.test(String(text || '').replace(/meu\s+plano/ig, ''))) {
+  if (detectedPlan && isWellhubPlanPreferenceMessage(text) && !/academia|treino|modalidade|gympass|wellhub/i.test(String(text || '').replace(/meu\s+plano/ig, ''))) {
     return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} ✓`;
   }
 
