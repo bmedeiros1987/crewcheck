@@ -1,6 +1,7 @@
 name: Partner Exchange API v1
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feat/partner-gate-api-v1
@@ -84,7 +85,14 @@ jobs:
           grep -q 'CREWCHECK_PARTNER_ROSTER_IMPORT_ENABLED' render.yaml
           grep -q 'CREWCHECK_PARTNER_GATE_DEFAULT_SOURCE_CLASS' render.yaml
           grep -q 'unclassified' render.yaml
-          grep -q 'Partner Gate API v1' README.md
+          grep -q 'Partner Exchange API v1' README.md
       - name: Protected roster engine boundary
         run: |
-          git diff --name-only "${{ github.event.pull_request.base.sha || github.event.before }}" "${{ github.sha }}" | grep -E '(^|/)(rosterParser\.mjs|aimsParser\.ts)$' && exit 1 || true
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE_SHA" ] || echo "$BASE_SHA" | grep -Eq '^0+$'; then
+            BASE_SHA="${{ github.event.repository.default_branch }}"
+          fi
+          if git diff --name-only "$BASE_SHA" "${{ github.sha }}" | grep -E '(^|/)(rosterParser\.mjs|aimsParser\.ts)$'; then
+            echo 'Protected roster engine changed in Partner Exchange PR.'
+            exit 1
+          fi
