@@ -490,76 +490,93 @@ for (const marker of ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']) {
 }
 
 // -----------------------------------------------------------------------
-// Caso 7m — o MESMO sinal estrutural do 7k, mas no PRIMEIRO "LA" depois de um
-// boundary "(...)". Aqui a decisão usava só a contagem de horários desde o
-// boundary (`timesSinceBoundary >= 3`), e o marcador não era consultado.
-// Efeito: a mesma APZ marcada era promovida quando havia 2 horários residuais
-// (a contagem chegava a 3 incluindo a própria APZ) e PERDIDA com 1 ou 0,
-// embora as três situações sejam estruturalmente idênticas.
+// Caso 7m — MATRIZ do primeiro "LA" depois de um boundary "(...)".
 //
-// Contrato: marcador adjacente ao horário prevalece sobre a contagem. A
-// contagem continua sendo a heurística usada quando NÃO há marcador.
+// Dois eixos independentes que precisam ser CRUZADOS, não testados isolados:
+//   eixo A: quantos horários existem entre o "(...)" e o "LA";
+//   eixo B: existe marcador do allowlist adjacente ao horário?
+//
+// O que cada sinal prova:
+//   - o marcador prova a que PERNA o segmento pertence (workType). Sozinho ele
+//     NÃO prova que o horário seja apresentação;
+//   - a contagem prova o que não cabe no boundary: "(...)" contribui no máximo
+//     chegada + debrief, então um 3º horário é estruturalmente excedente.
+//
+// Cruzando os dois:
+//   1 horário  + marcador -> resíduo do boundary, REVIEW  (contraexemplo Work)
+//   2 horários + marcador -> o 2º é a APZ                 (contraexemplo Work anterior)
+//   2 horários sem marcador -> ambiguidade irredutível, REVIEW
+//   3 horários (com ou sem marcador) -> APZ pela contagem
 // -----------------------------------------------------------------------
 for (const marker of ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']) {
-  // Um único horário residual do boundary — o contraexemplo independente.
-  const tokens = ['(...)', 'BSB', '08:29', '09:25', marker, 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
-  const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
-  check(`boundary + 1 residual + APZ antes de ${marker}: dutyReport=09:25, nunca a STD 10:15`,
-    day?.dutyReport === '09:25' && day?.legs?.[0]?.departureTime === '10:15', JSON.stringify(day));
-  check(`boundary + 1 residual + APZ antes de ${marker}: o residual 08:29 nunca é promovido`,
-    day?.dutyReport !== '08:29', JSON.stringify(day));
-  check(`boundary + 1 residual + APZ antes de ${marker}: perna preservada e marcada PS`,
-    day?.legs?.length === 1 && day?.legs?.[0]?.workType === 'PS'
-    && day?.legs?.[0]?.origin === 'BSB' && day?.legs?.[0]?.destination === 'FOR', JSON.stringify(day));
+  // --- 1 horário + marcador: o único horário depois do "(...)" é chegada/debrief
+  //     herdado. Marcador não pode promovê-lo. Nas DUAS ordens.
+  for (const [ordem, tokens] of [
+    ['APZ -> marcador', ['(...)', 'BSB', '08:29', marker, 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55']],
+    ['marcador -> APZ', ['(...)', 'BSB', marker, '08:29', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55']],
+  ]) {
+    const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
+    check(`boundary + 1 horário + ${marker} (${ordem}): resíduo 08:29 NÃO é promovido, dutyReport=null`,
+      day?.dutyReport === null, JSON.stringify(day));
+    check(`boundary + 1 horário + ${marker} (${ordem}): STD 10:15 nunca vira APZ e a perna é preservada`,
+      day?.legs?.length === 1 && day?.legs?.[0]?.departureTime === '10:15'
+      && day?.legs?.[0]?.origin === 'BSB' && day?.legs?.[0]?.destination === 'FOR', JSON.stringify(day));
+    check(`boundary + 1 horário + ${marker} (${ordem}): o marcador ainda qualifica a perna como PS`,
+      day?.legs?.[0]?.workType === 'PS', JSON.stringify(day));
+  }
 
-  // Nenhum horário residual: mesma classe estrutural, contagem ainda menor.
-  const clean = ['(...)', 'BSB', '09:25', marker, 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
-  const cleanDay = mod.parseAimsTokensIntoEventsV3(clean, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
-  check(`boundary + 0 residual + APZ antes de ${marker}: dutyReport=09:25`,
-    cleanDay?.dutyReport === '09:25' && cleanDay?.legs?.[0]?.departureTime === '10:15', JSON.stringify(cleanDay));
-}
-
-// Ordem inversa (`marcador -> APZ -> LA`) no mesmo ramo do primeiro LA.
-for (const marker of ['EXTRA', 'PS', 'PAX']) {
-  const tokens = ['(...)', 'BSB', '08:29', marker, '09:25', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
-  const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
-  check(`boundary + ${marker} antes da APZ: dutyReport=09:25 (as duas ordens valem no primeiro LA)`,
-    day?.dutyReport === '09:25' && day?.legs?.[0]?.departureTime === '10:15', JSON.stringify(day));
+  // --- 2 horários + marcador: o 2º não cabe no par chegada+debrief do boundary
+  //     quando o marcador prova que o segmento é da perna nova. É a APZ.
+  for (const [ordem, tokens] of [
+    ['APZ -> marcador', ['(...)', 'BSB', '08:29', '09:25', marker, 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55']],
+    ['marcador -> APZ', ['(...)', 'BSB', '08:29', marker, '09:25', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55']],
+  ]) {
+    const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
+    check(`boundary + 2 horários + ${marker} (${ordem}): dutyReport=09:25, nunca a STD 10:15`,
+      day?.dutyReport === '09:25' && day?.legs?.[0]?.departureTime === '10:15', JSON.stringify(day));
+    check(`boundary + 2 horários + ${marker} (${ordem}): o resíduo 08:29 nunca é promovido`,
+      day?.dutyReport !== '08:29', JSON.stringify(day));
+    check(`boundary + 2 horários + ${marker} (${ordem}): perna preservada e marcada PS`,
+      day?.legs?.length === 1 && day?.legs?.[0]?.workType === 'PS', JSON.stringify(day));
+  }
 }
 
 // -----------------------------------------------------------------------
-// Caso 7n — contraprovas do 7m. A precedência do marcador NÃO pode virar
-// relaxamento global da contagem: sem marcador, o comportamento anterior
-// tem de ficar byte a byte igual, incluindo o REVIEW.
+// Caso 7n — contraprovas do 7m. A precedência do marcador não pode virar
+// relaxamento da contagem, e a contagem tem de continuar valendo sozinha.
 // -----------------------------------------------------------------------
 {
   const tokens = ['(...)', 'BSB', '08:29', '09:25', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
   const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
-  check('sem marcador, boundary + 2 horários: segue REVIEW (dutyReport=null), sem relaxar a contagem',
+  check('sem marcador, boundary + 2 horários: ambiguidade irredutível, segue REVIEW',
     day?.dutyReport === null && day?.legs?.[0]?.departureTime === '10:15', JSON.stringify(day));
 }
 {
-  // Token arbitrário entre a APZ e o "LA" não é marcador do allowlist: o sinal
-  // estrutural não atravessa token qualquer.
+  const tokens = ['(...)', 'BSB', '08:29', '08:45', '09:25', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
+  const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
+  check('sem marcador, boundary + 3 horários: a contagem segue promovendo a APZ 09:25',
+    day?.dutyReport === '09:25', JSON.stringify(day));
+}
+{
+  // Token fora do allowlist não é marcador: o sinal não atravessa token qualquer.
   const tokens = ['(...)', 'BSB', '08:29', '09:25', '(320)', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
   const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
   check('token fora do allowlist entre APZ e LA não prova apresentação: segue REVIEW',
     day?.dutyReport === null, JSON.stringify(day));
 }
 {
-  // A heurística de contagem continua valendo onde já valia (3 horários desde
-  // o boundary, sem marcador nenhum).
-  const tokens = ['(...)', 'BSB', '08:29', '08:45', '09:25', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
-  const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
-  check('sem marcador, boundary + 3 horários: contagem segue promovendo a APZ 09:25',
-    day?.dutyReport === '09:25', JSON.stringify(day));
-}
-{
-  // Continuação real, sem APZ nenhuma: nunca inventar, nunca usar a STD.
+  // Continuação real sem APZ e sem marcador: nunca inventar, nunca usar a STD.
   const tokens = ['(...)', 'BSB', '08:29', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
   const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
   check('continuação sem APZ após boundary: dutyReport=null, jamais a STD 10:15',
     day?.dutyReport === null && day?.legs?.[0]?.departureTime === '10:15', JSON.stringify(day));
+}
+{
+  // Coluna limpa (sem boundary): a APZ pré-LA continua sendo lida como sempre.
+  const tokens = ['BSB', '09:25', 'LA', '3730', '10:15', 'BSB', 'FOR', '12:55'];
+  const day = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.type === 'VOO');
+  check('sem boundary: a APZ pré-LA de coluna limpa continua sendo lida (09:25)',
+    day?.dutyReport === '09:25', JSON.stringify(day));
 }
 
 console.log(`\n---> ${passed} passed, ${failed} failed`);

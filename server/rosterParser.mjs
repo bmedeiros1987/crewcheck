@@ -479,19 +479,26 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
     for (let b = i - 1; b >= 0; b--) {
      if (/^\(\.{3}\)$/.test(upperTokens[b])) { lastBoundaryIdx = b; break; }
     }
-    // #510: um marcador do allowlist adjacente ao horário prova a apresentação
-    // estruturalmente, nas DUAS ordens (`marcador -> APZ -> LA` e
-    // `APZ -> marcador(es) -> LA`). Esse sinal PREVALECE sobre a contagem de
-    // horários desde o boundary — a contagem é a heurística usada apenas quando
-    // não há marcador nenhum para distinguir APZ de resíduo de boundary.
-    // Sem esta precedência a mesma APZ marcada era promovida com 2 horários
-    // residuais (a contagem chegava a 3 incluindo a própria APZ) e perdida com
-    // 1 ou 0, embora as três situações sejam estruturalmente idênticas.
-    if (lastBoundaryIdx < 0 || preLaReportHasLeadingMarker || preLaReportFollowedByMarker) {
+    if (lastBoundaryIdx < 0) {
      reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     } else {
      const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
-     if (timesSinceBoundary >= 3) reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+     // #510: um marcador do allowlist adjacente ao horário prova a que PERNA o
+     // segmento pertence (workType), nas duas ordens. O que ele NÃO prova, sozinho,
+     // é que o horário seja apresentação: numa continuação sem APZ própria, o
+     // único horário depois do "(...)" ainda é chegada/debrief herdado do
+     // boundary. Exigir 2+ horários é o que separa os dois casos, porque o
+     // boundary contribui no máximo chegada + debrief:
+     //
+     //   (...) BSB 08:29 EXTRA LA 3730       -> 1 horário  -> resíduo, REVIEW
+     //   (...) BSB 08:29 09:25 EXTRA LA 3730 -> 2 horários -> o 2º é a APZ
+     //
+     // Com 3+ horários o 3º já é estruturalmente excedente e dispensa marcador.
+     const markerProvesPresentation = (preLaReportHasLeadingMarker || preLaReportFollowedByMarker)
+      && timesSinceBoundary >= 2;
+     if (timesSinceBoundary >= 3 || markerProvesPresentation) {
+      reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+     }
     }
    } else if (current && (current.lastLegAfterDestCount >= 3 || preLaReportHasLeadingMarker || preLaReportFollowedByMarker)) {
     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
