@@ -262,5 +262,94 @@ for (const code of ['REC', 'CPT', 'LIS']) {
     `end=${aims.findAimsVisualFlightBlockEnd(tokens, 0)} tokens=${JSON.stringify(tokens)}`);
 }
 
+// ---------------------------------------------------------------------------
+// 12. Virada de dia com jornada nova no mesmo dia civil (#510/#538).
+//     A jornada anterior chega de madrugada e a jornada seguinte começa à tarde,
+//     na MESMA coluna. O prefixo de continuidade consumia os três horários
+//     (chegada, debriefing e a apresentação da jornada nova), com dois efeitos:
+//       - o debriefing da jornada anterior virava um horário da tarde;
+//       - a jornada nova perdia a apresentação e caía em APZ = STD.
+//     Contrato: a jornada anterior consome SOMENTE chegada + debriefing.
+// ---------------------------------------------------------------------------
+{
+  const prefixTokens = ['(...)', 'BEL', '00:15', '00:45', '15:05', 'LA', '8020', '15:35'];
+  const end = aims.findAimsContinuationPrefixEnd(prefixTokens);
+  check('continuação consome só chegada + debriefing; o terceiro horário fica para a jornada nova',
+    end === 4, `end=${end} esperado=4 prefixo="${prefixTokens.slice(0, end).join(' ')}"`);
+
+  // Sem debriefing publicado o corte não pode depender da contagem: um horário
+  // 14h depois da chegada é apresentação, não debriefing.
+  const noDebrief = ['(...)', 'BEL', '00:15', '15:05', 'LA', '8020', '15:35'];
+  const endNoDebrief = aims.findAimsContinuationPrefixEnd(noDebrief);
+  check('sem debriefing publicado, horário distante da chegada não é consumido como debriefing',
+    endNoDebrief === 3, `end=${endNoDebrief} esperado=3 prefixo="${noDebrief.slice(0, endNoDebrief).join(' ')}"`);
+
+  const columns = [
+    { page: 1, markerX: 0, date: '15/08/2026', dateObj: new Date(2026, 7, 15), dayOfWeek: 'Sáb', tokens: ['LA', '3410', '20:30', '21:30', 'GRU', '(...)'] },
+    { page: 1, markerX: 1, date: '16/08/2026', dateObj: new Date(2026, 7, 16), dayOfWeek: 'Dom', tokens: ['(...)', 'BEL', '00:15', '00:45', '15:05', 'LA', '8020', '15:35', 'BEL', 'GRU', '19:00', '(320)'] },
+  ];
+  const stitched = aims.stitchAimsOvernightColumnContinuations(columns);
+  check('costura leva chegada e debriefing para a coluna de origem',
+    stitched[0].tokens.join(' ').includes('BEL 00:15 00:45'),
+    JSON.stringify(stitched.map((column) => column.tokens)));
+  check('costura NÃO leva a apresentação 15:05 da jornada nova',
+    !stitched[0].tokens.includes('15:05') && stitched[1].tokens[0] === '15:05',
+    JSON.stringify(stitched.map((column) => column.tokens)));
+
+  const parseCol = (column) => aims.parseAimsVisualColumnDays(column.tokens, {
+    date: column.date, dayOfWeek: column.dayOfWeek, dateObj: column.dateObj, base: 'BSB', rawBlock: column.tokens.join(' '),
+  });
+
+  const previous = parseCol(stitched[0]).find((day) => day.type === 'VOO');
+  check('jornada anterior fecha no debriefing publicado (00:45), não na apresentação seguinte',
+    previous?.dutyDebrief === '00:45' && previous?.legs?.[0]?.arrivalTime === '00:15', show(parseCol(stitched[0])));
+
+  const nextDays = parseCol(stitched[1]);
+  const nextFlight = nextDays.find((day) => day.type === 'VOO');
+  const nextLeg = nextFlight?.legs?.[0];
+  check('jornada nova preserva a apresentação publicada como APZ 15:05',
+    nextLeg?.presentationTime === '15:05', show(nextDays));
+  check('jornada nova mantém STD 15:35 e APZ diferente de STD',
+    nextLeg?.departureTime === '15:35' && nextLeg?.presentationTime !== nextLeg?.departureTime, show(nextDays));
+  check('jornada nova começa na apresentação, não na decolagem',
+    nextFlight?.dutyReport === '15:05', show(nextDays));
+  check('virada de dia: nenhuma atividade fantasma na coluna da jornada nova',
+    nextDays.every((day) => day.type === 'VOO'), show(nextDays));
+}
+
+// ---------------------------------------------------------------------------
+// 13. Contraprova da recuperação da apresentação — ela não pode roubar horário
+//     de uma perna anterior nem de uma atividade anterior da mesma coluna.
+// ---------------------------------------------------------------------------
+{
+  const tokens = ['LA', '9001', '06:00', '06:45', 'GRU', 'BSB', '08:00', '08:20', 'LA', '9002', '09:10', 'BSB', 'GRU', '10:30', '(320)'];
+  const legs = legsOf(parse(tokens));
+  check('segunda perna não adota o debriefing da primeira como apresentação',
+    legs.length === 2 && legs[1]?.presentationTime === undefined && legs[1]?.departureTime === '09:10',
+    JSON.stringify(legs.map((leg) => `${leg.flightNumber} apz=${leg.presentationTime ?? 'AUSENTE'} std=${leg.departureTime}`)));
+  check('primeira perna conserva a própria apresentação publicada (06:00)',
+    legs[0]?.presentationTime === '06:00' && legs[0]?.departureTime === '06:45', JSON.stringify(legs));
+}
+
+for (const [label, tokens] of [
+  ['ASB', ['ASB', '08:00', '12:00', 'LA', '9003', '13:00', 'GRU', 'BSB', '15:00', '(320)']],
+  ['DO', ['DO', 'LA', '9003', '13:00', 'GRU', 'BSB', '15:00', '(320)']],
+]) {
+  const days = parse(tokens);
+  const leg = legsOf(days)[0];
+  check(`horário de ${label} anterior não é adotado como apresentação do voo`,
+    leg?.presentationTime === undefined && leg?.departureTime === '13:00', show(days));
+  check(`atividade ${label} anterior continua preservada como dia próprio`,
+    days.some((day) => day.type === label), show(days));
+}
+
+{
+  const tokens = ['15:05', 'EXTRA', 'LA', '8020', '15:35', 'BEL', 'GRU', '19:00', '(320)'];
+  const leg = legsOf(parse(tokens))[0];
+  check('marcador entre a apresentação e o número do voo é transparente (APZ 15:05, PS preservado)',
+    leg?.presentationTime === '15:05' && leg?.departureTime === '15:35' && leg?.workType === 'PS',
+    JSON.stringify(leg));
+}
+
 cleanup();
 process.exit(checker.report());

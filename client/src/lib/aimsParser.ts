@@ -214,6 +214,10 @@ function parseAimsHumanLegs(tokens: string[], homeBase: string): AimsHumanLeg[] 
   const source = tokens.map((token) => String(token || '').trim()).filter(Boolean);
   const legs: AimsHumanLeg[] = [];
   let pendingWorkType: string | null = null;
+  // Primeiro índice ainda não lido por nenhuma perna. Um horário solto antes do
+  // número do voo só pode ser a apresentação desta jornada se nenhuma perna
+  // anterior já o tiver consumido como chegada ou debriefing.
+  let consumedUpTo = 0;
   for (let i = 0; i < source.length; i += 1) {
     if (isExtraAimsMarker(source[i])) {
       pendingWorkType = 'PS';
@@ -221,19 +225,37 @@ function parseAimsHumanLegs(tokens: string[], homeBase: string): AimsHumanLeg[] 
     }
     if (source[i].toUpperCase() !== 'LA' || !/^\d{3,4}$/.test(source[i + 1] || '')) continue;
     const flightNumber = `LA${source[i + 1]}`;
+    // #510: na virada de coluna a apresentação é publicada ANTES do número do
+    // voo e ficava fora do segmento, deixando a decolagem como único horário —
+    // ou seja, APZ = STD. Recuperá-la aqui não pode roubar um horário da perna
+    // anterior, daí o piso `consumedUpTo`.
+    const leadingIdx = presentationTokenIndex(source, i, consumedUpTo);
     i += 2;
-    const legTokens: string[] = [];
+    const legTokens: string[] = leadingIdx >= 0 ? [source[leadingIdx]] : [];
     while (i < source.length) {
       if (source[i].toUpperCase() === 'LA' && /^\d{3,4}$/.test(source[i + 1] || '')) { i -= 1; break; }
       if (isExtraAimsMarker(source[i]) && source[i + 1]?.toUpperCase() === 'LA') { i -= 1; break; }
       legTokens.push(source[i]);
       i += 1;
     }
+    consumedUpTo = i + 1;
     const parsed = parseOneAimsHumanLeg(flightNumber, legTokens, pendingWorkType, homeBase);
     pendingWorkType = null;
     if (parsed) legs.push(parsed);
   }
   return legs;
+}
+
+/**
+ * Índice do horário de apresentação publicado imediatamente antes do número do
+ * voo, ou -1 quando não há um. Marcadores (EXTRA/PS) entre o horário e o `LA`
+ * são transparentes; qualquer token já consumido por um bloco anterior está
+ * fora de alcance.
+ */
+function presentationTokenIndex(tokens: string[], flightIdx: number, consumedUpTo: number): number {
+  let idx = flightIdx - 1;
+  while (idx >= consumedUpTo && isExtraAimsMarker(tokens[idx])) idx -= 1;
+  return idx >= consumedUpTo && isAimsClockToken(tokens[idx]) ? idx : -1;
 }
 
 function parseOneAimsHumanLeg(flightNumber: string, tokens: string[], forcedWorkType: string | null, homeBase: string): AimsHumanLeg | null {
@@ -1077,13 +1099,29 @@ function findAimsContinuationPrefixEnd(tokens: string[]): number {
   // A partir da segunda, um código colidente (REC/CPT/LIS) é atividade nova — usar
   // o limiar de duas estações aqui arrastaria essa atividade para a data anterior.
   const AIRPORTS_BEFORE_ARRIVAL_IN_CONTINUATION = 1;
+  // #510: da coluna seguinte a jornada anterior só pode consumir CHEGADA e
+  // DEBRIEFING. Quando a nova jornada começa no mesmo dia civil, a fonte publica
+  // a apresentação dela antes do próximo `LA`; arrastar esse terceiro horário
+  // para trás transformava o debriefing da jornada anterior num horário da tarde
+  // e apagava a APZ da jornada nova, que caía no próprio STD.
+  const CLOCKS_IN_CONTINUATION = 2;
+  // Um debriefing segue a chegada em minutos. Um horário muito além disso é
+  // apresentação da jornada nova mesmo quando o debriefing não foi publicado.
+  const MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES = 120;
   let airportsSeenInLeg = 0;
+  const clocksInPrefix: string[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
     if (token === 'LA' && /^\d{3,4}$/.test(next)) break;
     const isAirportToken = /^[A-Z]{3}$/.test(token) && isAimsHumanAirport(tokens[i], '');
     if (i > 0 && isAimsVisualStandaloneBoundaryToken(token) && !(isAirportToken && airportsSeenInLeg < AIRPORTS_BEFORE_ARRIVAL_IN_CONTINUATION)) break;
+    if (isAimsClockToken(tokens[i])) {
+      if (clocksInPrefix.length >= CLOCKS_IN_CONTINUATION) break;
+      const clock = normalizeSimpleTime(String(tokens[i]).trim());
+      if (clocksInPrefix.length === 1 && diffHours(clocksInPrefix[0], clock) * 60 > MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES) break;
+      clocksInPrefix.push(clock);
+    }
     if (isAirportToken) airportsSeenInLeg += 1;
     end = i + 1;
   }
@@ -1110,13 +1148,18 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
 
   const output: RosterDay[] = [];
   let i = 0;
+  // Fim do último bloco efetivamente consumido. Tokens apenas pulados pelo laço
+  // (um horário de apresentação solto, por exemplo) continuam disponíveis para o
+  // bloco de voo seguinte; tokens já lidos por um bloco anterior, não.
+  let consumedEnd = 0;
   while (i < source.length) {
     const token = String(source[i] || '').toUpperCase();
     const next = String(source[i + 1] || '').toUpperCase();
 
     if (token === 'LA' && /^\d{3,4}$/.test(next)) {
       const end = findAimsVisualFlightBlockEnd(source, i);
-      const segment = source.slice(i, end);
+      const presentationIdx = presentationTokenIndex(source, i, consumedEnd);
+      const segment = source.slice(presentationIdx >= 0 ? presentationIdx : i, end);
       // v11.1.100: o bloco visual de uma coluna pode conter duas jornadas no mesmo dia
       // separadas por pernoite diurno/solo >=12h. parseFlightDay consolidava tudo em
       // um único ParsedDay e perdia a segunda perna quando a chegada estava costurada
@@ -1127,17 +1170,20 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
         if (parsedDay.legs?.length) output.push(parsedDay);
       }
       i = Math.max(end, i + 2);
+      consumedEnd = i;
       continue;
     }
 
     if (isExtraAimsMarker(token) && source[i + 1]?.toUpperCase() === 'LA') {
       const end = findAimsVisualFlightBlockEnd(source, i);
-      const segment = source.slice(i, end);
+      const presentationIdx = presentationTokenIndex(source, i, consumedEnd);
+      const segment = source.slice(presentationIdx >= 0 ? presentationIdx : i, end);
       const parsedDays = buildAimsHumanFlightDays(segment, context);
       for (const parsedDay of parsedDays) {
         if (parsedDay.legs?.length) output.push(parsedDay);
       }
       i = Math.max(end, i + 2);
+      consumedEnd = i;
       continue;
     }
 
@@ -1146,6 +1192,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseASB(segment), segment.join(' ')));
       i = Math.max(end, i + 1);
+      consumedEnd = i;
       continue;
     }
 
@@ -1154,6 +1201,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseStandby(segment, token === 'HSBE' ? 'HSBE' : 'HSB'), segment.join(' ')));
       i = Math.max(end, i + 1);
+      consumedEnd = i;
       continue;
     }
 
@@ -1165,6 +1213,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
         : parseGroundActivity(segment, token);
       output.push(makeAimsHumanRosterDay(context, parsed, segment.join(' ')));
       i = Math.max(end, i + 1);
+      consumedEnd = i;
       continue;
     }
 
@@ -1173,6 +1222,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       const type = code === 'DOF' ? 'DOF' : code === 'DR' ? 'DR' : code === 'OFF' ? 'OFF' : 'DO';
       output.push(makeAimsHumanRosterDay(context, { type, pairingCode: code, dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null }, code));
       i += 1;
+      consumedEnd = i;
       continue;
     }
 
@@ -2220,6 +2270,10 @@ function collectAllClockTokens(lines: string[]): string[] {
     }
   }
   return output;
+}
+
+function isAimsClockToken(token: string): boolean {
+  return /^([01]?\d|2[0-3]):[0-5]\d(?:\(\+1\))?$/.test(String(token || '').trim());
 }
 
 function normalizeSimpleTime(time: string): string {
