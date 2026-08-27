@@ -482,20 +482,37 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
     if (lastBoundaryIdx < 0) {
      reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     } else {
-     const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
-     // #510: um marcador do allowlist adjacente ao horário prova a que PERNA o
-     // segmento pertence (workType), nas duas ordens. O que ele NÃO prova, sozinho,
-     // é que o horário seja apresentação: numa continuação sem APZ própria, o
-     // único horário depois do "(...)" ainda é chegada/debrief herdado do
-     // boundary. Exigir 2+ horários é o que separa os dois casos, porque o
-     // boundary contribui no máximo chegada + debrief:
+     const boundaryTimes = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken);
+     const timesSinceBoundary = boundaryTimes.length;
+     // #510: o marcador do allowlist prova a que PERNA o segmento pertence
+     // (workType). Sozinho ele NÃO prova o papel semântico do horário — e a
+     // CONTAGEM também não, com exatamente dois: o boundary "(...)" contribui
+     // chegada + debrief opcional, então dois horários ainda cabem inteiramente
+     // nele. As duas leituras abaixo produzem o MESMO token stream:
      //
-     //   (...) BSB 08:29 EXTRA LA 3730       -> 1 horário  -> resíduo, REVIEW
-     //   (...) BSB 08:29 09:25 EXTRA LA 3730 -> 2 horários -> o 2º é a APZ
+     //   chegada 08:29 + debrief 08:50 + marcador + continuação sem APZ
+     //   chegada 08:29 + APZ     08:50 + marcador + jornada nova
      //
+     // O discriminador não é estrutural, é TEMPORAL, e está presente na entrada:
+     // um debriefing segue a chegada em minutos, enquanto uma apresentação de
+     // jornada nova fica muito além disso e imediatamente antes da própria STD.
+     // Quando as duas leituras continuam plausíveis, a entrada é genuinamente
+     // ambígua e o resultado seguro é REVIEW — nunca inventar apresentação.
+     const MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES = 120;
+     const MAX_PRESENTATION_LEAD_MINUTES = 180;
+     let markerProvesPresentation = false;
+     if ((preLaReportHasLeadingMarker || preLaReportFollowedByMarker) && timesSinceBoundary === 2 && leg?.departureTime) {
+      const arrival = normalizeTimeToken(boundaryTimes[0]);
+      const candidate = normalizeTimeToken(normalized[preLaReportIdx]);
+      let sinceArrival = toMin(candidate) - toMin(arrival);
+      if (sinceArrival < 0) sinceArrival += 1440;
+      let presentationLead = toMin(leg.departureTime) - toMin(candidate);
+      if (presentationLead < 0) presentationLead += 1440;
+      const couldBeDebriefOfPreviousJourney = sinceArrival <= MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
+      const couldBePresentationOfThisLeg = presentationLead > 0 && presentationLead <= MAX_PRESENTATION_LEAD_MINUTES;
+      markerProvesPresentation = couldBePresentationOfThisLeg && !couldBeDebriefOfPreviousJourney;
+     }
      // Com 3+ horários o 3º já é estruturalmente excedente e dispensa marcador.
-     const markerProvesPresentation = (preLaReportHasLeadingMarker || preLaReportFollowedByMarker)
-      && timesSinceBoundary >= 2;
      if (timesSinceBoundary >= 3 || markerProvesPresentation) {
       reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
      }
