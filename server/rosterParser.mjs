@@ -479,7 +479,15 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
     for (let b = i - 1; b >= 0; b--) {
      if (/^\(\.{3}\)$/.test(upperTokens[b])) { lastBoundaryIdx = b; break; }
     }
-    if (lastBoundaryIdx < 0) {
+    // #510: um marcador do allowlist adjacente ao horário prova a apresentação
+    // estruturalmente, nas DUAS ordens (`marcador -> APZ -> LA` e
+    // `APZ -> marcador(es) -> LA`). Esse sinal PREVALECE sobre a contagem de
+    // horários desde o boundary — a contagem é a heurística usada apenas quando
+    // não há marcador nenhum para distinguir APZ de resíduo de boundary.
+    // Sem esta precedência a mesma APZ marcada era promovida com 2 horários
+    // residuais (a contagem chegava a 3 incluindo a própria APZ) e perdida com
+    // 1 ou 0, embora as três situações sejam estruturalmente idênticas.
+    if (lastBoundaryIdx < 0 || preLaReportHasLeadingMarker || preLaReportFollowedByMarker) {
      reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     } else {
      const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
