@@ -466,6 +466,13 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   let preLaReportIdx = i - 1;
   while (preLaReportIdx >= 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx])) preLaReportIdx -= 1;
   const preLaReportHasLeadingMarker = preLaReportIdx > 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx - 1]);
+  // #510: a ordem `APZ -> marcador(es) -> LA` é sinal estrutural tão forte quanto
+  // `marcador -> APZ -> LA`. Um horário seguido de EXTRA/[EXTRA]/PS/PAX/PASSAGEIRO e
+  // só então do "LA" não pode ser debrief da perna anterior: o marcador qualifica a
+  // perna que começa, então o horário pertence à apresentação dela.
+  // `preLaReportIdx < i - 1` só é verdadeiro quando o laço acima pulou ao menos um
+  // marcador entre o horário e o "LA" — nenhum outro token é pulado ali.
+  const preLaReportFollowedByMarker = preLaReportIdx < i - 1;
   if (!reportEquivalent && preLaReportIdx >= 0 && isTimeToken(tokens[preLaReportIdx])) {
    if (k === 0) {
     let lastBoundaryIdx = -1;
@@ -478,7 +485,7 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
      const timesSinceBoundary = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken).length;
      if (timesSinceBoundary >= 3) reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
     }
-   } else if (current && (current.lastLegAfterDestCount >= 3 || preLaReportHasLeadingMarker)) {
+   } else if (current && (current.lastLegAfterDestCount >= 3 || preLaReportHasLeadingMarker || preLaReportFollowedByMarker)) {
     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
    }
   }

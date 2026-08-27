@@ -445,6 +445,24 @@ function check(name, condition, detail = '') {
 }
 
 // -----------------------------------------------------------------------
+// Caso 7k — APZ -> marcador(es) -> LA. Ordem espelhada do 7j: aqui o marcador
+// fica ENTRE a apresentação e o "LA". O horário seguido de marcador não pode ser
+// debrief da perna anterior — o marcador qualifica a perna que começa, então o
+// horário pertence à apresentação dela. Vale para os cinco marcadores.
+// -----------------------------------------------------------------------
+for (const marker of ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']) {
+  const tokens = ['LA','4712','06:00','06:45','AAA','BBB','08:20','23:03',marker,'LA','3246','23:50','BBB','CCC','01:15'];
+  const flightDays = mod.parseAimsTokensIntoEventsV3(tokens, 31, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  const first = flightDays.find((d) => d.pairingCode === 'LA4712');
+  const second = flightDays.find((d) => d.pairingCode === 'LA3246');
+  check(`APZ antes de ${marker}: nova jornada recebe APZ 23:03, nunca a STD 23:50`,
+    second?.dutyReport === '23:03' && second?.legs?.[0]?.departureTime === '23:50', JSON.stringify(second));
+  check(`APZ antes de ${marker}: nova perna é PS e a jornada anterior fica intacta`,
+    second?.legs?.[0]?.workType === 'PS' && first?.dutyReport === '06:00' && first?.dutyDebrief === '08:20',
+    JSON.stringify({ first, second }));
+}
+
+// -----------------------------------------------------------------------
 // Caso 8 — descontinuidade física: origem da perna não bate com o destino da
 // perna anterior. Mesmo com intervalo curto, não pode ser tratada como
 // conexão da mesma jornada (nunca fundir jornada fisicamente impossível).
