@@ -1,5 +1,6 @@
 import type { CrewRoster, RosterDay } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { regulatoryHistoryCoverageComplete } from './complianceEngine';
 import { authFetch, getStoredUser, getToken } from './authClient';
 
 export interface DatabaseStatus {
@@ -646,10 +647,16 @@ export async function fetchRegulatoryHistoryDays(
       const opened = await openSavedRoster(String(id));
       for (const day of opened?.roster?.days || []) byDate.set(String(day.date || ''), day);
     }
-    return { days: Array.from(byDate.values()), complete: true };
+    const days = Array.from(byDate.values());
+    // #536: sucesso da requisição NÃO é prova de cobertura. Uma conta que contém
+    // apenas a competência ativa responde 200 e devolve zero dias anteriores;
+    // declarar isso como completo permitiria falso OK na janela de 28 dias.
+    // `complete` passa a refletir cobertura temporal real do intervalo exigido.
+    return { days, complete: regulatoryHistoryCoverageComplete(active?.days || [], days) };
   } catch {
-    // Falha de rede/sessão: devolve o que o aparelho já tem, mas declara cobertura
-    // incompleta para o cálculo não afirmar conformidade.
+    // Falha de rede/sessão: devolve o que o aparelho já tem. Mesmo que o cache
+    // local por acaso cubra o intervalo, a origem não pôde ser confirmada, então
+    // a cobertura é declarada incompleta — fail-closed, sem afirmar conformidade.
     return { days: local, complete: false };
   }
 }

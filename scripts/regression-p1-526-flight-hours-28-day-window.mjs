@@ -21,6 +21,7 @@
  * jamais entra no acumulador de voo.
  */
 
+import { readFileSync } from 'node:fs';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB, createChecker } from './lib/ts-module-harness.mjs';
 
 const harness = loadClientModules({
@@ -37,7 +38,13 @@ const harness = loadClientModules({
   ],
 });
 
-const { worstFlightHoursWindow28Days } = harness.load('complianceEngine');
+const {
+  worstFlightHoursWindow28Days,
+  regulatoryHistoryCoverageComplete,
+  canReuseComplianceSnapshot,
+  rosterFingerprint,
+  analyzeCompliance,
+} = harness.load('complianceEngine');
 
 const checker = createChecker('P-1 #526 — horas de voo em janela de 28 dias');
 const { check } = checker;
@@ -164,4 +171,125 @@ const day = (date, flyingHours, extra = {}) => ({
     ![limits?.narrowBody28Days, limits?.wideBody28Days].includes(176), JSON.stringify(limits));
 }
 
-checker.report();
+// -----------------------------------------------------------------------
+// Caso 8 (#536) — COBERTURA REGULATÓRIA. Sucesso da consulta não é prova de
+// cobertura temporal.
+//
+// `fetchRegulatoryHistoryDays` devolvia `complete: true` sempre que
+// `/api/rosters` respondia com sucesso — inclusive quando a conta contém APENAS
+// a competência ativa e não existe um único dia anterior. Isso remove o aviso de
+// análise não conclusiva e permite falso OK: 49,6h em fevereiro passam como
+// dentro do limite embora 50,4h não carregadas do fim de janeiro formem
+// 100h/28d.
+//
+// Regra: todo dia civil no intervalo [primeiro dia ativo - 27, primeiro dia - 1]
+// precisa estar representado. Buraco reprova — fail-closed.
+// -----------------------------------------------------------------------
+{
+  const cobertura = (currentDays, historyDays) => (typeof regulatoryHistoryCoverageComplete === 'function'
+    ? regulatoryHistoryCoverageComplete(currentDays, historyDays)
+    : `API AUSENTE (${typeof regulatoryHistoryCoverageComplete})`);
+
+  check('API: complianceEngine exporta regulatoryHistoryCoverageComplete',
+    typeof regulatoryHistoryCoverageComplete === 'function', typeof regulatoryHistoryCoverageComplete);
+
+  // Fevereiro inteiro como competência ativa.
+  const fevereiro = [];
+  for (let d = 1; d <= 28; d++) fevereiro.push(day(`${pad(d)}/02/2026`, d <= 16 ? 3.1 : 0));
+
+  // Janeiro inteiro: cobre com folga os 27 dias anteriores a 01/02.
+  const janeiroCompleto = [];
+  for (let d = 1; d <= 31; d++) janeiroCompleto.push(day(`${pad(d)}/01/2026`, d >= 20 ? 4.2 : 0));
+
+  check('cloud só com a competência ativa: cobertura INCOMPLETA (nenhum dia anterior)',
+    cobertura(fevereiro, []) === false, String(cobertura(fevereiro, [])));
+  check('histórico suficiente: cobertura COMPLETA',
+    cobertura(fevereiro, janeiroCompleto) === true, String(cobertura(fevereiro, janeiroCompleto)));
+
+  // Buraco de um único dia dentro do intervalo exigido reprova.
+  const comBuraco = janeiroCompleto.filter((d) => d.date !== '20/01/2026');
+  check('um único dia faltando no intervalo exigido: cobertura INCOMPLETA',
+    cobertura(fevereiro, comBuraco) === false, String(cobertura(fevereiro, comBuraco)));
+
+  // Histórico que existe mas é curto demais (só a última semana de janeiro).
+  const parcial = janeiroCompleto.filter((d) => Number(d.date.slice(0, 2)) >= 25);
+  check('histórico local parcial (só a última semana): cobertura INCOMPLETA',
+    cobertura(fevereiro, parcial) === false, String(cobertura(fevereiro, parcial)));
+
+  // Dia anterior ao intervalo exigido não compensa buraco dentro dele.
+  const soDezembro = [];
+  for (let d = 1; d <= 31; d++) soDezembro.push(day(`${pad(d)}/12/2025`, 0));
+  check('histórico antigo demais (dezembro) não cobre o intervalo exigido',
+    cobertura(fevereiro, soDezembro) === false, String(cobertura(fevereiro, soDezembro)));
+
+  // Sem escala ativa não há nada a declarar como completo.
+  check('sem escala ativa: nunca declarar cobertura completa',
+    cobertura([], janeiroCompleto) === false, String(cobertura([], janeiroCompleto)));
+
+  // A contraprova central do #526 continua valendo: a violação 50,4h + 49,6h
+  // atravessando a virada do mês é detectada quando o histórico está presente.
+  const janeiro20a31 = [];
+  for (let d = 20; d <= 31; d++) janeiro20a31.push(day(`${pad(d)}/01/2026`, 4.2));
+  const fevereiro01a16 = [];
+  for (let d = 1; d <= 16; d++) fevereiro01a16.push(day(`${pad(d)}/02/2026`, 3.1));
+  const worst = worstFlightHoursWindow28Days([...janeiro20a31, ...fevereiro01a16]);
+  check('violação 50,4h + 49,6h atravessando a virada do mês continua detectada (100h)',
+    Math.round(worst.flightHours) === 100 && worst.spansMonthBoundary === true, JSON.stringify(worst));
+  check('cobertura incompleta NÃO apaga violação já detectada',
+    Math.round(worstFlightHoursWindow28Days([...janeiro20a31, ...fevereiro01a16]).flightHours) === 100);
+}
+
+// -----------------------------------------------------------------------
+// Caso 9 (#536) — PROVENIÊNCIA: o tipo de aeronave decide o perfil legal
+// (NarrowBody 90h x WideBody 100h). Fora do digest, uma escala reclassificada
+// de Narrow para Wide reaproveitaria um snapshot calculado com o teto errado.
+// -----------------------------------------------------------------------
+{
+  const comAeronave = (aircraftType) => ({
+    crewName: 'T', crewId: '1', base: 'BSB', rank: 'CCM', month: 2, year: 2026, rawText: '',
+    days: [{
+      ...day('10/02/2026', 3.1),
+      type: 'VOO',
+      legs: [{ flightNumber: 'LA100', origin: 'BSB', destination: 'GRU', departureTime: '08:00', arrivalTime: '09:30', workType: 'OP', aircraftType }],
+    }],
+  });
+
+  const narrow = rosterFingerprint(comAeronave('320'));
+  const wide = rosterFingerprint(comAeronave('789'));
+  check('proveniência: mudar NarrowBody -> WideBody muda o rosterFingerprint',
+    narrow !== wide, JSON.stringify({ narrow, wide }));
+  check('proveniência: mesmo tipo de aeronave mantém o fingerprint estável',
+    rosterFingerprint(comAeronave('320')) === narrow);
+
+  // O snapshot calculado como Narrow não pode ser reaproveitado como Wide.
+  const contexto = (roster, complete) => ({ roster, regulatoryHistoryDays: [], roleSelection: 'CCM', regulatoryHistoryComplete: complete });
+  const snapshotNarrow = analyzeCompliance(comAeronave('320'), 'CCM', [], true);
+  check('snapshot Narrow NÃO é reutilizado depois de reclassificar para Wide',
+    canReuseComplianceSnapshot(snapshotNarrow, contexto(comAeronave('789'), true)) === false);
+  check('snapshot Narrow continua reutilizável para a mesma escala',
+    canReuseComplianceSnapshot(snapshotNarrow, contexto(comAeronave('320'), true)) === true);
+  check('mudança de cobertura (completa -> incompleta) invalida o snapshot',
+    canReuseComplianceSnapshot(snapshotNarrow, contexto(comAeronave('320'), false)) === false);
+}
+
+// -----------------------------------------------------------------------
+// Caso 10 (#536) — FIAÇÃO em databaseClient.ts.
+//
+// Asserção de fiação, não de comportamento: `databaseClient.ts` depende de
+// `localStorage`/`fetch` e não é carregável neste harness puro. O comportamento
+// está provado no Caso 8, na função pura. O que esta checagem garante é que o
+// caminho de rede realmente CONSULTA a cobertura em vez de declarar `true`.
+// -----------------------------------------------------------------------
+{
+  const db = readFileSync(new URL('../client/src/lib/databaseClient.ts', import.meta.url), 'utf8');
+  check('fiação: databaseClient importa regulatoryHistoryCoverageComplete',
+    /import \{ regulatoryHistoryCoverageComplete \} from '\.\/complianceEngine';/.test(db));
+  check('fiação: complete vem da cobertura temporal, não do sucesso da requisição',
+    /complete: regulatoryHistoryCoverageComplete\(active\?\.days \|\| \[\], days\)/.test(db));
+  check('fiação: nenhum caminho declara complete: true incondicionalmente',
+    !/complete: true/.test(db), 'ainda existe `complete: true` literal em databaseClient.ts');
+  check('fiação: falha de rede continua fail-closed (complete: false)',
+    /return \{ days: local, complete: false \};/.test(db));
+}
+
+process.exit(checker.report());

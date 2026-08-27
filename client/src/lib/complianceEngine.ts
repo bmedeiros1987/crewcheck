@@ -1688,7 +1688,10 @@ function dayDigestParts(days: RosterDay[]): string[] {
       String(day.dutyReport || ''),
       String(day.dutyDebrief || ''),
       String(getFlightHours(day)),
-      (day.legs || []).map((leg) => `${leg.flightNumber || ''}:${leg.origin || ''}>${leg.destination || ''}:${leg.departureTime || ''}-${leg.arrivalTime || ''}`).join(','),
+      // #536: o tipo de aeronave decide o perfil legal (NarrowBody 90h x
+      // WideBody 100h em 28 dias). Fora do digest, uma escala reclassificada de
+      // Narrow para Wide reaproveitaria um snapshot calculado com o teto errado.
+      (day.legs || []).map((leg) => `${leg.flightNumber || ''}:${leg.origin || ''}>${leg.destination || ''}:${leg.departureTime || ''}-${leg.arrivalTime || ''}:${leg.aircraftType || ''}`).join(','),
     ].join('|'))
     .sort();
 }
@@ -1723,18 +1726,64 @@ export function regulatoryHistoryFingerprint(days: RosterDay[]): string {
   return stableDigest(dayDigestParts(Array.isArray(days) ? days : []));
 }
 
+/**
+ * Índice de dia civil, estável a horário de verão. `parseDate` devolve meia-noite
+ * LOCAL; a diferença em milissegundos entre datas locais deixa de ser múltiplo
+ * exato de 24h quando há transição de DST dentro da janela, deslocando a
+ * fronteira em um dia.
+ */
+function utcDayIndex(day: RosterDay): number | null {
+  try {
+    const parsed = parseDate(String(day.date || ''));
+    if (!Number.isFinite(parsed.getTime())) return null;
+    return Math.floor(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) / 86400000);
+  } catch { return null; }
+}
+
+/**
+ * #536: a janela de 28 dias só pode ser declarada CONCLUSIVA quando os dias
+ * anteriores de que ela precisa existirem de fato.
+ *
+ * Sucesso da consulta não é prova de cobertura: uma conta que contém apenas a
+ * competência ativa responde 200 e devolve zero dias anteriores. Tratar isso
+ * como completo permite falso OK — 49,6h em fevereiro passam como dentro do
+ * limite embora 50,4h não carregadas do fim de janeiro formem 100h/28d.
+ *
+ * A regra é de cobertura temporal, não de sucesso de rede: todo dia civil no
+ * intervalo [primeiro dia da escala ativa - windowDays, primeiro dia - 1]
+ * precisa estar representado. Qualquer buraco reprova — fail-closed.
+ *
+ * Cobertura incompleta NÃO apaga violação já detectada; ela apenas impede
+ * concluir conformidade.
+ */
+export function regulatoryHistoryCoverageComplete(
+  currentDays: RosterDay[],
+  historyDays: RosterDay[],
+  windowDays = 27,
+): boolean {
+  const currentIndexes = (Array.isArray(currentDays) ? currentDays : [])
+    .map(utcDayIndex)
+    .filter((value): value is number => value != null);
+  // Sem escala ativa não há janela a avaliar — nada a declarar como completo.
+  if (!currentIndexes.length) return false;
+  const firstCurrent = Math.min(...currentIndexes);
+  const covered = new Set(
+    (Array.isArray(historyDays) ? historyDays : [])
+      .map(utcDayIndex)
+      .filter((value): value is number => value != null),
+  );
+  for (let index = firstCurrent - windowDays; index < firstCurrent; index += 1) {
+    if (!covered.has(index)) return false;
+  }
+  return true;
+}
+
 export function selectRegulatoryHistoryDays(
   currentDays: RosterDay[],
   candidateDays: RosterDay[],
   windowDays = 27,
 ): RosterDay[] {
-  const indexOf = (day: RosterDay): number | null => {
-    try {
-      const parsed = parseDate(String(day.date || ''));
-      if (!Number.isFinite(parsed.getTime())) return null;
-      return Math.floor(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) / 86400000);
-    } catch { return null; }
-  };
+  const indexOf = utcDayIndex;
   const currentIndexes = currentDays.map(indexOf).filter((value): value is number => value != null);
   if (!currentIndexes.length) return [];
   const firstCurrent = Math.min(...currentIndexes);
