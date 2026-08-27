@@ -814,8 +814,30 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   return events.sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
 }
 
+/**
+ * #525/#537: quais tipos canônicos são PROGRAMAÇÃO OPERACIONAL.
+ *
+ * `journey-rest` e `rest` representam intervalo, não programação. Eles seguem
+ * visíveis na timeline, mas não podem ser selecionados como programação
+ * atual/próxima nem alimentar despertador, Cockpit, alertas ou consumidores
+ * financeiros — o repouso não tem apresentação, então esses consumidores
+ * exibiriam horário vazio ou tratariam o início do repouso como início de
+ * jornada.
+ *
+ * A lista vive aqui, junto do modelo canônico, e não em cada consumidor: um
+ * consumidor novo que esqueça de filtrar volta a reintroduzir o mesmo defeito.
+ */
+export const OPERATIONAL_CANONICAL_EVENT_KINDS: CanonicalRosterEventKind[] = ['flight', 'duty', 'stay'];
+
+export function isOperationalCanonicalEvent(event: Pick<CanonicalRosterEvent, 'kind'> | null | undefined): boolean {
+  if (!event) return false;
+  return OPERATIONAL_CANONICAL_EVENT_KINDS.includes(event.kind);
+}
+
 export function selectNextRosterEvent(events: CanonicalRosterEvent[], now = new Date()): CanonicalRosterEvent | null {
-  const sorted = [...events].sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
+  // Defesa na própria seleção: mesmo que um chamador esqueça de filtrar, o
+  // repouso nunca pode ser devolvido como programação atual/próxima.
+  const sorted = [...events].filter(isOperationalCanonicalEvent).sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
   const active = sorted.find((event) => {
     const start = new Date(event.startDateTime).getTime();
     const end = new Date(event.endDateTime).getTime();

@@ -33,6 +33,7 @@
  * Casos sintéticos, escritos à mão. Sem fixture de corpus e sem PDF real.
  */
 
+import { readFileSync } from 'node:fs';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB, createChecker } from './lib/ts-module-harness.mjs';
 
 const harness = loadClientModules({
@@ -49,7 +50,8 @@ const harness = loadClientModules({
   ],
 });
 
-const { buildCanonicalRosterEvents } = harness.load('canonicalRoster');
+const { buildCanonicalRosterEvents, selectNextRosterEvent, isOperationalCanonicalEvent, OPERATIONAL_CANONICAL_EVENT_KINDS } = harness.load('canonicalRoster');
+const { isSmartDepartureEligible, isJourneyRestScheduleActivity } = harness.load('scheduleActivityClassification');
 
 const checker = createChecker('P-1 #525 — tempo em solo x repouso entre jornadas x pernoite');
 const { check } = checker;
@@ -158,4 +160,163 @@ const isBetweenJourneys = (event) => event.kind === 'stay' || event.kind === 'jo
   check('repouso curto: não inventa hotel', !rest?.day?.hotel, JSON.stringify(rest?.day?.hotel ?? null));
 }
 
-checker.report();
+// -----------------------------------------------------------------------
+// Caso 6 (#537) — CONSUMIDORES OPERACIONAIS.
+//
+// `journey-rest` é projetado como `kind: 'duty'` de propósito: mapeá-lo para
+// `stay` inflaria a contagem de pernoites. Mas o predicado que decide o que é
+// programação operacional olhava só o `kind` da projeção, então o repouso era
+// aceito como `duty` e podia ser selecionado como programação ATUAL/PRÓXIMA.
+// Consequência: Cockpit/Despertador recebiam o intervalo 18:30 -> 03:10 como
+// se fosse jornada, com apresentação vazia.
+//
+// Contrato: o repouso PERMANECE na timeline e é EXCLUÍDO dos seletores.
+// -----------------------------------------------------------------------
+{
+  // API guard — sem isto, uma exportação ausente derruba o arquivo com
+  // TypeError e as asserções que importam nunca chegam a ser avaliadas.
+  check('API: canonicalRoster exporta isOperationalCanonicalEvent',
+    typeof isOperationalCanonicalEvent === 'function', typeof isOperationalCanonicalEvent);
+  check('API: canonicalRoster exporta OPERATIONAL_CANONICAL_EVENT_KINDS',
+    Array.isArray(OPERATIONAL_CANONICAL_EVENT_KINDS), JSON.stringify(OPERATIONAL_CANONICAL_EVENT_KINDS ?? null));
+
+  // Chamada protegida: com a API ausente, o teste precisa FALHAR NOMEADO em cada
+  // contrato, não morrer no primeiro TypeError e esconder o resto do arquivo.
+  const ehOperacional = (kind) => (typeof isOperationalCanonicalEvent === 'function'
+    ? isOperationalCanonicalEvent({ kind })
+    : `API AUSENTE (${typeof isOperationalCanonicalEvent})`);
+
+  check('predicado: journey-rest NÃO é programação operacional',
+    ehOperacional('journey-rest') === false, String(ehOperacional('journey-rest')));
+  check('predicado: rest NÃO é programação operacional',
+    ehOperacional('rest') === false, String(ehOperacional('rest')));
+  for (const kind of ['flight', 'duty', 'stay']) {
+    check(`predicado: ${kind} continua sendo programação operacional`,
+      ehOperacional(kind) === true, String(ehOperacional(kind)));
+  }
+
+  // Cenário real: repouso ATIVO agora, entre duas jornadas.
+  const events = buildCanonicalRosterEvents(roster([
+    day('18/08/2026', [leg('LA600', 'CNF', 'GRU', '16:00', '18:00')], { dutyReport: '15:00', dutyDebrief: '18:30' }),
+    day('19/08/2026', [leg('LA601', 'GRU', 'BSB', '04:00', '06:00', { presentationTime: '03:10' })], { dutyReport: '03:10', dutyDebrief: '06:30' }),
+  ]));
+  const rest = events.find((e) => e.kind === 'journey-rest');
+  check('cenário: o repouso entre jornadas existe na timeline', Boolean(rest), JSON.stringify(events.map((e) => e.kind)));
+
+  // "Agora" DENTRO do repouso: é o instante em que o defeito aparece, porque
+  // `selectNextRosterEvent` prefere o evento ativo ao próximo futuro.
+  const duranteORepouso = new Date('2026-08-18T22:00:00');
+  const selecionado = selectNextRosterEvent(events, duranteORepouso);
+  check('durante o repouso: o seletor NÃO devolve o repouso como programação',
+    selecionado?.kind !== 'journey-rest', JSON.stringify(selecionado));
+  check('durante o repouso: o seletor devolve a próxima jornada REAL (LA601)',
+    selecionado?.flightNumber === 'LA601', JSON.stringify(selecionado));
+  check('durante o repouso: a programação selecionada tem apresentação publicada',
+    Boolean(selecionado?.presentation), JSON.stringify(selecionado?.presentation ?? null));
+
+  // O repouso segue visível: excluir do seletor não pode apagá-lo da timeline.
+  check('a exclusão do seletor não remove o repouso da timeline',
+    events.some((e) => e.kind === 'journey-rest'), JSON.stringify(events.map((e) => e.kind)));
+
+  // Contraprova: sem nenhum repouso na lista, a seleção não muda.
+  const semRepouso = events.filter((e) => e.kind !== 'journey-rest');
+  check('contraprova: a seleção é a mesma com e sem o repouso na entrada',
+    selectNextRosterEvent(semRepouso, duranteORepouso)?.id === selecionado?.id,
+    JSON.stringify({ com: selecionado?.id, sem: selectNextRosterEvent(semRepouso, duranteORepouso)?.id }));
+
+  // O repouso também não pode ser escolhido quando é o ÚNICO candidato: aí a
+  // resposta correta é "nenhuma programação", não o repouso.
+  check('repouso sozinho não vira programação: seleção devolve null',
+    selectNextRosterEvent([rest], duranteORepouso) === null, JSON.stringify(selectNextRosterEvent([rest], duranteORepouso)));
+}
+
+// -----------------------------------------------------------------------
+// Caso 7 (#537) — ESTAÇÃO FÍSICA. O repouso usa o dia do voo SEGUINTE como
+// `publishedDay`. Ler a base desse dia exibiria BSB no lugar da estação onde o
+// tripulante realmente está. O evento canônico já resolve isso em origin/destination.
+// -----------------------------------------------------------------------
+{
+  const events = buildCanonicalRosterEvents(roster([
+    day('18/08/2026', [leg('LA700', 'BSB', 'BEL', '16:00', '18:00')], { dutyReport: '15:00', dutyDebrief: '18:30' }),
+    day('19/08/2026', [leg('LA701', 'BEL', 'FLN', '04:00', '06:00', { presentationTime: '03:10' })], { dutyReport: '03:10', dutyDebrief: '06:30' }),
+  ]));
+  const rest = events.find((e) => e.kind === 'journey-rest');
+  check('estação física: o repouso acontece em BEL, não na base BSB do dia seguinte',
+    rest?.origin === 'BEL' && rest?.destination === 'BEL', JSON.stringify({ origin: rest?.origin, destination: rest?.destination }));
+  check('estação física: o repouso não herda o pairing do voo seguinte',
+    !rest?.flightNumber, JSON.stringify(rest?.flightNumber ?? null));
+  check('estação física: o repouso não tem apresentação (não alimenta despertador)',
+    !rest?.presentation && rest?.showPresentation === false, JSON.stringify({ presentation: rest?.presentation, showPresentation: rest?.showPresentation }));
+  check('oracle 520 min preservado: 18:30 -> 03:10',
+    rest?.restMinutes === 520, JSON.stringify(rest?.restMinutes ?? null));
+}
+
+// -----------------------------------------------------------------------
+// Caso 8 (#537) — O CAMINHO DO ESTADO PREPARADO.
+//
+// Em estado preparado o passo v14.3.50 SUBSTITUI `isOperationalEvent` inteiro
+// por `return isSmartDepartureEligible(event)`. Uma correção feita só no corpo
+// inline de Home.tsx ficaria verde em base e INERTE em produção — exatamente o
+// padrão que já custou uma rodada no #549. Por isso a exclusão vive também na
+// função de classificação, e é aqui que ela é provada de forma executável,
+// valendo nos DOIS estados.
+// -----------------------------------------------------------------------
+{
+  const elegivel = (activity) => (typeof isSmartDepartureEligible === 'function'
+    ? isSmartDepartureEligible(activity)
+    : `API AUSENTE (${typeof isSmartDepartureEligible})`);
+
+  check('API: scheduleActivityClassification exporta isJourneyRestScheduleActivity',
+    typeof isJourneyRestScheduleActivity === 'function', typeof isJourneyRestScheduleActivity);
+
+  const repouso = { kind: 'duty', canonical: { kind: 'journey-rest' }, presentation: '', flightNumber: '' };
+  const voo = { kind: 'flight', canonical: { kind: 'flight' }, presentation: '03:10', flightNumber: 'LA601' };
+
+  check('preparado: isSmartDepartureEligible REJEITA o repouso entre jornadas',
+    elegivel(repouso) === false, String(elegivel(repouso)));
+  check('preparado: isSmartDepartureEligible continua aceitando voo real',
+    elegivel(voo) === true, String(elegivel(voo)));
+  check('preparado: o repouso é reconhecido pelo tipo canônico, não pelo kind da projeção',
+    typeof isJourneyRestScheduleActivity === 'function'
+    && isJourneyRestScheduleActivity(repouso) === true
+    && isJourneyRestScheduleActivity(voo) === false);
+}
+
+// -----------------------------------------------------------------------
+// Caso 9 (#537) — FIAÇÃO em Home.tsx, ciente do estado.
+//
+// Asserções de fiação, não de comportamento: Home.tsx é uma página React de
+// ~4.600 linhas e não é carregável neste harness puro. A prova de comportamento
+// está nos Casos 6 e 8. O que estas checagens garantem é que os consumidores
+// continuam LIGADOS e que a cadeia de preparação não desfaz a correção em
+// silêncio. Cada forma abaixo é a esperada no seu estado.
+// -----------------------------------------------------------------------
+{
+  const home = readFileSync(new URL('../client/src/pages/Home.tsx', import.meta.url), 'utf8');
+  const preparado = /function isOperationalEvent\(event: ZeroLeg\) \{\s*\n\s*return isSmartDepartureEligible\(event\);\s*\n\}/.test(home);
+  const estado = preparado ? 'preparado' : 'base';
+
+  check(`fiação (${estado}): isOperationalEvent exclui o repouso`,
+    preparado
+      ? /return isSmartDepartureEligible\(event\);/.test(home)
+      : /if \(event\.canonical && !isOperationalCanonicalEvent\(event\.canonical\)\) return false;/.test(home));
+
+  check(`fiação (${estado}): a linha do \`base\` está numa das duas formas conhecidas`,
+    home.includes("    const base = safe((day as any).base || (day as any).airport || (day as any).hotel || event.origin, roster.base || '—');")
+    || home.includes("    const base = safe((day as any).operationalAirport || (day as any).airport || event.origin || (day as any).base || (day as any).hotel, roster.base || '—');"));
+
+  // Estas valem nos dois estados: nenhum passo da cadeia as reescreve.
+  check('fiação: Home.tsx importa o predicado canônico',
+    /import \{ isOperationalCanonicalEvent \} from '@\/lib\/canonicalRoster';/.test(home));
+  check('fiação: a linha-âncora do v14.3.50 (import canônico) permanece intacta',
+    home.includes("import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';"));
+  check('fiação: rosterEventTitle preserva o título próprio do repouso',
+    /if \(isJourneyRestEvent\(event\)\) return event\.title;/.test(home));
+  check('fiação: rosterEventLine preserva o subtítulo próprio do repouso',
+    /if \(isJourneyRestEvent\(event\)\) return event\.subtitle;/.test(home));
+  check('fiação: a estação do repouso vem do canônico, não da base do dia seguinte',
+    /const restStation = isJourneyRest \? safe\(event\.origin, base\) : base;/.test(home)
+    && /origin: restStation,\s*\n\s*destination: restStation,/.test(home));
+}
+
+process.exit(checker.report());

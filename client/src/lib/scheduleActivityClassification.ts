@@ -319,7 +319,21 @@ function hasContinuationPresentation(activity: ScheduleActivityLike): boolean {
   return presentation === CONTINUATION_PRESENTATION;
 }
 
+/**
+ * #537: repouso ENTRE jornadas é representação de intervalo, nunca programação.
+ * Ele é projetado como `duty` de propósito (mapeá-lo para `stay` inflaria a
+ * contagem de pernoites), então o `kind` da projeção não o distingue — quem
+ * distingue é o tipo canônico.
+ */
+export function isJourneyRestScheduleActivity(activity: ScheduleActivityLike): boolean {
+  return normalize(activity?.canonical?.kind) === 'JOURNEY-REST';
+}
+
 export function isSmartDepartureEligible(activity: ScheduleActivityLike): boolean {
+  // Repouso entre jornadas não tem apresentação por definição: ele descreve
+  // justamente o intervalo ANTES da apresentação da jornada seguinte. Planejar
+  // saída, despertador ou diária a partir dele produz horário inexistente.
+  if (isJourneyRestScheduleActivity(activity)) return false;
   if (!isProgramScheduleActivity(activity)) return false;
   // Continuação de jornada carrega tempo de solo, não apresentação: planejar
   // saída a partir dela levaria a um horário que não existe (#512). Apresentação
