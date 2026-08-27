@@ -609,6 +609,87 @@ for (const marker of ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']) {
     day?.dutyReport === '09:25', JSON.stringify(day));
 }
 
+// -----------------------------------------------------------------------
+// Caso 7o — O DISCRIMINADOR VALE PARA JORNADA POSTERIOR, não só para o
+// primeiro "LA" depois de "(...)".
+//
+// Uma jornada posterior aberta por DESCONTINUIDADE FÍSICA (BBB -> CCC) é o
+// caminho que a matriz anterior não cobria: ali o ramo `k>0` promovia qualquer
+// horário adjacente a marcador sem testar janela de debriefing nem lead de
+// apresentação. Dano duplo — APZ inventada na jornada nova E o debriefing
+// legítimo da anterior apagado pelo recorte anti-vazamento.
+//
+// O discriminador é o MESMO dos dois lados: `markerProvenPresentation`.
+// -----------------------------------------------------------------------
+for (const marker of ['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']) {
+  // 08:50 está 30 min depois da chegada 08:20 -> debriefing plausível da
+  // jornada anterior. Não pode virar APZ da jornada nova.
+  for (const [ordem, tokens] of [
+    ['horário -> marcador', ['LA', '9000', '06:00', '06:45', 'AAA', 'BBB', '08:20', '08:50', marker, 'LA', '9001', '10:15', 'CCC', 'DDD', '12:55']],
+    ['marcador -> horário', ['LA', '9000', '06:00', '06:45', 'AAA', 'BBB', '08:20', marker, '08:50', 'LA', '9001', '10:15', 'CCC', 'DDD', '12:55']],
+  ]) {
+    const flightDays = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+    const first = flightDays.find((d) => d.pairingCode === 'LA9000');
+    const second = flightDays.find((d) => d.pairingCode === 'LA9001');
+    check(`jornada posterior + ${marker} (${ordem}): descontinuidade física abre duas jornadas`,
+      flightDays.length === 2 && Boolean(first) && Boolean(second), JSON.stringify(flightDays.map((d) => d.pairingCode)));
+    check(`jornada posterior + ${marker} (${ordem}): debriefing plausível NÃO vira APZ, dutyReport=null`,
+      second?.dutyReport === null, JSON.stringify(second));
+    check(`jornada posterior + ${marker} (${ordem}): a jornada nova preserva perna, STD e workType`,
+      second?.legs?.length === 1 && second?.legs?.[0]?.departureTime === '10:15'
+      && second?.legs?.[0]?.origin === 'CCC' && second?.legs?.[0]?.workType === 'PS', JSON.stringify(second));
+    check(`jornada posterior + ${marker} (${ordem}): a jornada anterior conserva a própria apresentação`,
+      first?.dutyReport === '06:00', JSON.stringify(first));
+  }
+
+  // Quando o horário está estruturalmente do lado da jornada ANTERIOR (o
+  // marcador vem depois dele), o debriefing legítimo tem de sobreviver ao
+  // recorte anti-vazamento — era ele que estava sendo apagado.
+  {
+    const tokens = ['LA', '9000', '06:00', '06:45', 'AAA', 'BBB', '08:20', '08:50', marker, 'LA', '9001', '10:15', 'CCC', 'DDD', '12:55'];
+    const first = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.pairingCode === 'LA9000');
+    check(`jornada posterior + ${marker}: o debriefing legítimo 08:50 da jornada anterior é preservado`,
+      first?.dutyDebrief === '08:50', JSON.stringify(first));
+  }
+}
+
+// -----------------------------------------------------------------------
+// Caso 7p — contraprovas do 7o. Os DOIS lados do discriminador têm de valer
+// no ramo posterior, exatamente como no primeiro LA após boundary.
+// -----------------------------------------------------------------------
+{
+  // Fora da janela de debriefing (5h40) MAS sem lead plausível (6h até a STD):
+  // não é debriefing nem apresentação. REVIEW.
+  const tokens = ['LA', '9000', '06:00', '06:45', 'AAA', 'BBB', '08:20', '14:00', 'EXTRA', 'LA', '9001', '20:00', 'CCC', 'DDD', '22:00'];
+  const second = mod.parseAimsTokensIntoEventsV3(tokens, 17, 8, 2026, 'BSB').find((d) => d.pairingCode === 'LA9001');
+  check('jornada posterior: horário sem lead plausível não vira APZ, mesmo fora da janela de debriefing',
+    second?.dutyReport === null, JSON.stringify(second));
+}
+{
+  // O oracle LA3246: 23:03 está 14h43 depois da chegada 08:20 — debriefing
+  // fisicamente insustentável — e a 47 min da própria STD. A APZ está provada.
+  // Este é o caso que separa "aplicar o discriminador" de "desligar o marcador".
+  const tokens = ['LA', '4712', '06:00', '06:45', 'AAA', 'BBB', '08:20', '23:03', 'EXTRA', 'LA', '3246', '23:50', 'BBB', 'CCC', '01:15'];
+  const flightDays = mod.parseAimsTokensIntoEventsV3(tokens, 31, 8, 2026, 'BSB').filter((d) => d.type === 'VOO');
+  const second = flightDays.find((d) => d.pairingCode === 'LA3246');
+  check('jornada posterior: com debriefing insustentável (14h43), a APZ 23:03 continua comprovada',
+    second?.dutyReport === '23:03' && second?.legs?.[0]?.departureTime === '23:50', JSON.stringify(second));
+  check('jornada posterior: LA4712 permanece separada e íntegra',
+    flightDays.find((d) => d.pairingCode === 'LA4712')?.dutyReport === '06:00', JSON.stringify(flightDays));
+}
+{
+  // Simetria explícita: a mesma entrada, mudando só o ramo (primeiro LA após
+  // boundary x jornada posterior), tem de produzir a MESMA decisão. Foi a
+  // assimetria entre os dois ramos que produziu este blocker.
+  const posterior = ['LA', '9000', '06:00', '06:45', 'AAA', 'BBB', '08:20', '08:50', 'EXTRA', 'LA', '9001', '10:15', 'CCC', 'DDD', '12:55'];
+  const primeiro = ['(...)', 'BBB', '08:20', '08:50', 'EXTRA', 'LA', '9001', '10:15', 'CCC', 'DDD', '12:55'];
+  const a = mod.parseAimsTokensIntoEventsV3(posterior, 17, 8, 2026, 'BSB').find((d) => d.pairingCode === 'LA9001');
+  const b = mod.parseAimsTokensIntoEventsV3(primeiro, 17, 8, 2026, 'BSB').find((d) => d.pairingCode === 'LA9001');
+  check('simetria: primeiro LA após boundary e jornada posterior decidem igual (ambos REVIEW)',
+    a?.dutyReport === null && b?.dutyReport === null,
+    JSON.stringify({ posterior: a?.dutyReport, primeiro: b?.dutyReport }));
+}
+
 console.log(`\n---> ${passed} passed, ${failed} failed`);
 fs.rmSync(tempDir, { recursive: true, force: true });
 process.exit(failed > 0 ? 1 : 0);

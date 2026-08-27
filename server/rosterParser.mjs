@@ -473,6 +473,12 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // `preLaReportIdx < i - 1` só é verdadeiro quando o laço acima pulou ao menos um
   // marcador entre o horário e o "LA" — nenhum outro token é pulado ali.
   const preLaReportFollowedByMarker = preLaReportIdx < i - 1;
+  // Chegada da perna anterior: primeiro horário publicado depois do destino
+  // dela. É a referência contra a qual se mede se o candidato ainda cabe como
+  // debriefing daquela jornada.
+  const previousArrivalClock = current?.lastLegAfterDestTimeIndexes?.length
+   ? normalizeTimeToken(normalized[current.lastLegAfterDestTimeIndexes[0]])
+   : current?.lastArrival;
   if (!reportEquivalent && preLaReportIdx >= 0 && isTimeToken(tokens[preLaReportIdx])) {
    if (k === 0) {
     let lastBoundaryIdx = -1;
@@ -498,27 +504,26 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
      // jornada nova fica muito além disso e imediatamente antes da própria STD.
      // Quando as duas leituras continuam plausíveis, a entrada é genuinamente
      // ambígua e o resultado seguro é REVIEW — nunca inventar apresentação.
-     const MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES = 120;
-     const MAX_PRESENTATION_LEAD_MINUTES = 180;
-     let markerProvesPresentation = false;
-     if ((preLaReportHasLeadingMarker || preLaReportFollowedByMarker) && timesSinceBoundary === 2 && leg?.departureTime) {
-      const arrival = normalizeTimeToken(boundaryTimes[0]);
-      const candidate = normalizeTimeToken(normalized[preLaReportIdx]);
-      let sinceArrival = toMin(candidate) - toMin(arrival);
-      if (sinceArrival < 0) sinceArrival += 1440;
-      let presentationLead = toMin(leg.departureTime) - toMin(candidate);
-      if (presentationLead < 0) presentationLead += 1440;
-      const couldBeDebriefOfPreviousJourney = sinceArrival <= MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
-      const couldBePresentationOfThisLeg = presentationLead > 0 && presentationLead <= MAX_PRESENTATION_LEAD_MINUTES;
-      markerProvesPresentation = couldBePresentationOfThisLeg && !couldBeDebriefOfPreviousJourney;
-     }
+     const markerProvesPresentation = (preLaReportHasLeadingMarker || preLaReportFollowedByMarker)
+      && timesSinceBoundary === 2
+      && markerProvenPresentation(boundaryTimes[0], normalized[preLaReportIdx], leg?.departureTime);
      // Com 3+ horários o 3º já é estruturalmente excedente e dispensa marcador.
      if (timesSinceBoundary >= 3 || markerProvesPresentation) {
       reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
      }
     }
-   } else if (current && (current.lastLegAfterDestCount >= 3 || preLaReportHasLeadingMarker || preLaReportFollowedByMarker)) {
-    reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+   } else if (current) {
+    // Jornada posterior: o 3º horário pós-destino da perna anterior é excedente
+    // ESTRUTURAL e dispensa qualquer outro sinal. Com 2 ou menos, o marcador
+    // sozinho não basta — ele prova a perna, não o papel do horário. Aqui vale
+    // o MESMO discriminador temporal do primeiro LA após boundary; sem isso uma
+    // jornada aberta por descontinuidade física ainda promovia o debriefing
+    // legítimo da jornada anterior a apresentação da nova.
+    const markerProvesPresentation = (preLaReportHasLeadingMarker || preLaReportFollowedByMarker)
+     && markerProvenPresentation(previousArrivalClock, normalized[preLaReportIdx], leg?.departureTime);
+    if (current.lastLegAfterDestCount >= 3 || markerProvesPresentation) {
+     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+    }
    }
   }
 
@@ -527,12 +532,13 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   // o descanso desde esse fim/debrief, como faz o parser canônico. No caso
   // pré-LA de exatamente dois horários a ambiguidade permanece; ali seguimos
   // usando a chegada para não transformar a possível APZ em debrief.
-  let preLaCouldBePresentation = false;
-  if (k > 0 && preLaReportIdx >= 0 && isTimeToken(normalized[preLaReportIdx]) && leg?.departureTime) {
-   let presentationLead = toMin(leg.departureTime) - toMin(normalized[preLaReportIdx]);
-   if (presentationLead < 0) presentationLead += 1440;
-   preLaCouldBePresentation = presentationLead > 0 && presentationLead <= 180;
-  }
+  // #510: mesmo discriminador do bloco acima. Sem ele o recorte anti-vazamento
+  // apagava o debriefing legítimo da jornada anterior justamente nos casos em
+  // que o candidato NÃO podia ser apresentação — dano duplo: APZ inventada na
+  // jornada nova e debriefing destruído na anterior.
+  const preLaCouldBePresentation = k > 0
+   && preLaReportIdx >= 0
+   && markerProvenPresentation(previousArrivalClock, normalized[preLaReportIdx], leg?.departureTime);
   const previousDebriefIsUnambiguous = Boolean(
    current
    && current.lastLegAfterDestTimeIndexes?.length >= 2
@@ -970,6 +976,30 @@ function isTimeToken(t) { return /^\d{1,2}:\d{2}(?:\(\+1\))?$/.test(String(t)); 
 function normalizeTimeToken(t) { return String(t).replace(/^([0-9]):/,'0$1:'); }
 
 function diffHours(a,b) { const ma=toMin(a), mb=toMin(b); return ((mb<=ma?mb+1440:mb)-ma)/60; }
+
+// #510: discriminador APZ x debriefing. NÃO é estrutural — o mesmo token stream
+// serve às duas leituras — é TEMPORAL: um debriefing segue a chegada em minutos,
+// enquanto uma apresentação de jornada nova fica muito além disso e
+// imediatamente antes da própria STD. Quando as duas leituras continuam
+// plausíveis, a entrada é ambígua e o resultado seguro é REVIEW.
+//
+// Vale para QUALQUER jornada — primeira depois de "(...)" ou posterior aberta
+// por descontinuidade física. Aplicá-lo a só um dos ramos deixa o outro
+// promovendo debriefing legítimo a apresentação.
+const MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES = 120;
+const MAX_PRESENTATION_LEAD_MINUTES = 180;
+
+function markerProvenPresentation(arrivalClock, candidateClock, departureClock) {
+ if (!arrivalClock || !candidateClock || !departureClock) return false;
+ if (!isTimeToken(arrivalClock) || !isTimeToken(candidateClock) || !isTimeToken(departureClock)) return false;
+ let sinceArrival = toMin(candidateClock) - toMin(arrivalClock);
+ if (sinceArrival < 0) sinceArrival += 1440;
+ let presentationLead = toMin(departureClock) - toMin(candidateClock);
+ if (presentationLead < 0) presentationLead += 1440;
+ const couldBeDebriefOfPreviousJourney = sinceArrival <= MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
+ const couldBePresentationOfThisLeg = presentationLead > 0 && presentationLead <= MAX_PRESENTATION_LEAD_MINUTES;
+ return couldBePresentationOfThisLeg && !couldBeDebriefOfPreviousJourney;
+}
 
 function toMin(t) { const [h,m]=normalizeTimeToken(t).replace('(＋1)','').replace('( +1 )','').replace('( +1)','').replace('(+1)','').split(':').map(Number); return h*60+m; }
 
