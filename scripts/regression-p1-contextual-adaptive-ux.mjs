@@ -7,7 +7,9 @@ const files = {
   pulseTypes: 'client/src/components/pulse/pulseTypes.ts',
   preferences: 'client/src/lib/experiencePreferences.ts',
   navigation: 'client/src/lib/contextualNavigation.ts',
+  journeyPlanner: 'client/src/lib/journeyPlanner.ts',
   actions: 'client/src/components/context/ContextualJourneyActions.tsx',
+  returnBar: 'client/src/components/context/ContextualReturnBar.tsx',
   experience: 'client/src/components/context/ExperiencePreferencesCard.tsx',
   runtime: 'client/src/components/context/ExperienceRuntimeBridge.tsx',
   bridge: 'client/src/components/context/PulseContextBridge.tsx',
@@ -32,7 +34,9 @@ const pulse = read(files.pulse);
 const pulseTypes = read(files.pulseTypes);
 const preferences = read(files.preferences);
 const navigation = read(files.navigation);
+const journeyPlanner = read(files.journeyPlanner);
 const actions = read(files.actions);
+const returnBar = read(files.returnBar);
 const experience = read(files.experience);
 const runtime = read(files.runtime);
 const bridge = read(files.bridge);
@@ -46,11 +50,16 @@ ok(pulse.includes("crewcheck:set-view") && pulse.includes('cc-pulse-action'), 'P
 ok(preferences.includes("'essential' | 'complete' | 'advanced' | 'custom'"), 'densidade Essencial/Completo/Avançado/Personalizado está explícita');
 ok(preferences.includes('isCrewViewVisible') && preferences.includes('experienceVisibleActionLimit'), 'preferência governa menu e densidade de ações');
 ok(navigation.includes('sessionStorage') && navigation.includes('sourceView') && navigation.includes('target'), 'contexto linkável é mínimo, temporário e reversível');
+ok(returnBar.includes('crewcheck:go-back') && returnBar.includes('Voltar à'), 'destino mostra retorno explícito ao contexto que originou a navegação');
 ok(actions.includes('Planejar saída') && actions.includes('Gerenciar pernoite') && actions.includes('Portão e operação'), 'ações são descritas pela tarefa, não pelo nome interno do módulo');
 ok(actions.includes("label: 'Mais'") === false && actions.includes("expanded ? 'Menos' : 'Mais'"), 'progressive disclosure mantém ações secundárias em Mais');
 ok(experience.includes('Quanto do CrewCheck você quer ver?') && experience.includes('duas fontes de preferência'), 'configuração explica adaptação e preserva fonte única dos filtros da Escala');
 ok(runtime.includes('dataset.crewExperience') && css.includes('data-crew-experience="essential"'), 'nível de experiência chega ao layout sem alterar motores de negócio');
 ok(bridge.includes('publishCrewCheckPulse') && bridge.includes('Planejar saída') && bridge.includes('Gerenciar pernoite'), 'Pulse recebe contexto operacional do próximo evento');
+ok(journeyPlanner.includes("'safest' | 'fastest' | 'availability' | 'fewest-connections' | 'last-safe'"), 'Journey Engine oferece estratégias explícitas sem depender da UI');
+ok(journeyPlanner.includes('staffAvailability') && journeyPlanner.includes('eligibleCarriers') && journeyPlanner.includes('strictEligibility'), 'Journey Engine separa elegibilidade de congênere e disponibilidade staff');
+ok(journeyPlanner.includes('recoveryOptions') && journeyPlanner.includes('Disponibilidade desconhecida não foi tratada como assento disponível.'), 'score considera recuperação e não inventa disponibilidade');
+ok(journeyPlanner.includes("mode?: 'car' | 'rideshare' | 'transit' | 'walk' | 'airport-transfer'"), 'Journey Engine aceita trechos terrestres e troca de aeroporto');
 ok(docs.includes('Journey Engine') && docs.includes('Plano A/B/C') && docs.includes('não') && docs.includes('scraping'), 'roadmap cobre staff travel multimodal e guardrail de credenciais');
 ok(prepare.includes("await import('../v14410/apply.mjs');"), 'preparação materializa v14410 depois da cadeia corrente');
 
@@ -62,12 +71,15 @@ if (prepared) {
   const home = read(files.home);
   for (const needle of [
     "import ContextualJourneyActions from '@/components/context/ContextualJourneyActions';",
+    "import ContextualReturnBar from '@/components/context/ContextualReturnBar';",
     '<ExperienceRuntimeBridge/>',
     '<PulseContextBridge event={event}/>',
+    '<ContextualReturnBar view={view}/>',
     '<ContextualJourneyActions event={event} sourceView="roster"',
     '<ExperiencePreferencesCard/>',
     'const visibleGroups = groups.map',
     "window.addEventListener('crewcheck:go-back'",
+    "window.removeEventListener('crewcheck:go-back'",
     "url.searchParams.set('view', view)",
     "new URLSearchParams(window.location.search).get('view')",
   ]) ok(home.includes(needle), `Home preparado contém ${needle}`);
