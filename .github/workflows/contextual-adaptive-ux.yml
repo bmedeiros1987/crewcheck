@@ -48,7 +48,7 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Validate prepared contract
         run: node scripts/regression-p1-contextual-adaptive-ux.mjs --prepared
-      - name: TypeScript
-        run: npm run check
-      - name: Production build
-        run: npm run build
+      - name: TypeScript on prepared source
+        run: npx tsc --noEmit
+      - name: Production build on prepared source
+        run: npx vite build
