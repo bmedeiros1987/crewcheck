@@ -20,8 +20,10 @@ function replaceOnce(source, needle, replacement, label) {
 function assertMaterialized(source) {
   for (const needle of [
     marker,
+    "import ContextualReturnBar from '@/components/context/ContextualReturnBar';",
     '<ExperienceRuntimeBridge/>',
     '<PulseContextBridge event={event}/>',
+    '<ContextualReturnBar view={view}/>',
     '<ContextualJourneyActions event={event}',
     '<ExperiencePreferencesCard/>',
     'const visibleGroups = groups.map',
@@ -42,7 +44,7 @@ let next = before;
 next = replaceOnce(
   next,
   "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';",
-  "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';\nimport ContextualJourneyActions from '@/components/context/ContextualJourneyActions';\nimport ExperiencePreferencesCard from '@/components/context/ExperiencePreferencesCard';\nimport ExperienceRuntimeBridge from '@/components/context/ExperienceRuntimeBridge';\nimport PulseContextBridge from '@/components/context/PulseContextBridge';\nimport { isCrewViewVisible, loadExperiencePreferences } from '@/lib/experiencePreferences';\nimport { clearCrewContext, loadCrewContext } from '@/lib/contextualNavigation';",
+  "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';\nimport ContextualJourneyActions from '@/components/context/ContextualJourneyActions';\nimport ContextualReturnBar from '@/components/context/ContextualReturnBar';\nimport ExperiencePreferencesCard from '@/components/context/ExperiencePreferencesCard';\nimport ExperienceRuntimeBridge from '@/components/context/ExperienceRuntimeBridge';\nimport PulseContextBridge from '@/components/context/PulseContextBridge';\nimport { isCrewViewVisible, loadExperiencePreferences } from '@/lib/experiencePreferences';\nimport { clearCrewContext, loadCrewContext } from '@/lib/contextualNavigation';",
   'imports contextuais',
 );
 
@@ -142,7 +144,7 @@ next = replaceOnce(
 );
 
 next = replaceOnce(next, '    <div className="cz-wallpaper"/>', '    <div className="cz-wallpaper"/>\n    <ExperienceRuntimeBridge/>', 'bridge da experiência');
-next = replaceOnce(next, '    <CrewCheckPulse/>', '    <CrewCheckPulse/>\n    <PulseContextBridge event={event}/>', 'Pulse contextual');
+next = replaceOnce(next, '    <CrewCheckPulse/>', '    <CrewCheckPulse/>\n    <PulseContextBridge event={event}/>\n    <ContextualReturnBar view={view}/>', 'Pulse e retorno contextuais');
 
 next = replaceOnce(
   next,
