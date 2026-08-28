@@ -45,7 +45,7 @@ ok(pulseTypes.includes('action?: CrewCheckPulseAction'), 'Pulse aceita CTA tipad
 ok(pulse.includes("crewcheck:set-view") && pulse.includes('cc-pulse-action'), 'Pulse executa ação interna pelo barramento existente');
 ok(preferences.includes("'essential' | 'complete' | 'advanced' | 'custom'"), 'densidade Essencial/Completo/Avançado/Personalizado está explícita');
 ok(preferences.includes('isCrewViewVisible') && preferences.includes('experienceVisibleActionLimit'), 'preferência governa menu e densidade de ações');
-ok(navigation.includes("sessionStorage") && navigation.includes('sourceView') && navigation.includes('target'), 'contexto linkável é mínimo, temporário e reversível');
+ok(navigation.includes('sessionStorage') && navigation.includes('sourceView') && navigation.includes('target'), 'contexto linkável é mínimo, temporário e reversível');
 ok(actions.includes('Planejar saída') && actions.includes('Gerenciar pernoite') && actions.includes('Portão e operação'), 'ações são descritas pela tarefa, não pelo nome interno do módulo');
 ok(actions.includes("label: 'Mais'") === false && actions.includes("expanded ? 'Menos' : 'Mais'"), 'progressive disclosure mantém ações secundárias em Mais');
 ok(experience.includes('Quanto do CrewCheck você quer ver?') && experience.includes('duas fontes de preferência'), 'configuração explica adaptação e preserva fonte única dos filtros da Escala');
@@ -66,7 +66,7 @@ if (prepared) {
     '<PulseContextBridge event={event}/>',
     '<ContextualJourneyActions event={event} sourceView="roster"',
     '<ExperiencePreferencesCard/>',
-    'const visibleNav = nav.filter',
+    'const visibleGroups = groups.map',
     "window.addEventListener('crewcheck:go-back'",
     "url.searchParams.set('view', view)",
     "new URLSearchParams(window.location.search).get('view')",
