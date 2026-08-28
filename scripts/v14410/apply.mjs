@@ -26,6 +26,7 @@ function assertMaterialized(source) {
     '<ExperiencePreferencesCard/>',
     'const visibleGroups = groups.map',
     "window.addEventListener('crewcheck:go-back'",
+    "window.removeEventListener('crewcheck:go-back'",
     "url.searchParams.set('view', view)",
   ]) requireText(source, needle, needle);
 }
@@ -135,8 +136,8 @@ next = replaceOnce(
 
 next = replaceOnce(
   next,
-  "return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); window.removeEventListener('crewcheck:presentation-updated', refreshPresentation); };",
-  "return () => { window.removeEventListener('crewcheck:open-menu', open); window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:go-back', returnToContext as EventListener); window.removeEventListener('crewcheck:theme-change', syncTheme); window.removeEventListener('crewcheck:presentation-updated', refreshPresentation); };",
+  "window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener);",
+  "window.removeEventListener('crewcheck:set-view', setViewFromEvent as EventListener); window.removeEventListener('crewcheck:go-back', returnToContext as EventListener);",
   'cleanup do voltar contextual',
 );
 
