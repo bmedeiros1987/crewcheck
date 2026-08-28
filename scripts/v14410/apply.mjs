@@ -24,7 +24,7 @@ function assertMaterialized(source) {
     '<PulseContextBridge event={event}/>',
     '<ContextualJourneyActions event={event}',
     '<ExperiencePreferencesCard/>',
-    'const visibleNav = nav.filter',
+    'const visibleGroups = groups.map',
     "window.addEventListener('crewcheck:go-back'",
     "url.searchParams.set('view', view)",
   ]) requireText(source, needle, needle);
@@ -47,8 +47,8 @@ next = replaceOnce(
 
 next = replaceOnce(
   next,
-  "function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {\n  const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));",
-  "function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {\n  const click = onMenu || (back ? (() => window.dispatchEvent(new Event('crewcheck:go-back'))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));",
+  "  const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));",
+  "  const click = onMenu || (back ? (() => window.dispatchEvent(new Event('crewcheck:go-back'))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));",
   'voltar contextual do Brand',
 );
 
@@ -62,19 +62,19 @@ next = replaceOnce(
 next = replaceOnce(
   next,
   "  const jump = (v: ZeroView) => { setView(v); close(); };",
-  "  const visibleNav = nav.filter(([target]) => isCrewViewVisible(target, experience, admin));\n  const jump = (v: ZeroView) => { setView(v); close(); };",
-  'filtro adaptativo do menu',
+  "  const visibleGroups = groups.map((group) => ({ ...group, items: group.items.filter(([target]) => isCrewViewVisible(target, experience, admin)) })).filter((group) => group.items.length > 0);\n  const jump = (v: ZeroView) => { setView(v); close(); };",
+  'filtro adaptativo do menu agrupado',
 );
 
-next = replaceOnce(next, '{nav.map(([v, label, desc, Icon]) =>', '{visibleNav.map(([v, label, desc, Icon]) =>', 'render do menu adaptativo');
+next = replaceOnce(next, '{groups.map((group) =>', '{visibleGroups.map((group) =>', 'render do menu adaptativo');
 
 for (const [oldText, newText] of [
-  ["['cockpit','Cockpit','Próxima programação',HomeIcon]", "['cockpit','Hoje','Seu dia e próxima programação',HomeIcon]"],
-  ["['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness]", "['load','Horas e limites','Uso acumulado e margem disponível',BriefcaseBusiness]"],
-  ["['radar','Radar de voos','Portão e status',Radar]", "['radar','Portão e operação','Status, portão e aeronave',Radar]"],
-  ["['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock]", "['presentation','Apresentação','Horário, hotel e local',Clock]"],
+  ["['cockpit','FlyDeck','Sequência operacional do dia',HomeIcon]", "['cockpit','Hoje','Seu dia e próxima programação',HomeIcon]"],
+  ["['load','Carga de trabalho','Horas usadas e disponíveis',BriefcaseBusiness]", "['load','Horas e limites','Uso acumulado e margem disponível',BriefcaseBusiness]"],
+  ["['radar','Radar de voos','Portão, terminal e status',Radar]", "['radar','Portão e operação','Status, portão e aeronave',Radar]"],
+  ["['presentation','Apresentação','Horário publicado e ajustes',Clock]", "['presentation','Apresentação','Horário, hotel e local',Clock]"],
   ["['hotels','Hotéis','Pernoite e entorno',Hotel]", "['hotels','Pernoite','Hotel, quarto e entorno',Hotel]"],
-  ["['salary','Salário','Previsões e adicionais',DollarSign]", "['salary','Ganhos e salário','Previsões e adicionais',DollarSign]"],
+  ["['salary','Salário','Produção e adicionais',DollarSign]", "['salary','Ganhos e salário','Produção e adicionais',DollarSign]"],
 ]) {
   if (next.includes(oldText)) next = next.replace(oldText, newText);
 }
@@ -150,7 +150,7 @@ next = replaceOnce(
   'preferência adaptativa nas configurações',
 );
 
-if (next.includes("[['cockpit','Cockpit',HomeIcon]")) next = next.replace("[['cockpit','Cockpit',HomeIcon]", "[['cockpit','Hoje',HomeIcon]");
+if (next.includes("['cockpit','FlyDeck',HomeIcon]")) next = next.replace("['cockpit','FlyDeck',HomeIcon]", "['cockpit','Hoje',HomeIcon]");
 
 assertMaterialized(next);
 fs.writeFileSync(homePath, next, 'utf8');
