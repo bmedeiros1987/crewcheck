@@ -159,5 +159,6 @@ await import('../p0-flightdeck-ui-audit/apply.mjs');
 await import('../p1-visitor-outage-recovery/apply.mjs');
 await import('../p0-elevenlabs-stt-key-isolation/apply.mjs');
 await import('../p0-build-identity/apply.mjs');
+await import('../p0-580-transposed-vc-boundary/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../ci/sync-canonical-manual.mjs');
