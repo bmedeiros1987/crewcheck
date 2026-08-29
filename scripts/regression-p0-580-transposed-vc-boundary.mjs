@@ -74,7 +74,21 @@ for (let day = 21; day <= 30; day += 1) {
     items: [item(dateToken, 60, y, page), item('VC', 70, y, page)],
   });
 }
-rows.push({ page, key: 100, text: 'LEGEND HSB Home Stand by DO Day off VC Vacation DR Requested day off <==', items: [item('LEGEND HSB DO VC DR <==', 65, 100, page)] });
+
+// Real CrewRoster reports place LEGEND on one row and its activity-code labels on
+// following rows. Those labels contain valid codes and used to contaminate the
+// final published day after the marker itself was ignored.
+const legendRows = [
+  'LEGEND',
+  'MCK Emergency mockup',
+  'HSB Home Stand by',
+  'DO Day off',
+  'DR Requested day off',
+  '<== Pairing/Flight extends to previous day(s)',
+];
+legendRows.forEach((text, index) => {
+  rows.push({ page, key: 100 - index * 12, text, items: [item(text, 65, 100 - index * 12, page)] });
+});
 
 const fullText = ['Roster Report 01-Sep-2026 to 01-Oct-2026', ...rows.map((row) => row.text)].join('\n');
 const roster = parseCrewRosterReportRows(rows, fullText);
@@ -86,9 +100,11 @@ const expected = Array.from({ length: 10 }, (_, i) => `${String(i + 21).padStart
 assert.deepEqual([...new Set(vcDays.map((day) => day.date))], expected, '21–30 must remain ten independent VC days');
 for (const day of vcDays) {
   assert.ok(!/\bLEGEND\b/i.test(day.rawText || ''), `legend leaked into ${day.date}`);
+  assert.ok(!/Home Stand by|Day off|Requested day off|Emergency mockup/i.test(day.rawText || ''), `legend labels leaked into ${day.date}`);
   const dates = (day.rawText || '').match(/\b\d{2}-[A-Za-z]{3}-\d{4}\b/g) || [];
   assert.ok(dates.length <= 1, `multiple date tokens collapsed into ${day.date}: ${dates.join(', ')}`);
 }
+assert.ok(!roster.days.some((day) => /Home Stand by|Requested day off|Emergency mockup/i.test(day.rawText || '')), 'legend section must not create or contaminate roster days');
 
 console.log('PASS regression-p0-580-transposed-vc-boundary');
 fs.rmSync(outDir, { recursive: true, force: true });
