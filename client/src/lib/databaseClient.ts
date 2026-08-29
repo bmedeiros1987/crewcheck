@@ -178,10 +178,27 @@ export async function saveRosterAnalysis(payload: SaveRosterPayload): Promise<Sa
   return result.roster;
 }
 
-export async function openSavedRoster(id: string): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
+function assertExpectedRosterPeriod(roster: CrewRoster, expected?: Pick<SavedRosterSummary, 'year' | 'month'>): void {
+  const expectedYear = Number(expected?.year || 0);
+  const expectedMonth = Number(expected?.month || 0);
+  if (!expectedYear || !expectedMonth) return;
+  if (Number(roster?.year) === expectedYear && Number(roster?.month) === expectedMonth) return;
+  throw Object.assign(new Error('A competência retornada não corresponde à escala escolhida.'), {
+    code: 'ROSTER_PERIOD_MISMATCH',
+    expectedYear,
+    expectedMonth,
+    actualYear: Number(roster?.year || 0),
+    actualMonth: Number(roster?.month || 0),
+  });
+}
+
+export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
   const local = findLocalRoster(id);
   if (id.startsWith('local-') || id.startsWith('offline-')) {
-    if (local) return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+    if (local) {
+      assertExpectedRosterPeriod(local.roster, expected);
+      return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+    }
   }
 
   const attempts = [
@@ -193,20 +210,20 @@ export async function openSavedRoster(id: string): Promise<{ roster: CrewRoster;
   for (const endpoint of attempts) {
     try {
       const payload = await jsonFetch<{ ok: boolean; data: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] } }>(endpoint);
-      if (payload?.data?.roster?.days?.length) return payload.data;
+      if (payload?.data?.roster?.days?.length) {
+        assertExpectedRosterPeriod(payload.data.roster, expected);
+        return payload.data;
+      }
     } catch (error) {
+      if ((error as any)?.code === 'ROSTER_PERIOD_MISMATCH') throw error;
       lastError = error;
     }
   }
 
-  if (local) return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
-
-  // Fallback premium: se o backend antigo ainda responder "API endpoint não encontrado",
-  // tenta abrir a escala ativa para não deixar o usuário preso no gerenciador.
-  try {
-    const active = await jsonFetch<{ ok: boolean; data?: { roster: CrewRoster; compliance: ComplianceResult | null; gym: GymRecommendation[] } }>(`/api/rosters/active`, { cache: 'no-store' });
-    if (active?.data?.roster?.days?.length) return { roster: active.data.roster, compliance: active.data.compliance as any, gym: active.data.gym || [] };
-  } catch {}
+  if (local) {
+    assertExpectedRosterPeriod(local.roster, expected);
+    return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+  }
 
   throw lastError || new Error('Não foi possível abrir a escala salva.');
 }
@@ -221,7 +238,7 @@ export async function openActiveRoster(): Promise<{ roster: CrewRoster; complian
     throw new Error('Escala ativa não retornou dados.');
   } catch (error) {
     if (local?.id) {
-      const data = await openSavedRoster(local.id);
+      const data = await openSavedRoster(local.id, local);
       const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
       return { ...merged, summary: local };
     }
@@ -348,7 +365,7 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
     .filter((entry) => entry.bounds.last && entry.bounds.last.getTime() <= currentBounds.first!.getTime() + 24 * 60 * 60 * 1000)
     .sort((a, b) => (b.bounds.last?.getTime() || 0) - (a.bounds.last?.getTime() || 0))[0]?.item;
   if (previousSummary) {
-    const previous = await openSavedRoster(previousSummary.id).catch(() => null);
+    const previous = await openSavedRoster(previousSummary.id, previousSummary).catch(() => null);
     const tail = previous?.roster ? continuationTailLocal(previous.roster, roster) : null;
     if (tail?.days?.length) roster = mergeContinuousLocal(roster, tail, 'prepend');
   }
@@ -360,7 +377,7 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
     .filter((entry) => entry.bounds.first && entry.bounds.first.getTime() <= (updatedBounds.last?.getTime() || currentLastTime) + 7 * 24 * 60 * 60 * 1000 && entry.bounds.first.getTime() > (updatedBounds.last?.getTime() || currentLastTime) - 24 * 60 * 60 * 1000)
     .sort((a, b) => (a.bounds.first?.getTime() || 0) - (b.bounds.first?.getTime() || 0))[0]?.item;
   if (nextSummary) {
-    const next = await openSavedRoster(nextSummary.id).catch(() => null);
+    const next = await openSavedRoster(nextSummary.id, nextSummary).catch(() => null);
     const tail = next?.roster ? continuationTailLocal(roster, next.roster) : null;
     if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');
     else if (next?.roster?.days?.length) roster = mergeContinuousLocal(roster, { ...next.roster, days: next.roster.days.slice(0, 5) }, 'append');

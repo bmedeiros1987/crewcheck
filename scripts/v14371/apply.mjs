@@ -27,7 +27,7 @@ const oldBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
     throw new Error('Escala ativa não retornou dados.');
   } catch (error) {
     if (local?.id) {
-      const data = await openSavedRoster(local.id);
+      const data = await openSavedRoster(local.id, local);
       const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
       return { ...merged, summary: local };
     }
@@ -50,7 +50,7 @@ const newBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
       }
 
       if (reconciliation.decision === 'use-local' && local?.id) {
-        const data = await openSavedRoster(local.id);
+        const data = await openSavedRoster(local.id, local);
         const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
         return { ...merged, summary: local };
       }
@@ -61,7 +61,7 @@ const newBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
   } catch (error: any) {
     if (String(error?.code || '').toUpperCase() === 'ACTIVE_ROSTER_CONFLICT') throw error;
     if (local?.id) {
-      const data = await openSavedRoster(local.id);
+      const data = await openSavedRoster(local.id, local);
       const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
       return { ...merged, summary: local };
     }
