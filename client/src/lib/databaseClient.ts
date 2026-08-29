@@ -76,7 +76,6 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return authFetch<T>(url, init);
 }
 
-
 function hasCrewCheckAuthToken(): boolean {
   try { return Boolean(getToken()); } catch { return false; }
 }
@@ -84,7 +83,6 @@ function hasCrewCheckAuthToken(): boolean {
 function localDatabaseStatus(message = 'Sessão offline/local ativa. Faça login para sincronizar com o banco em nuvem.', health: Partial<DatabaseStatus> = {}): DatabaseStatus {
   return { ...health, ok: Boolean(health.connected), connected: Boolean(health.connected), databaseConfigured: Boolean(health.databaseConfigured ?? health.configured), localOnly: true, message };
 }
-
 
 export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   let health: DatabaseStatus = { ok: false };
@@ -108,7 +106,6 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   }
 }
 
-
 function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterSummary[] {
   let activeSeen = false;
   return items.map((item) => {
@@ -120,7 +117,6 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
     return { ...item, isActive: false };
   });
 }
-
 
 export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]> {
   const local = getLocalRosterSummaries(limit);
@@ -150,7 +146,6 @@ export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]
     return normalizeSingleActiveSummary(local);
   }
 }
-
 
 const MAX_INLINE_ROSTER_BACKUP_BYTES = Math.max(512_000, Number((import.meta as any)?.env?.VITE_CREWCHECK_MAX_INLINE_ROSTER_BACKUP_BYTES || 4 * 1024 * 1024));
 
@@ -246,8 +241,6 @@ export async function openActiveRoster(): Promise<{ roster: CrewRoster; complian
   }
 }
 
-
-
 function parseCrewRosterDate(value?: string | null): Date | null {
   const raw = String(value || '').trim();
   let match = raw.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
@@ -272,6 +265,22 @@ function rosterDataBounds(roster: CrewRoster): { first: Date | null; last: Date 
   const dates = (roster.days || []).map((day) => parseCrewRosterDate(day.date)).filter((date): date is Date => Boolean(date && Number.isFinite(date.getTime())));
   if (!dates.length) return { first: null, last: null };
   return { first: new Date(Math.min(...dates.map((date) => date.getTime()))), last: new Date(Math.max(...dates.map((date) => date.getTime()))) };
+}
+
+function rosterPeriodOrdinal(period: Pick<SavedRosterSummary, 'year' | 'month'>): number | null {
+  const year = Number(period.year);
+  const month = Number(period.month);
+  if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  return year * 12 + month - 1;
+}
+
+function adjacentRosterSummary(candidates: SavedRosterSummary[], current: Pick<SavedRosterSummary, 'year' | 'month'>, offset: -1 | 1): SavedRosterSummary | undefined {
+  const currentOrdinal = rosterPeriodOrdinal(current);
+  if (currentOrdinal === null) return undefined;
+  const targetOrdinal = currentOrdinal + offset;
+  return candidates
+    .filter((item) => rosterPeriodOrdinal(item) === targetOrdinal)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
 }
 
 function mergeAirportForLocal(value?: string | null): string {
@@ -341,7 +350,6 @@ function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, positio
   return { ...primary, days, rawText: `${position === 'prepend' ? `${adjacent.rawText || ''}\n\n--- Final da escala anterior anexado automaticamente por continuidade/pernoite ---\n` : ''}${primary.rawText || ''}${position === 'append' ? `\n\n--- Próxima escala anexada automaticamente ---\n${adjacent.rawText || ''}` : ''}`.trim() };
 }
 
-
 function getSmartLocalActiveRosterSummary(): SavedRosterSummary | undefined {
   const candidates = getLocalRosterSummaries(12);
   if (!candidates.length) return undefined;
@@ -360,22 +368,18 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
   let roster = data.roster;
   const candidates = getLocalRosterSummaries(12).filter((item) => item.id !== summary.id);
 
-  const previousSummary = candidates
-    .map((item) => ({ item, bounds: rosterSummaryBounds(item) }))
-    .filter((entry) => entry.bounds.last && entry.bounds.last.getTime() <= currentBounds.first!.getTime() + 24 * 60 * 60 * 1000)
-    .sort((a, b) => (b.bounds.last?.getTime() || 0) - (a.bounds.last?.getTime() || 0))[0]?.item;
+  // Publication adjacency is a property of the nominal competence, not of the
+  // factual first/last day carried inside a roster. A next-month publication may
+  // legitimately carry the final days of the previous month; using those factual
+  // bounds to choose the previous publication can skip the actual previous month.
+  const previousSummary = adjacentRosterSummary(candidates, summary, -1);
   if (previousSummary) {
     const previous = await openSavedRoster(previousSummary.id, previousSummary).catch(() => null);
     const tail = previous?.roster ? continuationTailLocal(previous.roster, roster) : null;
     if (tail?.days?.length) roster = mergeContinuousLocal(roster, tail, 'prepend');
   }
 
-  const updatedBounds = rosterDataBounds(roster);
-  const currentLastTime = currentBounds.last.getTime();
-  const nextSummary = candidates
-    .map((item) => ({ item, bounds: rosterSummaryBounds(item) }))
-    .filter((entry) => entry.bounds.first && entry.bounds.first.getTime() <= (updatedBounds.last?.getTime() || currentLastTime) + 7 * 24 * 60 * 60 * 1000 && entry.bounds.first.getTime() > (updatedBounds.last?.getTime() || currentLastTime) - 24 * 60 * 60 * 1000)
-    .sort((a, b) => (a.bounds.first?.getTime() || 0) - (b.bounds.first?.getTime() || 0))[0]?.item;
+  const nextSummary = adjacentRosterSummary(candidates, summary, 1);
   if (nextSummary) {
     const next = await openSavedRoster(nextSummary.id, nextSummary).catch(() => null);
     const tail = next?.roster ? continuationTailLocal(roster, next.roster) : null;
@@ -466,7 +470,6 @@ export async function getStoredStats(): Promise<StoredStatsResponse> {
   }
 }
 
-
 const LEGACY_LOCAL_HISTORY_KEY = 'crewcheck_local_history_v1';
 
 function localHistoryKey(): string {
@@ -480,7 +483,6 @@ function localHistoryKey(): string {
   }
 }
 
-
 type LocalHistoryItem = {
   id: string;
   checksum: string;
@@ -490,7 +492,6 @@ type LocalHistoryItem = {
   compliance: ComplianceResult;
   gym: GymRecommendation[];
 };
-
 
 function safeStorageScope(): string {
   try {
