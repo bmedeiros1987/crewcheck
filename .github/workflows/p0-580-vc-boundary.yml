@@ -1,0 +1,28 @@
+name: CrewCheck P0 #580 VC boundary
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/pdfParser.ts'
+      - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
+      - '.github/workflows/p0-580-vc-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vc-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Reproduce normal-page transposed VC collapse
+        run: node scripts/regression-p0-580-transposed-vc-boundary.mjs
