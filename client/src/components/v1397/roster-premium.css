@@ -403,6 +403,19 @@ html[data-crew-theme="light"] .cc-roster-flight-grid-v1397 > span { background: 
 .cc-roster-flight-grid-v1397 small { color: var(--ccr-muted) !important; font-size: 8px !important; font-weight: 850 !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
 .cc-roster-flight-grid-v1397 b { color: var(--ccr-title) !important; font-size: 12px !important; line-height: 1.25 !important; overflow-wrap: anywhere !important; }
 
+.cc-roster-program-time-grid-v1397 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.cc-roster-program-time-grid-v1397 > span {
+  border-color: color-mix(in srgb, var(--program-accent) 24%, var(--ccr-line)) !important;
+  background: color-mix(in srgb, var(--program-accent) 7%, var(--ccr-panel-soft)) !important;
+}
+
+.cc-roster-program-time-grid-v1397 b {
+  font-variant-numeric: tabular-nums !important;
+}
+
 .cc-roster-summary-v1397 {
   margin: 15px 0 0 !important;
   color: var(--ccr-text) !important;

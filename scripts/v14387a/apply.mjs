@@ -9,8 +9,12 @@ for (const file of [classificationFile, rosterFile]) {
 }
 
 let classification = fs.readFileSync(classificationFile, 'utf8');
-const restAnchor = `const RECOVERY_REST_CODES = new Set([\n  'DR',`;
-const restReplacement = `const RECOVERY_REST_CODES = new Set([\n  'DESCANSO_BASE_CONTINUIDADE',\n  'DR',`;
+// #303: a âncora era `'DR',` — o primeiro item do conjunto de repouso. DR saiu de
+// lá porque é Day Off Requested (folga pedida), como rosterCodes.ts sempre
+// declarou, e o primeiro item passou a ser `'REST',`. O contrato deste aplicador é
+// literal, então ele é atualizado junto com o conjunto, e não depois.
+const restAnchor = `const RECOVERY_REST_CODES = new Set([\n  'REST',`;
+const restReplacement = `const RECOVERY_REST_CODES = new Set([\n  'DESCANSO_BASE_CONTINUIDADE',\n  'REST',`;
 if (!classification.includes("'DESCANSO_BASE_CONTINUIDADE'")) {
   if (!classification.includes(restAnchor)) throw new Error('[v14387a] âncora de repouso não encontrada.');
   classification = classification.replace(restAnchor, restReplacement);

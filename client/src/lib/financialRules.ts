@@ -1,5 +1,16 @@
 import type { CrewRoster } from './pdfParser';
 import { getLegalProfile, type CrewRoleSelection } from './actRules';
+import {
+  ACT_BREAKFAST_PERCENT,
+  ACT_DOMESTIC_MAIN_MEAL_BRL,
+} from './financialAmounts';
+
+export {
+  ACT_BREAKFAST_PERCENT,
+  ACT_DOMESTIC_MAIN_MEAL_BRL,
+  perDiemSlotAmount,
+  roundCurrencyAmount,
+} from './financialAmounts';
 
 export type PerDiemCurrency = 'BRL' | 'USD' | 'EUR' | 'GBP';
 export type PerDiemRateKey =
@@ -40,6 +51,8 @@ export type ActFinancialFunctionKey =
 
 export interface ActFinancialProfile {
   version: string;
+  effectiveFrom: string;
+  sourceUrl: string;
   roleLabel: string;
   functionKey: ActFinancialFunctionKey;
   functionLabel: string;
@@ -63,15 +76,17 @@ export type AirportPerDiemOverrides = Record<string, PerDiemRateKey>;
 
 /**
  * ACT LATAM 2025/2027 — valores vigentes a partir de 01/12/2025.
- * Itens sujeitos a 50% do INPC dez/2024-nov/2025: fator de 2,09%.
- * Diária nacional: reajuste integral do mesmo INPC (4,18%).
- * Para comissários, os valores de KM e diária também foram conferidos contra a
- * tabela de reajuste 2025/26 fornecida pelo usuário.
+ * A diária nacional de R$ 109,95 é um valor-fonte do SNA e não deve ser
+ * recalculada no cliente a partir dos valores históricos de R$ 105,04 ou
+ * R$ 109,44. Componentes salariais e diárias internacionais seguem as tabelas
+ * segregadas por função auditadas nesta mesma versão.
  */
-export const ACT_FINANCIAL_RULES_VERSION = 'ACT-LATAM-2025-2027.2025-12-INPC-4.18';
+export const ACT_FINANCIAL_RULES_VERSION = 'ACT-LATAM-2025-2027.2025-12-SNA-109.95';
+export const ACT_FINANCIAL_RULES_EFFECTIVE_FROM = '2025-12-01';
+export const ACT_FINANCIAL_RULES_SOURCE_URL = 'https://www.aeronautas.org.br/pilotos-e-comissarios-da-latam-aprovam-propostas-de-acts-por-funcao/';
 
 export const ACT_PER_DIEM_RATES: PerDiemActRate[] = [
-  { key: 'domestic', label: 'Nacional', currency: 'BRL', mainMeal: 109.44 },
+  { key: 'domestic', label: 'Nacional', currency: 'BRL', mainMeal: ACT_DOMESTIC_MAIN_MEAL_BRL },
   { key: 'north_america', label: 'América do Norte', currency: 'USD', mainMeal: 28.70 },
   { key: 'mexico', label: 'México', currency: 'USD', mainMeal: 23.00 },
   { key: 'south_america_caribbean', label: 'América do Sul e Caribe', currency: 'USD', mainMeal: 21.00 },
@@ -90,6 +105,10 @@ const CABIN_RATES: SalaryActRates = {
   standbyHour: 16.59,
   excessHour: 49.77,
 };
+
+// Chave e objeto próprios: os valores hoje coincidem, mas uma futura tabela de
+// chefe de cabine não pode alterar silenciosamente o perfil de comissário.
+const CABIN_CHIEF_RATES: SalaryActRates = { ...CABIN_RATES };
 
 const PILOT_RATES: Record<string, SalaryActRates> = {
   first_officer: {
@@ -124,7 +143,7 @@ const PILOT_RATES: Record<string, SalaryActRates> = {
 
 export const ACT_SALARY_RATES_BY_FUNCTION: Record<Exclude<ActFinancialFunctionKey, 'unknown'>, SalaryActRates> = {
   cabin: CABIN_RATES,
-  cabin_chief: CABIN_RATES,
+  cabin_chief: CABIN_CHIEF_RATES,
   pilot_first_officer: PILOT_RATES.first_officer,
   pilot_commander: PILOT_RATES.commander,
   pilot_embraer_first_officer: PILOT_RATES.embraer_first_officer,
@@ -208,7 +227,7 @@ function cabinSalaryProfile(functionLabel: string): { key: ActFinancialFunctionK
   return {
     key: chief ? 'cabin_chief' : 'cabin',
     label: chief ? 'Chefe de cabine / Comissário líder' : 'Comissário(a) de voo',
-    rates: CABIN_RATES,
+    rates: chief ? CABIN_CHIEF_RATES : CABIN_RATES,
     manual: false,
   };
 }
@@ -245,6 +264,8 @@ export function resolveActFinancialRules(
     const cabin = cabinSalaryProfile(registeredFunction);
     return {
       version: ACT_FINANCIAL_RULES_VERSION,
+      effectiveFrom: ACT_FINANCIAL_RULES_EFFECTIVE_FROM,
+      sourceUrl: ACT_FINANCIAL_RULES_SOURCE_URL,
       roleLabel: legal.roleLabel,
       functionKey: cabin.key,
       functionLabel: cabin.label,
@@ -252,7 +273,7 @@ export function resolveActFinancialRules(
       legalReference: 'ACT Aeronautas Comissários 2025/2027 - cláusulas 2.4.1, 2.4.2, 3.2.7 e 3.2.8',
       salary: cabin.rates,
       perDiem: ACT_PER_DIEM_RATES,
-      breakfastPercent: 0.25,
+      breakfastPercent: ACT_BREAKFAST_PERCENT,
       requiresManualFunction: cabin.manual,
     };
   }
@@ -260,6 +281,8 @@ export function resolveActFinancialRules(
   const pilot = pilotSalaryProfile(registeredFunction);
   return {
     version: ACT_FINANCIAL_RULES_VERSION,
+    effectiveFrom: ACT_FINANCIAL_RULES_EFFECTIVE_FROM,
+    sourceUrl: ACT_FINANCIAL_RULES_SOURCE_URL,
     roleLabel: legal.roleLabel,
     functionKey: pilot.key,
     functionLabel: pilot.label,
@@ -267,7 +290,7 @@ export function resolveActFinancialRules(
     legalReference: 'ACT Aeronautas Pilotos 2025/2027 - cláusulas 2.4.1, 2.4.2, 3.2.7 e 3.2.8',
     salary: pilot.rates,
     perDiem: ACT_PER_DIEM_RATES,
-    breakfastPercent: 0.25,
+    breakfastPercent: ACT_BREAKFAST_PERCENT,
     requiresManualFunction: pilot.manual,
   };
 }

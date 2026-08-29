@@ -1,5 +1,4 @@
 import {
-  CalendarDays,
   ChevronRight,
   Clock3,
   Hotel,
@@ -14,6 +13,7 @@ import {
   isProgramScheduleActivity,
   type ScheduleActivityLike,
 } from '../../lib/scheduleActivityClassification';
+import { setPendingRosterFocus } from '../../lib/rosterFocus';
 import './operational-day-timeline.css';
 
 type RosterEvent = ScheduleActivityLike & {
@@ -301,18 +301,22 @@ export default function OperationalDayTimeline({
   const timeline = buildOperationalDayTimeline(events, now);
   const current = timeline.find((item) => item.at.getTime() <= now.getTime() && (item.endAt?.getTime() || item.at.getTime()) >= now.getTime());
   const next = timeline.find((item) => item.at.getTime() > now.getTime());
+  // #560: a data que o CTA leva para a escala é a do compromisso corrente; se
+  // não houver, a do próximo; só então o primeiro item relevante. Usar
+  // timeline[0] direto abre a data errada, porque buildOperationalDayTimeline
+  // mantém itens já encerrados por até 2 h (filtro de now - 2h na montagem).
+  const focusDate = current?.at || next?.at || timeline[0]?.at || new Date();
 
   return <section className="cc14349-dayline cc14357-dayline" aria-labelledby="cc14349-dayline-title">
     <header className="cc14349-dayline-head">
       <span className="cc14349-dayline-heading">
-        <span className="cc14349-dayline-heading-icon" aria-hidden="true"><CalendarDays/></span>
         <span>
           <small>ROTINA OPERACIONAL</small>
           <h2 id="cc14349-dayline-title">Linha do Dia</h2>
           <p>Agora, próximo compromisso e sequência operacional.</p>
         </span>
       </span>
-      <button type="button" onClick={() => onNavigate('roster')}>Ver escala <ChevronRight aria-hidden="true"/></button>
+      <button type="button" onClick={() => { setPendingRosterFocus(focusDate); onNavigate('roster'); }}>Ver escala <ChevronRight aria-hidden="true"/></button>
     </header>
 
     {timeline.length ? <>
@@ -337,7 +341,7 @@ export default function OperationalDayTimeline({
             type="button"
             key={item.id}
             className={`cc14349-dayline-item tone-${item.tone}${isCurrent ? ' is-current' : ''}${isNext ? ' is-next' : ''}`}
-            onClick={() => onNavigate(item.targetView || 'roster')}
+            onClick={() => { if (!item.targetView || item.targetView === 'roster') setPendingRosterFocus(item.at); onNavigate(item.targetView || 'roster'); }}
           >
             <span className="cc14349-dayline-time"><strong>{timeLabel(item.at)}</strong><small>{dateLabel(item.at)}</small></span>
             <span className="cc14349-dayline-marker" aria-hidden="true"><Icon/></span>

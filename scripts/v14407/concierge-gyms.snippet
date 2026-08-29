@@ -1,0 +1,59 @@
+// cc-v14407:concierge-gyms
+async function conciergeGymsReply(snapshot, text = '', profile = {}) {
+  const preferences = snapshot?.preferences || {};
+  const provider = /smart\s*fit/i.test(text) && !/wellhub|gympass/i.test(text) ? 'smartfit' : /wellhub|gympass/i.test(text) ? 'wellhub' : String(preferences.gymPlan || 'wellhub');
+  const detectedPlan = detectWellhubPlanFromText(text);
+  const detectedActivity = detectWellhubActivityFromText(text);
+  const wellhubPlan = detectedPlan || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
+  const activity = detectedActivity || String(preferences.gymActivity || '').trim();
+
+  if ((detectedPlan || detectedActivity || provider !== preferences.gymPlan) && profile?.email) {
+    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
+      gymPlan: provider,
+      ...(detectedPlan ? { wellhubPlan: detectedPlan } : {}),
+      ...(detectedActivity ? { gymActivity: detectedActivity } : {}),
+    } });
+    if (saved) snapshot = saved;
+  }
+
+  if (provider === 'smartfit') {
+    const locationState = conciergeLocationContextV14335(snapshot);
+    const stay = conciergeCurrentStay(snapshot?.roster);
+    if (!locationState.fresh && !stay?.hotel) return locationState.message;
+    const places = await conciergeSearchPlaces('Smart Fit academia', locationState.fresh ? '' : stay.hotel, locationState.fresh ? locationState.location : null, 6);
+    if (!places.length) return 'Não encontrei unidade Smart Fit direta agora. Esta busca não afirma parceria Wellhub.';
+    return ['Smart Fit direta:', locationState.fresh ? conciergeLocationLineV14335(snapshot) : 'Contexto do pernoite: ' + stay.hotel, '', conciergePlaceLines(places), '', 'Esta busca é de Smart Fit direta e não confirma elegibilidade Wellhub.'].join('\n');
+  }
+
+  const stay = conciergeCurrentStay(snapshot?.roster);
+  const next = conciergeNextProgram(snapshot?.roster);
+  const airport = next?.legs?.[0]?.origin || snapshot?.roster?.base || '';
+  const location = snapshot?.preferences?.location || {};
+  const locationText = [location.city, location.state, stay?.hotel, WEATHER_AIRPORT_POINTS[airport]?.city, airport].filter(Boolean).join(' ');
+  const query = String(text || '').match(/(?:rede|academia)\s+([\p{L}0-9 .&+-]{2,40})/iu)?.[1]?.replace(/\b(?:com|que|perto|em|no|na)\b[\s\S]*$/i, '').trim() || '';
+  const partners = await searchVerifiedWellhub({ plan: wellhubPlan, query: /meu plano|modalidade|wellhub|gympass/i.test(query) ? '' : query, activity, locationText, limit: 8 });
+
+  if (!partners.length) {
+    return [
+      'Wellhub verificado · ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
+      activity ? 'Não encontrei essa modalidade confirmada nas páginas oficiais das unidades que o catálogo atual cobre.' : 'Não encontrei unidade verificada compatível com esse filtro no catálogo atual.',
+      'O CrewCheck não usa Google Maps ou apenas o nome da rede para inventar parceria ou modalidade. Tente outra modalidade, cidade ou deixe o campo livre.',
+    ].join('\n');
+  }
+
+  const lines = partners.map((partner, index) => {
+    const activities = partner.activities?.length ? partner.activities.slice(0, 6).join(', ') : activity ? 'modalidade confirmada na página oficial' : 'consulte a página oficial para modalidades';
+    return [
+      `${index + 1}. ${partner.name} · ${partner.city}/${partner.state}`,
+      `   Plano mínimo: ${wellhubPlanLabelServer(partner.minimumPlan)} · Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
+      `   Modalidades: ${activities}`,
+      `   Fonte oficial: ${partner.sourceUrl}`,
+    ].join('\n');
+  });
+  return [
+    `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
+    locationText ? `Contexto: ${locationText}. A localização só ordena os resultados; não define elegibilidade.` : 'Sem cidade confirmada; mostrando unidades compatíveis do catálogo verificado.',
+    '', ...lines,
+    '', 'Para alterar: diga “meu plano Wellhub é Silver+” ou “quero modalidade Pilates”. A fonte de parceria, plano, modalidade e horário continua sendo o Wellhub.',
+  ].join('\n');
+}

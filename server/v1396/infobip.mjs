@@ -66,6 +66,11 @@ export function normalizeInfobipVoice(value = '') {
   return { name: candidate };
 }
 
+export function normalizeInfobipLanguage(value = '') {
+  const primary = String(value || 'pt').trim().toLowerCase().split(/[-_]/)[0];
+  return /^[a-z]{2}$/.test(primary) ? primary : 'pt';
+}
+
 export function infobipConfiguration(environment = process.env) {
   const apiKeyEntry = firstEnvironmentValue(environment, INFOBIP_API_KEY_ALIASES);
   const baseUrlEntry = firstEnvironmentValue(environment, INFOBIP_BASE_URL_ALIASES);
@@ -85,7 +90,7 @@ export function infobipConfiguration(environment = process.env) {
     apiKey,
     baseUrl,
     from,
-    language: firstEnvironmentValue(environment, ['INFOBIP_VOICE_LANGUAGE', 'INFOBIP_LANGUAGE']).value || 'pt-BR',
+    language: normalizeInfobipLanguage(firstEnvironmentValue(environment, ['INFOBIP_VOICE_LANGUAGE', 'INFOBIP_LANGUAGE']).value),
     voice: normalizeInfobipVoice(firstEnvironmentValue(environment, ['INFOBIP_VOICE_NAME', 'INFOBIP_TTS_VOICE']).value),
     sources: {
       apiKey: apiKeyEntry.source,
@@ -105,6 +110,45 @@ export function infobipPublicStatus(environment = process.env) {
     missing: configuration.missing,
     sources: configuration.sources,
   };
+}
+
+function redactInfobipDiagnostic(value = '') {
+  return String(value || '')
+    .replace(/\bApp\s+\S+/gi, '[credencial]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[número]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220);
+}
+
+export function infobipProviderErrorDetail(raw = '') {
+  const source = String(raw || '').trim();
+  if (!source) return '';
+  let parsed = null;
+  try { parsed = JSON.parse(source); } catch {}
+  const exception = parsed?.requestError?.serviceException || parsed?.serviceException || null;
+  const code = redactInfobipDiagnostic(exception?.messageId || parsed?.errorCode || parsed?.code || '');
+  const description = redactInfobipDiagnostic(exception?.text || parsed?.message || parsed?.error || source);
+  const validation = exception?.validationErrors || parsed?.validationErrors;
+  const validationText = validation && typeof validation === 'object'
+    ? redactInfobipDiagnostic(Object.entries(validation).map(([field, reason]) => `${field}: ${reason}`).join('; '))
+    : '';
+  return [code, description, validationText].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(' — ').slice(0, 320);
+}
+
+export function infobipRejectedUnsupportedLanguage(raw = '') {
+  return /REJECTED_UNSUPPORTED_LANGUAGE|Unsupported language/i.test(String(raw || ''));
+}
+
+export function buildInfobipEnglishFallbackRequest(request = {}) {
+  const body = JSON.parse(JSON.stringify(request?.body || {}));
+  const message = body?.messages?.[0];
+  if (message) {
+    message.language = 'en';
+    message.text = 'CrewCheck wake-up alert. Open CrewCheck now.';
+    delete message.voice;
+  }
+  return { ...request, body };
 }
 
 export function buildInfobipTtsRequest({ environment = process.env, phone = '', text = '' } = {}) {

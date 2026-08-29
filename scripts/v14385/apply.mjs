@@ -8,11 +8,12 @@ if (!fs.existsSync('client/src/lib/financialReserveCredits.ts')) throw new Error
 
 let source = fs.readFileSync(file, 'utf8');
 
-const importAnchor = "import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';";
+const financialRulesImportPattern = /^import \{[^\n]*\bresolveActFinancialRules\b[^\n]*\bresolvePerDiemRule\b[^\n]*\} from ['"]@\/lib\/financialRules['"];$/m;
 const importLine = "import { payableReserveHours } from '@/lib/financialReserveCredits';";
 if (!source.includes(importLine)) {
-  if (!source.includes(importAnchor)) throw new Error('[v14385] âncora de financialRules não encontrada.');
-  source = source.replace(importAnchor, `${importAnchor}\n${importLine}`);
+  const financialRulesImport = source.match(financialRulesImportPattern)?.[0];
+  if (!financialRulesImport) throw new Error('[v14385] import de financialRules não encontrado.');
+  source = source.replace(financialRulesImport, `${financialRulesImport}\n${importLine}`);
 }
 
 const oldReserve = "  const reserveHours = reserveEvents.reduce((sum, event) => sum + durationHours(event), 0);";

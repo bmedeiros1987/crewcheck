@@ -22,21 +22,21 @@ assert.equal(policy.freeDayPostponementIndemnity(4.01), 700);
 assert.equal(policy.freeDayPostponementIndemnity(12, true), 0);
 assert.equal(policy.freeDayPostponementIndemnity(12.01, true), 700);
 
-// Referência pública dos ACTs Latam 2025/2027 (SNA): manter separada de valores
-// observados em demonstrativos, que podem superar os pisos do ACT.
-assert.match(financialRulesSource, /ACT-LATAM-2025-2027\.2025-12-SNA/);
-assert.match(financialRulesSource, /key: 'domestic'[\s\S]{0,100}?mainMeal: 105\.04/);
-assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?dayKm: 0\.057349/);
-assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?nightKm: 0\.114698/);
-assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?reserveHour: 48\.75/);
-assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?standbyHour: 16\.25/);
-assert.match(financialRulesSource, /first_officer:[\s\S]{0,250}?dayKm: 0\.140262[\s\S]{0,250}?nightKm: 0\.285240/);
-assert.match(financialRulesSource, /commander:[\s\S]{0,250}?dayKm: 0\.211605[\s\S]{0,250}?nightKm: 0\.423250/);
-assert.match(financialRulesSource, /embraer_first_officer:[\s\S]{0,250}?reserveHour: 54\.84[\s\S]{0,250}?standbyHour: 18\.28/);
-assert.match(financialRulesSource, /embraer_commander:[\s\S]{0,250}?reserveHour: 134\.90[\s\S]{0,250}?standbyHour: 44\.96/);
-assert.match(financialRulesSource, /north_america'[\s\S]{0,100}?mainMeal: 25\.70/);
-assert.match(financialRulesSource, /europe'[\s\S]{0,100}?mainMeal: 23\.00/);
-assert.match(financialRulesSource, /breakfastPercent: 0\.25/);
+// Tabela vigente do SNA separada de valores históricos aprendidos de
+// demonstrativos. O valor canônico não é recalculado no navegador.
+assert.match(financialRulesSource, /ACT-LATAM-2025-2027\.2025-12-SNA-109\.95/);
+assert.match(financialRulesSource, /mainMeal: ACT_DOMESTIC_MAIN_MEAL_BRL/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?dayKm: 0\.058547/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?nightKm: 0\.117095/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?reserveHour: 49\.77/);
+assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?standbyHour: 16\.59/);
+assert.match(financialRulesSource, /first_officer:[\s\S]{0,250}?dayKm: 0\.143193[\s\S]{0,250}?nightKm: 0\.291202/);
+assert.match(financialRulesSource, /commander:[\s\S]{0,250}?dayKm: 0\.216028[\s\S]{0,250}?nightKm: 0\.432096/);
+assert.match(financialRulesSource, /embraer_first_officer:[\s\S]{0,250}?reserveHour: 55\.99[\s\S]{0,250}?standbyHour: 18\.66/);
+assert.match(financialRulesSource, /embraer_commander:[\s\S]{0,250}?reserveHour: 137\.72[\s\S]{0,250}?standbyHour: 45\.90/);
+assert.match(financialRulesSource, /north_america'[\s\S]{0,100}?mainMeal: 28\.70/);
+assert.match(financialRulesSource, /europe'[\s\S]{0,100}?mainMeal: 25\.00/);
+assert.match(financialRulesSource, /breakfastPercent: ACT_BREAKFAST_PERCENT/);
 assert.match(financialRulesSource, /readRegisteredCrewFunction\(\) \|\| legal\.functionLabel/);
 
 // O cadastro precisa coletar a função antes de criar a conta e preservar o perfil

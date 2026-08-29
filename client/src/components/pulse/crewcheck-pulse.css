@@ -1,0 +1,177 @@
+/* =============================================================================
+   CrewCheck Pulse — camada de comunicação do sistema (#546)
+   -----------------------------------------------------------------------------
+   Superfície própria, entre o shell e o conteúdo. Não é cabeçalho: não assume a
+   navegação, não altera nenhuma regra de .cz-global-header e não acrescenta um só
+   !important à disputa que já existe naquele arquivo — .cc-pulse é classe nova,
+   que nenhuma outra folha estiliza, então não precisa disputar nada.
+
+   Fixação: sticky, não fixed. Enquanto o banner está ativo ele acompanha a tela;
+   quando não há mensagem, some por completo e não reserva espaço. O deslocamento
+   de topo espelha a altura do espaçador do cabeçalho — 116px base, 62px em telas
+   estreitas, 88px em ponteiro fino a partir de 901px — para o Pulse parar logo
+   abaixo do cabeçalho fixo em vez de escorregar por baixo dele.
+
+   Essa duplicação é consciente: hoje a altura do cabeçalho é número escrito à mão
+   em dois arquivos (internal-global-header.css e web-desktop-shell.css), que são
+   escopo do #558. Quando o #558 transformar isso em token único, os três valores
+   daqui devem passar a lê-lo.
+
+   Cores vêm de tokens já definidos e sensíveis a tema:
+   --cc-surface / --cc-border / --cc-text / --cc-text-muted / --cc-accent estão em
+   premium-audit-v13-8-8.css, em :root e em html[data-crew-theme="dark"];
+   --event-* estão em index.css, nos dois blocos de tema. Nenhuma cor literal.
+   ========================================================================== */
+
+.cc-pulse {
+  --cc-pulse-accent: var(--cc-accent);
+  /* espelha .cz-global-header-spacer */
+  --cc-pulse-offset: calc(116px + env(safe-area-inset-top, 0px));
+
+  position: sticky;
+  top: calc(var(--cc-pulse-offset) + 8px);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, var(--cc-content, 1180px));
+  margin: 0 auto 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--cc-border);
+  border-left: 3px solid var(--cc-pulse-accent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--cc-pulse-accent) 6%, var(--cc-surface));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--cc-pulse-accent) 10%, transparent);
+  color: var(--cc-text);
+  animation: cc-pulse-enter 220ms ease-out both;
+}
+
+.cc-pulse[data-leaving='true'] {
+  animation: cc-pulse-leave 180ms ease-in both;
+}
+
+/* Cor semântica por categoria. A identidade rosa→roxo fica no informativo e no
+   lembrete; os demais usam a cor que o resto do produto já associa ao estado. */
+.cc-pulse[data-tone='informativo'] { --cc-pulse-accent: var(--event-reserve); }
+.cc-pulse[data-tone='sucesso']     { --cc-pulse-accent: var(--event-conforme); }
+.cc-pulse[data-tone='atencao']     { --cc-pulse-accent: var(--event-standby, var(--cc-accent)); }
+.cc-pulse[data-tone='erro']        { --cc-pulse-accent: var(--event-alert); }
+.cc-pulse[data-tone='operacional'] { --cc-pulse-accent: var(--event-flight); }
+.cc-pulse[data-tone='lembrete']    { --cc-pulse-accent: var(--event-reserve); }
+
+.cc-pulse-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cc-pulse-accent) 14%, transparent);
+  color: var(--cc-pulse-accent);
+}
+
+/* O "pulso" que dá nome à superfície: um indicador vivo, discreto, que não
+   compete com o texto nem pisca de forma agressiva. */
+.cc-pulse-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cc-pulse-accent);
+  animation: cc-pulse-beat 2.4s ease-in-out infinite;
+}
+
+.cc-pulse-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cc-pulse-copy strong {
+  font-size: .9rem;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--cc-text);
+}
+
+.cc-pulse-copy small {
+  font-size: .78rem;
+  line-height: 1.35;
+  color: var(--cc-text-muted);
+}
+
+/* O ícone continua pequeno; o alvo de toque é expandido por pseudo-elemento até
+   44x44, sem alterar a altura da faixa. */
+.cc-pulse-dismiss {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--cc-text-muted);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.cc-pulse-dismiss:hover {
+  background: color-mix(in srgb, var(--cc-pulse-accent) 10%, transparent);
+  color: var(--cc-text);
+}
+
+.cc-pulse-dismiss::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.cc-pulse-dismiss:focus-visible {
+  outline: 2px solid var(--cc-pulse-accent);
+  outline-offset: 2px;
+}
+
+@keyframes cc-pulse-enter {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes cc-pulse-leave {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes cc-pulse-beat {
+  0%, 100% { opacity: .45; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.35); }
+}
+
+@media (max-width: 720px) {
+  .cc-pulse { --cc-pulse-offset: calc(62px + env(safe-area-inset-top, 0px)); }
+}
+
+@media (pointer: fine) and (min-width: 901px) {
+  .cc-pulse { --cc-pulse-offset: calc(88px + env(safe-area-inset-top, 0px)); }
+}
+
+@media (max-width: 420px) {
+  .cc-pulse { gap: 10px; padding: 11px 12px; }
+  .cc-pulse-icon { width: 30px; height: 30px; }
+  .cc-pulse-copy strong { font-size: .85rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-pulse,
+  .cc-pulse[data-leaving='true'] { animation: none; }
+  .cc-pulse-dot { animation: none; opacity: 1; }
+  .cc-pulse-dismiss { transition: none; }
+}

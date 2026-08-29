@@ -1,0 +1,36 @@
+// cc-v14407:concierge-routine
+async function conciergeRoutineReply(snapshot, text = '') {
+  const next = conciergeNextProgram(snapshot?.roster);
+  if (!next) return 'Envie ou sincronize sua escala para eu montar a rotina de recuperação, treino, alimentação e sono.';
+  const hours = (next.start.getTime() - Date.now()) / 3_600_000;
+  const duty = Number(next.day?.dutyHours || 0);
+  const items = [];
+  if (hours <= 12) items.push('Prioridade operacional: preserve descanso e preparação; se treinar, mantenha uma sessão curta e compatível com sua recuperação.');
+  else if (hours <= 24) items.push('Janela curta: o CrewCheck prioriza uma sessão breve e encerra com margem antes da próxima apresentação.');
+  else items.push('Há uma janela maior; a sugestão de academia continua limitada pelos horários reais publicados e pela próxima programação.');
+  if (duty >= 10) items.push(`Jornada prevista de ${duty.toFixed(1).replace('.', ',')} h: preserve margem para refeição, deslocamento e recuperação.`);
+  if (next.legs?.length >= 3) items.push(`${next.legs.length} etapas no dia: o CrewCheck reduz a prioridade de treino para preservar tempo operacional.`);
+
+  const preferences = snapshot?.preferences || {};
+  const detectedActivity = detectWellhubActivityFromText(text);
+  const activity = detectedActivity || String(preferences.gymActivity || '').trim();
+  const plan = detectWellhubPlanFromText(text) || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : '');
+  if (plan && String(preferences.gymPlan || 'wellhub') !== 'smartfit') {
+    const stay = conciergeCurrentStay(snapshot?.roster);
+    const airport = next?.legs?.[0]?.origin || snapshot?.roster?.base || '';
+    const location = preferences.location || {};
+    const locationText = [location.city, location.state, stay?.hotel, WEATHER_AIRPORT_POINTS[airport]?.city, airport].filter(Boolean).join(' ');
+    const gymWindow = await buildWellhubRoutineSuggestion({ plan, activity, locationText, nextAt: next.start.toISOString(), durationMinutes: hours <= 12 ? 30 : 45, bufferMinutes: 120 });
+    if (gymWindow.ok && gymWindow.gym) {
+      items.push(`Academia compatível: ${gymWindow.gym.name} (${wellhubPlanLabelServer(gymWindow.gym.minimumPlan)}), ${gymWindow.date} de ${gymWindow.startTime} a ${gymWindow.endTime}.`);
+      items.push(`Horário oficial: ${(gymWindow.gym.openingHours || []).join(' | ')}.${activity ? ` Modalidade: ${activity}.` : ''}`);
+      items.push(`Fonte oficial: ${gymWindow.gym.sourceUrl}`);
+    } else {
+      items.push(`Academia: ${gymWindow.message}`);
+    }
+  } else {
+    items.push('Academia: defina seu plano Wellhub no app ou diga “meu plano Wellhub é Basic+/Silver/Gold...” para cruzar plano, modalidade, horário e escala.');
+  }
+  items.push(`Próxima programação: ${conciergeProgramTitle(next)} · ${conciergeDateLabel(next)} · apresentação ${conciergePresentationTime(next)}.`);
+  return ['Rotina sugerida', ...items.map((item) => `• ${item}`)].join('\n');
+}
