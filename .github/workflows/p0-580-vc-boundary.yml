@@ -7,6 +7,7 @@ on:
       - 'client/src/lib/pdfParser.ts'
       - 'client/src/lib/databaseClient.ts'
       - 'client/src/lib/localRosterOverlap.ts'
+      - 'client/src/pages/WatchPage.tsx'
       - 'server/platform.mjs'
       - 'scripts/p0-580-transposed-vc-boundary/**'
       - 'scripts/v139/apply.mjs'
