@@ -1,12 +1,19 @@
 import fs from 'node:fs';
 
 const parserPath = 'client/src/lib/pdfParser.ts';
+const databasePath = 'client/src/lib/databaseClient.ts';
 const transposedMarker = 'P0_580_TRANSPOSED_STRUCTURE_GUARD';
 const legendMarker = 'P0_580_LEGEND_BOUNDARY_GUARD';
 const legendSectionMarker = 'P0_580_LEGEND_SECTION_GUARD';
+const overlapMarker = 'P0_580_OVERLAP_ACTIVITY_DEDUPE';
 
 if (!fs.existsSync(parserPath)) throw new Error(`[${transposedMarker}] ${parserPath} not found`);
 let source = fs.readFileSync(parserPath, 'utf8');
+
+function requireFragments(text, marker, fragments) {
+  const missing = fragments.filter((fragment) => !text.includes(fragment));
+  if (missing.length) throw new Error(`[${marker}] structural patch incomplete: missing ${missing.join(' | ')}`);
+}
 
 if (!source.includes(transposedMarker)) {
   const scoreAnchor = `  const transposedScore = scoreParsedDays(transposedDays, header.month, header.year);`;
@@ -20,8 +27,14 @@ if (!source.includes(transposedMarker)) {
   source = source.replace(strongAnchor, `  const useStrongTransposed = /Roster\\s+Report/i.test(fullText)\n    && transposedStructurallySound\n    && transposedDays.length >= 25\n    && transposedEventCount >= 30\n    && (!sourceHasFlights || transposedFlightCount > 0);`);
   console.log(`[crewcheck:prepare] applied ${transposedMarker}`);
 } else {
-  console.log(`[crewcheck:prepare] ${transposedMarker} already applied`);
+  console.log(`[crewcheck:prepare] ${transposedMarker} already applied; validating structure`);
 }
+requireFragments(source, transposedMarker, [
+  'const transposedStructurallySound = transposedDays.every',
+  'dateTokens.length <= 1',
+  ': Number.NEGATIVE_INFINITY',
+  '&& transposedStructurallySound',
+]);
 
 if (!source.includes(legendMarker)) {
   const footerAnchor = `function isHeaderOrFooterRow(text: string): boolean {\n  return /^(Date\\b|Pairing\\/Activity\\b|Duty\\b|Report\\b|Item\\b|Updated Date\\b)/i.test(text)`;
@@ -29,8 +42,11 @@ if (!source.includes(legendMarker)) {
   source = source.replace(footerAnchor, `function isHeaderOrFooterRow(text: string): boolean {\n  // ${legendMarker}: legend labels enumerate valid activity codes, so allowing\n  // them through as continuation text contaminates the final published day.\n  if (/^LEGEND\\b/i.test(text)) return true;\n  return /^(Date\\b|Pairing\\/Activity\\b|Duty\\b|Report\\b|Item\\b|Updated Date\\b)/i.test(text)`);
   console.log(`[crewcheck:prepare] applied ${legendMarker}`);
 } else {
-  console.log(`[crewcheck:prepare] ${legendMarker} already applied`);
+  console.log(`[crewcheck:prepare] ${legendMarker} already applied; validating structure`);
 }
+requireFragments(source, legendMarker, [
+  'if (/^LEGEND\\b/i.test(text)) return true;',
+]);
 
 if (!source.includes(legendSectionMarker)) {
   const rowsAnchor = `function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRoster {\n  const header = parseHeader(fullText);\n  const transposedDays = parseCrewRosterTransposedColumns(rows, header.month, header.year, header.base);\n  const visualDays = parseDaysFromRows(rows, header.month, header.year, header.base);\n  const columnarDays = parseCrewRosterColumnarRows(rows, header.month, header.year, header.base);\n  const looseDays = parseCrewRosterReportLooseText(fullText, header.month, header.year, header.base);`;
@@ -45,12 +61,54 @@ if (!source.includes(legendSectionMarker)) {
     `parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month)`,
     `parseGenericTripulationRecords(publishedText, header.crewName, header.year, header.month)`,
   );
-  if (!source.includes(legendSectionMarker) || !source.includes('parseCrewRosterTransposedColumns(publishedRows')) {
-    throw new Error(`[${legendSectionMarker}] structural patch incomplete`);
-  }
   console.log(`[crewcheck:prepare] applied ${legendSectionMarker}`);
 } else {
-  console.log(`[crewcheck:prepare] ${legendSectionMarker} already applied`);
+  console.log(`[crewcheck:prepare] ${legendSectionMarker} already applied; validating structure`);
 }
+requireFragments(source, legendSectionMarker, [
+  'const legendRowIndex = rows.findIndex',
+  'const publishedRows = legendRowIndex >= 0 ? rows.slice(0, legendRowIndex) : rows;',
+  'const publishedText = legendTextMatch',
+  'parseCrewRosterTransposedColumns(publishedRows',
+  'parseDaysFromRows(publishedRows',
+  'parseCrewRosterColumnarRows(publishedRows',
+  'parseCrewRosterReportLooseText(publishedText',
+  'rescueFlightsFromFullText(mergedDays, publishedText',
+  'parseGenericTripulationRecords(publishedText',
+]);
 
 fs.writeFileSync(parserPath, source, 'utf8');
+
+if (!fs.existsSync(databasePath)) throw new Error(`[${overlapMarker}] ${databasePath} not found`);
+let database = fs.readFileSync(databasePath, 'utf8');
+
+if (!database.includes(overlapMarker)) {
+  const importAnchor = `import { authFetch, getStoredUser, getToken } from './authClient';`;
+  if (!database.includes(importAnchor)) throw new Error(`[${overlapMarker}] database import anchor not found`);
+  database = database.replace(importAnchor, `${importAnchor}\nimport { dedupeAdjacentRosterDays } from './localRosterOverlap'; // ${overlapMarker}`);
+
+  const nextAnchor = `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const nextAnchors = rosterContinuationAnchorsLocal(nextRoster);`;
+  if (!database.includes(nextAnchor)) throw new Error(`[${overlapMarker}] continuation anchor not found`);
+  database = database.replace(nextAnchor, `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };\n  const nextAnchors = rosterContinuationAnchorsLocal(overlapFilteredNext);`);
+
+  const mergeAnchor = `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const sourceDays = position === 'prepend' ? [...(adjacent.days || []), ...(primary.days || [])] : [...(primary.days || []), ...(adjacent.days || [])];`;
+  if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
+  database = database.replace(mergeAnchor, `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], adjacent.days || []);\n  const sourceDays = position === 'prepend' ? [...adjacentDays, ...(primary.days || [])] : [...(primary.days || []), ...adjacentDays];`);
+
+  const fallbackAnchor = `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    else if (next?.roster?.days?.length) roster = mergeContinuousLocal(roster, { ...next.roster, days: next.roster.days.slice(0, 5) }, 'append');`;
+  if (!database.includes(fallbackAnchor)) throw new Error(`[${overlapMarker}] blind next-roster fallback anchor not found`);
+  database = database.replace(fallbackAnchor, `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    // Fail closed when there is no proven physical continuation. Nominal adjacency\n    // alone must not append an arbitrary fixed slice from the next publication.`);
+
+  console.log(`[crewcheck:prepare] applied ${overlapMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${overlapMarker} already applied; validating structure`);
+}
+requireFragments(database, overlapMarker, [
+  `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,
+  'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
+  'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], adjacent.days || []);',
+  'Nominal adjacency',
+]);
+if (database.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
+
+fs.writeFileSync(databasePath, database, 'utf8');
