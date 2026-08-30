@@ -31,20 +31,14 @@ const primary = [
   { date: '01/09/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '08:20', legs: [leg('LA9002', 'BBB', 'CCC')] },
   { date: '02/09/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '09:00', legs: [leg('LA9003', 'CCC', 'DDD')] },
   { date: '04/09/2026', type: 'VC', pairingCode: 'VC-A', legs: [] },
-  // Same flight/date/route can legitimately occur more than once. The overlap
-  // matcher must remove only the occurrence already present at the same time.
   { date: '05/09/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '07:00', legs: [leg('LA9010', 'GGG', 'HHH', '08:00')] },
 ];
 const adjacent = [
-  // Same operational facts, but reimport changed pairing/report metadata.
   { date: '2026-08-29', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '08:15', legs: [leg('LA9001', 'AAA', 'BBB')] },
   { date: '2026-09-01', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '08:30', legs: [leg('LA9002', 'BBB', 'CCC')] },
-  // Partial overlap: duplicate first leg plus a legitimate new leg.
-  { date: '2026-09-02', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '09:10', legs: [leg('LA9003', 'CCC', 'DDD'), leg('LA9004', 'DDD', 'EEE')] },
+  { date: '2026-09-02', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '09:10', dutyDebrief: '12:30', dutyHours: 200, flyingHours: 120, rawText: 'full stale duty text', legs: [leg('LA9003', 'CCC', 'DDD'), leg('LA9004', 'DDD', 'EEE')] },
   { date: '2026-09-03', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '11:00', legs: [leg('LA9005', 'EEE', 'FFF')] },
   { date: '2026-09-04', type: 'VC', pairingCode: 'VC-B', legs: [] },
-  // 08h00 normalizes to the same published occurrence as 08:00 and is removed;
-  // 18:00 is a distinct operation and must survive despite identical flight/route.
   { date: '2026-09-05', type: 'FLIGHT', pairingCode: 'P-C', dutyReport: '07:05', legs: [leg('LA9010', 'GGG', 'HHH', '08h00'), leg('LA9010', 'GGG', 'HHH', '18:00')] },
 ];
 
@@ -52,18 +46,49 @@ const filtered = dedupeAdjacentRosterDays(primary, adjacent);
 assert.equal(filtered.length, 3, 'overlap reimport must retain only genuinely new operational days/legs');
 assert.equal(filtered[0].date, '2026-09-02');
 assert.deepEqual(filtered[0].legs.map((item) => item.flightNumber), ['LA9004'], 'partial overlap must keep only the new leg');
+assert.equal(filtered[0].dutyReport, null, 'partial duty must invalidate stale dutyReport');
+assert.equal(filtered[0].dutyDebrief, null, 'partial duty must invalidate stale dutyDebrief');
+assert.equal(filtered[0].dutyHours, null, 'partial duty must invalidate stale dutyHours');
+assert.equal(filtered[0].flyingHours, null, 'partial duty must invalidate stale flyingHours');
+assert.equal(filtered[0].rawText, null, 'partial duty must invalidate stale rawText');
 assert.equal(filtered[1].date, '2026-09-03');
 assert.deepEqual(filtered[1].legs.map((item) => item.flightNumber), ['LA9005']);
 assert.equal(filtered[2].date, '2026-09-05');
 assert.equal(filtered[2].legs.length, 1, 'same flight/date/route at a different time must remain distinct');
-assert.equal(filtered[2].legs[0].flightNumber, 'LA9010');
 assert.equal(filtered[2].legs[0].departureTime, '18:00');
+
+// Unknown/invalid time cannot prove identity. Preserve both occurrences rather
+// than collapsing uncertain data.
+const unknownTimePrimary = [
+  { date: '06/09/2026', type: 'FLIGHT', legs: [leg('LA9020', 'III', 'JJJ', '')] },
+];
+const unknownTimeAdjacent = [
+  { date: '2026-09-06', type: 'FLIGHT', legs: [leg('LA9020', 'III', 'JJJ', 'invalid')] },
+];
+const unknownTimeFiltered = dedupeAdjacentRosterDays(unknownTimePrimary, unknownTimeAdjacent);
+assert.equal(unknownTimeFiltered.length, 1, 'unknown/invalid time must remain fail-safe and non-deduplicable');
+assert.equal(unknownTimeFiltered[0].legs.length, 1);
+
+// Count-aware overlap: one occurrence in primary consumes only one identical
+// adjacent occurrence; an additional real repeated occurrence must survive.
+const multiplicityPrimary = [
+  { date: '07/09/2026', type: 'FLIGHT', legs: [leg('LA9030', 'KKK', 'LLL', '09:00')] },
+];
+const multiplicityAdjacent = [
+  { date: '2026-09-07', type: 'FLIGHT', legs: [leg('LA9030', 'KKK', 'LLL', '09:00'), leg('LA9030', 'KKK', 'LLL', '09:00')] },
+];
+const multiplicityFiltered = dedupeAdjacentRosterDays(multiplicityPrimary, multiplicityAdjacent);
+assert.equal(multiplicityFiltered.length, 1, 'one extra repeated occurrence must survive count-aware dedupe');
+assert.equal(multiplicityFiltered[0].legs.length, 1, 'primary occurrence may consume at most one matching adjacent copy');
+assert.equal(multiplicityFiltered[0].dutyReport ?? null, null, 'partial repeated duty must not retain stale duty metadata');
 
 const databaseSource = fs.readFileSync(databasePath, 'utf8');
 assert.match(databaseSource, /P0_580_OVERLAP_ACTIVITY_DEDUPE/, 'prepared database source must contain overlap marker');
 assert.match(databaseSource, /dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], nextRoster\.days \|\| \[\]\)/, 'continuation detection must ignore overlap copies first');
 assert.match(databaseSource, /const adjacentDays = dedupeAdjacentRosterDays\(primary\.days \|\| \[\], adjacent\.days \|\| \[\]\)/, 'merge must dedupe by operational activity identity');
 assert.doesNotMatch(databaseSource, /next\.roster\.days\.slice\(0, 5\)/, 'blind fixed-slice fallback must not survive');
+assert.doesNotMatch(helperSource, /TIME-UNKNOWN/, 'unknown operational time must never become a deduplicable identity');
+assert.match(helperSource, /new Map<string, number>/, 'overlap dedupe must use count-aware multiplicity tracking');
 
 // Fail-closed counterproof: a source carrying the marker but missing one mandatory
 // structural fragment must be rejected by the apply step instead of returning green.
@@ -88,4 +113,4 @@ try {
 }
 assert.equal(failedClosed, true, 'partially applied marker state must fail closed');
 
-console.log('[P0-580] overlap/reimport dedupe + repeated-occurrence + fail-closed apply: PASS');
+console.log('[P0-580] overlap/reimport dedupe + fail-safe time + multiplicity + stale-duty + fail-closed apply: PASS');
