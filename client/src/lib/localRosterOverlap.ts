@@ -2,6 +2,7 @@ type LocalRosterLegLike = {
   flightNumber?: string | null;
   origin?: string | null;
   destination?: string | null;
+  departureTime?: string | null;
 };
 
 type LocalRosterDayLike<TLeg extends LocalRosterLegLike = LocalRosterLegLike> = {
@@ -27,15 +28,29 @@ function normalizeDateKey(value?: string | null): string {
   return normalizeToken(raw);
 }
 
+function normalizeOperationalTime(value?: string | null): string {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{1,2})\s*(?:[:hH.]\s*)?(\d{2})$/);
+  if (!match) return '';
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) return '';
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): string | null {
   const date = normalizeDateKey(day.date);
   const flight = normalizeToken(leg.flightNumber);
   const origin = normalizeToken(leg.origin).slice(0, 3);
   const destination = normalizeToken(leg.destination).slice(0, 3);
+  const departure = normalizeOperationalTime(leg.departureTime);
   if (!date || !flight || !origin || !destination) return null;
-  // Published report/pairing times may change after reimport. Flight/date/route is
-  // the stable operational identity used only to suppress overlapping copies.
-  return `F|${date}|${flight}|${origin}|${destination}`;
+  // Pairing/report metadata may legitimately change after reimport. Published
+  // departure time is part of the occurrence identity so two operations with the
+  // same flight/date/route are not collapsed when they happen at different times.
+  // If the time is absent/invalid, preserve a separate fail-safe identity rather
+  // than guessing that two occurrences are the same and risking data loss.
+  return `F|${date}|${flight}|${origin}|${destination}|${departure || 'TIME-UNKNOWN'}`;
 }
 
 function activityIdentityKey(day: LocalRosterDayLike): string | null {
