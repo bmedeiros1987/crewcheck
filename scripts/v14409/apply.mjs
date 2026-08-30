@@ -38,7 +38,8 @@ function patchServer(source) {
 
   const conciergeTag = '// cc-v14409:concierge-gyms-plan-location';
   const gymStart = next.includes(conciergeTag) ? conciergeTag : 'async function conciergeGymsReply(';
-  next = replaceBetween(next, gymStart, 'function conciergeRoutineReply(', conciergeGyms, 'Concierge Wellhub');
+  const routineStart = next.includes('async function conciergeRoutineReply(') ? 'async function conciergeRoutineReply(' : 'function conciergeRoutineReply(';
+  next = replaceBetween(next, gymStart, routineStart, conciergeGyms, 'Concierge Wellhub');
 
   const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto|modalidade)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
   const dispatchPattern = /^\s*if \([^\n]*return conciergeGymsReply\(snapshot, value, profile\);\s*$/m;
