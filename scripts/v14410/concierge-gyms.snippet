@@ -4,21 +4,21 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const detectedPlan = detectWellhubPlanFromText(text);
   const detectedActivity = detectWellhubActivityFromText(text);
   const planPreference = Boolean(detectedPlan && isWellhubPlanPreferenceMessage(text));
-  const wellhubContext = /wellhub|gympass|academia|treino|modalidade/i.test(String(text || ''));
-  const provider = planPreference || (detectedPlan && wellhubContext)
+  const planUpdate = planPreference ? detectedPlan : '';
+  const provider = planPreference
     ? 'wellhub'
     : /smart\s*fit/i.test(text) && !/wellhub|gympass/i.test(text)
       ? 'smartfit'
       : /wellhub|gympass/i.test(text)
         ? 'wellhub'
         : String(preferences.gymPlan || 'wellhub');
-  const wellhubPlan = detectedPlan || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
+  const wellhubPlan = planUpdate || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
   const activity = detectedActivity || String(preferences.gymActivity || '').trim();
 
-  if ((detectedPlan || detectedActivity || provider !== preferences.gymPlan) && profile?.email) {
+  if ((planUpdate || detectedActivity || provider !== preferences.gymPlan) && profile?.email) {
     const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
       gymPlan: provider,
-      ...(detectedPlan ? { wellhubPlan: detectedPlan } : {}),
+      ...(planUpdate ? { wellhubPlan: planUpdate } : {}),
       ...(detectedActivity ? { gymActivity: detectedActivity } : {}),
     } });
     if (saved) snapshot = saved;
@@ -41,21 +41,23 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const airport = next?.legs?.[0]?.origin || snapshot?.roster?.base || '';
   const locationContext = conciergeLocationContextV14335(snapshot);
   const currentLocation = locationContext.fresh ? (locationContext.location || {}) : {};
+  const informedLocation = extractWellhubLocationHintFromText(text);
+  const hasInformedCity = Boolean(String(informedLocation.city || '').trim());
   const airportCity = WEATHER_AIRPORT_POINTS[airport]?.city || '';
-  const currentCity = String(currentLocation.city || '').trim();
-  const currentState = String(currentLocation.state || '').trim();
+  const currentCity = String(informedLocation.city || currentLocation.city || '').trim();
+  const currentState = String(hasInformedCity ? informedLocation.state || '' : currentLocation.state || '').trim();
 
   if (locationContext.fresh && !currentCity && !currentState) {
     return [
       `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
       `Recebi sua localização atual (${locationContext.label || 'coordenadas compartilhadas'}), mas ainda não consegui confirmar a cidade/UF.`,
-      'Não vou usar o aeroporto da escala como substituto. Compartilhe a localização novamente ou informe a cidade para evitar resultado na cidade errada.',
+      'Não vou usar o aeroporto da escala como substituto. Compartilhe a localização novamente ou diga nesta mensagem, por exemplo, “academia em Canoas”.',
     ].join('\n');
   }
 
   const locationCity = currentCity || (!locationContext.fresh ? airportCity : '');
   const locationState = currentState;
-  const locationText = [locationCity, locationState, !locationContext.fresh ? stay?.hotel : '', !locationContext.fresh ? airport : ''].filter(Boolean).join(' ');
+  const locationText = [locationCity, locationState, !locationContext.fresh && !hasInformedCity ? stay?.hotel : '', !locationContext.fresh && !hasInformedCity ? airport : ''].filter(Boolean).join(' ');
   const query = String(text || '').match(/(?:rede|academia)\s+([\p{L}0-9 .&+-]{2,40})/iu)?.[1]?.replace(/\b(?:com|que|perto|em|no|na)\b[\s\S]*$/i, '').trim() || '';
   const candidatePartners = await searchVerifiedWellhub({ plan: wellhubPlan, query: /meu plano|modalidade|wellhub|gympass/i.test(query) ? '' : query, activity, locationText, limit: 60 });
   const partners = filterWellhubPartnersForLocation(candidatePartners, { city: locationCity, state: locationState }).slice(0, 8);
