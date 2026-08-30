@@ -90,7 +90,7 @@ export default function WatchPage({ device = 'samsung' }: { device?: 'samsung' |
       const list = await listSavedRosters(8);
       const best = selectBestSummary(list);
       if (!best) throw new Error('Nenhuma escala salva encontrada.');
-      const data = await openSavedRoster(best.id);
+      const data = await openSavedRoster(best.id, best);
       setSummary(best);
       setRoster(data.roster);
     } catch (err) {
