@@ -34,7 +34,11 @@ export function isWellhubPlanPreferenceMessage(text = '') {
 function isRecognizedWellhubActivity(value = '') {
   const raw = String(value || '').trim();
   if (!raw) return false;
-  return Boolean(detectWellhubActivityFromText(raw));
+  const canonical = detectWellhubActivityFromText(raw);
+  // O detector v14.4.07 também aceita texto customizado e procura aliases dentro
+  // dele. Para classificar como atividade conhecida, o resultado canônico precisa
+  // ser exatamente o próprio valor, não apenas um alias aninhado em outra frase.
+  return Boolean(canonical && normalize(canonical) === normalize(raw));
 }
 
 export function isWellhubActivityPreferenceMessage(text = '') {
@@ -63,10 +67,11 @@ export function extractWellhubLocationHintFromText(text = '') {
   if (!raw) return { city: '', state: '' };
 
   // Não limite a cidade por quantidade de palavras. Há municípios brasileiros
-  // válidos com cinco ou mais tokens (ex.: São José do Rio Preto). Quando a UF
-  // vier explícita, ela funciona como delimitador forte; sem UF, paramos apenas
-  // em qualificadores da própria consulta.
-  const scoped = raw.match(/\b(?:cidade\s+de|cidade|em)\s+(.+)$/iu);
+  // válidos com cinco ou mais tokens (ex.: São José do Rio Preto). "em" só é
+  // aceito quando ligado diretamente a uma intenção geográfica de academia;
+  // cláusulas de modalidade como "treino em grupo" não podem substituir GPS.
+  const scoped = raw.match(/\b(?:cidade\s+de|cidade)\s+(.+)$/iu)
+    || raw.match(/\b(?:academias?|wellhub|gympass|treinar)\s+em\s+(.+)$/iu);
   if (!scoped) return { city: '', state: '' };
   const tail = String(scoped[1] || '').trim();
   if (!tail) return { city: '', state: '' };
