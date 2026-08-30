@@ -58,9 +58,19 @@ function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): strin
   return `F|${date}|${flight}|${origin}|${destination}|${departure}`;
 }
 
+function looksLikeFlightWithoutLegs(day: LocalRosterDayLike): boolean {
+  const type = normalizeToken(day.type);
+  const pairing = normalizeToken(day.pairingCode);
+  if (['FLIGHT', 'VOO'].includes(type)) return true;
+  // A flight-number-like activity without parsed legs is incomplete evidence.
+  // It must survive overlap reconciliation rather than being collapsed against
+  // another activity that merely shares the same pairing/label.
+  return /^LA\d{2,5}$/.test(pairing);
+}
+
 function activityIdentityKey(day: LocalRosterDayLike): string | null {
   const date = normalizeDateKey(day.date);
-  if (!date) return null;
+  if (!date || looksLikeFlightWithoutLegs(day)) return null;
   const type = normalizeToken(day.type);
   const pairing = normalizeToken(day.pairingCode);
   const semantic = type && !['OTHER', 'UNKNOWN'].includes(type) ? type : pairing;
