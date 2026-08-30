@@ -11,6 +11,7 @@ on:
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
       - 'scripts/regression-p0-580-overlap-reimport.mjs'
+      - 'scripts/regression-p0-580-exact-competence-open.mjs'
       - '.github/workflows/p0-580-vc-boundary.yml'
   workflow_dispatch:
 
@@ -35,3 +36,5 @@ jobs:
         run: node scripts/regression-p0-580-transposed-vc-boundary.mjs
       - name: Validate overlap reimport and fail-closed apply
         run: node scripts/regression-p0-580-overlap-reimport.mjs
+      - name: Validate exact competence open and carry-in
+        run: node scripts/regression-p0-580-exact-competence-open.mjs
