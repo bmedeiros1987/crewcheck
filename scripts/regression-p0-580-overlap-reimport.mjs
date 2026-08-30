@@ -25,12 +25,15 @@ const tempModule = path.join(tempModuleDir, 'localRosterOverlap.mjs');
 fs.writeFileSync(tempModule, helperJs);
 const { dedupeAdjacentRosterDays } = await import(`${pathToFileURL(tempModule).href}?v=${Date.now()}`);
 
-const leg = (flightNumber, origin, destination) => ({ flightNumber, origin, destination, departureTime: '10:00' });
+const leg = (flightNumber, origin, destination, departureTime = '10:00') => ({ flightNumber, origin, destination, departureTime });
 const primary = [
   { date: '29/08/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '08:10', legs: [leg('LA9001', 'AAA', 'BBB')] },
   { date: '01/09/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '08:20', legs: [leg('LA9002', 'BBB', 'CCC')] },
   { date: '02/09/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '09:00', legs: [leg('LA9003', 'CCC', 'DDD')] },
   { date: '04/09/2026', type: 'VC', pairingCode: 'VC-A', legs: [] },
+  // Same flight/date/route can legitimately occur more than once. The overlap
+  // matcher must remove only the occurrence already present at the same time.
+  { date: '05/09/2026', type: 'FLIGHT', pairingCode: 'P-A', dutyReport: '07:00', legs: [leg('LA9010', 'GGG', 'HHH', '08:00')] },
 ];
 const adjacent = [
   // Same operational facts, but reimport changed pairing/report metadata.
@@ -40,14 +43,21 @@ const adjacent = [
   { date: '2026-09-02', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '09:10', legs: [leg('LA9003', 'CCC', 'DDD'), leg('LA9004', 'DDD', 'EEE')] },
   { date: '2026-09-03', type: 'FLIGHT', pairingCode: 'P-B', dutyReport: '11:00', legs: [leg('LA9005', 'EEE', 'FFF')] },
   { date: '2026-09-04', type: 'VC', pairingCode: 'VC-B', legs: [] },
+  // 08h00 normalizes to the same published occurrence as 08:00 and is removed;
+  // 18:00 is a distinct operation and must survive despite identical flight/route.
+  { date: '2026-09-05', type: 'FLIGHT', pairingCode: 'P-C', dutyReport: '07:05', legs: [leg('LA9010', 'GGG', 'HHH', '08h00'), leg('LA9010', 'GGG', 'HHH', '18:00')] },
 ];
 
 const filtered = dedupeAdjacentRosterDays(primary, adjacent);
-assert.equal(filtered.length, 2, 'overlap reimport must retain only genuinely new operational days/legs');
+assert.equal(filtered.length, 3, 'overlap reimport must retain only genuinely new operational days/legs');
 assert.equal(filtered[0].date, '2026-09-02');
 assert.deepEqual(filtered[0].legs.map((item) => item.flightNumber), ['LA9004'], 'partial overlap must keep only the new leg');
 assert.equal(filtered[1].date, '2026-09-03');
 assert.deepEqual(filtered[1].legs.map((item) => item.flightNumber), ['LA9005']);
+assert.equal(filtered[2].date, '2026-09-05');
+assert.equal(filtered[2].legs.length, 1, 'same flight/date/route at a different time must remain distinct');
+assert.equal(filtered[2].legs[0].flightNumber, 'LA9010');
+assert.equal(filtered[2].legs[0].departureTime, '18:00');
 
 const databaseSource = fs.readFileSync(databasePath, 'utf8');
 assert.match(databaseSource, /P0_580_OVERLAP_ACTIVITY_DEDUPE/, 'prepared database source must contain overlap marker');
@@ -78,4 +88,4 @@ try {
 }
 assert.equal(failedClosed, true, 'partially applied marker state must fail closed');
 
-console.log('[P0-580] overlap/reimport dedupe + fail-closed apply: PASS');
+console.log('[P0-580] overlap/reimport dedupe + repeated-occurrence + fail-closed apply: PASS');
