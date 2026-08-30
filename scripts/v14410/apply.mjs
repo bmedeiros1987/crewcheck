@@ -33,7 +33,7 @@ function replaceRequired(source, before, after, label) {
 
 function patchServer(source) {
   const wellhubImport = "import { buildWellhubRoutineSuggestion, detectWellhubActivityFromText, detectWellhubPlanFromText, handleWellhubRoutineRoute, handleWellhubSearchRoute, isWellhubPlanServer, searchVerifiedWellhub, wellhubPlanLabelServer } from './server/v14407/wellhub.mjs';";
-  const conciergeImport = "import { filterWellhubPartnersForLocation, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  const conciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
   let next = insertAfterRequired(source, wellhubImport, conciergeImport, 'import Wellhub v14.4.07');
 
   const conciergeTag = '// cc-v14410:concierge-gyms-plan-location';
@@ -98,6 +98,9 @@ function patchServer(source) {
   if (!next.includes('cc-v14410:concierge-gyms-plan-location')) throw new Error(`${TAG} função Wellhub nova não aplicada.`);
   if (next.includes('cc-v14409:concierge-gyms-plan-location')) throw new Error(`${TAG} marcador legado v14.4.09 permaneceu materializado.`);
   if (!next.includes('isWellhubPlanPreferenceMessage(value)')) throw new Error(`${TAG} roteamento de plano natural não aplicado.`);
+  if (!next.includes("const planUpdate = planPreference ? detectedPlan : '';")) throw new Error(`${TAG} tier detectado ainda não está condicionado à intenção Wellhub.`);
+  if (next.includes('detectedPlan && wellhubContext')) throw new Error(`${TAG} falso positivo legado de tier em nome de academia permaneceu.`);
+  if (!next.includes('extractWellhubLocationHintFromText(text)')) throw new Error(`${TAG} fallback explícito de cidade informada não aplicado.`);
   if (!next.includes('filterWellhubPartnersForLocation(candidatePartners')) throw new Error(`${TAG} filtro geográfico não aplicado.`);
   if (next.includes('return conciergeGymsReply(snapshot);')) throw new Error(`${TAG} atalho legado ainda sombreia texto/perfil.`);
   if (!next.includes("source: 'whatsapp'")) throw new Error(`${TAG} localização do WhatsApp não conectada ao snapshot compartilhado.`);
