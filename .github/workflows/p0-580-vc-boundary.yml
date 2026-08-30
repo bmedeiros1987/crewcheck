@@ -5,9 +5,12 @@ on:
     branches: [main]
     paths:
       - 'client/src/lib/pdfParser.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/localRosterOverlap.ts'
       - 'scripts/p0-580-transposed-vc-boundary/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
+      - 'scripts/regression-p0-580-overlap-reimport.mjs'
       - '.github/workflows/p0-580-vc-boundary.yml'
   workflow_dispatch:
 
@@ -30,3 +33,5 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Validate normal-page transposed VC boundary
         run: node scripts/regression-p0-580-transposed-vc-boundary.mjs
+      - name: Validate overlap reimport and fail-closed apply
+        run: node scripts/regression-p0-580-overlap-reimport.mjs
