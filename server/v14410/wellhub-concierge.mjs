@@ -24,6 +24,19 @@ export function isWellhubPlanPreferenceMessage(text = '') {
   return natural.test(raw);
 }
 
+export function extractWellhubLocationHintFromText(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return { city: '', state: '' };
+  const match = raw.match(/\b(?:cidade\s+de|cidade|em)\s+([\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,3}?)(?=\s+(?:perto|pr[oó]xim[ao]|agora|hoje|com|que|para|onde)\b|[\/,.;!?]|$)/iu);
+  if (!match) return { city: '', state: '' };
+  const end = Number(match.index || 0) + match[0].length;
+  const stateMatch = raw.slice(end).match(/^\s*[\/,-]\s*([A-Za-z]{2})\b/);
+  return {
+    city: String(match[1] || '').trim(),
+    state: stateMatch ? String(stateMatch[1] || '').toUpperCase() : '',
+  };
+}
+
 export function filterWellhubPartnersForLocation(partners = [], { city = '', state = '' } = {}) {
   const cityKey = normalize(city);
   const stateKey = normalize(state);
