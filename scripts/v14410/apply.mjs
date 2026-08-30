@@ -55,7 +55,11 @@ function patchServer(source) {
   const routineStart = next.includes('async function conciergeRoutineReply(') ? 'async function conciergeRoutineReply(' : 'function conciergeRoutineReply(';
   next = replaceBetween(next, gymStart, routineStart, conciergeGyms, 'Concierge Wellhub');
 
-  const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto|modalidade)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
+  // Generic words like "modalidade" are not sufficient to route into the gym
+  // state machine. Natural activity preferences are admitted only by the hardened
+  // helper below, preventing unrelated corporate/payment modality messages from
+  // silently persisting gymPlan=wellhub.
+  const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
   next = replaceAllGymDispatchers(next, dispatch);
 
   const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);\n(?=\nhttp\.createServer)/;
@@ -88,10 +92,10 @@ function patchServer(source) {
     snapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: normalized } });
     if (!String(text || '').trim()) {
       return [
-        \`Localização atualizada: \${normalized.label}.\`,
+        `Localização atualizada: ${normalized.label}.`,
         'Vou usar estas coordenadas por até 6 horas para Saída Inteligente e buscas perto de você.',
         'Depois desse período pedirei uma nova localização para não pesquisar na cidade errada.',
-      ].join('\\n');
+      ].join('\n');
     }
   }
 
