@@ -35,7 +35,9 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   const raw = String(text || '').trim();
   const detected = detectWellhubActivityFromText(raw);
   if (!detected || NON_GYM_ACTIVITY_CONTEXT.test(raw)) return false;
-  if (/\b(wellhub|gympass|academias?|modalidade|atividade|aula|treino)\b/i.test(raw)) return true;
+  if (/smart\s*fit/i.test(raw) && !/\b(wellhub|gympass)\b/i.test(raw)) return false;
+  if (/\b(modalidade|atividade)\b/i.test(raw)) return true;
+  if (/\b(wellhub|gympass)\b/i.test(raw) && /\b(aula|treino|quero|prefiro|fa[cç]o|pratico|praticar)\b/i.test(raw)) return true;
   return /^(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+[\p{L}0-9 +&-]{2,40}[.!]?$/iu.test(raw);
 }
 
