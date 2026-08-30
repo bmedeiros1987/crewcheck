@@ -92,10 +92,10 @@ function patchServer(source) {
     snapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: normalized } });
     if (!String(text || '').trim()) {
       return [
-        \`Localização atualizada: \${normalized.label}.\`,
+        'Localização atualizada: ' + normalized.label + '.',
         'Vou usar estas coordenadas por até 6 horas para Saída Inteligente e buscas perto de você.',
         'Depois desse período pedirei uma nova localização para não pesquisar na cidade errada.',
-      ].join('\n');
+      ].join(String.fromCharCode(10));
     }
   }
 
