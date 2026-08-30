@@ -4,7 +4,9 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const detectedPlan = detectWellhubPlanFromText(text);
   const detectedActivity = detectWellhubActivityFromText(text);
   const planPreference = Boolean(detectedPlan && isWellhubPlanPreferenceMessage(text));
+  const activityPreference = Boolean(detectedActivity && isWellhubActivityPreferenceMessage(text));
   const planUpdate = planPreference ? detectedPlan : '';
+  const activityUpdate = activityPreference ? detectedActivity : '';
   const provider = planPreference
     ? 'wellhub'
     : /smart\s*fit/i.test(text) && !/wellhub|gympass/i.test(text)
@@ -15,17 +17,19 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const wellhubPlan = planUpdate || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
   const activity = detectedActivity || String(preferences.gymActivity || '').trim();
 
-  if ((planUpdate || detectedActivity || provider !== preferences.gymPlan) && profile?.email) {
+  if ((planUpdate || activityUpdate || provider !== preferences.gymPlan) && profile?.email) {
     const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
       gymPlan: provider,
       ...(planUpdate ? { wellhubPlan: planUpdate } : {}),
-      ...(detectedActivity ? { gymActivity: detectedActivity } : {}),
+      ...(activityUpdate ? { gymActivity: activityUpdate } : {}),
     } });
     if (saved) snapshot = saved;
   }
 
   const planPreferenceOnly = planPreference && !/\b(academia|academias|treino|modalidade|rede|perto|pr[oó]xima|onde)\b/i.test(String(text || ''));
   if (planPreferenceOnly) return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} ✓`;
+  const activityPreferenceOnly = activityPreference && !/\b(academia|academias|rede|perto|pr[oó]xima|onde|hoje|agora)\b/i.test(String(text || ''));
+  if (activityPreferenceOnly) return `Modalidade Wellhub atualizada para ${activityUpdate} ✓`;
 
   if (provider === 'smartfit') {
     const locationContext = conciergeLocationContextV14335(snapshot);
@@ -57,6 +61,14 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
 
   const locationCity = currentCity || (!locationContext.fresh ? airportCity : '');
   const locationState = currentState;
+  if (!locationCity && !locationState) {
+    return [
+      `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
+      'Não tenho uma cidade/UF confirmada para pesquisar academias com segurança.',
+      'Compartilhe sua localização pelo Telegram/WhatsApp ou informe a cidade na mensagem, por exemplo: “academia em Canoas”.',
+    ].join('\n');
+  }
+
   const locationText = [locationCity, locationState, !locationContext.fresh && !hasInformedCity ? stay?.hotel : '', !locationContext.fresh && !hasInformedCity ? airport : ''].filter(Boolean).join(' ');
   const query = String(text || '').match(/(?:rede|academia)\s+([\p{L}0-9 .&+-]{2,40})/iu)?.[1]?.replace(/\b(?:com|que|perto|em|no|na)\b[\s\S]*$/i, '').trim() || '';
   const candidatePartners = await searchVerifiedWellhub({ plan: wellhubPlan, query: /meu plano|modalidade|wellhub|gympass/i.test(query) ? '' : query, activity, locationText, limit: 60 });
@@ -67,7 +79,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
     return [
       'Wellhub verificado · seu plano ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
       `Não encontrei unidade verificada compatível com seu filtro${place} no catálogo oficial atual.`,
-      locationCity || locationState ? 'Não vou sugerir unidade de outra cidade/estado como se fosse próxima. Posso tentar outra cidade, rede ou modalidade.' : 'Informe a cidade/pernoite para eu evitar resultados geograficamente irrelevantes.',
+      'Não vou sugerir unidade de outra cidade/estado como se fosse próxima. Posso tentar outra cidade, rede ou modalidade.',
     ].join('\n');
   }
 
@@ -85,7 +97,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   });
   return [
     `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
-    locationText ? `Contexto local: ${locationText}. Resultados fora da cidade/estado confirmado são descartados.` : 'Sem cidade confirmada; mostrando unidades compatíveis do catálogo verificado.',
+    `Contexto local: ${locationText}. Resultados fora da cidade/estado confirmado são descartados.`,
     '', ...lines,
     '', 'Para alterar, diga naturalmente “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.',
   ].join('\n');
