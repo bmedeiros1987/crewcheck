@@ -91,6 +91,10 @@ if (!database.includes(overlapMarker)) {
   if (!database.includes(nextAnchor)) throw new Error(`[${overlapMarker}] continuation anchor not found`);
   database = database.replace(nextAnchor, `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };\n  const nextAnchors = rosterContinuationAnchorsLocal(overlapFilteredNext);`);
 
+  const firstNextAnchor = `  const firstNext = nextAnchors[0];\n  if (!last.destination || !firstNext.origin || last.destination === base || last.destination !== firstNext.origin) return null;\n  const gapToNext = dayGapLocal(last, firstNext);\n  if (gapToNext < 0 || gapToNext > 3) return null;`;
+  if (!database.includes(firstNextAnchor)) throw new Error(`[${overlapMarker}] first continuation anchor not found`);
+  database = database.replace(firstNextAnchor, `  if (!last.destination || last.destination === base) return null;\n  // A count-aware dedupe can intentionally retain an extra occurrence that is\n  // operationally identical to an overlap already present in the primary roster.\n  // That retained multiplicity is valid data, but it must not veto a later proven\n  // continuation merely because its own origin does not match the primary tail.\n  const firstNext = nextAnchors.find((anchor) => {\n    const gap = dayGapLocal(last, anchor);\n    return gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin);\n  });\n  if (!firstNext) return null;\n  const gapToNext = dayGapLocal(last, firstNext);`);
+
   const mergeAnchor = `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const sourceDays = position === 'prepend' ? [...(adjacent.days || []), ...(primary.days || [])] : [...(primary.days || []), ...(adjacent.days || [])];`;
   if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
   database = database.replace(mergeAnchor, `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const originalAdjacentDays = adjacent.days || [];\n  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);\n  const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length\n    || adjacentDays.some((day, index) => day !== originalAdjacentDays[index]);\n  // Roster-level rawText is aggregate source data. Once any overlap row/leg is\n  // removed, keeping the full adjacent raw text would reintroduce the discarded\n  // duty into canonical/compliance consumers. Fail closed by clearing the\n  // adjacent aggregate while retaining the structured surviving days.\n  if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };\n  const sourceDays = position === 'prepend' ? [...adjacentDays, ...(primary.days || [])] : [...(primary.days || []), ...adjacentDays];`);
@@ -106,11 +110,14 @@ if (!database.includes(overlapMarker)) {
 requireFragments(database, overlapMarker, [
   `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,
   'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
+  'const firstNext = nextAnchors.find((anchor) => {',
+  'return gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin);',
   'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
   'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
   "if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };",
   'Nominal adjacency',
 ]);
+if (database.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
 if (database.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
 
 fs.writeFileSync(databasePath, database, 'utf8');
