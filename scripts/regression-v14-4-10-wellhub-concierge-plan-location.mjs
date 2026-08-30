@@ -30,6 +30,8 @@ assert.equal(isWellhubPlanPreferenceMessage("A Gold's Gym aceita Wellhub?"), fal
 
 assert.equal(isWellhubActivityPreferenceMessage('quero Pilates'), true);
 assert.equal(isWellhubActivityPreferenceMessage('modalidade Pilates'), true);
+assert.equal(isWellhubActivityPreferenceMessage('Wellhub quero Pilates'), true);
+assert.equal(isWellhubActivityPreferenceMessage('academia Smart Fit com Pilates'), false);
 assert.equal(isWellhubActivityPreferenceMessage('quero corrida para o aeroporto'), false);
 assert.equal(isWellhubActivityPreferenceMessage('meu voo atrasou depois do Pilates'), false);
 
@@ -74,6 +76,7 @@ assert.ok(apply.includes('isWellhubPlanPreferenceMessage(value)'), 'roteamento p
 assert.ok(apply.includes('isWellhubActivityPreferenceMessage(value)'), 'roteamento precisa reconhecer modalidade natural');
 assert.ok(snippet.includes("const planUpdate = planPreference ? detectedPlan : '';"), 'tier detectado só pode virar preferência com intenção Wellhub');
 assert.ok(snippet.includes("const activityUpdate = activityPreference ? detectedActivity : '';"), 'modalidade só deve persistir com intenção explícita');
+assert.ok(snippet.includes('const provider = planPreference || activityPreference'), 'preferência explícita de modalidade deve selecionar Wellhub');
 assert.ok(!snippet.includes('detectedPlan && wellhubContext'), 'nome de academia com Gold/Silver não pode alterar o tier');
 assert.ok(snippet.includes('extractWellhubLocationHintFromText(text)'), 'cidade informada na mensagem precisa destravar reverse geocode incompleto');
 assert.ok(snippet.includes('Não tenho uma cidade/UF confirmada para pesquisar academias com segurança.'), 'busca sem geografia deve falhar fechado');
@@ -105,6 +108,7 @@ assert.equal((materializedServer.match(/return conciergeGymsReply\(snapshot, val
 assert.ok(!materializedServer.includes('return conciergeGymsReply(snapshot);'), 'atalho legado não pode sombrear texto/perfil');
 assert.ok(!materializedServer.includes('detectedPlan && wellhubContext'), 'materializado não pode persistir tier por mero nome de academia');
 assert.match(materializedServer, /isWellhubActivityPreferenceMessage\(value\)/);
+assert.match(materializedServer, /const provider = planPreference \|\| activityPreference/);
 assert.match(materializedServer, /extractWellhubLocationHintFromText\(text\)/);
 assert.match(materializedServer, /Não tenho uma cidade\/UF confirmada para pesquisar academias com segurança\./);
 assert.match(materializedServer, /configureWhatsAppConcierge\(async \(\{ email, text, location \}\)/);
