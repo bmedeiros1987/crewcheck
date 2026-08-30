@@ -69,6 +69,19 @@ const unknownTimeFiltered = dedupeAdjacentRosterDays(unknownTimePrimary, unknown
 assert.equal(unknownTimeFiltered.length, 1, 'unknown/invalid time must remain fail-safe and non-deduplicable');
 assert.equal(unknownTimeFiltered[0].legs.length, 1);
 
+// Flight-like rows without parsed legs are incomplete evidence. They may be the
+// exact data-loss symptom being recovered, so activity-level equality is not
+// sufficient to delete them during overlap reconciliation.
+const leglessFlightPrimary = [
+  { date: '08/09/2026', type: 'VOO', pairingCode: 'LA9040', legs: [] },
+];
+const leglessFlightAdjacent = [
+  { date: '2026-09-08', type: 'OTHER', pairingCode: 'LA9040', legs: [] },
+];
+const leglessFlightFiltered = dedupeAdjacentRosterDays(leglessFlightPrimary, leglessFlightAdjacent);
+assert.equal(leglessFlightFiltered.length, 1, 'flight-like activity without parsed legs must be preserved fail-closed');
+assert.equal(leglessFlightFiltered[0].pairingCode, 'LA9040');
+
 // Count-aware overlap: one occurrence in primary consumes only one identical
 // adjacent occurrence; an additional real repeated occurrence must survive.
 const multiplicityPrimary = [
@@ -89,6 +102,7 @@ assert.match(databaseSource, /const adjacentDays = dedupeAdjacentRosterDays\(pri
 assert.doesNotMatch(databaseSource, /next\.roster\.days\.slice\(0, 5\)/, 'blind fixed-slice fallback must not survive');
 assert.doesNotMatch(helperSource, /TIME-UNKNOWN/, 'unknown operational time must never become a deduplicable identity');
 assert.match(helperSource, /new Map<string, number>/, 'overlap dedupe must use count-aware multiplicity tracking');
+assert.match(helperSource, /looksLikeFlightWithoutLegs/, 'flight-like activity without parsed legs must be preserved fail-closed');
 
 // Fail-closed counterproof: a source carrying the marker but missing one mandatory
 // structural fragment must be rejected by the apply step instead of returning green.
@@ -113,4 +127,4 @@ try {
 }
 assert.equal(failedClosed, true, 'partially applied marker state must fail closed');
 
-console.log('[P0-580] overlap/reimport dedupe + fail-safe time + multiplicity + stale-duty + fail-closed apply: PASS');
+console.log('[P0-580] overlap/reimport dedupe + fail-safe time + legless-flight + multiplicity + stale-duty + fail-closed apply: PASS');
