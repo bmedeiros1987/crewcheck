@@ -87,13 +87,17 @@ if (!database.includes(overlapMarker)) {
   if (!database.includes(importAnchor)) throw new Error(`[${overlapMarker}] database import anchor not found`);
   database = database.replace(importAnchor, `${importAnchor}\nimport { dedupeAdjacentRosterDays } from './localRosterOverlap'; // ${overlapMarker}`);
 
+  const activeAnchor = `    if (payload?.data?.roster?.days?.length) {\n      return { roster: payload.data.roster, compliance: payload.data.compliance as any, gym: payload.data.gym || [], summary: payload.roster || null };\n    }`;
+  if (!database.includes(activeAnchor)) throw new Error(`[${overlapMarker}] active-roster reconciliation anchor not found`);
+  database = database.replace(activeAnchor, `    if (payload?.data?.roster?.days?.length) {\n      const remoteData = { roster: payload.data.roster, compliance: payload.data.compliance as any, gym: payload.data.gym || [] };\n      const remoteSummary = payload.roster\n        || getLocalRosterSummaries(12).find((item) => Number(item.year) === Number(remoteData.roster.year) && Number(item.month) === Number(remoteData.roster.month))\n        || null;\n      // A successful active fetch still represents only one publication. Reconcile\n      // adjacent nominal periods with the same local-history path used offline so\n      // carry-out/carry-in continuity does not disappear merely because the API is up.\n      const reconciled = remoteSummary\n        ? await buildSmartLocalContinuousRoster(remoteSummary, remoteData).catch(() => remoteData)\n        : remoteData;\n      return { ...reconciled, summary: payload.roster || remoteSummary };\n    }`);
+
   const nextAnchor = `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const nextAnchors = rosterContinuationAnchorsLocal(nextRoster);`;
   if (!database.includes(nextAnchor)) throw new Error(`[${overlapMarker}] continuation anchor not found`);
   database = database.replace(nextAnchor, `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };\n  const nextAnchors = rosterContinuationAnchorsLocal(overlapFilteredNext);`);
 
   const firstNextAnchor = `  const firstNext = nextAnchors[0];\n  if (!last.destination || !firstNext.origin || last.destination === base || last.destination !== firstNext.origin) return null;\n  const gapToNext = dayGapLocal(last, firstNext);\n  if (gapToNext < 0 || gapToNext > 3) return null;`;
   if (!database.includes(firstNextAnchor)) throw new Error(`[${overlapMarker}] first continuation anchor not found`);
-  database = database.replace(firstNextAnchor, `  if (!last.destination || last.destination === base) return null;\n  // A count-aware dedupe can intentionally retain an extra occurrence that is\n  // operationally identical to an overlap already present in the primary roster.\n  // That retained multiplicity is valid data, but it must not veto a later proven\n  // continuation merely because its own origin does not match the primary tail.\n  const firstNext = nextAnchors.find((anchor) => {\n    const gap = dayGapLocal(last, anchor);\n    return gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin);\n  });\n  if (!firstNext) return null;\n  const gapToNext = dayGapLocal(last, firstNext);`);
+  database = database.replace(firstNextAnchor, `  if (!last.destination || last.destination === base) return null;\n  // Count-aware dedupe may intentionally retain an extra copy of an occurrence\n  // that is already proven in the primary roster. Only those proven retained\n  // duplicates may be skipped while searching for the continuation anchor. An\n  // arbitrary incompatible duty must fail closed instead of being bypassed.\n  let firstNext = null as (typeof nextAnchors)[number] | null;\n  for (const anchor of nextAnchors) {\n    const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [anchor.day]).length === 0;\n    if (provenRetainedOverlap) continue;\n    const gap = dayGapLocal(last, anchor);\n    if (gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin)) {\n      firstNext = anchor;\n      break;\n    }\n    return null;\n  }\n  if (!firstNext) return null;\n  const gapToNext = dayGapLocal(last, firstNext);`);
 
   const mergeAnchor = `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const sourceDays = position === 'prepend' ? [...(adjacent.days || []), ...(primary.days || [])] : [...(primary.days || []), ...(adjacent.days || [])];`;
   if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
@@ -109,9 +113,11 @@ if (!database.includes(overlapMarker)) {
 }
 requireFragments(database, overlapMarker, [
   `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,
+  'const remoteData = { roster: payload.data.roster',
+  'await buildSmartLocalContinuousRoster(remoteSummary, remoteData)',
   'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
-  'const firstNext = nextAnchors.find((anchor) => {',
-  'return gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin);',
+  'const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [anchor.day]).length === 0;',
+  'return null;',
   'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
   'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
   "if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };",
