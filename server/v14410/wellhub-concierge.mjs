@@ -31,27 +31,57 @@ export function isWellhubPlanPreferenceMessage(text = '') {
   return explicitProductPlan.test(raw);
 }
 
+function isRecognizedWellhubActivity(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  return Boolean(detectWellhubActivityFromText(raw));
+}
+
 export function isWellhubActivityPreferenceMessage(text = '') {
   const raw = String(text || '').trim();
   const detected = detectWellhubActivityFromText(raw);
   if (!detected || NON_GYM_ACTIVITY_CONTEXT.test(raw)) return false;
   if (/smart\s*fit/i.test(raw) && !/\b(wellhub|gympass)\b/i.test(raw)) return false;
-  if (/\b(modalidade|atividade)\b/i.test(raw)) return true;
-  if (/\b(wellhub|gympass)\b/i.test(raw) && /\b(aula|treino|quero|prefiro|fa[cç]o|pratico|praticar)\b/i.test(raw)) return true;
+
+  // O detector aceita atividade/modalidade customizada. Para não transformar
+  // frases genéricas como "atividade da empresa" em preferência de academia,
+  // atividade customizada só é aceita quando o usuário a ancora explicitamente
+  // ao produto Wellhub/Gympass. Atividades conhecidas podem usar a gramática
+  // natural curta anunciada pelo Concierge ("quero Pilates", "modalidade Yoga").
+  const recognizedActivity = isRecognizedWellhubActivity(detected);
+  const explicitProductActivity = /^(?:(?:wellhub|gympass)\s+(?:modalidade|atividade|aula|treino)\s*(?:é|e|eh|:|-)?\s*|(?:minha\s+)?(?:modalidade|atividade)\s+(?:do\s+)?(?:wellhub|gympass)\s*(?:é|e|eh|:|-)\s*)[\p{L}0-9 +&-]{2,60}[.!]?$/iu;
+  if (explicitProductActivity.test(raw)) return true;
+  if (!recognizedActivity) return false;
+
+  if (/^(?:modalidade|atividade|aula|treino)\s+[\p{L}0-9 +&-]{2,60}[.!]?$/iu.test(raw)) return true;
+  if (/\b(wellhub|gympass)\b/i.test(raw) && /\b(aula|treino|quero|prefiro|fa[cç]o|pratico|praticar|modalidade|atividade)\b/i.test(raw)) return true;
   return /^(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+[\p{L}0-9 +&-]{2,40}[.!]?$/iu.test(raw);
 }
 
 export function extractWellhubLocationHintFromText(text = '') {
   const raw = String(text || '').trim();
   if (!raw) return { city: '', state: '' };
-  const match = raw.match(/\b(?:cidade\s+de|cidade|em)\s+([\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,3}?)(?=\s+(?:perto|pr[oó]xim[ao]|agora|hoje|com|que|para|onde)\b|[\/,.;!?]|$)/iu);
-  if (!match) return { city: '', state: '' };
-  const end = Number(match.index || 0) + match[0].length;
-  const stateMatch = raw.slice(end).match(/^\s*[\/,-]\s*([A-Za-z]{2})\b/);
-  return {
-    city: String(match[1] || '').trim(),
-    state: stateMatch ? String(stateMatch[1] || '').toUpperCase() : '',
-  };
+
+  // Não limite a cidade por quantidade de palavras. Há municípios brasileiros
+  // válidos com cinco ou mais tokens (ex.: São José do Rio Preto). Quando a UF
+  // vier explícita, ela funciona como delimitador forte; sem UF, paramos apenas
+  // em qualificadores da própria consulta.
+  const scoped = raw.match(/\b(?:cidade\s+de|cidade|em)\s+(.+)$/iu);
+  if (!scoped) return { city: '', state: '' };
+  const tail = String(scoped[1] || '').trim();
+  if (!tail) return { city: '', state: '' };
+
+  const withState = tail.match(/^(.+?)\s*[\/,-]\s*([A-Za-z]{2})\b/);
+  if (withState) {
+    return {
+      city: String(withState[1] || '').replace(/\s+/g, ' ').trim().replace(/[\/,;-]+$/g, '').trim(),
+      state: String(withState[2] || '').toUpperCase(),
+    };
+  }
+
+  const cityOnly = tail.match(/^(.+?)(?=\s+(?:perto|pr[oó]xim[ao]|agora|hoje|com|que|para|onde)\b|[.;!?]|$)/iu);
+  const city = String(cityOnly?.[1] || '').replace(/\s+/g, ' ').trim().replace(/[\/,;-]+$/g, '').trim();
+  return { city, state: '' };
 }
 
 export function filterWellhubPartnersForLocation(partners = [], { city = '', state = '' } = {}) {
