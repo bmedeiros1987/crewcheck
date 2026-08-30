@@ -54,6 +54,7 @@ assert.ok(snippet.includes('filterWellhubPartnersForLocation(candidatePartners')
 assert.ok(snippet.includes('Não vou usar o aeroporto da escala como substituto'), 'GPS recente sem cidade deve falhar fechado');
 assert.ok(snippet.includes('Não vou sugerir unidade de outra cidade/estado'), 'falha geográfica deve ser explícita e fail-closed');
 assert.ok(snippet.includes('Plano Wellhub atualizado para'), 'mudança de plano deve ser confirmada ao usuário');
+assert.ok(snippet.includes('Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel}'), 'resultado deve separar plano do usuário do plano mínimo da unidade');
 assert.ok(loader.includes("../v14409/apply.mjs"), 'preparação canônica precisa aplicar v14.4.09');
 
 const hashFiles = () => crypto.createHash('sha256')
