@@ -93,7 +93,11 @@ if (!database.includes(overlapMarker)) {
 
   const mergeAnchor = `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const sourceDays = position === 'prepend' ? [...(adjacent.days || []), ...(primary.days || [])] : [...(primary.days || []), ...(adjacent.days || [])];`;
   if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
-  database = database.replace(mergeAnchor, `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], adjacent.days || []);\n  const sourceDays = position === 'prepend' ? [...adjacentDays, ...(primary.days || [])] : [...(primary.days || []), ...adjacentDays];`);
+  database = database.replace(mergeAnchor, `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const originalAdjacentDays = adjacent.days || [];\n  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);\n  const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length\n    || adjacentDays.some((day, index) => day !== originalAdjacentDays[index]);\n  // Roster-level rawText is aggregate source data. Once any overlap row/leg is\n  // removed, keeping the full adjacent raw text would reintroduce the discarded\n  // duty into canonical/compliance consumers. Fail closed by omitting that\n  // aggregate text; structured retained days remain the source of truth.\n  const safeAdjacentRawText = adjacentWasFiltered ? '' : String(adjacent.rawText || '');\n  const sourceDays = position === 'prepend' ? [...adjacentDays, ...(primary.days || [])] : [...(primary.days || []), ...adjacentDays];`);
+
+  const rawTextAnchor = `  return { ...primary, days, rawText: \`${'${position === \'prepend\' ? `'}${'${adjacent.rawText || \'\'}'}${'\\n\\n--- Final da escala anterior anexado automaticamente por continuidade/pernoite ---\\n` : \'\'}'}${'${primary.rawText || \'\'}'}${'${position === \'append\' ? `\\n\\n--- Próxima escala anexada automaticamente ---\\n'}${'${adjacent.rawText || \'\'}'}${'` : \'\'}'}\`.trim() };`;
+  if (!database.includes(rawTextAnchor)) throw new Error(`[${overlapMarker}] aggregate rawText anchor not found`);
+  database = database.replace(rawTextAnchor, `  const prependRaw = position === 'prepend' && safeAdjacentRawText\n    ? \`${'${safeAdjacentRawText}'}\\n\\n--- Final da escala anterior anexado automaticamente por continuidade/pernoite ---\\n\`\n    : '';\n  const appendRaw = position === 'append' && safeAdjacentRawText\n    ? \`\\n\\n--- Próxima escala anexada automaticamente ---\\n${'${safeAdjacentRawText}'}\`\n    : '';\n  return { ...primary, days, rawText: \`${'${prependRaw}'}${'${primary.rawText || \'\'}'}${'${appendRaw}'}\`.trim() };`);
 
   const fallbackAnchor = `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    else if (next?.roster?.days?.length) roster = mergeContinuousLocal(roster, { ...next.roster, days: next.roster.days.slice(0, 5) }, 'append');`;
   if (!database.includes(fallbackAnchor)) throw new Error(`[${overlapMarker}] blind next-roster fallback anchor not found`);
@@ -106,7 +110,11 @@ if (!database.includes(overlapMarker)) {
 requireFragments(database, overlapMarker, [
   `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,
   'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
-  'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], adjacent.days || []);',
+  'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
+  'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
+  "const safeAdjacentRawText = adjacentWasFiltered ? '' : String(adjacent.rawText || '');",
+  'const prependRaw = position ===',
+  'const appendRaw = position ===',
   'Nominal adjacency',
 ]);
 if (database.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
