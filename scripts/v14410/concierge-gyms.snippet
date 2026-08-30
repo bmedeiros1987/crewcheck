@@ -7,7 +7,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const activityPreference = Boolean(detectedActivity && isWellhubActivityPreferenceMessage(text));
   const planUpdate = planPreference ? detectedPlan : '';
   const activityUpdate = activityPreference ? detectedActivity : '';
-  const provider = planPreference
+  const provider = planPreference || activityPreference
     ? 'wellhub'
     : /smart\s*fit/i.test(text) && !/wellhub|gympass/i.test(text)
       ? 'smartfit'
