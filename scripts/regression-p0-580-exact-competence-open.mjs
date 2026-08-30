@@ -115,8 +115,8 @@ try {
 
   // Production-path proof: seed the same local-history storage consumed by
   // openActiveRoster(), with nominal August carrying into September and the
-  // September publication carrying August back in. The offline fallback must
-  // select nominal adjacency, reconcile overlap, and append only real continuity.
+  // September publication carrying August back in. Both successful online fetch
+  // and offline fallback must reconcile the same adjacent nominal periods.
   const augustCarry = {
     ...roster(2026, 8, []),
     rawText: 'AUGUST-PRIMARY-RAW',
@@ -149,6 +149,27 @@ try {
     },
   ]));
 
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === '/api/rosters/active') {
+      return new Response(JSON.stringify({
+        ok: true,
+        roster: { id: 'remote-august-carry', year: 2026, month: 8, isActive: true },
+        data: { roster: augustCarry, compliance: { score: 100, alerts: [] }, gym: [] },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ ok: false, message: 'Histórico indisponível neste backend.' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  const onlineContinuous = await openActiveRoster();
+  assert.equal(Number(onlineContinuous.summary?.year), 2026, 'online reload deve manter a publicação nominal de Agosto como primária');
+  assert.equal(Number(onlineContinuous.summary?.month), 8, 'online reload deve manter Agosto como competência primária');
+  assert.ok((onlineContinuous.roster.days || []).some((day) => canonicalDate(day.date) === '2026-09-03' && day.pairingCode === 'SEP-N'), 'online reload também deve anexar a continuidade física da publicação adjacente');
+  assert.doesNotMatch(String(onlineContinuous.roster.rawText || ''), /STALE-OVERLAP-LA9102|SEPTEMBER-RAW/, 'online reload não pode reintroduzir rawText stale da publicação filtrada');
+
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'offline' }), {
     status: 503,
     headers: { 'content-type': 'application/json' },
@@ -172,8 +193,8 @@ try {
 
   // Fresh production counterexample for retained multiplicity: after count-aware
   // overlap consumes one adjacent copy, a second legitimate copy remains before a
-  // later physical continuation. That earlier retained occurrence must not become
-  // the sole continuation anchor and veto the later matching leg.
+  // later physical continuation. That proven retained occurrence may be skipped
+  // while searching for the later matching continuation.
   const augustMultiplicity = {
     ...roster(2026, 8, []),
     rawText: 'AUGUST-MULTIPLICITY',
@@ -217,22 +238,52 @@ try {
   assert.ok((withMultiplicity.roster.days || []).some((day) => canonicalDate(day.date) === '2026-09-03' && day.pairingCode === 'SEP-M4'), 'a multiplicidade retida anterior não pode vetar a continuação física posterior');
   assert.doesNotMatch(String(withMultiplicity.roster.rawText || ''), /SEPTEMBER-MULTIPLICITY-STALE/, 'rawText adjacente filtrado continua inválido no cenário de multiplicidade');
 
+  // An arbitrary incompatible duty is not a retained overlap duplicate. It must
+  // block continuity even if a later anchor would happen to match the primary tail.
+  const septemberBrokenChain = {
+    ...roster(2026, 9, []),
+    rawText: 'SEPTEMBER-BROKEN-CHAIN',
+    days: [
+      flightDay('2026-08-29', 'SEP-BX', 'LA9100', 'BSB', 'AAA', '08:00', '07:10'),
+      flightDay('2026-09-01', 'SEP-BY', 'LA9101', 'AAA', 'BBB', '09:00', '08:15'),
+      flightDay('2026-09-02', 'SEP-BZ', 'LA9102', 'BBB', 'CCC', '10:00', '09:25'),
+      flightDay('2026-09-03', 'SEP-BAD', 'LA9300', 'XXX', 'YYY', '11:00', '10:00'),
+      flightDay('2026-09-04', 'SEP-LATE', 'LA9301', 'CCC', 'BSB', '12:00', '11:00'),
+    ],
+  };
+  localStorage.setItem('crewcheck_local_history_v11_crew-580', JSON.stringify([
+    {
+      id: 'local-august-broken', checksum: 'august-broken', createdAt: '2026-08-31T14:00:00.000Z',
+      sourceFileName: 'august-broken.pdf', roster: augustCarry, compliance: { score: 100, alerts: [] }, gym: [],
+    },
+    {
+      id: 'local-september-broken', checksum: 'september-broken', createdAt: '2026-08-30T14:00:00.000Z',
+      sourceFileName: 'september-broken.pdf', roster: septemberBrokenChain, compliance: { score: 100, alerts: [] }, gym: [],
+    },
+  ]));
+  const brokenChain = await openActiveRoster();
+  assert.ok(!(brokenChain.roster.days || []).some((day) => day.pairingCode === 'SEP-BAD'), 'âncora incompatível arbitrária deve bloquear anexação da publicação adjacente');
+  assert.ok(!(brokenChain.roster.days || []).some((day) => day.pairingCode === 'SEP-LATE'), 'uma âncora compatível posterior não pode autorizar pular uma jornada incompatível anterior');
+
   const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   const historyGenerator = fs.readFileSync('scripts/v14338/apply.mjs', 'utf8');
   const historyUiGenerator = fs.readFileSync('scripts/v14339/apply.mjs', 'utf8');
   const platformSource = fs.readFileSync('server/platform.mjs', 'utf8');
   const watchSource = fs.readFileSync('client/src/pages/WatchPage.tsx', 'utf8');
+  const workflowSource = fs.readFileSync('.github/workflows/p0-580-vc-boundary.yml', 'utf8');
   assert.doesNotMatch(databaseSource, /Fallback premium:[\s\S]*?\/api\/rosters\/active/, 'abrir por ID não pode cair na escala ativa');
   assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'overlap parcial deve invalidar rawText agregado adjacente');
-  assert.match(databaseSource, /const firstNext = nextAnchors\.find\(\(anchor\) => \{/, 'continuidade deve procurar uma âncora fisicamente compatível depois do dedupe, sem deixar multiplicidade retida vetar o fluxo');
+  assert.match(databaseSource, /const provenRetainedOverlap = dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], \[anchor\.day\]\)\.length === 0;/, 'somente duplicata retida e comprovada pode ser ignorada antes da âncora de continuidade');
+  assert.match(databaseSource, /await buildSmartLocalContinuousRoster\(remoteSummary, remoteData\)/, 'fetch ativo online deve reconciliar competências adjacentes antes de retornar');
   assert.match(historyUiGenerator, /openSavedRoster\(item\.id, item\)/, 'a UI materializada deve informar a competência nominal selecionada');
   assert.match(watchSource, /openSavedRoster\(best\.id, best\)/, 'o relógio também deve validar a competência nominal escolhida');
+  assert.match(workflowSource, /client\/src\/pages\/WatchPage\.tsx/, 'o gate de competência deve disparar quando o consumidor Watch mudar');
   assert.match(historyUiGenerator, /toast\.error\(error instanceof Error \? error\.message : 'Não consegui abrir esta escala do histórico\.'\)/, 'a UI materializada deve expor o conflito de competência em vez de mascará-lo');
   assert.match(historyGenerator, /persistRosterHistoryLocally\(payload\)/, 'a preparação deve persistir cada publicação localmente por competência');
   assert.match(historyGenerator, /saveRosterAnalysis\(\{ roster, compliance: newCompliance, gym: newGym, sourceFileName: file\.name \}/, 'toda importação de PDF deve acionar o histórico local-first');
   assert.match(platformSource, /function rosterKey\(roster\)[\s\S]*roster\?\.year[\s\S]*roster\?\.month/, 'a chave remota deve usar ano/mês nominais da publicação');
 
-  console.log('[p0-580-exact-competence] OK — seleção nominal + carry overlap + multiplicidade exercitados pelo openActiveRoster real.');
+  console.log('[p0-580-exact-competence] OK — seleção nominal, carry online/offline, multiplicidade e fail-closed de âncora exercitados.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
