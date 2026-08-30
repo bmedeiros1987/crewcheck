@@ -12,6 +12,7 @@ on:
       - 'scripts/v139/apply.mjs'
       - 'scripts/v14338/apply.mjs'
       - 'scripts/v14339/apply.mjs'
+      - 'scripts/v14371/apply.mjs'
       - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
       - 'scripts/regression-p0-580-overlap-reimport.mjs'
       - 'scripts/regression-p0-580-exact-competence-open.mjs'
