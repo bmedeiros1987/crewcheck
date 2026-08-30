@@ -164,6 +164,30 @@ try {
     });
   };
 
+  await assert.rejects(
+    () => openActiveRoster(),
+    (error) => {
+      assert.equal(error?.code, 'ACTIVE_ROSTER_CONFLICT', 'identidade remota ambígua deve exigir confirmação');
+      return true;
+    },
+    'mesma competência sem identidade estável nunca pode escolher silenciosamente remoto ou local',
+  );
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === '/api/rosters/active') {
+      return new Response(JSON.stringify({
+        ok: true,
+        roster: { id: 'remote-august-carry', checksum: 'august-carry', year: 2026, month: 8, isActive: true },
+        data: { roster: augustCarry, compliance: { score: 100, alerts: [] }, gym: [] },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ ok: false, message: 'Histórico indisponível neste backend.' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
   const onlineContinuous = await openActiveRoster();
   assert.equal(Number(onlineContinuous.summary?.year), 2026, 'online reload deve manter a publicação nominal de Agosto como primária');
   assert.equal(Number(onlineContinuous.summary?.month), 8, 'online reload deve manter Agosto como competência primária');
