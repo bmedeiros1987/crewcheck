@@ -98,7 +98,8 @@ assert.equal(multiplicityFiltered[0].dutyReport ?? null, null, 'partial repeated
 const databaseSource = fs.readFileSync(databasePath, 'utf8');
 assert.match(databaseSource, /P0_580_OVERLAP_ACTIVITY_DEDUPE/, 'prepared database source must contain overlap marker');
 assert.match(databaseSource, /dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], nextRoster\.days \|\| \[\]\)/, 'continuation detection must ignore overlap copies first');
-assert.match(databaseSource, /const adjacentDays = dedupeAdjacentRosterDays\(primary\.days \|\| \[\], adjacent\.days \|\| \[\]\)/, 'merge must dedupe by operational activity identity');
+assert.match(databaseSource, /const adjacentDays = dedupeAdjacentRosterDays\(primary\.days \|\| \[\], originalAdjacentDays\)/, 'merge must dedupe by operational activity identity');
+assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'filtered adjacent publication must invalidate stale aggregate rawText');
 assert.doesNotMatch(databaseSource, /next\.roster\.days\.slice\(0, 5\)/, 'blind fixed-slice fallback must not survive');
 assert.doesNotMatch(helperSource, /TIME-UNKNOWN/, 'unknown operational time must never become a deduplicable identity');
 assert.match(helperSource, /new Map<string, number>/, 'overlap dedupe must use count-aware multiplicity tracking');
