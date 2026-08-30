@@ -170,19 +170,69 @@ try {
   assert.ok((continuous.roster.days || []).some((day) => canonicalDate(day.date) === '2026-09-03' && day.pairingCode === 'SEP-N'), 'a perna nova da publicação adjacente precisa sobreviver');
   assert.doesNotMatch(String(continuous.roster.rawText || ''), /STALE-OVERLAP-LA9102|SEPTEMBER-RAW/, 'rawText agregado da publicação filtrada não pode reintroduzir atividade removida');
 
+  // Fresh production counterexample for retained multiplicity: after count-aware
+  // overlap consumes one adjacent copy, a second legitimate copy remains before a
+  // later physical continuation. That earlier retained occurrence must not become
+  // the sole continuation anchor and veto the later matching leg.
+  const augustMultiplicity = {
+    ...roster(2026, 8, []),
+    rawText: 'AUGUST-MULTIPLICITY',
+    days: [
+      { date: '01/08/2026', type: 'DO', isDayOff: true, legs: [] },
+      flightDay('29/08/2026', 'AUG-M1', 'LA9200', 'BSB', 'AAA', '08:00', '07:00'),
+      flightDay('01/09/2026', 'AUG-M2', 'LA9201', 'AAA', 'BBB', '09:00', '08:00'),
+      flightDay('02/09/2026', 'AUG-M3', 'LA9202', 'BBB', 'CCC', '10:00', '09:00'),
+    ],
+  };
+  const repeatedOverlapDay = flightDay('2026-08-29', 'SEP-M1', 'LA9200', 'BSB', 'AAA', '08:00', '07:05');
+  repeatedOverlapDay.legs.push(leg('LA9200', 'BSB', 'AAA', '08:00'));
+  const septemberMultiplicity = {
+    ...roster(2026, 9, []),
+    rawText: 'SEPTEMBER-MULTIPLICITY-STALE',
+    days: [
+      repeatedOverlapDay,
+      flightDay('2026-09-01', 'SEP-M2', 'LA9201', 'AAA', 'BBB', '09:00', '08:10'),
+      flightDay('2026-09-02', 'SEP-M3', 'LA9202', 'BBB', 'CCC', '10:00', '09:20'),
+      flightDay('2026-09-03', 'SEP-M4', 'LA9203', 'CCC', 'BSB', '11:00', '10:00'),
+    ],
+  };
+
+  localStorage.setItem('crewcheck_local_history_v11_crew-580', JSON.stringify([
+    {
+      id: 'local-august-multiplicity', checksum: 'august-multiplicity', createdAt: '2026-08-31T13:00:00.000Z',
+      sourceFileName: 'august-multiplicity.pdf', roster: augustMultiplicity, compliance: { score: 100, alerts: [] }, gym: [],
+    },
+    {
+      id: 'local-september-multiplicity', checksum: 'september-multiplicity', createdAt: '2026-08-30T13:00:00.000Z',
+      sourceFileName: 'september-multiplicity.pdf', roster: septemberMultiplicity, compliance: { score: 100, alerts: [] }, gym: [],
+    },
+  ]));
+
+  const withMultiplicity = await openActiveRoster();
+  const retainedOverlapLegs = (withMultiplicity.roster.days || [])
+    .filter((day) => canonicalDate(day.date) === '2026-08-29')
+    .flatMap((day) => day.legs || [])
+    .filter((item) => item.flightNumber === 'LA9200');
+  assert.equal(retainedOverlapLegs.length, 2, 'uma ocorrência primária deve consumir somente uma das duas cópias adjacentes e preservar a multiplicidade legítima');
+  assert.ok((withMultiplicity.roster.days || []).some((day) => canonicalDate(day.date) === '2026-09-03' && day.pairingCode === 'SEP-M4'), 'a multiplicidade retida anterior não pode vetar a continuação física posterior');
+  assert.doesNotMatch(String(withMultiplicity.roster.rawText || ''), /SEPTEMBER-MULTIPLICITY-STALE/, 'rawText adjacente filtrado continua inválido no cenário de multiplicidade');
+
   const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   const historyGenerator = fs.readFileSync('scripts/v14338/apply.mjs', 'utf8');
   const historyUiGenerator = fs.readFileSync('scripts/v14339/apply.mjs', 'utf8');
   const platformSource = fs.readFileSync('server/platform.mjs', 'utf8');
+  const watchSource = fs.readFileSync('client/src/pages/WatchPage.tsx', 'utf8');
   assert.doesNotMatch(databaseSource, /Fallback premium:[\s\S]*?\/api\/rosters\/active/, 'abrir por ID não pode cair na escala ativa');
   assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'overlap parcial deve invalidar rawText agregado adjacente');
+  assert.match(databaseSource, /const firstNext = nextAnchors\.find\(\(anchor\) => \{/, 'continuidade deve procurar uma âncora fisicamente compatível depois do dedupe, sem deixar multiplicidade retida vetar o fluxo');
   assert.match(historyUiGenerator, /openSavedRoster\(item\.id, item\)/, 'a UI materializada deve informar a competência nominal selecionada');
+  assert.match(watchSource, /openSavedRoster\(best\.id, best\)/, 'o relógio também deve validar a competência nominal escolhida');
   assert.match(historyUiGenerator, /toast\.error\(error instanceof Error \? error\.message : 'Não consegui abrir esta escala do histórico\.'\)/, 'a UI materializada deve expor o conflito de competência em vez de mascará-lo');
   assert.match(historyGenerator, /persistRosterHistoryLocally\(payload\)/, 'a preparação deve persistir cada publicação localmente por competência');
   assert.match(historyGenerator, /saveRosterAnalysis\(\{ roster, compliance: newCompliance, gym: newGym, sourceFileName: file\.name \}/, 'toda importação de PDF deve acionar o histórico local-first');
   assert.match(platformSource, /function rosterKey\(roster\)[\s\S]*roster\?\.year[\s\S]*roster\?\.month/, 'a chave remota deve usar ano/mês nominais da publicação');
 
-  console.log('[p0-580-exact-competence] OK — seleção nominal + carry overlap exercitados pelo openActiveRoster real.');
+  console.log('[p0-580-exact-competence] OK — seleção nominal + carry overlap + multiplicidade exercitados pelo openActiveRoster real.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
