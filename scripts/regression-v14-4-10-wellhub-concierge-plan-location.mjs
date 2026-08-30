@@ -31,12 +31,17 @@ assert.equal(isWellhubPlanPreferenceMessage("A Gold's Gym aceita Wellhub?"), fal
 assert.equal(isWellhubActivityPreferenceMessage('quero Pilates'), true);
 assert.equal(isWellhubActivityPreferenceMessage('modalidade Pilates'), true);
 assert.equal(isWellhubActivityPreferenceMessage('Wellhub quero Pilates'), true);
+assert.equal(isWellhubActivityPreferenceMessage('Wellhub modalidade: Aquagym'), true);
 assert.equal(isWellhubActivityPreferenceMessage('academia Smart Fit com Pilates'), false);
 assert.equal(isWellhubActivityPreferenceMessage('quero corrida para o aeroporto'), false);
 assert.equal(isWellhubActivityPreferenceMessage('meu voo atrasou depois do Pilates'), false);
+assert.equal(isWellhubActivityPreferenceMessage('atividade da empresa'), false);
+assert.equal(isWellhubActivityPreferenceMessage('modalidade de pagamento'), false);
 
 assert.deepEqual(extractWellhubLocationHintFromText('academia em Canoas perto de mim'), { city: 'Canoas', state: '' });
 assert.deepEqual(extractWellhubLocationHintFromText('academia na cidade de São Paulo/SP'), { city: 'São Paulo', state: 'SP' });
+assert.deepEqual(extractWellhubLocationHintFromText('academia em São José do Rio Preto/SP'), { city: 'São José do Rio Preto', state: 'SP' });
+assert.deepEqual(extractWellhubLocationHintFromText('academia em São José do Vale do Rio Preto perto de mim'), { city: 'São José do Vale do Rio Preto', state: '' });
 assert.deepEqual(extractWellhubLocationHintFromText('meu plano é Silver+'), { city: '', state: '' });
 
 const sample = [
