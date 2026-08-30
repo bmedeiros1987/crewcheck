@@ -1,9 +1,17 @@
 // cc-v14409:concierge-gyms-plan-location
 async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const preferences = snapshot?.preferences || {};
-  const provider = /smart\s*fit/i.test(text) && !/wellhub|gympass/i.test(text) ? 'smartfit' : /wellhub|gympass/i.test(text) ? 'wellhub' : String(preferences.gymPlan || 'wellhub');
   const detectedPlan = detectWellhubPlanFromText(text);
   const detectedActivity = detectWellhubActivityFromText(text);
+  const planPreference = Boolean(detectedPlan && isWellhubPlanPreferenceMessage(text));
+  const wellhubContext = /wellhub|gympass|academia|treino|modalidade/i.test(String(text || ''));
+  const provider = planPreference || (detectedPlan && wellhubContext)
+    ? 'wellhub'
+    : /smart\s*fit/i.test(text) && !/wellhub|gympass/i.test(text)
+      ? 'smartfit'
+      : /wellhub|gympass/i.test(text)
+        ? 'wellhub'
+        : String(preferences.gymPlan || 'wellhub');
   const wellhubPlan = detectedPlan || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
   const activity = detectedActivity || String(preferences.gymActivity || '').trim();
 
@@ -16,30 +24,46 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
     if (saved) snapshot = saved;
   }
 
+  const planPreferenceOnly = planPreference && !/\b(academia|academias|treino|modalidade|rede|perto|pr[oó]xima|onde)\b/i.test(String(text || ''));
+  if (planPreferenceOnly) {
+    return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} ✓`;
+  }
+
   if (provider === 'smartfit') {
-    const locationState = conciergeLocationContextV14335(snapshot);
+    const locationContext = conciergeLocationContextV14335(snapshot);
     const stay = conciergeCurrentStay(snapshot?.roster);
-    if (!locationState.fresh && !stay?.hotel) return locationState.message;
-    const places = await conciergeSearchPlaces('Smart Fit academia', locationState.fresh ? '' : stay.hotel, locationState.fresh ? locationState.location : null, 6);
+    if (!locationContext.fresh && !stay?.hotel) return locationContext.message;
+    const places = await conciergeSearchPlaces('Smart Fit academia', locationContext.fresh ? '' : stay.hotel, locationContext.fresh ? locationContext.location : null, 6);
     if (!places.length) return 'Não encontrei unidade Smart Fit direta agora. Esta busca não afirma parceria Wellhub.';
-    return ['Smart Fit direta:', locationState.fresh ? conciergeLocationLineV14335(snapshot) : 'Contexto do pernoite: ' + stay.hotel, '', conciergePlaceLines(places), '', 'Esta busca é de Smart Fit direta e não confirma elegibilidade Wellhub.'].join('\n');
+    return ['Smart Fit direta:', locationContext.fresh ? conciergeLocationLineV14335(snapshot) : 'Contexto do pernoite: ' + stay.hotel, '', conciergePlaceLines(places), '', 'Esta busca é de Smart Fit direta e não confirma elegibilidade Wellhub.'].join('\n');
   }
 
   const stay = conciergeCurrentStay(snapshot?.roster);
   const next = conciergeNextProgram(snapshot?.roster);
   const airport = next?.legs?.[0]?.origin || snapshot?.roster?.base || '';
-  const location = snapshot?.preferences?.location || {};
+  const locationContext = conciergeLocationContextV14335(snapshot);
+  const currentLocation = locationContext.fresh ? (locationContext.location || {}) : {};
   const airportCity = WEATHER_AIRPORT_POINTS[airport]?.city || '';
-  const locationCity = String(location.city || airportCity || '').trim();
-  const locationState = String(location.state || '').trim();
-  const locationText = [locationCity, locationState, stay?.hotel, airport].filter(Boolean).join(' ');
+  const currentCity = String(currentLocation.city || '').trim();
+  const currentState = String(currentLocation.state || '').trim();
+
+  // GPS recente nunca é substituído silenciosamente pela cidade da próxima escala.
+  // Se o reverse geocode não confirmou cidade/UF, falha fechado em vez de sugerir
+  // uma academia de outro estado como se estivesse próxima.
+  if (locationContext.fresh && !currentCity && !currentState) {
+    return [
+      `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
+      `Recebi sua localização atual (${locationContext.label || 'coordenadas compartilhadas'}), mas ainda não consegui confirmar a cidade/UF.`,
+      'Não vou usar o aeroporto da escala como substituto. Compartilhe a localização novamente ou informe a cidade para evitar resultado na cidade errada.',
+    ].join('\n');
+  }
+
+  const locationCity = currentCity || (!locationContext.fresh ? airportCity : '');
+  const locationState = currentState;
+  const locationText = [locationCity, locationState, !locationContext.fresh ? stay?.hotel : '', !locationContext.fresh ? airport : ''].filter(Boolean).join(' ');
   const query = String(text || '').match(/(?:rede|academia)\s+([\p{L}0-9 .&+-]{2,40})/iu)?.[1]?.replace(/\b(?:com|que|perto|em|no|na)\b[\s\S]*$/i, '').trim() || '';
   const candidatePartners = await searchVerifiedWellhub({ plan: wellhubPlan, query: /meu plano|modalidade|wellhub|gympass/i.test(query) ? '' : query, activity, locationText, limit: 60 });
   const partners = filterWellhubPartnersForLocation(candidatePartners, { city: locationCity, state: locationState }).slice(0, 8);
-
-  if (detectedPlan && isWellhubPlanPreferenceMessage(text) && !/academia|treino|modalidade|gympass|wellhub/i.test(String(text || '').replace(/meu\s+plano/ig, ''))) {
-    return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} ✓`;
-  }
 
   if (!partners.length) {
     const place = locationCity ? ` em ${locationCity}${locationState ? `/${locationState}` : ''}` : locationState ? ` em ${locationState}` : '';
