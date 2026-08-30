@@ -45,6 +45,7 @@ assert.deepEqual(extractWellhubLocationHintFromText('academia na cidade de São 
 assert.deepEqual(extractWellhubLocationHintFromText('academia em São José do Rio Preto/SP'), { city: 'São José do Rio Preto', state: 'SP' });
 assert.deepEqual(extractWellhubLocationHintFromText('academia em São José do Vale do Rio Preto perto de mim'), { city: 'São José do Vale do Rio Preto', state: '' });
 assert.deepEqual(extractWellhubLocationHintFromText('academia com treino em grupo perto de mim'), { city: '', state: '' });
+assert.deepEqual(extractWellhubLocationHintFromText('academia para treinar em grupo perto de mim'), { city: '', state: '' });
 assert.deepEqual(extractWellhubLocationHintFromText('quero Pilates em grupo perto de mim'), { city: '', state: '' });
 assert.deepEqual(extractWellhubLocationHintFromText('meu plano é Silver+'), { city: '', state: '' });
 
@@ -83,6 +84,7 @@ const loader = fs.readFileSync('scripts/v139/apply.mjs', 'utf8');
 assert.ok(apply.includes('replaceAllGymDispatchers'), 'materializador precisa colapsar dispatchers antigos');
 assert.ok(apply.includes('isWellhubPlanPreferenceMessage(value)'), 'roteamento precisa reconhecer atualização natural do plano');
 assert.ok(apply.includes('isWellhubActivityPreferenceMessage(value)'), 'roteamento precisa reconhecer modalidade natural');
+assert.ok(!apply.includes('smart fit|treino perto|modalidade'), 'palavra modalidade sozinha não pode despachar para o estado de academias');
 assert.ok(snippet.includes("const planUpdate = planPreference ? detectedPlan : '';"), 'tier detectado só pode virar preferência com intenção Wellhub');
 assert.ok(snippet.includes("const activityUpdate = activityPreference ? detectedActivity : '';"), 'modalidade só deve persistir com intenção explícita');
 assert.ok(snippet.includes('const provider = planPreference || activityPreference'), 'preferência explícita de modalidade deve selecionar Wellhub');
@@ -116,6 +118,7 @@ assert.equal((materializedServer.match(/cc-v14409:concierge-gyms-plan-location/g
 assert.equal((materializedServer.match(/return conciergeGymsReply\(snapshot, value, profile\);/g) || []).length, 1, 'deve existir um único dispatcher de academias');
 assert.ok(!materializedServer.includes('return conciergeGymsReply(snapshot);'), 'atalho legado não pode sombrear texto/perfil');
 assert.ok(!materializedServer.includes('detectedPlan && wellhubContext'), 'materializado não pode persistir tier por mero nome de academia');
+assert.ok(!materializedServer.includes('smart fit|treino perto|modalidade'), 'dispatcher materializado não pode aceitar modalidade genérica');
 assert.match(materializedServer, /isWellhubActivityPreferenceMessage\(value\)/);
 assert.match(materializedServer, /const provider = planPreference \|\| activityPreference/);
 assert.match(materializedServer, /extractWellhubLocationHintFromText\(text\)/);
