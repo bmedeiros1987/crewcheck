@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { detectWellhubPlanFromText } from '../server/v14407/wellhub.mjs';
 import { normalizeConciergeLocation } from '../server/v14335/concierge-location.mjs';
-import { filterWellhubPartnersForLocation, isWellhubPlanPreferenceMessage } from '../server/v14410/wellhub-concierge.mjs';
+import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubPlanPreferenceMessage } from '../server/v14410/wellhub-concierge.mjs';
 
 assert.equal(detectWellhubPlanFromText('meu plano Wellhub é Silver+'), 'silver-plus');
 assert.equal(detectWellhubPlanFromText('meu plano é Silver+'), 'silver-plus');
@@ -17,6 +17,12 @@ assert.equal(isWellhubPlanPreferenceMessage('tenho Basic+'), true);
 assert.equal(isWellhubPlanPreferenceMessage('o avião é silver'), false);
 assert.equal(isWellhubPlanPreferenceMessage('meu plano de saúde é Silver'), false);
 assert.equal(isWellhubPlanPreferenceMessage('meu plano de celular é Gold'), false);
+assert.equal(detectWellhubPlanFromText("academia Gold's Gym perto de mim"), 'gold');
+assert.equal(isWellhubPlanPreferenceMessage("academia Gold's Gym perto de mim"), false);
+
+assert.deepEqual(extractWellhubLocationHintFromText('academia em Canoas perto de mim'), { city: 'Canoas', state: '' });
+assert.deepEqual(extractWellhubLocationHintFromText('academia na cidade de São Paulo/SP'), { city: 'São Paulo', state: 'SP' });
+assert.deepEqual(extractWellhubLocationHintFromText('meu plano é Silver+'), { city: '', state: '' });
 
 const sample = [
   { name: 'Local FLN', city: 'Florianópolis', state: 'SC' },
@@ -49,9 +55,12 @@ const apply = fs.readFileSync('scripts/v14410/apply.mjs', 'utf8');
 const snippet = fs.readFileSync('scripts/v14410/concierge-gyms.snippet', 'utf8');
 const loader = fs.readFileSync('scripts/v139/apply.mjs', 'utf8');
 assert.ok(apply.includes('isWellhubPlanPreferenceMessage(value)'), 'roteamento precisa reconhecer atualização natural do plano');
-assert.ok(snippet.includes("planPreference || (detectedPlan && wellhubContext)"), 'tier Wellhub precisa tirar o usuário do branch Smart Fit');
+assert.ok(snippet.includes("const planUpdate = planPreference ? detectedPlan : '';"), 'tier detectado só pode virar preferência com intenção Wellhub');
+assert.ok(!snippet.includes('detectedPlan && wellhubContext'), 'nome de academia com Gold/Silver não pode alterar o tier');
+assert.ok(snippet.includes('extractWellhubLocationHintFromText(text)'), 'cidade informada na mensagem precisa destravar reverse geocode incompleto');
 assert.ok(snippet.includes('filterWellhubPartnersForLocation(candidatePartners'), 'Concierge precisa filtrar geograficamente antes de responder');
 assert.ok(snippet.includes('Não vou usar o aeroporto da escala como substituto'), 'GPS recente sem cidade deve falhar fechado');
+assert.ok(snippet.includes('“academia em Canoas”'), 'mensagem de recuperação deve anunciar um caminho implementado');
 assert.ok(snippet.includes('Não vou sugerir unidade de outra cidade/estado'), 'falha geográfica deve ser explícita e fail-closed');
 assert.ok(snippet.includes('Plano Wellhub atualizado para'), 'mudança de plano deve ser confirmada ao usuário');
 assert.ok(snippet.includes('Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel}'), 'resultado deve separar plano do usuário do plano mínimo da unidade');
@@ -73,6 +82,8 @@ const materializedWhatsApp = fs.readFileSync('server/whatsapp.mjs', 'utf8');
 assert.equal((materializedServer.match(/cc-v14410:concierge-gyms-plan-location/g) || []).length, 1, 'marcador Wellhub não pode duplicar');
 assert.equal((materializedServer.match(/cc-v14409:concierge-gyms-plan-location/g) || []).length, 0, 'marcador legado v14.4.09 não pode permanecer');
 assert.ok(!materializedServer.includes('return conciergeGymsReply(snapshot);'), 'atalho legado não pode sombrear texto/perfil');
+assert.ok(!materializedServer.includes('detectedPlan && wellhubContext'), 'materializado não pode persistir tier por mero nome de academia');
+assert.match(materializedServer, /extractWellhubLocationHintFromText\(text\)/);
 assert.match(materializedServer, /configureWhatsAppConcierge\(async \(\{ email, text, location \}\)/);
 assert.match(materializedServer, /source: 'whatsapp'/);
 assert.match(materializedWhatsApp, /message\?\.type === 'location'/);
