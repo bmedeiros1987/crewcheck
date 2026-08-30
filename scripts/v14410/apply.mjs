@@ -31,9 +31,22 @@ function replaceRequired(source, before, after, label) {
   return source.replace(before, after);
 }
 
+function replaceAllGymDispatchers(source, canonicalDispatch) {
+  const pattern = /^[ \t]*if \([^\n]*\) return conciergeGymsReply\(snapshot(?:, value, profile)?\);[ \t]*$/gm;
+  const matches = source.match(pattern) || [];
+  if (!matches.length) throw new Error(`${TAG} roteamento de academias não localizado.`);
+  let inserted = false;
+  const next = source.replace(pattern, () => {
+    if (inserted) return '';
+    inserted = true;
+    return canonicalDispatch;
+  });
+  return next.replace(/\n{3,}/g, '\n\n');
+}
+
 function patchServer(source) {
   const wellhubImport = "import { buildWellhubRoutineSuggestion, detectWellhubActivityFromText, detectWellhubPlanFromText, handleWellhubRoutineRoute, handleWellhubSearchRoute, isWellhubPlanServer, searchVerifiedWellhub, wellhubPlanLabelServer } from './server/v14407/wellhub.mjs';";
-  const conciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  const conciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
   let next = insertAfterRequired(source, wellhubImport, conciergeImport, 'import Wellhub v14.4.07');
 
   const conciergeTag = '// cc-v14410:concierge-gyms-plan-location';
@@ -42,16 +55,8 @@ function patchServer(source) {
   const routineStart = next.includes('async function conciergeRoutineReply(') ? 'async function conciergeRoutineReply(' : 'function conciergeRoutineReply(';
   next = replaceBetween(next, gymStart, routineStart, conciergeGyms, 'Concierge Wellhub');
 
-  // Um atalho legado de linguagem natural (ex.: "onde treinar") chamava a função
-  // sem texto/perfil antes do dispatch novo e, por isso, ignorava Silver+/localização.
-  // Dentro do core do Concierge esses identificadores já existem; preserve o atalho,
-  // mas faça-o usar exatamente o mesmo contexto do restante do roteamento.
-  next = next.replace(/return conciergeGymsReply\(snapshot\);/g, 'return conciergeGymsReply(snapshot, value, profile);');
-
-  const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto|modalidade)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
-  const dispatchPattern = /^\s*if \([^\n]*return conciergeGymsReply\(snapshot, value, profile\);\s*$/m;
-  if (!dispatchPattern.test(next)) throw new Error(`${TAG} roteamento de academias não localizado.`);
-  next = next.replace(dispatchPattern, dispatch);
+  const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto|modalidade)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
+  next = replaceAllGymDispatchers(next, dispatch);
 
   const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);\n(?=\nhttp\.createServer)/;
   const whatsappBinding = `configureWhatsAppConcierge(async ({ email, text, location }) => {
@@ -98,10 +103,14 @@ function patchServer(source) {
   if (!next.includes('cc-v14410:concierge-gyms-plan-location')) throw new Error(`${TAG} função Wellhub nova não aplicada.`);
   if (next.includes('cc-v14409:concierge-gyms-plan-location')) throw new Error(`${TAG} marcador legado v14.4.09 permaneceu materializado.`);
   if (!next.includes('isWellhubPlanPreferenceMessage(value)')) throw new Error(`${TAG} roteamento de plano natural não aplicado.`);
+  if (!next.includes('isWellhubActivityPreferenceMessage(value)')) throw new Error(`${TAG} roteamento de modalidade natural não aplicado.`);
   if (!next.includes("const planUpdate = planPreference ? detectedPlan : '';")) throw new Error(`${TAG} tier detectado ainda não está condicionado à intenção Wellhub.`);
   if (next.includes('detectedPlan && wellhubContext')) throw new Error(`${TAG} falso positivo legado de tier em nome de academia permaneceu.`);
   if (!next.includes('extractWellhubLocationHintFromText(text)')) throw new Error(`${TAG} fallback explícito de cidade informada não aplicado.`);
+  if (!next.includes('Não tenho uma cidade/UF confirmada para pesquisar academias com segurança.')) throw new Error(`${TAG} busca sem contexto geográfico não está fail-closed.`);
   if (!next.includes('filterWellhubPartnersForLocation(candidatePartners')) throw new Error(`${TAG} filtro geográfico não aplicado.`);
+  const dispatchCount = (next.match(/return conciergeGymsReply\(snapshot, value, profile\);/g) || []).length;
+  if (dispatchCount !== 1) throw new Error(`${TAG} esperado um único dispatcher de academias; encontrado ${dispatchCount}.`);
   if (next.includes('return conciergeGymsReply(snapshot);')) throw new Error(`${TAG} atalho legado ainda sombreia texto/perfil.`);
   if (!next.includes("source: 'whatsapp'")) throw new Error(`${TAG} localização do WhatsApp não conectada ao snapshot compartilhado.`);
   return next;
@@ -128,4 +137,4 @@ function patchWhatsApp(source) {
 
 update('server.mjs', patchServer);
 update('server/whatsapp.mjs', patchWhatsApp);
-console.log(`${TAG} Concierge Wellhub: plano natural + localização fail-closed + paridade de localização no WhatsApp.`);
+console.log(`${TAG} Concierge Wellhub: plano/modalidade naturais + geografia fail-closed + paridade de localização no WhatsApp.`);
