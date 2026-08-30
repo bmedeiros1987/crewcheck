@@ -68,7 +68,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   if (!partners.length) {
     const place = locationCity ? ` em ${locationCity}${locationState ? `/${locationState}` : ''}` : locationState ? ` em ${locationState}` : '';
     return [
-      'Wellhub verificado · ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
+      'Wellhub verificado · seu plano ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
       `Não encontrei unidade verificada compatível com seu filtro${place} no catálogo oficial atual.`,
       locationCity || locationState ? 'Não vou sugerir unidade de outra cidade/estado como se fosse próxima. Posso tentar outra cidade, rede ou modalidade.' : 'Informe a cidade/pernoite para eu evitar resultados geograficamente irrelevantes.',
     ].join('\n');
@@ -76,9 +76,12 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
 
   const lines = partners.map((partner, index) => {
     const activities = partner.activities?.length ? partner.activities.slice(0, 6).join(', ') : activity ? 'modalidade confirmada na página oficial' : 'consulte a página oficial para modalidades';
+    const userPlanLabel = wellhubPlanLabelServer(wellhubPlan);
+    const minimumPlanLabel = wellhubPlanLabelServer(partner.minimumPlan);
     return [
       `${index + 1}. ${partner.name} · ${partner.city}/${partner.state}`,
-      `   Plano mínimo: ${wellhubPlanLabelServer(partner.minimumPlan)} · Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
+      `   Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel}`,
+      `   Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
       `   Modalidades: ${activities}`,
       `   Wellhub verificado ✓ ${partner.sourceUrl}`,
     ].join('\n');
