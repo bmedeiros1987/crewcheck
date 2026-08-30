@@ -67,11 +67,11 @@ export function extractWellhubLocationHintFromText(text = '') {
   if (!raw) return { city: '', state: '' };
 
   // Não limite a cidade por quantidade de palavras. Há municípios brasileiros
-  // válidos com cinco ou mais tokens (ex.: São José do Rio Preto). "em" só é
-  // aceito quando ligado diretamente a uma intenção geográfica de academia;
-  // cláusulas de modalidade como "treino em grupo" não podem substituir GPS.
+  // válidos com cinco ou mais tokens (ex.: São José do Rio Preto). Fora de
+  // `cidade`/`cidade de`, aceitamos `em` somente logo após academia(s). Isso
+  // evita interpretar expressões de modalidade como `treinar em grupo` como GPS.
   const scoped = raw.match(/\b(?:cidade\s+de|cidade)\s+(.+)$/iu)
-    || raw.match(/\b(?:academias?|wellhub|gympass|treinar)\s+em\s+(.+)$/iu);
+    || raw.match(/\bacademias?\s+em\s+(.+)$/iu);
   if (!scoped) return { city: '', state: '' };
   const tail = String(scoped[1] || '').trim();
   if (!tail) return { city: '', state: '' };
