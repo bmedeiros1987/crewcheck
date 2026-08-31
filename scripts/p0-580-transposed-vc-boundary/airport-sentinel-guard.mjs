@@ -13,10 +13,15 @@ if (!source.includes(marker)) {
   const count = source.split(unsafeHelper).length - 1;
   if (count !== 1) throw new Error(`[${marker}] unsafe airport helper count ${count}, expected 1`);
   source = source.replace(unsafeHelper, safeHelper);
-  fs.writeFileSync(databasePath, source, 'utf8');
   console.log(`[crewcheck:prepare] applied ${marker}`);
 } else {
   console.log(`[crewcheck:prepare] ${marker} already applied; validating structure`);
+}
+
+const staleResidualDefinition = `  const residualDays = overlapFilteredNext.days || [];`;
+const directResidualDefinition = `  const residualDays = dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []);`;
+if (source.includes(staleResidualDefinition)) {
+  source = source.replace(staleResidualDefinition, directResidualDefinition);
 }
 
 const start = source.indexOf('function mergeAirportForLocal(value?: string | null): string {');
@@ -31,3 +36,6 @@ for (const fragment of [
   if (!helper.includes(fragment)) throw new Error(`[${marker}] structural guard incomplete: missing ${fragment}`);
 }
 if (helper.includes('.slice(0, 3)')) throw new Error(`[${marker}] truncating airport normalization survived`);
+if (!source.includes(directResidualDefinition)) throw new Error(`[${marker}] residual source-order definition not aligned`);
+
+fs.writeFileSync(databasePath, source, 'utf8');
