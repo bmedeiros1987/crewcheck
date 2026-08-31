@@ -107,6 +107,11 @@ if (!database.includes(overlapMarker)) {
   if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
   database = database.replace(mergeAnchor, `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const originalAdjacentDays = adjacent.days || [];\n  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);\n  const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length\n    || adjacentDays.some((day, index) => day !== originalAdjacentDays[index]);\n  // Roster-level rawText is aggregate source data. Once any overlap row/leg is\n  // removed, keeping the full adjacent raw text would reintroduce the discarded\n  // duty into canonical/compliance consumers. Fail closed by clearing the\n  // adjacent aggregate while retaining the structured surviving days.\n  if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };\n  const sourceDays = position === 'prepend' ? [...adjacentDays, ...(primary.days || [])] : [...(primary.days || []), ...adjacentDays];`);
 
+  const legacySecondDedupe = `  const seen = new Set<string>();\n  const days: CrewRoster['days'] = [];\n  for (const day of sourceDays) {\n    const key = \`${'${day.date}'}|${'${day.type}'}|${'${day.pairingCode}'}|${'${day.dutyReport}'}|${'${day.dutyDebrief}'}|${'${(day.legs || []).map((leg) => `${leg.flightNumber}-${leg.origin}-${leg.destination}-${leg.departureTime}`).join('|')}'}\`;\n    if (seen.has(key)) continue;\n    seen.add(key);\n    days.push(day);\n  }`;
+  const legacySecondDedupeCount = database.split(legacySecondDedupe).length - 1;
+  if (legacySecondDedupeCount !== 1) throw new Error(`[${overlapMarker}] legacy second-dedupe anchor count ${legacySecondDedupeCount}, expected 1`);
+  database = database.replace(legacySecondDedupe, `  // Overlap identity has already been consumed count-aware above. A second Set-based\n  // dedupe here would erase legitimate retained multiplicity. Preserve sourceDays.\n  const days: CrewRoster['days'] = [...sourceDays];`);
+
   const fallbackAnchor = `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    else if (next?.roster?.days?.length) roster = mergeContinuousLocal(roster, { ...next.roster, days: next.roster.days.slice(0, 5) }, 'append');`;
   if (!database.includes(fallbackAnchor)) throw new Error(`[${overlapMarker}] blind next-roster fallback anchor not found`);
   database = database.replace(fallbackAnchor, `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    // Fail closed when there is no proven physical continuation. Nominal adjacency\n    // alone must not append an arbitrary fixed slice from the next publication.`);
@@ -128,9 +133,11 @@ requireFragments(database, overlapMarker, [
   'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
   'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
   "if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };",
+  "const days: CrewRoster['days'] = [...sourceDays];",
   'Nominal adjacency',
 ]);
 if (database.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
+if (database.includes('const seen = new Set<string>();')) throw new Error(`[${overlapMarker}] legacy second dedupe survived count-aware overlap filtering`);
 if (database.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
 
 fs.writeFileSync(databasePath, database, 'utf8');
