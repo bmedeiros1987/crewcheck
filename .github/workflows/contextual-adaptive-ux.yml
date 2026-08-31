@@ -1,0 +1,56 @@
+name: Contextual adaptive UX
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/context/**'
+      - 'client/src/components/pulse/**'
+      - 'client/src/lib/experiencePreferences.ts'
+      - 'client/src/lib/contextualNavigation.ts'
+      - 'client/src/lib/journeyPlanner.ts'
+      - 'scripts/v14410/**'
+      - 'scripts/regression-p1-contextual-adaptive-ux.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'docs/atlas/CONTEXTUAL_ADAPTIVE_UX.md'
+      - '.github/workflows/contextual-adaptive-ux.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/context/**'
+      - 'client/src/components/pulse/**'
+      - 'client/src/lib/experiencePreferences.ts'
+      - 'client/src/lib/contextualNavigation.ts'
+      - 'client/src/lib/journeyPlanner.ts'
+      - 'scripts/v14410/**'
+      - 'scripts/regression-p1-contextual-adaptive-ux.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'docs/atlas/CONTEXTUAL_ADAPTIVE_UX.md'
+      - '.github/workflows/contextual-adaptive-ux.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contextual-adaptive-ux:
+    name: Contextual actions, Pulse and adaptive density
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate base contract
+        run: node scripts/regression-p1-contextual-adaptive-ux.mjs
+      - name: Validate source preparation
+        run: node scripts/v139/apply.mjs
+      - name: Validate prepared contract
+        run: node scripts/regression-p1-contextual-adaptive-ux.mjs --prepared
+      - name: TypeScript on prepared source
+        run: npx tsc --noEmit
+      - name: Production build on prepared source
+        run: npx vite build
