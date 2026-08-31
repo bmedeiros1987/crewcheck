@@ -11,7 +11,7 @@ if (!source.includes(marker)) {
   const count = source.split(anchor).length - 1;
   if (count !== 1) throw new Error(`[${marker}] continuation scan anchor count ${count}, expected 1`);
 
-  source = source.replace(anchor, `    const gap = dayGapLocal(last, anchor);\n    // ${marker}: a structured but civilly impossible date is not merely an\n    // unknown dedupe key. Its position in the adjacent publication cannot be\n    // proven safely, so it must stop continuity before any later anchor can\n    // authorize appending the publication.\n    const hasInvalidStructuredDateBeforeAnchor = (overlapFilteredNext.days || []).some((day, index) => {\n      if (index >= anchor.index) return false;\n      const rawDate = String(day?.date || '').trim();\n      const structuredDate = /^(?:\\d{1,2}[\\/.\\-]\\d{1,2}[\\/.\\-]\\d{2,4}|\\d{4}-\\d{1,2}-\\d{1,2})$/.test(rawDate);\n      return structuredDate && !parseCrewRosterDate(rawDate);\n    });\n    if (hasInvalidStructuredDateBeforeAnchor) return null;\n    const hasInterveningOff = (overlapFilteredNext.days || []).some((day) => {`);
+  source = source.replace(anchor, `    const gap = dayGapLocal(last, anchor);\n    // ${marker}: after proven overlap copies are removed, every remaining row\n    // before a later continuation anchor must have a valid civil date. Unknown,\n    // malformed or impossible dates cannot be ordered safely and therefore must\n    // stop continuity rather than disappear from the scan and authorize a later\n    // activity indirectly.\n    const hasInvalidDateBeforeAnchor = (overlapFilteredNext.days || []).some((day, index) => {\n      if (index >= anchor.index) return false;\n      const rawDate = String(day?.date || '').trim();\n      return !rawDate || !parseCrewRosterDate(rawDate);\n    });\n    if (hasInvalidDateBeforeAnchor) return null;\n    const hasInterveningOff = (overlapFilteredNext.days || []).some((day) => {`);
   fs.writeFileSync(databasePath, source, 'utf8');
   console.log(`[crewcheck:prepare] applied ${marker}`);
 } else {
@@ -21,10 +21,10 @@ if (!source.includes(marker)) {
 const prepared = fs.readFileSync(databasePath, 'utf8');
 const required = [
   marker,
-  'const hasInvalidStructuredDateBeforeAnchor = (overlapFilteredNext.days || []).some',
+  'const hasInvalidDateBeforeAnchor = (overlapFilteredNext.days || []).some',
   'if (index >= anchor.index) return false;',
-  'return structuredDate && !parseCrewRosterDate(rawDate);',
-  'if (hasInvalidStructuredDateBeforeAnchor) return null;',
+  "return !rawDate || !parseCrewRosterDate(rawDate);",
+  'if (hasInvalidDateBeforeAnchor) return null;',
 ];
 const missing = required.filter((fragment) => !prepared.includes(fragment));
 if (missing.length) throw new Error(`[${marker}] structural validation failed: ${missing.join(' | ')}`);
