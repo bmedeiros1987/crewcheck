@@ -27,7 +27,7 @@ assert.equal(
   'INVALID activity sentinel must remain non-deduplicable',
 );
 
-const leg = (origin) => ({ flightNumber: 'LA9060', origin, destination: 'BBB', departureTime: '10:00' });
+const leg = (origin, destination = 'BBB') => ({ flightNumber: 'LA9060', origin, destination, departureTime: '10:00' });
 const placeholderAirportPrimary = [
   { date: '13/09/2026', type: 'FLIGHT', legs: [leg('XXX')] },
 ];
@@ -38,8 +38,23 @@ const placeholderAirportResult = dedupeAdjacentRosterDays(placeholderAirportPrim
 assert.equal(placeholderAirportResult.length, 1, 'XXX airport placeholder must remain non-deduplicable');
 assert.equal(placeholderAirportResult[0].legs.length, 1);
 
+// Airport sentinels are contextual. UNK is a legitimate IATA code and must not
+// inherit the generic UNKNOWN/UNK placeholder policy used for non-airport fields.
+const legitimateIataPrimary = [
+  { date: '14/09/2026', type: 'FLIGHT', legs: [leg('UNK', 'BBB')] },
+];
+const legitimateIataAdjacent = [
+  { date: '2026-09-14', type: 'FLIGHT', legs: [leg('UNK', 'BBB')] },
+];
+assert.equal(
+  dedupeAdjacentRosterDays(legitimateIataPrimary, legitimateIataAdjacent).length,
+  0,
+  'legitimate UNK IATA identity must deduplicate an exact carry-in copy',
+);
+
 assert.match(helperSource, /'INVALID'/, 'invalid sentinel must be explicitly non-identifying');
 assert.match(helperSource, /NON_IDENTIFYING_AIRPORT_TOKENS/, 'airport placeholders need a dedicated fail-closed guard');
 assert.match(helperSource, /'XXX'/, 'XXX airport placeholder must not authorize overlap deletion');
+assert.match(helperSource, /const token = normalizeToken\(value\);/, 'airport identity must use context-specific token normalization');
 
-console.log('[P0-580] invalid identity/activity and airport placeholders: PASS');
+console.log('[P0-580] invalid sentinels rejected while legitimate IATA identity remains deduplicable: PASS');
