@@ -10,6 +10,7 @@ on:
       - 'client/src/pages/WatchPage.tsx'
       - 'server/platform.mjs'
       - 'scripts/p0-580-transposed-vc-boundary/**'
+      - 'scripts/p0-580-invalid-date-continuity/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/v14338/apply.mjs'
       - 'scripts/v14339/apply.mjs'
