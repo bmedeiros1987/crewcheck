@@ -69,6 +69,25 @@ const unknownTimeFiltered = dedupeAdjacentRosterDays(unknownTimePrimary, unknown
 assert.equal(unknownTimeFiltered.length, 1, 'unknown/invalid time must remain fail-safe and non-deduplicable');
 assert.equal(unknownTimeFiltered[0].legs.length, 1);
 
+// Unknown, missing or civilly impossible dates are incomplete factual identity.
+// Fail-before on 289d7f18fc0ced132ed0a22f2e56df1c7b562060: UNKNOWN was
+// normalized as an ordinary token and equal occurrences were silently deleted.
+for (const [label, primaryDate, adjacentDate] of [
+  ['unknown', 'UNKNOWN', 'unknown'],
+  ['missing', null, undefined],
+  ['impossible', '31/02/2026', '2026-02-31'],
+]) {
+  const uncertainDatePrimary = [
+    { date: primaryDate, type: 'FLIGHT', legs: [leg('LA9021', 'III', 'JJJ', '10:00')] },
+  ];
+  const uncertainDateAdjacent = [
+    { date: adjacentDate, type: 'FLIGHT', legs: [leg('LA9021', 'III', 'JJJ', '10:00')] },
+  ];
+  const uncertainDateFiltered = dedupeAdjacentRosterDays(uncertainDatePrimary, uncertainDateAdjacent);
+  assert.equal(uncertainDateFiltered.length, 1, `${label} factual date must remain fail-safe and non-deduplicable`);
+  assert.equal(uncertainDateFiltered[0].legs.length, 1);
+}
+
 // Flight-like rows without parsed legs are incomplete evidence. They may be the
 // exact data-loss symptom being recovered, so activity-level equality is not
 // sufficient to delete them during overlap reconciliation.
@@ -102,6 +121,8 @@ assert.match(databaseSource, /const adjacentDays = dedupeAdjacentRosterDays\(pri
 assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'filtered adjacent publication must invalidate stale aggregate rawText');
 assert.doesNotMatch(databaseSource, /next\.roster\.days\.slice\(0, 5\)/, 'blind fixed-slice fallback must not survive');
 assert.doesNotMatch(helperSource, /TIME-UNKNOWN/, 'unknown operational time must never become a deduplicable identity');
+assert.match(helperSource, /function normalizeDateKey\(value\?: string \| null\): string \| null/, 'unknown factual date must be represented as non-deduplicable');
+assert.match(helperSource, /function validDateKey\(/, 'date identity must reject civilly impossible calendar dates');
 assert.match(helperSource, /new Map<string, number>/, 'overlap dedupe must use count-aware multiplicity tracking');
 assert.match(helperSource, /looksLikeFlightWithoutLegs/, 'flight-like activity without parsed legs must be preserved fail-closed');
 
@@ -128,4 +149,16 @@ try {
 }
 assert.equal(failedClosed, true, 'partially applied marker state must fail closed');
 
-console.log('[P0-580] overlap/reimport dedupe + fail-safe time + legless-flight + multiplicity + stale-duty + fail-closed apply: PASS');
+// False-positive counterproof: postconditions must inspect only the production
+// function they protect. Similar Set/slice/firstNext constructs in an unrelated
+// helper cannot reject a valid, already materialized source.
+const tempApplyScopeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-580-apply-scope-'));
+fs.mkdirSync(path.join(tempApplyScopeDir, 'client/src/lib'), { recursive: true });
+fs.mkdirSync(path.join(tempApplyScopeDir, 'scripts/p0-580-transposed-vc-boundary'), { recursive: true });
+fs.writeFileSync(path.join(tempApplyScopeDir, 'client/src/lib/pdfParser.ts'), preparedParser);
+fs.writeFileSync(path.join(tempApplyScopeDir, 'client/src/lib/localRosterOverlap.ts'), helperSource);
+fs.writeFileSync(path.join(tempApplyScopeDir, 'client/src/lib/databaseClient.ts'), `${databaseSource}\n\nfunction unrelatedPreviewHelper(nextAnchors: unknown[], next: { roster: { days: unknown[] } }) {\n  const seen = new Set<string>();\n  const firstNext = nextAnchors[0];\n  return { seen, firstNext, preview: next.roster.days.slice(0, 5) };\n}\n`);
+fs.copyFileSync(applyPath, path.join(tempApplyScopeDir, 'scripts/p0-580-transposed-vc-boundary/apply.mjs'));
+execFileSync(process.execPath, ['scripts/p0-580-transposed-vc-boundary/apply.mjs'], { cwd: tempApplyScopeDir, stdio: 'pipe' });
+
+console.log('[P0-580] overlap/reimport dedupe + fail-safe time/date + legless-flight + multiplicity + stale-duty + scoped fail-closed apply: PASS');

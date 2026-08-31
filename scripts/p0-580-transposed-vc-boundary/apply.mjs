@@ -135,6 +135,7 @@ requireFragments(database, overlapMarker, [
   `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,
   'const remoteData = { roster: payload.data.roster',
   'if (remoteSummary) assertExpectedRosterPeriod(remoteData.roster, remoteSummary);',
+  "['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())",
   'await buildSmartLocalContinuousRoster(remoteSummary, remoteData)',
   'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
   'const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [anchor.day]).length === 0;',
@@ -147,7 +148,13 @@ requireFragments(database, overlapMarker, [
   "const days: CrewRoster['days'] = [...sourceDays];",
   'Nominal adjacency',
 ]);
-if (database.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
+const continuationTailBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {`,
+  `\nfunction mergeContinuousLocal(`,
+);
+if (continuationTailBlock.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
 const mergeContinuousBlock = requireUniqueRange(
   database,
   overlapMarker,
@@ -155,6 +162,12 @@ const mergeContinuousBlock = requireUniqueRange(
   `\nfunction getSmartLocalActiveRosterSummary()`,
 );
 if (mergeContinuousBlock.includes('const seen = new Set<string>();')) throw new Error(`[${overlapMarker}] legacy second dedupe survived count-aware overlap filtering`);
-if (database.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
+const smartContinuousBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `async function buildSmartLocalContinuousRoster(`,
+  `\nexport async function deleteRosterAnalysis(`,
+);
+if (smartContinuousBlock.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
 
 fs.writeFileSync(databasePath, database, 'utf8');

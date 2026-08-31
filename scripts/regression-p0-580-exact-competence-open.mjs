@@ -149,6 +149,34 @@ try {
     },
   ]));
 
+  // Fail-before on 289d7f18fc0ced132ed0a22f2e56df1c7b562060: the
+  // summary/body mismatch was detected and then swallowed by the outer catch,
+  // which silently returned the local August roster. A trusted checksum must not
+  // authorize a body from another nominal publication.
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === '/api/rosters/active') {
+      return new Response(JSON.stringify({
+        ok: true,
+        roster: { id: 'remote-august-carry', checksum: 'august-carry', year: 2026, month: 8, isActive: true },
+        data: { roster: septemberCarry, compliance: { score: 100, alerts: [] }, gym: [] },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ ok: false, message: 'Histórico indisponível neste backend.' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  await assert.rejects(
+    () => openActiveRoster(),
+    (error) => {
+      assert.equal(error?.code, 'ROSTER_PERIOD_MISMATCH', 'summary Agosto/body Setembro deve preservar o código de conflito nominal');
+      return true;
+    },
+    'mismatch interno da resposta remota nunca pode ser mascarado por fallback local',
+  );
+
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url === '/api/rosters/active') {
@@ -299,6 +327,7 @@ try {
   assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'overlap parcial deve invalidar rawText agregado adjacente');
   assert.match(databaseSource, /const provenRetainedOverlap = dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], \[anchor\.day\]\)\.length === 0;/, 'somente duplicata retida e comprovada pode ser ignorada antes da âncora de continuidade');
   assert.match(databaseSource, /await buildSmartLocalContinuousRoster\(remoteSummary, remoteData\)/, 'fetch ativo online deve reconciliar competências adjacentes antes de retornar');
+  assert.match(databaseSource, /\['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'\]\.includes\(String\(error\?\.code \|\| ''\)\.toUpperCase\(\)\)/, 'mismatch nominal remoto deve atravessar o catch sem fallback local');
   assert.match(historyUiGenerator, /openSavedRoster\(item\.id, item\)/, 'a UI materializada deve informar a competência nominal selecionada');
   assert.match(watchSource, /openSavedRoster\(best\.id, best\)/, 'o relógio também deve validar a competência nominal escolhida');
   assert.match(workflowSource, /client\/src\/pages\/WatchPage\.tsx/, 'o gate de competência deve disparar quando o consumidor Watch mudar');
@@ -307,7 +336,7 @@ try {
   assert.match(historyGenerator, /saveRosterAnalysis\(\{ roster, compliance: newCompliance, gym: newGym, sourceFileName: file\.name \}/, 'toda importação de PDF deve acionar o histórico local-first');
   assert.match(platformSource, /function rosterKey\(roster\)[\s\S]*roster\?\.year[\s\S]*roster\?\.month/, 'a chave remota deve usar ano/mês nominais da publicação');
 
-  console.log('[p0-580-exact-competence] OK — seleção nominal, carry online/offline, multiplicidade e fail-closed de âncora exercitados.');
+  console.log('[p0-580-exact-competence] OK — seleção nominal, mismatch remoto fail-closed, carry online/offline, multiplicidade e âncora exercitados.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }

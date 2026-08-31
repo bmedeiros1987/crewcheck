@@ -21,16 +21,29 @@ function normalizeToken(value?: string | null): string {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-function normalizeDateKey(value?: string | null): string {
+function validDateKey(yearValue: string, monthValue: string, dayValue: string): string | null {
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  if (!Number.isInteger(year) || year < 1000 || year > 9999 || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1) return null;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day > daysInMonth) return null;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function normalizeDateKey(value?: string | null): string | null {
   const raw = String(value || '').trim();
   let match = raw.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
   if (match) {
     const year = match[3].length === 2 ? `20${match[3]}` : match[3];
-    return `${year.padStart(4, '0')}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+    return validDateKey(year, match[2], match[1]);
   }
   match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-  return normalizeToken(raw);
+  if (match) return validDateKey(match[1], match[2], match[3]);
+  // An unknown factual date cannot prove that two operational occurrences are
+  // identical. Preserve the adjacent activity instead of guessing equality.
+  return null;
 }
 
 function normalizeOperationalTime(value?: string | null): string {
