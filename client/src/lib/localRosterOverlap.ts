@@ -25,6 +25,7 @@ function normalizeToken(value?: string | null): string {
 const NON_IDENTIFYING_TOKENS = new Set([
   'UNKNOWN',
   'UNK',
+  'INVALID',
   'NA',
   'NONE',
   'NULL',
@@ -34,9 +35,19 @@ const NON_IDENTIFYING_TOKENS = new Set([
   'PLACEHOLDER',
 ]);
 
+const NON_IDENTIFYING_AIRPORT_TOKENS = new Set([
+  'XXX',
+]);
+
 function normalizeIdentityToken(value?: string | null): string | null {
   const token = normalizeToken(value);
   if (!token || NON_IDENTIFYING_TOKENS.has(token)) return null;
+  return token;
+}
+
+function normalizeAirportIdentityToken(value?: string | null): string | null {
+  const token = normalizeIdentityToken(value);
+  if (!token || NON_IDENTIFYING_AIRPORT_TOKENS.has(token) || !/^[A-Z]{3}$/.test(token)) return null;
   return token;
 }
 
@@ -78,13 +89,13 @@ function normalizeOperationalTime(value?: string | null): string {
 function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): string | null {
   const date = normalizeDateKey(day.date);
   const flight = normalizeIdentityToken(leg.flightNumber);
-  const origin = normalizeIdentityToken(leg.origin);
-  const destination = normalizeIdentityToken(leg.destination);
+  const origin = normalizeAirportIdentityToken(leg.origin);
+  const destination = normalizeAirportIdentityToken(leg.destination);
   const departure = normalizeOperationalTime(leg.departureTime);
   // Identity must be composed only from verified values. In particular, never
   // truncate UNKNOWN into the airport-looking token UNK or let another placeholder
   // become evidence strong enough to delete an adjacent operation.
-  if (!date || !flight || !/^(?=.*\d)[A-Z0-9]{2,8}$/.test(flight) || !origin || !/^[A-Z]{3}$/.test(origin) || !destination || !/^[A-Z]{3}$/.test(destination) || !departure) return null;
+  if (!date || !flight || !/^(?=.*\d)[A-Z0-9]{2,8}$/.test(flight) || !origin || !destination || !departure) return null;
   // Pairing/report metadata may legitimately change after reimport. Published
   // departure time is part of the occurrence identity so two operations with the
   // same flight/date/route are not collapsed when they happen at different times.
