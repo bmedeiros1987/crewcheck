@@ -15,6 +15,15 @@ function requireFragments(text, marker, fragments) {
   if (missing.length) throw new Error(`[${marker}] structural patch incomplete: missing ${missing.join(' | ')}`);
 }
 
+function requireUniqueRange(text, marker, startFragment, endFragment) {
+  const startCount = text.split(startFragment).length - 1;
+  if (startCount !== 1) throw new Error(`[${marker}] structural range start count ${startCount}, expected 1`);
+  const start = text.indexOf(startFragment);
+  const end = text.indexOf(endFragment, start + startFragment.length);
+  if (end < 0) throw new Error(`[${marker}] structural range end not found`);
+  return text.slice(start, end);
+}
+
 if (!source.includes(transposedMarker)) {
   const scoreAnchor = `  const transposedScore = scoreParsedDays(transposedDays, header.month, header.year);`;
   if (!source.includes(scoreAnchor)) throw new Error(`[${transposedMarker}] transposed score anchor not found`);
@@ -139,7 +148,13 @@ requireFragments(database, overlapMarker, [
   'Nominal adjacency',
 ]);
 if (database.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
-if (database.includes('const seen = new Set<string>();')) throw new Error(`[${overlapMarker}] legacy second dedupe survived count-aware overlap filtering`);
+const mergeContinuousBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {`,
+  `\nfunction getSmartLocalActiveRosterSummary()`,
+);
+if (mergeContinuousBlock.includes('const seen = new Set<string>();')) throw new Error(`[${overlapMarker}] legacy second dedupe survived count-aware overlap filtering`);
 if (database.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
 
 fs.writeFileSync(databasePath, database, 'utf8');
