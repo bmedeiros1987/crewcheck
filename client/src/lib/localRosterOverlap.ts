@@ -22,6 +22,24 @@ function normalizeToken(value?: string | null): string {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+const NON_IDENTIFYING_TOKENS = new Set([
+  'UNKNOWN',
+  'UNK',
+  'NA',
+  'NONE',
+  'NULL',
+  'UNDEFINED',
+  'TBD',
+  'TBA',
+  'PLACEHOLDER',
+]);
+
+function normalizeIdentityToken(value?: string | null): string | null {
+  const token = normalizeToken(value);
+  if (!token || NON_IDENTIFYING_TOKENS.has(token)) return null;
+  return token;
+}
+
 function validDateKey(yearValue: string, monthValue: string, dayValue: string): string | null {
   const year = Number(yearValue);
   const month = Number(monthValue);
@@ -59,11 +77,14 @@ function normalizeOperationalTime(value?: string | null): string {
 
 function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): string | null {
   const date = normalizeDateKey(day.date);
-  const flight = normalizeToken(leg.flightNumber);
-  const origin = normalizeToken(leg.origin).slice(0, 3);
-  const destination = normalizeToken(leg.destination).slice(0, 3);
+  const flight = normalizeIdentityToken(leg.flightNumber);
+  const origin = normalizeIdentityToken(leg.origin);
+  const destination = normalizeIdentityToken(leg.destination);
   const departure = normalizeOperationalTime(leg.departureTime);
-  if (!date || !flight || !origin || !destination || !departure) return null;
+  // Identity must be composed only from verified values. In particular, never
+  // truncate UNKNOWN into the airport-looking token UNK or let another placeholder
+  // become evidence strong enough to delete an adjacent operation.
+  if (!date || !flight || !/^(?=.*\d)[A-Z0-9]{2,8}$/.test(flight) || !origin || !/^[A-Z]{3}$/.test(origin) || !destination || !/^[A-Z]{3}$/.test(destination) || !departure) return null;
   // Pairing/report metadata may legitimately change after reimport. Published
   // departure time is part of the occurrence identity so two operations with the
   // same flight/date/route are not collapsed when they happen at different times.
@@ -85,9 +106,11 @@ function looksLikeFlightWithoutLegs(day: LocalRosterDayLike): boolean {
 function activityIdentityKey(day: LocalRosterDayLike): string | null {
   const date = normalizeDateKey(day.date);
   if (!date || looksLikeFlightWithoutLegs(day)) return null;
-  const type = normalizeToken(day.type);
-  const pairing = normalizeToken(day.pairingCode);
-  const semantic = type && !['OTHER', 'UNKNOWN'].includes(type) ? type : pairing;
+  const type = normalizeIdentityToken(day.type);
+  const pairing = normalizeIdentityToken(day.pairingCode);
+  const semantic = type && type !== 'OTHER' ? type : pairing && pairing !== 'OTHER' ? pairing : null;
+  // Placeholder/unknown labels are not proof that two non-flight activities are
+  // the same occurrence. Uncertainty must preserve the adjacent row fail-closed.
   return semantic ? `A|${date}|${semantic}` : null;
 }
 
