@@ -325,7 +325,9 @@ try {
   const workflowSource = fs.readFileSync('.github/workflows/p0-580-vc-boundary.yml', 'utf8');
   assert.doesNotMatch(databaseSource, /Fallback premium:[\s\S]*?\/api\/rosters\/active/, 'abrir por ID não pode cair na escala ativa');
   assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'overlap parcial deve invalidar rawText agregado adjacente');
-  assert.match(databaseSource, /const provenRetainedOverlap = dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], \[anchor\.day\]\)\.length === 0;/, 'somente duplicata retida e comprovada pode ser ignorada antes da âncora de continuidade');
+  assert.match(databaseSource, /const residualDays = dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], nextRoster\.days \|\| \[\]\);/, 'continuidade deve partir das atividades residuais depois do dedupe count-aware');
+  assert.match(databaseSource, /for \(const day of residualDays\)/, 'continuidade deve percorrer atividades residuais em ordem de fonte');
+  assert.match(databaseSource, /dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], \[day\]\)\.length === 0/, 'somente overlap individualmente comprovado pode ser ignorado durante a varredura residual');
   assert.match(databaseSource, /await buildSmartLocalContinuousRoster\(remoteSummary, remoteData\)/, 'fetch ativo online deve reconciliar competências adjacentes antes de retornar');
   assert.match(databaseSource, /\['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'\]\.includes\(String\(error\?\.code \|\| ''\)\.toUpperCase\(\)\)/, 'mismatch nominal remoto deve atravessar o catch sem fallback local');
   assert.match(historyUiGenerator, /openSavedRoster\(item\.id, item\)/, 'a UI materializada deve informar a competência nominal selecionada');
