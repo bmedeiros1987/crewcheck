@@ -69,6 +69,29 @@ const unknownTimeFiltered = dedupeAdjacentRosterDays(unknownTimePrimary, unknown
 assert.equal(unknownTimeFiltered.length, 1, 'unknown/invalid time must remain fail-safe and non-deduplicable');
 assert.equal(unknownTimeFiltered[0].legs.length, 1);
 
+// Placeholder labels are not operational identity. This is the Manus adversarial
+// counterexample: equal UNKNOWN values must not silently consume adjacent data.
+const unknownActivityPrimary = [
+  { date: '10/09/2026', type: 'UNKNOWN', pairingCode: 'UNKNOWN', legs: [] },
+];
+const unknownActivityAdjacent = [
+  { date: '2026-09-10', type: 'UNKNOWN', pairingCode: 'UNKNOWN', legs: [] },
+];
+const unknownActivityFiltered = dedupeAdjacentRosterDays(unknownActivityPrimary, unknownActivityAdjacent);
+assert.equal(unknownActivityFiltered.length, 1, 'unknown activity labels must remain fail-safe and non-deduplicable');
+
+for (const [label, primaryLeg, adjacentLeg] of [
+  ['flight number', leg('UNKNOWN', 'AAA', 'BBB', '10:00'), leg('UNKNOWN', 'AAA', 'BBB', '10:00')],
+  ['origin', leg('LA9050', 'UNKNOWN', 'BBB', '10:00'), leg('LA9050', 'UNKNOWN', 'BBB', '10:00')],
+  ['destination', leg('LA9050', 'AAA', 'UNKNOWN', '10:00'), leg('LA9050', 'AAA', 'UNKNOWN', '10:00')],
+]) {
+  const uncertainLegPrimary = [{ date: '11/09/2026', type: 'FLIGHT', legs: [primaryLeg] }];
+  const uncertainLegAdjacent = [{ date: '2026-09-11', type: 'FLIGHT', legs: [adjacentLeg] }];
+  const uncertainLegFiltered = dedupeAdjacentRosterDays(uncertainLegPrimary, uncertainLegAdjacent);
+  assert.equal(uncertainLegFiltered.length, 1, `unknown ${label} must remain fail-safe and non-deduplicable`);
+  assert.equal(uncertainLegFiltered[0].legs.length, 1);
+}
+
 // Unknown, missing or civilly impossible dates are incomplete factual identity.
 // Fail-before on 289d7f18fc0ced132ed0a22f2e56df1c7b562060: UNKNOWN was
 // normalized as an ordinary token and equal occurrences were silently deleted.
@@ -125,6 +148,8 @@ assert.match(helperSource, /function normalizeDateKey\(value\?: string \| null\)
 assert.match(helperSource, /function validDateKey\(/, 'date identity must reject civilly impossible calendar dates');
 assert.match(helperSource, /new Map<string, number>/, 'overlap dedupe must use count-aware multiplicity tracking');
 assert.match(helperSource, /looksLikeFlightWithoutLegs/, 'flight-like activity without parsed legs must be preserved fail-closed');
+assert.match(helperSource, /NON_IDENTIFYING_TOKENS/, 'placeholder identity values must be explicitly non-deduplicable');
+assert.match(helperSource, /normalizeIdentityToken/, 'identity construction must distinguish verified values from placeholders');
 
 // Fail-closed counterproof: a source carrying the marker but missing one mandatory
 // structural fragment must be rejected by the apply step instead of returning green.
@@ -161,4 +186,4 @@ fs.writeFileSync(path.join(tempApplyScopeDir, 'client/src/lib/databaseClient.ts'
 fs.copyFileSync(applyPath, path.join(tempApplyScopeDir, 'scripts/p0-580-transposed-vc-boundary/apply.mjs'));
 execFileSync(process.execPath, ['scripts/p0-580-transposed-vc-boundary/apply.mjs'], { cwd: tempApplyScopeDir, stdio: 'pipe' });
 
-console.log('[P0-580] overlap/reimport dedupe + fail-safe time/date + legless-flight + multiplicity + stale-duty + scoped fail-closed apply: PASS');
+console.log('[P0-580] overlap/reimport dedupe + fail-safe time/date/placeholders + legless-flight + multiplicity + stale-duty + scoped fail-closed apply: PASS');
