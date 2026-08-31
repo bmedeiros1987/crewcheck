@@ -101,6 +101,11 @@ if (!database.includes(overlapMarker)) {
   if (activeReturnCount !== 1) throw new Error(`[${overlapMarker}] active-roster reconciliation anchor count ${activeReturnCount}, expected 1`);
   database = database.replace(activeReturnAnchor, `const remoteData = { roster: payload.data.roster, compliance: payload.data.compliance as any, gym: payload.data.gym || [] };\n      const remoteSummary = payload.roster\n        || getLocalRosterSummaries(12).find((item) => Number(item.year) === Number(remoteData.roster.year) && Number(item.month) === Number(remoteData.roster.month))\n        || null;\n      if (remoteSummary) assertExpectedRosterPeriod(remoteData.roster, remoteSummary);\n      const reconciled = remoteSummary\n        ? await buildSmartLocalContinuousRoster(remoteSummary, remoteData).catch(() => remoteData)\n        : remoteData;\n      return { ...reconciled, summary: payload.roster || remoteSummary };`);
 
+  const dateParserAnchor = `function parseCrewRosterDate(value?: string | null): Date | null {\n  const raw = String(value || '').trim();\n  let match = raw.match(/^(\\d{1,2})[\\/.\\-](\\d{1,2})[\\/.\\-](\\d{2,4})$/);\n  if (match) {\n    const year = Number(match[3].length === 2 ? \`20\${match[3]}\` : match[3]);\n    return new Date(year, Number(match[2]) - 1, Number(match[1]), 12, 0, 0, 0);\n  }\n  match = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);\n  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);\n  const date = new Date(raw);\n  return Number.isFinite(date.getTime()) ? date : null;\n}`;
+  const dateParserCount = database.split(dateParserAnchor).length - 1;
+  if (dateParserCount !== 1) throw new Error(`[${overlapMarker}] strict roster date parser anchor count ${dateParserCount}, expected 1`);
+  database = database.replace(dateParserAnchor, `function parseCrewRosterDate(value?: string | null): Date | null {\n  const raw = String(value || '').trim();\n  const buildCivilDate = (year: number, month: number, day: number): Date | null => {\n    if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1 || day > 31) return null;\n    const date = new Date(year, month - 1, day, 12, 0, 0, 0);\n    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;\n  };\n  let match = raw.match(/^(\\d{1,2})[\\/.\\-](\\d{1,2})[\\/.\\-](\\d{2,4})$/);\n  if (match) {\n    const year = Number(match[3].length === 2 ? \`20\${match[3]}\` : match[3]);\n    return buildCivilDate(year, Number(match[2]), Number(match[1]));\n  }\n  match = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);\n  if (match) return buildCivilDate(Number(match[1]), Number(match[2]), Number(match[3]));\n  return null;\n}`);
+
   const nextAnchor = `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const nextAnchors = rosterContinuationAnchorsLocal(nextRoster);`;
   if (!database.includes(nextAnchor)) throw new Error(`[${overlapMarker}] continuation anchor not found`);
   database = database.replace(nextAnchor, `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };\n  const nextAnchors = rosterContinuationAnchorsLocal(overlapFilteredNext);`);
@@ -137,11 +142,13 @@ requireFragments(database, overlapMarker, [
   'if (remoteSummary) assertExpectedRosterPeriod(remoteData.roster, remoteSummary);',
   "['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())",
   'await buildSmartLocalContinuousRoster(remoteSummary, remoteData)',
+  'const buildCivilDate = (year: number, month: number, day: number): Date | null => {',
+  'date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day',
+  'return null;',
   'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
   'const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [anchor.day]).length === 0;',
   'const hasInterveningOff = (overlapFilteredNext.days || []).some',
   'dayDate.getTime() > last.date.getTime()',
-  'return null;',
   'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
   'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
   "if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };",
@@ -155,6 +162,14 @@ const continuationTailBlock = requireUniqueRange(
   `\nfunction mergeContinuousLocal(`,
 );
 if (continuationTailBlock.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
+const rosterDateParserBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `function parseCrewRosterDate(value?: string | null): Date | null {`,
+  `\nfunction rosterSummaryBounds(`,
+);
+if (rosterDateParserBlock.includes('new Date(raw)')) throw new Error(`[${overlapMarker}] permissive roster-date fallback survived`);
+if (!rosterDateParserBlock.includes('date.getFullYear() === year')) throw new Error(`[${overlapMarker}] civil roster-date round-trip guard missing`);
 const mergeContinuousBlock = requireUniqueRange(
   database,
   overlapMarker,
