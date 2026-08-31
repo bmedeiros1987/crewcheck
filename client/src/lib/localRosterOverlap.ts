@@ -124,11 +124,18 @@ function activityIdentityKey(day: LocalRosterDayLike): string | null {
   if (!date || looksLikeFlightWithoutLegs(day)) return null;
   const type = normalizeIdentityToken(day.type);
   const pairing = normalizeIdentityToken(day.pairingCode);
-  // Ground activities often share a broad parsed type (for example CRM) while
-  // pairingCode preserves the published specific activity (for example CBF vs
-  // EMER). Prefer that specific code whenever it is verifiable so two distinct
-  // activities on the same date are never collapsed by a generic type alone.
-  const semantic = pairing && pairing !== 'OTHER' ? pairing : type && type !== 'OTHER' ? type : null;
+  // CRM is a broad parser category: distinct published activities such as CBF and
+  // EMER can both map to type CRM, with pairingCode retaining the distinguishing
+  // code. Preserve that specificity without making every mutable pairing label part
+  // of identity for activities such as VC, where reimports may legitimately rename
+  // the pairing while the semantic activity remains the same.
+  const semantic = type === 'CRM' && pairing && pairing !== 'OTHER'
+    ? `CRM:${pairing}`
+    : type && type !== 'OTHER'
+      ? type
+      : pairing && pairing !== 'OTHER'
+        ? pairing
+        : null;
   // Placeholder/unknown labels are not proof that two non-flight activities are
   // the same occurrence. Uncertainty must preserve the adjacent row fail-closed.
   return semantic ? `A|${date}|${semantic}` : null;
