@@ -19,6 +19,7 @@ on:
       - 'scripts/regression-p0-580-overlap-reimport.mjs'
       - 'scripts/regression-p0-580-exact-competence-open.mjs'
       - 'scripts/regression-p0-580-invalid-placeholders.mjs'
+      - 'scripts/regression-p0-580-residual-source-order.mjs'
       - '.github/workflows/p0-580-vc-boundary.yml'
   workflow_dispatch:
 
@@ -47,3 +48,5 @@ jobs:
         run: node scripts/regression-p0-580-exact-competence-open.mjs
       - name: Validate invalid overlap placeholders
         run: node scripts/regression-p0-580-invalid-placeholders.mjs
+      - name: Validate residual continuity source order
+        run: node scripts/regression-p0-580-residual-source-order.mjs
