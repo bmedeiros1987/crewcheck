@@ -6,6 +6,7 @@ const transposedMarker = 'P0_580_TRANSPOSED_STRUCTURE_GUARD';
 const legendMarker = 'P0_580_LEGEND_BOUNDARY_GUARD';
 const legendSectionMarker = 'P0_580_LEGEND_SECTION_GUARD';
 const overlapMarker = 'P0_580_OVERLAP_ACTIVITY_DEDUPE';
+const sourceOrderMarker = 'P0_580_RESIDUAL_SOURCE_ORDER_GUARD';
 
 if (!fs.existsSync(parserPath)) throw new Error(`[${transposedMarker}] ${parserPath} not found`);
 let source = fs.readFileSync(parserPath, 'utf8');
@@ -112,7 +113,7 @@ if (!database.includes(overlapMarker)) {
 
   const firstNextAnchor = `  const firstNext = nextAnchors[0];\n  if (!last.destination || !firstNext.origin || last.destination === base || last.destination !== firstNext.origin) return null;\n  const gapToNext = dayGapLocal(last, firstNext);\n  if (gapToNext < 0 || gapToNext > 3) return null;`;
   if (!database.includes(firstNextAnchor)) throw new Error(`[${overlapMarker}] first continuation anchor not found`);
-  database = database.replace(firstNextAnchor, `  if (!last.destination || last.destination === base) return null;\n  let firstNext = null as (typeof nextAnchors)[number] | null;\n  for (const anchor of nextAnchors) {\n    const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [anchor.day]).length === 0;\n    if (provenRetainedOverlap) continue;\n    const gap = dayGapLocal(last, anchor);\n    const hasInterveningOff = (overlapFilteredNext.days || []).some((day) => {\n      if (!isOffLikeLocalDay(day)) return false;\n      const dayDate = parseCrewRosterDate(day.date);\n      return Boolean(dayDate && dayDate.getTime() > last.date.getTime() && dayDate.getTime() <= anchor.date.getTime());\n    });\n    if (hasInterveningOff) return null;\n    if (gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin)) {\n      firstNext = anchor;\n      break;\n    }\n    return null;\n  }\n  if (!firstNext) return null;\n  const gapToNext = dayGapLocal(last, firstNext);`);
+  database = database.replace(firstNextAnchor, `  if (!last.destination || last.destination === base) return null;\n  // ${sourceOrderMarker}: after count-aware overlap removal, walk every residual\n  // activity in publication order. A later compatible flight cannot authorize\n  // skipping an intervening residual activity that was not individually proven\n  // to be an overlap copy. This is intentionally fail-closed.\n  const residualDays = overlapFilteredNext.days || [];\n  let firstNext = null as (typeof nextAnchors)[number] | null;\n  for (const day of residualDays) {\n    const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [day]).length === 0;\n    if (provenRetainedOverlap) continue;\n    const dayDate = parseCrewRosterDate(day.date);\n    if (!dayDate || isOffLikeLocalDay(day)) return null;\n    if (!(day.legs || []).length) return null;\n    const anchor = nextAnchors.find((candidate) => candidate.day === day);\n    if (!anchor) return null;\n    const gap = dayGapLocal(last, anchor);\n    if (gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin)) {\n      firstNext = anchor;\n      break;\n    }\n    return null;\n  }\n  if (!firstNext) return null;\n  const gapToNext = dayGapLocal(last, firstNext);`);
 
   const mergeAnchor = `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const sourceDays = position === 'prepend' ? [...(adjacent.days || []), ...(primary.days || [])] : [...(primary.days || []), ...(adjacent.days || [])];`;
   if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
@@ -146,9 +147,13 @@ requireFragments(database, overlapMarker, [
   'date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day',
   'return null;',
   'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
-  'const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [anchor.day]).length === 0;',
-  'const hasInterveningOff = (overlapFilteredNext.days || []).some',
-  'dayDate.getTime() > last.date.getTime()',
+  sourceOrderMarker,
+  'const residualDays = overlapFilteredNext.days || [];',
+  'const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [day]).length === 0;',
+  'const dayDate = parseCrewRosterDate(day.date);',
+  'if (!dayDate || isOffLikeLocalDay(day)) return null;',
+  'if (!(day.legs || []).length) return null;',
+  'const anchor = nextAnchors.find((candidate) => candidate.day === day);',
   'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
   'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
   "if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };",
@@ -162,6 +167,8 @@ const continuationTailBlock = requireUniqueRange(
   `\nfunction mergeContinuousLocal(`,
 );
 if (continuationTailBlock.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
+if (!continuationTailBlock.includes(sourceOrderMarker)) throw new Error(`[${overlapMarker}] residual source-order guard missing`);
+if (continuationTailBlock.includes('for (const anchor of nextAnchors)')) throw new Error(`[${overlapMarker}] anchor-only continuation traversal survived`);
 const rosterDateParserBlock = requireUniqueRange(
   database,
   overlapMarker,
