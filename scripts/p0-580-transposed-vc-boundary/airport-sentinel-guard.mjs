@@ -18,12 +18,6 @@ if (!source.includes(marker)) {
   console.log(`[crewcheck:prepare] ${marker} already applied; validating structure`);
 }
 
-const staleResidualDefinition = `  const residualDays = overlapFilteredNext.days || [];`;
-const directResidualDefinition = `  const residualDays = dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []);`;
-if (source.includes(staleResidualDefinition)) {
-  source = source.replace(staleResidualDefinition, directResidualDefinition);
-}
-
 const start = source.indexOf('function mergeAirportForLocal(value?: string | null): string {');
 const end = source.indexOf('\n}\n\nfunction isOffLikeLocalDay', start);
 if (start < 0 || end < 0) throw new Error(`[${marker}] continuity airport helper range not found`);
@@ -36,6 +30,5 @@ for (const fragment of [
   if (!helper.includes(fragment)) throw new Error(`[${marker}] structural guard incomplete: missing ${fragment}`);
 }
 if (helper.includes('.slice(0, 3)')) throw new Error(`[${marker}] truncating airport normalization survived`);
-if (!source.includes(directResidualDefinition)) throw new Error(`[${marker}] residual source-order definition not aligned`);
 
 fs.writeFileSync(databasePath, source, 'utf8');
