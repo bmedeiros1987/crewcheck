@@ -17,6 +17,7 @@ on:
       - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
       - 'scripts/regression-p0-580-overlap-reimport.mjs'
       - 'scripts/regression-p0-580-exact-competence-open.mjs'
+      - 'scripts/regression-p0-580-invalid-placeholders.mjs'
       - '.github/workflows/p0-580-vc-boundary.yml'
   workflow_dispatch:
 
@@ -43,3 +44,5 @@ jobs:
         run: node scripts/regression-p0-580-overlap-reimport.mjs
       - name: Validate exact competence open and carry-in
         run: node scripts/regression-p0-580-exact-competence-open.mjs
+      - name: Validate invalid overlap placeholders
+        run: node scripts/regression-p0-580-invalid-placeholders.mjs
