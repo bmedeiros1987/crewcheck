@@ -46,7 +46,12 @@ function normalizeIdentityToken(value?: string | null): string | null {
 }
 
 function normalizeAirportIdentityToken(value?: string | null): string | null {
-  const token = normalizeIdentityToken(value);
+  // Airport identity has its own sentinel policy. Generic placeholders such as
+  // UNK/TBA/TBD can also be legitimate IATA codes, so reusing the generic token
+  // blacklist here would turn real airports into non-identifying values and let
+  // duplicate carry-in legs survive. Reject only airport-specific sentinels and
+  // malformed values in this context.
+  const token = normalizeToken(value);
   if (!token || NON_IDENTIFYING_AIRPORT_TOKENS.has(token) || !/^[A-Z]{3}$/.test(token)) return null;
   return token;
 }
