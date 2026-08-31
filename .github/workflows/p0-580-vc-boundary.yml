@@ -50,3 +50,5 @@ jobs:
         run: node scripts/regression-p0-580-invalid-placeholders.mjs
       - name: Validate residual continuity source order
         run: node scripts/regression-p0-580-residual-source-order.mjs
+      - name: Validate continuity airport sentinels
+        run: node scripts/p0-580-transposed-vc-boundary/regression-airport-sentinel.mjs
