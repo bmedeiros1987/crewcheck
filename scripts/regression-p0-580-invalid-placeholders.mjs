@@ -52,9 +52,23 @@ assert.equal(
   'legitimate UNK IATA identity must deduplicate an exact carry-in copy',
 );
 
+// CRM is a broad parser category. The published pairing code carries the specific
+// ground activity identity, so CBF and EMER on the same date must coexist instead
+// of one being deleted merely because both normalize to type CRM.
+const crmPrimary = [
+  { date: '15/09/2026', type: 'CRM', pairingCode: 'CBF', legs: [] },
+];
+const crmAdjacent = [
+  { date: '2026-09-15', type: 'CRM', pairingCode: 'EMER', legs: [] },
+];
+const crmResult = dedupeAdjacentRosterDays(crmPrimary, crmAdjacent);
+assert.equal(crmResult.length, 1, 'distinct CRM ground activities must remain distinct by published specific code');
+assert.equal(crmResult[0].pairingCode, 'EMER');
+
 assert.match(helperSource, /'INVALID'/, 'invalid sentinel must be explicitly non-identifying');
 assert.match(helperSource, /NON_IDENTIFYING_AIRPORT_TOKENS/, 'airport placeholders need a dedicated fail-closed guard');
 assert.match(helperSource, /'XXX'/, 'XXX airport placeholder must not authorize overlap deletion');
+assert.match(helperSource, /type === 'CRM'/, 'CRM identity must preserve the published specific activity code');
 assert.match(helperSource, /const token = normalizeToken\(value\);/, 'airport identity must use context-specific token normalization');
 
-console.log('[P0-580] invalid sentinels rejected while legitimate IATA identity remains deduplicable: PASS');
+console.log('[P0-580] invalid sentinels, legitimate IATA and distinct CRM ground activities: PASS');
