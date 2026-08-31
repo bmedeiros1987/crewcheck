@@ -13,6 +13,7 @@ type LocalRosterDayLike<TLeg extends LocalRosterLegLike = LocalRosterLegLike> = 
   dutyDebrief?: string | null;
   dutyHours?: unknown;
   flyingHours?: unknown;
+  isNextDay?: boolean | null;
   rawText?: string | null;
   legs?: TLeg[] | null;
 };
@@ -111,6 +112,10 @@ function clearPartialDutyMetadata<TDay extends LocalRosterDayLike>(day: TDay): T
     dutyDebrief: null,
     dutyHours: null,
     flyingHours: null,
+    // Partial-leg filtering invalidates day-level rollover metadata. Preserving a
+    // stale true value can make compliance treat a retained daytime leg as crossing
+    // midnight and inflate the operational window by 24 hours.
+    isNextDay: null,
     rawText: null,
   } as TDay;
 }
