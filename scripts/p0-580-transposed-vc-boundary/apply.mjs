@@ -7,6 +7,7 @@ const legendMarker = 'P0_580_LEGEND_BOUNDARY_GUARD';
 const legendSectionMarker = 'P0_580_LEGEND_SECTION_GUARD';
 const overlapMarker = 'P0_580_OVERLAP_ACTIVITY_DEDUPE';
 const sourceOrderMarker = 'P0_580_RESIDUAL_SOURCE_ORDER_GUARD';
+const summaryBodyMarker = 'P0_580_ACTIVE_SUMMARY_BODY_GUARD';
 
 if (!fs.existsSync(parserPath)) throw new Error(`[${transposedMarker}] ${parserPath} not found`);
 let source = fs.readFileSync(parserPath, 'utf8');
@@ -97,6 +98,19 @@ if (!database.includes(overlapMarker)) {
   if (!database.includes(importAnchor)) throw new Error(`[${overlapMarker}] database import anchor not found`);
   database = database.replace(importAnchor, `${importAnchor}\nimport { dedupeAdjacentRosterDays } from './localRosterOverlap'; // ${overlapMarker}`);
 
+  // P0_580_ACTIVE_SUMMARY_BODY_GUARD: the announced summary must be validated
+  // against the body that actually arrived BEFORE any device-versus-server
+  // reconciliation. Reconciliation compares the remote summary with whichever
+  // publication is locally active, so running it first turns an internally
+  // inconsistent remote response into a confirmation prompt whose outcome depends
+  // on the calendar. Nominal competence is sovereign: an authorized checksum never
+  // authorizes a body from another competence.
+  const summaryBodyGuard = `      // ${summaryBodyMarker}: an authorized summary never authorizes a body from another\n      // nominal competence. Runs before reconciliation so an internally inconsistent\n      // remote response is reported as the nominal mismatch it is.\n      if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);`;
+  const reconciliationAnchor = `      const reconciliation = reconcileActiveRosterIdentity({ remote: payload.roster || null, local: local || null });`;
+  const reconciliationCount = database.split(reconciliationAnchor).length - 1;
+  if (reconciliationCount !== 1) throw new Error(`[${overlapMarker}] active reconciliation anchor count ${reconciliationCount}, expected 1`);
+  database = database.replace(reconciliationAnchor, `${summaryBodyGuard}\n${reconciliationAnchor}`);
+
   const activeReturnAnchor = `return { roster: payload.data.roster, compliance: payload.data.compliance as any, gym: payload.data.gym || [], summary: payload.roster || null };`;
   const activeReturnCount = database.split(activeReturnAnchor).length - 1;
   if (activeReturnCount !== 1) throw new Error(`[${overlapMarker}] active-roster reconciliation anchor count ${activeReturnCount}, expected 1`);
@@ -140,6 +154,8 @@ if (!database.includes(overlapMarker)) {
 requireFragments(database, overlapMarker, [
   `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,
   'const remoteData = { roster: payload.data.roster',
+  summaryBodyMarker,
+  'if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);',
   'if (remoteSummary) assertExpectedRosterPeriod(remoteData.roster, remoteSummary);',
   "['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())",
   'await buildSmartLocalContinuousRoster(remoteSummary, remoteData)',
@@ -160,6 +176,13 @@ requireFragments(database, overlapMarker, [
   "const days: CrewRoster['days'] = [...sourceDays];",
   'Nominal adjacency',
 ]);
+// The summary/body guard is only meaningful upstream of reconciliation; assert the
+// order structurally so a later refactor cannot silently restore the old sequence.
+const summaryBodyGuardIndex = database.indexOf('if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);');
+const reconciliationIndex = database.indexOf('const reconciliation = reconcileActiveRosterIdentity(');
+if (summaryBodyGuardIndex < 0) throw new Error(`[${overlapMarker}] summary/body guard missing`);
+if (reconciliationIndex < 0) throw new Error(`[${overlapMarker}] active reconciliation call missing`);
+if (summaryBodyGuardIndex > reconciliationIndex) throw new Error(`[${overlapMarker}] summary/body guard must precede identity reconciliation`);
 const continuationTailBlock = requireUniqueRange(
   database,
   overlapMarker,
