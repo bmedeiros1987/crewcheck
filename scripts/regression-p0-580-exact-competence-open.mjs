@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
+import { freezeFixtureClock } from './p0-580-transposed-vc-boundary/fixed-clock.mjs';
 
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-580-exact-competence-'));
 
@@ -63,6 +64,8 @@ try {
     },
   });
 
+  // Pin the harness clock to the epoch these fixtures describe. See fixed-clock.mjs.
+  freezeFixtureClock();
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
   globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
@@ -325,7 +328,14 @@ try {
   const workflowSource = fs.readFileSync('.github/workflows/p0-580-vc-boundary.yml', 'utf8');
   assert.doesNotMatch(databaseSource, /Fallback premium:[\s\S]*?\/api\/rosters\/active/, 'abrir por ID não pode cair na escala ativa');
   assert.match(databaseSource, /if \(adjacentWasFiltered\) adjacent = \{ \.\.\.adjacent, rawText: '' \};/, 'overlap parcial deve invalidar rawText agregado adjacente');
-  assert.match(databaseSource, /const residualDays = dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], nextRoster\.days \|\| \[\]\);/, 'continuidade deve partir das atividades residuais depois do dedupe count-aware');
+  // The residual scan must consume the SAME objects that produced nextAnchors:
+  // dedupeAdjacentRosterDays clones a day whose legs were partially consumed, so
+  // re-deriving the dedupe here yields fresh references and the anchor lookup
+  // `candidate.day === day` silently fails, blocking every partial-overlap
+  // continuation. Assert the count-aware source and the referential reuse.
+  assert.match(databaseSource, /const overlapFilteredNext = \{ \.\.\.nextRoster, days: dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], nextRoster\.days \|\| \[\]\) \};/, 'continuidade deve partir do dedupe count-aware de previous vs next');
+  assert.match(databaseSource, /const residualDays = overlapFilteredNext\.days \|\| \[\];/, 'a varredura residual deve reutilizar os objetos já filtrados, preservando identidade referencial');
+  assert.doesNotMatch(databaseSource, /const residualDays = dedupeAdjacentRosterDays\(/, 're-derivar o dedupe quebra candidate.day === day e bloqueia continuação de overlap parcial');
   assert.match(databaseSource, /for \(const day of residualDays\)/, 'continuidade deve percorrer atividades residuais em ordem de fonte');
   assert.match(databaseSource, /dedupeAdjacentRosterDays\(previousRoster\.days \|\| \[\], \[day\]\)\.length === 0/, 'somente overlap individualmente comprovado pode ser ignorado durante a varredura residual');
   assert.match(databaseSource, /await buildSmartLocalContinuousRoster\(remoteSummary, remoteData\)/, 'fetch ativo online deve reconciliar competências adjacentes antes de retornar');

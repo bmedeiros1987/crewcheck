@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
+import { freezeFixtureClock } from './fixed-clock.mjs';
 
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-580-airport-sentinel-'));
 
@@ -45,6 +46,8 @@ try {
     },
   });
 
+  // Pin the harness clock to the epoch these fixtures describe. See fixed-clock.mjs.
+  freezeFixtureClock();
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
   globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
