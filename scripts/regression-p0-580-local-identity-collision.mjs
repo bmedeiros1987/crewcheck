@@ -144,10 +144,67 @@ try {
   await deleteRosterAnalysis(collidingId);
   assert.equal(JSON.parse(localStorage.getItem(historyKey)).length, 2, 'id ambíguo sem identidade não pode apagar nada');
 
+  // --- 6. Fail-open in assertExpectedRosterCrew: a verifiable expectation must not be
+  // satisfied by an answer whose own identity cannot be verified. The remote branch is
+  // where this bites — the local branch already refuses earlier, in the lookup — so the
+  // scenarios below drive a non-local id through the server attempts.
+  //
+  // Fail-before on 664b656: `if (!wanted || !actual || wanted === actual) return;`
+  // returned silently whenever the answer carried no crew, so a crew-less body of the
+  // right competence was accepted as Alpha's roster.
+  const alpha = publication('ALPHA TRIPULANTE', '33333333', [flightDay('06/08/2026', 'AL1', 'LA4000', 'BSB', 'AAA', '08:00', '07:00')]);
+  const crewless = { ...publication('', '', [flightDay('06/08/2026', 'XX1', 'LA4000', 'BSB', 'AAA', '08:00', '07:00')]) };
+  const remoteId = 'remote-alpha-2026-08';
+  const expectedAlpha = { id: remoteId, year: 2026, month: 8, crewId: alpha.crewId, crewName: alpha.crewName };
+
+  const serveRemote = (roster) => {
+    globalThis.fetch = async (input) => {
+      if (String(input).startsWith(`/api/rosters/${remoteId}`) || String(input).includes(`id=${remoteId}`)) {
+        return new Response(JSON.stringify({ ok: true, data: { roster, compliance: { score: 100, alerts: [] }, gym: [] } }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: false, message: 'not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+    };
+  };
+
+  // (1) expected Alpha + corpo da mesma competência sem identidade => recusa explícita.
+  resetEnvironment('device-account');
+  serveRemote(crewless);
+  await assert.rejects(
+    () => openSavedRoster(remoteId, expectedAlpha),
+    (error) => {
+      assert.equal(error?.code, 'ROSTER_IDENTITY_MISMATCH', 'corpo sem identidade verificável não pode satisfazer uma expectativa verificável');
+      assert.equal(error?.actualCrew, 'unverified', 'a recusa deve dizer que a identidade do corpo não pôde ser verificada');
+      return true;
+    },
+    'ausência de identidade no corpo não é prova de concordância',
+  );
+
+  // (2) expected Alpha + corpo Alpha => passa.
+  resetEnvironment('device-account');
+  serveRemote(alpha);
+  const openedAlpha = await openSavedRoster(remoteId, expectedAlpha);
+  assert.equal(openedAlpha.roster.crewId, alpha.crewId, 'corpo do próprio tripulante deve continuar abrindo normalmente');
+
+  // (3) expectativa sem identidade não pode adivinhar entre candidatos ambíguos.
+  resetEnvironment('device-account');
+  localStorage.setItem('crewcheck_local_history_v11_device-account', JSON.stringify([
+    { id: collidingId, checksum: 'bruno-ambiguous', createdAt: '2026-08-31T14:00:00.000Z', sourceFileName: 'bruno.pdf', roster: bruno, compliance: { score: 100, alerts: [] }, gym: [] },
+    { id: collidingId, checksum: 'ana-ambiguous', createdAt: '2026-08-30T14:00:00.000Z', sourceFileName: 'ana.pdf', roster: ana, compliance: { score: 100, alerts: [] }, gym: [] },
+  ]));
+  await assert.rejects(
+    () => openSavedRoster(collidingId, { id: collidingId, year: 2026, month: 8 }),
+    () => true,
+    'sem identidade na expectativa, um id ambíguo não pode devolver um dos candidatos por sorteio',
+  );
+
   const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   assert.match(databaseSource, /function crewIdentityToken\(/, 'a normalização de identidade deve existir em um único lugar');
   assert.match(databaseSource, /function findLocalRoster\(id: string, expected\?/, 'a busca por id deve receber a identidade esperada');
   assert.match(databaseSource, /assertExpectedRosterCrew\(local\.roster, expected\);/, 'a abertura local deve validar identidade, não só competência');
+  assert.match(databaseSource, /assertExpectedRosterCrew\(payload\.data\.roster, expected\);/, 'a resposta remota também deve validar identidade');
+  assert.doesNotMatch(databaseSource, /if \(!wanted \|\| !actual \|\| wanted === actual\) return;/, 'a expectativa verificável não pode ser satisfeita por identidade ausente');
   assert.doesNotMatch(databaseSource, /return readLocalHistory\(\)\.find\(\(item\) => item\.id === id \|\| item\.checksum === id\) \|\| null;/, 'a busca por id sem identidade não pode sobreviver');
   const historyGenerator = fs.readFileSync('scripts/v14338/apply.mjs', 'utf8');
   assert.match(historyGenerator, /localRosterIdentitySlug\(roster\)/, 'o id gerado deve carregar a identidade do tripulante');

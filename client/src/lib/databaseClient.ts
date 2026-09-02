@@ -189,16 +189,21 @@ function assertExpectedRosterPeriod(roster: CrewRoster, expected?: Pick<SavedRos
 
 // P0_580_LOCAL_ID_COLLISION_GUARD: competence alone never identifies a publication.
 // Two crew members share a competence, so a period-only check passes while handing
-// back the wrong person's roster. Both identities must be verifiable to compare;
-// an unverifiable side is not treated as agreement.
+// back the wrong person's roster.
+//
+// Once the caller has named a verifiable crew, an answer whose own identity cannot be
+// verified is not evidence of agreement — it is the absence of evidence, and accepting
+// it is a fail-open on the very contract this guard exists to enforce. Only a caller
+// that named no crew keeps the conservative path.
 function assertExpectedRosterCrew(roster: CrewRoster, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): void {
   const wanted = crewIdentityToken(expected);
+  if (!wanted) return;
   const actual = crewIdentityToken(roster);
-  if (!wanted || !actual || wanted === actual) return;
+  if (actual === wanted) return;
   throw Object.assign(new Error('A escala aberta pertence a outro tripulante.'), {
     code: 'ROSTER_IDENTITY_MISMATCH',
     expectedCrew: wanted,
-    actualCrew: actual,
+    actualCrew: actual || 'unverified',
   });
 }
 
