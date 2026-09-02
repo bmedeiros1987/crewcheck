@@ -99,8 +99,10 @@ function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): strin
   const departure = normalizeOperationalTime(leg.departureTime);
   // Identity must be composed only from verified values. In particular, never
   // truncate UNKNOWN into the airport-looking token UNK or let another placeholder
-  // become evidence strong enough to delete an adjacent operation.
-  if (!date || !flight || !/^(?=.*\d)[A-Z0-9]{2,8}$/.test(flight) || !origin || !destination || !departure) return null;
+  // become evidence strong enough to delete an adjacent operation. A stable
+  // alphanumeric published identifier need not contain a digit; placeholder
+  // values are already rejected by normalizeIdentityToken().
+  if (!date || !flight || !/^[A-Z0-9]{2,8}$/.test(flight) || !origin || !destination || !departure) return null;
   // Pairing/report metadata may legitimately change after reimport. Published
   // departure time is part of the occurrence identity so two operations with the
   // same flight/date/route are not collapsed when they happen at different times.
