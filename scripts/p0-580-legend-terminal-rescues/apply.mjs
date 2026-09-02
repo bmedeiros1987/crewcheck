@@ -52,3 +52,5 @@ for (const unsafe of [
   if (block.includes(unsafe)) throw new Error(`[${marker}] post-LEGEND rescue still uses unbounded source: ${unsafe}`);
 }
 console.log(`[crewcheck:prepare] ${marker} validated`);
+
+await import('../p0-580-previous-source-order/apply.mjs');
