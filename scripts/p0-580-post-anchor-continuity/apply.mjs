@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const databasePath = 'client/src/lib/databaseClient.ts';
 const marker = 'P0_580_POST_ANCHOR_RESIDUAL_GUARD';
 const crewMarker = 'P0_580_ADJACENT_CREW_IDENTITY_GUARD';
+const remoteCrewMarker = 'P0_580_REMOTE_CREW_IDENTITY_ENRICHMENT';
 
 if (!fs.existsSync(databasePath)) throw new Error(`[${marker}] ${databasePath} not found`);
 let source = fs.readFileSync(databasePath, 'utf8');
@@ -17,6 +18,17 @@ if (!source.includes(crewMarker)) {
   console.log(`[crewcheck:prepare] applied ${crewMarker}`);
 } else {
   console.log(`[crewcheck:prepare] ${crewMarker} already applied; validating structure`);
+}
+
+if (!source.includes(remoteCrewMarker)) {
+  const oldRemoteSummary = `      const remoteSummary = payload.roster\n        || getLocalRosterSummaries(12).find((item) => Number(item.year) === Number(remoteData.roster.year) && Number(item.month) === Number(remoteData.roster.month))\n        || null;`;
+  const remoteSummaryCount = source.split(oldRemoteSummary).length - 1;
+  if (remoteSummaryCount !== 1) throw new Error(`[${remoteCrewMarker}] remote summary anchor count ${remoteSummaryCount}, expected 1`);
+  const newRemoteSummary = `      // ${remoteCrewMarker}: older active-summary payloads may omit crew identity even\n      // though the already-authorized roster body contains it. Carry that verified\n      // identity into local adjacency selection; never infer it from another month.\n      const remoteSummaryBase = payload.roster\n        || getLocalRosterSummaries(12).find((item) => Number(item.year) === Number(remoteData.roster.year) && Number(item.month) === Number(remoteData.roster.month))\n        || null;\n      const remoteSummary = remoteSummaryBase\n        ? {\n            ...remoteSummaryBase,\n            crewId: remoteSummaryBase.crewId || remoteData.roster.crewId || null,\n            crewName: remoteSummaryBase.crewName || remoteData.roster.crewName || null,\n          }\n        : null;`;
+  source = source.replace(oldRemoteSummary, newRemoteSummary);
+  console.log(`[crewcheck:prepare] applied ${remoteCrewMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${remoteCrewMarker} already applied; validating structure`);
 }
 
 if (!source.includes(marker)) {
@@ -45,6 +57,10 @@ for (const fragment of [
   crewMarker,
   "Pick<SavedRosterSummary, 'year' | 'month' | 'crewId' | 'crewName'>",
   'sameRosterCrew(current, item)',
+  remoteCrewMarker,
+  'const remoteSummaryBase = payload.roster',
+  'crewId: remoteSummaryBase.crewId || remoteData.roster.crewId || null',
+  'crewName: remoteSummaryBase.crewName || remoteData.roster.crewName || null',
 ]) {
   if (!prepared.includes(fragment)) throw new Error(`[${marker}] structural patch incomplete: missing ${fragment}`);
 }
