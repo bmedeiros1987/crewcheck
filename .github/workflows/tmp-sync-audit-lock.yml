@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
 
+# Temporary one-shot helper; remove after package-lock.json is synchronized.
 jobs:
   sync-lock:
     runs-on: ubuntu-latest
