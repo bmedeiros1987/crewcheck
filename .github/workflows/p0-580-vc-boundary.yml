@@ -27,6 +27,7 @@ on:
       - 'scripts/regression-p0-580-post-anchor-residual.mjs'
       - 'scripts/regression-p0-580-residual-object-identity.mjs'
       - 'scripts/regression-p0-580-boundary-clock-independence.mjs'
+      - 'scripts/regression-p0-580-local-identity-collision.mjs'
       - 'scripts/regression-p0-580-adjacent-crew-identity.mjs'
       - 'scripts/regression-p0-580-previous-source-order.mjs'
       - 'scripts/regression-p0-580-active-body-fingerprint.mjs'
@@ -74,3 +75,5 @@ jobs:
         run: node scripts/regression-p0-580-residual-object-identity.mjs
       - name: Validate nominal mismatch independence from the calendar
         run: node scripts/regression-p0-580-boundary-clock-independence.mjs
+      - name: Validate local publication identity uniqueness
+        run: node scripts/regression-p0-580-local-identity-collision.mjs
