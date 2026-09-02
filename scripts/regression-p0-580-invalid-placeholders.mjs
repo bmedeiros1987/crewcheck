@@ -115,13 +115,31 @@ const crmResult = dedupeAdjacentRosterDays(crmPrimary, crmAdjacent);
 assert.equal(crmResult.length, 1, 'distinct CRM ground activities must remain distinct by published specific code');
 assert.equal(crmResult[0].pairingCode, 'EMER');
 
+for (const pairingCode of [undefined, 'UNKNOWN', 'UNKNOWN1', 'MISSING', '???']) {
+  const primary = [{ date: '16/09/2026', type: 'CRM', pairingCode, legs: [] }];
+  const adjacent = [{ date: '2026-09-16', type: 'CRM', pairingCode, legs: [] }];
+  assert.equal(
+    dedupeAdjacentRosterDays(primary, adjacent).length,
+    1,
+    `CRM without a verifiable specific code (${String(pairingCode)}) must remain non-deduplicable`,
+  );
+}
+
+const sameSpecificCrmPrimary = [{ date: '17/09/2026', type: 'CRM', pairingCode: 'CBF', legs: [] }];
+const sameSpecificCrmAdjacent = [{ date: '2026-09-17', type: 'CRM', pairingCode: 'CBF', legs: [] }];
+assert.equal(
+  dedupeAdjacentRosterDays(sameSpecificCrmPrimary, sameSpecificCrmAdjacent).length,
+  0,
+  'CRM with the same verified specific code must still deduplicate an exact overlap',
+);
+
 assert.match(helperSource, /'INVALID'/, 'invalid sentinel must be explicitly non-identifying');
 assert.match(helperSource, /'MISSING'/, 'missing-data sentinel must be explicitly non-identifying');
 assert.match(helperSource, /NON_IDENTIFYING_TOKEN_FAMILIES/, 'numbered sentinel families must fail closed before identity construction');
 assert.match(helperSource, /UNKNOWN\|INVALID\|MISSING/, 'UNKNOWN/INVALID/MISSING families must remain structurally guarded');
 assert.match(helperSource, /NON_IDENTIFYING_AIRPORT_TOKENS/, 'airport placeholders need a dedicated fail-closed guard');
 assert.match(helperSource, /'XXX'/, 'XXX airport placeholder must not authorize overlap deletion');
-assert.match(helperSource, /type === 'CRM'/, 'CRM identity must preserve the published specific activity code');
+assert.match(helperSource, /if \(type === 'CRM'\)/, 'CRM must require a verified published specific activity code');
 assert.match(helperSource, /const token = normalizeToken\(value\);/, 'airport identity must use context-specific token normalization');
 
 console.log('[P0-580] invalid sentinels, legitimate IATA and distinct CRM ground activities: PASS');
