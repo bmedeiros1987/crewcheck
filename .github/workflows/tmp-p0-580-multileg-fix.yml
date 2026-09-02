@@ -1,0 +1,165 @@
+name: Temporary P0 580 multi-leg hardening
+
+on:
+  push:
+    branches:
+      - chatgpt/580-nominal-competence-adjacency
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/580-nominal-competence-adjacency
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Apply narrow multi-leg guard and regression
+        shell: python
+        run: |
+          from pathlib import Path
+
+          overlap = Path('client/src/lib/localRosterOverlap.ts')
+          text = overlap.read_text()
+          marker = "function looksLikeFlightWithoutLegs(day: LocalRosterDayLike): boolean {"
+          addition = '''export function isOperationalLegChainVerifiable<TLeg extends LocalRosterLegLike, TDay extends LocalRosterDayLike<TLeg>>(day: TDay): boolean {
+            const legs = day.legs || [];
+            if (!legs.length) return false;
+            for (const leg of legs) {
+              if (!legIdentityKey(day, leg)) return false;
+            }
+            for (let index = 0; index < legs.length - 1; index += 1) {
+              const destination = normalizeAirportIdentityToken(legs[index]?.destination);
+              const nextOrigin = normalizeAirportIdentityToken(legs[index + 1]?.origin);
+              if (!destination || !nextOrigin || destination !== nextOrigin) return false;
+            }
+            return true;
+          }
+
+          '''
+          if 'isOperationalLegChainVerifiable' not in text:
+              if text.count(marker) != 1:
+                  raise SystemExit('overlap insertion anchor mismatch')
+              text = text.replace(marker, addition + marker)
+              overlap.write_text(text)
+
+          apply = Path('scripts/p0-580-transposed-vc-boundary/apply.mjs')
+          text = apply.read_text()
+          old_import = "import { dedupeAdjacentRosterDays } from './localRosterOverlap'; // ${overlapMarker}"
+          new_import = "import { dedupeAdjacentRosterDays, isOperationalLegChainVerifiable } from './localRosterOverlap'; // ${overlapMarker}"
+          text = text.replace(old_import, new_import)
+          text = text.replace("  if (!(day.legs || []).length) return null;\\n    const anchor = nextAnchors.find((candidate) => candidate.day === day);",
+                              "  if (!(day.legs || []).length) return null;\\n    if (!isOperationalLegChainVerifiable(day)) return null;\\n    const anchor = nextAnchors.find((candidate) => candidate.day === day);")
+          text = text.replace("  `import { dedupeAdjacentRosterDays } from './localRosterOverlap';`,",
+                              "  `import { dedupeAdjacentRosterDays, isOperationalLegChainVerifiable } from './localRosterOverlap';`,")
+          text = text.replace("  'if (!(day.legs || []).length) return null;',\n  'const anchor = nextAnchors.find((candidate) => candidate.day === day);',",
+                              "  'if (!(day.legs || []).length) return null;',\n  'if (!isOperationalLegChainVerifiable(day)) return null;',\n  'const anchor = nextAnchors.find((candidate) => candidate.day === day);',")
+          if "if (!isOperationalLegChainVerifiable(day)) return null;" not in text:
+              raise SystemExit('apply guard insertion failed')
+          apply.write_text(text)
+
+          invalid = Path('scripts/p0-580-invalid-date-continuity/apply.mjs')
+          text = invalid.read_text()
+          text = text.replace("    'if (!(day.legs || []).length) return null;',\n  ];",
+                              "    'if (!(day.legs || []).length) return null;',\n    'if (!isOperationalLegChainVerifiable(day)) return null;',\n  ];")
+          if text.count("'if (!isOperationalLegChainVerifiable(day)) return null;'") < 2:
+              raise SystemExit('invalid-date structural guard insertion failed')
+          invalid.write_text(text)
+
+          regression = Path('scripts/regression-p0-580-residual-source-order.mjs')
+          text = regression.read_text()
+          anchor = "  const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');"
+          addition = '''  const disconnectedSeptember = baseRoster(2026, 9, [
+            flightDay('2026-08-29', 'SEP-A', 'TST100', 'BSB', 'AAA', '08:00', '07:10'),
+            flightDay('2026-09-01', 'SEP-B', 'TST101', 'AAA', 'BBB', '09:00', '08:10'),
+            flightDay('2026-09-02', 'SEP-C', 'TST102', 'BBB', 'CCC', '10:00', '09:10'),
+            {
+              date: '2026-09-03', type: 'FLIGHT', pairingCode: 'BAD-DISCONNECTED', dutyReport: '10:00',
+              legs: [leg('TST103', 'CCC', 'DDD', '11:00'), leg('TST104', 'EEE', 'BSB', '13:00')],
+            },
+          ], 'SEPTEMBER-DISCONNECTED');
+
+          const continuousSeptember = baseRoster(2026, 9, [
+            flightDay('2026-08-29', 'SEP-A', 'TST100', 'BSB', 'AAA', '08:00', '07:10'),
+            flightDay('2026-09-01', 'SEP-B', 'TST101', 'AAA', 'BBB', '09:00', '08:10'),
+            flightDay('2026-09-02', 'SEP-C', 'TST102', 'BBB', 'CCC', '10:00', '09:10'),
+            {
+              date: '2026-09-03', type: 'FLIGHT', pairingCode: 'GOOD-CONTINUOUS', dutyReport: '10:00',
+              legs: [leg('TST103', 'CCC', 'DDD', '11:00'), leg('TST104', 'DDD', 'BSB', '13:00')],
+            },
+          ], 'SEPTEMBER-CONTINUOUS');
+
+          const setAdjacent = (roster, checksum) => localStorage.setItem('crewcheck_local_history_v11_crew-residual', JSON.stringify([
+            {
+              id: 'local-august-residual', checksum: 'august-residual', createdAt: '2026-08-31T14:00:00.000Z',
+              sourceFileName: 'august-residual.pdf', roster: august, compliance: { score: 100, alerts: [] }, gym: [],
+            },
+            {
+              id: `local-${checksum}`, checksum, createdAt: '2026-08-30T14:00:00.000Z',
+              sourceFileName: `${checksum}.pdf`, roster, compliance: { score: 100, alerts: [] }, gym: [],
+            },
+          ]));
+
+          const onlineAugust = async (input) => {
+            if (String(input) === '/api/rosters/active') {
+              return new Response(JSON.stringify({
+                ok: true,
+                roster: { id: 'remote-august-residual', checksum: 'august-residual', year: 2026, month: 8, isActive: true },
+                data: { roster: august, compliance: { score: 100, alerts: [] }, gym: [] },
+              }), { status: 200, headers: { 'content-type': 'application/json' } });
+            }
+            return new Response(JSON.stringify({ ok: false, message: 'not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+          };
+
+          setAdjacent(disconnectedSeptember, 'september-disconnected');
+          globalThis.fetch = onlineAugust;
+          assert.ok(!(await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'BAD-DISCONNECTED'), 'online: jornada multi-leg desconectada deve falhar fechado');
+          globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'offline' }), { status: 503, headers: { 'content-type': 'application/json' } });
+          assert.ok(!(await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'BAD-DISCONNECTED'), 'offline: jornada multi-leg desconectada deve falhar fechado');
+
+          setAdjacent(continuousSeptember, 'september-continuous');
+          globalThis.fetch = onlineAugust;
+          assert.ok((await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'GOOD-CONTINUOUS'), 'online: jornada multi-leg contínua legítima deve ser preservada');
+          globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'offline' }), { status: 503, headers: { 'content-type': 'application/json' } });
+          assert.ok((await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'GOOD-CONTINUOUS'), 'offline: jornada multi-leg contínua legítima deve ser preservada');
+
+          '''
+          if 'BAD-DISCONNECTED' not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit('regression insertion anchor mismatch')
+              text = text.replace(anchor, addition + anchor)
+              text = text.replace("  assert.match(databaseSource, /for \\(const day of residualDays\\)/, 'continuidade deve percorrer atividades residuais, não apenas âncoras com legs');",
+                                  "  assert.match(databaseSource, /for \\(const day of residualDays\\)/, 'continuidade deve percorrer atividades residuais, não apenas âncoras com legs');\n  assert.match(databaseSource, /isOperationalLegChainVerifiable\\(day\\)/, 'continuidade deve validar a cadeia interna completa de pernas');")
+              regression.write_text(text)
+
+      - name: Validate P0 materialization and regressions
+        run: |
+          node --check scripts/p0-580-transposed-vc-boundary/apply.mjs
+          node --check scripts/p0-580-invalid-date-continuity/apply.mjs
+          node --check scripts/regression-p0-580-residual-source-order.mjs
+          node scripts/v139/apply.mjs
+          node scripts/regression-p0-580-residual-source-order.mjs
+          node scripts/regression-p0-580-exact-competence-open.mjs
+          node scripts/regression-p0-580-overlap-reimport.mjs
+          node scripts/regression-p0-580-transposed-vc-boundary.mjs
+          npx tsc --noEmit
+          git diff --check
+      - name: Commit narrow fix
+        run: |
+          git checkout -- client/src/lib/databaseClient.ts client/src/lib/pdfParser.ts || true
+          if git diff --quiet -- client/src/lib/localRosterOverlap.ts scripts/p0-580-transposed-vc-boundary/apply.mjs scripts/p0-580-invalid-date-continuity/apply.mjs scripts/regression-p0-580-residual-source-order.mjs; then
+            echo 'fix already applied'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add client/src/lib/localRosterOverlap.ts scripts/p0-580-transposed-vc-boundary/apply.mjs scripts/p0-580-invalid-date-continuity/apply.mjs scripts/regression-p0-580-residual-source-order.mjs
+          git commit -m 'fix(#580): reject disconnected multi-leg journeys'
+          git push origin HEAD:chatgpt/580-nominal-competence-adjacency
