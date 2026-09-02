@@ -36,13 +36,15 @@ const NON_IDENTIFYING_TOKENS = new Set([
   'PLACEHOLDER',
 ]);
 
+const NON_IDENTIFYING_TOKEN_FAMILIES = /^(?:UNKNOWN|INVALID|MISSING)\d+$/;
+
 const NON_IDENTIFYING_AIRPORT_TOKENS = new Set([
   'XXX',
 ]);
 
 function normalizeIdentityToken(value?: string | null): string | null {
   const token = normalizeToken(value);
-  if (!token || NON_IDENTIFYING_TOKENS.has(token)) return null;
+  if (!token || NON_IDENTIFYING_TOKENS.has(token) || NON_IDENTIFYING_TOKEN_FAMILIES.test(token)) return null;
   return token;
 }
 
@@ -102,7 +104,7 @@ function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): strin
   // truncate UNKNOWN into the airport-looking token UNK or let another placeholder
   // become evidence strong enough to delete an adjacent operation. A stable
   // alphanumeric published identifier need not contain a digit; placeholder
-  // values are already rejected by normalizeIdentityToken().
+  // values and their numeric variants are rejected by normalizeIdentityToken().
   if (!date || !flight || !/^[A-Z0-9]{2,8}$/.test(flight) || !origin || !destination || !departure) return null;
   // Pairing/report metadata may legitimately change after reimport. Published
   // departure time is part of the occurrence identity so two operations with the
