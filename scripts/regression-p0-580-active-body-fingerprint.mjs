@@ -70,6 +70,34 @@ try {
       'mesma competência/checksum nunca pode autorizar corpo operacional diferente',
     );
 
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    try {
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, writable: true, value: undefined });
+      globalThis.fetch = async (input) => {
+        const url = String(input);
+        if (url === '/api/rosters/active') {
+          return new Response(JSON.stringify({
+            ok: true,
+            roster: { id: 'remote-august-sha', checksum: '0'.repeat(64), year: 2026, month: 8, crewId: 'CREW-A', crewName: 'Tripulante Alpha', isActive: true },
+            data: { roster: roster('LA9999'), compliance: { score: 100, alerts: [] }, gym: [] },
+          }), { status: 200, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({ ok: false }), { status: 404, headers: { 'content-type': 'application/json' } });
+      };
+
+      await assert.rejects(
+        () => openActiveRoster(),
+        (error) => {
+          assert.equal(error?.code, 'ACTIVE_ROSTER_BODY_MISMATCH');
+          return true;
+        },
+        'checksum SHA-256 anunciado deve falhar fechado quando Web Crypto estiver indisponível',
+      );
+    } finally {
+      if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
+      else delete globalThis.crypto;
+    }
+
     globalThis.fetch = async (input) => {
       const url = String(input);
       if (url === '/api/rosters/active') {
@@ -89,6 +117,8 @@ try {
     assert.match(source, /P0_580_ACTIVE_BODY_FINGERPRINT_GUARD/);
     assert.match(source, /await assertActiveRosterBodyIdentity\(payload\.roster \|\| null, payload\.data\.roster, local \|\| null\);/);
     assert.match(source, /ACTIVE_ROSTER_BODY_MISMATCH/);
+    assert.match(source, /if \(!globalThis\.crypto\?\.subtle\)/);
+    assert.match(source, /if \(bodyFingerprint !== announced\)/);
 
     console.log('[p0-580-active-body-fingerprint] PASS');
   } finally {
