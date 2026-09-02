@@ -121,6 +121,29 @@ try {
   const openedAna2 = await openSavedRoster(summaryAna2.id, summaryAna2);
   assert.equal(openedAna2.roster.crewId, ana.crewId, 'a publicação identificada continua abrindo a própria escala');
 
+  // --- 5. The same collision is destructive on the delete path: removing "every entry
+  // with this id" wiped the other crew member's roster as collateral. ---
+  resetEnvironment('device-account');
+  const historyKey = 'crewcheck_local_history_v11_device-account';
+  localStorage.setItem(historyKey, JSON.stringify([
+    { id: collidingId, checksum: 'bruno-legacy', createdAt: '2026-08-31T14:00:00.000Z', sourceFileName: 'bruno.pdf', roster: bruno, compliance: { score: 100, alerts: [] }, gym: [] },
+    { id: collidingId, checksum: 'ana-legacy', createdAt: '2026-08-30T14:00:00.000Z', sourceFileName: 'ana.pdf', roster: ana, compliance: { score: 100, alerts: [] }, gym: [] },
+  ]));
+  const { deleteRosterAnalysis } = await import(`${pathToFileURL(path.join(outDir, 'database-client.mjs')).href}?v=${Date.now()}-delete`);
+  await deleteRosterAnalysis(collidingId, { crewId: ana.crewId, crewName: ana.crewName });
+  const remaining = JSON.parse(localStorage.getItem(historyKey));
+  assert.equal(remaining.length, 1, 'apagar sob um id compartilhado não pode levar junto a escala do outro tripulante');
+  assert.equal(remaining[0].roster.crewId, bruno.crewId, 'a publicação que sobra deve ser exatamente a que não foi pedida');
+
+  // Ambiguous id with no identity given: refuse rather than guess on a destructive op.
+  resetEnvironment('device-account');
+  localStorage.setItem(historyKey, JSON.stringify([
+    { id: collidingId, checksum: 'bruno-legacy', createdAt: '2026-08-31T14:00:00.000Z', sourceFileName: 'bruno.pdf', roster: bruno, compliance: { score: 100, alerts: [] }, gym: [] },
+    { id: collidingId, checksum: 'ana-legacy', createdAt: '2026-08-30T14:00:00.000Z', sourceFileName: 'ana.pdf', roster: ana, compliance: { score: 100, alerts: [] }, gym: [] },
+  ]));
+  await deleteRosterAnalysis(collidingId);
+  assert.equal(JSON.parse(localStorage.getItem(historyKey)).length, 2, 'id ambíguo sem identidade não pode apagar nada');
+
   const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   assert.match(databaseSource, /function crewIdentityToken\(/, 'a normalização de identidade deve existir em um único lugar');
   assert.match(databaseSource, /function findLocalRoster\(id: string, expected\?/, 'a busca por id deve receber a identidade esperada');
@@ -128,6 +151,7 @@ try {
   assert.doesNotMatch(databaseSource, /return readLocalHistory\(\)\.find\(\(item\) => item\.id === id \|\| item\.checksum === id\) \|\| null;/, 'a busca por id sem identidade não pode sobreviver');
   const historyGenerator = fs.readFileSync('scripts/v14338/apply.mjs', 'utf8');
   assert.match(historyGenerator, /localRosterIdentitySlug\(roster\)/, 'o id gerado deve carregar a identidade do tripulante');
+  assert.match(databaseSource, /function deleteLocalRoster\(id: string, expected\?/, 'a remoção local também deve ser resolvida por identidade');
 
   console.log('[p0-580-local-identity-collision] OK — id local único por tripulante, id legado desambiguado por identidade e fail-closed quando a identidade pedida não está no dispositivo.');
 } finally {

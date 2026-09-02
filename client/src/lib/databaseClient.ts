@@ -423,19 +423,19 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
   return roster === data.roster ? data : { roster, compliance: null as any, gym: [] };
 }
 
-export async function deleteRosterAnalysis(id: string): Promise<boolean> {
+export async function deleteRosterAnalysis(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): Promise<boolean> {
   if (id.startsWith('local-') || id.startsWith('offline-')) {
-    deleteLocalRoster(id);
+    deleteLocalRoster(id, expected);
     return true;
   }
   try {
     const payload = await jsonFetch<{ ok: boolean }>(`/api/rosters/${id}`, { method: 'DELETE' });
-    deleteLocalRoster(id);
+    deleteLocalRoster(id, expected);
     return Boolean(payload.ok);
   } catch (error) {
-    const local = findLocalRoster(id);
+    const local = findLocalRoster(id, expected);
     if (local) {
-      deleteLocalRoster(id);
+      deleteLocalRoster(id, expected);
       return true;
     }
     throw error;
@@ -618,7 +618,15 @@ function findLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId
   return matches.find((item) => crewIdentityToken(item.roster) === wanted) || null;
 }
 
-function deleteLocalRoster(id: string): void {
+// P0_580_LOCAL_ID_COLLISION_GUARD: a legacy id is shared by every publication of the
+// same competence on the device, so removing "every entry with this id" destroys
+// another crew member's roster as collateral. Delete the entry whose identity was
+// actually asked for; when the id is ambiguous and no identity was given, delete
+// nothing rather than guess on a destructive operation.
+function deleteLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): void {
+  const target = findLocalRoster(id, expected);
+  if (!target) return;
+  const targetIdentity = crewIdentityToken(target.roster);
   for (const key of localHistoryKeys()) {
     try {
       const raw = localStorage.getItem(key);
@@ -627,7 +635,9 @@ function deleteLocalRoster(id: string): void {
       if (!Array.isArray(parsed)) continue;
       const next = parsed.filter((entry: any) => {
         const item = normalizeLocalHistoryItem(entry);
-        return item && item.id !== id && item.checksum !== id;
+        if (!item) return false;
+        if (item.id !== id && item.checksum !== id) return true;
+        return crewIdentityToken(item.roster) !== targetIdentity;
       });
       localStorage.setItem(key, JSON.stringify(next));
     } catch {
