@@ -13,7 +13,7 @@ const helperJs = ts.transpileModule(helperSource, {
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-580-invalid-placeholders-'));
 const tempModule = path.join(tempDir, 'localRosterOverlap.mjs');
 fs.writeFileSync(tempModule, helperJs);
-const { dedupeAdjacentRosterDays } = await import(`${pathToFileURL(tempModule).href}?v=${Date.now()}`);
+const { dedupeAdjacentRosterDays, isOperationalLegChainVerifiable } = await import(`${pathToFileURL(tempModule).href}?v=${Date.now()}`);
 
 const invalidActivityPrimary = [
   { date: '12/09/2026', type: 'INVALID', pairingCode: 'INVALID', legs: [] },
@@ -52,6 +52,38 @@ assert.equal(
   'legitimate UNK IATA identity must deduplicate an exact carry-in copy',
 );
 
+// Explicit missing-data labels are not operational identity. They must neither
+// authorize continuity nor delete an adjacent copy merely because date/route/time
+// happen to match.
+const missingIdentityDay = {
+  date: '2026-09-14',
+  type: 'FLIGHT',
+  legs: [{ flightNumber: 'MISSING', origin: 'UNK', destination: 'BBB', departureTime: '10:00' }],
+};
+assert.equal(
+  isOperationalLegChainVerifiable(missingIdentityDay),
+  false,
+  'MISSING flight identity must fail closed for continuation',
+);
+assert.equal(
+  dedupeAdjacentRosterDays([missingIdentityDay], [missingIdentityDay]).length,
+  1,
+  'MISSING flight identity must remain non-deduplicable',
+);
+
+// Preserve the earlier contract that a stable non-numeric published identifier can
+// still be valid when it is not a sentinel and all other operational fields verify.
+const alphaIdentityDay = {
+  date: '2026-09-14',
+  type: 'FLIGHT',
+  legs: [{ flightNumber: 'ABCD', origin: 'UNK', destination: 'BBB', departureTime: '10:00' }],
+};
+assert.equal(
+  isOperationalLegChainVerifiable(alphaIdentityDay),
+  true,
+  'stable non-numeric operational identifiers must remain supported',
+);
+
 // CRM is a broad parser category. The published pairing code carries the specific
 // ground activity identity, so CBF and EMER on the same date must coexist instead
 // of one being deleted merely because both normalize to type CRM.
@@ -66,6 +98,7 @@ assert.equal(crmResult.length, 1, 'distinct CRM ground activities must remain di
 assert.equal(crmResult[0].pairingCode, 'EMER');
 
 assert.match(helperSource, /'INVALID'/, 'invalid sentinel must be explicitly non-identifying');
+assert.match(helperSource, /'MISSING'/, 'missing-data sentinel must be explicitly non-identifying');
 assert.match(helperSource, /NON_IDENTIFYING_AIRPORT_TOKENS/, 'airport placeholders need a dedicated fail-closed guard');
 assert.match(helperSource, /'XXX'/, 'XXX airport placeholder must not authorize overlap deletion');
 assert.match(helperSource, /type === 'CRM'/, 'CRM identity must preserve the published specific activity code');
