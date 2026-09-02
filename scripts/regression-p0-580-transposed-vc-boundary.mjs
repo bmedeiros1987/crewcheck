@@ -76,10 +76,12 @@ for (let day = 21; day <= 30; day += 1) {
 }
 
 // Real CrewRoster reports place LEGEND on one row and its activity-code labels on
-// following rows. Those labels contain valid codes and used to contaminate the
-// final published day after the marker itself was ignored.
+// following rows. A syntactically valid flight-like line after LEGEND is included
+// to prove that every later rescue (visual/offset/ground) honors the same terminal
+// boundary instead of reintroducing post-LEGEND operational-looking data.
 const legendRows = [
   'LEGEND',
+  '30-Sep-2026 LA9999 OP XXX 12:00 YYY 13:00',
   'MCK Emergency mockup',
   'HSB Home Stand by',
   'DO Day off',
@@ -105,6 +107,7 @@ for (const day of vcDays) {
   assert.ok(dates.length <= 1, `multiple date tokens collapsed into ${day.date}: ${dates.join(', ')}`);
 }
 assert.ok(!roster.days.some((day) => /Home Stand by|Requested day off|Emergency mockup/i.test(day.rawText || '')), 'legend section must not create or contaminate roster days');
+assert.ok(!roster.days.some((day) => /LA9999/.test(`${day.pairingCode || ''} ${day.rawText || ''} ${(day.legs || []).map((leg) => leg.flightNumber).join(' ')}`)), 'post-LEGEND flight-like rows must remain terminally excluded from every rescue path');
 
 console.log('PASS regression-p0-580-transposed-vc-boundary');
 fs.rmSync(outDir, { recursive: true, force: true });
