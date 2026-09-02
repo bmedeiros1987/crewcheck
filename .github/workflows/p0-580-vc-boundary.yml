@@ -11,6 +11,7 @@ on:
       - 'server/platform.mjs'
       - 'scripts/p0-580-transposed-vc-boundary/**'
       - 'scripts/p0-580-invalid-date-continuity/**'
+      - 'scripts/p0-580-post-anchor-continuity/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/v14338/apply.mjs'
       - 'scripts/v14339/apply.mjs'
@@ -20,6 +21,7 @@ on:
       - 'scripts/regression-p0-580-exact-competence-open.mjs'
       - 'scripts/regression-p0-580-invalid-placeholders.mjs'
       - 'scripts/regression-p0-580-residual-source-order.mjs'
+      - 'scripts/regression-p0-580-post-anchor-residual.mjs'
       - 'scripts/regression-p0-580-residual-object-identity.mjs'
       - 'scripts/regression-p0-580-boundary-clock-independence.mjs'
       - '.github/workflows/p0-580-vc-boundary.yml'
@@ -52,6 +54,8 @@ jobs:
         run: node scripts/regression-p0-580-invalid-placeholders.mjs
       - name: Validate residual continuity source order
         run: node scripts/regression-p0-580-residual-source-order.mjs
+      - name: Validate residuals after first continuity anchor
+        run: node scripts/regression-p0-580-post-anchor-residual.mjs
       - name: Validate continuity airport sentinels
         run: node scripts/p0-580-transposed-vc-boundary/regression-airport-sentinel.mjs
       - name: Validate residual object identity across partial overlap
