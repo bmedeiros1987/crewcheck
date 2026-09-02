@@ -106,6 +106,7 @@ const names = [
   'localHistoryKeys',
   'normalizeLocalHistoryItem',
   'readLocalHistory',
+  'crewIdentityToken',
   'migrateLegacyActiveRosterSnapshotsOnce',
   'readLocalActiveRosterSnapshots',
   'periodHistoryKey',
@@ -138,6 +139,7 @@ ${extracted.normalizeLocalHistoryItem}
 ${extracted.readLocalHistory}
 ${extracted.migrateLegacyActiveRosterSnapshotsOnce}
 ${extracted.readLocalActiveRosterSnapshots}
+${extracted.crewIdentityToken}
 ${extracted.periodHistoryKey}
 ${extracted.getLocalRosterSummaries}
 ${extracted.rosterSummaryBounds}
