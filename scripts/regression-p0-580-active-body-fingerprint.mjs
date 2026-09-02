@@ -61,14 +61,32 @@ try {
       return new Response(JSON.stringify({ ok: false }), { status: 404, headers: { 'content-type': 'application/json' } });
     };
 
-    await assert.rejects(
-      () => openActiveRoster(),
-      (error) => {
-        assert.equal(error?.code, 'ACTIVE_ROSTER_BODY_MISMATCH');
-        return true;
-      },
-      'mesma competência/checksum nunca pode autorizar corpo operacional diferente',
-    );
+    await assert.rejects(() => openActiveRoster(), (error) => {
+      assert.equal(error?.code, 'ACTIVE_ROSTER_BODY_MISMATCH');
+      return true;
+    });
+
+    localStorage.setItem('crewcheck_local_history_v11_crew-580', JSON.stringify([]));
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url === '/api/rosters/active') {
+        return new Response(JSON.stringify({
+          ok: true,
+          roster: { id: 'remote-legacy', checksum: 'legacy-checksum', year: 2026, month: 8, crewId: 'CREW-A', crewName: 'Tripulante Alpha', isActive: true },
+          data: { roster: roster('LA9999'), compliance: { score: 100, alerts: [] }, gym: [] },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ok: false }), { status: 404, headers: { 'content-type': 'application/json' } });
+    };
+    await assert.rejects(() => openActiveRoster(), (error) => {
+      assert.equal(error?.code, 'ACTIVE_ROSTER_BODY_MISMATCH');
+      return true;
+    }, 'checksum legado sem snapshot confiável deve falhar fechado');
+
+    localStorage.setItem('crewcheck_local_history_v11_crew-580', JSON.stringify([{
+      id: 'local-august-trusted', checksum: 'trusted', createdAt: '2026-08-31T12:00:00.000Z',
+      sourceFileName: 'august-trusted.pdf', roster: trusted, compliance: { score: 100, alerts: [] }, gym: [],
+    }]));
 
     const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
     try {
@@ -85,14 +103,10 @@ try {
         return new Response(JSON.stringify({ ok: false }), { status: 404, headers: { 'content-type': 'application/json' } });
       };
 
-      await assert.rejects(
-        () => openActiveRoster(),
-        (error) => {
-          assert.equal(error?.code, 'ACTIVE_ROSTER_BODY_MISMATCH');
-          return true;
-        },
-        'checksum SHA-256 anunciado deve falhar fechado quando Web Crypto estiver indisponível',
-      );
+      await assert.rejects(() => openActiveRoster(), (error) => {
+        assert.equal(error?.code, 'ACTIVE_ROSTER_BODY_MISMATCH');
+        return true;
+      });
     } finally {
       if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
       else delete globalThis.crypto;
@@ -110,12 +124,13 @@ try {
       return new Response(JSON.stringify({ ok: false }), { status: 404, headers: { 'content-type': 'application/json' } });
     };
     const accepted = await openActiveRoster();
-    assert.ok(accepted.roster.days.some((day) => day.pairingCode === 'LA1000'), 'corpo que coincide com snapshot autorizado deve permanecer aceito');
-    assert.ok(!accepted.roster.days.some((day) => day.pairingCode === 'LA9999'), 'corpo trocado não pode sobreviver ao controle positivo');
+    assert.ok(accepted.roster.days.some((day) => day.pairingCode === 'LA1000'));
+    assert.ok(!accepted.roster.days.some((day) => day.pairingCode === 'LA9999'));
 
     const source = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
     assert.match(source, /P0_580_ACTIVE_BODY_FINGERPRINT_GUARD/);
-    assert.match(source, /await assertActiveRosterBodyIdentity\(payload\.roster \|\| null, payload\.data\.roster, local \|\| null\);/);
+    assert.match(source, /P0_580_LEGACY_CHECKSUM_SNAPSHOT_GUARD/);
+    assert.match(source, /if \(!canonicalSha256 && !matchingLocalSummary\?\.id\)/);
     assert.match(source, /ACTIVE_ROSTER_BODY_MISMATCH/);
     assert.match(source, /if \(!globalThis\.crypto\?\.subtle\)/);
     assert.match(source, /if \(bodyFingerprint !== announced\)/);
