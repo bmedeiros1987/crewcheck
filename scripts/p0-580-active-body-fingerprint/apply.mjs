@@ -19,10 +19,15 @@ if (!source.includes(marker)) {
   if (guardCount !== 1) throw new Error(`[${marker}] summary/body guard anchor count ${guardCount}, expected 1`);
   source = source.replace(guardAnchor, `      if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);\n      await assertActiveRosterBodyIdentity(payload.roster || null, payload.data.roster, local || null);\n      const reconciliation = reconcileActiveRosterIdentity({ remote: payload.roster || null, local: local || null });`);
 
-  const rethrowBefore = `['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())`;
-  const rethrowAfter = `['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH', 'ACTIVE_ROSTER_BODY_MISMATCH'].includes(String(error?.code || '').toUpperCase())`;
-  if (source.includes(rethrowBefore)) source = source.replace(rethrowBefore, rethrowAfter);
-  else if (!source.includes(rethrowAfter)) throw new Error(`[${marker}] active-roster rethrow anchor not found`);
+  // Keep the historical rethrow expression byte-for-byte so the idempotency oracle
+  // remains meaningful; add the new fail-closed code as a separate guard before it.
+  const rethrowAnchor = `    if (['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())) throw error;`;
+  const mismatchGuard = `    if (String(error?.code || '').toUpperCase() === 'ACTIVE_ROSTER_BODY_MISMATCH') throw error;`;
+  if (source.includes(rethrowAnchor) && !source.includes(mismatchGuard)) {
+    source = source.replace(rethrowAnchor, `${mismatchGuard}\n${rethrowAnchor}`);
+  } else if (!source.includes(rethrowAnchor) || !source.includes(mismatchGuard)) {
+    throw new Error(`[${marker}] active-roster rethrow anchor not found`);
+  }
 
   fs.writeFileSync(databasePath, source, 'utf8');
   console.log(`[crewcheck:prepare] applied ${marker}`);
@@ -36,7 +41,8 @@ for (const fragment of [
   'function activeRosterFingerprintPayload(roster: CrewRoster): string',
   "globalThis.crypto.subtle.digest('SHA-256'",
   'await assertActiveRosterBodyIdentity(payload.roster || null, payload.data.roster, local || null);',
-  "'ACTIVE_ROSTER_BODY_MISMATCH'",
+  "String(error?.code || '').toUpperCase() === 'ACTIVE_ROSTER_BODY_MISMATCH'",
+  "['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())",
   'activeRosterFingerprintPayload(trustedLocal.roster) !== bodyIdentity',
 ]) {
   if (!prepared.includes(fragment)) throw new Error(`[${marker}] missing structural guard: ${fragment}`);
