@@ -1,0 +1,51 @@
+name: Temporary P0 580 history crew identity fix
+
+on:
+  push:
+    branches:
+      - chatgpt/580-nominal-competence-adjacency
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: chatgpt/580-nominal-competence-adjacency
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Patch sentinel-aware history identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('client/src/lib/databaseClient.ts')
+          text = path.read_text()
+          old = """function periodHistoryKey(item: LocalHistoryItem): string {\n  return `${item.roster.crewId || item.roster.crewName || 'crew'}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;\n}\n"""
+          new = """function periodHistoryKey(item: LocalHistoryItem): string {\n  // P0_580_HISTORY_CREW_IDENTITY_GUARD: a placeholder crewId must never collapse\n  // different crew members into the same nominal-period history slot. Prefer a\n  // verified ID; otherwise use the normalized published name; without either,\n  // keep entries distinct rather than authorizing cross-publication adjacency.\n  const normalizedId = String(item.roster.crewId || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');\n  const usableId = normalizedId && !/^(?:UNKNOWN|INVALID|MISSING)(?:\\d+)?$/.test(normalizedId) && !/^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalizedId) ? normalizedId : '';\n  const normalizedName = String(item.roster.crewName || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');\n  const identity = usableId ? `ID:${usableId}` : normalizedName ? `NAME:${normalizedName}` : `ENTRY:${item.checksum || item.id}`;\n  return `${identity}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;\n}\n"""
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'periodHistoryKey anchor count {count}, expected 1')
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Commit source fix
+        run: |
+          if git diff --quiet -- client/src/lib/databaseClient.ts; then
+            echo "source already patched"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add client/src/lib/databaseClient.ts
+            git commit -m "fix(#580): scope history dedupe by verified crew identity"
+            git push origin HEAD:chatgpt/580-nominal-competence-adjacency
+          fi
+      - name: Verify exact P0 identity regression
+        run: |
+          npm ci
+          node scripts/v139/apply.mjs
+          node scripts/regression-p0-580-adjacent-crew-identity.mjs
