@@ -42,3 +42,5 @@ for (const fragment of [
 }
 if (block.includes('index > last.index && isOffLikeLocalDay(day)')) throw new Error(`[${marker}] off-only post-anchor guard survived`);
 if (block.includes("filter((day, index) => index >= tailStart && !isOffLikeLocalDay(day))")) throw new Error(`[${marker}] filtering source rows instead of respecting boundary survived`);
+
+await import('../p0-580-active-body-fingerprint/apply.mjs');
