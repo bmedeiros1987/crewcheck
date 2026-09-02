@@ -693,7 +693,15 @@ function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
 }
 
 function periodHistoryKey(item: LocalHistoryItem): string {
-  return `${item.roster.crewId || item.roster.crewName || 'crew'}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;
+  // P0_580_HISTORY_CREW_IDENTITY_GUARD: a placeholder crewId must never collapse
+  // different crew members into the same nominal-period history slot. Prefer a
+  // verified ID; otherwise use the normalized published name; without either,
+  // keep entries distinct rather than authorizing cross-publication adjacency.
+  const normalizedId = String(item.roster.crewId || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const usableId = normalizedId && !/^(?:UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalizedId) && !/^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalizedId) ? normalizedId : '';
+  const normalizedName = String(item.roster.crewName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const identity = usableId ? `ID:${usableId}` : normalizedName ? `NAME:${normalizedName}` : `ENTRY:${item.checksum || item.id}`;
+  return `${identity}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;
 }
 
 function buildLocalStoredStats(): StoredStatsResponse {
