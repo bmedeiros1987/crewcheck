@@ -109,6 +109,20 @@ function legIdentityKey(day: LocalRosterDayLike, leg: LocalRosterLegLike): strin
   return `F|${date}|${flight}|${origin}|${destination}|${departure}`;
 }
 
+export function isOperationalLegChainVerifiable<TLeg extends LocalRosterLegLike, TDay extends LocalRosterDayLike<TLeg>>(day: TDay): boolean {
+  const legs = day.legs || [];
+  if (!legs.length) return false;
+  for (const leg of legs) {
+    if (!legIdentityKey(day, leg)) return false;
+  }
+  for (let index = 0; index < legs.length - 1; index += 1) {
+    const destination = normalizeAirportIdentityToken(legs[index]?.destination);
+    const nextOrigin = normalizeAirportIdentityToken(legs[index + 1]?.origin);
+    if (!destination || !nextOrigin || destination !== nextOrigin) return false;
+  }
+  return true;
+}
+
 function looksLikeFlightWithoutLegs(day: LocalRosterDayLike): boolean {
   const type = normalizeToken(day.type);
   const pairing = normalizeToken(day.pairingCode);

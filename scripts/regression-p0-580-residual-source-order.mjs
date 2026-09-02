@@ -105,9 +105,64 @@ try {
   });
   assertResidualBlocked(await openActiveRoster(), 'offline');
 
+  const disconnectedSeptember = baseRoster(2026, 9, [
+  flightDay('2026-08-29', 'SEP-A', 'TST100', 'BSB', 'AAA', '08:00', '07:10'),
+  flightDay('2026-09-01', 'SEP-B', 'TST101', 'AAA', 'BBB', '09:00', '08:10'),
+  flightDay('2026-09-02', 'SEP-C', 'TST102', 'BBB', 'CCC', '10:00', '09:10'),
+  {
+    date: '2026-09-03', type: 'FLIGHT', pairingCode: 'BAD-DISCONNECTED', dutyReport: '10:00',
+    legs: [leg('TST103', 'CCC', 'DDD', '11:00'), leg('TST104', 'EEE', 'BSB', '13:00')],
+  },
+], 'SEPTEMBER-DISCONNECTED');
+
+const continuousSeptember = baseRoster(2026, 9, [
+  flightDay('2026-08-29', 'SEP-A', 'TST100', 'BSB', 'AAA', '08:00', '07:10'),
+  flightDay('2026-09-01', 'SEP-B', 'TST101', 'AAA', 'BBB', '09:00', '08:10'),
+  flightDay('2026-09-02', 'SEP-C', 'TST102', 'BBB', 'CCC', '10:00', '09:10'),
+  {
+    date: '2026-09-03', type: 'FLIGHT', pairingCode: 'GOOD-CONTINUOUS', dutyReport: '10:00',
+    legs: [leg('TST103', 'CCC', 'DDD', '11:00'), leg('TST104', 'DDD', 'BSB', '13:00')],
+  },
+], 'SEPTEMBER-CONTINUOUS');
+
+const setAdjacent = (roster, checksum) => localStorage.setItem('crewcheck_local_history_v11_crew-residual', JSON.stringify([
+  {
+    id: 'local-august-residual', checksum: 'august-residual', createdAt: '2026-08-31T14:00:00.000Z',
+    sourceFileName: 'august-residual.pdf', roster: august, compliance: { score: 100, alerts: [] }, gym: [],
+  },
+  {
+    id: `local-${checksum}`, checksum, createdAt: '2026-08-30T14:00:00.000Z',
+    sourceFileName: `${checksum}.pdf`, roster, compliance: { score: 100, alerts: [] }, gym: [],
+  },
+]));
+
+const onlineAugust = async (input) => {
+  if (String(input) === '/api/rosters/active') {
+    return new Response(JSON.stringify({
+      ok: true,
+      roster: { id: 'remote-august-residual', checksum: 'august-residual', year: 2026, month: 8, isActive: true },
+      data: { roster: august, compliance: { score: 100, alerts: [] }, gym: [] },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  return new Response(JSON.stringify({ ok: false, message: 'not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+};
+
+setAdjacent(disconnectedSeptember, 'september-disconnected');
+globalThis.fetch = onlineAugust;
+assert.ok(!(await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'BAD-DISCONNECTED'), 'online: jornada multi-leg desconectada deve falhar fechado');
+globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'offline' }), { status: 503, headers: { 'content-type': 'application/json' } });
+assert.ok(!(await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'BAD-DISCONNECTED'), 'offline: jornada multi-leg desconectada deve falhar fechado');
+
+setAdjacent(continuousSeptember, 'september-continuous');
+globalThis.fetch = onlineAugust;
+assert.ok((await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'GOOD-CONTINUOUS'), 'online: jornada multi-leg contínua legítima deve ser preservada');
+globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'offline' }), { status: 503, headers: { 'content-type': 'application/json' } });
+assert.ok((await openActiveRoster()).roster.days.some((day) => day.pairingCode === 'GOOD-CONTINUOUS'), 'offline: jornada multi-leg contínua legítima deve ser preservada');
+
   const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   assert.match(databaseSource, /P0_580_RESIDUAL_SOURCE_ORDER_GUARD/, 'produção materializada deve carregar o guard de ordem-fonte residual');
   assert.match(databaseSource, /for \(const day of residualDays\)/, 'continuidade deve percorrer atividades residuais, não apenas âncoras com legs');
+  assert.match(databaseSource, /isOperationalLegChainVerifiable\(day\)/, 'continuidade deve validar a cadeia interna completa de pernas');
   assert.doesNotMatch(databaseSource, /for \(const anchor of nextAnchors\)/, 'travessia anchor-only não pode sobreviver no contrato materializado');
 
   console.log('[p0-580-residual-source-order] OK — atividade residual sem legs bloqueia âncora posterior online/offline.');

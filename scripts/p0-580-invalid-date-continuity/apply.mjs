@@ -15,6 +15,7 @@ if (source.includes(sourceOrderMarker)) {
     'const dayDate = parseCrewRosterDate(day.date);',
     'if (!dayDate || isOffLikeLocalDay(day)) return null;',
     'if (!(day.legs || []).length) return null;',
+    'if (!isOperationalLegChainVerifiable(day)) return null;',
   ];
   const missing = requiredSourceOrder.filter((fragment) => !source.includes(fragment));
   if (missing.length) throw new Error(`[${marker}] source-order guard incomplete: ${missing.join(' | ')}`);
@@ -40,6 +41,7 @@ if (prepared.includes(sourceOrderMarker)) {
     'const dayDate = parseCrewRosterDate(day.date);',
     'if (!dayDate || isOffLikeLocalDay(day)) return null;',
     'if (!(day.legs || []).length) return null;',
+    'if (!isOperationalLegChainVerifiable(day)) return null;',
   ];
   const missing = required.filter((fragment) => !prepared.includes(fragment));
   if (missing.length) throw new Error(`[${marker}] structural validation failed: ${missing.join(' | ')}`);
