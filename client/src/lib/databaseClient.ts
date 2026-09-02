@@ -759,14 +759,38 @@ function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
 // normalization drift, and the drift is what reopens cross-crew selection.
 // Returns '' when the crew cannot be verified, so callers can fail closed instead of
 // treating unverifiable as equal.
+// The crew-identity sentinel policy lives here, at rest, as the single definition in
+// the codebase. The adjacency guard materialized by
+// scripts/p0-580-post-anchor-continuity/apply.mjs consumes these same two functions, so
+// the by-id lookup, the history slot key and cross-publication adjacency cannot drift
+// apart into divergent sentinel lists.
+function normalizeRosterCrewId(value: string | null | undefined): string | null {
+  const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // P0_580_CREW_IDENTITY_SENTINEL_GUARD: placeholder identities, including numbered variants,
+  // cannot authorize cross-publication adjacency.
+  if (!normalized || /^(?:UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalized) || /^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalized)) return null;
+  return normalized;
+}
+
+function normalizeRosterCrewName(value: string | null | undefined): string | null {
+  const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // P0_580_CREW_NAME_SENTINEL_GUARD: parser defaults and generic labels do not
+  // prove crew identity across publications.
+  if (!normalized || /^(?:TRIPULANTE|CREW|CREWMEMBER|UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalized) || /^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalized)) return null;
+  return normalized;
+}
+
 type CrewIdentitySource = { crewId?: string | null; crewName?: string | null };
 
 function crewIdentityToken(source: CrewIdentitySource | null | undefined): string {
-  const normalizedId = String(source?.crewId || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const usableId = normalizedId && !/^(?:UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalizedId) && !/^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalizedId) ? normalizedId : '';
-  if (usableId) return `ID:${usableId}`;
-  const normalizedName = String(source?.crewName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return normalizedName ? `NAME:${normalizedName}` : '';
+  // A verified crewId is sovereign. Falling back to the published name is only sound
+  // when the name itself identifies a person: the parser's default label reaches here as
+  // a perfectly ordinary string, so accepting any non-empty name made two unrelated
+  // publications with the same default look like one crew member.
+  const id = normalizeRosterCrewId(source?.crewId);
+  if (id) return `ID:${id}`;
+  const name = normalizeRosterCrewName(source?.crewName);
+  return name ? `NAME:${name}` : '';
 }
 
 function periodHistoryKey(item: LocalHistoryItem): string {

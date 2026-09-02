@@ -199,8 +199,102 @@ try {
     'sem identidade na expectativa, um id ambíguo não pode devolver um dos candidatos por sorteio',
   );
 
+  // --- 7. Generic/default crew names are not identity.
+  //
+  // crewIdentityToken rejected sentinel crewIds but accepted ANY non-empty crewName, so
+  // the parser's own default label reached it as an ordinary string and became
+  // NAME:TRIPULANTE. Two unrelated publications of the same competence, neither with a
+  // verifiable id, both carrying the default name, then looked like one crew member to
+  // periodHistoryKey, findLocalRoster and openSavedRoster alike.
+  const genericOne = {
+    ...publication('Tripulante', '', [flightDay('07/08/2026', 'G1', 'LA5000', 'BSB', 'AAA', '08:00', '07:00')]),
+    rawText: 'GENERIC-ONE',
+  };
+  const genericTwo = {
+    ...publication('TRIPULANTE', 'UNKNOWN', [flightDay('07/08/2026', 'G2', 'LA6000', 'BSB', 'ZZZ', '09:00', '08:00')]),
+    rawText: 'GENERIC-TWO',
+  };
+  const genericId = 'local-device-account-2026-08';
+
+  // (1) legacy collision + generic identity: never the first candidate.
+  resetEnvironment('device-account');
+  localStorage.setItem('crewcheck_local_history_v11_device-account', JSON.stringify([
+    { id: genericId, checksum: 'generic-two', createdAt: '2026-08-31T14:00:00.000Z', sourceFileName: 'two.pdf', roster: genericTwo, compliance: { score: 100, alerts: [] }, gym: [] },
+    { id: genericId, checksum: 'generic-one', createdAt: '2026-08-30T14:00:00.000Z', sourceFileName: 'one.pdf', roster: genericOne, compliance: { score: 100, alerts: [] }, gym: [] },
+  ]));
+  await assert.rejects(
+    () => openSavedRoster(genericId, { id: genericId, year: 2026, month: 8, crewId: '', crewName: 'Tripulante' }),
+    () => true,
+    'nome default não pode selecionar entre publicações distintas sob um id compartilhado',
+  );
+
+  // The two entries must also remain distinct in history rather than collapsing into a
+  // single slot through the generic name.
+  {
+    const stored = JSON.parse(localStorage.getItem('crewcheck_local_history_v11_device-account'));
+    assert.equal(stored.length, 2, 'as duas publicações genéricas devem continuar distintas no histórico');
+  }
+
+  // (2) remote body with generic identity does not authorize a verifiable expectation.
+  resetEnvironment('device-account');
+  serveRemote(genericOne);
+  await assert.rejects(
+    () => openSavedRoster(remoteId, expectedAlpha),
+    (error) => {
+      assert.equal(error?.code, 'ROSTER_IDENTITY_MISMATCH', 'corpo remoto com nome genérico não autoriza match com identidade verificável');
+      return true;
+    },
+    'nome default no corpo remoto não é identidade',
+  );
+
+  // (3) Alpha + Alpha still passes — a real human name and a real id stay strong.
+  resetEnvironment('device-account');
+  serveRemote(alpha);
+  const alphaAgain = await openSavedRoster(remoteId, expectedAlpha);
+  assert.equal(alphaAgain.roster.crewId, alpha.crewId, 'identidade real deve continuar autorizando a abertura');
+
+  const bravo = publication('BRAVO TRIPULANTE', '44444444', [flightDay('07/08/2026', 'BR1', 'LA7000', 'BSB', 'BBB', '08:00', '07:00')]);
+  resetEnvironment('device-account');
+  serveRemote(alpha);
+  await assert.rejects(
+    () => openSavedRoster(remoteId, { id: remoteId, year: 2026, month: 8, crewId: bravo.crewId, crewName: bravo.crewName }),
+    (error) => {
+      assert.equal(error?.code, 'ROSTER_IDENTITY_MISMATCH', '(4) Alpha esperado x Bravo pedido deve recusar');
+      return true;
+    },
+    'dois tripulantes reais distintos nunca podem casar',
+  );
+
+  // A real human name that merely contains the default word must keep working as
+  // identity when neither side exposes an id. Both sides are name-only on purpose: the
+  // token prefers ID over NAME, so mixing an id-bearing body with a name-only
+  // expectation would be testing that preference, not the sentinel policy.
+  const namedOnly = publication('BRAVO TRIPULANTE', '', [flightDay('07/08/2026', 'BR2', 'LA7001', 'BSB', 'BBB', '08:00', '07:00')]);
+  resetEnvironment('device-account');
+  serveRemote(namedOnly);
+  const openedNamed = await openSavedRoster(remoteId, { id: remoteId, year: 2026, month: 8, crewId: null, crewName: namedOnly.crewName });
+  assert.equal(openedNamed.roster.crewName, namedOnly.crewName, 'nome humano real que contém a palavra default continua sendo identidade válida');
+
+  // ...and it must not be confused with the bare default label.
+  resetEnvironment('device-account');
+  serveRemote(genericOne);
+  await assert.rejects(
+    () => openSavedRoster(remoteId, { id: remoteId, year: 2026, month: 8, crewId: null, crewName: namedOnly.crewName }),
+    (error) => {
+      assert.equal(error?.code, 'ROSTER_IDENTITY_MISMATCH', 'o rótulo default não pode satisfazer um nome humano real');
+      return true;
+    },
+    'nome real x rótulo default deve recusar',
+  );
+
   const databaseSource = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   assert.match(databaseSource, /function crewIdentityToken\(/, 'a normalização de identidade deve existir em um único lugar');
+  assert.match(databaseSource, /P0_580_CREW_NAME_SENTINEL_GUARD/, 'a política de nome genérico deve estar presente');
+  assert.match(databaseSource, /const name = normalizeRosterCrewName\(source\?\.crewName\);/, 'o token deve consumir a política canônica de nome, não uma lista própria');
+  assert.match(databaseSource, /const id = normalizeRosterCrewId\(source\?\.crewId\);/, 'o token deve consumir a política canônica de id');
+  assert.doesNotMatch(databaseSource, /return normalizedName \? `NAME:\$\{normalizedName\}` : '';/, 'o fallback genérico permissivo não pode voltar');
+  assert.equal((databaseSource.match(/^function normalizeRosterCrewName\(/gm) || []).length, 1, 'a política de nome deve ter uma única definição');
+  assert.equal((databaseSource.match(/^function normalizeRosterCrewId\(/gm) || []).length, 1, 'a política de id deve ter uma única definição');
   assert.match(databaseSource, /function findLocalRoster\(id: string, expected\?/, 'a busca por id deve receber a identidade esperada');
   assert.match(databaseSource, /assertExpectedRosterCrew\(local\.roster, expected\);/, 'a abertura local deve validar identidade, não só competência');
   assert.match(databaseSource, /assertExpectedRosterCrew\(payload\.data\.roster, expected\);/, 'a resposta remota também deve validar identidade');
