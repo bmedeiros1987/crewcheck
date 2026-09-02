@@ -187,12 +187,40 @@ function assertExpectedRosterPeriod(roster: CrewRoster, expected?: Pick<SavedRos
   });
 }
 
-export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
-  const local = findLocalRoster(id);
+// P0_580_LOCAL_ID_COLLISION_GUARD: competence alone never identifies a publication.
+// Two crew members share a competence, so a period-only check passes while handing
+// back the wrong person's roster. Both identities must be verifiable to compare;
+// an unverifiable side is not treated as agreement.
+function assertExpectedRosterCrew(roster: CrewRoster, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): void {
+  const wanted = crewIdentityToken(expected);
+  const actual = crewIdentityToken(roster);
+  if (!wanted || !actual || wanted === actual) return;
+  throw Object.assign(new Error('A escala aberta pertence a outro tripulante.'), {
+    code: 'ROSTER_IDENTITY_MISMATCH',
+    expectedCrew: wanted,
+    actualCrew: actual,
+  });
+}
+
+export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month' | 'crewId' | 'crewName'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
+  const local = findLocalRoster(id, expected);
   if (id.startsWith('local-') || id.startsWith('offline-')) {
     if (local) {
       assertExpectedRosterPeriod(local.roster, expected);
+      assertExpectedRosterCrew(local.roster, expected);
       return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+    }
+    // Entries answer to this id but none of them belongs to the crew member we were
+    // asked for. A local id is device-local, so there is no server copy to fall back
+    // to; carrying on would hand back another crew member's roster. Say so instead.
+    const wantedCrew = crewIdentityToken(expected);
+    const candidates = localRosterCandidates(id);
+    if (wantedCrew && candidates.length) {
+      throw Object.assign(new Error('A escala aberta pertence a outro tripulante.'), {
+        code: 'ROSTER_IDENTITY_MISMATCH',
+        expectedCrew: wantedCrew,
+        actualCrew: candidates.map((item) => crewIdentityToken(item.roster)).filter(Boolean).join(',') || 'unknown',
+      });
     }
   }
 
@@ -207,16 +235,21 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
       const payload = await jsonFetch<{ ok: boolean; data: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] } }>(endpoint);
       if (payload?.data?.roster?.days?.length) {
         assertExpectedRosterPeriod(payload.data.roster, expected);
+        assertExpectedRosterCrew(payload.data.roster, expected);
         return payload.data;
       }
     } catch (error) {
       if ((error as any)?.code === 'ROSTER_PERIOD_MISMATCH') throw error;
+      // An identity mismatch is a wrong-crew answer, never a reason to keep trying
+      // the next endpoint and fall back to whatever the device happens to hold.
+      if ((error as any)?.code === 'ROSTER_IDENTITY_MISMATCH') throw error;
       lastError = error;
     }
   }
 
   if (local) {
     assertExpectedRosterPeriod(local.roster, expected);
+    assertExpectedRosterCrew(local.roster, expected);
     return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
   }
 
@@ -568,8 +601,21 @@ function readLocalHistory(): LocalHistoryItem[] {
   return items.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 }
 
-function findLocalRoster(id: string): LocalHistoryItem | null {
-  return readLocalHistory().find((item) => item.id === id || item.checksum === id) || null;
+// P0_580_LOCAL_ID_COLLISION_GUARD: local ids generated before the identity-scoped
+// format are shared by every publication of the same competence on the device, so two
+// crew members' rosters can answer to the same id. Resolve against the identity the
+// caller actually asked for, and fail closed when it is not there: returning "some
+// entry with that id" is how one crew member's roster reached another's session.
+function localRosterCandidates(id: string): LocalHistoryItem[] {
+  return readLocalHistory().filter((item) => item.id === id || item.checksum === id);
+}
+
+function findLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): LocalHistoryItem | null {
+  const matches = localRosterCandidates(id);
+  if (!matches.length) return null;
+  const wanted = crewIdentityToken(expected);
+  if (!wanted) return matches.length === 1 ? matches[0] : null;
+  return matches.find((item) => crewIdentityToken(item.roster) === wanted) || null;
 }
 
 function deleteLocalRoster(id: string): void {
@@ -692,15 +738,28 @@ function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
   }));
 }
 
+// P0_580_CREW_IDENTITY_TOKEN: single normalization of "which crew member does this
+// publication belong to", shared by the history slot key, the generated local id and
+// the by-id lookup. One definition on purpose: two copies of a security-relevant
+// normalization drift, and the drift is what reopens cross-crew selection.
+// Returns '' when the crew cannot be verified, so callers can fail closed instead of
+// treating unverifiable as equal.
+type CrewIdentitySource = { crewId?: string | null; crewName?: string | null };
+
+function crewIdentityToken(source: CrewIdentitySource | null | undefined): string {
+  const normalizedId = String(source?.crewId || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const usableId = normalizedId && !/^(?:UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalizedId) && !/^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalizedId) ? normalizedId : '';
+  if (usableId) return `ID:${usableId}`;
+  const normalizedName = String(source?.crewName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return normalizedName ? `NAME:${normalizedName}` : '';
+}
+
 function periodHistoryKey(item: LocalHistoryItem): string {
   // P0_580_HISTORY_CREW_IDENTITY_GUARD: a placeholder crewId must never collapse
   // different crew members into the same nominal-period history slot. Prefer a
   // verified ID; otherwise use the normalized published name; without either,
   // keep entries distinct rather than authorizing cross-publication adjacency.
-  const normalizedId = String(item.roster.crewId || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const usableId = normalizedId && !/^(?:UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalizedId) && !/^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalizedId) ? normalizedId : '';
-  const normalizedName = String(item.roster.crewName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const identity = usableId ? `ID:${usableId}` : normalizedName ? `NAME:${normalizedName}` : `ENTRY:${item.checksum || item.id}`;
+  const identity = crewIdentityToken(item.roster) || `ENTRY:${item.checksum || item.id}`;
   return `${identity}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;
 }
 
