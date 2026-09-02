@@ -71,6 +71,24 @@ assert.equal(
   'MISSING flight identity must remain non-deduplicable',
 );
 
+for (const flightNumber of ['UNKNOWN1', 'INVALID1', 'MISSING1']) {
+  const variant = {
+    date: '2026-09-14',
+    type: 'FLIGHT',
+    legs: [{ flightNumber, origin: 'UNK', destination: 'BBB', departureTime: '10:00' }],
+  };
+  assert.equal(
+    isOperationalLegChainVerifiable(variant),
+    false,
+    `${flightNumber} placeholder family must fail closed for continuation`,
+  );
+  assert.equal(
+    dedupeAdjacentRosterDays([variant], [variant]).length,
+    1,
+    `${flightNumber} placeholder family must remain non-deduplicable`,
+  );
+}
+
 // Preserve the earlier contract that a stable non-numeric published identifier can
 // still be valid when it is not a sentinel and all other operational fields verify.
 const alphaIdentityDay = {
@@ -99,6 +117,8 @@ assert.equal(crmResult[0].pairingCode, 'EMER');
 
 assert.match(helperSource, /'INVALID'/, 'invalid sentinel must be explicitly non-identifying');
 assert.match(helperSource, /'MISSING'/, 'missing-data sentinel must be explicitly non-identifying');
+assert.match(helperSource, /NON_IDENTIFYING_TOKEN_FAMILIES/, 'numbered sentinel families must fail closed before identity construction');
+assert.match(helperSource, /UNKNOWN\|INVALID\|MISSING/, 'UNKNOWN/INVALID/MISSING families must remain structurally guarded');
 assert.match(helperSource, /NON_IDENTIFYING_AIRPORT_TOKENS/, 'airport placeholders need a dedicated fail-closed guard');
 assert.match(helperSource, /'XXX'/, 'XXX airport placeholder must not authorize overlap deletion');
 assert.match(helperSource, /type === 'CRM'/, 'CRM identity must preserve the published specific activity code');
