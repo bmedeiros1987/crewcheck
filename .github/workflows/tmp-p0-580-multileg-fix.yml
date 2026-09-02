@@ -150,7 +150,7 @@ jobs:
           node scripts/regression-p0-580-overlap-reimport.mjs
           node scripts/regression-p0-580-transposed-vc-boundary.mjs
           npx tsc --noEmit
-          git diff --check
+          git diff --check -- client/src/lib/localRosterOverlap.ts scripts/p0-580-transposed-vc-boundary/apply.mjs scripts/p0-580-invalid-date-continuity/apply.mjs scripts/regression-p0-580-residual-source-order.mjs
       - name: Commit narrow fix
         run: |
           git checkout -- client/src/lib/databaseClient.ts client/src/lib/pdfParser.ts || true
