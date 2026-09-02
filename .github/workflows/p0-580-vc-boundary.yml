@@ -24,6 +24,7 @@ on:
       - 'scripts/regression-p0-580-post-anchor-residual.mjs'
       - 'scripts/regression-p0-580-residual-object-identity.mjs'
       - 'scripts/regression-p0-580-boundary-clock-independence.mjs'
+      - 'scripts/regression-p0-580-adjacent-crew-identity.mjs'
       - '.github/workflows/p0-580-vc-boundary.yml'
   workflow_dispatch:
 
@@ -50,6 +51,8 @@ jobs:
         run: node scripts/regression-p0-580-overlap-reimport.mjs
       - name: Validate exact competence open and carry-in
         run: node scripts/regression-p0-580-exact-competence-open.mjs
+      - name: Validate adjacent roster crew identity
+        run: node scripts/regression-p0-580-adjacent-crew-identity.mjs
       - name: Validate invalid overlap placeholders
         run: node scripts/regression-p0-580-invalid-placeholders.mjs
       - name: Validate residual continuity source order
