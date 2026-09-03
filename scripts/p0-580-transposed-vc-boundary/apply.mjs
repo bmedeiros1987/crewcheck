@@ -8,6 +8,7 @@ const legendSectionMarker = 'P0_580_LEGEND_SECTION_GUARD';
 const overlapMarker = 'P0_580_OVERLAP_ACTIVITY_DEDUPE';
 const sourceOrderMarker = 'P0_580_RESIDUAL_SOURCE_ORDER_GUARD';
 const summaryBodyMarker = 'P0_580_ACTIVE_SUMMARY_BODY_GUARD';
+const transposedDateMarker = 'P0_580_TRANSPOSED_DATE_ITEM_GUARD';
 
 if (!fs.existsSync(parserPath)) throw new Error(`[${transposedMarker}] ${parserPath} not found`);
 let source = fs.readFileSync(parserPath, 'utf8');
@@ -62,7 +63,7 @@ requireFragments(source, legendMarker, [
 if (!source.includes(legendSectionMarker)) {
   const rowsAnchor = `function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRoster {\n  const header = parseHeader(fullText);\n  const transposedDays = parseCrewRosterTransposedColumns(rows, header.month, header.year, header.base);\n  const visualDays = parseDaysFromRows(rows, header.month, header.year, header.base);\n  const columnarDays = parseCrewRosterColumnarRows(rows, header.month, header.year, header.base);\n  const looseDays = parseCrewRosterReportLooseText(fullText, header.month, header.year, header.base);`;
   if (!source.includes(rowsAnchor)) throw new Error(`[${legendSectionMarker}] parseCrewRosterReportRows anchor not found`);
-  source = source.replace(rowsAnchor, `function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRoster {\n  // ${legendSectionMarker}: LEGEND terminates the published roster. Labels below\n  // it intentionally contain valid activity codes (HSB/DO/DR/VC) and must never\n  // be parsed as continuation rows or transposed activities.\n  const legendRowIndex = rows.findIndex((row) => /^LEGEND\\b/i.test(normalizeSpaces(String(row?.text || ''))));\n  const publishedRows = legendRowIndex >= 0 ? rows.slice(0, legendRowIndex) : rows;\n  const legendTextMatch = String(fullText || '').match(/(?:^|\\n)\\s*LEGEND\\b/i);\n  const publishedText = legendTextMatch && typeof legendTextMatch.index === 'number'\n    ? String(fullText || '').slice(0, legendTextMatch.index)\n    : fullText;\n  const header = parseHeader(publishedText);\n  const transposedDays = parseCrewRosterTransposedColumns(publishedRows, header.month, header.year, header.base);\n  const visualDays = parseDaysFromRows(publishedRows, header.month, header.year, header.base);\n  const columnarDays = parseCrewRosterColumnarRows(publishedRows, header.month, header.year, header.base);\n  const looseDays = parseCrewRosterReportLooseText(publishedText, header.month, header.year, header.base);`);
+  source = source.replace(rowsAnchor, `function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRoster {\n  // ${legendSectionMarker}: LEGEND terminates the published roster. Labels below\n  // it intentionally contain valid activity codes (HSB/DO/DR/VC) and must never\n  // be parsed as continuation rows or transposed activities.\n  const legendRowIndex = rows.findIndex((row) => /\\bLEGEND\\b/i.test(normalizeSpaces(String(row?.text || ''))));\n  const legendBoundaryRow = legendRowIndex >= 0 ? rows[legendRowIndex] : null;\n  const legendItemIndex = legendBoundaryRow?.items?.findIndex((item) => /\\bLEGEND\\b/i.test(String(item?.str || ''))) ?? -1;\n  const boundaryItems = legendBoundaryRow && legendItemIndex > 0\n    ? legendBoundaryRow.items.slice(0, legendItemIndex)\n    : [];\n  const boundaryRow = legendBoundaryRow;\n  // P0_580_LEGEND_DESCRIPTION_ROW_GUARD: some landscape PDFs place the legend descriptions before\n  // the final horizontal date band. They are not roster activities even when\n  // their labels contain valid HSB/DO/VC/DR codes.\n  const isLegendDescriptionRow = (row: VisualRow) => /^(?:Home Stand by|Day off|Vacation|Requested day off|Pairing\\/Flight extends to previous day\\(s\\))/i.test(normalizeSpaces(String(row?.text || '')));\n  const rosterRowsBeforeBoundary = legendRowIndex < 0\n    ? rows\n    : rows.slice(0, legendRowIndex);\n  const publishedRows = legendRowIndex < 0\n    ? rosterRowsBeforeBoundary.filter((row) => !isLegendDescriptionRow(row))\n    : [\n      ...rosterRowsBeforeBoundary.filter((row) => !isLegendDescriptionRow(row)),\n      ...(boundaryRow && boundaryItems.length\n        ? [{ ...boundaryRow, items: boundaryItems, text: normalizeSpaces(boundaryItems.map((item) => item.str).join(' ')) }]\n        : []),\n    ];\n  const legendTextMatch = String(fullText || '').match(/(?:^|\\n)([^\\n]*?)\\bLEGEND\\b/i);\n  const publishedText = legendTextMatch && typeof legendTextMatch.index === 'number'\n    ? String(fullText || '').slice(0, legendTextMatch.index + (legendTextMatch[1]?.length || 0)).trimEnd()\n    : fullText;\n  const header = parseHeader(publishedText);\n  const transposedDays = parseCrewRosterTransposedColumns(publishedRows, header.month, header.year, header.base);\n  const visualDays = parseDaysFromRows(publishedRows, header.month, header.year, header.base);\n  const columnarDays = parseCrewRosterColumnarRows(publishedRows, header.month, header.year, header.base);\n  const looseDays = parseCrewRosterReportLooseText(publishedText, header.month, header.year, header.base);`);
 
   source = source.replace(
     `rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base)`,
@@ -78,7 +79,11 @@ if (!source.includes(legendSectionMarker)) {
 }
 requireFragments(source, legendSectionMarker, [
   'const legendRowIndex = rows.findIndex',
-  'const publishedRows = legendRowIndex >= 0 ? rows.slice(0, legendRowIndex) : rows;',
+  'const legendItemIndex = legendBoundaryRow?.items?.findIndex',
+  'const boundaryItems = legendBoundaryRow && legendItemIndex > 0',
+  'P0_580_LEGEND_DESCRIPTION_ROW_GUARD',
+  'const isLegendDescriptionRow = (row: VisualRow)',
+  'const publishedRows = legendRowIndex < 0',
   'const publishedText = legendTextMatch',
   'parseCrewRosterTransposedColumns(publishedRows',
   'parseDaysFromRows(publishedRows',
@@ -86,6 +91,52 @@ requireFragments(source, legendSectionMarker, [
   'parseCrewRosterReportLooseText(publishedText',
   'rescueFlightsFromFullText(mergedDays, publishedText',
   'parseGenericTripulationRecords(publishedText',
+]);
+
+if (!source.includes(transposedDateMarker)) {
+  const dateFilterAnchor = `.filter(item => item.str && item.x > 45 && item.y > 35 && !/^(LEGEND|<==)$/i.test(item.str));`;
+  if (!source.includes(dateFilterAnchor)) throw new Error(`[${transposedDateMarker}] transposed item filter anchor not found`);
+  source = source.replace(
+    dateFilterAnchor,
+    `.filter(item => item.str && item.x > 45 && (item.y > 35 || DATE_TOKEN_RE.test(item.str)) && !/^(LEGEND|<==)$/i.test(item.str)) // ${transposedDateMarker}`,
+  );
+  console.log(`[crewcheck:prepare] applied ${transposedDateMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${transposedDateMarker} already applied; validating structure`);
+}
+requireFragments(source, transposedDateMarker, [
+  'item.y > 35 || DATE_TOKEN_RE.test(item.str)',
+]);
+
+const dateCoverageMarker = 'P0_580_DATE_COVERAGE_SELECTION_GUARD';
+if (!source.includes(dateCoverageMarker)) {
+  const dateCoverageAnchor = `  const sequentialDays = dedupeColumnarRosterDays(looseDays);
+  const sequentialEventCount = countRosterEvents(sequentialDays);`;
+  if (!source.includes(dateCoverageAnchor)) throw new Error(`[${dateCoverageMarker}] sequential-days anchor not found`);
+  source = source.replace(dateCoverageAnchor, `  const sequentialDays = dedupeColumnarRosterDays(looseDays);
+  const sequentialEventCount = countRosterEvents(sequentialDays);
+  // ${dateCoverageMarker}: prefer a complete one-date-per-column candidate over a row-wise collapse.
+  const dateCoverage = (days: RosterDay[]) => new Set((days || [])
+    .filter((day) => isPublishedRosterContextMonth(day.month, day.year, header.month, header.year))
+    .map((day) => day.date)).size;
+  const useDateCompleteTransposed = /Roster\\s+Report/i.test(fullText)
+    && Boolean(transposedStructurallySound)
+    && dateCoverage(transposedDays) > Math.max(dateCoverage(visualDays), dateCoverage(columnarDays), dateCoverage(sequentialDays));`);
+
+  const mergedAnchor = `  const mergedDays = useStrongTransposed
+    ? transposedDays`;
+  if (!source.includes(mergedAnchor)) throw new Error(`[${dateCoverageMarker}] merged-days anchor not found`);
+  source = source.replace(mergedAnchor, `  const mergedDays = (useStrongTransposed || useDateCompleteTransposed)
+    ? transposedDays`);
+  console.log(`[crewcheck:prepare] applied ${dateCoverageMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${dateCoverageMarker} already applied; validating structure`);
+}
+requireFragments(source, dateCoverageMarker, [
+  'const dateCoverage = (days: RosterDay[])',
+  'const useDateCompleteTransposed',
+  '&& Boolean(transposedStructurallySound)',
+  '(useStrongTransposed || useDateCompleteTransposed)',
 ]);
 
 fs.writeFileSync(parserPath, source, 'utf8');
