@@ -308,6 +308,8 @@ function findBestFlightPatternV3(tokens) {
   const destination = upper[destIdx];
   if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;
   if (!depItem || !arrItem || arrItem.idx <= destIdx) return;
+  const routeBoundaries = new Set(['CNA']);
+  if (upper.slice(0, arrItem.idx).some((token) => routeBoundaries.has(token))) return;
   const departureTime = normalizeTimeToken(depItem.token);
   const arrivalTime = normalizeTimeToken(arrItem.token);
   const duration = diffHours(departureTime, arrivalTime);
@@ -369,34 +371,263 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
   day.flyingHours = 0;
   events.push(day);
  }
- const flightDay = makeDay(dayNum, month, year, base);
- flightDay.rawText = normalized.join(' ');
+ // Uma coluna de dia civil no AIMS/Escala pode conter mais de um bloco de
+ // jornada: um resíduo "(...)" da jornada da madrugada anterior (que não é
+ // apresentação de hoje), duas jornadas civis reais no mesmo dia, e pernas de
+ // CONEXÃO de uma mesma jornada que também imprimem dois horários (programado
+ // + realizado) antes da própria origem — não só a primeira perna da jornada.
+ // Contar "dois horários antes do aeroporto" sozinho não basta: isso fundia
+ // corretamente LA4712+LA3246 (jornadas diferentes) mas também fragmentava
+ // LA3558+LA3559+LA4631 (uma única jornada com conexões curtas), porque cada
+ // perna de conexão também imprime seu próprio par de horários.
+ //
+ // O sinal real de NOVA jornada é físico: o intervalo desde o fim da perna
+ // anterior até a apresentação/horário desta perna. Conexão = minutos; nova
+ // jornada = pernoite/folga real. Usamos o mesmo limiar de 12h já validado no
+ // cliente (aimsParser.ts::buildAimsHumanFlightDays) para a mesma decisão.
+ const laIndexes = [];
  for (let i = 0; i < upperTokens.length; i++) {
-  if (upperTokens[i] === 'LA' && /^\d{3,4}$/.test(upperTokens[i+1] || '')) {
-   const next = upperTokens.findIndex((token, idx) => idx > i + 1 && token === 'LA');
-   const seq = normalized.slice(i + 2, next > 0 ? next : normalized.length);
-   const leg = parseAimsFlightSeq('LA' + upperTokens[i+1], seq);
-   const hasLeadingExtraMarker = upperTokens
-    .slice(Math.max(0, i - 4), i)
-    .some((token) => ['EXTRA','[EXTRA]','PS','PAX','PASSAGEIRO'].includes(token));
-   if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
-   if (leg) flightDay.legs.push(leg);
+  if (upperTokens[i] === 'LA' && /^\d{3,4}$/.test(upperTokens[i + 1] || '')) laIndexes.push(i);
+ }
+
+ const leadingWorkMarkers = new Set(['EXTRA', '[EXTRA]', 'PS', 'PAX', 'PASSAGEIRO']);
+ const segments = [];
+ for (let k = 0; k < laIndexes.length; k++) {
+  const i = laIndexes[k];
+  const nextLaIndex = k < laIndexes.length - 1 ? laIndexes[k + 1] : normalized.length;
+  // Um marcador EXTRA/PS/PAX/PASSAGEIRO colado ao FIM da janela desta perna
+  // (logo antes do próximo "LA") descreve a PRÓXIMA perna, não esta — excluir
+  // do seq evita que parseAimsFlightSeq contamine o workType da perna errada
+  // (a perna anterior não pode virar PS só porque a seguinte é).
+  let seqEnd = nextLaIndex;
+  while (seqEnd > i + 2 && leadingWorkMarkers.has(upperTokens[seqEnd - 1])) seqEnd -= 1;
+  const preLaTimeIdx = seqEnd - 1;
+  if (preLaTimeIdx > i + 2 && isTimeToken(normalized[preLaTimeIdx])) {
+   let markerStart = preLaTimeIdx;
+   while (markerStart > i + 2 && leadingWorkMarkers.has(upperTokens[markerStart - 1])) markerStart -= 1;
+   if (markerStart < preLaTimeIdx) seqEnd = markerStart;
+  }
+  const seq = normalized.slice(i + 2, seqEnd);
+  const leg = parseAimsFlightSeq('LA' + upperTokens[i + 1], seq);
+  // O marcador pertence ao "LA" que ele precede, então este olhar é sempre
+  // absoluto na coluna inteira — nunca relativo a um segmento já decidido,
+  // senão um marcador colado numa perna que abre jornada nova fica preso ao
+  // segmento anterior e corrompe o workType da perna errada.
+  const hasLeadingExtraMarker = upperTokens
+   .slice(Math.max(0, i - 4), i)
+   .some((token) => leadingWorkMarkers.has(token));
+  if (leg && hasLeadingExtraMarker) leg.workType = 'PS';
+
+  let reportEquivalent = null;
+  let destIdx = -1;
+  let afterDestTimeIndexes = [];
+  if (leg) {
+   const originIdx = upperTokens.findIndex((token, idx) => idx >= i + 2 && idx < seqEnd && token === leg.origin);
+   if (originIdx >= 0) {
+    const timesBeforeOrigin = normalized.slice(i + 2, originIdx).filter(isTimeToken).map(normalizeTimeToken);
+    if (timesBeforeOrigin.length >= 2) reportEquivalent = timesBeforeOrigin[0];
+    destIdx = upperTokens.findIndex((token, idx) => idx > originIdx && idx < seqEnd && token === leg.destination);
+    if (destIdx >= 0) {
+     for (let idx = destIdx + 1; idx < seqEnd; idx++) {
+      if (isTimeToken(normalized[idx])) afterDestTimeIndexes.push(idx);
+     }
+    }
+   }
+  }
+  const afterDestCount = afterDestTimeIndexes.length;
+  // Quando a apresentação já está impressa dentro do bloco LA atual, ela não
+  // disputa nenhum horário pós-destino da perna anterior. Preserve o debrief
+  // legítimo anterior; o recorte anti-vazamento só se aplica ao fallback
+  // ambíguo imediatamente antes de LA.
+  const reportResolvedInsideCurrentLaBlock = Boolean(reportEquivalent);
+
+  const current = segments[segments.length - 1];
+  // Apresentação impressa ANTES do "LA" (não entre "LA" e a origem) só é
+  // reconhecida quando há um sinal estrutural que a distingue de um debrief
+  // legítimo da jornada anterior ou de um resíduo de boundary:
+  // - k===0 (primeiro "LA" da coluna) sem nenhum "(...)" antes dele: coluna
+  //   genuinamente limpa, sempre seguro.
+  // - k===0 COM "(...)" antes: o resíduo de boundary (mesmo marcador que
+  //   stitchServerAimsMidnightColumns usa via regex /^\(\.{3}\)$/ para
+  //   virada de meia-noite) sempre contribui NO MÁXIMO 2 horários própios
+  //   (chegada + debrief opcional) logo após a estação — é exatamente o
+  //   formato que essa função produz ao substituir o "(...)". Um 3º horário
+  //   além desses dois não pode pertencer ao boundary; só pode ser a
+  //   apresentação própria desta perna. Com 2 ou menos horários desde o
+  //   último "(...)", todos pertencem ao boundary — fica REVIEW.
+  // - k>0: só quando a perna anterior tem 3+ horários após o próprio destino.
+  //   Os dois primeiros formam o par chegada+debrief legítimo dela; o 3º é
+  //   estruturalmente excedente e pertence a esta apresentação.
+  // Com exatamente 2 horários na perna anterior (ex.: LA3559→LA4631) a
+  // ambiguidade é irresolúvel: o 2º pode ser tanto o debrief legítimo da
+  // perna anterior quanto a apresentação desta. Sem um sinal que distinga os
+  // dois casos, fica REVIEW (dutyReport=null) — nunca inventada, nunca
+  // contaminando a jornada anterior (#510).
+  let preLaReportIdx = i - 1;
+  while (preLaReportIdx >= 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx])) preLaReportIdx -= 1;
+  const preLaReportHasLeadingMarker = preLaReportIdx > 0 && leadingWorkMarkers.has(upperTokens[preLaReportIdx - 1]);
+  // #510: a ordem `APZ -> marcador(es) -> LA` é sinal estrutural tão forte quanto
+  // `marcador -> APZ -> LA`. Um horário seguido de EXTRA/[EXTRA]/PS/PAX/PASSAGEIRO e
+  // só então do "LA" não pode ser debrief da perna anterior: o marcador qualifica a
+  // perna que começa, então o horário pertence à apresentação dela.
+  // `preLaReportIdx < i - 1` só é verdadeiro quando o laço acima pulou ao menos um
+  // marcador entre o horário e o "LA" — nenhum outro token é pulado ali.
+  const preLaReportFollowedByMarker = preLaReportIdx < i - 1;
+  // Chegada da perna anterior: primeiro horário publicado depois do destino
+  // dela. É a referência contra a qual se mede se o candidato ainda cabe como
+  // debriefing daquela jornada.
+  const previousArrivalClock = current?.lastLegAfterDestTimeIndexes?.length
+   ? normalizeTimeToken(normalized[current.lastLegAfterDestTimeIndexes[0]])
+   : current?.lastArrival;
+  if (!reportEquivalent && preLaReportIdx >= 0 && isTimeToken(tokens[preLaReportIdx])) {
+   if (k === 0) {
+    let lastBoundaryIdx = -1;
+    for (let b = i - 1; b >= 0; b--) {
+     if (/^\(\.{3}\)$/.test(upperTokens[b])) { lastBoundaryIdx = b; break; }
+    }
+    if (lastBoundaryIdx < 0) {
+     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+    } else {
+     const boundaryTimes = normalized.slice(lastBoundaryIdx + 1, i).filter(isTimeToken);
+     const timesSinceBoundary = boundaryTimes.length;
+     // #510: o marcador do allowlist prova a que PERNA o segmento pertence
+     // (workType). Sozinho ele NÃO prova o papel semântico do horário — e a
+     // CONTAGEM também não, com exatamente dois: o boundary "(...)" contribui
+     // chegada + debrief opcional, então dois horários ainda cabem inteiramente
+     // nele. As duas leituras abaixo produzem o MESMO token stream:
+     //
+     //   chegada 08:29 + debrief 08:50 + marcador + continuação sem APZ
+     //   chegada 08:29 + APZ     08:50 + marcador + jornada nova
+     //
+     // O discriminador não é estrutural, é TEMPORAL, e está presente na entrada:
+     // um debriefing segue a chegada em minutos, enquanto uma apresentação de
+     // jornada nova fica muito além disso e imediatamente antes da própria STD.
+     // Quando as duas leituras continuam plausíveis, a entrada é genuinamente
+     // ambígua e o resultado seguro é REVIEW — nunca inventar apresentação.
+     const markerProvesPresentation = (preLaReportHasLeadingMarker || preLaReportFollowedByMarker)
+      && timesSinceBoundary === 2
+      && markerProvenPresentation(boundaryTimes[0], normalized[preLaReportIdx], leg?.departureTime);
+     // Com 3+ horários o 3º já é estruturalmente excedente e dispensa marcador.
+     if (timesSinceBoundary >= 3 || markerProvesPresentation) {
+      reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+     }
+    }
+   } else if (current) {
+    // Jornada posterior: o 3º horário pós-destino da perna anterior é excedente
+    // ESTRUTURAL e dispensa qualquer outro sinal. Com 2 ou menos, o marcador
+    // sozinho não basta — ele prova a perna, não o papel do horário. Aqui vale
+    // o MESMO discriminador temporal do primeiro LA após boundary; sem isso uma
+    // jornada aberta por descontinuidade física ainda promovia o debriefing
+    // legítimo da jornada anterior a apresentação da nova.
+    const markerProvesPresentation = (preLaReportHasLeadingMarker || preLaReportFollowedByMarker)
+     && markerProvenPresentation(previousArrivalClock, normalized[preLaReportIdx], leg?.departureTime);
+    if (current.lastLegAfterDestCount >= 3 || markerProvesPresentation) {
+     reportEquivalent = normalizeTimeToken(normalized[preLaReportIdx]);
+    }
+   }
+  }
+
+  // Se a apresentação atual é inequívoca, os dois primeiros horários após o
+  // destino anterior também são inequívocos: chegada + fim da jornada. Meça
+  // o descanso desde esse fim/debrief, como faz o parser canônico. No caso
+  // pré-LA de exatamente dois horários a ambiguidade permanece; ali seguimos
+  // usando a chegada para não transformar a possível APZ em debrief.
+  // #510: mesmo discriminador do bloco acima. Sem ele o recorte anti-vazamento
+  // apagava o debriefing legítimo da jornada anterior justamente nos casos em
+  // que o candidato NÃO podia ser apresentação — dano duplo: APZ inventada na
+  // jornada nova e debriefing destruído na anterior.
+  const preLaCouldBePresentation = k > 0
+   && preLaReportIdx >= 0
+   && markerProvenPresentation(previousArrivalClock, normalized[preLaReportIdx], leg?.departureTime);
+  const previousDebriefIsUnambiguous = Boolean(
+   current
+   && current.lastLegAfterDestTimeIndexes?.length >= 2
+   && (
+    reportResolvedInsideCurrentLaBlock
+    || preLaReportHasLeadingMarker
+    || (reportEquivalent && current.lastLegAfterDestTimeIndexes.length >= 3)
+    || (current.lastLegAfterDestTimeIndexes.length === 2 && !preLaCouldBePresentation)
+   )
+  );
+  const previousDutyEndForGap = previousDebriefIsUnambiguous
+   ? normalizeTimeToken(normalized[current.lastLegAfterDestTimeIndexes[1]])
+   : current?.lastArrival;
+
+  const sameStation = Boolean(current && current.legs.length && leg && current.legs.at(-1).destination === leg.origin);
+  let opensNewSegment;
+  if (!current) {
+   opensNewSegment = true;
+  } else if (!leg || !current.lastArrival) {
+   opensNewSegment = true;
+  } else if (!sameStation) {
+   // Descontinuidade física: a perna não pode ser conexão da jornada aberta,
+   // não importa o intervalo — nunca fundir jornada fisicamente impossível.
+   opensNewSegment = true;
+  } else {
+   // Com estação compatível, o sinal de nova jornada é o intervalo físico
+   // desde o fim da perna anterior. Usa a apresentação própria quando
+   // comprovada; sem ela, usa a partida real da própria perna só para medir
+   // o intervalo (nunca como dutyReport — #510) — assim uma perna sem APZ
+   // publicada depois de um descanso longo ainda abre jornada própria em vez
+   // de herdar silenciosamente a apresentação da jornada anterior.
+   const comparisonTime = reportEquivalent || leg.departureTime;
+   const prevArrivalMin = toMin(current.lastArrival);
+   let prevMin = toMin(previousDutyEndForGap) + (previousDebriefIsUnambiguous ? 0 : 30);
+   if (prevMin < prevArrivalMin) prevMin += 1440;
+   let candMin = toMin(comparisonTime);
+   // Ancore o próximo horário após a chegada, não após o debrief: em escalas
+   // com pares programado/realizado a próxima apresentação pode anteceder em
+   // poucos minutos o fim publicado (sobreposição, não virada de dia).
+   if (candMin < prevArrivalMin) candMin += 1440;
+   opensNewSegment = (candMin - prevMin) >= 12 * 60;
+  }
+
+  if (opensNewSegment) {
+   // Quando a apresentação da nova jornada não está resolvida dentro do seu
+   // próprio bloco LA, a anterior não pode reter, como se fosse debrief, o
+   // horário ambíguo que pode pertencer à jornada que começa. Nesse fallback,
+   // descarta exatamente o ÚLTIMO horário pós-destino quando
+   // há 2 ou mais — o par chegada+debrief legítimo (os primeiros N-1) nunca é
+   // tocado, só o excedente final é que é removido do cálculo de debrief.
+   // Jornadas de perna única com só a chegada (ex.: LA4712, afterDestCount=1)
+   // não são afetadas. O corte usa a POSIÇÃO REAL do penúltimo horário (não
+   // "destIdx + contagem"), porque um token não-horário intercalado entre os
+   // horários (ex.: matrícula de aeronave) quebraria essa aritmética e
+   // cortaria também um horário legítimo antes do excedente real.
+   if (!reportResolvedInsideCurrentLaBlock && current && current.lastLegAfterDestTimeIndexes && current.lastLegAfterDestTimeIndexes.length >= 2 && !(current.lastLegAfterDestTimeIndexes.length === 2 && previousDebriefIsUnambiguous)) {
+    const keepUpToIdx = current.lastLegAfterDestTimeIndexes[current.lastLegAfterDestTimeIndexes.length - 2];
+    current.tokenEnd = Math.min(current.tokenEnd, keepUpToIdx + 1);
+   }
+   segments.push({ reportEquivalent, legs: [], lastArrival: null, tokenStart: i });
+  }
+  const segment = segments[segments.length - 1];
+  if (leg) {
+   segment.legs.push(leg);
+   segment.lastArrival = leg.arrivalTime;
+   segment.tokenEnd = seqEnd;
+   segment.lastLegDestIdx = destIdx;
+   segment.lastLegAfterDestCount = afterDestCount;
+   segment.lastLegAfterDestTimeIndexes = afterDestTimeIndexes;
   }
  }
- if (flightDay.legs.length) {
+
+ for (let s = 0; s < segments.length; s++) {
+  const segment = segments[s];
+  if (!segment.legs.length) continue;
+  const flightDay = makeDay(dayNum, month, year, base);
+  flightDay.rawText = normalized.join(' ');
   flightDay.type = 'VOO';
-  flightDay.pairingCode = flightDay.legs[0].flightNumber;
-  const firstLaIndex = upperTokens.findIndex((token) => token === 'LA');
-  const beforeFirst = normalized.slice(0, firstLaIndex).filter(isTimeToken).map(normalizeTimeToken);
-  const firstSeqStart = upperTokens.findIndex((token) => token === 'LA') + 2;
-  const firstOrigin = flightDay.legs[0].origin;
-  const firstOriginIdx = upperTokens.findIndex((token, idx) => idx >= firstSeqStart && token === firstOrigin);
-  const firstTimesBeforeOrigin = normalized.slice(firstSeqStart, firstOriginIdx).filter(isTimeToken).map(normalizeTimeToken);
-  flightDay.dutyReport = beforeFirst[0] || (firstTimesBeforeOrigin.length >= 2 ? firstTimesBeforeOrigin[0] : null) || flightDay.legs[0].departureTime;
-  flightDay.dutyDebrief = inferAimsDebriefV3(normalized, flightDay.legs.at(-1)) || flightDay.legs.at(-1).arrivalTime;
-  flightDay.isNextDay = flightDay.legs.some((leg) => leg.isNextDay) || diffHours(flightDay.dutyReport, flightDay.dutyDebrief) > 18;
-  flightDay.flyingHours = flightDay.legs.reduce((sum, leg) => sum + (leg.duration || diffHours(leg.departureTime, leg.arrivalTime)), 0);
-  flightDay.dutyHours = diffHours(flightDay.dutyReport, flightDay.dutyDebrief);
+  flightDay.pairingCode = segment.legs[0].flightNumber;
+  flightDay.legs = segment.legs;
+  // Nenhum fallback para o horário de partida: se a apresentação própria não
+  // está comprovada, dutyReport fica null. O consumidor deve tratar como
+  // REVIEW, nunca copiar STD (#510).
+  flightDay.dutyReport = segment.reportEquivalent || null;
+  const segmentTokens = normalized.slice(segment.tokenStart, segment.tokenEnd);
+  flightDay.dutyDebrief = inferAimsDebriefV3(segmentTokens, segment.legs.at(-1)) || segment.legs.at(-1).arrivalTime;
+  flightDay.isNextDay = segment.legs.some((leg) => leg.isNextDay) || (flightDay.dutyReport ? diffHours(flightDay.dutyReport, flightDay.dutyDebrief) > 18 : false);
+  flightDay.flyingHours = segment.legs.reduce((sum, leg) => sum + (leg.duration || diffHours(leg.departureTime, leg.arrivalTime)), 0);
+  flightDay.dutyHours = flightDay.dutyReport ? diffHours(flightDay.dutyReport, flightDay.dutyDebrief) : null;
   events.push(flightDay);
  }
  if (!events.length) {
@@ -745,6 +976,30 @@ function isTimeToken(t) { return /^\d{1,2}:\d{2}(?:\(\+1\))?$/.test(String(t)); 
 function normalizeTimeToken(t) { return String(t).replace(/^([0-9]):/,'0$1:'); }
 
 function diffHours(a,b) { const ma=toMin(a), mb=toMin(b); return ((mb<=ma?mb+1440:mb)-ma)/60; }
+
+// #510: discriminador APZ x debriefing. NÃO é estrutural — o mesmo token stream
+// serve às duas leituras — é TEMPORAL: um debriefing segue a chegada em minutos,
+// enquanto uma apresentação de jornada nova fica muito além disso e
+// imediatamente antes da própria STD. Quando as duas leituras continuam
+// plausíveis, a entrada é ambígua e o resultado seguro é REVIEW.
+//
+// Vale para QUALQUER jornada — primeira depois de "(...)" ou posterior aberta
+// por descontinuidade física. Aplicá-lo a só um dos ramos deixa o outro
+// promovendo debriefing legítimo a apresentação.
+const MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES = 120;
+const MAX_PRESENTATION_LEAD_MINUTES = 180;
+
+function markerProvenPresentation(arrivalClock, candidateClock, departureClock) {
+ if (!arrivalClock || !candidateClock || !departureClock) return false;
+ if (!isTimeToken(arrivalClock) || !isTimeToken(candidateClock) || !isTimeToken(departureClock)) return false;
+ let sinceArrival = toMin(candidateClock) - toMin(arrivalClock);
+ if (sinceArrival < 0) sinceArrival += 1440;
+ let presentationLead = toMin(departureClock) - toMin(candidateClock);
+ if (presentationLead < 0) presentationLead += 1440;
+ const couldBeDebriefOfPreviousJourney = sinceArrival <= MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
+ const couldBePresentationOfThisLeg = presentationLead > 0 && presentationLead <= MAX_PRESENTATION_LEAD_MINUTES;
+ return couldBePresentationOfThisLeg && !couldBeDebriefOfPreviousJourney;
+}
 
 function toMin(t) { const [h,m]=normalizeTimeToken(t).replace('(＋1)','').replace('( +1 )','').replace('( +1)','').replace('(+1)','').split(':').map(Number); return h*60+m; }
 

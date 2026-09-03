@@ -76,7 +76,6 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return authFetch<T>(url, init);
 }
 
-
 function hasCrewCheckAuthToken(): boolean {
   try { return Boolean(getToken()); } catch { return false; }
 }
@@ -84,7 +83,6 @@ function hasCrewCheckAuthToken(): boolean {
 function localDatabaseStatus(message = 'Sessão offline/local ativa. Faça login para sincronizar com o banco em nuvem.', health: Partial<DatabaseStatus> = {}): DatabaseStatus {
   return { ...health, ok: Boolean(health.connected), connected: Boolean(health.connected), databaseConfigured: Boolean(health.databaseConfigured ?? health.configured), localOnly: true, message };
 }
-
 
 export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   let health: DatabaseStatus = { ok: false };
@@ -108,7 +106,6 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   }
 }
 
-
 function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterSummary[] {
   let activeSeen = false;
   return items.map((item) => {
@@ -120,7 +117,6 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
     return { ...item, isActive: false };
   });
 }
-
 
 export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]> {
   const local = getLocalRosterSummaries(limit);
@@ -151,7 +147,6 @@ export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]
   }
 }
 
-
 const MAX_INLINE_ROSTER_BACKUP_BYTES = Math.max(512_000, Number((import.meta as any)?.env?.VITE_CREWCHECK_MAX_INLINE_ROSTER_BACKUP_BYTES || 4 * 1024 * 1024));
 
 function estimateBase64Bytes(value?: string | null): number {
@@ -178,10 +173,60 @@ export async function saveRosterAnalysis(payload: SaveRosterPayload): Promise<Sa
   return result.roster;
 }
 
-export async function openSavedRoster(id: string): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
-  const local = findLocalRoster(id);
+function assertExpectedRosterPeriod(roster: CrewRoster, expected?: Pick<SavedRosterSummary, 'year' | 'month'>): void {
+  const expectedYear = Number(expected?.year || 0);
+  const expectedMonth = Number(expected?.month || 0);
+  if (!expectedYear || !expectedMonth) return;
+  if (Number(roster?.year) === expectedYear && Number(roster?.month) === expectedMonth) return;
+  throw Object.assign(new Error('A competência retornada não corresponde à escala escolhida.'), {
+    code: 'ROSTER_PERIOD_MISMATCH',
+    expectedYear,
+    expectedMonth,
+    actualYear: Number(roster?.year || 0),
+    actualMonth: Number(roster?.month || 0),
+  });
+}
+
+// P0_580_LOCAL_ID_COLLISION_GUARD: competence alone never identifies a publication.
+// Two crew members share a competence, so a period-only check passes while handing
+// back the wrong person's roster.
+//
+// Once the caller has named a verifiable crew, an answer whose own identity cannot be
+// verified is not evidence of agreement — it is the absence of evidence, and accepting
+// it is a fail-open on the very contract this guard exists to enforce. Only a caller
+// that named no crew keeps the conservative path.
+function assertExpectedRosterCrew(roster: CrewRoster, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): void {
+  const wanted = crewIdentityToken(expected);
+  if (!wanted) return;
+  const actual = crewIdentityToken(roster);
+  if (actual === wanted) return;
+  throw Object.assign(new Error('A escala aberta pertence a outro tripulante.'), {
+    code: 'ROSTER_IDENTITY_MISMATCH',
+    expectedCrew: wanted,
+    actualCrew: actual || 'unverified',
+  });
+}
+
+export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month' | 'crewId' | 'crewName'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
+  const local = findLocalRoster(id, expected);
   if (id.startsWith('local-') || id.startsWith('offline-')) {
-    if (local) return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+    if (local) {
+      assertExpectedRosterPeriod(local.roster, expected);
+      assertExpectedRosterCrew(local.roster, expected);
+      return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+    }
+    // Entries answer to this id but none of them belongs to the crew member we were
+    // asked for. A local id is device-local, so there is no server copy to fall back
+    // to; carrying on would hand back another crew member's roster. Say so instead.
+    const wantedCrew = crewIdentityToken(expected);
+    const candidates = localRosterCandidates(id);
+    if (wantedCrew && candidates.length) {
+      throw Object.assign(new Error('A escala aberta pertence a outro tripulante.'), {
+        code: 'ROSTER_IDENTITY_MISMATCH',
+        expectedCrew: wantedCrew,
+        actualCrew: candidates.map((item) => crewIdentityToken(item.roster)).filter(Boolean).join(',') || 'unknown',
+      });
+    }
   }
 
   const attempts = [
@@ -193,20 +238,25 @@ export async function openSavedRoster(id: string): Promise<{ roster: CrewRoster;
   for (const endpoint of attempts) {
     try {
       const payload = await jsonFetch<{ ok: boolean; data: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] } }>(endpoint);
-      if (payload?.data?.roster?.days?.length) return payload.data;
+      if (payload?.data?.roster?.days?.length) {
+        assertExpectedRosterPeriod(payload.data.roster, expected);
+        assertExpectedRosterCrew(payload.data.roster, expected);
+        return payload.data;
+      }
     } catch (error) {
+      if ((error as any)?.code === 'ROSTER_PERIOD_MISMATCH') throw error;
+      // An identity mismatch is a wrong-crew answer, never a reason to keep trying
+      // the next endpoint and fall back to whatever the device happens to hold.
+      if ((error as any)?.code === 'ROSTER_IDENTITY_MISMATCH') throw error;
       lastError = error;
     }
   }
 
-  if (local) return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
-
-  // Fallback premium: se o backend antigo ainda responder "API endpoint não encontrado",
-  // tenta abrir a escala ativa para não deixar o usuário preso no gerenciador.
-  try {
-    const active = await jsonFetch<{ ok: boolean; data?: { roster: CrewRoster; compliance: ComplianceResult | null; gym: GymRecommendation[] } }>(`/api/rosters/active`, { cache: 'no-store' });
-    if (active?.data?.roster?.days?.length) return { roster: active.data.roster, compliance: active.data.compliance as any, gym: active.data.gym || [] };
-  } catch {}
+  if (local) {
+    assertExpectedRosterPeriod(local.roster, expected);
+    assertExpectedRosterCrew(local.roster, expected);
+    return { roster: local.roster, compliance: local.compliance, gym: local.gym || [] };
+  }
 
   throw lastError || new Error('Não foi possível abrir a escala salva.');
 }
@@ -221,15 +271,13 @@ export async function openActiveRoster(): Promise<{ roster: CrewRoster; complian
     throw new Error('Escala ativa não retornou dados.');
   } catch (error) {
     if (local?.id) {
-      const data = await openSavedRoster(local.id);
+      const data = await openSavedRoster(local.id, local);
       const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
       return { ...merged, summary: local };
     }
     throw error;
   }
 }
-
-
 
 function parseCrewRosterDate(value?: string | null): Date | null {
   const raw = String(value || '').trim();
@@ -255,6 +303,22 @@ function rosterDataBounds(roster: CrewRoster): { first: Date | null; last: Date 
   const dates = (roster.days || []).map((day) => parseCrewRosterDate(day.date)).filter((date): date is Date => Boolean(date && Number.isFinite(date.getTime())));
   if (!dates.length) return { first: null, last: null };
   return { first: new Date(Math.min(...dates.map((date) => date.getTime()))), last: new Date(Math.max(...dates.map((date) => date.getTime()))) };
+}
+
+function rosterPeriodOrdinal(period: Pick<SavedRosterSummary, 'year' | 'month'>): number | null {
+  const year = Number(period.year);
+  const month = Number(period.month);
+  if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  return year * 12 + month - 1;
+}
+
+function adjacentRosterSummary(candidates: SavedRosterSummary[], current: Pick<SavedRosterSummary, 'year' | 'month'>, offset: -1 | 1): SavedRosterSummary | undefined {
+  const currentOrdinal = rosterPeriodOrdinal(current);
+  if (currentOrdinal === null) return undefined;
+  const targetOrdinal = currentOrdinal + offset;
+  return candidates
+    .filter((item) => rosterPeriodOrdinal(item) === targetOrdinal)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
 }
 
 function mergeAirportForLocal(value?: string | null): string {
@@ -324,7 +388,6 @@ function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, positio
   return { ...primary, days, rawText: `${position === 'prepend' ? `${adjacent.rawText || ''}\n\n--- Final da escala anterior anexado automaticamente por continuidade/pernoite ---\n` : ''}${primary.rawText || ''}${position === 'append' ? `\n\n--- Próxima escala anexada automaticamente ---\n${adjacent.rawText || ''}` : ''}`.trim() };
 }
 
-
 function getSmartLocalActiveRosterSummary(): SavedRosterSummary | undefined {
   const candidates = getLocalRosterSummaries(12);
   if (!candidates.length) return undefined;
@@ -343,24 +406,20 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
   let roster = data.roster;
   const candidates = getLocalRosterSummaries(12).filter((item) => item.id !== summary.id);
 
-  const previousSummary = candidates
-    .map((item) => ({ item, bounds: rosterSummaryBounds(item) }))
-    .filter((entry) => entry.bounds.last && entry.bounds.last.getTime() <= currentBounds.first!.getTime() + 24 * 60 * 60 * 1000)
-    .sort((a, b) => (b.bounds.last?.getTime() || 0) - (a.bounds.last?.getTime() || 0))[0]?.item;
+  // Publication adjacency is a property of the nominal competence, not of the
+  // factual first/last day carried inside a roster. A next-month publication may
+  // legitimately carry the final days of the previous month; using those factual
+  // bounds to choose the previous publication can skip the actual previous month.
+  const previousSummary = adjacentRosterSummary(candidates, summary, -1);
   if (previousSummary) {
-    const previous = await openSavedRoster(previousSummary.id).catch(() => null);
+    const previous = await openSavedRoster(previousSummary.id, previousSummary).catch(() => null);
     const tail = previous?.roster ? continuationTailLocal(previous.roster, roster) : null;
     if (tail?.days?.length) roster = mergeContinuousLocal(roster, tail, 'prepend');
   }
 
-  const updatedBounds = rosterDataBounds(roster);
-  const currentLastTime = currentBounds.last.getTime();
-  const nextSummary = candidates
-    .map((item) => ({ item, bounds: rosterSummaryBounds(item) }))
-    .filter((entry) => entry.bounds.first && entry.bounds.first.getTime() <= (updatedBounds.last?.getTime() || currentLastTime) + 7 * 24 * 60 * 60 * 1000 && entry.bounds.first.getTime() > (updatedBounds.last?.getTime() || currentLastTime) - 24 * 60 * 60 * 1000)
-    .sort((a, b) => (a.bounds.first?.getTime() || 0) - (b.bounds.first?.getTime() || 0))[0]?.item;
+  const nextSummary = adjacentRosterSummary(candidates, summary, 1);
   if (nextSummary) {
-    const next = await openSavedRoster(nextSummary.id).catch(() => null);
+    const next = await openSavedRoster(nextSummary.id, nextSummary).catch(() => null);
     const tail = next?.roster ? continuationTailLocal(roster, next.roster) : null;
     if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');
     else if (next?.roster?.days?.length) roster = mergeContinuousLocal(roster, { ...next.roster, days: next.roster.days.slice(0, 5) }, 'append');
@@ -369,19 +428,19 @@ async function buildSmartLocalContinuousRoster(summary: SavedRosterSummary, data
   return roster === data.roster ? data : { roster, compliance: null as any, gym: [] };
 }
 
-export async function deleteRosterAnalysis(id: string): Promise<boolean> {
+export async function deleteRosterAnalysis(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): Promise<boolean> {
   if (id.startsWith('local-') || id.startsWith('offline-')) {
-    deleteLocalRoster(id);
+    deleteLocalRoster(id, expected);
     return true;
   }
   try {
     const payload = await jsonFetch<{ ok: boolean }>(`/api/rosters/${id}`, { method: 'DELETE' });
-    deleteLocalRoster(id);
+    deleteLocalRoster(id, expected);
     return Boolean(payload.ok);
   } catch (error) {
-    const local = findLocalRoster(id);
+    const local = findLocalRoster(id, expected);
     if (local) {
-      deleteLocalRoster(id);
+      deleteLocalRoster(id, expected);
       return true;
     }
     throw error;
@@ -449,7 +508,6 @@ export async function getStoredStats(): Promise<StoredStatsResponse> {
   }
 }
 
-
 const LEGACY_LOCAL_HISTORY_KEY = 'crewcheck_local_history_v1';
 
 function localHistoryKey(): string {
@@ -463,7 +521,6 @@ function localHistoryKey(): string {
   }
 }
 
-
 type LocalHistoryItem = {
   id: string;
   checksum: string;
@@ -473,7 +530,6 @@ type LocalHistoryItem = {
   compliance: ComplianceResult;
   gym: GymRecommendation[];
 };
-
 
 function safeStorageScope(): string {
   try {
@@ -550,11 +606,32 @@ function readLocalHistory(): LocalHistoryItem[] {
   return items.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 }
 
-function findLocalRoster(id: string): LocalHistoryItem | null {
-  return readLocalHistory().find((item) => item.id === id || item.checksum === id) || null;
+// P0_580_LOCAL_ID_COLLISION_GUARD: local ids generated before the identity-scoped
+// format are shared by every publication of the same competence on the device, so two
+// crew members' rosters can answer to the same id. Resolve against the identity the
+// caller actually asked for, and fail closed when it is not there: returning "some
+// entry with that id" is how one crew member's roster reached another's session.
+function localRosterCandidates(id: string): LocalHistoryItem[] {
+  return readLocalHistory().filter((item) => item.id === id || item.checksum === id);
 }
 
-function deleteLocalRoster(id: string): void {
+function findLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): LocalHistoryItem | null {
+  const matches = localRosterCandidates(id);
+  if (!matches.length) return null;
+  const wanted = crewIdentityToken(expected);
+  if (!wanted) return matches.length === 1 ? matches[0] : null;
+  return matches.find((item) => crewIdentityToken(item.roster) === wanted) || null;
+}
+
+// P0_580_LOCAL_ID_COLLISION_GUARD: a legacy id is shared by every publication of the
+// same competence on the device, so removing "every entry with this id" destroys
+// another crew member's roster as collateral. Delete the entry whose identity was
+// actually asked for; when the id is ambiguous and no identity was given, delete
+// nothing rather than guess on a destructive operation.
+function deleteLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): void {
+  const target = findLocalRoster(id, expected);
+  if (!target) return;
+  const targetIdentity = crewIdentityToken(target.roster);
   for (const key of localHistoryKeys()) {
     try {
       const raw = localStorage.getItem(key);
@@ -563,7 +640,9 @@ function deleteLocalRoster(id: string): void {
       if (!Array.isArray(parsed)) continue;
       const next = parsed.filter((entry: any) => {
         const item = normalizeLocalHistoryItem(entry);
-        return item && item.id !== id && item.checksum !== id;
+        if (!item) return false;
+        if (item.id !== id && item.checksum !== id) return true;
+        return crewIdentityToken(item.roster) !== targetIdentity;
       });
       localStorage.setItem(key, JSON.stringify(next));
     } catch {
@@ -674,8 +753,53 @@ function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
   }));
 }
 
+// P0_580_CREW_IDENTITY_TOKEN: single normalization of "which crew member does this
+// publication belong to", shared by the history slot key, the generated local id and
+// the by-id lookup. One definition on purpose: two copies of a security-relevant
+// normalization drift, and the drift is what reopens cross-crew selection.
+// Returns '' when the crew cannot be verified, so callers can fail closed instead of
+// treating unverifiable as equal.
+// The crew-identity sentinel policy lives here, at rest, as the single definition in
+// the codebase. The adjacency guard materialized by
+// scripts/p0-580-post-anchor-continuity/apply.mjs consumes these same two functions, so
+// the by-id lookup, the history slot key and cross-publication adjacency cannot drift
+// apart into divergent sentinel lists.
+function normalizeRosterCrewId(value: string | null | undefined): string | null {
+  const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // P0_580_CREW_IDENTITY_SENTINEL_GUARD: placeholder identities, including numbered variants,
+  // cannot authorize cross-publication adjacency.
+  if (!normalized || /^(?:UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalized) || /^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalized)) return null;
+  return normalized;
+}
+
+function normalizeRosterCrewName(value: string | null | undefined): string | null {
+  const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // P0_580_CREW_NAME_SENTINEL_GUARD: parser defaults and generic labels do not
+  // prove crew identity across publications.
+  if (!normalized || /^(?:TRIPULANTE|CREW|CREWMEMBER|UNKNOWN|INVALID|MISSING)(?:\d+)?$/.test(normalized) || /^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA|PLACEHOLDER)$/.test(normalized)) return null;
+  return normalized;
+}
+
+type CrewIdentitySource = { crewId?: string | null; crewName?: string | null };
+
+function crewIdentityToken(source: CrewIdentitySource | null | undefined): string {
+  // A verified crewId is sovereign. Falling back to the published name is only sound
+  // when the name itself identifies a person: the parser's default label reaches here as
+  // a perfectly ordinary string, so accepting any non-empty name made two unrelated
+  // publications with the same default look like one crew member.
+  const id = normalizeRosterCrewId(source?.crewId);
+  if (id) return `ID:${id}`;
+  const name = normalizeRosterCrewName(source?.crewName);
+  return name ? `NAME:${name}` : '';
+}
+
 function periodHistoryKey(item: LocalHistoryItem): string {
-  return `${item.roster.crewId || item.roster.crewName || 'crew'}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;
+  // P0_580_HISTORY_CREW_IDENTITY_GUARD: a placeholder crewId must never collapse
+  // different crew members into the same nominal-period history slot. Prefer a
+  // verified ID; otherwise use the normalized published name; without either,
+  // keep entries distinct rather than authorizing cross-publication adjacency.
+  const identity = crewIdentityToken(item.roster) || `ENTRY:${item.checksum || item.id}`;
+  return `${identity}:${item.roster.year || '0000'}:${item.roster.month || '00'}`;
 }
 
 function buildLocalStoredStats(): StoredStatsResponse {

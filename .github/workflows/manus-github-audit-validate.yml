@@ -1,0 +1,26 @@
+name: Manus bridge static validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/manus-github-audit.yml'
+      - 'scripts/validate_manus_workflow.py'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/manus-github-audit.yml'
+      - 'scripts/validate_manus_workflow.py'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Manus bridge invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow
+        run: python scripts/validate_manus_workflow.py .github/workflows/manus-github-audit.yml
