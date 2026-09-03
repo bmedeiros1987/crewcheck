@@ -315,5 +315,82 @@ check('allowlist não expõe superfície administrativa',
     !fonte.includes('crewcheck_auth_token'));
 }
 
+// ---------------------------------------------------------------------------
+// 11. Paridade de contrato entre o lado nativo e o lado web.
+//
+// O erro clássico desta fronteira é o Swift chamar um nome que o TypeScript não
+// expõe: compila dos dois lados e falha só no dispositivo. As asserções abaixo
+// são estáticas de propósito — não há Xcode aqui — e travam exatamente isso.
+// ---------------------------------------------------------------------------
+{
+  const ler = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
+  const bridge = ler('ios-wrapper/App/CrewCheckNativeBridge.swift');
+  const inbox = ler('ios-wrapper/App/CrewCheckSharedInbox.swift');
+  const share = ler('ios-wrapper/ShareExtension/ShareViewController.swift');
+  const shareInfo = ler('ios-wrapper/ShareExtension/Info.plist');
+  const appEnt = ler('ios-wrapper/App/CrewCheck.entitlements');
+  const shareEnt = ler('ios-wrapper/ShareExtension/CrewCheckShare.entitlements');
+  const infoAdds = ler('ios-wrapper/App/Info.plist.additions.plist');
+  const push = ler('ios-wrapper/App/CrewCheckPushAdapter.swift');
+  const runtime = ler('client/src/lib/iosNativeRuntime.ts');
+
+  // Nomes que o Swift invoca precisam existir no runtime web.
+  for (const nome of ['receiveSharedPdf', 'openDeepLink']) {
+    check(`paridade: o Swift chama ${nome} e o runtime web o expõe`,
+      bridge.includes(nome) && runtime.includes(nome));
+  }
+  for (const nome of ['openExternal', 'requestNotifications', 'requestLocation', 'acknowledgeSharedPdf']) {
+    check(`paridade: mensagem "${nome}" tratada no Swift e emitida pelo web`,
+      bridge.includes(`case "${nome}"`) || bridge.includes(`"${nome}"`));
+  }
+  check('paridade: o handler WKWebView tem o nome que o web procura',
+    bridge.includes('crewcheckIos') && runtime.includes('crewcheckIos'));
+  check('paridade: as chaves de permissão são as mesmas dos dois lados',
+    bridge.includes('crewcheck_location_permission') && runtime.includes('crewcheck_location_permission')
+    && bridge.includes('crewcheck_notifications_permission') && runtime.includes('crewcheck_notifications_permission'));
+
+  // App Group: extensão e app precisam do MESMO identificador, senão a caixa de
+  // entrada simplesmente não existe para um dos lados.
+  const grupo = 'group.com.crewcheck.app';
+  check('App Group idêntico em app, extensão e código',
+    appEnt.includes(grupo) && shareEnt.includes(grupo) && inbox.includes(grupo));
+
+  // Segurança do caminho: shareId vira nome de diretório.
+  check('acknowledge valida o shareId como UUID antes de usá-lo como caminho',
+    inbox.includes('UUID(uuidString: raw) != nil'));
+  check('nome de arquivo compartilhado é sanitizado no lado nativo também',
+    inbox.includes('lastPathComponent') && inbox.includes('hasSuffix(".pdf")'));
+  check('o nativo recusa não-PDF antes de gravar', inbox.includes('%PDF-'));
+
+  // Share Extension: só PDF, um por vez.
+  check('Share Extension aceita apenas PDF',
+    shareInfo.includes('com.adobe.pdf') && !/public\.image|public\.url|public\.text/.test(shareInfo));
+  check('Share Extension não interpreta o arquivo (sem parser próprio)',
+    !/aimsParser|canonicalRoster|parse/i.test(share.replace(/\/\/.*$/gm, '')));
+
+  // Permissões mínimas.
+  check('não pedimos localização "Always"', !infoAdds.includes('NSLocationAlwaysUsageDescription'));
+  check('background limitado a push remoto',
+    infoAdds.includes('remote-notification')
+    && !/<string>fetch<\/string>|<string>location<\/string>/.test(infoAdds));
+  check('esquema de deep link declarado', infoAdds.includes('<string>crewcheck</string>'));
+  check('permissão de calendário é somente escrita',
+    infoAdds.includes('NSCalendarsWriteOnlyAccessUsageDescription')
+    && !infoAdds.includes('NSCalendarsFullAccessUsageDescription'));
+
+  // Push é adaptador, não comportamento.
+  check('push só registra quando a permissão já foi concedida',
+    push.includes('authorizationStatus == .authorized'));
+  check('push não agenda nem inventa notificação local',
+    !/UNMutableNotificationContent|scheduleNotification|UNTimeIntervalNotificationTrigger/.test(push));
+
+  // Nenhum segredo nas fontes nativas.
+  for (const [nome, fonte] of [['bridge', bridge], ['inbox', inbox], ['share', share], ['push', push]]) {
+    check(`sem segredo embutido em ${nome}`,
+      !/(api[_-]?key|client[_-]?secret|password|Bearer [A-Za-z0-9])/i.test(fonte));
+    check(`sem log de conteúdo em ${nome}`, !/print\(|NSLog\(/.test(fonte));
+  }
+}
+
 harness.cleanup();
 process.exit(checker.report());

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Chaves a MESCLAR em ios/App/App/Info.plist depois de `npx cap add ios`.
+  Este arquivo não é compilado: é a fonte versionada do que o target precisa.
+
+  Permissões pedidas e por quê (princípio de permissão mínima):
+    NSLocationWhenInUseUsageDescription  — Planejador de Saída e locais próximos.
+                                           NÃO pedimos "Always": nada no produto
+                                           exige localização em background.
+    NSCalendarsWriteOnlyAccessUsageDescription — publicar a escala no calendário.
+                                           Escrita apenas; o app não lê a agenda.
+    NSFaceIDUsageDescription             — desbloqueio biométrico OPCIONAL do app.
+  Notificações não têm chave de Info.plist; a autorização é pedida em runtime e
+  só depois disso o registro em APNs acontece.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.crewcheck.app.deeplink</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>crewcheck</string></array>
+    </dict>
+  </array>
+
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>O CrewCheck usa sua localização para calcular o horário de saída até a apresentação e mostrar serviços próximos ao hotel.</string>
+  <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+  <string>O CrewCheck adiciona sua escala publicada ao calendário do iPhone. O app não lê seus outros compromissos.</string>
+  <key>NSFaceIDUsageDescription</key>
+  <string>Use Face ID para abrir o CrewCheck sem digitar sua senha.</string>
+
+  <key>UIBackgroundModes</key>
+  <array>
+    <!-- Somente push remoto. Sem 'fetch' e sem 'location': o produto não executa
+         trabalho operacional em background nesta fundação. -->
+    <string>remote-notification</string>
+  </array>
+
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+</dict>
+</plist>

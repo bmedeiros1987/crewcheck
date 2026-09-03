@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MESMO App Group do app: é o canal entre extensão e app. -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array><string>group.com.crewcheck.app</string></array>
+</dict>
+</plist>
