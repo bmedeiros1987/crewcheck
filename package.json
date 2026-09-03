@@ -154,6 +154,10 @@
     "@types/react-dom": "18.2.25",
     "typescript": "5.6.3"
   },
+  "overrides": {
+    "browserslist": "4.28.7",
+    "dompurify": "3.4.13"
+  },
   "engines": {
     "node": ">=22.13.0"
   },

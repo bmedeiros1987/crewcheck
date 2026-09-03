@@ -53,6 +53,13 @@ function localRosterHistorySummary(item: LocalHistoryItem): SavedRosterSummary {
     storageReady: false,
   };
 }
+function localRosterIdentitySlug(roster: CrewRoster): string {
+  // Mirrors crewIdentityToken(): a verified id wins, then the published name.
+  // Without either, stay unique per entry rather than sharing a slot.
+  const token = crewIdentityToken(roster);
+  if (token) return token.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'crew';
+  return \`anon-\${Math.random().toString(36).slice(2, 10)}\`;
+}
 function persistRosterHistoryLocally(payload: SaveRosterPayload): SavedRosterSummary {
   const roster = payload.roster;
   const periodIdentity = localRosterPeriodIdentity(roster);
@@ -62,7 +69,11 @@ function persistRosterHistoryLocally(payload: SaveRosterPayload): SavedRosterSum
   const month = String(Number(roster.month) || 0).padStart(2, '0');
   const now = new Date().toISOString();
   const item: LocalHistoryItem = {
-    id: previous?.id || \`local-\${safeStorageScope()}-\${year}-\${month}\`,
+    // P0_580_LOCAL_ID_COLLISION_GUARD: the device scope is the account holding the
+    // history, not the crew member the publication belongs to. Without the crew
+    // token two crew members' rosters for the same competence are stored under one
+    // id, and a by-id open then answers with whichever was saved last.
+    id: previous?.id || \`local-\${safeStorageScope()}-\${localRosterIdentitySlug(roster)}-\${year}-\${month}\`,
     checksum: String(payload.checksum || periodIdentity),
     createdAt: now,
     sourceFileName: payload.sourceFileName || previous?.sourceFileName || 'Escala oficial importada',
