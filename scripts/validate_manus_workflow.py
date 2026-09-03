@@ -10,8 +10,12 @@ required = [
     'pull_request:',
     'issue_comment:',
     'types: [created]',
+    'workflow_dispatch:',
+    'pr_number:',
     "github.event.pull_request.number == 583",
+    "github.event.pull_request.number == 592",
     "github.event.issue.number == 583",
+    "github.event.issue.number == 592",
     "github.event.comment.author_association == 'OWNER'",
     "github.event.comment.author_association == 'COLLABORATOR'",
     "github.event.comment.body == '@manus'",
@@ -21,7 +25,7 @@ required = [
     'issues: read',
     'pull-requests: read',
     'checks: read',
-    'group: ${{ github.workflow }}-pr-583',
+    'group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}',
     'cancel-in-progress: true',
     'test -n "$MANUS_GITHUB_CONNECTOR_ID"',
     'connectors: [$connector_id]',
@@ -31,6 +35,8 @@ required = [
     'https://api.manus.ai/v2/task.create',
     'x-manus-api-key: $MANUS_API_KEY',
     'MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}',
+    'PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}',
+    'pulls/$PR_NUMBER',
 ]
 
 for fragment in required:
