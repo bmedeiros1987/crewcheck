@@ -39,6 +39,10 @@ assert.equal(isWellhubActivityPreferenceMessage('atividade da empresa'), false);
 assert.equal(isWellhubActivityPreferenceMessage('modalidade de pagamento'), false);
 assert.equal(isWellhubActivityPreferenceMessage('atividade da empresa com corrida'), false);
 assert.equal(isWellhubActivityPreferenceMessage('modalidade corporativa com Pilates'), false);
+assert.equal(isWellhubActivityPreferenceMessage('quero personalizar meu perfil'), false, 'alias personal dentro de personalizar não pode virar preferência');
+assert.equal(isWellhubActivityPreferenceMessage('quero abdicar do cargo'), false, 'alias abd dentro de abdicar não pode virar preferência');
+assert.equal(isWellhubActivityPreferenceMessage('quero personal'), true, 'alias personal como palavra inteira continua válido');
+assert.equal(isWellhubActivityPreferenceMessage('quero abd'), true, 'alias abd como palavra inteira continua válido');
 
 assert.deepEqual(extractWellhubLocationHintFromText('academia em Canoas perto de mim'), { city: 'Canoas', state: '' });
 assert.deepEqual(extractWellhubLocationHintFromText('academia na cidade de São Paulo/SP'), { city: 'São Paulo', state: 'SP' });
