@@ -8,6 +8,25 @@ const WELLHUB_PLAN_TOKEN = '(?:digital|starter|basic(?:\\+|\\s+plus)?|silver(?:\
 const OTHER_PLAN_CONTEXT = /\b(?:plano\s+(?:de\s+)?(?:sa[uú]de|m[eé]dico|odontol[oó]gico|celular|telefone|telefonia|internet|dados|operadora|seguro|cart[aã]o|streaming)|amil|unimed|bradesco\s+sa[uú]de|sulamerica\s+sa[uú]de|sulamerica\s+saude)\b/i;
 const NON_GYM_ACTIVITY_CONTEXT = /\b(?:aeroporto|voo|port[aã]o|escala|sa[ií]da|hotel|uber|carro|tr[aâ]nsito)\b/i;
 
+// Keep the boundary vocabulary aligned with the aliases accepted by the v14.4.07
+// detector, but re-check them as whole normalized phrases before a detected value is
+// allowed to mutate Concierge state. The upstream detector intentionally does broad
+// substring discovery for search; preference writes need stronger evidence.
+const WELLHUB_ACTIVITY_ALIAS_PHRASES = [
+  'musculacao', 'musculação', 'treino de forca', 'treino de força', 'bodybuilding', 'fisiculturismo',
+  'hiit', 'pilates', 'yoga', 'zumba', 'jump', 'step', 'pump', 'funcional', 'circuito funcional', 'circuitos funcionais',
+  'spinning', 'bike', 'cycling', 'power bike', 'danca', 'dança', 'fit dance', 'fitness dance', 'danca de salao', 'dança de salão',
+  'luta', 'fight', 'artes marciais', 'boxe', 'jiu jitsu', 'jiu-jitsu', 'muay thai', 'cardio', 'abdominal', 'abd', 'gap',
+  'regeneracao', 'regeneração', 'treino hibrido', 'treino híbrido', 'personal', 'alongamento', 'natacao', 'natação',
+  'crossfit', 'corrida',
+];
+
+function containsWholeNormalizedPhrase(text = '', phrase = '') {
+  const haystack = ` ${normalize(text)} `;
+  const needle = normalize(phrase);
+  return Boolean(needle && haystack.includes(` ${needle} `));
+}
+
 export function isWellhubPlanPreferenceMessage(text = '') {
   const raw = String(text || '').trim();
   const detected = detectWellhubPlanFromText(raw);
@@ -31,14 +50,13 @@ export function isWellhubPlanPreferenceMessage(text = '') {
   return explicitProductPlan.test(raw);
 }
 
-function isRecognizedWellhubActivity(value = '') {
-  const raw = String(value || '').trim();
-  if (!raw) return false;
-  const canonical = detectWellhubActivityFromText(raw);
-  // O detector v14.4.07 também aceita texto customizado e procura aliases dentro
-  // dele. Para classificar como atividade conhecida, o resultado canônico precisa
-  // ser exatamente o próprio valor, não apenas um alias aninhado em outra frase.
-  return Boolean(canonical && normalize(canonical) === normalize(raw));
+function isRecognizedWellhubActivity(raw = '', detected = '') {
+  const expected = normalize(detected);
+  if (!expected) return false;
+  return WELLHUB_ACTIVITY_ALIAS_PHRASES.some((alias) => {
+    if (!containsWholeNormalizedPhrase(raw, alias)) return false;
+    return normalize(detectWellhubActivityFromText(alias)) === expected;
+  });
 }
 
 export function isWellhubActivityPreferenceMessage(text = '') {
@@ -52,7 +70,10 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   // atividade customizada só é aceita quando o usuário a ancora explicitamente
   // ao produto Wellhub/Gympass. Atividades conhecidas podem usar a gramática
   // natural curta anunciada pelo Concierge ("quero Pilates", "modalidade Yoga").
-  const recognizedActivity = isRecognizedWellhubActivity(detected);
+  // A confirmação de atividade conhecida precisa observar o alias na mensagem
+  // original com fronteira de frase; substring de palavra (personalizar/abdicar)
+  // não é evidência suficiente para persistir preferência.
+  const recognizedActivity = isRecognizedWellhubActivity(raw, detected);
   const explicitProductActivity = /^(?:(?:wellhub|gympass)\s+(?:modalidade|atividade|aula|treino)\s*(?:é|e|eh|:|-)?\s*|(?:minha\s+)?(?:modalidade|atividade)\s+(?:do\s+)?(?:wellhub|gympass)\s*(?:é|e|eh|:|-)\s*)[\p{L}0-9 +&-]{2,60}[.!]?$/iu;
   if (explicitProductActivity.test(raw)) return true;
   if (!recognizedActivity) return false;
