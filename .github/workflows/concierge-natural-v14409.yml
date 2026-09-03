@@ -1,0 +1,21 @@
+name: CrewCheck Concierge natural v14.4.09
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/concierge-natural-v14409
+
+jobs:
+  concierge-natural:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Validate answer-first text and adaptive voice
+        run: node scripts/regression-v14-4-09-concierge-natural.mjs

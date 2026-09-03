@@ -55,11 +55,20 @@ const legacyTts = read('elevenlabs_tts_1377.js');
 assert.ok(chain.includes("await import('../v14408/apply.mjs');"), 'v14.4.08 não está na preparação canônica');
 assert.ok(server.includes("from './server/v14408/concierge-human.mjs';"), 'camada humana não foi ligada ao servidor');
 assert.ok(server.includes('conciergeSemanticInputContextV14338(text, currentSnapshot)'), 'contexto semântico curto não foi restaurado');
-assert.ok(server.includes('conciergeHumanizeReplyV14408(finalized, text)'), 'resposta final não passa pela camada humana');
+assert.ok(
+  server.includes('conciergeHumanizeReplyV14408(finalized, text)') || server.includes('conciergeNaturalReplyV14409(finalized, text)'),
+  'resposta final não passa pela camada humana ou por uma sucessora compatível',
+);
 assert.ok(server.includes("form.append('no_verbatim', 'true');"), 'Scribe v2 não está limpando hesitações');
 assert.ok(server.includes("form.append('tag_audio_events', 'false');"), 'eventos de áudio continuam poluindo a transcrição');
-assert.ok(server.includes('voice_settings: conciergeElevenLabsVoiceSettingsV14408(process.env),'), 'TTS principal não usa política natural');
-assert.ok(infobip.includes('voice_settings: conciergeElevenLabsVoiceSettingsV14408(environment),'), 'Infobip não usa a mesma política natural');
+assert.ok(
+  server.includes('voice_settings: conciergeElevenLabsVoiceSettingsV14408(process.env),') || server.includes('voice_settings: conciergeVoiceSettingsV14409(finalText, process.env),'),
+  'TTS principal não usa política natural ou sucessora compatível',
+);
+assert.ok(
+  infobip.includes('voice_settings: conciergeElevenLabsVoiceSettingsV14408(environment),') || infobip.includes('voice_settings: conciergeVoiceSettingsV14409(finalText, environment),'),
+  'Infobip não usa política natural ou sucessora compatível',
+);
 assert.ok(legacyTts.includes('speed: Number(process.env.ELEVENLABS_SPEED'), 'fonte TTS legada não guarda speed natural');
 assert.ok(legacyTts.includes('|| 0.52)'), 'fonte TTS legada não guarda stability corrigida');
 assert.ok(legacyTts.includes('|| 0.76)'), 'fonte TTS legada não guarda similarity corrigida');
@@ -74,4 +83,4 @@ for (const protectedPath of [
   assert.ok(!apply.includes(`update('${protectedPath}'`), `patch não pode tocar motor protegido: ${protectedPath}`);
 }
 
-console.log('[v14.4.08] OK — Concierge contextual, texto humano, Scribe v2 limpo e voz ElevenLabs estável.');
+console.log('[v14.4.08] OK — base humana preservada; sucessores compatíveis podem substituir o renderizador final e a política de voz.');
