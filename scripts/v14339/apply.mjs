@@ -76,7 +76,7 @@ function DatabaseView({ setBundle, setView }: { setBundle: (b: BundleState) => v
   }, []);
   async function open(item: any) {
     try {
-      const data = item?.id ? await openSavedRoster(item.id) : await openActiveRoster();
+      const data = item?.id ? await openSavedRoster(item.id, item) : await openActiveRoster();
       if (data?.roster) {
         const compliance = data.compliance || analyzeSafe(data.roster);
         const source = historyPeriodLabel(item);
@@ -85,8 +85,8 @@ function DatabaseView({ setBundle, setView }: { setBundle: (b: BundleState) => v
         setView('cockpit');
         toast.success(\`\${source} aberta.\`);
       }
-    } catch {
-      toast.error('Não consegui abrir esta escala do histórico.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui abrir esta escala do histórico.');
     }
   }
   return <><Brand back/>

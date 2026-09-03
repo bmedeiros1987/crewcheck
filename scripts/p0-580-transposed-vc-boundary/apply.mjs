@@ -1,0 +1,219 @@
+import fs from 'node:fs';
+
+const parserPath = 'client/src/lib/pdfParser.ts';
+const databasePath = 'client/src/lib/databaseClient.ts';
+const transposedMarker = 'P0_580_TRANSPOSED_STRUCTURE_GUARD';
+const legendMarker = 'P0_580_LEGEND_BOUNDARY_GUARD';
+const legendSectionMarker = 'P0_580_LEGEND_SECTION_GUARD';
+const overlapMarker = 'P0_580_OVERLAP_ACTIVITY_DEDUPE';
+const sourceOrderMarker = 'P0_580_RESIDUAL_SOURCE_ORDER_GUARD';
+const summaryBodyMarker = 'P0_580_ACTIVE_SUMMARY_BODY_GUARD';
+
+if (!fs.existsSync(parserPath)) throw new Error(`[${transposedMarker}] ${parserPath} not found`);
+let source = fs.readFileSync(parserPath, 'utf8');
+
+function requireFragments(text, marker, fragments) {
+  const missing = fragments.filter((fragment) => !text.includes(fragment));
+  if (missing.length) throw new Error(`[${marker}] structural patch incomplete: missing ${missing.join(' | ')}`);
+}
+
+function requireUniqueRange(text, marker, startFragment, endFragment) {
+  const startCount = text.split(startFragment).length - 1;
+  if (startCount !== 1) throw new Error(`[${marker}] structural range start count ${startCount}, expected 1`);
+  const start = text.indexOf(startFragment);
+  const end = text.indexOf(endFragment, start + startFragment.length);
+  if (end < 0) throw new Error(`[${marker}] structural range end not found`);
+  return text.slice(start, end);
+}
+
+if (!source.includes(transposedMarker)) {
+  const scoreAnchor = `  const transposedScore = scoreParsedDays(transposedDays, header.month, header.year);`;
+  if (!source.includes(scoreAnchor)) throw new Error(`[${transposedMarker}] transposed score anchor not found`);
+
+  source = source.replace(scoreAnchor, `  // ${transposedMarker}: a normal horizontal page can be misread as X-columns when\n  // repeated activities line up vertically. If one synthetic transposed day\n  // contains several published date tokens (or the report legend), that candidate\n  // has collapsed independent rows and must never outrank the sequential/visual\n  // parsers. This is structural validation only; no date/activity is hardcoded.\n  const transposedStructurallySound = transposedDays.every((day) => {\n    const raw = String(day.rawText || '');\n    const dateTokens = raw.match(DATE_TOKEN_GLOBAL_RE) || [];\n    return dateTokens.length <= 1 && !/\\bLEGEND\\b/i.test(raw);\n  });\n  const transposedScore = transposedStructurallySound\n    ? scoreParsedDays(transposedDays, header.month, header.year)\n    : Number.NEGATIVE_INFINITY;`);
+
+  const strongAnchor = `  const useStrongTransposed = /Roster\\s+Report/i.test(fullText)\n    && transposedDays.length >= 25\n    && transposedEventCount >= 30\n    && (!sourceHasFlights || transposedFlightCount > 0);`;
+  if (!source.includes(strongAnchor)) throw new Error(`[${transposedMarker}] prepared strong-transposed anchor not found`);
+
+  source = source.replace(strongAnchor, `  const useStrongTransposed = /Roster\\s+Report/i.test(fullText)\n    && transposedStructurallySound\n    && transposedDays.length >= 25\n    && transposedEventCount >= 30\n    && (!sourceHasFlights || transposedFlightCount > 0);`);
+  console.log(`[crewcheck:prepare] applied ${transposedMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${transposedMarker} already applied; validating structure`);
+}
+requireFragments(source, transposedMarker, [
+  'const transposedStructurallySound = transposedDays.every',
+  'dateTokens.length <= 1',
+  ': Number.NEGATIVE_INFINITY',
+  '&& transposedStructurallySound',
+]);
+
+if (!source.includes(legendMarker)) {
+  const footerAnchor = `function isHeaderOrFooterRow(text: string): boolean {\n  return /^(Date\\b|Pairing\\/Activity\\b|Duty\\b|Report\\b|Item\\b|Updated Date\\b)/i.test(text)`;
+  if (!source.includes(footerAnchor)) throw new Error(`[${legendMarker}] header/footer anchor not found`);
+  source = source.replace(footerAnchor, `function isHeaderOrFooterRow(text: string): boolean {\n  // ${legendMarker}: legend labels enumerate valid activity codes, so allowing\n  // them through as continuation text contaminates the final published day.\n  if (/^LEGEND\\b/i.test(text)) return true;\n  return /^(Date\\b|Pairing\\/Activity\\b|Duty\\b|Report\\b|Item\\b|Updated Date\\b)/i.test(text)`);
+  console.log(`[crewcheck:prepare] applied ${legendMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${legendMarker} already applied; validating structure`);
+}
+requireFragments(source, legendMarker, [
+  'if (/^LEGEND\\b/i.test(text)) return true;',
+]);
+
+if (!source.includes(legendSectionMarker)) {
+  const rowsAnchor = `function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRoster {\n  const header = parseHeader(fullText);\n  const transposedDays = parseCrewRosterTransposedColumns(rows, header.month, header.year, header.base);\n  const visualDays = parseDaysFromRows(rows, header.month, header.year, header.base);\n  const columnarDays = parseCrewRosterColumnarRows(rows, header.month, header.year, header.base);\n  const looseDays = parseCrewRosterReportLooseText(fullText, header.month, header.year, header.base);`;
+  if (!source.includes(rowsAnchor)) throw new Error(`[${legendSectionMarker}] parseCrewRosterReportRows anchor not found`);
+  source = source.replace(rowsAnchor, `function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRoster {\n  // ${legendSectionMarker}: LEGEND terminates the published roster. Labels below\n  // it intentionally contain valid activity codes (HSB/DO/DR/VC) and must never\n  // be parsed as continuation rows or transposed activities.\n  const legendRowIndex = rows.findIndex((row) => /^LEGEND\\b/i.test(normalizeSpaces(String(row?.text || ''))));\n  const publishedRows = legendRowIndex >= 0 ? rows.slice(0, legendRowIndex) : rows;\n  const legendTextMatch = String(fullText || '').match(/(?:^|\\n)\\s*LEGEND\\b/i);\n  const publishedText = legendTextMatch && typeof legendTextMatch.index === 'number'\n    ? String(fullText || '').slice(0, legendTextMatch.index)\n    : fullText;\n  const header = parseHeader(publishedText);\n  const transposedDays = parseCrewRosterTransposedColumns(publishedRows, header.month, header.year, header.base);\n  const visualDays = parseDaysFromRows(publishedRows, header.month, header.year, header.base);\n  const columnarDays = parseCrewRosterColumnarRows(publishedRows, header.month, header.year, header.base);\n  const looseDays = parseCrewRosterReportLooseText(publishedText, header.month, header.year, header.base);`);
+
+  source = source.replace(
+    `rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base)`,
+    `rescueFlightsFromFullText(mergedDays, publishedText, header.month, header.year, header.base)`,
+  );
+  source = source.replace(
+    `parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month)`,
+    `parseGenericTripulationRecords(publishedText, header.crewName, header.year, header.month)`,
+  );
+  console.log(`[crewcheck:prepare] applied ${legendSectionMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${legendSectionMarker} already applied; validating structure`);
+}
+requireFragments(source, legendSectionMarker, [
+  'const legendRowIndex = rows.findIndex',
+  'const publishedRows = legendRowIndex >= 0 ? rows.slice(0, legendRowIndex) : rows;',
+  'const publishedText = legendTextMatch',
+  'parseCrewRosterTransposedColumns(publishedRows',
+  'parseDaysFromRows(publishedRows',
+  'parseCrewRosterColumnarRows(publishedRows',
+  'parseCrewRosterReportLooseText(publishedText',
+  'rescueFlightsFromFullText(mergedDays, publishedText',
+  'parseGenericTripulationRecords(publishedText',
+]);
+
+fs.writeFileSync(parserPath, source, 'utf8');
+
+if (!fs.existsSync(databasePath)) throw new Error(`[${overlapMarker}] ${databasePath} not found`);
+let database = fs.readFileSync(databasePath, 'utf8');
+
+if (!database.includes(overlapMarker)) {
+  const importAnchor = `import { authFetch, getStoredUser, getToken } from './authClient';`;
+  if (!database.includes(importAnchor)) throw new Error(`[${overlapMarker}] database import anchor not found`);
+  database = database.replace(importAnchor, `${importAnchor}\nimport { dedupeAdjacentRosterDays, isOperationalLegChainVerifiable } from './localRosterOverlap'; // ${overlapMarker}`);
+
+  // P0_580_ACTIVE_SUMMARY_BODY_GUARD: the announced summary must be validated
+  // against the body that actually arrived BEFORE any device-versus-server
+  // reconciliation. Reconciliation compares the remote summary with whichever
+  // publication is locally active, so running it first turns an internally
+  // inconsistent remote response into a confirmation prompt whose outcome depends
+  // on the calendar. Nominal competence is sovereign: an authorized checksum never
+  // authorizes a body from another competence.
+  const summaryBodyGuard = `      // ${summaryBodyMarker}: an authorized summary never authorizes a body from another\n      // nominal competence. Runs before reconciliation so an internally inconsistent\n      // remote response is reported as the nominal mismatch it is.\n      if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);`;
+  const reconciliationAnchor = `      const reconciliation = reconcileActiveRosterIdentity({ remote: payload.roster || null, local: local || null });`;
+  const reconciliationCount = database.split(reconciliationAnchor).length - 1;
+  if (reconciliationCount !== 1) throw new Error(`[${overlapMarker}] active reconciliation anchor count ${reconciliationCount}, expected 1`);
+  database = database.replace(reconciliationAnchor, `${summaryBodyGuard}\n${reconciliationAnchor}`);
+
+  const activeReturnAnchor = `return { roster: payload.data.roster, compliance: payload.data.compliance as any, gym: payload.data.gym || [], summary: payload.roster || null };`;
+  const activeReturnCount = database.split(activeReturnAnchor).length - 1;
+  if (activeReturnCount !== 1) throw new Error(`[${overlapMarker}] active-roster reconciliation anchor count ${activeReturnCount}, expected 1`);
+  database = database.replace(activeReturnAnchor, `const remoteData = { roster: payload.data.roster, compliance: payload.data.compliance as any, gym: payload.data.gym || [] };\n      const remoteSummary = payload.roster\n        || getLocalRosterSummaries(12).find((item) => Number(item.year) === Number(remoteData.roster.year) && Number(item.month) === Number(remoteData.roster.month))\n        || null;\n      if (remoteSummary) assertExpectedRosterPeriod(remoteData.roster, remoteSummary);\n      const reconciled = remoteSummary\n        ? await buildSmartLocalContinuousRoster(remoteSummary, remoteData).catch(() => remoteData)\n        : remoteData;\n      return { ...reconciled, summary: payload.roster || remoteSummary };`);
+
+  const dateParserAnchor = `function parseCrewRosterDate(value?: string | null): Date | null {\n  const raw = String(value || '').trim();\n  let match = raw.match(/^(\\d{1,2})[\\/.\\-](\\d{1,2})[\\/.\\-](\\d{2,4})$/);\n  if (match) {\n    const year = Number(match[3].length === 2 ? \`20\${match[3]}\` : match[3]);\n    return new Date(year, Number(match[2]) - 1, Number(match[1]), 12, 0, 0, 0);\n  }\n  match = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);\n  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);\n  const date = new Date(raw);\n  return Number.isFinite(date.getTime()) ? date : null;\n}`;
+  const dateParserCount = database.split(dateParserAnchor).length - 1;
+  if (dateParserCount !== 1) throw new Error(`[${overlapMarker}] strict roster date parser anchor count ${dateParserCount}, expected 1`);
+  database = database.replace(dateParserAnchor, `function parseCrewRosterDate(value?: string | null): Date | null {\n  const raw = String(value || '').trim();\n  const buildCivilDate = (year: number, month: number, day: number): Date | null => {\n    if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1 || day > 31) return null;\n    const date = new Date(year, month - 1, day, 12, 0, 0, 0);\n    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;\n  };\n  let match = raw.match(/^(\\d{1,2})[\\/.\\-](\\d{1,2})[\\/.\\-](\\d{2,4})$/);\n  if (match) {\n    const year = Number(match[3].length === 2 ? \`20\${match[3]}\` : match[3]);\n    return buildCivilDate(year, Number(match[2]), Number(match[1]));\n  }\n  match = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);\n  if (match) return buildCivilDate(Number(match[1]), Number(match[2]), Number(match[3]));\n  return null;\n}`);
+
+  const nextAnchor = `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const nextAnchors = rosterContinuationAnchorsLocal(nextRoster);`;
+  if (!database.includes(nextAnchor)) throw new Error(`[${overlapMarker}] continuation anchor not found`);
+  database = database.replace(nextAnchor, `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {\n  const previousAnchors = rosterContinuationAnchorsLocal(previousRoster);\n  const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };\n  const nextAnchors = rosterContinuationAnchorsLocal(overlapFilteredNext);`);
+
+  const firstNextAnchor = `  const firstNext = nextAnchors[0];\n  if (!last.destination || !firstNext.origin || last.destination === base || last.destination !== firstNext.origin) return null;\n  const gapToNext = dayGapLocal(last, firstNext);\n  if (gapToNext < 0 || gapToNext > 3) return null;`;
+  if (!database.includes(firstNextAnchor)) throw new Error(`[${overlapMarker}] first continuation anchor not found`);
+  database = database.replace(firstNextAnchor, `  if (!last.destination || last.destination === base) return null;\n  // ${sourceOrderMarker}: after count-aware overlap removal, walk every residual\n  // activity in publication order. A later compatible flight cannot authorize\n  // skipping an intervening residual activity that was not individually proven\n  // to be an overlap copy. This is intentionally fail-closed.\n  const residualDays = overlapFilteredNext.days || [];\n  let firstNext = null as (typeof nextAnchors)[number] | null;\n  for (const day of residualDays) {\n    const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [day]).length === 0;\n    if (provenRetainedOverlap) continue;\n    const dayDate = parseCrewRosterDate(day.date);\n    if (!dayDate || isOffLikeLocalDay(day)) return null;\n    if (!(day.legs || []).length) return null;\n    if (!isOperationalLegChainVerifiable(day)) return null;\n    const anchor = nextAnchors.find((candidate) => candidate.day === day);\n    if (!anchor) return null;\n    const gap = dayGapLocal(last, anchor);\n    if (gap >= 0 && gap <= 3 && Boolean(anchor.origin && last.destination === anchor.origin)) {\n      firstNext = anchor;\n      break;\n    }\n    return null;\n  }\n  if (!firstNext) return null;\n  const gapToNext = dayGapLocal(last, firstNext);`);
+
+  const mergeAnchor = `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const sourceDays = position === 'prepend' ? [...(adjacent.days || []), ...(primary.days || [])] : [...(primary.days || []), ...(adjacent.days || [])];`;
+  if (!database.includes(mergeAnchor)) throw new Error(`[${overlapMarker}] merge anchor not found`);
+  database = database.replace(mergeAnchor, `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {\n  const originalAdjacentDays = adjacent.days || [];\n  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);\n  const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length\n    || adjacentDays.some((day, index) => day !== originalAdjacentDays[index]);\n  if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };\n  const sourceDays = position === 'prepend' ? [...adjacentDays, ...(primary.days || [])] : [...(primary.days || []), ...adjacentDays];`);
+
+  const legacyStart = `  const seen = new Set<string>();\n  const days: CrewRoster['days'] = [];\n  for (const day of sourceDays) {`;
+  const legacyStartCount = database.split(legacyStart).length - 1;
+  if (legacyStartCount !== 1) throw new Error(`[${overlapMarker}] legacy second-dedupe start count ${legacyStartCount}, expected 1`);
+  const legacyStartIndex = database.indexOf(legacyStart);
+  const legacyEnd = `    days.push(day);\n  }\n  days.sort(`;
+  const legacyEndIndex = database.indexOf(legacyEnd, legacyStartIndex);
+  if (legacyEndIndex < 0) throw new Error(`[${overlapMarker}] legacy second-dedupe end anchor not found`);
+  const replacement = `  // Overlap identity has already been consumed count-aware above. A second Set-based\n  // dedupe here would erase legitimate retained multiplicity. Preserve sourceDays.\n  const days: CrewRoster['days'] = [...sourceDays];\n  days.sort(`;
+  database = database.slice(0, legacyStartIndex) + replacement + database.slice(legacyEndIndex + legacyEnd.length);
+
+  const fallbackAnchor = `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    else if (next?.roster?.days?.length) roster = mergeContinuousLocal(roster, { ...next.roster, days: next.roster.days.slice(0, 5) }, 'append');`;
+  if (!database.includes(fallbackAnchor)) throw new Error(`[${overlapMarker}] blind next-roster fallback anchor not found`);
+  database = database.replace(fallbackAnchor, `    if (tail?.days?.length && next?.roster) roster = mergeContinuousLocal(roster, next.roster, 'append');\n    // Fail closed when there is no proven physical continuation. Nominal adjacency\n    // alone must not append an arbitrary fixed slice from the next publication.`);
+
+  console.log(`[crewcheck:prepare] applied ${overlapMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${overlapMarker} already applied; validating structure`);
+}
+requireFragments(database, overlapMarker, [
+  `import { dedupeAdjacentRosterDays, isOperationalLegChainVerifiable } from './localRosterOverlap';`,
+  'const remoteData = { roster: payload.data.roster',
+  summaryBodyMarker,
+  'if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);',
+  'if (remoteSummary) assertExpectedRosterPeriod(remoteData.roster, remoteSummary);',
+  "['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())",
+  'await buildSmartLocalContinuousRoster(remoteSummary, remoteData)',
+  'const buildCivilDate = (year: number, month: number, day: number): Date | null => {',
+  'date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day',
+  'return null;',
+  'const overlapFilteredNext = { ...nextRoster, days: dedupeAdjacentRosterDays(previousRoster.days || [], nextRoster.days || []) };',
+  sourceOrderMarker,
+  'const residualDays = overlapFilteredNext.days || [];',
+  'const provenRetainedOverlap = dedupeAdjacentRosterDays(previousRoster.days || [], [day]).length === 0;',
+  'const dayDate = parseCrewRosterDate(day.date);',
+  'if (!dayDate || isOffLikeLocalDay(day)) return null;',
+  'if (!(day.legs || []).length) return null;',
+  'if (!isOperationalLegChainVerifiable(day)) return null;',
+  'const anchor = nextAnchors.find((candidate) => candidate.day === day);',
+  'const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], originalAdjacentDays);',
+  'const adjacentWasFiltered = adjacentDays.length !== originalAdjacentDays.length',
+  "if (adjacentWasFiltered) adjacent = { ...adjacent, rawText: '' };",
+  "const days: CrewRoster['days'] = [...sourceDays];",
+  'Nominal adjacency',
+]);
+// The summary/body guard is only meaningful upstream of reconciliation; assert the
+// order structurally so a later refactor cannot silently restore the old sequence.
+const summaryBodyGuardIndex = database.indexOf('if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);');
+const reconciliationIndex = database.indexOf('const reconciliation = reconcileActiveRosterIdentity(');
+if (summaryBodyGuardIndex < 0) throw new Error(`[${overlapMarker}] summary/body guard missing`);
+if (reconciliationIndex < 0) throw new Error(`[${overlapMarker}] active reconciliation call missing`);
+if (summaryBodyGuardIndex > reconciliationIndex) throw new Error(`[${overlapMarker}] summary/body guard must precede identity reconciliation`);
+const continuationTailBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `function continuationTailLocal(previousRoster: CrewRoster, nextRoster: CrewRoster): CrewRoster | null {`,
+  `\nfunction mergeContinuousLocal(`,
+);
+if (continuationTailBlock.includes('const firstNext = nextAnchors[0];')) throw new Error(`[${overlapMarker}] retained overlap multiplicity can still veto continuation`);
+if (!continuationTailBlock.includes(sourceOrderMarker)) throw new Error(`[${overlapMarker}] residual source-order guard missing`);
+if (continuationTailBlock.includes('for (const anchor of nextAnchors)')) throw new Error(`[${overlapMarker}] anchor-only continuation traversal survived`);
+const rosterDateParserBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `function parseCrewRosterDate(value?: string | null): Date | null {`,
+  `\nfunction rosterSummaryBounds(`,
+);
+if (rosterDateParserBlock.includes('new Date(raw)')) throw new Error(`[${overlapMarker}] permissive roster-date fallback survived`);
+if (!rosterDateParserBlock.includes('date.getFullYear() === year')) throw new Error(`[${overlapMarker}] civil roster-date round-trip guard missing`);
+const mergeContinuousBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `function mergeContinuousLocal(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {`,
+  `\nfunction getSmartLocalActiveRosterSummary()`,
+);
+if (mergeContinuousBlock.includes('const seen = new Set<string>();')) throw new Error(`[${overlapMarker}] legacy second dedupe survived count-aware overlap filtering`);
+const smartContinuousBlock = requireUniqueRange(
+  database,
+  overlapMarker,
+  `async function buildSmartLocalContinuousRoster(`,
+  `\nexport async function deleteRosterAnalysis(`,
+);
+if (smartContinuousBlock.includes('next.roster.days.slice(0, 5)')) throw new Error(`[${overlapMarker}] blind fixed-slice fallback survived`);
+
+fs.writeFileSync(databasePath, database, 'utf8');

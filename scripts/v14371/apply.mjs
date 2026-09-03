@@ -27,7 +27,7 @@ const oldBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
     throw new Error('Escala ativa não retornou dados.');
   } catch (error) {
     if (local?.id) {
-      const data = await openSavedRoster(local.id);
+      const data = await openSavedRoster(local.id, local);
       const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
       return { ...merged, summary: local };
     }
@@ -50,7 +50,7 @@ const newBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
       }
 
       if (reconciliation.decision === 'use-local' && local?.id) {
-        const data = await openSavedRoster(local.id);
+        const data = await openSavedRoster(local.id, local);
         const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
         return { ...merged, summary: local };
       }
@@ -59,9 +59,9 @@ const newBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
     }
     throw new Error('Escala ativa não retornou dados.');
   } catch (error: any) {
-    if (String(error?.code || '').toUpperCase() === 'ACTIVE_ROSTER_CONFLICT') throw error;
+    if (['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())) throw error;
     if (local?.id) {
-      const data = await openSavedRoster(local.id);
+      const data = await openSavedRoster(local.id, local);
       const merged = await buildSmartLocalContinuousRoster(local, data).catch(() => data);
       return { ...merged, summary: local };
     }
@@ -72,4 +72,4 @@ const newBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
 if (!source.includes(oldBlock)) throw new Error('[v14.3.71] Ponto de aplicação openActiveRoster não encontrado.');
 source = source.replace(oldBlock, newBlock);
 fs.writeFileSync(file, source, 'utf8');
-console.log('[v14.3.71] openActiveRoster reconcilia identidade remoto/local e bloqueia conflito silencioso.');
+console.log('[v14.3.71] openActiveRoster reconcilia identidade remoto/local e bloqueia conflito ou competência divergente.');
