@@ -254,6 +254,10 @@ export function classifyScheduleActivity(
 }
 
 export function isProgramScheduleActivity(activity: ScheduleActivityLike): boolean {
+  // #537: `journey-rest` é projetado como `duty` apenas para permanecer fora
+  // do contrato de pernoite/stay. O tipo projetado nunca pode fazê-lo voltar a
+  // ser programação em seletores materializados que usam este predicado.
+  if (isJourneyRestScheduleActivity(activity)) return false;
   return classifyScheduleActivity(activity) === 'PROGRAMACAO';
 }
 
