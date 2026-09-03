@@ -1,0 +1,31 @@
+name: 'CrewCheck Financeiro 2.0 compensation engine'
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'shared/financial2/**'
+      - 'scripts/regression-financial2-compensation-engine.mjs'
+      - '.github/workflows/financial2-compensation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compensation-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci || npm install
+      # O domínio é puro: roda sem materializar a cadeia canônica, o que é a prova
+      # executável de que ele não depende de parser/escala.
+      - name: Compensation engine regression
+        run: node scripts/regression-financial2-compensation-engine.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
