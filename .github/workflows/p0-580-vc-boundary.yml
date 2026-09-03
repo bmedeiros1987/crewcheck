@@ -21,6 +21,7 @@ on:
       - 'scripts/v14339/apply.mjs'
       - 'scripts/v14371/apply.mjs'
       - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
+      - 'scripts/regression-p0-580-real-vc-legend-boundary.mjs'
       - 'scripts/regression-p0-580-overlap-reimport.mjs'
       - 'scripts/regression-p0-580-exact-competence-open.mjs'
       - 'scripts/regression-p0-580-invalid-placeholders.mjs'
@@ -53,6 +54,8 @@ jobs:
         run: npm ci || npm install
       - name: Materialize canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
+      - name: Validate real VC/LEGEND final-page boundary
+        run: node scripts/regression-p0-580-real-vc-legend-boundary.mjs
       - name: Validate normal-page transposed VC boundary
         run: node scripts/regression-p0-580-transposed-vc-boundary.mjs
       - name: Validate overlap reimport and fail-closed apply
