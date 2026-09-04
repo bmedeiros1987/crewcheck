@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   buildArriveByOtpRequest,
   buildPresentationTarget,
+  chooseInTripRescueRecommendation,
   choosePresentationRecommendation,
   rankPresentationRoutes,
 } from '../server/mobility/presentationSyncPlanner.mjs';
@@ -71,6 +72,69 @@ const recDriving = choosePresentationRecommendation({
 });
 assert.equal(recDriving.recommendation, 'DRIVING');
 assert.equal(recDriving.primary.id, 'car-fast');
+
+const rescueToTransit = chooseInTripRescueRecommendation({
+  activeItinerary: {
+    id: 'uber-congested',
+    start: '2026-09-05T14:00:00.000Z',
+    end: '2026-09-05T15:34:00.000Z',
+    realtimeAgeSeconds: 20,
+    legs: [{ mode: 'CAR' }],
+  },
+  alternatives: [{
+    id: 'uber-metro-rescue',
+    start: '2026-09-05T14:00:00.000Z',
+    end: '2026-09-05T15:10:00.000Z',
+    realtimeAgeSeconds: 20,
+    legs: [{ mode: 'CAR' }, { mode: 'SUBWAY', waitSeconds: 120 }, { mode: 'WALK' }],
+  }],
+  presentationAt,
+  arrivalBufferMinutes: 20,
+});
+assert.equal(rescueToTransit.action, 'SWITCH_NOW');
+assert.equal(rescueToTransit.to.id, 'uber-metro-rescue');
+
+const rescueToCar = chooseInTripRescueRecommendation({
+  activeItinerary: {
+    id: 'metro-disrupted',
+    start: '2026-09-05T14:00:00.000Z',
+    end: '2026-09-05T15:08:00.000Z',
+    realtimeAgeSeconds: 15,
+    disrupted: true,
+    legs: [{ mode: 'SUBWAY', waitSeconds: 60 }],
+  },
+  alternatives: [{
+    id: 'car-rescue',
+    start: '2026-09-05T14:02:00.000Z',
+    end: '2026-09-05T15:12:00.000Z',
+    realtimeAgeSeconds: 15,
+    legs: [{ mode: 'CAR' }],
+  }],
+  presentationAt,
+  arrivalBufferMinutes: 20,
+});
+assert.equal(rescueToCar.action, 'SWITCH_NOW');
+assert.equal(rescueToCar.to.id, 'car-rescue');
+
+const keepRoute = chooseInTripRescueRecommendation({
+  activeItinerary: {
+    id: 'metro-ok',
+    start: '2026-09-05T14:00:00.000Z',
+    end: '2026-09-05T15:05:00.000Z',
+    realtimeAgeSeconds: 20,
+    legs: [{ mode: 'SUBWAY', waitSeconds: 60 }],
+  },
+  alternatives: [{
+    id: 'car-similar',
+    start: '2026-09-05T14:03:00.000Z',
+    end: '2026-09-05T15:06:00.000Z',
+    realtimeAgeSeconds: 20,
+    legs: [{ mode: 'CAR' }],
+  }],
+  presentationAt,
+  arrivalBufferMinutes: 20,
+});
+assert.equal(keepRoute.action, 'KEEP_ROUTE');
 
 const otp = buildArriveByOtpRequest({
   origin: { lat: -15.8, lon: -47.9 },
