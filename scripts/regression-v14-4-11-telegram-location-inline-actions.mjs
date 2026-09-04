@@ -14,7 +14,9 @@ assert.match(patch, /conciergePharmaciesReply/, 'callback não reutiliza a busca
 assert.match(patch, /conciergeGymsReply/, 'callback não reutiliza a busca canônica de academias');
 assert.match(patch, /reply_markup: conciergeLocationActionsKeyboard\(\)/, 'confirmação de localização ainda não usa inline keyboard');
 assert.match(patch, /Quando ela expirar, peço uma atualização/, 'texto humano de expiração não aplicado');
-assert.doesNotMatch(patch, /para \/saida, \/hospitais, \/farmacias e \/academias/, 'copy técnica com comandos não pode permanecer na confirmação nova');
+// O patch precisa conter a copy legada como âncora de substituição. A ausência dela
+// deve ser comprovada somente após materialização; o workflow faz esse gate em server.mjs.
+assert.match(patch, /const oldLocationCopy =/, 'patch não preserva âncora explícita para substituir a copy legada');
 assert.match(patch, /if \(!data\.startsWith\('cc_nav:'\) && !data\.startsWith\('cc_location:'\)\) return false;/, 'callback de localização não está integrado ao dispatcher existente');
 
 console.log('PASS v14.4.11 Telegram location inline actions');
