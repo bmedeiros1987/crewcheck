@@ -35,3 +35,5 @@ jobs:
       - run: npm ci
       - name: Aircraft-group provenance
         run: node scripts/regression-p1-526-aircraft-provenance.mjs
+      - name: Rolling 28-day flight-hours window
+        run: node scripts/regression-p1-526-rolling-28d.mjs
