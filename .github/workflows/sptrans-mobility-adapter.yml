@@ -4,7 +4,10 @@ on:
   pull_request:
     paths:
       - 'server/integrations/sptrans.mjs'
+      - 'server/v1412/sptransHealth.mjs'
+      - 'server/v139/index.mjs'
       - 'scripts/regression-sptrans-adapter.mjs'
+      - 'scripts/regression-sptrans-health.mjs'
       - '.github/workflows/sptrans-mobility-adapter.yml'
   workflow_dispatch:
 
@@ -21,5 +24,7 @@ jobs:
         run: npm ci || npm install
       - name: SPTrans adapter regression
         run: node scripts/regression-sptrans-adapter.mjs
+      - name: SPTrans health regression
+        run: node scripts/regression-sptrans-health.mjs
       - name: TypeScript
         run: npx tsc --noEmit --pretty false --project tsconfig.json
