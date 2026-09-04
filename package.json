@@ -114,6 +114,7 @@
     "db:migrate:v13.9.5": "node scripts/apply-v13-9-5-migration.mjs",
     "regression:v13.9.5:medical-emergency": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-5-medical-emergency-care.mjs",
     "regression:v13.9.6:infobip-calls": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-6-infobip-premium-calls.mjs",
+    "regression:v14.4.03:callmebot-onboarding": "node scripts/v139/apply.mjs && node scripts/regression-v14-4-03-callmebot-onboarding.mjs",
     "regression:v13.9.7:premium-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-7-premium-roster-finance.mjs",
     "regression:v13.9.8:act-roster": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs",
     "regression:v13.9.9:monthly-premium": "node scripts/v139/apply.mjs && node scripts/regression-v13-9-9-month-base-menu-admin-infobip.mjs",
@@ -153,9 +154,12 @@
     "@types/react-dom": "18.2.25",
     "typescript": "5.6.3"
   },
+  "overrides": {
+    "browserslist": "4.28.7",
+    "dompurify": "3.4.13"
+  },
   "engines": {
     "node": ">=22.13.0"
   },
   "check:1264-futuristic-premium": "node -e \"console.log('CrewCheck v12.5.65 futuristic premium design OK')\""
 }
-

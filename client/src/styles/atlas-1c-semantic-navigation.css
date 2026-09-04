@@ -1,0 +1,204 @@
+/* Atlas 1C — semantic colour survives the theme; surfaces adapt to it. */
+:root {
+  --cc-atlas-brand: var(--cz-pink);
+  --cc-atlas-brand-2: var(--cz-purple);
+  --cc-atlas-flight: var(--event-flight);
+  --cc-atlas-alert: var(--event-alert);
+  --cc-atlas-positive: var(--event-conforme);
+  --cc-atlas-attention: var(--event-layover);
+  --cc-atlas-violet: var(--event-reserve);
+}
+
+.cz-menu-section > button,
+.cz-bottom-nav > button {
+  --cc-atlas-tone: var(--cc-atlas-brand);
+}
+
+.cz-bottom-nav > button:has(> .lucide-house),
+.cz-bottom-nav > button:has(> .lucide-home),
+.cz-bottom-nav > button:has(> .lucide-menu) { --cc-atlas-tone: var(--cc-atlas-brand); }
+.cz-bottom-nav > button:has(> .lucide-calendar-days) { --cc-atlas-tone: var(--cc-atlas-flight); }
+.cz-bottom-nav > button:has(> .lucide-navigation) { --cc-atlas-tone: var(--cc-atlas-positive); }
+.cz-bottom-nav > button:has(> .lucide-bell) { --cc-atlas-tone: var(--cc-atlas-alert); }
+.cz-bottom-nav > button:has(> .lucide-briefcase-business) { --cc-atlas-tone: var(--cc-atlas-attention); }
+
+/* Prepared menu labels are semantic anchors; the unprepared single list has a guarded fallback. */
+.cz-menu-section > button:is([data-menu-label='Planejado x atual'], [data-menu-label='BIDS / PBS'], [data-menu-label='Regulamentação'], [data-menu-label='Assinaturas'], [data-menu-label='Concierge'], [data-menu-label='Apresentação'], [data-menu-label='Hotéis'], [data-menu-label='Relatórios'], [data-menu-label='Histórico'], [data-menu-label='Crew Locker'], [data-menu-label='CrewLock'], [data-menu-label='Guardian']) {
+  --cc-atlas-tone: var(--cc-atlas-violet);
+}
+.cz-menu-section > button:is([data-menu-label='Saída Inteligente'], [data-menu-label='Meu carro'], [data-menu-label='Radar de voos'], [data-menu-label='Locais próximos'], [data-menu-label='Rotina'], [data-menu-label='Tripulação e função'], [data-menu-label='Pessoas e visitantes'], [data-menu-label='CrewCheck Life']) {
+  --cc-atlas-tone: var(--cc-atlas-positive);
+}
+.cz-menu-section > button:is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala']) {
+  --cc-atlas-tone: var(--cc-atlas-flight);
+}
+.cz-menu-section > button:is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Manutenção']) {
+  --cc-atlas-tone: var(--cc-atlas-attention);
+}
+.cz-menu-section > button:is([data-menu-label='Irregularidades'], [data-menu-label='Emergência'], [data-menu-label='Admin']) { --cc-atlas-tone: var(--cc-atlas-alert); }
+.cz-menu-section > button:is([data-menu-label='Configurações'], [data-menu-label='Manual CrewCheck'], [data-menu-label='Suporte']) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
+
+.cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(3), :nth-of-type(4), :nth-of-type(6), :nth-of-type(8), :nth-of-type(13), :nth-of-type(17), :nth-of-type(18), :nth-of-type(22), :nth-of-type(27)) { --cc-atlas-tone: var(--cc-atlas-violet); }
+.cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(9), :nth-of-type(10), :nth-of-type(11), :nth-of-type(14), :nth-of-type(19), :nth-of-type(23), :nth-of-type(24)) { --cc-atlas-tone: var(--cc-atlas-positive); }
+.cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(2), :nth-of-type(12), :nth-of-type(15), :nth-of-type(25), :nth-of-type(26), :nth-of-type(29)) { --cc-atlas-tone: var(--cc-atlas-flight); }
+.cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(7), :nth-of-type(16), :nth-of-type(20), :nth-of-type(21), :nth-of-type(30)) { --cc-atlas-tone: var(--cc-atlas-attention); }
+.cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(5), :nth-of-type(31)) { --cc-atlas-tone: var(--cc-atlas-alert); }
+.cz-menu-section:not(.cz-menu-group) > button:nth-of-type(28) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
+
+/* Responsive menu: one column whenever two cards cannot keep whole words readable. */
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group],
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+  gap: 10px !important;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > h3,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > h3 {
+  grid-column: 1 / -1;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button {
+  min-width: 0 !important;
+  grid-template-columns: 40px minmax(0, 1fr) 18px !important;
+  gap: 10px !important;
+  background: var(--cc1515-dark-surface) !important;
+  border-color: color-mix(in srgb, var(--cc-atlas-tone) 28%, var(--cc1515-dark-line)) !important;
+  box-shadow: var(--cc-shadow-soft) !important;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:first-child,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > svg:first-child {
+  box-sizing: content-box;
+  width: 22px !important;
+  height: 22px !important;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--cc-atlas-tone) 34%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cc-atlas-tone) 13%, transparent);
+  color: var(--cc-atlas-tone) !important;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:last-child,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > svg:last-child {
+  color: color-mix(in srgb, var(--cc-atlas-tone) 58%, var(--foreground-muted)) !important;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span strong,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > span strong {
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  hyphens: none !important;
+  text-wrap: balance;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span small,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > span small {
+  color: var(--cc1515-dark-muted) !important;
+  opacity: 1 !important;
+}
+
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button.active,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button:focus-visible,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button.active,
+.cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button:focus-visible {
+  background: color-mix(in srgb, var(--cc-atlas-tone) 14%, var(--cc1515-dark-surface)) !important;
+  border-color: color-mix(in srgb, var(--cc-atlas-tone) 62%, var(--cc1515-dark-line)) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc-atlas-tone) 18%, transparent), var(--cc-shadow-soft) !important;
+}
+
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button {
+  background: var(--cc1515-light-surface) !important;
+  border-color: color-mix(in srgb, var(--cc-atlas-tone) 24%, var(--cc1515-light-line)) !important;
+}
+
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span small,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > span small {
+  color: var(--cc1515-light-muted) !important;
+}
+
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button.active,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button:focus-visible,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button.active,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button:focus-visible {
+  background: color-mix(in srgb, var(--cc-atlas-tone) 10%, var(--cc1515-light-surface)) !important;
+  border-color: color-mix(in srgb, var(--cc-atlas-tone) 54%, var(--cc1515-light-line)) !important;
+}
+
+/* Bottom navigation reads as one surface; colour belongs to destinations and state. */
+.cz-bottom-nav {
+  background: var(--cc1515-dark-surface) !important;
+  border-color: var(--cc1515-dark-line) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: var(--cc1385-shadow-dark) !important;
+}
+
+[data-crew-theme='light'] .cz-bottom-nav {
+  background: var(--cc1515-light-surface) !important;
+  border-color: var(--cc1515-light-line) !important;
+  box-shadow: var(--cc1385-shadow-light) !important;
+}
+
+.cz-bottom-nav > button {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--foreground-muted) !important;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.cz-bottom-nav > button > svg {
+  color: var(--cc-atlas-tone) !important;
+  opacity: 1 !important;
+}
+
+.cz-bottom-nav > button.active {
+  background: color-mix(in srgb, var(--cc-atlas-tone) 15%, var(--cc1515-dark-surface)) !important;
+  color: var(--cc1515-dark-title) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc-atlas-tone) 30%, transparent) !important;
+  transform: translateY(-1px);
+}
+
+[data-crew-theme='light'] .cz-bottom-nav > button.active {
+  background: color-mix(in srgb, var(--cc-atlas-tone) 11%, var(--cc1515-light-surface)) !important;
+  color: var(--cc1515-light-title) !important;
+}
+
+.cz-bottom-nav > button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--cc-atlas-tone) !important;
+}
+
+html[data-crew-theme='dark'] body > .cz-bottom-nav > button:not(.active),
+html[data-crew-theme='light'] body > .cz-bottom-nav > button:not(.active) {
+  background: transparent !important;
+  border: none !important;
+}
+
+html[data-crew-theme='dark'] body > .cz-bottom-nav > button.active {
+  background: color-mix(in srgb, var(--cc-atlas-tone) 15%, var(--cc1515-dark-surface)) !important;
+  border: none !important;
+}
+
+html[data-crew-theme='light'] body > .cz-bottom-nav > button.active {
+  background: color-mix(in srgb, var(--cc-atlas-tone) 11%, var(--cc1515-light-surface)) !important;
+  border: none !important;
+}
+
+@media (max-width: 360px) {
+  .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+  .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button {
+    grid-template-columns: 38px minmax(0, 1fr) 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+  .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button,
+  .cz-bottom-nav > button {
+    transition: none !important;
+    transform: none !important;
+  }
+}

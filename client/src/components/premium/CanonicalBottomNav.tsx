@@ -37,32 +37,19 @@ export function CanonicalBottomNav({
             key={item.id}
             type="button"
             className={`cc-bottom-nav-item ${isActive ? 'active' : ''}`}
+            data-nav-id={item.id}
             onClick={handleClick}
             aria-label={item.label}
             aria-current={isActive ? 'page' : undefined}
           >
-            <div style={{ position: 'relative' }}>
+            <span className="cc-bottom-nav-icon" aria-hidden="true">
               <Icon size={20} />
               {badge > 0 && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '-6px',
-                    right: '-6px',
-                    background: 'var(--event-alert)',
-                    color: '#fff',
-                    borderRadius: '9999px',
-                    fontSize: '0.5rem',
-                    fontWeight: 800,
-                    padding: '0.1rem 0.3rem',
-                    minWidth: '1rem',
-                    textAlign: 'center',
-                  }}
-                >
-                  {badge}
+                <span className="cc-bottom-nav-badge">
+                  {badge > 99 ? '99+' : badge}
                 </span>
               )}
-            </div>
+            </span>
             <span className="cc-bottom-nav-label">{item.label}</span>
           </button>
         );

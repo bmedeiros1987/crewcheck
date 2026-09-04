@@ -5,6 +5,27 @@ if (!fs.existsSync(file)) throw new Error('[v14.3.75] server roster parser ausen
 
 let source = fs.readFileSync(file, 'utf8');
 const marker = '// [v14.3.75] Telegram/server AIMS parity with canonical client parser';
+const originalSource = source;
+
+const oldScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
+const legacyBaseScoreGuardWithCna = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  const routeBoundaries = new Set(['CNA']);\n  if (upper.slice(originIdx + 1, destIdx).some((token) => routeBoundaries.has(token))) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
+const priorBaseScoreGuardWithCna = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;\n  const routeBoundaries = new Set(['CNA']);\n  if (upper.slice(originIdx + 1, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+const baseScoreGuardWithCna = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;\n  const routeBoundaries = new Set(['CNA']);\n  if (upper.slice(0, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+const priorNewScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;\n  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(originIdx + 1, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+const legacyNewScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(originIdx + 1, destIdx).some((token) => routeBoundaries.has(token))) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
+const newScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;\n  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(0, arrItem.idx).some((token) => routeBoundaries.has(token))) return;";
+// `oldScoreGuard` é prefixo literal de `newScoreGuard`, então uma árvore já
+// migrada ainda casa aquele ramo e o bloco de boundaries seria reinjetado,
+// duplicando `const routeBoundaries` e quebrando o parser com SyntaxError.
+// A detecção de estado final precisa vir antes de qualquer ramo de migração.
+if (source.includes(newScoreGuard)) { /* guard já no formato final: nada a migrar */ }
+else if (source.includes(baseScoreGuardWithCna)) source = source.replace(baseScoreGuardWithCna, newScoreGuard);
+else if (source.includes(priorBaseScoreGuardWithCna)) source = source.replace(priorBaseScoreGuardWithCna, newScoreGuard);
+else if (source.includes(legacyBaseScoreGuardWithCna)) source = source.replace(legacyBaseScoreGuardWithCna, newScoreGuard);
+else if (source.includes(priorNewScoreGuard)) source = source.replace(priorNewScoreGuard, newScoreGuard);
+else if (source.includes(legacyNewScoreGuard)) source = source.replace(legacyNewScoreGuard, newScoreGuard);
+else if (source.includes(oldScoreGuard)) source = source.replace(oldScoreGuard, newScoreGuard);
+else throw new Error('[v14.3.75] guard de inferência de rota não localizado.');
 
 if (!source.includes(marker)) {
   source = source.replace(
@@ -12,15 +33,13 @@ if (!source.includes(marker)) {
     "'PDP','PET','PFB','PHB','PIN','PMW'",
   );
 
-  const oldNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
+  const oldNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
+  const baseNonAirportWithCna = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
   const newNonAirport = "'HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','MT','MCK','CBF','EMER','CNA','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM','FH'";
-  if (!source.includes(oldNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
-  source = source.replace(oldNonAirport, newNonAirport);
+  if (source.includes(oldNonAirport)) source = source.replace(oldNonAirport, newNonAirport);
+  else if (source.includes(baseNonAirportWithCna)) source = source.replace(baseNonAirportWithCna, newNonAirport);
+  else if (!source.includes(newNonAirport)) throw new Error('[v14.3.75] conjunto de tokens não-aeroporto não localizado.');
 
-  const oldScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
-  const newScoreGuard = "  if (!isAirportCodeToken(origin) || !isAirportCodeToken(destination) || origin === destination) return;\n  const routeBoundaries = new Set(['CNA','HSB','HSBE','ASB','RES','CRM','CRMB','CRMBSB','RCFI','MT','MCK','MCK320','MCK_SS','CBF','EMER','DO','DOF','DOP','DOPR','DR','OFF','VC','NS','NSJ','IJ','DM']);\n  if (upper.slice(originIdx + 1, destIdx).some((token) => routeBoundaries.has(token))) return;\n  if (!depItem || !arrItem || arrItem.idx <= destIdx) return;";
-  if (!source.includes(oldScoreGuard)) throw new Error('[v14.3.75] guard de inferência de rota não localizado.');
-  source = source.replace(oldScoreGuard, newScoreGuard);
 
   const oldTokenActivities = "['HSB','HSBE','ASB','CBF','EMER','MT','CRM','NS','NSJ','IJ','DM'].includes(token)";
   const newTokenActivities = "['HSB','HSBE','ASB','CBF','EMER','MT','CRM','RCFI','MCK','MCK320','MCK_SS','NS','NSJ','IJ','DM'].includes(token)";
@@ -59,6 +78,9 @@ if (!source.includes(marker)) {
   source = `${source.trimEnd()}\n\n${marker}\n`;
   fs.writeFileSync(file, source, 'utf8');
   console.log('[v14.3.75] Telegram/server: AIMS preserva MCK/RCFI, CNA não vira aeroporto e o rebuilder de offsets fica restrito ao CrewRosterReport.');
+} else if (source !== originalSource) {
+  fs.writeFileSync(file, source, 'utf8');
+  console.log('[v14.3.75] guard legado de rota migrado no estado já preparado.');
 } else {
   console.log('[v14.3.75] paridade AIMS Telegram/server já aplicada.');
 }

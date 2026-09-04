@@ -47,3 +47,11 @@ A indisponibilidade de qualquer fonte externa não deve impedir o uso completo d
 ## Método BMT
 
 Observar → Entender → Simplificar → Construir → Evoluir continuamente.
+
+## Refino visual
+
+Todo pedido de melhoria visual de componente usa o prompt padrão de
+[`PROMPT_PADRAO_REFINO_VISUAL.md`](PROMPT_PADRAO_REFINO_VISUAL.md): evolução do componente
+atual, identidade rosa→roxo preservada, tokens de tema antes de valores hardcoded, estrutura
+de layout intocada e estado preparado validado quando a cadeia `scripts/v*/apply.mjs`
+materializa o arquivo.

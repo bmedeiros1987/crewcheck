@@ -198,6 +198,18 @@ function readableHours(value: number) {
   return `${hours ? `${hours}h` : ''}${minutes ? ` ${minutes}min` : ''}`.trim();
 }
 
+function publishedClock(value?: string | null) {
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  return match ? `${String(Number(match[1])).padStart(2, '0')}:${match[2]}` : '';
+}
+
+function publishedProgramWindow(event: RosterEvent) {
+  return {
+    start: publishedClock(event.day?.dutyReport || event.day?.startTime || event.departure),
+    end: publishedClock(event.day?.dutyDebrief || event.day?.endTime || event.arrival),
+  };
+}
+
 export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
@@ -309,6 +321,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
               const atBase = /DESCANSO_BASE/.test(eventCode(event));
               const eventPerDiems = perDiemForEvent(event);
               const earning = salaryByEvent.get(event.id);
+              const programWindow = publishedProgramWindow(event);
               return <article key={event.id} className="cc-roster-program-v1397 cc-roster-event-v1394" data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''}>
                 <header className="cc-roster-program-head-v1397">
                   <span className="cc-roster-program-icon-v1397">{modeIcon(mode, atBase)}</span>
@@ -321,6 +334,11 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
                   <span><small>Partida</small><b>{event.departure || '—'}</b></span>
                   <span><small>Chegada</small><b>{event.arrival || '—'}</b></span>
                   {event.subtitle && <span className="wide"><small>Detalhes da etapa</small><b>{event.subtitle}</b></span>}
+                </div>}
+
+                {['reserve', 'standby', 'training', 'duty'].includes(mode) && <div className="cc-roster-flight-grid-v1397 cc-roster-program-time-grid-v1397" aria-label="Horários publicados da programação">
+                  <span><small>Início</small><b>{programWindow.start || 'A confirmar'}</b></span>
+                  <span><small>Fim</small><b>{programWindow.end || 'A confirmar'}</b></span>
                 </div>}
 
                 {mode === 'stay' && <p className="cc-roster-summary-v1397">{hours ? `${readableHours(hours)} entre o fim da jornada e a próxima apresentação.` : 'Intervalo de continuidade entre jornadas.'} {event.hotel ? `Hotel: ${event.hotel}.` : atBase ? 'Endereço de casa salvo pode ser usado na Saída Inteligente.' : 'Hotel ainda não informado.'}</p>}

@@ -1,7 +1,7 @@
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_PLACE_DISTANCE_KM = 35;
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
-const TRUSTED_LOCATION_SOURCES = new Set(['telegram', 'app', 'web', 'android', 'manual']);
+const TRUSTED_LOCATION_SOURCES = new Set(['telegram', 'whatsapp', 'app', 'web', 'android', 'manual']);
 const TELEGRAM_LEGACY_LOCATION_SOURCES = new Set(['live', 'static']);
 
 const AIRPORT_LOCATION_LABELS = {
@@ -98,7 +98,7 @@ export function normalizeConciergeLocation(location = {}, { now = new Date(), tt
 
 export function conciergeLocationState(location, { now = new Date(), ttlMs = DEFAULT_TTL_MS, airportPoints = {} } = {}) {
   const normalized = normalizeConciergeLocation(location || {}, { now, ttlMs, airportPoints });
-  if (!normalized) return { status: 'missing', fresh: false, location: null, label: '', ageMinutes: null, message: 'Compartilhe novamente sua localização atual pelo clipe do Telegram.' };
+  if (!normalized) return { status: 'missing', fresh: false, location: null, label: '', ageMinutes: null, message: 'Compartilhe novamente sua localização atual pelo clipe do Telegram ou pelo WhatsApp.' };
   const updatedAt = new Date(normalized.updatedAt).getTime();
   const expiresAt = new Date(normalized.expiresAt).getTime();
   const current = new Date(now).getTime();

@@ -1,0 +1,86 @@
+name: 'CrewCheck P0 #580 VC boundary'
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/pdfParser.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/localRosterOverlap.ts'
+      - 'client/src/pages/WatchPage.tsx'
+      - 'server/platform.mjs'
+      - 'scripts/p0-580-transposed-vc-boundary/**'
+      - 'scripts/p0-580-invalid-date-continuity/**'
+      - 'scripts/p0-580-post-anchor-continuity/**'
+      - 'scripts/p0-580-local-period-identity/**'
+      - 'scripts/p0-580-legend-terminal-rescues/**'
+      - 'scripts/p0-580-previous-source-order/**'
+      - 'scripts/p0-580-active-body-fingerprint/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14338/apply.mjs'
+      - 'scripts/v14339/apply.mjs'
+      - 'scripts/v14371/apply.mjs'
+      - 'scripts/regression-p0-580-transposed-vc-boundary.mjs'
+      - 'scripts/regression-p0-580-real-vc-legend-boundary.mjs'
+      - 'scripts/regression-p0-580-overlap-reimport.mjs'
+      - 'scripts/regression-p0-580-exact-competence-open.mjs'
+      - 'scripts/regression-p0-580-invalid-placeholders.mjs'
+      - 'scripts/regression-p0-580-residual-source-order.mjs'
+      - 'scripts/regression-p0-580-post-anchor-residual.mjs'
+      - 'scripts/regression-p0-580-residual-object-identity.mjs'
+      - 'scripts/regression-p0-580-boundary-clock-independence.mjs'
+      - 'scripts/regression-p0-580-local-identity-collision.mjs'
+      - 'scripts/regression-p0-580-local-period-identity.mjs'
+      - 'scripts/regression-p0-580-adjacent-crew-identity.mjs'
+      - 'scripts/regression-p0-580-previous-source-order.mjs'
+      - 'scripts/regression-p0-580-active-body-fingerprint.mjs'
+      - '.github/workflows/p0-580-vc-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vc-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Materialize canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate real VC/LEGEND final-page boundary
+        run: node scripts/regression-p0-580-real-vc-legend-boundary.mjs
+      - name: Validate normal-page transposed VC boundary
+        run: node scripts/regression-p0-580-transposed-vc-boundary.mjs
+      - name: Validate overlap reimport and fail-closed apply
+        run: node scripts/regression-p0-580-overlap-reimport.mjs
+      - name: Validate exact competence open and carry-in
+        run: node scripts/regression-p0-580-exact-competence-open.mjs
+      - name: Validate adjacent roster crew identity
+        run: node scripts/regression-p0-580-adjacent-crew-identity.mjs
+      - name: Validate active roster body fingerprint
+        run: node scripts/regression-p0-580-active-body-fingerprint.mjs
+      - name: Validate previous carry source order
+        run: node scripts/regression-p0-580-previous-source-order.mjs
+      - name: Validate invalid overlap placeholders
+        run: node scripts/regression-p0-580-invalid-placeholders.mjs
+      - name: Validate residual continuity source order
+        run: node scripts/regression-p0-580-residual-source-order.mjs
+      - name: Validate residuals after first continuity anchor
+        run: node scripts/regression-p0-580-post-anchor-residual.mjs
+      - name: Validate continuity airport sentinels
+        run: node scripts/p0-580-transposed-vc-boundary/regression-airport-sentinel.mjs
+      - name: Validate residual object identity across partial overlap
+        run: node scripts/regression-p0-580-residual-object-identity.mjs
+      - name: Validate nominal mismatch independence from the calendar
+        run: node scripts/regression-p0-580-boundary-clock-independence.mjs
+      - name: Validate local publication identity uniqueness
+        run: node scripts/regression-p0-580-local-identity-collision.mjs
+      - name: Validate unverifiable local period identity across reload
+        run: node scripts/regression-p0-580-local-period-identity.mjs
