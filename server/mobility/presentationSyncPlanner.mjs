@@ -55,11 +55,12 @@ export function rankPresentationRoutes({
     const marginSeconds = Math.round((latestArrivalMs - endMs) / 1000);
     const realtimeAgeSeconds = Number.isFinite(itinerary.realtimeAgeSeconds) ? Math.max(0, itinerary.realtimeAgeSeconds) : null;
     const realtimeFresh = realtimeAgeSeconds === null ? false : realtimeAgeSeconds <= realtimeFreshnessSeconds;
-    const eligible = marginSeconds >= 0 && transfers <= maxTransfers;
+    const eligible = marginSeconds >= 0 && transfers <= maxTransfers && itinerary.disrupted !== true;
     const reliabilityPenalty = realtimeFresh ? 0 : 600;
+    const disruptionPenalty = itinerary.disrupted === true ? 3600 : 0;
     const transferPenalty = transfers * 300;
     const waitPenalty = Math.round(waitSeconds * 0.8);
-    const score = durationSeconds + reliabilityPenalty + transferPenalty + waitPenalty - Math.min(Math.max(marginSeconds, 0), 1800) * 0.15;
+    const score = durationSeconds + reliabilityPenalty + disruptionPenalty + transferPenalty + waitPenalty - Math.min(Math.max(marginSeconds, 0), 1800) * 0.15;
 
     return {
       ...itinerary,
@@ -129,6 +130,61 @@ export function choosePresentationRecommendation({
     reason: 'Hoje o deslocamento rodoviário é mais rápido ou mais confiável para preservar sua apresentação.',
     rankedTransit,
     driving: bestDriving,
+  };
+}
+
+export function chooseInTripRescueRecommendation({
+  activeItinerary,
+  alternatives = [],
+  presentationAt,
+  arrivalBufferMinutes = 20,
+  minimumGainSeconds = 300,
+}) {
+  if (!activeItinerary) throw new Error('ACTIVE_ITINERARY_REQUIRED');
+  assertNumber(minimumGainSeconds, 'MINIMUM_GAIN_SECONDS');
+
+  const ranked = rankPresentationRoutes({
+    itineraries: [activeItinerary, ...alternatives],
+    presentationAt,
+    arrivalBufferMinutes,
+  });
+  const active = ranked.find((route) => route.id === activeItinerary.id);
+  const bestAlternative = ranked.find((route) => route.id !== activeItinerary.id && route.eligible) || null;
+
+  if (!active?.eligible && bestAlternative) {
+    return {
+      action: 'SWITCH_NOW',
+      from: active,
+      to: bestAlternative,
+      reason: active?.disrupted
+        ? 'A rota atual sofreu uma interrupção e existe uma alternativa que preserva sua apresentação.'
+        : 'A rota atual não preserva mais a margem de apresentação; existe uma alternativa segura.',
+    };
+  }
+
+  if (!active?.eligible && !bestAlternative) {
+    return {
+      action: 'NO_SAFE_ROUTE',
+      from: active || null,
+      to: null,
+      reason: 'A rota atual perdeu a margem e nenhuma alternativa conhecida preserva a apresentação.',
+    };
+  }
+
+  if (bestAlternative && active && (active.score - bestAlternative.score) >= minimumGainSeconds) {
+    return {
+      action: 'SWITCH_RECOMMENDED',
+      from: active,
+      to: bestAlternative,
+      reason: 'Uma alternativa agora reduz risco, espera ou tempo total sem consumir sua margem de apresentação.',
+    };
+  }
+
+  return {
+    action: 'KEEP_ROUTE',
+    from: active,
+    to: null,
+    reason: 'A rota atual continua sendo uma opção segura; não vale trocar de modal agora.',
   };
 }
 
