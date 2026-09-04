@@ -1,0 +1,25 @@
+name: Care Engine Foundation
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/careEngine.ts'
+      - 'scripts/regression-p1-care-engine-foundation.mjs'
+      - 'scripts/lib/ts-module-harness.mjs'
+      - '.github/workflows/care-engine-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  care-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Context-aware care regression
+        run: node scripts/regression-p1-care-engine-foundation.mjs
