@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Voyage — by CrewCheck</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#07111f;color:#f8fbff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,#183b67 0,#0a1627 34%,#050b13 72%);min-height:100vh}.app{max-width:430px;margin:auto;padding:18px 16px 110px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.brand{font-size:22px;font-weight:800;letter-spacing:-.6px}.brand span{display:block;font-size:11px;font-weight:600;color:#8ea6c4;letter-spacing:.18em;text-transform:uppercase}.avatar{width:38px;height:38px;border-radius:50%;background:#15263c;border:1px solid #2a425f}.pulse{padding:16px;border:1px solid #2f5278;border-radius:22px;background:linear-gradient(135deg,rgba(28,74,121,.85),rgba(16,35,58,.86));box-shadow:0 18px 40px rgba(0,0,0,.28);margin-bottom:14px}.eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8ecbff;font-weight:800}.pulse h1{font-size:28px;line-height:1.02;margin:8px 0}.muted{color:#9eb2ca;font-size:13px}.primary{display:block;width:100%;margin-top:14px;border:0;border-radius:16px;padding:14px 16px;background:#f6fbff;color:#07111f;font-size:15px;font-weight:800}.card{background:rgba(14,25,41,.92);border:1px solid #20334c;border-radius:20px;padding:15px;margin-top:12px}.route{display:flex;justify-content:space-between;align-items:end}.airport{font-size:32px;font-weight:850;letter-spacing:-1px}.line{flex:1;margin:0 12px 9px;height:1px;background:#35506d;position:relative}.plane{position:absolute;left:44%;top:-10px}.meta{display:flex;justify-content:space-between;margin-top:12px;font-size:13px;color:#a7b8cd}.section{font-size:13px;font-weight:800;margin:20px 2px 8px}.timeline{display:grid;gap:8px}.step{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid #182a40}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#152b45;border:1px solid #31577e;font-size:12px}.step strong{display:block}.step small{color:#89a0bb}.risk{color:#ffd58a}.ok{color:#8bf0bf}.lock{margin-top:16px;padding:14px;border-radius:20px;background:linear-gradient(145deg,#10151c,#202733);border:1px solid #3d4856}.lockhead{display:flex;justify-content:space-between;font-size:12px;color:#b7c2cf}.lockaction{font-size:19px;font-weight:800;margin:14px 0 6px}.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{padding:7px 10px;border-radius:999px;background:#14263a;border:1px solid #284968;font-size:12px}.nav{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);width:min(398px,calc(100% - 28px));display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:rgba(8,14,23,.92);border:1px solid #26384d;padding:8px;border-radius:22px;backdrop-filter:blur(16px)}.nav button{border:0;background:transparent;color:#91a5bd;padding:8px 2px;font-size:11px}.nav .active{color:white;font-weight:800}</style>
+</head>
+<body>
+<main class="app">
+  <div class="top"><div class="brand">Voyage<span>by CrewCheck</span></div><div class="avatar"></div></div>
+  <section class="pulse">
+    <div class="eyebrow">Voyage Pulse · agora</div>
+    <h1>Peça seu transporte em 8 min.</h1>
+    <p class="muted">Trânsito aumentando para BSB. Você vai despachar bagagem e quer tomar café antes do embarque.</p>
+    <button class="primary">Ver saída inteligente</button>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Próximo voo · no horário</div>
+    <div class="route"><div><div class="airport">BSB</div><div class="muted">Brasília</div></div><div class="line"><span class="plane">✈</span></div><div style="text-align:right"><div class="airport">GRU</div><div class="muted">São Paulo</div></div></div>
+    <div class="meta"><span>Embarque 09:20</span><span>Portão 18</span></div>
+  </section>
+
+  <div class="section">Sua Journey</div>
+  <section class="card timeline">
+    <div class="step"><div class="dot">✓</div><div><strong>Acordar</strong><small>05:52 · concluído</small></div><span class="ok">OK</span></div>
+    <div class="step"><div class="dot">2</div><div><strong>Preparar</strong><small>50 min planejados</small></div><span>agora</span></div>
+    <div class="step"><div class="dot">3</div><div><strong>Pedir transporte</strong><small>06:47 recomendado</small></div><span class="risk">8 min</span></div>
+    <div class="step"><div class="dot">4</div><div><strong>Aeroporto</strong><small>Bagagem → café → segurança</small></div><span>07:27</span></div>
+    <div class="step"><div class="dot">5</div><div><strong>Embarque</strong><small>Margem projetada 24 min</small></div><span>09:20</span></div>
+  </section>
+
+  <div class="section">Live tracking · tela bloqueada</div>
+  <section class="lock">
+    <div class="lockhead"><span>VOYAGE · BSB → GRU</span><span>agora</span></div>
+    <div class="lockaction">Peça seu transporte em 8 min</div>
+    <div class="muted">Saída ideal 06:58 · Portão 18 · margem 24 min</div>
+    <div class="chips" style="margin-top:12px"><span class="chip">Abrir Journey</span><span class="chip">Transporte</span></div>
+  </section>
+</main>
+<nav class="nav"><button class="active">Agora</button><button>Journey</button><button>Explorer</button><button>Carteira</button></nav>
+</body>
+</html>
