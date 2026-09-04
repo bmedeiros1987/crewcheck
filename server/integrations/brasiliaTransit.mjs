@@ -103,7 +103,7 @@ export async function fetchOfficialJson(url, { fetchImpl = fetch, timeout = DEFA
   }
 }
 
-export function brasliaMobilitySourcePolicy() {
+export function brasiliaMobilitySourcePolicy() {
   return {
     useOnlyDocumentedOrAuthorizedInterfaces: true,
     neverScrapePrivateAppEndpoints: true,
