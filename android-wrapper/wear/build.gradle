@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+def watchEndpoint = project.findProperty('CREWCHECK_WATCH_ENDPOINT') ?: System.getenv('CREWCHECK_WATCH_ENDPOINT') ?: ''
+def watchToken = project.findProperty('CREWCHECK_WATCH_TOKEN') ?: System.getenv('CREWCHECK_WATCH_TOKEN') ?: ''
+
+def escapedEndpoint = watchEndpoint.replace('\\', '\\\\').replace('"', '\\"')
+def escapedToken = watchToken.replace('\\', '\\\\').replace('"', '\\"')
+
+android {
+    namespace 'com.crewcheck.watch'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.crewcheck.app'
+        minSdk 30
+        targetSdk 36
+        versionCode 140375
+        versionName '14.3.75-watch-mvp'
+        buildConfigField 'String', 'CREWCHECK_WATCH_ENDPOINT', '"' + escapedEndpoint + '"'
+        buildConfigField 'String', 'CREWCHECK_WATCH_TOKEN', '"' + escapedToken + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+        debug {
+            debuggable true
+        }
+    }
+}
