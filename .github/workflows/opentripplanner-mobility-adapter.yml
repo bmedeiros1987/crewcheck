@@ -1,0 +1,20 @@
+name: CrewCheck OpenTripPlanner mobility adapter
+
+on:
+  pull_request:
+    paths:
+      - 'server/integrations/opentripplanner.mjs'
+      - 'scripts/regression-opentripplanner-adapter.mjs'
+      - '.github/workflows/opentripplanner-mobility-adapter.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: OpenTripPlanner adapter regression
+        run: node scripts/regression-opentripplanner-adapter.mjs
