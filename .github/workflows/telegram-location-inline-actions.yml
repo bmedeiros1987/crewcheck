@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci || npm install
       - name: Static regression
         run: node scripts/regression-v14-4-11-telegram-location-inline-actions.mjs
       - name: Materialize source
