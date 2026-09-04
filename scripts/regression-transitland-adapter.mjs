@@ -51,11 +51,11 @@ assert.match(calls[2].url, /\/stops\/f-test%3ABSB\/departures\?/);
 assert.match(calls[2].url, /next=1800/);
 assert.match(calls[2].url, /limit=12/);
 
-await assert.rejects(
+assert.throws(
   () => transitlandNearbyStops({ latitude: 999, longitude: -47.9 }, { environment: env, fetchImpl }),
   /Invalid latitude/,
 );
-await assert.rejects(
+assert.throws(
   () => transitlandNearbyStops({ latitude: -15.8, longitude: -47.9, radius: 10001 }, { environment: env, fetchImpl }),
   /Invalid radius/,
 );
