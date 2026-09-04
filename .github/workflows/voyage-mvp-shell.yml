@@ -1,0 +1,20 @@
+name: Voyage MVP shell
+
+on:
+  pull_request:
+    paths:
+      - 'shared/voyageJourney.mjs'
+      - 'scripts/regression-voyage-live-state.mjs'
+      - 'voyage-preview/**'
+      - '.github/workflows/voyage-mvp-shell.yml'
+
+jobs:
+  voyage-live-state:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Voyage live-state regression
+        run: node scripts/regression-voyage-live-state.mjs
