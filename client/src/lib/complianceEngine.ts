@@ -2,6 +2,18 @@ import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import { getActRulesForProfile, getLegalProfile, type CrewRoleSelection, type LegalProfileSummary } from './actRules';
 import { getRosterCodeDefinition } from './rosterCodes';
 import { buildCanonicalRosterEvents } from './canonicalRoster';
+import {
+  // Importado sob alias de propósito: no estado preparado, o passo v14.3.95
+  // injeta dentro de `analyzeCompliance` um `const competenceKey` que é uma
+  // STRING. Importar com o nome nu faria a local sombrear esta função e o
+  // motor quebraria só depois da materialização — verde em base, morto em
+  // produção.
+  competenceKey as competenceKeyFor,
+  maxFlightHoursRolling28Days,
+  observationCompetenceKey,
+  sumFlightHoursForCompetence,
+  type FlightHoursObservation,
+} from './rollingFlightHours';
 
 export interface ComplianceAlert {
   id: string;
@@ -17,8 +29,17 @@ export interface ComplianceAlert {
 }
 
 export interface Metrics {
+  /** Horas de voo da COMPETÊNCIA ATIVA. Histórico adjacente carregado para a
+   *  janela móvel não entra aqui — ver `maxFlightHoursRolling28Days`. */
   totalFlightHours: number;
   maxFlightHoursMonth: number;
+  /**
+   * #526: maior soma OBSERVADA em qualquer janela de 28 dias civis
+   * consecutivos. Não confundir com `maxFlightHoursMonth`, que é o LIMITE
+   * regulatório. O cálculo vive em `rollingFlightHours.ts` e é deliberadamente
+   * elegível a histórico de competência adjacente.
+   */
+  maxFlightHoursRolling28Days: number;
   totalDutyHours: number;
   maxDutyHoursMonth: number;
   totalDaysOff: number;
@@ -1651,6 +1672,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   const metrics: Metrics = {
     totalFlightHours: 0,
     maxFlightHoursMonth: limits.maxFlightHoursMonth,
+    maxFlightHoursRolling28Days: 0,
     totalDutyHours: 0,
     maxDutyHoursMonth: limits.maxDutyHoursMonth,
     totalDaysOff: 0,
@@ -1676,6 +1698,10 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   let restTotal = 0;
   let restCount = 0;
   let consecutiveWorkPeriods = 0;
+  // #526: evidência bruta para a janela móvel. Uma observação POR ENTRADA de
+  // dia, não por data: duas ocorrências no mesmo dia civil precisam somar, e
+  // deduplicar aqui as perderia silenciosamente. O kernel agrupa por dia UTC.
+  const flightHoursObservations: FlightHoursObservation[] = [];
 
   sortedDays.forEach((day, index) => {
     const dutyHours = getDutyHours(day);
@@ -1686,6 +1712,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     addOperationalContextAlerts(alerts, day);
 
     metrics.totalFlightHours += flightHours;
+    flightHoursObservations.push({ date: String(day.date || ''), hours: flightHours });
     metrics.totalDutyHours += getRegulatoryWorkHoursForTotals(day);
     metrics.totalGroundHours += groundIntervals.reduce((sum, interval) => sum + interval.minutes, 0) / 60;
 
@@ -1927,7 +1954,26 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);
   metrics.maxNightOps168hCount = maxNightOpsWindow;
 
-  if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;
+  // #526: a janela móvel real de 28 dias, calculada pelo kernel isolado.
+  metrics.maxFlightHoursRolling28Days = maxFlightHoursRolling28Days(flightHoursObservations);
+
+  // O KPI mensal é da COMPETÊNCIA ATIVA. O histórico adjacente é necessário para
+  // a janela móvel acima, mas somá-lo aqui inflaria o total do mês exibido.
+  const activeCompetence = competenceKeyFor(Number(roster.month), Number(roster.year));
+  const carriesAdjacentHistory = Boolean(activeCompetence)
+    && flightHoursObservations.some((observation) => observationCompetenceKey(observation) !== activeCompetence);
+  if (activeCompetence) {
+    metrics.totalFlightHours = sumFlightHoursForCompetence(
+      flightHoursObservations,
+      Number(roster.month),
+      Number(roster.year),
+    );
+  }
+
+  // O total do PDF descreve o documento inteiro. Quando a escala carrega
+  // histórico de outra competência para alimentar a janela móvel, esse total
+  // cobre um intervalo diferente do KPI e não pode sobrescrevê-lo.
+  if (roster.totals?.flightHours && !carriesAdjacentHistory) metrics.totalFlightHours = roster.totals.flightHours;
   // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode
   // incluir solo/pernoite/continuação e inflar a escala. Mantemos cálculo próprio.
 
