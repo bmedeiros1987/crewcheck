@@ -43,8 +43,8 @@ const recTransit = choosePresentationRecommendation({
   transitItineraries: transit,
   drivingItinerary: {
     id: 'car',
-    start: '2026-09-05T14:05:00.000Z',
-    end: '2026-09-05T15:15:00.000Z',
+    start: '2026-09-05T13:45:00.000Z',
+    end: '2026-09-05T15:20:00.000Z',
     realtimeAgeSeconds: 500,
   },
   presentationAt,
