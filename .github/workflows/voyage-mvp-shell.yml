@@ -6,7 +6,10 @@ on:
       - 'shared/voyageJourney.mjs'
       - 'scripts/regression-voyage-live-state.mjs'
       - 'scripts/regression-voyage-brand-system.mjs'
+      - 'scripts/regression-voyage-web-route.mjs'
       - 'voyage-preview/**'
+      - 'client/public/voyage/**'
+      - 'client/index.html'
       - '.github/workflows/voyage-mvp-shell.yml'
 
 jobs:
@@ -21,3 +24,5 @@ jobs:
         run: node scripts/regression-voyage-live-state.mjs
       - name: Voyage premium brand-system contract
         run: node scripts/regression-voyage-brand-system.mjs
+      - name: Voyage production route contract
+        run: node scripts/regression-voyage-web-route.mjs
