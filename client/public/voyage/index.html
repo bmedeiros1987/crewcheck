@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#08111f" />
+<title>Voyage — Beyond the Trip</title>
+<style>
+:root{
+  --font:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --gold:#d9ad69;--gold-strong:#edc982;--gold-soft:#f3dfbd;--champagne:#f3e7d2;
+  --success:#58c982;--danger:#e65363;--warning:#d99a43;
+  --radius-xl:30px;--radius-lg:22px;--radius-md:16px;
+  --shadow:0 28px 80px rgba(0,0,0,.34);
+}
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#07101c;--bg-elevated:#0b1726;--surface:#0d1a2a;--surface-2:#112235;
+  --surface-glass:rgba(10,22,37,.82);--border:#20354c;--border-soft:#17283b;
+  --text:#f7f1e8;--text-2:#d9d4cd;--muted:#93a1b0;--nav:#07111edb;
+  --hero:linear-gradient(155deg,#163a61 0%,#0c1d31 46%,#07111e 100%);
+}
+html[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f4efe7;--bg-elevated:#fbf8f3;--surface:#fffdf9;--surface-2:#f4ede2;
+  --surface-glass:rgba(255,253,249,.88);--border:#ddd1bf;--border-soft:#e9dfd0;
+  --text:#111820;--text-2:#3c4650;--muted:#6e7882;--nav:#fffaf3e8;
+  --hero:linear-gradient(155deg,#f7ead4 0%,#fffaf1 48%,#efe4d4 100%);
+  --shadow:0 24px 70px rgba(78,58,36,.15);
+}
+*{box-sizing:border-box}body{margin:0;font-family:var(--font);background:radial-gradient(circle at 15% -8%,color-mix(in srgb,var(--gold) 15%,transparent),transparent 34%),var(--bg);color:var(--text);min-height:100vh;transition:background .25s ease,color .25s ease}.app{max-width:430px;margin:auto;padding:18px 16px 116px}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.brand-lockup{display:flex;align-items:center;gap:10px}.brand-mark{width:40px;height:34px;display:block}.brand-copy strong{display:block;font-size:20px;font-weight:500;letter-spacing:.24em;margin-right:-.24em}.brand-copy span{display:block;color:var(--gold);font-size:9px;letter-spacing:.30em;text-transform:uppercase;margin-top:3px}.top-actions{display:flex;gap:8px}.icon-btn{width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--surface-glass);color:var(--text);display:grid;place-items:center;backdrop-filter:blur(16px)}.hero{position:relative;overflow:hidden;padding:21px;border:1px solid color-mix(in srgb,var(--gold) 38%,var(--border));border-radius:var(--radius-xl);background:var(--hero);box-shadow:var(--shadow)}.hero:after{content:"";position:absolute;inset:auto -45px -75px auto;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--gold) 18%,transparent),transparent 70%)}.eyebrow{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold-strong);font-weight:700}.hero h1{font-family:Georgia,"Times New Roman",serif;font-size:32px;line-height:1.04;font-weight:500;margin:10px 0 9px;max-width:320px}.hero p{color:var(--text-2);font-size:13px;line-height:1.55;margin:0;max-width:340px}.primary{width:100%;margin-top:18px;border:1px solid var(--gold-strong);border-radius:999px;padding:14px 16px;background:linear-gradient(135deg,var(--gold-soft),var(--gold));color:#19150f;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(217,173,105,.22)}.section-title{display:flex;align-items:end;justify-content:space-between;margin:22px 3px 9px}.section-title strong{font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:500}.section-title span{font-size:11px;color:var(--muted)}.card{background:var(--surface-glass);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;box-shadow:0 12px 35px rgba(0,0,0,.10);backdrop-filter:blur(18px)}.route{display:flex;align-items:flex-end;gap:12px}.airport{font-size:30px;font-weight:700;letter-spacing:.04em}.city{font-size:11px;color:var(--muted);margin-top:1px}.flight-line{position:relative;flex:1;height:28px;margin-bottom:3px}.flight-line:before{content:"";position:absolute;left:0;right:0;top:14px;height:1px;background:linear-gradient(90deg,var(--border),var(--gold),var(--border))}.plane{position:absolute;left:48%;top:2px;color:var(--gold);font-size:17px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}.meta div{padding:11px;border-radius:14px;background:var(--surface-2);border:1px solid var(--border-soft)}.meta small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}.meta strong{display:block;margin-top:4px;font-size:13px}.journey{display:grid;gap:0}.step{display:grid;grid-template-columns:30px 1fr auto;gap:11px;align-items:center;padding:13px 0;border-bottom:1px solid var(--border-soft)}.step:last-child{border-bottom:0}.dot{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--border);font-size:11px;color:var(--gold)}.step strong{display:block;font-size:13px}.step small{display:block;color:var(--muted);margin-top:2px}.tag{font-size:10px;padding:6px 8px;border-radius:999px;border:1px solid var(--border);color:var(--text-2)}.tag.gold{color:var(--gold-strong);border-color:color-mix(in srgb,var(--gold) 45%,var(--border))}.tag.ok{color:var(--success)}.lock{position:relative;overflow:hidden;background:linear-gradient(145deg,var(--surface),var(--surface-2));border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px}.lock:before{content:"";position:absolute;left:-30px;top:-30px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--gold) 15%,transparent),transparent 68%)}.lock-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.10em;color:var(--muted)}.lock-action{font-family:Georgia,"Times New Roman",serif;font-size:21px;margin:14px 0 5px}.lock-copy{font-size:12px;color:var(--text-2);line-height:1.45}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.chip{padding:7px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:11px}.nav{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);width:min(398px,calc(100% - 28px));display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:8px;background:var(--nav);border:1px solid var(--border);border-radius:24px;backdrop-filter:blur(24px);box-shadow:var(--shadow)}.nav button{border:0;background:transparent;color:var(--muted);padding:8px 2px;font-size:10px;display:grid;gap:3px;place-items:center}.nav button b{font-size:15px;font-weight:500}.nav .active{color:var(--gold-strong)}.brand-rule{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:9px;letter-spacing:.17em;text-transform:uppercase;margin:22px 4px 0}.brand-rule:before,.brand-rule:after{content:"";height:1px;background:var(--border);flex:1}@media (prefers-reduced-motion:no-preference){.plane{animation:cruise 5s ease-in-out infinite}@keyframes cruise{0%,100%{transform:translateX(-8px)}50%{transform:translateX(8px)}}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <div class="brand-lockup" aria-label="Voyage — Beyond the Trip">
+      <svg class="brand-mark" viewBox="0 0 120 92" aria-hidden="true"><path fill="var(--champagne)" d="M4 10 47 20 60 44 31 36Z"/><path fill="var(--gold-soft)" d="M116 10 73 20 60 44 89 36Z"/><path fill="var(--gold)" d="M31 39 60 49 89 39 64 80 56 80Z"/></svg>
+      <div class="brand-copy"><strong>VOYAGE</strong><span>Beyond the Trip</span></div>
+    </div>
+    <div class="top-actions"><button class="icon-btn" id="themeToggle" aria-label="Alternar tema">◐</button><button class="icon-btn" aria-label="Perfil">◉</button></div>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Voyage Pulse · agora</div>
+    <h1>Mais que viagens. Melhores jornadas.</h1>
+    <p>Trânsito aumentando para BSB. Para manter sua margem, tomar café e despachar bagagem com tranquilidade, o melhor momento para pedir transporte é em 8 minutos.</p>
+    <button class="primary">Ver saída inteligente</button>
+  </section>
+
+  <div class="section-title"><strong>Próximo voo</strong><span>No horário</span></div>
+  <section class="card">
+    <div class="route"><div><div class="airport">BSB</div><div class="city">Brasília</div></div><div class="flight-line"><span class="plane">✈</span></div><div style="text-align:right"><div class="airport">GRU</div><div class="city">São Paulo</div></div></div>
+    <div class="meta"><div><small>Embarque</small><strong>09:20</strong></div><div><small>Portão</small><strong>18</strong></div></div>
+  </section>
+
+  <div class="section-title"><strong>Sua Journey</strong><span>Hoje</span></div>
+  <section class="card journey">
+    <div class="step"><div class="dot">✓</div><div><strong>Acordar</strong><small>05:52 · concluído</small></div><span class="tag ok">OK</span></div>
+    <div class="step"><div class="dot">2</div><div><strong>Preparar</strong><small>50 min planejados</small></div><span class="tag">agora</span></div>
+    <div class="step"><div class="dot">3</div><div><strong>Pedir transporte</strong><small>06:47 recomendado</small></div><span class="tag gold">8 min</span></div>
+    <div class="step"><div class="dot">4</div><div><strong>Aeroporto</strong><small>Bagagem → café → segurança</small></div><span class="tag">07:27</span></div>
+    <div class="step"><div class="dot">5</div><div><strong>Embarque</strong><small>Margem projetada 24 min</small></div><span class="tag">09:20</span></div>
+  </section>
+
+  <div class="section-title"><strong>Live Journey</strong><span>Tela bloqueada</span></div>
+  <section class="lock">
+    <div class="lock-head"><span>VOYAGE · BSB → GRU</span><span>AGORA</span></div>
+    <div class="lock-action">Peça seu transporte em 8 min</div>
+    <div class="lock-copy">Saída ideal 06:58 · Portão 18 · margem projetada 24 min</div>
+    <div class="chips"><span class="chip">Abrir Journey</span><span class="chip">Transporte</span></div>
+  </section>
+
+  <div class="brand-rule">Technology for a more human journey</div>
+</main>
+<nav class="nav" aria-label="Navegação principal"><button class="active"><b>⌂</b>Início</button><button><b>▣</b>Jornadas</button><button><b>⌁</b>Descobrir</button><button><b>♙</b>VoyMate</button><button><b>⋯</b>Mais</button></nav>
+<script>
+const root=document.documentElement;const saved=localStorage.getItem('voyage-theme');const preferred=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';root.dataset.theme=saved||preferred;document.querySelector('meta[name="theme-color"]').content=root.dataset.theme==='dark'?'#08111f':'#f4efe7';document.getElementById('themeToggle').addEventListener('click',()=>{const next=root.dataset.theme==='dark'?'light':'dark';root.dataset.theme=next;localStorage.setItem('voyage-theme',next);document.querySelector('meta[name="theme-color"]').content=next==='dark'?'#08111f':'#f4efe7';});
+</script>
+</body>
+</html>
