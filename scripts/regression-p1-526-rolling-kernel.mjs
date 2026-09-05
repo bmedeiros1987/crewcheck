@@ -31,7 +31,8 @@ check(
 );
 
 const crossMonth = [
-  ...observations('2026-08-05', 27, 3),
+  ...observations('2026-08-06', 26, 3),
+  { date: '31/08/2026', hours: 3 },
   ...observations('2026-09-02', 1, 8),
 ];
 check(
