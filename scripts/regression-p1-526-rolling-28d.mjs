@@ -89,9 +89,14 @@ check(
 );
 
 // Histórico anterior entra no limite móvel, mas não deve inflar o KPI da
-// competência ativa. Agosto fornece 27 dias prévios; setembro fornece 1 dia.
+// competência ativa. Agosto fornece 81h dentro da janela Ago/Set sem criar um
+// dia civil extra em setembro: 26 dias Ago 6..31 x 3h, mais uma segunda
+// ocorrência de 3h em Ago 31. Setembro fornece apenas Sep 2 = 8h.
+const augustHistory = dayRange('2026-08-06', 26, 3);
+const august31 = new Date('2026-08-31T00:00:00.000Z');
 const crossMonthDays = [
-  ...dayRange('2026-08-06', 27, 3),
+  ...augustHistory,
+  flightDay(august31, 3),
   ...dayRange('2026-09-02', 1, 8),
 ];
 const crossMonth = analyzeCompliance(roster(crossMonthDays, 9, 2026));
