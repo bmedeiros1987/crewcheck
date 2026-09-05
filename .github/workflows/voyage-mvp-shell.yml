@@ -5,6 +5,7 @@ on:
     paths:
       - 'shared/voyageJourney.mjs'
       - 'scripts/regression-voyage-live-state.mjs'
+      - 'scripts/regression-voyage-brand-system.mjs'
       - 'voyage-preview/**'
       - '.github/workflows/voyage-mvp-shell.yml'
 
@@ -18,3 +19,5 @@ jobs:
           node-version: '20'
       - name: Voyage live-state regression
         run: node scripts/regression-voyage-live-state.mjs
+      - name: Voyage premium brand-system contract
+        run: node scripts/regression-voyage-brand-system.mjs
