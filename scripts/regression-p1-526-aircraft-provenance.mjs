@@ -55,6 +55,24 @@ check('proveniencia derivada da escala preserva evidencia observavel',
     && fromRoster.aircraftGroupProvenance.evidence.some((item) => /B777/i.test(String(item))),
   JSON.stringify(fromRoster));
 
+// Regressao do blocker Work: um codigo numerico maior que apenas contem "777"
+// nao pode virar evidencia WideBody por correspondencia parcial. Mantemos uma
+// evidencia NarrowBody real para provar que o ruído textual nao muda o limite.
+const narrowBodyWithNumericNoise = {
+  ...wideBodyRoster,
+  rawText: 'EQUIP A320 REFERENCE 7777',
+  days: wideBodyRoster.days.map((day) => ({
+    ...day,
+    rawText: 'EQUIP A320 REFERENCE 7777',
+    legs: day.legs.map((leg) => ({ ...leg, aircraftType: 'A320' })),
+  })),
+};
+const fromNumericNoise = getLegalProfile(narrowBodyWithNumericNoise, 'cabin');
+check('superset numerico 7777 nao e interpretado como codigo 777',
+  fromNumericNoise.aircraftGroup === 'narrowBody', JSON.stringify(fromNumericNoise));
+check('evidencia NarrowBody permanece atribuida a escala',
+  fromNumericNoise.aircraftGroupProvenance?.source === 'escala', JSON.stringify(fromNumericNoise));
+
 // Contrato de produto da #526: uma selecao persistente/editavel de perfil deve
 // prevalecer sobre a inferencia de um voo isolado. O terceiro argumento e o
 // contexto explicito do enquadramento; main atual ainda nao o implementa.
