@@ -13,7 +13,7 @@ on:
         description: Pull request number to audit
         required: true
         type: string
-        default: '592'
+        default: '605'
 
 permissions:
   contents: read
@@ -38,12 +38,13 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           (
             (github.event.pull_request.number == 583 && github.event.pull_request.head.ref == 'chatgpt/580-nominal-competence-adjacency') ||
-            (github.event.pull_request.number == 592 && github.event.pull_request.head.ref == 'chatgpt/580-final-vc-legend-fix')
+            (github.event.pull_request.number == 592 && github.event.pull_request.head.ref == 'chatgpt/580-final-vc-legend-fix') ||
+            (github.event.pull_request.number == 605 && github.event.pull_request.head.ref == 'fix/526-rolling-28d-mainline')
           )
         ) ||
         (
           github.event_name == 'issue_comment' &&
-          (github.event.issue.number == 583 || github.event.issue.number == 592) &&
+          (github.event.issue.number == 583 || github.event.issue.number == 592 || github.event.issue.number == 605) &&
           github.event.issue.pull_request &&
           (
             github.event.comment.author_association == 'OWNER' ||
@@ -57,7 +58,7 @@ jobs:
         ) ||
         (
           github.event_name == 'workflow_dispatch' &&
-          inputs.pr_number == '592'
+          (inputs.pr_number == '583' || inputs.pr_number == '592' || inputs.pr_number == '605')
         )
       )
     runs-on: ubuntu-latest
@@ -98,13 +99,26 @@ jobs:
 
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$PR_STATE" = "open"
-          test "$PR_NUMBER" = "583" || test "$PR_NUMBER" = "592"
-          if [ "$PR_NUMBER" = "583" ]; then
-            test "$HEAD_REF" = "chatgpt/580-nominal-competence-adjacency"
-          else
-            test "$HEAD_REF" = "chatgpt/580-final-vc-legend-fix"
-          fi
           test "$HEAD_REPO" = "${{ github.repository }}"
+
+          case "$PR_NUMBER" in
+            583)
+              test "$HEAD_REF" = "chatgpt/580-nominal-competence-adjacency"
+              AUDIT_SCOPE="Re-run the relevant materialization and adversarial gates. Check nominal competence, online/local/offline behavior, persistence, reimport/reload, count-aware overlap, unknown-data fail-safe behavior, VC/LEGEND boundaries, #533, and #534."
+              ;;
+            592)
+              test "$HEAD_REF" = "chatgpt/580-final-vc-legend-fix"
+              AUDIT_SCOPE="Re-run the relevant materialization and adversarial gates. Check nominal competence, online/local/offline behavior, persistence, reimport/reload, count-aware overlap, unknown-data fail-safe behavior, VC/LEGEND boundaries, #533, and #534."
+              ;;
+            605)
+              test "$HEAD_REF" = "fix/526-rolling-28d-mainline"
+              AUDIT_SCOPE="Re-run the P1 #526 compliance clean-room and relevant materialization/adversarial gates. Verify D1..D28 with D29 expelling D1, UTC/timezone behavior, multiplicity on the same civil day, cross-competence rolling history without contaminating the active-competence KPI, raw PDF totals not overwriting derived flight hours, and aircraft-group provenance/override. Enforce the 28-day rolling metric itself against 90h NarrowBody / 100h WideBody; civil-month buckets may be diagnostic only and must not decide the violation. Preserve #533 and #534 and reject any use of #532, parser/canonical/APZ/journey hardcodes, or APZ=STD fallback."
+              ;;
+            *)
+              echo "Unsupported PR: $PR_NUMBER" >&2
+              exit 1
+              ;;
+          esac
 
           PROMPT_FILE="$(mktemp)"
           cat > "$PROMPT_FILE" <<EOF
@@ -126,10 +140,9 @@ jobs:
           and verify that its HEAD is still exactly $SHA. If HEAD changed, stop and
           report the request as stale; do not approve any other SHA.
 
-          Re-run the relevant materialization and adversarial gates. Check nominal
-          competence, online/local/offline behavior, persistence, reimport/reload,
-          count-aware overlap, unknown-data fail-safe behavior, VC/LEGEND boundaries,
-          #533, and #534. Return a concise result using exactly one prefix:
+          $AUDIT_SCOPE
+
+          Return a concise result using exactly one prefix:
           [MANUS-AUDIT] MANUS: MERGE
           or
           [MANUS-AUDIT] MANUS: BLOCKER
