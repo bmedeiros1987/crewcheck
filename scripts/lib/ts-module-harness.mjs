@@ -13,8 +13,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
  *
  * `stubs` maps a module basename to raw JS source, used for modules that only
  * provide types (e.g. pdfParser, whose runtime pulls in Vite-only imports).
+ *
+ * `expose` maps a module basename to a list of internal (non-exported) bindings
+ * that should be re-exported for the test, so uma regressão pode exercitar uma
+ * função interna sem que a produção precise exportá-la. Omitido por padrão.
  */
-export function loadClientModules({ files, stubs = {}, prefix = 'crewcheck-harness-' }) {
+export function loadClientModules({ files, stubs = {}, expose = {}, prefix = 'crewcheck-harness-' }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 
   for (const [name, source] of Object.entries(stubs)) {
@@ -26,11 +30,14 @@ export function loadClientModules({ files, stubs = {}, prefix = 'crewcheck-harne
     // Ausentes no estado base, presentes no preparado: os dois estados precisam
     // rodar, então um arquivo que não existe é apenas ignorado.
     if (!fs.existsSync(path.join(ROOT, relative))) continue;
-    const source = fs.readFileSync(path.join(ROOT, relative), 'utf8');
+    const name = path.basename(relative, '.ts');
+    let source = fs.readFileSync(path.join(ROOT, relative), 'utf8');
+    const exposed = expose[name] || [];
+    if (exposed.length) source = `${source}\nexport { ${exposed.join(', ')} };\n`;
     const compiled = ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
     }).outputText;
-    fs.writeFileSync(path.join(dir, `${path.basename(relative, '.ts')}.js`), compiled);
+    fs.writeFileSync(path.join(dir, `${name}.js`), compiled);
   }
 
   const require = createRequire(import.meta.url);
