@@ -1,5 +1,6 @@
-import type { CrewRoster } from './pdfParser';
+import type { CrewRoster, RosterDay } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { regulatoryHistoryCoverageComplete } from './complianceEngine';
 import { authFetch, getStoredUser, getToken } from './authClient';
 
 export interface DatabaseStatus {
@@ -686,6 +687,74 @@ function migrateLegacyActiveRosterSnapshotsOnce(): void {
       localStorage.removeItem(legacyKey);
     }
   } catch {}
+}
+
+/**
+ * #536: dias das competências anteriores que a janela regulatória de 28 dias precisa
+ * enxergar. Reusa `readLocalHistory()` sem alterá-la — ela já é estritamente
+ * escopada à identidade corrente (#440), e o histórico de outro usuário nunca entra.
+ *
+ * Devolve apenas dias; quem decide a janela é `selectRegulatoryHistoryDays`. Não
+ * altera o roster ativo: estes dias entram só no cálculo da janela, nunca em
+ * `competenceDays`, então não aparecem na UI nem inflam KPIs da competência.
+ */
+/**
+ * #536: histórico regulatório que existe na conta mas ainda não no aparelho.
+ *
+ * O motor de compliance continua puro e SÍNCRONO. Esta busca é da camada de
+ * carregamento: roda em background e o chamador dispara recálculo quando ela
+ * resolve. Até lá o cálculo roda com `regulatoryHistoryComplete: false` e a janela
+ * de 28 dias fica não conclusiva, nunca "OK" silencioso.
+ *
+ * Devolve `complete: false` quando a busca falha — desconhecido não é o mesmo que
+ * ausente, e afirmar conformidade com cobertura desconhecida é o defeito original.
+ */
+export async function fetchRegulatoryHistoryDays(
+  active: CrewRoster,
+): Promise<{ days: RosterDay[]; complete: boolean }> {
+  const local = readRegulatoryHistoryDays(active);
+  try {
+    const activeKey = `${active?.year || ''}-${String(active?.month || '').padStart(2, '0')}`;
+    const saved = await listSavedRosters(24);
+    const byDate = new Map<string, RosterDay>();
+    for (const day of local) byDate.set(String(day.date || ''), day);
+    for (const summary of saved) {
+      const key = `${(summary as any)?.year || ''}-${String((summary as any)?.month || '').padStart(2, '0')}`;
+      if (!key || key === activeKey) continue;
+      const id = (summary as any)?.id;
+      if (!id) continue;
+      const opened = await openSavedRoster(String(id));
+      for (const day of opened?.roster?.days || []) byDate.set(String(day.date || ''), day);
+    }
+    const days = Array.from(byDate.values());
+    // #536: sucesso da requisição NÃO é prova de cobertura. Uma conta que contém
+    // apenas a competência ativa responde 200 e devolve zero dias anteriores;
+    // declarar isso como completo permitiria falso OK na janela de 28 dias.
+    // `complete` passa a refletir cobertura temporal real do intervalo exigido.
+    return { days, complete: regulatoryHistoryCoverageComplete(active?.days || [], days) };
+  } catch {
+    // Falha de rede/sessão: devolve o que o aparelho já tem. Mesmo que o cache
+    // local por acaso cubra o intervalo, a origem não pôde ser confirmada, então
+    // a cobertura é declarada incompleta — fail-closed, sem afirmar conformidade.
+    return { days: local, complete: false };
+  }
+}
+
+export function readRegulatoryHistoryDays(active: CrewRoster): RosterDay[] {
+  try {
+    const activeKey = `${active?.year || ''}-${String(active?.month || '').padStart(2, '0')}`;
+    const out: RosterDay[] = [];
+    for (const item of readLocalHistory()) {
+      const roster = item?.roster;
+      if (!roster || !Array.isArray(roster.days)) continue;
+      const key = `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`;
+      if (key === activeKey) continue;
+      out.push(...roster.days);
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 function readLocalActiveRosterSnapshots(): LocalHistoryItem[] {

@@ -82,8 +82,24 @@ export interface LoadAnalysis {
   days: DayLoadAnalysis[];
 }
 
+/**
+ * #536: identidade do cálculo. Um snapshot persistido só pode ser reutilizado se
+ * TODOS estes campos baterem com o contexto atual — escala, histórico regulatório,
+ * perfil/regras e versão do motor. Reutilizar por "existe compliance salvo" foi o
+ * caminho pelo qual uma escala reaberta exibia um veredito calculado com histórico
+ * diferente do que está disponível agora.
+ */
+export interface ComplianceProvenance {
+  engineVersion: string;
+  rosterFingerprint: string;
+  regulatoryHistoryFingerprint: string;
+  roleSelection: string;
+  regulatoryHistoryComplete: boolean;
+}
+
 export interface ComplianceResult {
   engineVersion?: string;
+  provenance?: ComplianceProvenance;
   alerts: ComplianceAlert[];
   metrics: Metrics;
   overallStatus: 'compliant' | 'warning' | 'violation';
@@ -1590,6 +1606,10 @@ function sanitizeComplianceAlertsForProduction(alerts: ComplianceAlert[]): Compl
   });
 }
 
+
+// Mantida porque a cadeia de preparação depende dela: o passo v14.3.95 injeta
+// `competenceDays` usando `complianceDayMonthKey`. Não é código morto — removê-la
+// quebra a materialização do estado preparado.
 function complianceDayMonthKey(day: RosterDay): string {
   try {
     const parsed = parseDate(String(day.date || ''));
@@ -1598,18 +1618,234 @@ function complianceDayMonthKey(day: RosterDay): string {
   return 'unknown';
 }
 
-function flightHoursByRosterMonth(days: RosterDay[]): Array<{ key: string; flightHours: number }> {
-  const map = new Map<string, number>();
+// #526: o limite da ACT (cl. 3.3.17) é de horas de VOO em 28 DIAS, não no mês
+// civil. Agrupar por mês civil produz dois erros de sinal oposto: conta 29-31
+// dias contra um teto de 28 e — o mais grave — deixa de detectar violação real
+// que atravessa a virada do mês (ex.: 50h no fim de janeiro + 50h no início de
+// fevereiro somam 100h numa janela de 28 dias, mas cada mês isolado mostra 50h
+// e nenhum alerta dispara).
+//
+// O índice vem de Date.UTC(ano, mês, dia), não da diferença em milissegundos
+// entre datas locais: `parseDate` devolve meia-noite local, e uma transição de
+// horário de verão dentro da janela faria a diferença deixar de ser múltiplo
+// exato de 24h, deslocando a fronteira em um dia.
+function flightHoursDayEntries(days: RosterDay[]): Array<{ dayIndex: number; date: string; flightHours: number }> {
+  const entries: Array<{ dayIndex: number; date: string; flightHours: number }> = [];
   for (const day of days) {
-    const key = complianceDayMonthKey(day);
-    if (key === 'unknown') continue;
-    map.set(key, round1((map.get(key) || 0) + getFlightHours(day)));
+    const raw = String(day.date || '');
+    try {
+      const parsed = parseDate(raw);
+      if (!Number.isFinite(parsed.getTime())) continue;
+      const dayIndex = Math.floor(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) / 86400000);
+      entries.push({ dayIndex, date: raw, flightHours: getFlightHours(day) });
+    } catch {}
   }
-  return Array.from(map.entries()).map(([key, flightHours]) => ({ key, flightHours })).sort((a, b) => a.key.localeCompare(b.key));
+  return entries.sort((a, b) => a.dayIndex - b.dayIndex);
+}
+
+// `mustOverlapMonthKey` (formato YYYY-MM) restringe o resultado a janelas que
+// tocam pelo menos um dia daquela competência. O estado preparado usa isso: dias
+// adjacentes seguem no bundle para continuidade, então sem a restrição uma escala
+// com o mês subsequente anexado poderia alertar sobre uma janela inteiramente
+// dentro do mês seguinte, que não é a competência exibida. A janela ainda pode
+// ATRAVESSAR a virada do mês — que é justamente o caso que o #526 precisa
+// detectar; ela só não pode ficar inteiramente fora da competência.
+/**
+ * #526/#536: seleciona o histórico regulatório que precisa acompanhar a competência.
+ *
+ * A janela móvel de 28 dias só enxerga o que está em `roster.days`. Como cada
+ * importação traz uma competência, uma violação que dependa do fim do mês anterior
+ * ficava invisível: com apenas fevereiro no bundle, 50,4h + 50,4h nunca somam na
+ * mesma janela. Medido: jan+fev presentes => alerta dispara; só fevereiro => não.
+ *
+ * Devolve apenas os dias ESTRITAMENTE anteriores ao primeiro dia da competência e
+ * dentro de `windowDays`, sem datas duplicadas. Esses dias entram no cálculo da
+ * janela, nunca em `competenceDays` — os KPIs seguem filtrados por
+ * `complianceDayMonthKey === competenceKey`, então o mês anterior não aparece na UI
+ * nem infla totais. Verificado: com jan+fev no bundle o KPI de horas de voo
+ * permanece 50,4h (fevereiro), e o alerta de 100,8h dispara.
+ */
+function stableDigest(parts: string[]): string {
+  // FNV-1a: determinístico, sem dependência, suficiente para detectar mudança de
+  // entrada. Não é hash criptográfico e não precisa ser.
+  let hash = 0x811c9dc5;
+  for (const part of parts) {
+    for (let i = 0; i < part.length; i += 1) {
+      hash ^= part.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    hash ^= 0x2c;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${parts.length.toString(36)}-${hash.toString(36)}`;
+}
+
+function dayDigestParts(days: RosterDay[]): string[] {
+  return days
+    .map((day) => [
+      String(day.date || ''),
+      String(day.type || ''),
+      String(day.dutyReport || ''),
+      String(day.dutyDebrief || ''),
+      String(getFlightHours(day)),
+      // #536: o tipo de aeronave decide o perfil legal (NarrowBody 90h x
+      // WideBody 100h em 28 dias). Fora do digest, uma escala reclassificada de
+      // Narrow para Wide reaproveitaria um snapshot calculado com o teto errado.
+      (day.legs || []).map((leg) => `${leg.flightNumber || ''}:${leg.origin || ''}>${leg.destination || ''}:${leg.departureTime || ''}-${leg.arrivalTime || ''}:${leg.aircraftType || ''}`).join(','),
+    ].join('|'))
+    .sort();
+}
+
+/** Identidade da escala visível. Muda quando qualquer dia/perna relevante muda. */
+/**
+ * #536: um snapshot persistido só serve se TODOS os eixos baterem. Qualquer campo
+ * ausente (snapshot anterior a esta versão) reprova — fail-closed, recalcula.
+ */
+export function canReuseComplianceSnapshot(
+  snapshot: ComplianceResult | null | undefined,
+  context: { roster: CrewRoster; regulatoryHistoryDays: RosterDay[]; roleSelection: string; regulatoryHistoryComplete: boolean },
+): boolean {
+  const provenance = snapshot?.provenance;
+  if (!provenance) return false;
+  return provenance.engineVersion === COMPLIANCE_ENGINE_VERSION
+    && provenance.rosterFingerprint === rosterFingerprint(context.roster)
+    && provenance.regulatoryHistoryFingerprint === regulatoryHistoryFingerprint(context.regulatoryHistoryDays)
+    && provenance.roleSelection === String(context.roleSelection)
+    && provenance.regulatoryHistoryComplete === context.regulatoryHistoryComplete;
+}
+
+export function rosterFingerprint(roster: CrewRoster): string {
+  return stableDigest([
+    `${roster?.year || ''}-${String(roster?.month || '').padStart(2, '0')}`,
+    ...dayDigestParts(Array.isArray(roster?.days) ? roster.days : []),
+  ]);
+}
+
+/** Identidade do histórico regulatório usado no cálculo — separado da escala. */
+export function regulatoryHistoryFingerprint(days: RosterDay[]): string {
+  return stableDigest(dayDigestParts(Array.isArray(days) ? days : []));
+}
+
+/**
+ * Índice de dia civil, estável a horário de verão. `parseDate` devolve meia-noite
+ * LOCAL; a diferença em milissegundos entre datas locais deixa de ser múltiplo
+ * exato de 24h quando há transição de DST dentro da janela, deslocando a
+ * fronteira em um dia.
+ */
+function utcDayIndex(day: RosterDay): number | null {
+  try {
+    const parsed = parseDate(String(day.date || ''));
+    if (!Number.isFinite(parsed.getTime())) return null;
+    return Math.floor(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) / 86400000);
+  } catch { return null; }
+}
+
+/**
+ * #536: a janela de 28 dias só pode ser declarada CONCLUSIVA quando os dias
+ * anteriores de que ela precisa existirem de fato.
+ *
+ * Sucesso da consulta não é prova de cobertura: uma conta que contém apenas a
+ * competência ativa responde 200 e devolve zero dias anteriores. Tratar isso
+ * como completo permite falso OK — 49,6h em fevereiro passam como dentro do
+ * limite embora 50,4h não carregadas do fim de janeiro formem 100h/28d.
+ *
+ * A regra é de cobertura temporal, não de sucesso de rede: todo dia civil no
+ * intervalo [primeiro dia da escala ativa - windowDays, primeiro dia - 1]
+ * precisa estar representado. Qualquer buraco reprova — fail-closed.
+ *
+ * Cobertura incompleta NÃO apaga violação já detectada; ela apenas impede
+ * concluir conformidade.
+ */
+export function regulatoryHistoryCoverageComplete(
+  currentDays: RosterDay[],
+  historyDays: RosterDay[],
+  windowDays = 27,
+): boolean {
+  const currentIndexes = (Array.isArray(currentDays) ? currentDays : [])
+    .map(utcDayIndex)
+    .filter((value): value is number => value != null);
+  // Sem escala ativa não há janela a avaliar — nada a declarar como completo.
+  if (!currentIndexes.length) return false;
+  const firstCurrent = Math.min(...currentIndexes);
+  const covered = new Set(
+    (Array.isArray(historyDays) ? historyDays : [])
+      .map(utcDayIndex)
+      .filter((value): value is number => value != null),
+  );
+  for (let index = firstCurrent - windowDays; index < firstCurrent; index += 1) {
+    if (!covered.has(index)) return false;
+  }
+  return true;
+}
+
+export function selectRegulatoryHistoryDays(
+  currentDays: RosterDay[],
+  candidateDays: RosterDay[],
+  windowDays = 27,
+): RosterDay[] {
+  const indexOf = utcDayIndex;
+  const currentIndexes = currentDays.map(indexOf).filter((value): value is number => value != null);
+  if (!currentIndexes.length) return [];
+  const firstCurrent = Math.min(...currentIndexes);
+  const taken = new Set(currentDays.map((day) => String(day.date || '')));
+  const picked: Array<{ index: number; day: RosterDay }> = [];
+  for (const day of candidateDays) {
+    const index = indexOf(day);
+    if (index == null) continue;
+    if (index >= firstCurrent) continue;
+    if (firstCurrent - index > windowDays) continue;
+    const key = String(day.date || '');
+    if (taken.has(key)) continue;
+    taken.add(key);
+    picked.push({ index, day });
+  }
+  return picked.sort((a, b) => a.index - b.index).map((entry) => entry.day);
+}
+
+export function worstFlightHoursWindow28Days(days: RosterDay[], mustOverlapMonthKey?: string): { flightHours: number; from: string; to: string; spansMonthBoundary: boolean } {
+  const entries = flightHoursDayEntries(days);
+  const empty = { flightHours: 0, from: '', to: '', spansMonthBoundary: false };
+  if (!entries.length) return empty;
+  const WINDOW_DAYS = 28;
+  const monthKeyOf = (date: string) => `${date.slice(6)}-${date.slice(3, 5)}`;
+  let best = empty;
+  for (let i = 0; i < entries.length; i++) {
+    const start = entries[i].dayIndex;
+    let sum = 0;
+    let lastIndex = i;
+    let overlaps = !mustOverlapMonthKey;
+    for (let j = i; j < entries.length; j++) {
+      if (entries[j].dayIndex - start >= WINDOW_DAYS) break;
+      sum += entries[j].flightHours;
+      lastIndex = j;
+      if (mustOverlapMonthKey && monthKeyOf(entries[j].date) === mustOverlapMonthKey) overlaps = true;
+    }
+    if (!overlaps) continue;
+    const rounded = round1(sum);
+    if (rounded > best.flightHours) {
+      const from = entries[i].date;
+      const to = entries[lastIndex].date;
+      best = { flightHours: rounded, from, to, spansMonthBoundary: from.slice(3) !== to.slice(3) };
+    }
+  }
+  return best;
 }
 
 
-export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): ComplianceResult {
+export function analyzeCompliance(
+  roster: CrewRoster,
+  roleSelection: CrewRoleSelection = 'auto',
+  // #536: dias de competências anteriores que a janela de 28 dias precisa enxergar.
+  // Chegam por parâmetro, e NÃO dentro de `roster.days`, exatamente para não poderem
+  // entrar em nenhum total da competência. Mesclá-los no roster inflaria os KPIs no
+  // estado base, onde o filtro `competenceDays` ainda não existe — medido: horas de
+  // voo passavam de 50,4h para 100,8h.
+  regulatoryHistoryDays: RosterDay[] = [],
+  // #536: `false` significa "ainda não sei se existe mais histórico". Nesse estado a
+  // janela de 28 dias não pode devolver "OK" silencioso — mais histórico só pode
+  // AUMENTAR a soma, então ausência de violação é inconclusiva, não conformidade.
+  regulatoryHistoryComplete = true,
+): ComplianceResult {
   let alerts: ComplianceAlert[] = [];
   const legalProfile = getLegalProfile(roster, roleSelection);
   const actRules = getActRulesForProfile(legalProfile);
@@ -1936,35 +2172,48 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   // automático porque escalas com pernoite/continuação e reservas podem distorcer
   // a janela móvel e gerar falsos positivos.
 
-  const monthlyFlightBuckets = flightHoursByRosterMonth(sortedDays);
-  const isMultiMonthRoster = monthlyFlightBuckets.length > 1;
-  const monthlyBucketToEvaluate = isMultiMonthRoster
-    ? monthlyFlightBuckets.reduce((best, item) => item.flightHours > best.flightHours ? item : best, { key: '', flightHours: 0 })
-    : { key: `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`, flightHours: metrics.totalFlightHours };
-  const monthlyFlightHoursForAlert = monthlyBucketToEvaluate.flightHours;
+  // #526: a avaliação usa a PIOR janela móvel de 28 dias, não o mês civil.
+  // A janela nunca soma mais de 28 dias, então ela própria já protege contra o
+  // falso positivo que a separação por mês existia para evitar (escala atual +
+  // subsequente anexadas nunca caem juntas numa janela de 28 dias).
+  const worstFlightWindow = worstFlightHoursWindow28Days([...regulatoryHistoryDays, ...sortedDays]);
+  const flightWindowRange = worstFlightWindow.from && worstFlightWindow.to
+    ? `${worstFlightWindow.from} a ${worstFlightWindow.to}`
+    : '';
+  const monthlyFlightHoursForAlert = worstFlightWindow.flightHours;
 
   const monthlyFlightRatio = limits.maxFlightHoursMonth ? monthlyFlightHoursForAlert / limits.maxFlightHoursMonth : 0;
   if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth) {
     const suspiciousTotal = monthlyFlightRatio > 1.35 || monthlyFlightHoursForAlert > 140;
     pushAlert(alerts, {
       severity: suspiciousTotal ? 'warning' : 'error',
-      title: suspiciousTotal ? 'Horas de voo mensais — revisar base de cálculo' : 'Limite mensal de horas de voo excedido',
+      title: suspiciousTotal ? 'Horas de voo em 28 dias — revisar base de cálculo' : 'Limite de horas de voo em 28 dias excedido',
       description: suspiciousTotal
-        ? `O PDF retornou ${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}, valor incompatível com uma leitura operacional normal. O CrewCheck marcou para revisão em vez de confirmar irregularidade.`
-        : `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
+        ? `O PDF retornou ${monthlyFlightHoursForAlert.toFixed(1)}h de voo na janela de 28 dias${flightWindowRange ? ` (${flightWindowRange})` : ''}, valor incompatível com uma leitura operacional normal. O CrewCheck marcou para revisão em vez de confirmar irregularidade.`
+        : `${monthlyFlightHoursForAlert.toFixed(1)}h de voo em 28 dias${flightWindowRange ? ` (${flightWindowRange})` : ''}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
       details: suspiciousTotal
         ? 'Possível duplicidade de mês, continuação de escala, total acumulado do PDF ou trecho interpretado em duplicidade. Não use este item como irregularidade confirmada sem revisar o PDF oficial.'
-        : (isMultiMonthRoster ? `A escala visual pode estar com mês atual + subsequente anexado. O CrewCheck avaliou cada mês separadamente e não somou os meses para gerar este alerta.` : undefined),
+        : (worstFlightWindow.spansMonthBoundary ? 'Esta janela de 28 dias atravessa a virada do mês. O limite da ACT é por 28 dias corridos, não por mês civil — avaliar mês a mês deixaria de detectar este caso.' : undefined),
       legalReference: actRules.flightLimits.legalReference,
       confidence: suspiciousTotal ? 'media' : 'alta',
       classification: suspiciousTotal ? 'atencao' : 'confirmada',
     });
+  } else if (!regulatoryHistoryComplete) {
+    // #536: sem cobertura histórica completa, não afirmar conformidade. Uma
+    // violação que dependa do fim da competência anterior ficaria invisível, e o
+    // silêncio seria lido como "dentro do limite".
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Horas de voo em 28 dias — verificação não conclusiva',
+      description: `Foram somadas ${monthlyFlightHoursForAlert.toFixed(1)}h na janela disponível${flightWindowRange ? ` (${flightWindowRange})` : ''}, abaixo do limite de ${limits.maxFlightHoursMonth}h. A escala da competência anterior ainda não foi carregada, então a janela de 28 dias pode estar incompleta.`,
+      details: 'O resultado é recalculado automaticamente assim que o histórico anterior chegar. Até lá, este item não confirma conformidade.',
+    });
   } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
-      title: 'Horas de voo próximas do limite mensal',
-      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
-      details: isMultiMonthRoster ? 'Cálculo separado por mês para evitar falso positivo ao visualizar escala atual + subsequente.' : undefined,
+      title: 'Horas de voo próximas do limite de 28 dias',
+      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo em 28 dias${flightWindowRange ? ` (${flightWindowRange})` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
+      details: worstFlightWindow.spansMonthBoundary ? 'Esta janela de 28 dias atravessa a virada do mês.' : undefined,
       legalReference: actRules.flightLimits.legalReference,
     });
   }
@@ -2059,6 +2308,15 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   return {
     engineVersion: COMPLIANCE_ENGINE_VERSION,
+    // #536: identidade do cálculo, para que um snapshot só seja reutilizado quando
+    // o contexto for exatamente o mesmo.
+    provenance: {
+      engineVersion: COMPLIANCE_ENGINE_VERSION,
+      rosterFingerprint: rosterFingerprint(roster),
+      regulatoryHistoryFingerprint: regulatoryHistoryFingerprint(regulatoryHistoryDays),
+      roleSelection: String(roleSelection),
+      regulatoryHistoryComplete,
+    },
     alerts,
     metrics: {
       ...metrics,
