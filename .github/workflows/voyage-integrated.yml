@@ -1,0 +1,35 @@
+name: CrewCheck Voyage integrated
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/voyage/**'
+      - 'server/v1412/voyageIntegration.mjs'
+      - 'server/v139/index.mjs'
+      - 'scripts/v14411/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-v14-4-11-voyage-integrated.mjs'
+      - 'docs/voyage-integrated.md'
+      - '.github/workflows/voyage-integrated.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  voyage-integrated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Validate backend bridge syntax
+        run: node --check server/v1412/voyageIntegration.mjs && node --check server/v139/index.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate Voyage integrated contract
+        run: node scripts/regression-v14-4-11-voyage-integrated.mjs
+      - name: TypeScript check
+        run: npm ci && npx tsc --noEmit
