@@ -1,0 +1,25 @@
+name: CrewCheck Alerts foundation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/crewcheckAlerts.ts'
+      - 'scripts/regression-crewcheck-alerts-foundation.mjs'
+      - '.github/workflows/crewcheck-alerts-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  alerts-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Validate alert semantics
+        run: node scripts/regression-crewcheck-alerts-foundation.mjs
