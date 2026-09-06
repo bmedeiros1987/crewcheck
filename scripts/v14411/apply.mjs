@@ -25,12 +25,24 @@ if (!/\|\s*'voyage'\b/.test(source)) {
   replaceRequired(anchor, "  | 'voyage' | 'radar' | 'weather' | 'perdiem'", 'ZeroView voyage');
 }
 
-if (!source.includes("['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2]")) {
-  const navMatch = source.match(/const\s+nav\s*:\s*Array<\[ZeroView,\s*string,\s*string,\s*any\]>\s*=\s*\[/);
-  if (!navMatch || navMatch.index === undefined) throw new Error(`[v${VERSION}] âncora não encontrada: nav array Voyage`);
-  const insertAt = navMatch.index + navMatch[0].length;
-  const insertion = "\n    ['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2],";
-  source = `${source.slice(0, insertAt)}${insertion}${source.slice(insertAt)}`;
+const voyageMenuItem = "['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2]";
+if (!source.includes(voyageMenuItem)) {
+  const groupedMarker = "    { title: 'Documentos e conta', items: [";
+  if (source.includes(groupedMarker)) {
+    const insertion = `    { title: 'Viagens pessoais', items: [\n      ${voyageMenuItem},\n    ] },\n`;
+    source = source.replace(groupedMarker, `${insertion}${groupedMarker}`);
+    changed = true;
+  } else {
+    const navMatch = source.match(/const\s+nav\s*[^=]*=\s*\[/);
+    if (!navMatch || navMatch.index === undefined) throw new Error(`[v${VERSION}] âncora não encontrada: menu Voyage`);
+    const insertAt = navMatch.index + navMatch[0].length;
+    source = `${source.slice(0, insertAt)}\n    ${voyageMenuItem},${source.slice(insertAt)}`;
+    changed = true;
+  }
+}
+
+if (source.includes("const menuViews: ZeroView[] = [") && !/const menuViews:[^\n]+\[[^\]]*'voyage'/.test(source)) {
+  source = source.replace("const menuViews: ZeroView[] = ['settings'", "const menuViews: ZeroView[] = ['settings','voyage'");
   changed = true;
 }
 
