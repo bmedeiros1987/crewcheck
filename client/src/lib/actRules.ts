@@ -382,7 +382,7 @@ function inferAircraftGroupWithProvenance(roster: CrewRoster): {
     .flatMap(day => day.legs || [])
     .map(leg => String(leg.aircraftType || '').trim())
     .filter(Boolean);
-  const rawMatches = String(roster.rawText || '').match(/\b(?:A|B)?(?:330|332|333|339|350|351|359|767|773|777|787|789)|\b76W\b|\bWB\b|\bWIDE\b/gi) || [];
+  const rawMatches = String(roster.rawText || '').match(/\b(?:A|B)?(?:330|332|333|339|350|351|359|767|773|777|787|789)\b|\b76W\b|\bWB\b|\bWIDE\b/gi) || [];
   const evidence = [...new Set([...aircraftEvidence, ...rawMatches].map(item => item.toUpperCase()))];
   const allText = `${evidence.join(' ')} ${roster.rawText || ''}`.toUpperCase();
   const wideBody = /\b(?:A|B)?(?:330|332|333|339|350|351|359|767|773|777|787|789)\b|\b76W\b|\bWB\b|\bWIDE\b/.test(allText);
