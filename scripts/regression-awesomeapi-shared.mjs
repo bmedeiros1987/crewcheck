@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { awesomeApiSharedCapabilities, fetchFxLatest, lookupCep } from '../server/shared/awesomeapi.mjs';
 
+// This gate is intentionally self-contained: no real provider key or network access is required.
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.AWESOMEAPI_API_KEY;
 const originalAlias = process.env.AWESOME_API_KEY;
