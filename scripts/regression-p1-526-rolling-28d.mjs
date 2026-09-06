@@ -49,7 +49,7 @@ function flightDay(date, hours) {
   };
 }
 
-function roster(days, month = 9, year = 2026) {
+function roster(days, month = 9, year = 2026, totals) {
   return {
     crewName: 'TEST',
     crewId: 'TEST',
@@ -59,6 +59,7 @@ function roster(days, month = 9, year = 2026) {
     year,
     rawText: 'TEST ROSTER',
     days,
+    ...(totals ? { totals } : {}),
   };
 }
 
@@ -109,6 +110,21 @@ check(
   'histórico anterior não infla totalFlightHours da competência atual',
   crossMonth.metrics.totalFlightHours === 8,
   `totalFlightHours=${crossMonth.metrics.totalFlightHours}`,
+);
+
+// O total agregado do PDF é metadado do documento e pode representar um recorte
+// maior que a competência ativa. Mesmo sem dias adjacentes materializados, ele
+// nunca deve sobrescrever o KPI derivado dos dias normalizados da competência.
+const rawPdfTotal = analyzeCompliance(roster(
+  dayRange('2026-09-02', 1, 8),
+  9,
+  2026,
+  { flightHours: 89 },
+));
+check(
+  'total bruto do PDF não sobrescreve KPI derivado da competência',
+  rawPdfTotal.metrics.totalFlightHours === 8,
+  `totalFlightHours=${rawPdfTotal.metrics.totalFlightHours}`,
 );
 
 const failures = checker.report();
