@@ -15,6 +15,13 @@ function replaceRequired(before, after, label) {
   changed = true;
 }
 
+function menuDrawerBounds() {
+  const start = source.indexOf('function MenuDrawer(');
+  const end = start >= 0 ? source.indexOf('function Cockpit(', start) : -1;
+  if (start < 0 || end < 0) throw new Error(`[v${VERSION}] MenuDrawer não localizado.`);
+  return { start, end, block: source.slice(start, end) };
+}
+
 if (!source.includes("@/components/voyage/VoyageIntegrated")) {
   const anchor = "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';";
   replaceRequired(anchor, `${anchor}\nimport VoyageIntegrated from '@/components/voyage/VoyageIntegrated';`, 'import VoyageIntegrated');
@@ -27,23 +34,42 @@ if (!/\|\s*'voyage'\b/.test(source)) {
 
 const voyageMenuItem = "['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2]";
 if (!source.includes(voyageMenuItem)) {
-  const groupedMarker = "    { title: 'Documentos e conta', items: [";
-  if (source.includes(groupedMarker)) {
-    const insertion = `    { title: 'Viagens pessoais', items: [\n      ${voyageMenuItem},\n    ] },\n`;
-    source = source.replace(groupedMarker, `${insertion}${groupedMarker}`);
-    changed = true;
+  const { start, end, block } = menuDrawerBounds();
+  let nextBlock = block;
+  const pushGroup = `  groups.push({ title: 'Viagens pessoais', items: [\n    ${voyageMenuItem},\n  ] });\n`;
+
+  const jumpMatch = nextBlock.match(/^\s*const\s+jump\s*=.*$/m);
+  if (/\bconst\s+groups\b/.test(nextBlock) && jumpMatch && jumpMatch.index !== undefined) {
+    const lineStart = nextBlock.lastIndexOf('\n', jumpMatch.index) + 1;
+    nextBlock = `${nextBlock.slice(0, lineStart)}${pushGroup}${nextBlock.slice(lineStart)}`;
   } else {
-    const navMatch = source.match(/const\s+nav\s*[^=]*=\s*\[/);
-    if (!navMatch || navMatch.index === undefined) throw new Error(`[v${VERSION}] âncora não encontrada: menu Voyage`);
-    const insertAt = navMatch.index + navMatch[0].length;
-    source = `${source.slice(0, insertAt)}\n    ${voyageMenuItem},${source.slice(insertAt)}`;
-    changed = true;
+    const adminPush = nextBlock.match(/^\s*if\s*\(\s*admin\s*\)\s*groups\.push\(/m);
+    if (/\bconst\s+groups\b/.test(nextBlock) && adminPush && adminPush.index !== undefined) {
+      const lineStart = nextBlock.lastIndexOf('\n', adminPush.index) + 1;
+      nextBlock = `${nextBlock.slice(0, lineStart)}${pushGroup}${nextBlock.slice(lineStart)}`;
+    } else {
+      const navMatch = nextBlock.match(/const\s+nav\s*[^=]*=\s*\[/);
+      if (!navMatch || navMatch.index === undefined) {
+        const diagnostic = nextBlock.slice(0, 1200).replace(/\s+/g, ' ');
+        throw new Error(`[v${VERSION}] estrutura de menu não reconhecida: ${diagnostic}`);
+      }
+      const insertAt = navMatch.index + navMatch[0].length;
+      nextBlock = `${nextBlock.slice(0, insertAt)}\n    ${voyageMenuItem},${nextBlock.slice(insertAt)}`;
+    }
   }
+
+  source = `${source.slice(0, start)}${nextBlock}${source.slice(end)}`;
+  changed = true;
 }
 
-if (source.includes("const menuViews: ZeroView[] = [") && !/const menuViews:[^\n]+\[[^\]]*'voyage'/.test(source)) {
-  source = source.replace("const menuViews: ZeroView[] = ['settings'", "const menuViews: ZeroView[] = ['settings','voyage'");
-  changed = true;
+{
+  const { start, end, block } = menuDrawerBounds();
+  if (block.includes('const menuViews:') && !block.match(/const menuViews:[\s\S]*?'voyage'/)) {
+    const nextBlock = block.replace(/(const\s+menuViews[^=]*=\s*\[)/, "$1'voyage',");
+    if (nextBlock === block) throw new Error(`[v${VERSION}] menuViews localizado mas não atualizável.`);
+    source = `${source.slice(0, start)}${nextBlock}${source.slice(end)}`;
+    changed = true;
+  }
 }
 
 if (!source.includes("view === 'voyage' && <VoyageIntegrated")) {
