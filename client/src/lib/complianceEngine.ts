@@ -10,7 +10,6 @@ import {
   // produção.
   competenceKey as competenceKeyFor,
   maxFlightHoursRolling28Days,
-  observationCompetenceKey,
   sumFlightHoursForCompetence,
   type FlightHoursObservation,
 } from './rollingFlightHours';
@@ -1960,8 +1959,6 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   // O KPI mensal é da COMPETÊNCIA ATIVA. O histórico adjacente é necessário para
   // a janela móvel acima, mas somá-lo aqui inflaria o total do mês exibido.
   const activeCompetence = competenceKeyFor(Number(roster.month), Number(roster.year));
-  const carriesAdjacentHistory = Boolean(activeCompetence)
-    && flightHoursObservations.some((observation) => observationCompetenceKey(observation) !== activeCompetence);
   if (activeCompetence) {
     metrics.totalFlightHours = sumFlightHoursForCompetence(
       flightHoursObservations,
@@ -1970,10 +1967,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     );
   }
 
-  // O total do PDF descreve o documento inteiro. Quando a escala carrega
-  // histórico de outra competência para alimentar a janela móvel, esse total
-  // cobre um intervalo diferente do KPI e não pode sobrescrevê-lo.
-  if (roster.totals?.flightHours && !carriesAdjacentHistory) metrics.totalFlightHours = roster.totals.flightHours;
+  // O total bruto do PDF é metadado do documento, não a soma das etapas
+  // verificadas. O KPI permanece derivado mesmo em uma única competência.
   // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode
   // incluir solo/pernoite/continuação e inflar a escala. Mantemos cálculo próprio.
 
