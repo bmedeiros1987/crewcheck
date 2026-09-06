@@ -96,7 +96,13 @@ update('client/src/pages/Home.tsx', (source) => {
     next,
     `function isOperationalEvent(event: ZeroLeg) {
   if (event.placeholder) return false;
-  if (event.canonical?.kind === 'rest') return false;
+  // #537: repouso entre jornadas e projetado como duty de proposito (mapea-lo
+  // para stay inflaria a contagem de pernoites), entao o kind da projecao nao o
+  // distingue. Quem decide e o tipo CANONICO: o repouso segue na timeline, mas
+  // nunca e programacao operacional - nao pode ser selecionado como voo/jornada
+  // atual ou proxima, nem alimentar despertador, Cockpit, alertas ou diarias
+  // com um intervalo que nao tem apresentacao.
+  if (event.canonical && !isOperationalCanonicalEvent(event.canonical)) return false;
   const code = \`\${event.flightNumber} \${(event.day as any)?.type || ''} \${(event.day as any)?.pairingCode || ''}\`.toUpperCase();
   if (/(^|\\s)(DO|DOF|DOP|OFF|FOLGA|FÉRIAS|FERIAS|EAD)(\\s|$)/.test(code)) return false;
   if (code.includes('SOBREAVISO') && !/(VOO|RESERVA|ACION|CHAMAD|LA\\d+)/.test(code)) return false;

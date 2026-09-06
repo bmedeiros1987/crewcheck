@@ -68,6 +68,11 @@ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSe
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
+// #537: import separado de propósito. A linha acima é âncora exata do passo de
+// preparação v14.3.50, que insere o import da classificação de atividades logo
+// depois dela. Acrescentar um nome àquela linha faz a cadeia falhar com
+// "Âncora ausente". Um segundo import do mesmo módulo é equivalente e estável.
+import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
 import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
@@ -733,7 +738,16 @@ function clearPresentationLearning(event: ZeroLeg) {
   writeJsonRecord(PRESENTATION_RULES_KEY, rules);
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
+// #525: repouso entre jornadas não tem apresentação por definição — ele descreve
+// justamente o intervalo ANTES da apresentação da jornada seguinte. Consumidores
+// que exibem apresentação, despertador ou hotel precisam saber disso, senão o
+// card de repouso mostra dado fictício ("A confirmar") ou herda o hotel do dia do
+// voo seguinte, virando pernoite inventado por outro caminho.
+function isJourneyRestEvent(event: ZeroLeg): boolean {
+  return event.canonical?.kind === 'journey-rest';
+}
 function applyPresentationManagement(event: ZeroLeg): ZeroLeg {
+  if (isJourneyRestEvent(event)) return event;
   const managed = managedPresentationForEvent(event);
   if (!managed.presentation || managed.presentation === event.presentation) {
     return { ...event, presentationSource: managed.source };
@@ -1104,22 +1118,60 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
     }
 
     const base = safe((day as any).base || (day as any).airport || (day as any).hotel || event.origin, roster.base || '—');
+    // #525: repouso ENTRE jornadas não é pernoite nem programação operacional.
+    // Fica em `duty` de propósito — mapear para `stay` inflaria a contagem de
+    // pernoites e alimentaria hotel/Central de Pernoite com um repouso que não
+    // satisfaz o contrato de pernoite. O texto abaixo é o que o diferencia.
+    const isJourneyRest = event.kind === 'journey-rest';
+    // #537: o repouso entre jornadas usa o dia do voo SEGUINTE como
+    // `publishedDay`, então `base` resolve para a base/aeroporto DESSE voo (ex.:
+    // BSB) e não para a estação física onde o tripulante realmente está (ex.:
+    // BEL), que o evento canônico já resolveu em `origin`.
+    //
+    // Isto é um statement separado de propósito: a linha do `base` acima é
+    // âncora exata do passo de preparação v14.3.47, que a reescreve para
+    // priorizar `operationalAirport`. Alterá-la faria a cadeia falhar com
+    // "Ponto não localizado". Sobrescrever depois vale nos dois estados.
+    const restStation = isJourneyRest ? safe(event.origin, base) : base;
+    // #537: a duração só existe quando debrief E apresentação foram provados.
+    // `Number(undefined || 0)` publicaria "0 min" — número fabricado, exatamente o
+    // que o contrato proíbe. Sem duração provada, o card diz o que sabe e cala o
+    // que não sabe.
+    const rawRestMinutes = (event as any).restMinutes;
+    const restMinutes = Number.isFinite(Number(rawRestMinutes)) && Number(rawRestMinutes) > 0
+      ? Number(rawRestMinutes)
+      : null;
+    const restLabel = restMinutes == null
+      ? ''
+      : (restMinutes >= 60
+        ? `${Math.floor(restMinutes / 60)}h${restMinutes % 60 ? pad2(restMinutes % 60) : ''}`
+        : `${restMinutes} min`);
     const kind = event.kind === 'stay' ? 'stay' : 'duty';
     return {
       id: event.id,
       day,
       kind,
       date: d,
-      title: kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação'),
-      subtitle: kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional'),
-      origin: base,
-      destination: base,
+      title: isJourneyRest
+        ? `Repouso entre jornadas · ${city(restStation) || restStation}`
+        : (kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação')),
+      subtitle: isJourneyRest
+        ? (restLabel
+          ? `${restLabel} entre o fim de uma jornada e a apresentação da seguinte`
+          : 'Entre o fim de uma jornada e a apresentação da seguinte · duração a confirmar')
+        : (kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional')),
+      origin: restStation,
+      destination: restStation,
       flightNumber: event.flightNumber,
       presentation: event.presentation,
       departure: event.departure,
       arrival: event.arrival,
-      hotel: safe((day as any).hotel, ''),
-      timeRange: `${event.departure} → ${event.arrival}`,
+      // #525: o repouso entre jornadas usa o dia do voo SEGUINTE como
+      // `publishedDay`. Herdar o hotel desse dia faria o card de repouso exibir
+      // hotel — pernoite inventado por outro caminho, justamente o que o
+      // contrato proíbe.
+      hotel: isJourneyRest ? '' : safe((day as any).hotel, ''),
+      timeRange: isJourneyRest ? restLabel : `${event.departure} → ${event.arrival}`,
       canonical: event,
     };
   });
@@ -1170,7 +1222,13 @@ function eventEndDateTime(event: ZeroLeg): Date {
 }
 function isOperationalEvent(event: ZeroLeg) {
   if (event.placeholder) return false;
-  if (event.canonical?.kind === 'rest') return false;
+  // #537: repouso entre jornadas e projetado como duty de proposito (mapea-lo
+  // para stay inflaria a contagem de pernoites), entao o kind da projecao nao o
+  // distingue. Quem decide e o tipo CANONICO: o repouso segue na timeline, mas
+  // nunca e programacao operacional - nao pode ser selecionado como voo/jornada
+  // atual ou proxima, nem alimentar despertador, Cockpit, alertas ou diarias
+  // com um intervalo que nao tem apresentacao.
+  if (event.canonical && !isOperationalCanonicalEvent(event.canonical)) return false;
   const code = `${event.flightNumber} ${(event.day as any)?.type || ''} ${(event.day as any)?.pairingCode || ''}`.toUpperCase();
   if (/(^|\s)(DO|DOF|DOP|OFF|FOLGA|FÉRIAS|FERIAS|EAD)(\s|$)/.test(code)) return false;
   if (code.includes('SOBREAVISO') && !/(VOO|RESERVA|ACION|CHAMAD|LA\d+)/.test(code)) return false;
@@ -1934,12 +1992,19 @@ function rosterDaySummary(day: RosterDay, dayEvents: ZeroLeg[]): string {
 }
 function rosterEventTitle(event: ZeroLeg): string {
   if (event.kind === 'flight') return event.title;
+  // #537: o repouso entre jornadas já tem título e estação próprios, resolvidos
+  // na projeção. Cair no rótulo do código de escala usaria o dia do voo
+  // SEGUINTE e exibiria o pairing dele, não "Repouso entre jornadas".
+  if (isJourneyRestEvent(event)) return event.title;
   const code = rosterCode(event.day);
   if (code === 'DR') return 'Descanso';
   return rosterCodeLabel(code);
 }
 function rosterEventLine(event: ZeroLeg): string {
   if (event.kind === 'flight') return `${event.origin} → ${event.destination} · ${event.timeRange} · ${city(event.origin)} → ${city(event.destination)}`;
+  // #537: mesma razão do título — o subtítulo do repouso descreve o intervalo e
+  // a estação física, e não pode ser trocado pelo rótulo do código do dia.
+  if (isJourneyRestEvent(event)) return event.subtitle;
   const code = rosterCode(event.day);
   const label = rosterCodeLabel(code);
   const range = rosterTimeRange(event.day, event);
@@ -2069,9 +2134,14 @@ function LayoverWeatherBadge({ event }: { event: ZeroLeg }) {
 
 function RosterEventChips({ event }: { event: ZeroLeg }) {
   const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
-  const isStay = event.kind === 'stay' || Boolean(event.hotel);
+  const journeyRest = isJourneyRestEvent(event);
+  const isStay = !journeyRest && (event.kind === 'stay' || Boolean(event.hotel));
   return <div className="cz-roster-linked-chips" onClick={(click) => click.stopPropagation()}>
-    <span><Clock size={14}/> Apresentação {safe(presentation, 'A confirmar')}</span>
+    {/* #525: repouso entre jornadas não tem apresentação; exibir "A confirmar"
+        aqui inventaria um dado que não existe. O chip mostra a duração real. */}
+    {journeyRest
+      ? <span><Clock size={14}/> Repouso {safe(event.subtitle.split(' entre ')[0], '—')}</span>
+      : <span><Clock size={14}/> Apresentação {safe(presentation, 'A confirmar')}</span>}
     {isStay && <span><Hotel size={14}/> {safe(event.hotel, `Hotel em ${city(event.destination || event.origin)}`)}</span>}
     <span><CloudSun size={14}/> {compactWeatherLine(event)}</span>
     {event.kind === 'flight' && <span><Radar size={14}/> Alertas até pouso</span>}

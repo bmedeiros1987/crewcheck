@@ -1,7 +1,10 @@
 import type { CrewRoster, FlightLeg, RosterDay } from './pdfParser';
 import { completeContinuityDays } from './rosterContinuity';
 
-export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest';
+// #525: 'journey-rest' representa o intervalo ENTRE jornadas que não satisfaz o
+// contrato de pernoite. Não é tempo em solo (que é intra-jornada) e não é stay
+// (que alimenta hotel/Central de Pernoite) — é uma terceira categoria própria.
+export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest' | 'journey-rest';
 
 export type CanonicalRosterEvent = {
   id: string;
@@ -31,6 +34,12 @@ export type CanonicalRosterEvent = {
   journeyId: string;
   /** Por que esta etapa abriu uma jornada. `null` quando é continuação. */
   journeyBoundary: JourneyBoundaryReason | null;
+  /**
+   * #525: minutos de repouso entre duas jornadas. Presente apenas em eventos
+   * `journey-rest`. Distinto de `groundBeforeMinutes`, que descreve espera
+   * DENTRO de uma jornada.
+   */
+  restMinutes?: number;
 };
 
 const MONTHS: Record<string, number> = {
@@ -575,11 +584,19 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   let currentJourneyId = '';
   let journeyPreviousLeg: FlightLeg | null = null;
   let journeyPreviousEndMs: number | null = null;
+  // #525/#537: o debrief publicado é do RosterDay, não da perna. Ele só pode ser
+  // atribuído à jornada anterior quando aquela perna encerra o dia que o publica —
+  // com duas jornadas no mesmo dia civil, a primeira não pode herdar o debrief
+  // global do dia, que pertence à segunda.
+  let journeyPreviousDay: RosterDay | null = null;
+  let journeyPreviousLegClosesDay = false;
 
   const closeJourney = () => {
     currentJourneyId = '';
     journeyPreviousLeg = null;
     journeyPreviousEndMs = null;
+    journeyPreviousDay = null;
+    journeyPreviousLegClosesDay = false;
   };
 
   normalized.days.forEach((day) => {
@@ -608,6 +625,106 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
         const showPresentation = boundary !== null;
         if (showPresentation) {
           currentJourneyId = `jornada|${start.toISOString()}|${leg.flightNumber}|${leg.origin}`;
+        }
+
+        // #525: um intervalo ENTRE jornadas precisa existir na linha do tempo,
+        // mesmo quando não é pernoite. `journeyBoundaryReason` declara boundary
+        // por razões que não exigem intervalo nenhum (apresentação publicada,
+        // descontinuidade física), enquanto o pernoite sintético só nasce com
+        // 12h a 96h. Entre os dois critérios havia uma zona morta: boundary
+        // declarado com intervalo curto zerava `groundBeforeMinutes` (correto —
+        // não é conexão) e não gerava stay, então o intervalo sumia da UI.
+        //
+        // Este evento cobre exatamente essa faixa, e é derivado do BOUNDARY, não
+        // de pares de dias civis — por isso também representa o intervalo entre
+        // duas jornadas dentro do mesmo dia civil, que a varredura por dia civil
+        // nunca alcança.
+        //
+        // `gapMinutes` só é não-nulo quando existe perna anterior na sequência
+        // contínua; um pernoite/folga já emitido encerra a jornada e zera esse
+        // estado, então este evento nunca duplica um stay existente.
+        // #537: os endpoints do repouso NÃO são chegada->partida. Repouso começa no
+        // fim de jornada publicado (debrief) e termina na apresentação publicada da
+        // jornada seguinte. `gapMinutes` continua existindo acima, mas só para
+        // detectar boundary físico — nunca vira duração exibida.
+        //
+        // Oracle #527: chegada 18:00, debrief 18:30, apresentação 03:10, partida
+        // 04:00 => 18:30 -> 03:10(+1) = 520 min. Usar chegada->partida daria 600.
+        //
+        // Sem os DOIS endpoints provados não se fabrica duração: STD nunca substitui
+        // apresentação e chegada nunca substitui debrief.
+        const restStartProved = (() => {
+          if (!journeyPreviousDay || !journeyPreviousLegClosesDay) return null;
+          const debrief = normalizeTime(journeyPreviousDay.dutyDebrief);
+          if (!debrief) return null;
+          const arrival = normalizeTime(journeyPreviousLeg?.arrivalTime);
+          // Debrief igual à chegada é valor default do parser, não fim de jornada.
+          if (debrief === arrival) return null;
+          const at = new Date(journeyPreviousEndMs as number);
+          const debriefMinute = minutes(debrief);
+          if (debriefMinute == null) return null;
+          at.setHours(Math.floor(debriefMinute / 60), debriefMinute % 60, 0, 0);
+          // Debrief anterior à chegada pertence ao dia seguinte da virada física.
+          if (at.getTime() < (journeyPreviousEndMs as number)) at.setDate(at.getDate() + 1);
+          return at;
+        })();
+
+        const restEndProved = (() => {
+          const publishedPresentation = legPresentationIsPublished(leg)
+            ? normalizeTime(leg.presentationTime)
+            : (index === 0 && dayReportIsPublished(day) ? normalizeTime(day.dutyReport) : '');
+          if (!publishedPresentation) return null;
+          const presentationMinute = minutes(publishedPresentation);
+          if (presentationMinute == null) return null;
+          const at = new Date(start.getTime());
+          at.setHours(Math.floor(presentationMinute / 60), presentationMinute % 60, 0, 0);
+          // Apresentação posterior à partida pertence ao dia civil anterior.
+          if (at.getTime() > start.getTime()) at.setDate(at.getDate() - 1);
+          return at;
+        })();
+
+        // #537: o aeroporto do repouso/pernoite precisa ser fisicamente sustentado
+        // pelo boundary — destino da jornada anterior E origem da próxima. Se eles
+        // divergem há descontinuidade física, e nenhum dos dois pode ser publicado
+        // como local de permanência. Foi assim que um pernoite apareceu em FLN
+        // enquanto a continuidade real mantinha o tripulante em BEL (#440/#530).
+        const previousStation = airportCode(journeyPreviousLeg?.destination);
+        const nextStation = airportCode(leg.origin);
+        const physicalStation = previousStation && previousStation === nextStation ? previousStation : '';
+
+        if (showPresentation && gapMinutes != null && gapMinutes > 0 && physicalStation) {
+          const restStart = restStartProved ?? new Date(journeyPreviousEndMs as number);
+          const restEnd = restEndProved ?? start;
+          const provedRestMinutes = restStartProved && restEndProved
+            ? Math.round((restEndProved.getTime() - restStartProved.getTime()) / 60_000)
+            : null;
+          const station = physicalStation;
+          events.push({
+            id: `journey-rest|${restStart.toISOString()}|${station}`,
+            kind: 'journey-rest',
+            date: formatDate(restStart.getDate(), restStart.getMonth() + 1, restStart.getFullYear()),
+            publishedDay: day,
+            startDateTime: restStart.toISOString(),
+            endDateTime: restEnd.toISOString(),
+            flightNumber: '',
+            origin: station,
+            destination: station,
+            presentation: '',
+            departure: '',
+            arrival: '',
+            isNextDay: restStart.toDateString() !== restEnd.toDateString(),
+            sourceConfidence: 'alta',
+            legIndex: -1,
+            legCount: 0,
+            showPresentation: false,
+            // Repouso entre jornadas nunca é tempo em solo: solo é intra-jornada.
+            groundBeforeMinutes: null,
+            // Sem os dois endpoints provados, o evento existe mas sem duração —
+            // preferir ausência a publicar número falso.
+            restMinutes: provedRestMinutes ?? undefined,
+            journeyId: currentJourneyId,
+            journeyBoundary: boundary,
+          });
         }
 
         // Apresentação da jornada: evidência publicada da etapa, senão a do dia
@@ -645,6 +762,8 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
 
         journeyPreviousLeg = leg;
         journeyPreviousEndMs = end.getTime();
+        journeyPreviousDay = day;
+        journeyPreviousLegClosesDay = index === legs.length - 1;
       });
       return;
     }
@@ -695,8 +814,30 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   return events.sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
 }
 
+/**
+ * #525/#537: quais tipos canônicos são PROGRAMAÇÃO OPERACIONAL.
+ *
+ * `journey-rest` e `rest` representam intervalo, não programação. Eles seguem
+ * visíveis na timeline, mas não podem ser selecionados como programação
+ * atual/próxima nem alimentar despertador, Cockpit, alertas ou consumidores
+ * financeiros — o repouso não tem apresentação, então esses consumidores
+ * exibiriam horário vazio ou tratariam o início do repouso como início de
+ * jornada.
+ *
+ * A lista vive aqui, junto do modelo canônico, e não em cada consumidor: um
+ * consumidor novo que esqueça de filtrar volta a reintroduzir o mesmo defeito.
+ */
+export const OPERATIONAL_CANONICAL_EVENT_KINDS: CanonicalRosterEventKind[] = ['flight', 'duty', 'stay'];
+
+export function isOperationalCanonicalEvent(event: Pick<CanonicalRosterEvent, 'kind'> | null | undefined): boolean {
+  if (!event) return false;
+  return OPERATIONAL_CANONICAL_EVENT_KINDS.includes(event.kind);
+}
+
 export function selectNextRosterEvent(events: CanonicalRosterEvent[], now = new Date()): CanonicalRosterEvent | null {
-  const sorted = [...events].sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
+  // Defesa na própria seleção: mesmo que um chamador esqueça de filtrar, o
+  // repouso nunca pode ser devolvido como programação atual/próxima.
+  const sorted = [...events].filter(isOperationalCanonicalEvent).sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
   const active = sorted.find((event) => {
     const start = new Date(event.startDateTime).getTime();
     const end = new Date(event.endDateTime).getTime();
