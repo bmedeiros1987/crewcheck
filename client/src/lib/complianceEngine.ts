@@ -1984,28 +1984,22 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     : { key: `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`, flightHours: metrics.totalFlightHours };
   const monthlyFlightHoursForAlert = monthlyBucketToEvaluate.flightHours;
 
-  const monthlyFlightRatio = limits.maxFlightHoursMonth ? monthlyFlightHoursForAlert / limits.maxFlightHoursMonth : 0;
-  if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth) {
-    const suspiciousTotal = monthlyFlightRatio > 1.35 || monthlyFlightHoursForAlert > 140;
+  // #526: o bloco de buckets acima permanece como âncora da preparação
+  // v14.3.95; o enforcement usa exclusivamente a janela móvel observada.
+  if (metrics.maxFlightHoursRolling28Days > limits.maxFlightHoursMonth) {
     pushAlert(alerts, {
-      severity: suspiciousTotal ? 'warning' : 'error',
-      title: suspiciousTotal ? 'Horas de voo mensais — revisar base de cálculo' : 'Limite mensal de horas de voo excedido',
-      description: suspiciousTotal
-        ? `O PDF retornou ${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}, valor incompatível com uma leitura operacional normal. O CrewCheck marcou para revisão em vez de confirmar irregularidade.`
-        : `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
-      details: suspiciousTotal
-        ? 'Possível duplicidade de mês, continuação de escala, total acumulado do PDF ou trecho interpretado em duplicidade. Não use este item como irregularidade confirmada sem revisar o PDF oficial.'
-        : (isMultiMonthRoster ? `A escala visual pode estar com mês atual + subsequente anexado. O CrewCheck avaliou cada mês separadamente e não somou os meses para gerar este alerta.` : undefined),
+      severity: 'error',
+      title: 'Limite de 28 dias de horas de voo excedido',
+      description: `${metrics.maxFlightHoursRolling28Days.toFixed(1)}h de voo em 28 dias. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
       legalReference: actRules.flightLimits.legalReference,
-      confidence: suspiciousTotal ? 'media' : 'alta',
-      classification: suspiciousTotal ? 'atencao' : 'confirmada',
+      confidence: 'alta',
+      classification: 'confirmada',
     });
-  } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
+  } else if (metrics.maxFlightHoursRolling28Days > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
-      title: 'Horas de voo próximas do limite mensal',
-      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
-      details: isMultiMonthRoster ? 'Cálculo separado por mês para evitar falso positivo ao visualizar escala atual + subsequente.' : undefined,
+      title: 'Horas de voo próximas do limite de 28 dias',
+      description: `${metrics.maxFlightHoursRolling28Days.toFixed(1)}h de voo em 28 dias, equivalente a ${((metrics.maxFlightHoursRolling28Days / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
       legalReference: actRules.flightLimits.legalReference,
     });
   }
