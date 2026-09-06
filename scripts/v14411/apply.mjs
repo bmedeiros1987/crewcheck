@@ -15,14 +15,6 @@ function replaceRequired(before, after, label) {
   changed = true;
 }
 
-function insertBeforeRequired(marker, insertion, label) {
-  if (source.includes(insertion.trim())) return;
-  const index = source.indexOf(marker);
-  if (index < 0) throw new Error(`[v${VERSION}] âncora não encontrada: ${label}`);
-  source = `${source.slice(0, index)}${insertion}${source.slice(index)}`;
-  changed = true;
-}
-
 if (!source.includes("@/components/voyage/VoyageIntegrated")) {
   const anchor = "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';";
   replaceRequired(anchor, `${anchor}\nimport VoyageIntegrated from '@/components/voyage/VoyageIntegrated';`, 'import VoyageIntegrated');
@@ -34,11 +26,12 @@ if (!/\|\s*'voyage'\b/.test(source)) {
 }
 
 if (!source.includes("['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2]")) {
-  insertBeforeRequired(
-    "['departure','Planejador de Saída'",
-    "['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2], ",
-    'menu Voyage antes de departure'
-  );
+  const navMatch = source.match(/const\s+nav\s*:\s*Array<\[ZeroView,\s*string,\s*string,\s*any\]>\s*=\s*\[/);
+  if (!navMatch || navMatch.index === undefined) throw new Error(`[v${VERSION}] âncora não encontrada: nav array Voyage`);
+  const insertAt = navMatch.index + navMatch[0].length;
+  const insertion = "\n    ['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2],";
+  source = `${source.slice(0, insertAt)}${insertion}${source.slice(insertAt)}`;
+  changed = true;
 }
 
 if (!source.includes("view === 'voyage' && <VoyageIntegrated")) {
