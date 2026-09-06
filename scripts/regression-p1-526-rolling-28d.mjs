@@ -112,6 +112,20 @@ check(
   `totalFlightHours=${crossMonth.metrics.totalFlightHours}`,
 );
 
+// Regressão do gate Work/Codex: uma violação real que cruza a fronteira mensal
+// precisa disparar o alerta de 28 dias. Separar por mês civil aqui mascara o
+// excesso: Ago=59,5h e Set=38,5h, mas a janela móvel correta soma 98h.
+const crossMonthViolation = analyzeCompliance(roster(dayRange('2026-08-15', 28, 3.5), 9, 2026));
+const rollingLimitAlert = crossMonthViolation.alerts.find((alert) =>
+  alert.title === 'Limite de 28 dias de horas de voo excedido'
+  && String(alert.description || '').includes('98.0h')
+);
+check(
+  'violação de 98h cruzando mês dispara alerta pelo total móvel de 28 dias',
+  Boolean(rollingLimitAlert),
+  `alerts=${crossMonthViolation.alerts.map((alert) => alert.title).join(' | ')}`,
+);
+
 // O total agregado do PDF é metadado do documento e pode representar um recorte
 // maior que a competência ativa. Mesmo sem dias adjacentes materializados, ele
 // nunca deve sobrescrever o KPI derivado dos dias normalizados da competência.
