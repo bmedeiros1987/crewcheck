@@ -15,6 +15,14 @@ function replaceRequired(before, after, label) {
   changed = true;
 }
 
+function insertBeforeRequired(marker, insertion, label) {
+  if (source.includes(insertion.trim())) return;
+  const index = source.indexOf(marker);
+  if (index < 0) throw new Error(`[v${VERSION}] âncora não encontrada: ${label}`);
+  source = `${source.slice(0, index)}${insertion}${source.slice(index)}`;
+  changed = true;
+}
+
 if (!source.includes("@/components/voyage/VoyageIntegrated")) {
   const anchor = "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';";
   replaceRequired(anchor, `${anchor}\nimport VoyageIntegrated from '@/components/voyage/VoyageIntegrated';`, 'import VoyageIntegrated');
@@ -26,21 +34,22 @@ if (!/\|\s*'voyage'\b/.test(source)) {
 }
 
 if (!source.includes("['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2]")) {
-  const anchor = "['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Planejador de Saída','Quando sair, rota e trânsito',Car],";
-  replaceRequired(
-    anchor,
-    "['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2], ['departure','Planejador de Saída','Quando sair, rota e trânsito',Car],",
-    'menu Voyage'
+  insertBeforeRequired(
+    "['departure','Planejador de Saída'",
+    "['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2], ",
+    'menu Voyage antes de departure'
   );
 }
 
 if (!source.includes("view === 'voyage' && <VoyageIntegrated")) {
-  const anchor = "    {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}";
-  replaceRequired(
-    anchor,
-    `    {view === 'voyage' && <VoyageIntegrated roster={bundle.roster} source={bundle.source} onBack={() => setView('cockpit')}/>}\n${anchor}`,
-    'render Voyage'
-  );
+  const conciergeMarker = "{view === 'concierge' && <TelegramConciergeView";
+  const markerIndex = source.indexOf(conciergeMarker);
+  if (markerIndex < 0) throw new Error(`[v${VERSION}] âncora não encontrada: render Voyage`);
+  const lineStart = source.lastIndexOf('\n', markerIndex) + 1;
+  const indentation = source.slice(lineStart, markerIndex);
+  const insertion = `${indentation}{view === 'voyage' && <VoyageIntegrated roster={bundle.roster} source={bundle.source} onBack={() => setView('cockpit')}/>}\n`;
+  source = `${source.slice(0, lineStart)}${insertion}${source.slice(lineStart)}`;
+  changed = true;
 }
 
 if (!source.includes(`const CREWCHECK_VOYAGE_INTEGRATION_VERSION = '${VERSION}';`)) {
