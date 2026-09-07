@@ -168,3 +168,4 @@ await import('../p0-580-local-period-identity/apply.mjs');
 await import('../p0-580-legend-terminal-rescues/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../ci/sync-canonical-manual.mjs');
+await import('../p1-universal-pdf-intake/apply.mjs');
