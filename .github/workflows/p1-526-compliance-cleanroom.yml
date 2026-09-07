@@ -1,0 +1,45 @@
+name: P1 #526 compliance clean-room
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/actRules.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/rollingFlightHours.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-526-*.mjs'
+      - '.github/workflows/p1-526-compliance-cleanroom.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/actRules.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/rollingFlightHours.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-526-*.mjs'
+      - '.github/workflows/p1-526-compliance-cleanroom.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  clean-room-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Aircraft-group provenance
+        run: node scripts/regression-p1-526-aircraft-provenance.mjs
+      - name: Rolling 28-day UTC kernel
+        run: node scripts/regression-p1-526-rolling-kernel.mjs
+      - name: Rolling 28-day flight-hours window
+        run: node scripts/regression-p1-526-rolling-28d.mjs
+      - name: Rolling 28-day plausibility fail-safe
+        run: node scripts/regression-p1-526-rolling-plausibility.mjs

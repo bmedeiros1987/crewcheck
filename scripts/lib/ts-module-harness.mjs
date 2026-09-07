@@ -33,6 +33,35 @@ export function loadClientModules({ files, stubs = {}, prefix = 'crewcheck-harne
     fs.writeFileSync(path.join(dir, `${path.basename(relative, '.ts')}.js`), compiled);
   }
 
+  // #526: o motor de compliance passou a depender de `rollingFlightHours`. Em vez
+  // de repetir esse arquivo na lista de ~24 regressões (e quebrar todas de novo na
+  // próxima dependência), o harness fecha o grafo sozinho: compila também os
+  // imports relativos locais dos módulos já emitidos.
+  //
+  // Só entra o que ainda NÃO foi emitido — stubs são escritos antes e continuam
+  // vencendo — e só o que existe em `client/src/lib`. Import de tipo é apagado
+  // pelo transpile, então não vira dependência de runtime.
+  const emitted = new Set(fs.readdirSync(dir).map((file) => path.basename(file, '.js')));
+  const pending = [...emitted];
+  while (pending.length) {
+    const name = pending.pop();
+    const compiledPath = path.join(dir, `${name}.js`);
+    if (!fs.existsSync(compiledPath)) continue;
+    const body = fs.readFileSync(compiledPath, 'utf8');
+    for (const match of body.matchAll(/require\("\.\/([A-Za-z0-9_.-]+)"\)/g)) {
+      const dependency = match[1];
+      if (emitted.has(dependency)) continue;
+      const sourcePath = path.join(ROOT, 'client', 'src', 'lib', `${dependency}.ts`);
+      if (!fs.existsSync(sourcePath)) continue;
+      const compiled = ts.transpileModule(fs.readFileSync(sourcePath, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+      }).outputText;
+      fs.writeFileSync(path.join(dir, `${dependency}.js`), compiled);
+      emitted.add(dependency);
+      pending.push(dependency);
+    }
+  }
+
   const require = createRequire(import.meta.url);
   const load = (name) => require(path.join(dir, `${name}.js`));
   return { dir, load, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
