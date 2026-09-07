@@ -1986,20 +1986,32 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   // #526: o bloco de buckets acima permanece como âncora da preparação
   // v14.3.95; o enforcement usa exclusivamente a janela móvel observada.
-  if (metrics.maxFlightHoursRolling28Days > limits.maxFlightHoursMonth) {
+  const rollingFlightHours = metrics.maxFlightHoursRolling28Days;
+  const rollingFlightHoursImplausible = rollingFlightHours > limits.maxFlightHoursMonth * 1.35
+    || rollingFlightHours > 140;
+  if (rollingFlightHoursImplausible) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Horas de voo: revisar base de cálculo',
+      description: `${rollingFlightHours.toFixed(1)}h de voo em 28 dias excedem a faixa plausível para confirmação automática.`,
+      legalReference: actRules.flightLimits.legalReference,
+      confidence: 'media',
+      classification: 'atencao',
+    });
+  } else if (rollingFlightHours > limits.maxFlightHoursMonth) {
     pushAlert(alerts, {
       severity: 'error',
       title: 'Limite de 28 dias de horas de voo excedido',
-      description: `${metrics.maxFlightHoursRolling28Days.toFixed(1)}h de voo em 28 dias. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
+      description: `${rollingFlightHours.toFixed(1)}h de voo em 28 dias. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
       legalReference: actRules.flightLimits.legalReference,
       confidence: 'alta',
       classification: 'confirmada',
     });
-  } else if (metrics.maxFlightHoursRolling28Days > limits.maxFlightHoursMonth * 0.9) {
+  } else if (rollingFlightHours > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
       title: 'Horas de voo próximas do limite de 28 dias',
-      description: `${metrics.maxFlightHoursRolling28Days.toFixed(1)}h de voo em 28 dias, equivalente a ${((metrics.maxFlightHoursRolling28Days / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
+      description: `${rollingFlightHours.toFixed(1)}h de voo em 28 dias, equivalente a ${((rollingFlightHours / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
       legalReference: actRules.flightLimits.legalReference,
     });
   }
