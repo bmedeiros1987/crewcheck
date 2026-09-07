@@ -39,6 +39,7 @@ jobs:
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-p1-universal-pdf-intake.mjs
       - run: npx tsc --noEmit
+      - run: npx vite build
       - name: Build Android debug APK
         working-directory: android-wrapper
         run: gradle :app:assembleDebug --no-daemon
