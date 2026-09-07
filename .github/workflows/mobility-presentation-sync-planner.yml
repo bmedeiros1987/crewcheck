@@ -1,0 +1,19 @@
+name: Mobility presentation sync planner
+
+on:
+  pull_request:
+    paths:
+      - 'server/mobility/presentationSyncPlanner.mjs'
+      - 'scripts/regression-mobility-presentation-sync-planner.mjs'
+      - '.github/workflows/mobility-presentation-sync-planner.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/regression-mobility-presentation-sync-planner.mjs
