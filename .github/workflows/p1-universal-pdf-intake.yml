@@ -28,6 +28,13 @@ jobs:
         with:
           node-version: '22.13.0'
           cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-p1-universal-pdf-intake.mjs
@@ -36,4 +43,4 @@ jobs:
       - run: npx tsc --noEmit
       - name: Build Android debug APK
         working-directory: android-wrapper
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon
