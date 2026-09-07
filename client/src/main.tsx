@@ -2,6 +2,7 @@ import './lib/crewcheckPremiumRuntime';
 import './lib/themeRuntime';
 import './lib/offlineRuntime';
 import './lib/pwaSharedPdfRuntime';
+import './lib/iosNativeRuntime';
 import './lib/buildIdentityRuntime';
 import { createRoot } from "react-dom/client";
 import App from "./App";

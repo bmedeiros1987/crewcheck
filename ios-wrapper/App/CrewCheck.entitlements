@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements do target do APP. O target da Share Extension precisa do MESMO
+  App Group — é ele que liga os dois processos.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array><string>group.com.crewcheck.app</string></array>
+  <key>aps-environment</key>
+  <string>development</string>
+</dict>
+</plist>

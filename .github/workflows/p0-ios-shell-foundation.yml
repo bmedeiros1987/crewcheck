@@ -1,0 +1,41 @@
+name: 'CrewCheck P0 iOS shell foundation'
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/iosNativeRuntime.ts'
+      - 'client/src/main.tsx'
+      - 'ios-wrapper/**'
+      - 'capacitor.config.ts'
+      - 'scripts/regression-p0-ios-shell-foundation.mjs'
+      - '.github/workflows/p0-ios-shell-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-shell-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci || npm install
+      # O adaptador iOS vive no estado BASE: ele não é injetado pela cadeia.
+      # Rodar antes da materialização prova que o gate protege a base.
+      - name: Validate iOS shell foundation (base)
+        run: node scripts/regression-p0-ios-shell-foundation.mjs
+      - name: Materialize canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      # E depois da cadeia, para provar que a materialização não desfaz o
+      # adaptador nem o import no bootstrap (padrão #549).
+      - name: Validate iOS shell foundation (prepared)
+        run: node scripts/regression-p0-ios-shell-foundation.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit

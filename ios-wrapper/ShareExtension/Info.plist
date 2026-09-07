@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Info.plist do target da Share Extension.
+  Aceita EXATAMENTE um PDF por vez: nenhuma imagem, URL ou texto. Restringir o
+  predicado evita que o CrewCheck apareça no Share Sheet de conteúdo que ele não
+  sabe tratar.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>Importar escala no CrewCheck</string>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.share-services</string>
+    <key>NSExtensionPrincipalClass</key>
+    <string>ShareViewController</string>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <key>NSExtensionActivationRule</key>
+      <string>SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $att, ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf").@count == 1).@count == 1</string>
+    </dict>
+  </dict>
+</dict>
+</plist>
