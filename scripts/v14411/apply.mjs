@@ -32,11 +32,11 @@ if (!/\|\s*'voyage'\b/.test(source)) {
   replaceRequired(anchor, "  | 'voyage' | 'radar' | 'weather' | 'perdiem'", 'ZeroView voyage');
 }
 
-const voyageMenuItem = "['voyage','Voyage','Beyond the trip · integrado ao CrewCheck',Globe2]";
+const voyageMenuItem = "['voyage','Voyage','Explorer do tripulante · entorno e tempo livre',Globe2]";
 if (!source.includes(voyageMenuItem)) {
   const { start, end, block } = menuDrawerBounds();
   let nextBlock = block;
-  const pushGroup = `  groups.push({ title: 'Viagens pessoais', items: [\n    ${voyageMenuItem},\n  ] });\n`;
+  const pushGroup = `  groups.push({ title: 'Explorar', items: [\n    ${voyageMenuItem},\n  ] });\n`;
 
   const jumpMatch = nextBlock.match(/^\s*const\s+jump\s*=.*$/m);
   if (/\bconst\s+groups\b/.test(nextBlock) && jumpMatch && jumpMatch.index !== undefined) {
@@ -94,7 +94,7 @@ if (!source.includes(`const CREWCHECK_VOYAGE_INTEGRATION_VERSION = '${VERSION}';
 
 if (changed) {
   fs.writeFileSync(HOME, source, 'utf8');
-  console.log(`[crewcheck:v${VERSION}] Voyage integrado instalado; CrewCheck Explorer substituído pelo Voyage.`);
+  console.log(`[crewcheck:v${VERSION}] Voyage integrado instalado preservando o conceito Explorer e sem duplicar funções operacionais do CrewCheck.`);
 } else {
-  console.log(`[crewcheck:v${VERSION}] Voyage integrado já aplicado.`);
+  console.log(`[crewcheck:v${VERSION}] Voyage integrado já aplicado em modo Explorer.`);
 }
