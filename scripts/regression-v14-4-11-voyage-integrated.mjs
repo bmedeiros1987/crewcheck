@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { getSharedFlightStatus, voyageFlightStatusCapabilities } from '../server/shared/voyageFlightStatus.mjs';
+import { getSharedRoutePreview, voyageRoutePreviewCapabilities } from '../server/shared/voyageRoutePreview.mjs';
+import { resetMapsBudgetForTests } from '../server/v14342/maps-budget.mjs';
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const component = fs.readFileSync('client/src/components/voyage/VoyageIntegrated.tsx', 'utf8');
@@ -8,6 +10,7 @@ const css = fs.readFileSync('client/src/components/voyage/voyage-integrated.css'
 const backend = fs.readFileSync('server/v1412/voyageIntegration.mjs', 'utf8');
 const router = fs.readFileSync('server/v139/index.mjs', 'utf8');
 const sharedFlight = fs.readFileSync('server/shared/voyageFlightStatus.mjs', 'utf8');
+const sharedRoutes = fs.readFileSync('server/shared/voyageRoutePreview.mjs', 'utf8');
 const apply = fs.readFileSync('scripts/v14411/apply.mjs', 'utf8');
 const masterApply = fs.readFileSync('scripts/v139/apply.mjs', 'utf8');
 const docs = fs.readFileSync('docs/voyage-integrated.md', 'utf8');
@@ -42,17 +45,34 @@ assert.ok(backend.includes('sanitizeRoster'), 'backend deve minimizar a escala a
 
 assert.ok(router.includes('handleVoyageIntegrationRoute'), 'roteador principal deve registrar integração Voyage');
 assert.ok(router.includes('handleVoyageFlightStatusSharedRoute'), 'roteador deve registrar status de voo compartilhado com Voyage');
+assert.ok(router.includes('handleVoyageRoutePreviewSharedRoute'), 'roteador deve registrar rotas/trânsito compartilhados com Voyage');
 assert.ok(router.includes("'voyage-shared-flight-status'"), 'inventário deve registrar serviço compartilhado de voo');
+assert.ok(router.includes("'voyage-shared-routes'"), 'inventário deve registrar serviço compartilhado de rotas');
+
 assert.ok(sharedFlight.includes("'/api/shared/v1/flight/status'"), 'serviço compartilhado deve expor rota de status de voo');
 assert.ok(sharedFlight.includes('BAGGAGE_CAROUSEL'), 'contrato deve carregar esteira quando fornecida pelo Cirium');
 assert.ok(sharedFlight.includes('Baggage carousel is operational data only'), 'serviço não pode inferir through-check pela esteira');
 assert.ok(sharedFlight.includes('CREWCHECK_SHARED_SERVICES_TOKEN'), 'serviço deve exigir token server-to-server');
 assert.ok(!sharedFlight.includes('CIRIUM_SKY_API_TOKEN ='), 'serviço não pode embutir token Cirium');
 
+assert.ok(sharedRoutes.includes("'/api/shared/v1/routes/preview'"), 'serviço compartilhado deve expor preview de rota');
+assert.ok(sharedRoutes.includes('reserveGoogleMapsRequest'), 'Google compartilhado deve reutilizar o orçamento mensal do CrewCheck');
+assert.ok(sharedRoutes.includes('readGoogleRouteCache'), 'Google compartilhado deve reutilizar cache de rotas do CrewCheck');
+assert.ok(sharedRoutes.includes('TomTom'), 'rota de carro deve poder reutilizar TomTom');
+assert.ok(sharedRoutes.includes('Google Routes'), 'rota compartilhada deve poder reutilizar Google Routes');
+assert.ok(sharedRoutes.includes('CREWCHECK_SHARED_SERVICES_TOKEN'), 'rota compartilhada deve exigir token server-to-server');
+assert.ok(!sharedRoutes.includes('GOOGLE_ROUTES_API_KEY ='), 'serviço não pode embutir chave Google');
+assert.ok(!sharedRoutes.includes('TOMTOM_API_KEY ='), 'serviço não pode embutir chave TomTom');
+
 const capabilities = voyageFlightStatusCapabilities();
 assert.equal(capabilities.sharedWithVoyage, true);
 assert.equal(capabilities.providerSecretsExposed, false);
 assert.ok(capabilities.fields.includes('BAGGAGE_CAROUSEL'));
+
+const routeCapabilities = voyageRoutePreviewCapabilities();
+assert.equal(routeCapabilities.sharedWithVoyage, true);
+assert.equal(routeCapabilities.providerSecretsExposed, false);
+assert.deepEqual(routeCapabilities.modes, ['driving', 'transit']);
 
 const previousToken = process.env.CIRIUM_SKY_API_TOKEN;
 const previousSecret = process.env.CIRIUM_SKY_SECRET;
@@ -98,10 +118,58 @@ try {
   else process.env.CIRIUM_SKY_SECRET = previousSecret;
 }
 
+const previousRoutesKey = process.env.GOOGLE_ROUTES_API_KEY;
+const previousMapsKey = process.env.GOOGLE_MAPS_SERVER_KEY;
+const previousTomTomKey = process.env.TOMTOM_API_KEY;
+const previousDatabase = process.env.DATABASE_URL;
+process.env.GOOGLE_ROUTES_API_KEY = 'regression-google-key';
+process.env.GOOGLE_MAPS_SERVER_KEY = '';
+process.env.TOMTOM_API_KEY = '';
+delete process.env.DATABASE_URL;
+resetMapsBudgetForTests();
+try {
+  const fakeGoogleFetch = async (url, options = {}) => {
+    assert.equal(String(url), 'https://routes.googleapis.com/directions/v2:computeRoutes');
+    assert.equal(options.headers['X-Goog-Api-Key'], 'regression-google-key');
+    const request = JSON.parse(options.body);
+    assert.equal(request.travelMode, 'DRIVE');
+    assert.equal(request.routingPreference, 'TRAFFIC_AWARE');
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          routes: [{
+            duration: '900s',
+            staticDuration: '720s',
+            distanceMeters: 12500,
+            polyline: { encodedPolyline: 'shared-polyline' },
+            localizedValues: { duration: { text: '15 min' }, distance: { text: '12,5 km' } }
+          }]
+        };
+      }
+    };
+  };
+  const route = await getSharedRoutePreview({ origin: 'BSB Airport', destination: 'ParkShopping Brasília', mode: 'driving', fetchImpl: fakeGoogleFetch });
+  assert.equal(route.ok, true);
+  assert.equal(route.provider, 'Google Routes');
+  assert.equal(route.distanceMeters, 12500);
+  assert.equal(route.durationSeconds, 900);
+  assert.equal(route.trafficDelaySeconds, 180);
+  assert.equal(route.itineraryMutation, false);
+  assert.equal(route.secretsExposed, false);
+} finally {
+  if (previousRoutesKey === undefined) delete process.env.GOOGLE_ROUTES_API_KEY; else process.env.GOOGLE_ROUTES_API_KEY = previousRoutesKey;
+  if (previousMapsKey === undefined) delete process.env.GOOGLE_MAPS_SERVER_KEY; else process.env.GOOGLE_MAPS_SERVER_KEY = previousMapsKey;
+  if (previousTomTomKey === undefined) delete process.env.TOMTOM_API_KEY; else process.env.TOMTOM_API_KEY = previousTomTomKey;
+  if (previousDatabase === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previousDatabase;
+  resetMapsBudgetForTests();
+}
+
 assert.ok(apply.includes('preservando o conceito Explorer'), 'patch deve declarar preservação do Explorer sob a marca Voyage');
 assert.ok(!apply.includes('CrewCheck Explorer substituído pelo Voyage'), 'patch não pode declarar substituição do conceito Explorer');
 assert.ok(docs.includes('CrewCheck Explorer é preservado'), 'documentação deve registrar a fronteira corrigida');
 assert.ok(docs.includes('não deve replicar nem competir com funcionalidades nativas do CrewCheck'), 'documentação deve impedir duplicação funcional');
 assert.ok(masterApply.includes("await import('../v14411/apply.mjs');"), 'prepare canônico deve aplicar v14.4.11');
 
-console.log('CrewCheck v14.4.11 Voyage Explorer + shared Cirium regression: PASS');
+console.log('CrewCheck v14.4.11 Voyage Explorer + shared Cirium/routes regression: PASS');
