@@ -291,11 +291,16 @@ export function getLegalProfile(
   const { role, confidence, reason } = inferCrewRole(roster, selection);
   const rule = ACT_RULES[role];
   const inferredAircraft = inferAircraftGroupWithProvenance(roster);
-  const aircraftGroup = aircraftContext?.aircraftGroup || inferredAircraft.aircraftGroup;
-  const aircraftGroupProvenance = aircraftContext
-    ? { source: aircraftContext.source, evidence: [...(aircraftContext.evidence || [])] }
+  const storedProfileFunction = readStoredProfileFunction();
+  const profileAircraftContext: AircraftGroupContext | undefined = !aircraftContext && /\bEMBRAER\b/i.test(storedProfileFunction)
+    ? { aircraftGroup: 'narrowBody', source: 'perfil', evidence: [storedProfileFunction] }
+    : undefined;
+  const effectiveAircraftContext = aircraftContext || profileAircraftContext;
+  const aircraftGroup = effectiveAircraftContext?.aircraftGroup || inferredAircraft.aircraftGroup;
+  const aircraftGroupProvenance = effectiveAircraftContext
+    ? { source: effectiveAircraftContext.source, evidence: [...(effectiveAircraftContext.evidence || [])] }
     : { source: inferredAircraft.source, evidence: inferredAircraft.evidence };
-  const functionResolution = resolveCrewFunction(readStoredProfileFunction());
+  const functionResolution = resolveCrewFunction(storedProfileFunction);
   const functionLabel = functionResolution.role === role && functionResolution.functionKey !== 'unknown' ? functionResolution.functionLabel : inferFunctionLabel(roster, role);
   const flightLimit28Days = aircraftGroup === 'wideBody' ? rule.flightLimits.wideBody28Days : rule.flightLimits.narrowBody28Days;
   const flightLimit365Days = aircraftGroup === 'wideBody' ? rule.flightLimits.wideBody365Days : rule.flightLimits.narrowBody365Days;
