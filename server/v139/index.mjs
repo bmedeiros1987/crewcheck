@@ -13,6 +13,9 @@ import { handleEmailHealthRoute } from '../v1412/emailHealth.mjs';
 import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
 import { handleAiswebHealthRoute } from '../v1412/aiswebHealth.mjs';
 import { handleCiriumHealthRoute } from '../v1412/ciriumHealth.mjs';
+import { handleVoyageIntegrationRoute } from '../v1412/voyageIntegration.mjs';
+import { handleVoyageFlightStatusSharedRoute } from '../shared/voyageFlightStatus.mjs';
+import { handleVoyageRoutePreviewSharedRoute } from '../shared/voyageRoutePreview.mjs';
 
 function normalizeTelegramIntentText(value = '') {
   return String(value || '')
@@ -31,9 +34,12 @@ function isCanonicalHealthPlacesIntent(message = {}) {
 export async function handleV139Route(req, res, url) {
   try {
     if (await handleMailerSendWebhook(req, res, url)) return true;
+    if (await handleVoyageFlightStatusSharedRoute(req, res, url)) return true;
+    if (await handleVoyageRoutePreviewSharedRoute(req, res, url)) return true;
     if (await handleEmailHealthRoute(req, res, url)) return true;
     if (await handleAiswebHealthRoute(req, res, url)) return true;
     if (await handleCiriumHealthRoute(req, res, url)) return true;
+    if (await handleVoyageIntegrationRoute(req, res, url)) return true;
     if (await handleAuthRoute(req, res, url)) return true;
     if (await handlePartnerAccountsRoute(req, res, url)) return true;
     if (await handleEmergencyRoute(req, res, url)) return true;
@@ -75,5 +81,5 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 
 export const crewCheckV139 = {
   version: '14.1.2',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health', 'cirium-health'],
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health', 'cirium-health', 'voyage-integrated', 'voyage-shared-flight-status', 'voyage-shared-routes'],
 };
