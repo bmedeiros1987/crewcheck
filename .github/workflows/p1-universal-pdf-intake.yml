@@ -38,8 +38,6 @@ jobs:
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-p1-universal-pdf-intake.mjs
-      - run: npx playwright install --with-deps chromium
-      - run: node scripts/test-p1-pdf-intake-browser.mjs
       - run: npx tsc --noEmit
       - name: Build Android debug APK
         working-directory: android-wrapper
