@@ -41,3 +41,5 @@ jobs:
         run: node scripts/regression-p1-526-rolling-kernel.mjs
       - name: Rolling 28-day flight-hours window
         run: node scripts/regression-p1-526-rolling-28d.mjs
+      - name: Rolling 28-day plausibility fail-safe
+        run: node scripts/regression-p1-526-rolling-plausibility.mjs
