@@ -1,0 +1,46 @@
+name: ACT financial rates
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialRules.ts'
+      - 'client/src/lib/crewcheckPremiumRules.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-act-financial-rates-by-function.mjs'
+      - 'scripts/regression-v13-9-8-act-compensation-roster-precision.mjs'
+      - 'scripts/v14385/apply.mjs'
+      - '.github/workflows/act-financial-rates.yml'
+  push:
+    paths:
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialRules.ts'
+      - 'client/src/lib/crewcheckPremiumRules.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-act-financial-rates-by-function.mjs'
+      - 'scripts/regression-v13-9-8-act-compensation-roster-precision.mjs'
+      - 'scripts/v14385/apply.mjs'
+      - '.github/workflows/act-financial-rates.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Materialize current release and validate financial rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs
+          node scripts/regression-p1-act-financial-rates-by-function.mjs
+          node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs
+          npx tsc --noEmit --pretty false

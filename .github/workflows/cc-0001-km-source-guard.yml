@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialRules.ts'
       - 'scripts/v139/apply.mjs'
       - 'scripts/v14386/apply.mjs'
       - 'scripts/regression-cc-0001-km-source-guard.mjs'
@@ -20,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - name: Prepare canonical source

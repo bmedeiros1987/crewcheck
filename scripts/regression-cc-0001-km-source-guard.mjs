@@ -30,8 +30,11 @@ expect(
   'Enquanto não houver fonte corporativa, a origem técnica atual deve permanecer rastreável como distância geográfica.',
 );
 expect(
-  financialRules.includes("commander: {") && financialRules.includes('dayKm: 0.211605') && financialRules.includes('nightKm: 0.423250'),
-  'Tarifas ACT de CMTE não podem ser alteradas para mascarar erro de quantidade de KM.',
+  financialRules.includes('ACT-LATAM-2025-2027.2025-12-SNA-109.95')
+    && financialRules.includes("commander: {")
+    && financialRules.includes('dayKm: 0.216028')
+    && financialRules.includes('nightKm: 0.432096'),
+  'Tarifas ACT de CMTE devem permanecer na tabela auditada e não podem mascarar erro de quantidade de KM.',
 );
 
 for (const protectedPath of [
