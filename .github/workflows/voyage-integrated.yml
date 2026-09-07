@@ -4,11 +4,14 @@ on:
   pull_request:
     paths:
       - 'client/src/components/voyage/**'
+      - 'client/src/components/v1435/CrewLockerView.tsx'
       - 'server/v1412/voyageIntegration.mjs'
+      - 'server/v1412/crewHealthReadiness.mjs'
       - 'server/v139/index.mjs'
       - 'scripts/v14411/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-v14-4-11-voyage-integrated.mjs'
+      - 'scripts/regression-v14-4-12-crew-health-readiness.mjs'
       - 'docs/voyage-integrated.md'
       - '.github/workflows/voyage-integrated.yml'
   workflow_dispatch:
@@ -26,10 +29,12 @@ jobs:
         with:
           node-version: '22'
       - name: Validate backend bridge syntax
-        run: node --check server/v1412/voyageIntegration.mjs && node --check server/v139/index.mjs
+        run: node --check server/v1412/voyageIntegration.mjs && node --check server/v1412/crewHealthReadiness.mjs && node --check server/v139/index.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Validate Voyage integrated contract
         run: node scripts/regression-v14-4-11-voyage-integrated.mjs
+      - name: Validate crew health readiness contract
+        run: node scripts/regression-v14-4-12-crew-health-readiness.mjs
       - name: TypeScript check
         run: npm ci && npx tsc --noEmit
