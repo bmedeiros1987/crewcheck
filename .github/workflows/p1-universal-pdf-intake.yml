@@ -1,0 +1,39 @@
+name: P1 Universal PDF Intake
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-wrapper/app/src/main/AndroidManifest.xml'
+      - 'client/src/components/UniversalPdfChoice.tsx'
+      - 'client/src/components/v1435/CrewLockerView.tsx'
+      - 'client/src/lib/inspectIntakePdf.ts'
+      - 'client/src/lib/universalPdfIntake.ts'
+      - 'scripts/p1-universal-pdf-intake/**'
+      - 'scripts/regression-p1-universal-pdf-intake.mjs'
+      - 'scripts/test-p1-pdf-intake-browser.mjs'
+      - '.github/workflows/p1-universal-pdf-intake.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  intake-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-p1-universal-pdf-intake.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/test-p1-pdf-intake-browser.mjs
+      - run: npx tsc --noEmit
+      - name: Build Android debug APK
+        working-directory: android-wrapper
+        run: ./gradlew :app:assembleDebug --no-daemon

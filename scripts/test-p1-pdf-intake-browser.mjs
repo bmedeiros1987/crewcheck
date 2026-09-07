@@ -56,7 +56,7 @@ function App(){
 createRoot(document.getElementById('root')).render(<App/>);
 `;
 const compiled = await build({ stdin: { contents: entry, loader: 'tsx', resolveDir: process.cwd() }, bundle: true, write: false,
-  format: 'esm', platform: 'browser', alias: {'@': `${process.cwd()}/client/src`},
+  format: 'esm', platform: 'browser', jsx: 'automatic', alias: {'@': `${process.cwd()}/client/src`},
   plugins: [{name:'pdf-worker-url',setup(builder){builder.onResolve({filter:/pdf\.worker.*\?url$/},()=>({path:'worker-url',namespace:'intake'}));
     builder.onLoad({filter:/.*/,namespace:'intake'},()=>({contents:'export default "/pdf.worker.mjs"',loader:'js'}));}}] });
 const server = http.createServer((req,res)=>{
@@ -72,6 +72,7 @@ try {
   page.on('pageerror', e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.getByRole('button',{name:'Crew Wallet',exact:true}).waitFor();
+  await page.waitForTimeout(100);
   const pdf = text => { const doc=new jsPDF();doc.text(text,20,20);return Buffer.from(doc.output('arraybuffer')).toString('base64'); };
   const share = async (id,text,name='Documento.pdf') => page.evaluate(payload=>{
     window.__crewcheckPendingNativePdf=payload;
@@ -80,7 +81,9 @@ try {
   const waitAck = id => page.waitForFunction(id=>window.testState.acks.includes(id),id);
 
   await share('unknown','Unclassified document','CHT.pdf');
-  await page.getByRole('heading',{name:'Onde importar este PDF?'}).waitFor();
+  await page.waitForTimeout(13_000);
+  assert.equal(await page.getByRole('heading',{name:'Onde importar este PDF?'}).count(), 1,
+    JSON.stringify(await page.evaluate(()=>window.testState)) + JSON.stringify(errors));
   assert.equal(await page.evaluate(()=>window.testState.parses),0);
   await page.keyboard.press('Escape');
   await waitAck('unknown');
@@ -106,8 +109,8 @@ try {
   await page.getByPlaceholder('PIN de 6 a 12 números').fill('123456');
   await page.getByRole('button',{name:'Desbloquear',exact:true}).click();
   await page.getByText('Guardar cópia offline').waitFor();
-  assert.equal(await page.getByLabel('Tipo',{exact:true}).inputValue(),'CMA');
-  await page.getByLabel('Nome do titular').fill('Pessoa Sintética');
+  assert.equal(await page.locator('.cc-locker-form select').inputValue(),'CMA');
+  await page.locator('.cc-locker-form input').nth(1).fill('Pessoa Sintética');
   await page.getByRole('button',{name:'Criptografar e guardar offline'}).click();
   await waitAck('wallet');
   const docs = await page.evaluate(()=>window.listTestDocuments());
