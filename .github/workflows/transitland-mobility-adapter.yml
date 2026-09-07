@@ -1,0 +1,26 @@
+name: Transitland mobility adapter
+
+on:
+  pull_request:
+    paths:
+      - 'server/integrations/transitland.mjs'
+      - 'server/v1413/transitlandHealth.mjs'
+      - 'server/v139/index.mjs'
+      - 'scripts/regression-transitland-adapter.mjs'
+      - 'scripts/regression-transitland-health.mjs'
+      - '.github/workflows/transitland-mobility-adapter.yml'
+  workflow_dispatch:
+
+jobs:
+  transitland-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Adapter regression
+        run: node scripts/regression-transitland-adapter.mjs
+      - name: Health regression
+        run: node scripts/regression-transitland-health.mjs
