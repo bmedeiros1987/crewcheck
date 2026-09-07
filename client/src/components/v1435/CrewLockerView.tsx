@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Eye, FileCheck2, FileLock2, KeyRound, Plane, Plus, RefreshCw, ShieldCheck, Trash2, UploadCloud } from 'lucide-react';
+import { AlertTriangle, Download, ExternalLink, Eye, FileCheck2, FileLock2, KeyRound, Plane, Plus, RefreshCw, ShieldCheck, Trash2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   deleteCrewDocument,
@@ -14,7 +14,9 @@ import {
   type CrewDocumentRecord,
 } from '@/lib/crewlockerOffline';
 
-const TYPES = ['CHT', 'CMA', 'Passaporte', 'Visto', 'Certificado de treinamento', 'Vacinação', 'Outro'];
+const TYPES = ['CHT', 'CMA', 'Passaporte', 'Visto', 'CIVP Febre Amarela', 'Certificado de treinamento', 'Vacinação', 'Outro'];
+const CIVP_GOV_BR = 'https://www.gov.br/pt-br/servicos/obter-o-certificado-internacional-de-vacinacao-e-profilaxia';
+const MEU_SUS = 'https://meususdigital.saude.gov.br/';
 
 export default function CrewLockerView() {
   const [pin, setPin] = useState('');
@@ -43,6 +45,8 @@ export default function CrewLockerView() {
     if (doc.verification.level === 'source' && doc.verification.result === 'valid') acc.sourceVerified += 1;
     return acc;
   }, { total: 0, expired: 0, expiring: 0, sourceVerified: 0 }), [documents]);
+
+  const civpDocument = useMemo(() => documents.find((doc) => /civp|febre amarela/i.test(`${doc.type} ${doc.displayName}`)), [documents]);
 
   async function unlock() {
     try {
@@ -128,6 +132,17 @@ export default function CrewLockerView() {
   return <section className="cc-locker-shell">
     <header className="cc-locker-hero"><span><Plane/></span><div><small>CREWCHECK · CARTEIRA OPERACIONAL</small><h1>CrewLocker</h1><p>Documentos protegidos, leitura offline e situação de validade em um único lugar.</p></div><b>{storage.persistent ? 'Offline persistente' : 'Offline local'}</b></header>
 
+    <section className="cc-locker-card">
+      <header><div><small>PRONTIDÃO INTERNACIONAL</small><h2>CIVP · Febre Amarela</h2></div>{civpDocument ? <ShieldCheck/> : <AlertTriangle/>}</header>
+      {civpDocument ? <>
+        <p>Seu Certificado Internacional de Vacinação ou Profilaxia está guardado no CrewLocker e disponível offline neste aparelho.</p>
+        <div className="cc-locker-list"><article className="status-valid"><ShieldCheck/><div><h3>Documento localizado</h3><p>{civpDocument.displayName}</p><small>O CrewCheck mantém apenas o documento operacional necessário; seu histórico vacinal completo não é exigido.</small></div><span>Disponível</span><div className="actions"><button onClick={() => viewDocument(civpDocument)} title="Abrir CIVP"><Eye/></button><button onClick={() => viewDocument(civpDocument, true)} title="Baixar CIVP"><Download/></button></div></article></div>
+      </> : <>
+        <p>O CIVP de febre amarela ainda não foi localizado neste aparelho. Para tripulação internacional, mantenha uma cópia disponível antes da programação.</p>
+        <div className="actions"><a href={MEU_SUS} target="_blank" rel="noreferrer"><ExternalLink/> Verificar no Meu SUS Digital</a><a href={CIVP_GOV_BR} target="_blank" rel="noreferrer"><ExternalLink/> Como obter o CIVP</a></div>
+      </>}
+    </section>
+
     <section className="cc-locker-summary">
       <article><FileCheck2/><small>Documentos</small><strong>{summary.total}</strong></article>
       <article><ShieldCheck/><small>Verificados na fonte</small><strong>{summary.sourceVerified}</strong></article>
@@ -139,9 +154,9 @@ export default function CrewLockerView() {
       <header><div><small>NOVO DOCUMENTO</small><h2>Guardar cópia offline</h2></div><UploadCloud/></header>
       <div className="cc-locker-form">
         <label><span>Tipo</span><select value={type} onChange={(event) => setType(event.target.value)}>{TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label><span>Nome no cartão</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ex.: CMA 2026"/></label>
+        <label><span>Nome no cartão</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ex.: CIVP Febre Amarela"/></label>
         <label><span>Nome do titular</span><input value={holderName} onChange={(event) => setHolderName(event.target.value)} required/></label>
-        <label><span>Órgão emissor</span><input value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="Ex.: ANAC"/></label>
+        <label><span>Órgão emissor</span><input value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="Ex.: ANVISA"/></label>
         <label><span>Validade</span><input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)}/></label>
         <label className="file"><span>Arquivo</span><input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
       </div>
