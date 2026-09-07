@@ -14,6 +14,7 @@ import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
 import { handleAiswebHealthRoute } from '../v1412/aiswebHealth.mjs';
 import { handleCiriumHealthRoute } from '../v1412/ciriumHealth.mjs';
 import { handleVoyageIntegrationRoute } from '../v1412/voyageIntegration.mjs';
+import { handleCrewHealthReadinessRoute } from '../v1412/crewHealthReadiness.mjs';
 import { handleVoyageFlightStatusSharedRoute } from '../shared/voyageFlightStatus.mjs';
 import { handleVoyageRoutePreviewSharedRoute } from '../shared/voyageRoutePreview.mjs';
 
@@ -39,6 +40,7 @@ export async function handleV139Route(req, res, url) {
     if (await handleEmailHealthRoute(req, res, url)) return true;
     if (await handleAiswebHealthRoute(req, res, url)) return true;
     if (await handleCiriumHealthRoute(req, res, url)) return true;
+    if (await handleCrewHealthReadinessRoute(req, res, url)) return true;
     if (await handleVoyageIntegrationRoute(req, res, url)) return true;
     if (await handleAuthRoute(req, res, url)) return true;
     if (await handlePartnerAccountsRoute(req, res, url)) return true;
@@ -81,5 +83,5 @@ export async function handleV139Telegram(updateOrMessage = {}, sendTelegram) {
 
 export const crewCheckV139 = {
   version: '14.1.2',
-  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health', 'cirium-health', 'voyage-integrated', 'voyage-shared-flight-status', 'voyage-shared-routes'],
+  modules: ['recovery', 'bids', 'crewlock-e2ee', 'routine', 'emergency', 'stay-profile', 'partner-accounts', 'notifications-runtime', 'mailersend-webhook', 'email-health', 'aisweb-health', 'cirium-health', 'crew-health-readiness', 'voyage-integrated', 'voyage-shared-flight-status', 'voyage-shared-routes'],
 };
