@@ -79,6 +79,12 @@ try {
   },{shareId:id,dataBase64:pdf(text),filename:name});
   const waitAck = id => page.waitForFunction(id=>window.testState.acks.includes(id),id);
 
+  await share('unknown','Unclassified document','CHT.pdf');
+  await page.getByRole('heading',{name:'Onde importar este PDF?'}).waitFor();
+  assert.equal(await page.evaluate(()=>window.testState.parses),0);
+  await page.keyboard.press('Escape');
+  await waitAck('unknown');
+
   await share('roster-cancel','AIMS Escala Periodo');
   await page.getByRole('heading',{name:'Ativar esta escala?'}).waitFor();
   assert.equal(await page.evaluate(()=>window.testState.saves),0);
@@ -91,12 +97,6 @@ try {
   await page.getByRole('button',{name:'Ativar escala',exact:true}).click();
   await waitAck('roster-accept');
   assert.equal(await page.evaluate(()=>window.testState.saves),1);
-  await share('unknown','Unclassified document','CHT.pdf');
-  await page.getByRole('heading',{name:'Onde importar este PDF?'}).waitFor();
-  assert.equal(await page.evaluate(()=>window.testState.parses),2);
-  await page.keyboard.press('Escape');
-  await waitAck('unknown');
-
   await share('wallet','ANAC Certificado Medico Aeronautico','CMA.pdf');
   await page.getByText(/PDF recebido: CMA.pdf/).waitFor();
   assert.equal(await page.evaluate(()=>window.testState.parses),2);
