@@ -98,3 +98,42 @@ export function maxFlightHoursRolling28Days(observations: FlightHoursObservation
 
   return round1(best);
 }
+
+/** Assess trailing windows ending in the active publication, through its last
+ * observed day. Missing calendar dates are unknown, never inferred zero hours.
+ * Explicit zero-hour days provide coverage; duplicate entries only add hours.
+ * The observed maximum is a lower bound when coverage is incomplete.
+ */
+export function assessFlightHoursRolling28Days(
+  observations: FlightHoursObservation[],
+  month: number,
+  year: number,
+): { maxHours: number; complete: boolean } {
+  if (!competenceKey(month, year)) return { maxHours: 0, complete: false };
+  const start = Date.UTC(year, month - 1, 1);
+  const end = Date.UTC(year, month, 1);
+  const firstRequired = start - 27 * DAY_MS;
+  const byDay = new Map<number, number>();
+  let lastActive: number | null = null;
+  for (const observation of observations) {
+    const epoch = crewDateUtcEpoch(observation.date);
+    if (epoch === null || epoch < firstRequired || epoch >= end) continue;
+    const hours = Number(observation.hours);
+    if (!Number.isFinite(hours) || hours < 0) continue;
+    byDay.set(epoch, (byDay.get(epoch) || 0) + hours);
+    if (epoch >= start) lastActive = Math.max(lastActive ?? start, epoch);
+  }
+  // Even without an active day, preceding observations can establish a lower
+  // bound at the first active date, but cannot establish complete coverage.
+  const last = lastActive ?? start;
+  let complete = lastActive !== null;
+  let sum = 0;
+  let best = 0;
+  for (let epoch = firstRequired; epoch <= last; epoch += DAY_MS) {
+    if (!byDay.has(epoch)) complete = false;
+    sum += byDay.get(epoch) || 0;
+    sum -= byDay.get(epoch - ROLLING_28_DAYS_MS) || 0;
+    if (epoch >= start) best = Math.max(best, sum);
+  }
+  return { maxHours: round1(best), complete };
+}

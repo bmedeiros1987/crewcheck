@@ -9,7 +9,7 @@ import {
   // motor quebraria só depois da materialização — verde em base, morto em
   // produção.
   competenceKey as competenceKeyFor,
-  maxFlightHoursRolling28Days,
+  assessFlightHoursRolling28Days,
   sumFlightHoursForCompetence,
   type FlightHoursObservation,
 } from './rollingFlightHours';
@@ -1954,7 +1954,21 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   metrics.maxNightOps168hCount = maxNightOpsWindow;
 
   // #526: a janela móvel real de 28 dias, calculada pelo kernel isolado.
-  metrics.maxFlightHoursRolling28Days = maxFlightHoursRolling28Days(flightHoursObservations);
+  const rollingAssessment = assessFlightHoursRolling28Days(
+    flightHoursObservations, Number(roster.month), Number(roster.year),
+  );
+  metrics.maxFlightHoursRolling28Days = rollingAssessment.maxHours;
+  if (!rollingAssessment.complete) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Avaliação de horas de voo em 28 dias incompleta',
+      description: 'Faltam dias da escala ou do histórico anterior para avaliar todas as janelas de 28 dias até o último dia disponível da competência ativa. As horas observadas não comprovam conformidade.',
+      details: 'Carregue o histórico e os dias ausentes para concluir a avaliação. Ausência de registro não equivale a zero horas; excessos já comprovados pelas horas observadas continuam sinalizados.',
+      confidence: 'media',
+      classification: 'atencao',
+      legalReference: actRules.flightLimits.legalReference,
+    });
+  }
 
   // O KPI mensal é da COMPETÊNCIA ATIVA. O histórico adjacente é necessário para
   // a janela móvel acima, mas somá-lo aqui inflaria o total do mês exibido.

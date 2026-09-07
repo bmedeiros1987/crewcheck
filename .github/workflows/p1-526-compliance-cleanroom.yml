@@ -43,3 +43,9 @@ jobs:
         run: node scripts/regression-p1-526-rolling-28d.mjs
       - name: Rolling 28-day plausibility fail-safe
         run: node scripts/regression-p1-526-rolling-plausibility.mjs
+      - name: Rolling coverage and active competence
+        run: node scripts/regression-p1-526-rolling-boundaries.mjs
+      - name: Prepared rolling regressions
+        run: |
+          node scripts/v139/apply.mjs
+          for test in scripts/regression-p1-526-*.mjs; do node "$test" || exit 1; done
