@@ -33,13 +33,17 @@
   border-radius: 14px !important;
 }
 
+/* #558 — contrato invertido conscientemente. Este bloco escondia a navegacao
+   inferior a partir de 901px, sem distinguir ponteiro: escondia tambem em tablet.
+   Agora ela permanece visivel e o respiro deixa de ser 34px fixos, passando a
+   reservar a altura real da barra para nao cobrir conteudo. */
 @media (min-width: 901px) {
   .cz-bottom-nav {
-    display: none !important;
+    display: grid !important;
   }
 
   .cz-app {
-    padding-bottom: 34px !important;
+    padding-bottom: calc(var(--cc-nav-height) + 34px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 

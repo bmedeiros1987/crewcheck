@@ -1,0 +1,99 @@
+name: Atlas 1C desktop bottom navigation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/components/v1432/homologation.css'
+      - 'scripts/v14357/ui-clarity.css'
+      - 'scripts/v14357/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-p1-558-desktop-bottom-nav.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - '.github/workflows/atlas-1c-desktop-bottom-nav.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/components/v1432/homologation.css'
+      - 'scripts/v14357/ui-clarity.css'
+      - 'scripts/v14357/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-p1-558-desktop-bottom-nav.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - '.github/workflows/atlas-1c-desktop-bottom-nav.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlas-1c-desktop-bottom-nav-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # Obrigatorio enquanto qualquer step usar `| tee`: o shell padrao do Actions e
+    # `bash -e {0}`, SEM pipefail, entao o status do pipe e o do `tee` e uma regressao
+    # vermelha termina o step em 0 — falso verde. Declarar `shell: bash` faz o Actions
+    # usar `bash --noprofile --norc -eo pipefail {0}`, e a falha volta a propagar.
+    # Medido: mesmo comando, exit 0 sem pipefail e exit 1 com pipefail. Ver #564.
+    shell: bash
+
+jobs:
+  validate-desktop-bottom-nav:
+    name: Bottom nav visible, centred and clear of content
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # Contrato afirmado na arvore base: os dois pontos de ocultacao e a centralizacao.
+      # A fonte da camada de clareza (scripts/v14357/ui-clarity.css) e afirmada aqui
+      # porque o arquivo que ela gera so existe depois da cadeia.
+      - name: Desktop bottom navigation contract (base)
+        run: node scripts/regression-p1-558-desktop-bottom-nav.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-nav-base.log"
+
+      - name: Prepare CrewCheck
+        run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-prepare.log"
+
+      # Depois da cadeia o contrato precisa continuar valendo — e onde o #549 mordeu antes.
+      - name: Desktop bottom navigation contract (prepared)
+        run: node scripts/regression-p1-558-desktop-bottom-nav.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-nav-prepared.log"
+
+      # Afirma o arquivo GERADO, que e onde vivia o segundo display:none.
+      - name: Clarity layer keeps the bar visible
+        run: node scripts/regression-v14-3-57-ui-clarity.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-clarity.log"
+
+      - name: Web shell precedence
+        run: node scripts/regression-web-desktop-shell.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-shell.log"
+
+      - name: TypeScript
+        run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/atlas-1c-typescript.log"
+
+      - name: Build Web
+        run: npx vite build 2>&1 | tee "$RUNNER_TEMP/atlas-1c-build.log"
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Atlas-1C-desktop-bottom-nav-diagnostics
+          path: |
+            ${{ runner.temp }}/atlas-1c-nav-base.log
+            ${{ runner.temp }}/atlas-1c-nav-prepared.log
+            ${{ runner.temp }}/atlas-1c-clarity.log
+            ${{ runner.temp }}/atlas-1c-shell.log
+            ${{ runner.temp }}/atlas-1c-prepare.log
+            ${{ runner.temp }}/atlas-1c-typescript.log
+            ${{ runner.temp }}/atlas-1c-build.log
+          if-no-files-found: ignore
+          retention-days: 7

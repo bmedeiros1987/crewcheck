@@ -52,10 +52,15 @@
     height: calc(88px + env(safe-area-inset-top, 0px)) !important;
   }
 
+  /* #558 — contrato invertido conscientemente: a navegação inferior existe também no
+     desktop Web. Antes este bloco a escondia (display/visibility/pointer-events).
+     Aqui ela apenas volta a ser visível; a centralização real acontece em
+     v1432/homologation.css, que vence pela ordem e pela especificidade de
+     `body > .cz-bottom-nav` — por isso não repetimos left/width/transform aqui. */
   .cz-bottom-nav {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
+    display: grid !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
   }
 
   .cz-app,
@@ -65,8 +70,8 @@
   [data-view="presentation"],
   [data-view="routine"],
   [data-view="wakeup"] {
-    padding-bottom: 34px !important;
-    scroll-padding-bottom: 34px !important;
+    padding-bottom: calc(var(--cc-nav-height) + 34px + env(safe-area-inset-bottom, 0px)) !important;
+    scroll-padding-bottom: calc(var(--cc-nav-height) + 34px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .cz-menu-overlay {
     display: flex !important;

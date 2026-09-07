@@ -75,7 +75,11 @@ body > .cz-bottom-nav {
   }
 }
 
-@media (min-width:1181px) {
+/* #558 — o rodape volta a existir no desktop Web (>=901px). A faixa de 901-1180px
+   caia no ramo full-bleed acima e encostava nas bordas em 1024px; agora ela usa o
+   mesmo ramo centralizado ja aplicado a >=1181px. Alteracao de condicao, nao de
+   regra: nenhum seletor ou !important novo entra na cascata. */
+@media (min-width:1181px), (pointer: fine) and (min-width:901px) {
   body > .cz-bottom-nav {
     left: 50% !important;
     right: auto !important;

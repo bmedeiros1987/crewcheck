@@ -49,7 +49,13 @@ assert.ok(timelineCss.includes("[data-crew-theme='dark']"), 'Linha do Dia deve r
 const clarityCss = read('client/src/styles/v14357-ui-clarity.css');
 const indexCss = read('client/src/index.css');
 assert.ok(clarityCss.includes('@media (min-width: 901px)'), 'desktop deve possuir regra própria');
-assert.match(clarityCss, /@media \(min-width: 901px\)[\s\S]*\.cz-bottom-nav[\s\S]*display:\s*none/, 'navegação inferior não deve cobrir o desktop');
+// #558 — contrato invertido conscientemente. Esta regra escondia a navegação inferior a
+// partir de 901px sem distinguir ponteiro, alcançando também tablets. A barra passa a
+// existir no desktop, e o respeito ao conteúdo deixa de ser "sumir" e passa a ser
+// "reservar a própria altura".
+assert.match(clarityCss, /@media \(min-width: 901px\)[\s\S]*\.cz-bottom-nav[\s\S]*display:\s*grid/, 'navegação inferior deve permanecer visível no desktop');
+assert.match(clarityCss, /@media \(min-width: 901px\)[\s\S]*\.cz-app[\s\S]*padding-bottom:\s*calc\(var\(--cc-nav-height\)/, 'desktop deve reservar a altura da navegação inferior');
+assert.doesNotMatch(clarityCss, /@media \(min-width: 901px\)[\s\S]*\.cz-bottom-nav\s*\{[\s\S]*?display:\s*none/, 'a camada de clareza não pode voltar a esconder a navegação inferior');
 assert.ok(clarityCss.includes('width: min(100%, 1180px)'), 'FlyDeck e Linha do Dia devem compartilhar largura previsível');
 assert.ok(indexCss.includes('@import "./styles/v14357-ui-clarity.css";'), 'camada global de clareza deve estar carregada');
 const cssFixture = '@import "tailwindcss";\nbody{}';
