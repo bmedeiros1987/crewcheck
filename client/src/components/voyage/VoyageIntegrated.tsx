@@ -3,6 +3,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
+  Compass,
   ExternalLink,
   LoaderCircle,
   LockKeyhole,
@@ -115,19 +116,19 @@ export default function VoyageIntegrated({ roster, source = 'CrewCheck', onBack 
   }
 
   return (
-    <main className="voyage-integrated-shell" aria-label="Voyage integrado ao CrewCheck">
+    <main className="voyage-integrated-shell" aria-label="Voyage integrado ao CrewCheck em modo Explorer">
       <section className="voyage-integrated-hero">
         <div className="voyage-integrated-orbit" aria-hidden="true"><PlaneTakeoff/></div>
         <div className="voyage-integrated-kicker"><Sparkles/> CREWCHECK × VOYAGE</div>
         <h1>Voyage</h1>
         <p className="voyage-integrated-tagline">Beyond the trip.</p>
         <p className="voyage-integrated-lead">
-          O antigo conceito CrewCheck Explorer evolui para uma experiência integrada ao Voyage: sua escala protege seus compromissos de trabalho e o Voyage cuida da viagem pessoal ao redor deles.
+          Dentro do CrewCheck, o Voyage preserva o conceito do antigo CrewCheck Explorer: uma camada contextual para descobrir o que fazer, onde comer e como aproveitar o tempo livre ao redor da sua escala. Ele não substitui nem replica as funções operacionais do CrewCheck.
         </p>
         <div className="voyage-integrated-badges">
-          <span><ShieldCheck/> Produtos separados</span>
-          <span><LockKeyhole/> Compartilhamento sob sua autorização</span>
-          <span><CheckCircle2/> Nenhuma mudança automática no roteiro</span>
+          <span><Compass/> Modo Explorer do tripulante</span>
+          <span><ShieldCheck/> CrewCheck continua operacional</span>
+          <span><CheckCircle2/> Voyage completo é um app separado</span>
         </div>
       </section>
 
@@ -135,8 +136,8 @@ export default function VoyageIntegrated({ roster, source = 'CrewCheck', onBack 
         <article className="voyage-integrated-card voyage-integrated-card-main">
           <header>
             <div>
-              <small>Integração direta</small>
-              <h2>Use sua disponibilidade do CrewCheck</h2>
+              <small>Integração contextual</small>
+              <h2>Use sua disponibilidade para explorar</h2>
             </div>
             <span className={`voyage-integrated-status ${status?.enabled ? 'is-ready' : ''}`}>
               {status?.enabled ? 'Conectado' : status ? 'Aguardando configuração' : 'Verificando'}
@@ -144,32 +145,44 @@ export default function VoyageIntegrated({ roster, source = 'CrewCheck', onBack 
           </header>
 
           <p>
-            O Voyage recebe somente uma versão minimizada da sua disponibilidade. Nomes de tripulantes, senhas, chaves de API, CPF, PNR e outros dados desnecessários não entram nessa ponte.
+            A camada Voyage usa somente uma versão minimizada da sua disponibilidade para evitar sugestões em horários de trabalho. Nomes de tripulantes, senhas, chaves de API, CPF, PNR e outros dados desnecessários não entram nessa ponte.
           </p>
 
           {!preview?.shared ? (
             <div className="voyage-integrated-consent">
               <CalendarDays/>
               <div>
-                <strong>Compartilhar disponibilidade desta escala?</strong>
-                <span>Folgas explícitas podem virar janelas de viagem. Jornadas, voos, reservas, sobreavisos e dias incertos ficam protegidos.</span>
+                <strong>Usar a disponibilidade desta escala no Voyage?</strong>
+                <span>Folgas explícitas podem abrir janelas de exploração. Jornadas, voos, reservas, sobreavisos e dias incertos permanecem protegidos pelo CrewCheck.</span>
               </div>
               <button className="voyage-integrated-primary" onClick={authorizeAndPreview} disabled={busy || status?.enabled === false}>
                 {busy ? <LoaderCircle className="voyage-spin"/> : <Sparkles/>}
-                {busy ? 'Conectando…' : 'Integrar com o Voyage'}
+                {busy ? 'Conectando…' : 'Ativar Voyage no CrewCheck'}
               </button>
             </div>
           ) : (
             <div className="voyage-integrated-ready">
               <CheckCircle2/>
               <div>
-                <strong>Voyage integrado ao CrewCheck</strong>
-                <span>Sua escala passou a funcionar como restrição de disponibilidade para o planejamento pessoal.</span>
+                <strong>Voyage contextual ativado</strong>
+                <span>Sua escala agora protege as sugestões de exploração sem duplicar nenhuma função operacional do CrewCheck.</span>
               </div>
             </div>
           )}
 
           {error && <div className="voyage-integrated-error">{error}</div>}
+        </article>
+
+        <article className="voyage-integrated-card">
+          <small>Voyage dentro do CrewCheck</small>
+          <h3>Descoberta, não operação</h3>
+          <p>Tempo livre, entorno do pernoite, gastronomia, passeios, experiências e oportunidades contextuais. A escala apenas define onde e quando faz sentido sugerir.</p>
+        </article>
+
+        <article className="voyage-integrated-card">
+          <small>Domínio CrewCheck</small>
+          <h3>Operação continua aqui</h3>
+          <p>Escala, apresentação, Saída Inteligente, Radar, meteorologia operacional, regulamentação, pernoite operacional, despertador, diárias e demais ferramentas de tripulante continuam nativas do CrewCheck.</p>
         </article>
 
         <article className="voyage-integrated-card">
@@ -181,19 +194,13 @@ export default function VoyageIntegrated({ roster, source = 'CrewCheck', onBack 
             <div><b>{busyDates.length || '—'}</b><span>dias protegidos</span></div>
           </div>
         </article>
-
-        <article className="voyage-integrated-card">
-          <small>Proteção operacional</small>
-          <h3>Trabalho continua sendo trabalho</h3>
-          <p>Voos da sua escala não viram automaticamente trechos da viagem pessoal. Eles servem como âncoras para o Voyage não planejar algo onde não cabe.</p>
-        </article>
       </section>
 
       {preview?.shared && (
         <section className="voyage-integrated-availability">
           <header>
             <div>
-              <small>Disponibilidade inteligente</small>
+              <small>Contexto para exploração</small>
               <h2>Janelas reconhecidas pelo Voyage</h2>
             </div>
             <button className="voyage-integrated-ghost" onClick={authorizeAndPreview} disabled={busy}><RefreshCw/> Atualizar</button>
@@ -209,10 +216,10 @@ export default function VoyageIntegrated({ roster, source = 'CrewCheck', onBack 
 
       <section className="voyage-integrated-actions">
         <button className="voyage-integrated-primary voyage-integrated-open" onClick={openVoyage} disabled={!status?.launchUrl && !preview?.launchUrl}>
-          Entrar no Voyage <ChevronRight/>
+          Abrir Voyage completo <ChevronRight/>
         </button>
-        <span>Você continua no mesmo ecossistema. O Voyage assume o planejamento pessoal; o CrewCheck continua cuidando da vida operacional.</span>
-        {status?.launchUrl && <a href={status.launchUrl} target="_blank" rel="noreferrer">Abrir em nova janela <ExternalLink/></a>}
+        <span>Dentro do CrewCheck você usa o modo Explorer. O app Voyage é o produto completo para planejar e acompanhar viagens pessoais do início ao fim.</span>
+        {status?.launchUrl && <a href={status.launchUrl} target="_blank" rel="noreferrer">Abrir app Voyage <ExternalLink/></a>}
         {onBack && <button className="voyage-integrated-ghost" onClick={onBack}>Voltar ao CrewCheck</button>}
       </section>
     </main>
