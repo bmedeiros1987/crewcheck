@@ -1,0 +1,254 @@
+openapi: 3.1.0
+info:
+  title: CrewCheck Partner Roster Exchange
+  version: 1.0.0
+  description: |
+    Entrega B2B de PDF raw/original de escala autorizado pelo usuário.
+    O parceiro recebe somente metadados/status; o CrewCheck preserva e interpreta o documento com seu próprio parser.
+servers:
+  - url: https://crewcheck.online
+paths:
+  /api/v1/roster-imports:
+    post:
+      summary: Entregar PDF raw de escala
+      operationId: createPartnerRosterImport
+      security:
+        - partnerApiKey: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 160 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRosterImport'
+      responses:
+        '201':
+          description: Raw preservado e interpretação CrewCheck concluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RosterImportResponse' }
+        '202':
+          description: Raw preservado; interpretação em quarentena ou falhou
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RosterImportResponse' }
+        '400': { description: Payload, link, data ou PDF inválidos }
+        '401': { description: API key inválida ou revogada }
+        '403': { description: Escopo insuficiente, vínculo revogado/expirado ou vinculado a outro parceiro }
+        '409': { description: externalId reutilizado para conteúdo diferente }
+        '413': { description: PDF acima do limite permitido }
+        '415': { description: Somente application/pdf }
+        '429': { description: Rate limit excedido }
+        '503': { description: Importação B2B desabilitada ou infraestrutura indisponível }
+  /api/v1/roster-imports/{id}:
+    get:
+      summary: Consultar status de uma importação enviada pela mesma API key
+      operationId: getPartnerRosterImport
+      security:
+        - partnerApiKey: []
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: Metadados da importação
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+                  import: { $ref: '#/components/schemas/RosterImport' }
+        '404': { description: Importação não localizada para a credencial }
+  /api/partner-roster-links:
+    post:
+      summary: Usuário CrewCheck cria vínculo temporário para integração
+      operationId: createRosterLink
+      security:
+        - crewCheckUserJwt: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string, maxLength: 120, examples: [CrewTopia] }
+                expiresInDays: { type: integer, minimum: 1, maximum: 90, default: 30 }
+      responses:
+        '201':
+          description: Token completo retornado somente nesta resposta
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+                  linkToken: { type: string, pattern: '^rlnk_[A-Za-z0-9_-]{32,}$' }
+                  link: { $ref: '#/components/schemas/RosterLink' }
+    get:
+      summary: Listar vínculos do usuário
+      operationId: listRosterLinks
+      security:
+        - crewCheckUserJwt: []
+      responses:
+        '200': { description: Lista de vínculos sem token completo }
+  /api/partner-roster-links/{id}:
+    delete:
+      summary: Revogar vínculo
+      operationId: revokeRosterLink
+      security:
+        - crewCheckUserJwt: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: Vínculo revogado }
+        '404': { description: Vínculo ativo não localizado }
+  /api/partner-roster-imports:
+    get:
+      summary: Histórico de importações do próprio usuário
+      operationId: listUserPartnerRosterImports
+      security:
+        - crewCheckUserJwt: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        '200': { description: Histórico sem PDF raw }
+  /api/partner-roster-imports/latest:
+    get:
+      summary: Obter última interpretação válida do próprio usuário
+      operationId: getLatestUserPartnerRosterImport
+      security:
+        - crewCheckUserJwt: []
+      responses:
+        '200': { description: Snapshot interpretado pelo parser CrewCheck }
+        '404': { description: Nenhuma importação parsed disponível }
+  /api/partner-roster-imports/{id}:
+    get:
+      summary: Abrir uma importação do próprio usuário
+      operationId: getUserPartnerRosterImport
+      security:
+        - crewCheckUserJwt: []
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200': { description: Metadados; data somente quando parseStatus=parsed }
+        '404': { description: Importação não localizada }
+  /api/partner-roster-imports/{id}/reprocess:
+    post:
+      summary: Reprocessar raw imutável com o parser CrewCheck atual
+      operationId: reprocessUserPartnerRosterImport
+      security:
+        - crewCheckUserJwt: []
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200': { description: Nova tentativa de parse registrada }
+        '404': { description: Importação não localizada }
+components:
+  securitySchemes:
+    partnerApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ck_live_...
+      description: Requer o escopo rosters:write.
+    crewCheckUserJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ImportId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    CreateRosterImport:
+      type: object
+      required: [linkToken, authorizationReference, filename, mimeType, dataBase64]
+      anyOf:
+        - required: [externalId]
+        - description: Idempotency-Key pode ser fornecido por header em vez de externalId.
+      properties:
+        linkToken:
+          type: string
+          pattern: '^rlnk_[A-Za-z0-9_-]{32,}$'
+        externalId:
+          type: string
+          maxLength: 160
+        authorizationReference:
+          type: string
+          maxLength: 180
+        filename:
+          type: string
+          maxLength: 180
+        mimeType:
+          type: string
+          const: application/pdf
+        sourceDocumentCreatedAt:
+          type: string
+          format: date-time
+        dataBase64:
+          type: string
+          contentEncoding: base64
+          description: PDF raw/original. Limite padrão após decodificação: 8 MiB.
+    RosterImportResponse:
+      type: object
+      required: [ok, stored, parsed, import]
+      properties:
+        ok: { type: boolean, const: true }
+        stored: { type: boolean, const: true }
+        parsed: { type: boolean }
+        message: { type: string }
+        duplicate: { type: boolean }
+        import: { $ref: '#/components/schemas/RosterImport' }
+    RosterImport:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        externalId: { type: [string, 'null'] }
+        source: { type: string }
+        filename: { type: [string, 'null'] }
+        mimeType: { type: string, const: application/pdf }
+        fileSha256: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
+        fileSizeBytes: { type: integer, minimum: 0 }
+        parseStatus:
+          type: string
+          enum: [received, parsed, identity_unverified, identity_mismatch, parse_failed]
+        parserVersion: { type: [string, 'null'] }
+        summary:
+          oneOf:
+            - $ref: '#/components/schemas/ParseSummary'
+            - type: 'null'
+        sourceDocumentCreatedAt: { type: [string, 'null'] }
+        receivedAt: { type: [string, 'null'] }
+        parsedAt: { type: [string, 'null'] }
+    ParseSummary:
+      type: object
+      properties:
+        sourceFormat: { type: [string, 'null'] }
+        month: { type: [integer, 'null'] }
+        year: { type: [integer, 'null'] }
+        base: { type: [string, 'null'] }
+        rank: { type: [string, 'null'] }
+        events: { type: integer, minimum: 0 }
+        flights: { type: integer, minimum: 0 }
+        confidence: { type: [string, 'null'] }
+    RosterLink:
+      type: object
+      properties:
+        id: { type: integer }
+        label: { type: [string, 'null'] }
+        tokenPrefix: { type: string }
+        expiresAt: { type: string }
+        partnerBound: { type: boolean }
+        crewIdentityPinned: { type: boolean }
+        active: { type: boolean }
