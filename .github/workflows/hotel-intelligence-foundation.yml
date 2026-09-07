@@ -1,0 +1,28 @@
+name: CrewCheck Hotel Intelligence
+
+on:
+  push:
+    branches:
+      - 'feat/concierge-hotel-intelligence'
+    paths:
+      - 'client/src/lib/hotelIntelligence.ts'
+      - 'scripts/regression-hotel-intelligence-contract.mjs'
+      - '.github/workflows/hotel-intelligence-foundation.yml'
+  pull_request:
+    paths:
+      - 'client/src/lib/hotelIntelligence.ts'
+      - 'scripts/regression-hotel-intelligence-contract.mjs'
+      - '.github/workflows/hotel-intelligence-foundation.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: node scripts/regression-hotel-intelligence-contract.mjs
