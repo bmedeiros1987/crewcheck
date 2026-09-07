@@ -2,20 +2,54 @@
 
 ## Objetivo
 
-O Voyage passa a substituir o conceito de **CrewCheck Explorer** como a superfície de viagem pessoal do ecossistema. CrewCheck e Voyage continuam produtos distintos, mas o usuário pode autorizar uma ponte direta entre a escala operacional e o planejamento pessoal.
+O conceito do **CrewCheck Explorer é preservado** dentro do CrewCheck, mas passa a usar oficialmente a marca **Voyage**. A mudança é de identidade e integração, não de escopo funcional.
 
-## Responsabilidades
+Dentro do CrewCheck, o Voyage funciona como uma **camada de exploração contextual para o tripulante**: usa a escala para reconhecer onde e quando existe tempo livre e então ajuda a descobrir gastronomia, passeios, experiências e oportunidades próximas. Ele não deve replicar nem competir com funcionalidades nativas do CrewCheck.
 
-- **CrewCheck** continua sendo a fonte de verdade da escala, jornadas, voos operacionais, reserva, sobreaviso e demais compromissos de tripulante.
-- **Voyage** continua sendo a fonte de verdade do roteiro pessoal, hospedagem pessoal, orçamento, atividades, refeições e deslocamentos da viagem.
+O **app Voyage standalone** é outro produto: um Travel Operating System completo para viagens pessoais, de lazer, negócios e bleisure, com planejamento de ponta a ponta.
+
+## Fronteira de produto
+
+### CrewCheck continua responsável por
+
+- escala, jornadas, voos operacionais, reserva e sobreaviso;
+- apresentação e Saída Inteligente;
+- Radar, portão, status operacional e meteorologia operacional;
+- regulamentação, limites e conformidade;
+- pernoite operacional e contexto de hotel da escala;
+- despertador e rotinas diretamente ligadas à operação;
+- diárias, salário e demais ferramentas de tripulante;
+- qualquer decisão operacional ou de segurança.
+
+### Voyage dentro do CrewCheck — modo Explorer
+
+- descobrir o que fazer em uma folga ou janela realmente livre;
+- encontrar gastronomia, cafés, lazer, experiências e pontos de interesse próximos;
+- explorar o entorno de um pernoite sem substituir o módulo operacional de hotel;
+- sugerir oportunidades contextualizadas por localização e tempo disponível;
+- usar a escala somente como restrição e contexto, nunca como roteiro pessoal automático.
+
+O modo integrado deve sempre preferir **deep links** para módulos nativos do CrewCheck quando o assunto for operacional, em vez de criar uma versão concorrente da mesma função.
+
+### App Voyage standalone
+
+O aplicativo Voyage completo pode oferecer planejamento pessoal do início ao fim, incluindo roteiro cronológico, reservas, hospedagem pessoal, transporte, orçamento, refeições, atividades, conexões, clima de viagem, bagagem, colaboração e demais inteligências próprias do produto.
+
+Esses recursos completos não devem ser duplicados dentro do CrewCheck apenas porque compartilham serviços de backend.
+
+## Responsabilidades e fontes de verdade
+
+- **CrewCheck** é a fonte de verdade para escala e vida operacional do tripulante.
+- **Voyage standalone** é a fonte de verdade para viagens pessoais do usuário.
+- **Voyage dentro do CrewCheck** é uma projeção contextual do conceito Explorer, e não uma segunda implementação do CrewCheck nem o app Voyage completo embutido.
 - Um voo da escala não se transforma automaticamente em trecho da viagem pessoal.
-- A escala serve como restrição de disponibilidade para evitar que o Voyage planeje atividades em horários incompatíveis.
+- A escala serve como restrição de disponibilidade para evitar sugestões incompatíveis com trabalho e repouso.
 
 ## Consentimento e minimização
 
-O compartilhamento da escala só ocorre após ação explícita do usuário na superfície **Voyage integrado** do CrewCheck.
+O compartilhamento da escala só ocorre após ação explícita do usuário na superfície Voyage do CrewCheck.
 
-A ponte envia apenas contexto minimizado necessário ao planejamento:
+A ponte envia apenas contexto minimizado necessário à exploração:
 
 - base aeroportuária, quando conhecida;
 - fuso e locale;
@@ -51,41 +85,27 @@ Voyage:
 
 A comunicação backend-to-backend usa `CREWCHECK_SHARED_SERVICES_TOKEN` e não expõe o token ao browser.
 
-## Variáveis de ambiente
-
-No serviço CrewCheck:
-
-- `VOYAGE_API_URL` — URL base da API do Voyage. Pode usar `VOYAGE_INTERNAL_API_URL` como alias quando houver endpoint interno apropriado.
-- `VOYAGE_PUBLIC_URL` — URL que o usuário abre para entrar no Voyage. Enquanto o domínio definitivo não estiver publicado, pode apontar para a URL atual do app.
-- `CREWCHECK_SHARED_SERVICES_TOKEN` — segredo compartilhado server-to-server.
-
-No serviço Voyage:
-
-- `CREWCHECK_SHARED_SERVICES_TOKEN` — deve ter o mesmo valor do CrewCheck.
-- `CREWCHECK_SHARED_API_BASE_URL` — base dos serviços compartilhados do CrewCheck quando usados pelo Voyage.
-
-Os valores reais ficam somente no Render/gerenciador de segredos e nunca no GitHub.
-
 ## Política de alteração do roteiro
 
 A integração não altera roteiro automaticamente.
 
-Fluxo obrigatório no Voyage:
+Fluxo obrigatório no Voyage standalone:
 
 **detectar → explicar → propor → mostrar diferença → pedir aprovação → aplicar**.
 
-Alertas operacionais que não modificam o itinerário (por exemplo, hora de sair, mudança de portão, esteira de bagagem ou risco de conexão) podem ser apresentados automaticamente.
+Alertas operacionais que não modificam o itinerário podem ser apresentados automaticamente pelo produto responsável por aquele domínio.
 
 ## UI
 
-O menu principal do CrewCheck ganha a superfície **Voyage — Beyond the trip · integrado ao CrewCheck**.
+O menu principal do CrewCheck ganha a superfície **Voyage — Explorer do tripulante · integrado ao CrewCheck**.
 
-A tela:
+A tela deve deixar explícito que:
 
-1. explica a separação entre os produtos;
-2. pede autorização antes de compartilhar a disponibilidade;
-3. mostra folgas explícitas, compromissos protegidos e dias que não serão presumidos livres;
-4. oferece entrada direta no Voyage;
-5. mantém o CrewCheck disponível para a operação do tripulante.
+1. o conceito Explorer continua existindo;
+2. dentro do CrewCheck, Voyage significa descoberta contextual, não um segundo app de viagens completo;
+3. funções operacionais continuam no CrewCheck e devem ser abertas por deep link quando necessário;
+4. o usuário autoriza antes de compartilhar disponibilidade;
+5. folgas explícitas, compromissos protegidos e dias incertos são tratados de forma diferente;
+6. existe um CTA separado para abrir o **Voyage completo** fora do modo integrado.
 
 A implementação visual está em `client/src/components/voyage/VoyageIntegrated.tsx` e `voyage-integrated.css`.
