@@ -34,7 +34,7 @@ if (-not $Smoke -and -not $env:GITHUB_TOKEN) {
   throw 'Defina GITHUB_TOKEN apenas nesta sessão do PowerShell antes de iniciar o bridge.'
 }
 
-$argsList = @('scripts/ollama_bridge.py', '--model', $Model)
+$argsList = @('scripts/ollama_bridge_safe.py', '--model', $Model)
 
 if ($Smoke) {
   $argsList += '--smoke'
@@ -54,6 +54,7 @@ if ($Smoke) {
 } else {
   Write-Host 'Mode: all open PRs'
 }
+Write-Host 'Runtime: safe/non-thinking + per-PR isolation'
 Write-Host 'O token GitHub permanece somente no processo local e não é enviado ao Ollama.'
 
 & $pythonExe @pythonPrefix @argsList
