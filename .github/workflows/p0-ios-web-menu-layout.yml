@@ -1,0 +1,42 @@
+name: P0 iOS Web menu layout
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/styles/ios-web-menu-layout-p0.css'
+      - 'client/src/styles/ipad-shell-v14-3-94.css'
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/components/v1399/premium.css'
+      - 'scripts/regression-p0-ios-web-menu-layout.mjs'
+      - '.github/workflows/p0-ios-web-menu-layout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-web-menu-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Production build
+        run: npm run build
+
+      - name: Regression P0 iOS Web menu layout
+        run: node scripts/regression-p0-ios-web-menu-layout.mjs
+
+      - name: TypeScript
+        run: npx tsc --noEmit
