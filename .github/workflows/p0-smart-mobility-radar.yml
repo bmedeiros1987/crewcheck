@@ -1,0 +1,44 @@
+name: P0 #530 Smart Mobility Radar
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/p0-smart-mobility-radar/**'
+      - 'scripts/regression-p0-smart-mobility-radar.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1406/premium-layout.css'
+      - '.github/workflows/p0-smart-mobility-radar.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smart-mobility-radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+
+      - name: Regression P0 #530 Smart Mobility Radar
+        run: node scripts/regression-p0-smart-mobility-radar.mjs
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
