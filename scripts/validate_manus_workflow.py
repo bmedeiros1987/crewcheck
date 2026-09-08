@@ -68,6 +68,15 @@ for forbidden in [
 ]:
     assert forbidden not in s, f'forbidden fragment: {forbidden}'
 
+# Guard the YAML shape itself. Shell/comment text inside a `run: |` block must
+# never accidentally dedent to column 0, otherwise GitHub rejects the entire
+# workflow before creating a job (the failure mode fixed by #630).
+allowed_top_level = ('name:', 'on:', 'permissions:', 'concurrency:', 'jobs:')
+for lineno, line in enumerate(s.splitlines(), 1):
+    if not line or line.startswith((' ', '\t', '#')):
+        continue
+    assert line.startswith(allowed_top_level), f'unexpected top-level YAML line {lineno}: {line}'
+
 concurrency_group = re.search(r'^\s*group:\s*(.+)$', s, re.MULTILINE)
 assert concurrency_group, 'missing concurrency group'
 assert 'sha' not in concurrency_group.group(1).lower(), 'concurrency group must not contain SHA'
@@ -77,4 +86,4 @@ assert 'timeout-minutes: 30' in s, 'job must have a hard timeout'
 assert s.index('https://api.manus.ai/v2/task.create') < s.index('https://api.manus.ai/v2/task.listMessages'), 'polling must happen after task creation'
 assert s.index('current_sha=') < s.index('[MANUS-AUDIT] MANUS: MERGE'), 'exact-SHA revalidation must happen before publishing a merge verdict'
 assert s.endswith('\n'), 'workflow must end with a newline'
-print('PASS: authorized Manus trigger, private async task, bounded polling, structured verdict, fail-closed waiting/error handling, exact-SHA revalidation, and GitHub round-trip comment publishing')
+print('PASS: authorized Manus trigger, private async task, bounded polling, structured verdict, fail-closed waiting/error handling, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')

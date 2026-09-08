@@ -231,10 +231,7 @@ jobs:
 
           bridge_error() {
             local reason="$1"
-            post_comment "[MANUS-AUDIT] MANUS: BRIDGE_ERROR — SHA $REQUESTED_SHA
-
-Fail-closed: $reason
-Task: $TASK_ID"
+            post_comment "$(printf '[MANUS-AUDIT] MANUS: BRIDGE_ERROR — SHA %s\n\nFail-closed: %s\nTask: %s' "$REQUESTED_SHA" "$reason" "$TASK_ID")"
             echo "Manus bridge error: $reason" >&2
             exit 1
           }
@@ -294,9 +291,7 @@ Task: $TASK_ID"
           [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || bridge_error "could not revalidate current PR HEAD"
 
           if [ "$current_sha" != "$REQUESTED_SHA" ]; then
-            post_comment "[MANUS-AUDIT] MANUS: STALE — requested SHA $REQUESTED_SHA
-
-Current PR HEAD is $current_sha. No approval was published for the stale task."
+            post_comment "$(printf '[MANUS-AUDIT] MANUS: STALE — requested SHA %s\n\nCurrent PR HEAD is %s. No approval was published for the stale task.' "$REQUESTED_SHA" "$current_sha")"
             echo "Stale Manus verdict suppressed: requested=$REQUESTED_SHA current=$current_sha"
             exit 0
           fi
@@ -304,21 +299,11 @@ Current PR HEAD is $current_sha. No approval was published for the stale task."
           case "$verdict" in
             MERGE)
               test "$severity" = "NONE" || bridge_error "MERGE verdict must have severity NONE"
-              post_comment "[MANUS-AUDIT] MANUS: MERGE — SHA $REQUESTED_SHA
-
-$summary"
+              post_comment "$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s' "$REQUESTED_SHA" "$summary")"
               ;;
             BLOCKER)
               case "$severity" in P0|P1|P2) ;; *) bridge_error "BLOCKER verdict must have severity P0, P1, or P2" ;; esac
-              post_comment "[MANUS-AUDIT] MANUS: BLOCKER — SHA $REQUESTED_SHA
-Severity: $severity
-
-Summary: $summary
-
-Reproducer: $reproducer
-Expected: $expected
-Actual: $actual
-Root cause: $root_cause"
+              post_comment "$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s' "$REQUESTED_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause")"
               ;;
             *)
               bridge_error "unknown structured verdict: $verdict"
