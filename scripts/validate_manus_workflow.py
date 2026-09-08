@@ -46,7 +46,7 @@ required = [
     '[MANUS-AUDIT] MANUS: STALE',
     'current_sha=',
     'test "$sha" = "$REQUESTED_SHA"',
-    'test "$current_sha" != "$REQUESTED_SHA"',
+    '[ "$current_sha" != "$REQUESTED_SHA" ]',
     'agent_status',
     'structured_output_result',
     'timeout waiting for structured Manus verdict',
