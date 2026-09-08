@@ -17,7 +17,6 @@ assert.match(selector, /HSB\|HOME\[ _-\]\*STANDBY\|SOBREAVISO/, 'HSB/home standb
 assert.ok(!selector.includes('day as any)?.rawText'), 'HSB não pode ser inferido do rawText agregado do dia');
 assert.ok(selector.includes('isDepartureRestEvent(event) || isHomeStandbyDepartureEvent(event)'), 'HSB deve ser excluído antes da seleção da atividade presencial');
 
-// O contrato do caso real 08/09: HSB é domiciliar; ASB continua presencial.
 function homeStandbyOwnIdentity(parts) {
   const ownIdentity = parts.map((value) => String(value || '').trim().toUpperCase()).filter(Boolean).join(' ');
   return /(^|\s)(HSB|HOME[ _-]*STANDBY|SOBREAVISO)(\s|$)/.test(ownIdentity);
@@ -43,7 +42,6 @@ assert.ok(radarHelper.includes('sameCivilDay'), 'Radar não pode cruzar dia oper
 assert.ok(radarHelper.includes('samePresentationAirport'), 'Radar não pode puxar voo de outra base/origem');
 assert.ok(radarHelper.includes('inOperationalWindow'), 'Radar deve respeitar janela operacional da atividade');
 
-// Modelo mínimo da guarda: voo de amanhã ou de outra base nunca entra na reserva de hoje.
 function radarCandidate({ sameDay, sameBase, inWindow }) { return sameDay && sameBase && inWindow; }
 assert.equal(radarCandidate({ sameDay: true, sameBase: true, inWindow: true }), true);
 assert.equal(radarCandidate({ sameDay: false, sameBase: true, inWindow: true }), false);
@@ -51,9 +49,13 @@ assert.equal(radarCandidate({ sameDay: true, sameBase: false, inWindow: true }),
 assert.equal(radarCandidate({ sameDay: true, sameBase: true, inWindow: false }), false);
 
 const maps = slice('function GoogleMapsRoutePreview(', 'function isAdmin()');
-assert.ok(maps.includes('const rawIncidents = Array.isArray(route?.incidents)'), 'incidentes brutos devem ser preservados para avaliação');
+assert.ok(maps.includes('const incidents = route?.incidents || [];'), 'lista original deve permanecer para compatibilidade e visualização');
+assert.ok(maps.includes('const meaningfulIncidents = incidents.filter('), 'notificação deve operar sobre subconjunto relevante');
 assert.ok(maps.includes("item.roadClosure || item.severity === 'critical' || Number(item.delaySeconds || 0) >= 300"), 'alerta deve exigir bloqueio, crítico ou atraso >=5min');
+assert.ok(maps.includes('if (!meaningfulIncidents.length) return;'), 'ocorrência sem impacto não deve interromper o usuário');
+assert.ok(maps.includes('const fingerprint = meaningfulIncidents.map((item)'), 'dedupe deve ignorar ruído de ocorrências sem impacto');
 assert.ok(maps.includes("const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');"), 'primeiro alerta crítico relevante deve continuar distinguido');
+assert.ok(maps.includes("(critical || meaningfulIncidents[0])?.title"), 'corpo do alerta deve usar a ocorrência relevante');
 assert.ok(maps.includes("'Trânsito com impacto na rota'"), 'alerta não crítico deve explicar impacto real');
 assert.ok(!maps.includes("'Nova ocorrência na rota'"), 'aviso genérico sem nexo deve ser removido desta superfície');
 
