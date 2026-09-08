@@ -6,7 +6,7 @@ s = p.read_text()
 
 required = [
     'name: Manus audit scheduler',
-    "cron: '*/10 * * * *'",
+    "cron: '*/5 * * * *'",
     'workflow_dispatch:',
     'actions: write',
     'contents: read',
