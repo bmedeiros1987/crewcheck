@@ -19,15 +19,24 @@ Ollama text-only model
 
 The model receives only the explicit audit prompt. The bridge never forwards `GITHUB_TOKEN`, never executes commands requested by the model, never changes repository code, never merges, and checks the PR head SHA immediately before and immediately after the model call.
 
-This v1 is intentionally comment-only. `REQUEST_TEST`/whitelisted local test execution is deferred until the transport is proven stable.
+The daemon now watches every open PR in `bmedeiros1987/crewcheck` by default. It only acts on explicit top-level `[OLLAMA-REQUEST]` comments from the allowed GitHub author. That keeps the model from auditing arbitrary text or consuming local resources just because a PR exists.
+
+`REQUEST_TEST`/whitelisted local test execution remains deferred; the bridge is comment-only.
 
 ## GitHub token
 
-Use a dedicated fine-grained token with the smallest practical scope for the repository. It needs to read the selected PR and its comments and create issue/PR comments. It does not need repository administration, Actions administration, branch protection, merge, or contents write.
+Use a dedicated fine-grained token with the smallest practical scope for the repository. It needs to read pull requests/comments and create issue/PR comments. It does not need repository administration, Actions administration, branch protection, merge, or contents write.
+
+Recommended repository permissions:
+
+- repository access: only `bmedeiros1987/crewcheck`;
+- Pull requests: Read-only;
+- Issues: Read and write;
+- Metadata: Read-only.
 
 Do not paste the token into chat, prompts, source files, `.env` committed to git, or Ollama.
 
-For an initial PowerShell session:
+For a PowerShell session:
 
 ```powershell
 $env:GITHUB_TOKEN = 'YOUR_FINE_GRAINED_TOKEN'
@@ -37,7 +46,7 @@ Close the PowerShell session when finished to discard the process environment va
 
 ## Local smoke test
 
-From the repository root:
+From the bridge worktree:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Smoke
@@ -51,22 +60,36 @@ Expected response contains:
 
 No GitHub token is needed for the smoke test.
 
-## Run against the dedicated bridge PR
+The PowerShell launcher prefers a working `py -3` and falls back to a working `python`, avoiding the Windows Store alias problem.
+
+## Watch all open PRs
+
+This is the normal operating mode. No PR number is needed:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Pr <PR_NUMBER>
+powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1
 ```
 
-For one polling cycle only:
+The process stays open, polls the repository, and handles requests from any currently open PR. One bridge process is enough for the repository.
+
+To perform only one polling cycle:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Pr <PR_NUMBER> -Once
+powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Once
 ```
 
-For local validation without publishing the response:
+To validate locally without publishing or recording the request as processed:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Pr <PR_NUMBER> -Once -DryRun
+powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Once -DryRun
+```
+
+## Restrict to a single PR
+
+Targeted mode remains available for troubleshooting:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start_ollama_bridge.ps1 -Pr 605
 ```
 
 ## Request protocol
@@ -109,17 +132,14 @@ If the PR head moves while Ollama is reasoning, the result is discarded and the 
 
 ## Idempotency
 
-Processed `request_id` values are stored locally in `.ollama-bridge-state.json`. Reusing the same request ID does not trigger another model call.
+Processed requests are stored locally in `.ollama-bridge-state.json` under a key composed of `PR_NUMBER:request_id`, so the same request ID may safely exist on different PRs.
+
+`-DryRun` does not mark a request as processed and does not publish to GitHub.
 
 The state file contains request IDs/status/SHA only; it does not contain the GitHub token or full prompts.
 
-## Current limitations
+## Operational model
 
-- v1 reads the first 100 comments of the dedicated sandbox PR;
-- no `REQUEST_TEST` support yet;
-- no local shell execution at all;
-- no self-hosted GitHub runner;
-- no automatic merge authority;
-- Ollama PASS is additional evidence, never sufficient by itself to merge a P0 PR.
+The bridge does not blindly send every PR diff to Ollama. ChatGPT/Claude/Manus or the operator can place a bounded `[OLLAMA-REQUEST]` on any PR, and the single daemon will pick it up automatically. This prevents giant prompts from overrunning the local 4096-token model context and keeps audit scope explicit.
 
-These restrictions are intentional for the first transport validation.
+Ollama remains additional adversarial evidence. `PASS` does not grant merge authority, and a reproducible blocker still requires adjudication through the normal CrewCheck gate.
