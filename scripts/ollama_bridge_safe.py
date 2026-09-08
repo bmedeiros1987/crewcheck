@@ -24,7 +24,14 @@ _RETRY_AFTER: dict[int, float] = {}
 _RETRY_SECONDS = 120
 
 
-def call_ollama_non_thinking(url: str, model: str, prompt: str, timeout: int) -> str:
+def call_ollama_non_thinking(
+    url: str,
+    model: str,
+    prompt: str,
+    timeout: int,
+    num_ctx: int,
+    num_predict: int,
+) -> str:
     system = (
         "You are CrewCheck's local adversarial code auditor. You are a text-only analyzer. "
         "You have no shell, no browser, no filesystem tools, no GitHub access, and no credentials. "
@@ -39,11 +46,15 @@ def call_ollama_non_thinking(url: str, model: str, prompt: str, timeout: int) ->
             "model": model,
             "stream": False,
             "think": False,
+            "keep_alive": 0,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            "options": {"num_ctx": 4096},
+            "options": {
+                "num_ctx": max(1024, num_ctx),
+                "num_predict": max(64, num_predict),
+            },
         },
         timeout=timeout,
     )
