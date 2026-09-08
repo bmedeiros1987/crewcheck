@@ -1,4 +1,4 @@
-name: P0 #530 Smart Mobility Radar
+name: 'P0 #530 Smart Mobility Radar'
 
 on:
   pull_request:
@@ -34,7 +34,7 @@ jobs:
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
 
-      - name: Regression P0 #530 Smart Mobility Radar
+      - name: 'Regression P0 #530 Smart Mobility Radar'
         run: node scripts/regression-p0-smart-mobility-radar.mjs
 
       - name: TypeScript
