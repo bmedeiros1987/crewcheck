@@ -58,8 +58,6 @@ const radarTargetHelper = `function departureRadarTarget(event: ZeroLeg, radarEv
   if (![activityStart, activityEnd, flightStart].every((date) => Number.isFinite(date.getTime()))) return placeholderLeg();
   const sameCivilDay = dateChip(activityStart) === dateChip(flightStart);
   const samePresentationAirport = String(radarEvent.origin || '').trim().toUpperCase() === String(event.origin || '').trim().toUpperCase();
-  // Reserva pode ser seguida de acionamento pouco depois do fim publicado; a janela
-  // adicional evita perder esse voo sem jamais puxar um voo de outro dia/base.
   const inOperationalWindow = flightStart.getTime() >= activityStart.getTime()
     && flightStart.getTime() <= activityEnd.getTime() + 6 * 60 * 60_000;
   return sameCivilDay && samePresentationAirport && inOperationalWindow ? radarEvent : placeholderLeg();
@@ -90,13 +88,9 @@ home = patchBlock(home, 'function Departure(', 'function MonthlyMapView', 'Deslo
   if (!patched.includes('radarEvent?: ZeroLeg')) throw new Error('[smart-mobility] assinatura de Departure não atualizada');
 
   if (!patched.includes('const radarTarget = departureRadarTarget(event, radarEvent);')) {
-    const anchors = [
-      "  const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';",
-      "  const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';\n",
-    ];
-    const anchor = anchors.find((item) => patched.includes(item));
-    if (!anchor) throw new Error('[smart-mobility] modeLabel não localizado em Departure');
-    patched = patched.replace(anchor, `${anchor.trimEnd()}\n  const radarTarget = departureRadarTarget(event, radarEvent);\n  const radar = useRadarSnapshot(radarTarget);\n  const radarAvailable = !radarTarget.placeholder;\n`);
+    const modeAnchor = "  const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';";
+    if (!patched.includes(modeAnchor)) throw new Error('[smart-mobility] modeLabel não localizado em Departure');
+    patched = patched.replace(modeAnchor, `${modeAnchor}\n  const radarTarget = departureRadarTarget(event, radarEvent);\n  const radar = useRadarSnapshot(radarTarget);\n  const radarAvailable = !radarTarget.placeholder;`);
   }
 
   patched = patched
@@ -112,17 +106,21 @@ home = patchBlock(home, 'function Departure(', 'function MonthlyMapView', 'Deslo
     if (detailIndex >= 0) {
       patched = `${patched.slice(0, detailIndex)}${radarMarkup}${patched.slice(detailIndex)}`;
     } else {
-      const mapAnchor = '<GoogleMapsRoutePreview';
-      const mapIndex = patched.indexOf(mapAnchor);
+      const mapIndex = patched.indexOf('<GoogleMapsRoutePreview');
       if (mapIndex < 0) throw new Error('[smart-mobility] local para status Radar não encontrado');
       patched = `${patched.slice(0, mapIndex)}${radarMarkup}${patched.slice(mapIndex)}`;
     }
   }
 
   if (!patched.includes('cc-smart-mobility-settings')) {
-    const toolboxStart = patched.indexOf('<section className="cz-toolbox"><h2>Como você vai sair</h2>');
-    const mapStart = patched.indexOf('<GoogleMapsRoutePreview', toolboxStart);
-    if (toolboxStart < 0 || mapStart < 0) throw new Error('[smart-mobility] controles de trajeto não localizados');
+    // O layout passou por vários patches e o título da toolbox mudou ao longo das
+    // versões. Localizamos a seção pelos próprios departureModes, não por texto.
+    const modesIndex = patched.indexOf('departureModes.map');
+    const mapStart = modesIndex >= 0 ? patched.indexOf('<GoogleMapsRoutePreview', modesIndex) : -1;
+    const toolboxStart = modesIndex >= 0 ? patched.lastIndexOf('<section className="cz-toolbox', modesIndex) : -1;
+    if (modesIndex < 0 || toolboxStart < 0 || mapStart < 0 || toolboxStart >= mapStart) {
+      throw new Error(`[smart-mobility] controles de trajeto não localizados. modes=${modesIndex} toolbox=${toolboxStart} map=${mapStart}`);
+    }
     const toolbox = patched.slice(toolboxStart, mapStart);
     const wrapped = `<details className="cc-smart-mobility-settings"><summary><Settings size={18}/><span>Ajustar trajeto e margem</span><small>{modeLabel} · margem {margin} min</small></summary>${toolbox}</details>`;
     patched = `${patched.slice(0, toolboxStart)}${wrapped}${patched.slice(mapStart)}`;
@@ -131,8 +129,6 @@ home = patchBlock(home, 'function Departure(', 'function MonthlyMapView', 'Deslo
   return patched;
 });
 
-// A superfície de deslocamento recebe o próximo voo real apenas como contexto de
-// Radar. departureRadarTarget() impede que um voo de outro dia/base contamine ASB.
 home = home.replace(
   "{view === 'departure' && <Departure event={departureEvent}/>}",
   "{view === 'departure' && <Departure event={departureEvent} radarEvent={flightEvent}/>}",
@@ -141,7 +137,6 @@ if (!home.includes("<Departure event={departureEvent} radarEvent={flightEvent}/>
   throw new Error('[smart-mobility] ligação Departure ↔ Radar não aplicada');
 }
 
-// Nome curto no rodapé para caber em telas estreitas; a tela usa o nome completo.
 home = home.replace("['departure','Saída',Navigation]", "['departure','Desloc.',Navigation]");
 
 home = patchBlock(home, 'function GoogleMapsRoutePreview(', 'function isAdmin()', 'alertas de rota', (block) => {
@@ -151,8 +146,10 @@ home = patchBlock(home, 'function GoogleMapsRoutePreview(', 'function isAdmin()'
     if (!incidentLine) throw new Error('[smart-mobility] lista de incidentes não localizada');
     const indent = incidentLine[1];
     const rhs = incidentLine[2];
-    const replacement = `${indent}const rawIncidents = Array.isArray(route?.incidents) ? ${rhs} : [];\n${indent}const incidents = rawIncidents.filter((item) => item.roadClosure || item.severity === 'critical' || Number(item.delaySeconds || 0) >= 300);`;
-    patched = patched.replace(incidentLine[0], replacement);
+    patched = patched.replace(
+      incidentLine[0],
+      `${indent}const rawIncidents = Array.isArray(route?.incidents) ? ${rhs} : [];\n${indent}const incidents = rawIncidents.filter((item) => item.roadClosure || item.severity === 'critical' || Number(item.delaySeconds || 0) >= 300);`,
+    );
   }
   patched = patched.replace("const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';", "const title = critical ? 'Bloqueio crítico na rota' : 'Trânsito com impacto na rota';");
   return patched;
