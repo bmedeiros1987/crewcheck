@@ -4,13 +4,17 @@ on:
   pull_request:
     paths:
       - '.github/workflows/manus-github-audit.yml'
+      - '.github/workflows/manus-audit-scheduler.yml'
       - 'scripts/validate_manus_workflow.py'
+      - 'scripts/validate_manus_scheduler.py'
   push:
     branches:
       - main
     paths:
       - '.github/workflows/manus-github-audit.yml'
+      - '.github/workflows/manus-audit-scheduler.yml'
       - 'scripts/validate_manus_workflow.py'
+      - 'scripts/validate_manus_scheduler.py'
 
 permissions:
   contents: read
@@ -22,5 +26,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
-      - name: Validate workflow
+      - name: Validate round-trip bridge
         run: python scripts/validate_manus_workflow.py .github/workflows/manus-github-audit.yml
+      - name: Validate scheduled fallback
+        run: python scripts/validate_manus_scheduler.py .github/workflows/manus-audit-scheduler.yml
