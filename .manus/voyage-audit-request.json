@@ -1,0 +1,6 @@
+{
+  "pr_number": 4,
+  "requested_sha": "28b1338f8270ea495ca6c86a84a57e365dfef062",
+  "request_nonce": "2026-09-08T20:28:00Z",
+  "scope": "Final independent Voyage Product/UX/E2E gate. Revalidate Adaptive Home completeness, CTA honesty/no-op behavior, >=44px targets and accessibility, Journey Calendar/responsive behavior, Automatic/Dark/Light themes, offline/PWA behavior, and the new local PDF retention policy/cache transition. Verify relevant GitHub CI and Android evidence for the exact same SHA. Confirm that LOCAL_QUEUED expiry preserves structured facts/provenance and does not invent synchronization. Report any reproducible P0/P1 blocker; otherwise return MERGE/NONE."
+}
