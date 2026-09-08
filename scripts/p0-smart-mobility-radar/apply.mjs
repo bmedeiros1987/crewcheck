@@ -113,8 +113,6 @@ home = patchBlock(home, 'function Departure(', 'function MonthlyMapView', 'Deslo
   }
 
   if (!patched.includes('cc-smart-mobility-settings')) {
-    // O layout passou por vários patches e o título da toolbox mudou ao longo das
-    // versões. Localizamos a seção pelos próprios departureModes, não por texto.
     const modesIndex = patched.indexOf('departureModes.map');
     const mapStart = modesIndex >= 0 ? patched.indexOf('<GoogleMapsRoutePreview', modesIndex) : -1;
     const toolboxStart = modesIndex >= 0 ? patched.lastIndexOf('<section className="cz-toolbox', modesIndex) : -1;
@@ -141,17 +139,26 @@ home = home.replace("['departure','Saída',Navigation]", "['departure','Desloc.'
 
 home = patchBlock(home, 'function GoogleMapsRoutePreview(', 'function isAdmin()', 'alertas de rota', (block) => {
   let patched = block;
-  if (!patched.includes('const rawIncidents = Array.isArray(route?.incidents)')) {
-    const incidentLine = patched.match(/^(\s*)const incidents = Array\.isArray\(route\?\.incidents\) \? ([^\n;]+) : \[\];/m);
-    if (!incidentLine) throw new Error('[smart-mobility] lista de incidentes não localizada');
-    const indent = incidentLine[1];
-    const rhs = incidentLine[2];
+  const incidentAnchor = '    const incidents = route?.incidents || [];';
+  if (!patched.includes('const meaningfulIncidents = incidents.filter(')) {
+    if (!patched.includes(incidentAnchor)) throw new Error('[smart-mobility] lista de incidentes não localizada');
     patched = patched.replace(
-      incidentLine[0],
-      `${indent}const rawIncidents = Array.isArray(route?.incidents) ? ${rhs} : [];\n${indent}const incidents = rawIncidents.filter((item) => item.roadClosure || item.severity === 'critical' || Number(item.delaySeconds || 0) >= 300);`,
+      incidentAnchor,
+      `${incidentAnchor}\n    const meaningfulIncidents = incidents.filter((item) => item.roadClosure || item.severity === 'critical' || Number(item.delaySeconds || 0) >= 300);\n    if (!meaningfulIncidents.length) return;`,
     );
   }
-  patched = patched.replace("const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';", "const title = critical ? 'Bloqueio crítico na rota' : 'Trânsito com impacto na rota';");
+  patched = patched.replace(
+    'const fingerprint = incidents.map((item)',
+    'const fingerprint = meaningfulIncidents.map((item)',
+  );
+  patched = patched.replace(
+    "const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';",
+    "const title = critical ? 'Bloqueio crítico na rota' : 'Trânsito com impacto na rota';",
+  );
+  patched = patched.replace(
+    "const body = (critical || incidents[0])?.title || 'Revise o trajeto antes de sair.';",
+    "const body = (critical || meaningfulIncidents[0])?.title || 'Revise o trajeto antes de sair.';",
+  );
   return patched;
 });
 
