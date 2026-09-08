@@ -8,8 +8,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-  throw 'Python não encontrado no PATH.'
+$pythonExe = $null
+$pythonPrefix = @()
+
+if (Get-Command py -ErrorAction SilentlyContinue) {
+  & py -3 -c "import sys; raise SystemExit(0 if sys.version_info.major == 3 else 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $pythonExe = 'py'
+    $pythonPrefix = @('-3')
+  }
+}
+
+if (-not $pythonExe -and (Get-Command python -ErrorAction SilentlyContinue)) {
+  & python -c "import sys; raise SystemExit(0 if sys.version_info.major == 3 else 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $pythonExe = 'python'
+  }
+}
+
+if (-not $pythonExe) {
+  throw 'Python 3 não encontrado. Instale Python 3 ou disponibilize o launcher py -3 no PATH.'
 }
 
 if (-not $Smoke -and -not $env:GITHUB_TOKEN) {
@@ -20,8 +38,7 @@ $argsList = @('scripts/ollama_bridge.py', '--model', $Model)
 
 if ($Smoke) {
   $argsList += '--smoke'
-} else {
-  if (-not $Pr) { throw 'Informe -Pr <numero>.' }
+} elseif ($Pr) {
   $argsList += @('--pr', "$Pr")
 }
 
@@ -30,8 +47,14 @@ if ($DryRun) { $argsList += '--dry-run' }
 
 Write-Host "CrewCheck Ollama Bridge"
 Write-Host "Model: $Model"
-if ($Pr) { Write-Host "PR: #$Pr" }
+if ($Smoke) {
+  Write-Host 'Mode: smoke test'
+} elseif ($Pr) {
+  Write-Host "Mode: PR #$Pr only"
+} else {
+  Write-Host 'Mode: all open PRs'
+}
 Write-Host 'O token GitHub permanece somente no processo local e não é enviado ao Ollama.'
 
-& python @argsList
+& $pythonExe @pythonPrefix @argsList
 exit $LASTEXITCODE
