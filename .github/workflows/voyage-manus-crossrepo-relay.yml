@@ -1,0 +1,122 @@
+name: Voyage Manus cross-repo relay
+
+on:
+  push:
+    branches:
+      - relay/voyage-manus-audit
+    paths:
+      - '.manus/voyage-audit-request.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voyage-manus-crossrepo-relay
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build immutable request
+        id: request
+        env:
+          MANUS_GITHUB_CONNECTOR_ID: ${{ vars.MANUS_GITHUB_CONNECTOR_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$MANUS_GITHUB_CONNECTOR_ID"
+          test -f .manus/voyage-audit-request.json
+
+          PR_NUMBER="$(jq -er '.pr_number' .manus/voyage-audit-request.json)"
+          SHA="$(jq -er '.requested_sha' .manus/voyage-audit-request.json)"
+          SCOPE="$(jq -r '.scope // "Independent exact-SHA Voyage audit."' .manus/voyage-audit-request.json)"
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          PROMPT="[VOYAGE][MANUS FINAL EXACT-SHA AUDIT] Repository: https://github.com/bmedeiros1987/Voyage. Pull request: https://github.com/bmedeiros1987/Voyage/pull/$PR_NUMBER. Audit ONLY exact immutable SHA $SHA. Act as an independent READ-ONLY Product/UX/E2E auditor. Do not commit, push, rebase, modify code/tests, enable auto-merge, or merge. ChatGPT is the sole merge coordinator. Scope: $SCOPE Reproduce material claims independently from repository code, tests and GitHub Actions. Immediately before verdict, re-read Voyage PR #$PR_NUMBER and verify its HEAD is still exactly $SHA. If it differs, return BLOCKER severity P2 with summary STALE. MERGE requires zero reproducible P0/P1 blockers in scope. Return the full 40-character SHA and do not infer missing evidence."
+
+          jq -n \
+            --arg prompt "$PROMPT" \
+            --arg connector "$MANUS_GITHUB_CONNECTOR_ID" \
+            --arg title "Voyage #$PR_NUMBER final audit ${SHA:0:12}" \
+            '{message:{content:[{type:"text",text:$prompt}],connectors:[$connector]},title:$title,locale:"pt-BR",interactive_mode:false,hide_in_task_list:false,share_visibility:"private",agent_profile:"standard",structured_output_schema:{type:"object",properties:{verdict:{type:"string",enum:["MERGE","BLOCKER"]},sha:{type:"string"},severity:{type:"string",enum:["NONE","P0","P1","P2"]},summary:{type:"string"},reproducer:{type:"string"},expected:{type:"string"},actual:{type:"string"},root_cause:{type:"string"}},required:["verdict","sha","severity","summary","reproducer","expected","actual","root_cause"],additionalProperties:false}}' > request.json
+
+          echo "requested_sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create private Manus task
+        id: create
+        env:
+          MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$MANUS_API_KEY"
+          response="$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url 'https://api.manus.ai/v2/task.create' \
+            --header 'Content-Type: application/json' \
+            --header "x-manus-api-key: $MANUS_API_KEY" \
+            --data-binary @request.json)"
+          test "$(jq -r '.ok' <<<"$response")" = "true"
+          TASK_ID="$(jq -r '.task_id' <<<"$response")"
+          [[ "$TASK_ID" =~ ^[A-Za-z0-9_-]+$ ]]
+          echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
+          echo "MANUS_TASK_ID=$TASK_ID"
+
+      - name: Poll and emit structured verdict
+        env:
+          MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
+          TASK_ID: ${{ steps.create.outputs.task_id }}
+          REQUESTED_SHA: ${{ steps.request.outputs.requested_sha }}
+        run: |
+          set -euo pipefail
+          sleep 8
+          RESULT=''
+
+          for attempt in $(seq 1 100); do
+            body="$(mktemp)"
+            code="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' --get \
+              --url 'https://api.manus.ai/v2/task.listMessages' \
+              --header "x-manus-api-key: $MANUS_API_KEY" \
+              --data-urlencode "task_id=$TASK_ID" \
+              --data-urlencode 'order=desc' \
+              --data-urlencode 'limit=50')"
+
+            if [ "$code" = "200" ]; then
+              response="$(cat "$body")"
+              test "$(jq -r '.ok' <<<"$response")" = "true"
+              status="$(jq -r '[.messages[] | select(.type=="status_update") | .status_update.agent_status][0] // "unknown"' <<<"$response")"
+              if [ "$status" = "error" ]; then
+                echo 'MANUS_RELAY_ERROR=task_error' >&2
+                exit 24
+              fi
+              if [ "$status" = "waiting" ]; then
+                echo 'MANUS_RELAY_ERROR=interactive_input_requested' >&2
+                exit 23
+              fi
+              RESULT="$(jq -c '[.messages[] | select(.type=="structured_output_result") | .structured_output_result][0] // empty' <<<"$response")"
+              if [ -n "$RESULT" ]; then
+                break
+              fi
+              sleep 10
+            elif [ "$code" = "404" ] && [ "$attempt" -le 12 ]; then
+              sleep 5
+            elif [ "$code" = "429" ] || [[ "$code" =~ ^5 ]]; then
+              sleep 15
+            else
+              echo "MANUS_RELAY_ERROR=http_$code" >&2
+              exit 25
+            fi
+          done
+
+          [ -n "$RESULT" ] || { echo 'MANUS_RELAY_ERROR=timeout' >&2; exit 26; }
+          test "$(jq -r '.success' <<<"$RESULT")" = "true"
+          VALUE="$(jq -c '.value' <<<"$RESULT")"
+          SHA="$(jq -r '.sha' <<<"$VALUE")"
+          test "$SHA" = "$REQUESTED_SHA" || { echo "MANUS_RELAY_ERROR=sha_mismatch:$SHA" >&2; exit 27; }
+          echo "MANUS_STRUCTURED_RESULT=$VALUE"
+          echo "MANUS_VERDICT=$(jq -r '.verdict' <<<"$VALUE")"
+          echo "MANUS_SHA=$SHA"
+          echo "MANUS_SEVERITY=$(jq -r '.severity' <<<"$VALUE")"
