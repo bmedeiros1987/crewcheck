@@ -1,28 +1,13 @@
 #!/usr/bin/env python3
 """CrewCheck Ollama Bridge.
 
-A small local relay between GitHub PR comments and a local Ollama server.
+Local relay between GitHub PR comments and a local Ollama server.
+
+By default the daemon watches every open PR in the configured repository and
+processes explicit [OLLAMA-REQUEST] comments. Use --pr N to restrict it to one PR.
+
 The Ollama model never receives the GitHub token and never gets shell/web tools.
-
-Protocol (top-level PR comment):
-
-[OLLAMA-REQUEST]
-request_id: example-001
-sha: 0123456789abcdef0123456789abcdef01234567
-prompt:
-<<<PROMPT
-Audit this exact code slice...
-PROMPT>>>
-
-The bridge posts one of:
-- [OLLAMA-AUDIT] OLLAMA: PASS — SHA <sha>
-- [OLLAMA-AUDIT] OLLAMA: BLOCKER — SHA <sha>
-- [OLLAMA-AUDIT] CONTEXT_REQUIRED — SHA <sha>
-- [OLLAMA-AUDIT] INVALID — SHA <sha>
-- [OLLAMA-AUDIT] STALE — SHA <sha>
-
-This v1 is intentionally read-only apart from posting comments. It never merges,
-changes code, runs model-provided commands, or exposes GitHub credentials to Ollama.
+The bridge never merges, changes repository code, or executes model-provided commands.
 """
 
 from __future__ import annotations
@@ -34,6 +19,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,7 +81,7 @@ def github_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "crewcheck-ollama-bridge/1",
+        "User-Agent": "crewcheck-ollama-bridge/2",
     }
 
 
@@ -106,13 +92,45 @@ def github_get_pr(repo: str, pr: int, token: str) -> dict[str, Any]:
     )
 
 
+def github_list_open_pr_numbers(repo: str, token: str) -> list[int]:
+    numbers: list[int] = []
+    page = 1
+    while True:
+        query = urllib.parse.urlencode(
+            {"state": "open", "per_page": 100, "page": page, "sort": "created", "direction": "asc"}
+        )
+        result = http_json(
+            f"https://api.github.com/repos/{repo}/pulls?{query}",
+            headers=github_headers(token),
+        )
+        if not isinstance(result, list):
+            raise BridgeError("GitHub did not return an open-PR list")
+        for item in result:
+            number = item.get("number")
+            if isinstance(number, int):
+                numbers.append(number)
+        if len(result) < 100:
+            break
+        page += 1
+    return numbers
+
+
 def github_get_comments(repo: str, pr: int, token: str) -> list[dict[str, Any]]:
-    # Small controlled sandbox PR: first 100 comments is sufficient for v1.
-    result = http_json(
-        f"https://api.github.com/repos/{repo}/issues/{pr}/comments?per_page=100",
-        headers=github_headers(token),
-    )
-    return result if isinstance(result, list) else []
+    comments: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        query = urllib.parse.urlencode({"per_page": 100, "page": page})
+        result = http_json(
+            f"https://api.github.com/repos/{repo}/issues/{pr}/comments?{query}",
+            headers=github_headers(token),
+        )
+        if not isinstance(result, list):
+            raise BridgeError(f"GitHub did not return comments for PR #{pr}")
+        comments.extend(item for item in result if isinstance(item, dict))
+        if len(result) < 100:
+            break
+        page += 1
+    return comments
 
 
 def github_post_comment(repo: str, pr: int, token: str, body: str) -> None:
@@ -172,7 +190,7 @@ def call_ollama(url: str, model: str, prompt: str, timeout: int) -> str:
     response = http_json(
         url,
         method="POST",
-        headers={"User-Agent": "crewcheck-ollama-bridge/1"},
+        headers={"User-Agent": "crewcheck-ollama-bridge/2"},
         payload={
             "model": model,
             "stream": False,
@@ -191,7 +209,6 @@ def call_ollama(url: str, model: str, prompt: str, timeout: int) -> str:
 
 
 def validate_model_response(content: str, expected_sha: str) -> tuple[str, str]:
-    # Do not accept a model's claim for another commit.
     if expected_sha not in content:
         return "INVALID", (
             f"[OLLAMA-AUDIT] INVALID — SHA {expected_sha}\n"
@@ -225,11 +242,12 @@ def load_state(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             return {"processed": {}}
-        data.setdefault("processed", {})
+        processed = data.setdefault("processed", {})
+        if not isinstance(processed, dict):
+            raise ValueError("processed must be an object")
         return data
-    except Exception:
-        # Fail closed: preserve the unreadable file and start no request silently.
-        raise BridgeError(f"State file is unreadable: {path}")
+    except Exception as exc:
+        raise BridgeError(f"State file is unreadable: {path}") from exc
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
@@ -239,26 +257,38 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def process_once(args: argparse.Namespace, token: str, state: dict[str, Any]) -> bool:
-    pr_data = github_get_pr(args.repo, args.pr, token)
+def state_key(pr: int, request_id: str) -> str:
+    return f"{pr}:{request_id}"
+
+
+def process_pr_once(
+    args: argparse.Namespace,
+    token: str,
+    state: dict[str, Any],
+    pr: int,
+) -> bool:
+    pr_data = github_get_pr(args.repo, pr, token)
+    if str(pr_data.get("state") or "").lower() != "open":
+        return False
+
     head_sha = str(((pr_data.get("head") or {}).get("sha") or "")).lower()
     if not SHA_RE.fullmatch(head_sha):
-        raise BridgeError("GitHub did not return a valid PR head SHA")
+        raise BridgeError(f"GitHub did not return a valid head SHA for PR #{pr}")
 
-    comments = github_get_comments(args.repo, args.pr, token)
     requests: list[AuditRequest] = []
-    for comment in comments:
+    for comment in github_get_comments(args.repo, pr, token):
         request = parse_request(comment, args.allowed_author)
         if request is not None:
             requests.append(request)
 
     requests.sort(key=lambda item: item.comment_id)
     for request in requests:
-        if request.request_id in state["processed"]:
+        key = state_key(pr, request.request_id)
+        if key in state["processed"]:
             continue
 
         print(
-            f"request={request.request_id} comment={request.comment_id} "
+            f"pr=#{pr} request={request.request_id} comment={request.comment_id} "
             f"sha={request.sha[:12]} author={request.author}"
         )
 
@@ -269,16 +299,22 @@ def process_once(args: argparse.Namespace, token: str, state: dict[str, Any]) ->
                 f"Current PR head: {head_sha}\n"
                 "No model call was made."
             )
-            if not args.dry_run:
-                github_post_comment(args.repo, args.pr, token, body)
-            state["processed"][request.request_id] = {"status": "STALE", "sha": request.sha}
+            if args.dry_run:
+                print("--- DRY RUN RESULT ---")
+                print(body)
+            else:
+                github_post_comment(args.repo, pr, token, body)
+                state["processed"][key] = {
+                    "pr": pr,
+                    "status": "STALE",
+                    "sha": request.sha,
+                }
             return True
 
         content = call_ollama(args.ollama_url, args.model, request.prompt, args.ollama_timeout)
         status, body = validate_model_response(content, request.sha)
 
-        # TOCTOU guard: exact PR head must still match immediately before publishing.
-        pr_after = github_get_pr(args.repo, args.pr, token)
+        pr_after = github_get_pr(args.repo, pr, token)
         head_after = str(((pr_after.get("head") or {}).get("sha") or "")).lower()
         if head_after != request.sha:
             status = "STALE"
@@ -293,11 +329,22 @@ def process_once(args: argparse.Namespace, token: str, state: dict[str, Any]) ->
             print("--- DRY RUN RESULT ---")
             print(body)
         else:
-            github_post_comment(args.repo, args.pr, token, body)
-
-        state["processed"][request.request_id] = {"status": status, "sha": request.sha}
+            github_post_comment(args.repo, pr, token, body)
+            state["processed"][key] = {
+                "pr": pr,
+                "status": status,
+                "sha": request.sha,
+            }
         return True
 
+    return False
+
+
+def process_once(args: argparse.Namespace, token: str, state: dict[str, Any]) -> bool:
+    pr_numbers = [args.pr] if args.pr else github_list_open_pr_numbers(args.repo, token)
+    for pr in pr_numbers:
+        if process_pr_once(args, token, state, pr):
+            return True
     return False
 
 
@@ -313,13 +360,25 @@ def smoke_test(args: argparse.Namespace) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="CrewCheck local Ollama ↔ GitHub PR comment bridge")
+    parser = argparse.ArgumentParser(
+        description="CrewCheck local Ollama ↔ GitHub PR comment bridge"
+    )
     parser.add_argument("--repo", default="bmedeiros1987/crewcheck")
-    parser.add_argument("--pr", type=int, help="Dedicated sandbox/audit PR number")
+    parser.add_argument(
+        "--pr",
+        type=int,
+        help="Restrict the bridge to one PR. If omitted, watches every open PR.",
+    )
     parser.add_argument("--model", default=os.getenv("OLLAMA_MODEL", DEFAULT_MODEL))
     parser.add_argument("--ollama-url", default=os.getenv("OLLAMA_URL", DEFAULT_OLLAMA_URL))
-    parser.add_argument("--allowed-author", default=os.getenv("OLLAMA_BRIDGE_ALLOWED_AUTHOR", DEFAULT_ALLOWED_AUTHOR))
-    parser.add_argument("--state-file", default=os.getenv("OLLAMA_BRIDGE_STATE", ".ollama-bridge-state.json"))
+    parser.add_argument(
+        "--allowed-author",
+        default=os.getenv("OLLAMA_BRIDGE_ALLOWED_AUTHOR", DEFAULT_ALLOWED_AUTHOR),
+    )
+    parser.add_argument(
+        "--state-file",
+        default=os.getenv("OLLAMA_BRIDGE_STATE", ".ollama-bridge-state.json"),
+    )
     parser.add_argument("--interval", type=int, default=20)
     parser.add_argument("--ollama-timeout", type=int, default=300)
     parser.add_argument("--once", action="store_true")
@@ -332,9 +391,6 @@ def main() -> int:
     args = parse_args()
     if args.smoke:
         return smoke_test(args)
-    if not args.pr:
-        print("error: --pr is required unless --smoke is used", file=sys.stderr)
-        return 2
 
     token = os.getenv("GITHUB_TOKEN", "").strip()
     if not token:
@@ -344,10 +400,13 @@ def main() -> int:
     state_path = Path(args.state_file).resolve()
     state = load_state(state_path)
 
+    mode = f"PR #{args.pr}" if args.pr else "all open PRs"
+    print(f"watching {mode} in {args.repo}")
+
     while True:
         try:
             changed = process_once(args, token, state)
-            if changed:
+            if changed and not args.dry_run:
                 save_state(state_path, state)
         except KeyboardInterrupt:
             return 130
