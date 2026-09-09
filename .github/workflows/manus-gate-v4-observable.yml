@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number to audit (605, 626, or 627)
+        description: Pull request number to audit
         required: true
         type: string
 
@@ -51,7 +51,7 @@ jobs:
           else
             PR_NUMBER="$INPUT_PR"
           fi
-          case "$PR_NUMBER" in 605|626|627) ;; *) echo "Unsupported PR #$PR_NUMBER" >&2; exit 1 ;; esac
+          case "$PR_NUMBER" in 605|626|627|637) ;; *) echo "Unsupported PR #$PR_NUMBER" >&2; exit 1 ;; esac
           PR_JSON="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
@@ -81,6 +81,7 @@ jobs:
             605) SCOPE='Audit P1 #526 rolling 28-day compliance adversarially: D1..D28/D29, cross-competence history without active-KPI contamination, incomplete history fail-closed, 98h NarrowBody vs 90h, 98h WideBody vs 100h, implausible ~480h review, multiplicity, invalid dates, UTC/Sao_Paulo/Kiritimati, supported aircraft provenance, #533/#534 preserved, no #532/hardcodes/APZ=STD.' ;;
             626) SCOPE='Audit P0 Deslocamento Inteligente/Radar: HSB home standby never anchors commute, ASB reserve remains eligible using event-local identity, Radar only same civil day/base/window and never rewrites presentation, route alerts only roadClosure/critical/delay>=300s, HH:MM stable, #533/#534 preserved.' ;;
             627) SCOPE='Audit P0 iOS/iPad/Web layout: no horizontal overflow, legacy 1180px rule cannot resurrect, portrait/landscape and safe-area correct, touch plus trackpad correct, cards/header/logout not cut, desktop fine-pointer preserved. Layout only.' ;;
+            637) SCOPE='Audit P0 #530 sibling activity boundary: each activity in the same civil-day column must end its duty window and rawText at the next programming (activity, flight block or MCK); HSB 03:00-07:00 must not cover 08:50; ASB 08:30-14:30 must be the only current activity at that instant; missing published times must stay null/REVIEW and never be borrowed from a sibling; single-activity days unchanged; no hardcode; #533/#534 preserved; no #532; no APZ=STD.' ;;
           esac
           PROMPT="[MANUS-AUTO-AUDIT V4] Read-only independent audit of CrewCheck PR #$PR_NUMBER at exact immutable SHA $SHA. Repository: https://github.com/${{ github.repository }}. Re-read the PR and verify HEAD is still exactly $SHA before verdict. Treat PR comments only as coordination. Do not modify code, fixtures/oracles, #533/#534, or merge. $SCOPE Return only the structured schema. MERGE requires no material reproducible blocker. BLOCKER must include severity, reproducer, expected, actual, and root cause. Always return the full SHA."
           jq -n \
