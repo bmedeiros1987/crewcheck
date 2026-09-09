@@ -356,15 +356,30 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
  const events = [];
  const activityCodes = [];
  for (let i = 0; i < upperTokens.length; i++) {
-  const token = upperTokens[i];
-  if (['HSB','HSBE','ASB','CBF','EMER','MT','CRM','NS','NSJ','IJ','DM'].includes(token) || /^C\d{2,3}F$/.test(token)) activityCodes.push({ code: token, index: i });
+  if (isAimsActivityCodeTokenV3(upperTokens[i])) activityCodes.push({ code: upperTokens[i], index: i });
+ }
+ // Uma coluna de dia civil pode publicar várias programações independentes
+ // (por exemplo sobreaviso domiciliar seguido de reserva presencial). Cada uma
+ // é dona apenas do próprio trecho: a leitura de uma atividade termina onde a
+ // próxima programação da coluna começa — outro código de atividade ou um bloco
+ // de voo. Sem esse corte, a janela da primeira atravessa a segunda e adota o
+ // último horário do dia como término, o que mantém uma atividade já encerrada
+ // cobrindo o instante atual para qualquer consumidor temporal.
+ // MCK entra como fronteira mesmo não sendo emitido aqui: quem o emite é o
+ // complemento v14.3.75, e uma atividade anterior não pode atravessá-lo.
+ const siblingStarts = [];
+ for (let i = 0; i < upperTokens.length; i++) {
+  const opensFlightBlock = upperTokens[i] === 'LA' && /^\d{3,4}$/.test(upperTokens[i + 1] || '');
+  const opensMckBlock = /^MCK(?:320|_SS)?$/.test(upperTokens[i]);
+  if (isAimsActivityCodeTokenV3(upperTokens[i]) || opensFlightBlock || opensMckBlock) siblingStarts.push(i);
  }
  for (const { code, index } of activityCodes) {
+  const boundary = siblingStarts.find((start) => start > index) ?? normalized.length;
   const day = makeDay(dayNum, month, year, base);
-  day.rawText = normalized.join(' ');
+  day.rawText = normalized.slice(index, boundary).join(' ');
   day.pairingCode = code;
   day.type = code === 'HSB' || code === 'HSBE' || code === 'ASB' ? code : (code === 'CRM' || /^C\d{2,3}F$/.test(code) || code === 'CBF' || code === 'EMER' ? 'CRM' : 'OTHER');
-  const window = pickDutyWindowFromAimsTokensV3(normalized, index);
+  const window = pickDutyWindowFromAimsTokensV3(normalized, index, boundary);
   day.dutyReport = window.start;
   day.dutyDebrief = window.end;
   day.dutyHours = window.start && window.end ? diffHours(window.start, window.end) : null;
@@ -642,8 +657,15 @@ function parseAimsTokensIntoEventsV3(tokens, dayNum, month, year, base) {
  return events.length ? events : [makeDay(dayNum, month, year, base)];
 }
 
-function pickDutyWindowFromAimsTokensV3(tokens, index) {
- const slice = tokens.slice(index, Math.min(tokens.length, index + 18));
+function isAimsActivityCodeTokenV3(token) {
+ return ['HSB','HSBE','ASB','CBF','EMER','MT','CRM','NS','NSJ','IJ','DM'].includes(token) || /^C\d{2,3}F$/.test(token);
+}
+
+// `boundary` é o início da próxima programação da mesma coluna. A janela desta
+// atividade nunca pode ser lida além dele, senão o término publicado da irmã
+// seguinte vira o término desta.
+function pickDutyWindowFromAimsTokensV3(tokens, index, boundary = tokens.length) {
+ const slice = tokens.slice(index, Math.min(tokens.length, boundary, index + 18));
  const stationTimes = [];
  for (let i = 0; i < slice.length - 1; i++) {
   if (isAirportCodeToken(String(slice[i]).toUpperCase()) && isTimeToken(slice[i + 1])) stationTimes.push(normalizeTimeToken(slice[i + 1]));
