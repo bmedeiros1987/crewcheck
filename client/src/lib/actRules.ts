@@ -12,6 +12,12 @@ export interface CrewFunctionResolution {
   menuScopes: Array<'cabin' | 'pilot' | 'instructor' | 'admin' | 'all'>;
 }
 export type AircraftGroup = 'narrowBody' | 'wideBody';
+export type AircraftGroupProvenanceSource = 'perfil' | 'escala' | 'fallback';
+export interface AircraftGroupContext {
+  aircraftGroup: AircraftGroup;
+  source: AircraftGroupProvenanceSource;
+  evidence?: string[];
+}
 export type RoleConfidence = 'alta' | 'media' | 'baixa';
 
 export interface LegalProfileSummary {
@@ -24,6 +30,10 @@ export interface LegalProfileSummary {
   inferenceReason: string;
   aircraftGroup: AircraftGroup;
   aircraftGroupLabel: string;
+  aircraftGroupProvenance: {
+    source: AircraftGroupProvenanceSource;
+    evidence: string[];
+  };
   flightLimit28Days: number;
   flightLimit365Days: number;
   dsrReference: string;
@@ -273,12 +283,24 @@ function readStoredProfileFunction(): string {
   } catch { return ''; }
 }
 
-
-export function getLegalProfile(roster: CrewRoster, selection: CrewRoleSelection = 'auto'): LegalProfileSummary {
+export function getLegalProfile(
+  roster: CrewRoster,
+  selection: CrewRoleSelection = 'auto',
+  aircraftContext?: AircraftGroupContext,
+): LegalProfileSummary {
   const { role, confidence, reason } = inferCrewRole(roster, selection);
   const rule = ACT_RULES[role];
-  const aircraftGroup = inferAircraftGroup(roster);
-  const functionResolution = resolveCrewFunction(readStoredProfileFunction());
+  const inferredAircraft = inferAircraftGroupWithProvenance(roster);
+  const storedProfileFunction = readStoredProfileFunction();
+  const profileAircraftContext: AircraftGroupContext | undefined = !aircraftContext && /\bEMBRAER\b/i.test(storedProfileFunction)
+    ? { aircraftGroup: 'narrowBody', source: 'perfil', evidence: [storedProfileFunction] }
+    : undefined;
+  const effectiveAircraftContext = aircraftContext || profileAircraftContext;
+  const aircraftGroup = effectiveAircraftContext?.aircraftGroup || inferredAircraft.aircraftGroup;
+  const aircraftGroupProvenance = effectiveAircraftContext
+    ? { source: effectiveAircraftContext.source, evidence: [...(effectiveAircraftContext.evidence || [])] }
+    : { source: inferredAircraft.source, evidence: inferredAircraft.evidence };
+  const functionResolution = resolveCrewFunction(storedProfileFunction);
   const functionLabel = functionResolution.role === role && functionResolution.functionKey !== 'unknown' ? functionResolution.functionLabel : inferFunctionLabel(roster, role);
   const flightLimit28Days = aircraftGroup === 'wideBody' ? rule.flightLimits.wideBody28Days : rule.flightLimits.narrowBody28Days;
   const flightLimit365Days = aircraftGroup === 'wideBody' ? rule.flightLimits.wideBody365Days : rule.flightLimits.narrowBody365Days;
@@ -294,6 +316,7 @@ export function getLegalProfile(roster: CrewRoster, selection: CrewRoleSelection
     inferenceReason: reason,
     aircraftGroup,
     aircraftGroupLabel: aircraftGroup === 'wideBody' ? 'Wide Body' : 'Narrow Body / A32F / Embraer',
+    aircraftGroupProvenance,
     flightLimit28Days,
     flightLimit365Days,
     dsrReference: aircraftGroup === 'wideBody' ? rule.daysOff.wideDsr : rule.daysOff.narrowDsr,
@@ -355,11 +378,22 @@ function inferFunctionLabel(roster: CrewRoster, role: CrewRole): string {
   return 'Piloto(a)';
 }
 
-function inferAircraftGroup(roster: CrewRoster): AircraftGroup {
-  const allAircraft = roster.days.flatMap(day => day.legs || []).map(leg => String(leg.aircraftType || '')).join(' ').toUpperCase();
-  const allText = `${allAircraft} ${roster.rawText || ''}`.toUpperCase();
-  if (/\b(330|332|333|339|350|351|359|777|773|787|789|767|76W|WB|WIDE)\b/.test(allText)) return 'wideBody';
-  return 'narrowBody';
+function inferAircraftGroupWithProvenance(roster: CrewRoster): {
+  aircraftGroup: AircraftGroup;
+  source: 'escala' | 'fallback';
+  evidence: string[];
+} {
+  const aircraftEvidence = roster.days
+    .flatMap(day => day.legs || [])
+    .map(leg => String(leg.aircraftType || '').trim())
+    .filter(Boolean);
+  const rawMatches = String(roster.rawText || '').match(/\b(?:A|B)?(?:330|332|333|339|350|351|359|767|773|777|787|789)\b|\b76W\b|\bWB\b|\bWIDE\b/gi) || [];
+  const evidence = [...new Set([...aircraftEvidence, ...rawMatches].map(item => item.toUpperCase()))];
+  const allText = `${evidence.join(' ')} ${roster.rawText || ''}`.toUpperCase();
+  const wideBody = /\b(?:A|B)?(?:330|332|333|339|350|351|359|767|773|777|787|789)\b|\b76W\b|\bWB\b|\bWIDE\b/.test(allText);
+  if (wideBody) return { aircraftGroup: 'wideBody', source: 'escala', evidence };
+  if (evidence.length) return { aircraftGroup: 'narrowBody', source: 'escala', evidence };
+  return { aircraftGroup: 'narrowBody', source: 'fallback', evidence: [] };
 }
 
 function compensationForFunction(rule: ActRuleSet, functionLabel: string): string {

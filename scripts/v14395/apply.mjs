@@ -73,12 +73,15 @@ if (compliance.includes('  metrics.nightOperations = nightSummary.workedEvents.l
   );
 }
 
-// Raw PDF totals may span adjacent context days or accumulated periods. Never let
-// them overwrite the reference-month value derived from normalized roster days.
-compliance = compliance.replace(
+// Raw PDF totals may span adjacent context days, accumulated periods, or a wider
+// document window than the active competence. Never let any raw aggregate assignment
+// overwrite the reference-month value derived from normalized roster days.
+for (const rawTotalAssignment of [
   `  if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;\n`,
-  '',
-);
+  `  if (roster.totals?.flightHours && !carriesAdjacentHistory) metrics.totalFlightHours = roster.totals.flightHours;\n`,
+]) {
+  compliance = compliance.replace(rawTotalAssignment, '');
+}
 
 compliance = replaceOnce(
   compliance,

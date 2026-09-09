@@ -2,6 +2,17 @@ import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import { getActRulesForProfile, getLegalProfile, type CrewRoleSelection, type LegalProfileSummary } from './actRules';
 import { getRosterCodeDefinition } from './rosterCodes';
 import { buildCanonicalRosterEvents } from './canonicalRoster';
+import {
+  // Importado sob alias de propósito: no estado preparado, o passo v14.3.95
+  // injeta dentro de `analyzeCompliance` um `const competenceKey` que é uma
+  // STRING. Importar com o nome nu faria a local sombrear esta função e o
+  // motor quebraria só depois da materialização — verde em base, morto em
+  // produção.
+  competenceKey as competenceKeyFor,
+  assessFlightHoursRolling28Days,
+  sumFlightHoursForCompetence,
+  type FlightHoursObservation,
+} from './rollingFlightHours';
 
 export interface ComplianceAlert {
   id: string;
@@ -17,8 +28,17 @@ export interface ComplianceAlert {
 }
 
 export interface Metrics {
+  /** Horas de voo da COMPETÊNCIA ATIVA. Histórico adjacente carregado para a
+   *  janela móvel não entra aqui — ver `maxFlightHoursRolling28Days`. */
   totalFlightHours: number;
   maxFlightHoursMonth: number;
+  /**
+   * #526: maior soma OBSERVADA em qualquer janela de 28 dias civis
+   * consecutivos. Não confundir com `maxFlightHoursMonth`, que é o LIMITE
+   * regulatório. O cálculo vive em `rollingFlightHours.ts` e é deliberadamente
+   * elegível a histórico de competência adjacente.
+   */
+  maxFlightHoursRolling28Days: number;
   totalDutyHours: number;
   maxDutyHoursMonth: number;
   totalDaysOff: number;
@@ -1651,6 +1671,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   const metrics: Metrics = {
     totalFlightHours: 0,
     maxFlightHoursMonth: limits.maxFlightHoursMonth,
+    maxFlightHoursRolling28Days: 0,
     totalDutyHours: 0,
     maxDutyHoursMonth: limits.maxDutyHoursMonth,
     totalDaysOff: 0,
@@ -1676,6 +1697,10 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   let restTotal = 0;
   let restCount = 0;
   let consecutiveWorkPeriods = 0;
+  // #526: evidência bruta para a janela móvel. Uma observação POR ENTRADA de
+  // dia, não por data: duas ocorrências no mesmo dia civil precisam somar, e
+  // deduplicar aqui as perderia silenciosamente. O kernel agrupa por dia UTC.
+  const flightHoursObservations: FlightHoursObservation[] = [];
 
   sortedDays.forEach((day, index) => {
     const dutyHours = getDutyHours(day);
@@ -1686,6 +1711,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     addOperationalContextAlerts(alerts, day);
 
     metrics.totalFlightHours += flightHours;
+    flightHoursObservations.push({ date: String(day.date || ''), hours: flightHours });
     metrics.totalDutyHours += getRegulatoryWorkHoursForTotals(day);
     metrics.totalGroundHours += groundIntervals.reduce((sum, interval) => sum + interval.minutes, 0) / 60;
 
@@ -1927,7 +1953,36 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);
   metrics.maxNightOps168hCount = maxNightOpsWindow;
 
-  if (roster.totals?.flightHours) metrics.totalFlightHours = roster.totals.flightHours;
+  // #526: a janela móvel real de 28 dias, calculada pelo kernel isolado.
+  const rollingAssessment = assessFlightHoursRolling28Days(
+    flightHoursObservations, Number(roster.month), Number(roster.year),
+  );
+  metrics.maxFlightHoursRolling28Days = rollingAssessment.maxHours;
+  if (!rollingAssessment.complete) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Avaliação de horas de voo em 28 dias incompleta',
+      description: 'Faltam dias da escala ou do histórico anterior para avaliar todas as janelas de 28 dias até o último dia disponível da competência ativa. As horas observadas não comprovam conformidade.',
+      details: 'Carregue o histórico e os dias ausentes para concluir a avaliação. Ausência de registro não equivale a zero horas; excessos já comprovados pelas horas observadas continuam sinalizados.',
+      confidence: 'media',
+      classification: 'atencao',
+      legalReference: actRules.flightLimits.legalReference,
+    });
+  }
+
+  // O KPI mensal é da COMPETÊNCIA ATIVA. O histórico adjacente é necessário para
+  // a janela móvel acima, mas somá-lo aqui inflaria o total do mês exibido.
+  const activeCompetence = competenceKeyFor(Number(roster.month), Number(roster.year));
+  if (activeCompetence) {
+    metrics.totalFlightHours = sumFlightHoursForCompetence(
+      flightHoursObservations,
+      Number(roster.month),
+      Number(roster.year),
+    );
+  }
+
+  // O total bruto do PDF é metadado do documento, não a soma das etapas
+  // verificadas. O KPI permanece derivado mesmo em uma única competência.
   // Não usar total de duty do PDF para irregularidade: em PDFs convertidos ele pode
   // incluir solo/pernoite/continuação e inflar a escala. Mantemos cálculo próprio.
 
@@ -1943,28 +1998,34 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     : { key: `${roster.year || ''}-${String(roster.month || '').padStart(2, '0')}`, flightHours: metrics.totalFlightHours };
   const monthlyFlightHoursForAlert = monthlyBucketToEvaluate.flightHours;
 
-  const monthlyFlightRatio = limits.maxFlightHoursMonth ? monthlyFlightHoursForAlert / limits.maxFlightHoursMonth : 0;
-  if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth) {
-    const suspiciousTotal = monthlyFlightRatio > 1.35 || monthlyFlightHoursForAlert > 140;
-    pushAlert(alerts, {
-      severity: suspiciousTotal ? 'warning' : 'error',
-      title: suspiciousTotal ? 'Horas de voo mensais — revisar base de cálculo' : 'Limite mensal de horas de voo excedido',
-      description: suspiciousTotal
-        ? `O PDF retornou ${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}, valor incompatível com uma leitura operacional normal. O CrewCheck marcou para revisão em vez de confirmar irregularidade.`
-        : `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : 'no mês'}. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
-      details: suspiciousTotal
-        ? 'Possível duplicidade de mês, continuação de escala, total acumulado do PDF ou trecho interpretado em duplicidade. Não use este item como irregularidade confirmada sem revisar o PDF oficial.'
-        : (isMultiMonthRoster ? `A escala visual pode estar com mês atual + subsequente anexado. O CrewCheck avaliou cada mês separadamente e não somou os meses para gerar este alerta.` : undefined),
-      legalReference: actRules.flightLimits.legalReference,
-      confidence: suspiciousTotal ? 'media' : 'alta',
-      classification: suspiciousTotal ? 'atencao' : 'confirmada',
-    });
-  } else if (monthlyFlightHoursForAlert > limits.maxFlightHoursMonth * 0.9) {
+  // #526: o bloco de buckets acima permanece como âncora da preparação
+  // v14.3.95; o enforcement usa exclusivamente a janela móvel observada.
+  const rollingFlightHours = metrics.maxFlightHoursRolling28Days;
+  const rollingFlightHoursImplausible = rollingFlightHours > limits.maxFlightHoursMonth * 1.35
+    || rollingFlightHours > 140;
+  if (rollingFlightHoursImplausible) {
     pushAlert(alerts, {
       severity: 'warning',
-      title: 'Horas de voo próximas do limite mensal',
-      description: `${monthlyFlightHoursForAlert.toFixed(1)}h de voo ${isMultiMonthRoster ? `no mês ${monthlyBucketToEvaluate.key}` : ''}, equivalente a ${((monthlyFlightHoursForAlert / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
-      details: isMultiMonthRoster ? 'Cálculo separado por mês para evitar falso positivo ao visualizar escala atual + subsequente.' : undefined,
+      title: 'Horas de voo: revisar base de cálculo',
+      description: `${rollingFlightHours.toFixed(1)}h de voo em 28 dias excedem a faixa plausível para confirmação automática.`,
+      legalReference: actRules.flightLimits.legalReference,
+      confidence: 'media',
+      classification: 'atencao',
+    });
+  } else if (rollingFlightHours > limits.maxFlightHoursMonth) {
+    pushAlert(alerts, {
+      severity: 'error',
+      title: 'Limite de 28 dias de horas de voo excedido',
+      description: `${rollingFlightHours.toFixed(1)}h de voo em 28 dias. Limite aplicado pela ACT para ${legalProfile.aircraftGroupLabel}: ${limits.maxFlightHoursMonth}h/28 dias.`,
+      legalReference: actRules.flightLimits.legalReference,
+      confidence: 'alta',
+      classification: 'confirmada',
+    });
+  } else if (rollingFlightHours > limits.maxFlightHoursMonth * 0.9) {
+    pushAlert(alerts, {
+      severity: 'warning',
+      title: 'Horas de voo próximas do limite de 28 dias',
+      description: `${rollingFlightHours.toFixed(1)}h de voo em 28 dias, equivalente a ${((rollingFlightHours / limits.maxFlightHoursMonth) * 100).toFixed(0)}% do limite parametrizado.`,
       legalReference: actRules.flightLimits.legalReference,
     });
   }
