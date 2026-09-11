@@ -1,0 +1,86 @@
+name: TMP P0 530 nonflight timezone edge
+on:
+  push:
+    branches: [fix/p0-530-for-cgh-timezone]
+    paths: [.github/workflows/tmp-p0-530-nonflight-tz.yml]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p0-530-for-cgh-timezone
+          fetch-depth: 0
+      - name: Apply narrow fix and regression
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('client/src/lib/complianceEngine.ts')
+          s = p.read_text()
+          old = """    const firstStart = getFirstOperationalStart(day).time;
+              const startMinutes = minutesOfDay(firstStart) ?? 0;
+              occurrences.push({ instant: parseDate(day.date).getTime() + startMinutes * 60_000 });
+              nightKeys.push(parseDate(day.date).getTime());"""
+          new = """    const firstStart = getFirstOperationalStart(day).time;
+              const startMinutes = minutesOfDay(firstStart) ?? 0;
+              const [dayNumber, month, year] = day.date.split('/').map(Number);
+              const brazilMidnight = Date.UTC(year, month - 1, dayNumber, 3, 0, 0, 0);
+              occurrences.push({ instant: brazilMidnight + startMinutes * 60_000 });
+              nightKeys.push(brazilMidnight);"""
+          if s.count(old) != 1:
+              raise SystemExit(f'nonflight anchor count={s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+
+          r = Path('scripts/regression-p0-530-journey-instant-timezone-independence.mjs')
+          text = r.read_text()
+          append = r'''
+          const complianceBundle = path.join(tmp, 'compliance.mjs');
+          execFileSync(path.join(root, 'node_modules', '.bin', 'esbuild'), [
+            'client/src/lib/complianceEngine.ts', '--bundle', '--platform=node', '--format=esm',
+            '--outfile=' + complianceBundle,
+          ], { stdio: 'inherit' });
+          const compliance = await import(pathToFileURL(complianceBundle).href + '?v=' + Date.now());
+          const boundaryRoster = {
+            crewName: 'Synthetic Crew', base: 'AAA', month: 9, year: 2026, rawText: '',
+            days: [
+              {
+                date: '01/09/2026', dayNumber: 1, month: 9, year: 2026, dayOfWeek: 'ter',
+                type: 'OTHER', pairingCode: 'CRM', dutyReport: '00:00', dutyDebrief: '02:00',
+                dutyHours: 2, flyingHours: 0, isNextDay: false, hotel: null, base: 'AAA', legs: [], rawText: 'CRM synthetic',
+              },
+              {
+                date: '08/09/2026', dayNumber: 8, month: 9, year: 2026, dayOfWeek: 'ter',
+                type: 'VOO', pairingCode: 'SYNTH', dutyReport: '00:00', dutyDebrief: '01:00',
+                dutyHours: 1, flyingHours: 1, isNextDay: false, hotel: null, base: 'AAA', rawText: 'synthetic flight',
+                legs: [{ flightNumber: 'LA9002', origin: 'AAA', destination: 'BBB', departureTime: '00:00', arrivalTime: '01:00', presentationTime: '00:00' }],
+              },
+            ],
+          };
+          const complianceResult = compliance.analyzeCompliance(boundaryRoster);
+          assert.equal(complianceResult.metrics.maxNightOps168hCount, 2, 'atividade não-voo + voo exatamente a 168h deve ser invariável por TZ');
+          console.log(JSON.stringify({ tz: process.env.TZ, maxNightOps168hCount: complianceResult.metrics.maxNightOps168hCount }));
+          '''
+          if 'atividade não-voo + voo exatamente a 168h' in text:
+              raise SystemExit('regression already contains nonflight edge')
+          r.write_text(text + append)
+      - name: Install and execute in three runtimes
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          for zone in UTC America/Sao_Paulo Pacific/Kiritimati; do
+            echo "=== $zone ==="
+            TZ="$zone" node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
+          done
+          npx tsc --noEmit
+          git diff --check
+      - name: Commit only validated product/test diff
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-p0-530-nonflight-tz.yml
+          git config user.name 'CrewCheck P0 Gatekeeper'
+          git config user.email 'crewcheck@users.noreply.github.com'
+          git add client/src/lib/complianceEngine.ts scripts/regression-p0-530-journey-instant-timezone-independence.mjs .github/workflows/tmp-p0-530-nonflight-tz.yml
+          git commit -m 'fix(#530): anchor non-flight night events to Brazil time'
+          git push origin HEAD:fix/p0-530-for-cgh-timezone
