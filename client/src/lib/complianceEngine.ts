@@ -808,8 +808,10 @@ function buildNonFlightNightData(days: RosterDay[]): { occurrences: NightOccurre
     if (!hasMadrugadaDuty(day)) continue;
     const firstStart = getFirstOperationalStart(day).time;
     const startMinutes = minutesOfDay(firstStart) ?? 0;
-    occurrences.push({ instant: parseDate(day.date).getTime() + startMinutes * 60_000 });
-    nightKeys.push(parseDate(day.date).getTime());
+    const [dayNumber, month, year] = day.date.split('/').map(Number);
+    const brazilMidnight = Date.UTC(year, month - 1, dayNumber, 3, 0, 0, 0);
+    occurrences.push({ instant: brazilMidnight + startMinutes * 60_000 });
+    nightKeys.push(brazilMidnight);
   }
   return { occurrences, nightKeys };
 }
