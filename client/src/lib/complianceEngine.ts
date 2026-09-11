@@ -727,15 +727,20 @@ type NightOccurrence = { instant: number };
  * 00:00–06:00 da própria noite). É essa noite tocada, não a data de
  * publicação da jornada, que deve alimentar o streak de consecutivas.
  */
+const BRAZIL_UTC_OFFSET_MS = -3 * NIGHT_HOUR_MS;
+
 function nightKeysTouchedByInterval(start: number, end: number): number[] {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
   const keys: number[] = [];
-  const cursor = new Date(start);
-  cursor.setHours(0, 0, 0, 0);
-  for (let nightKey = cursor.getTime(); nightKey < end; nightKey += NIGHT_DAY_MS) {
-    const windowStart = nightKey;
-    const windowEnd = nightKey + 6 * NIGHT_HOUR_MS;
-    if (start < windowEnd && end > windowStart) keys.push(nightKey);
+  // Move o instante para um relógio civil BRT e ancora 00:00 via UTC;
+  // depois converte a janela de volta para instante absoluto. Assim a
+  // madrugada operacional 00:00–06:00 Brasil não depende de process.env.TZ.
+  const civilCursor = new Date(start + BRAZIL_UTC_OFFSET_MS);
+  civilCursor.setUTCHours(0, 0, 0, 0);
+  for (let civilNightKey = civilCursor.getTime(); civilNightKey < end + BRAZIL_UTC_OFFSET_MS; civilNightKey += NIGHT_DAY_MS) {
+    const windowStart = civilNightKey - BRAZIL_UTC_OFFSET_MS;
+    const windowEnd = windowStart + 6 * NIGHT_HOUR_MS;
+    if (start < windowEnd && end > windowStart) keys.push(windowStart);
   }
   return keys;
 }

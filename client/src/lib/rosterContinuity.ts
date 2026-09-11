@@ -23,14 +23,20 @@ function localDate(day: RosterDay, roster: CrewRoster) {
   const parsed = parseDate(day.date, day.month || roster.month || 1, day.year || roster.year || new Date().getFullYear());
   return new Date(parsed.year, parsed.month - 1, parsed.day, 0, 0, 0, 0);
 }
+const BRAZIL_UTC_OFFSET_MINUTES = 3 * 60;
 function dateAt(day: RosterDay, roster: CrewRoster, value: string | null, fallbackHour: number) {
-  const date = localDate(day, roster);
+  const parsed = parseDate(day.date, day.month || roster.month || 1, day.year || roster.year || new Date().getFullYear());
   const time = normalizeTime(value);
-  if (time) {
-    const [hours, minutes] = time.split(':').map(Number);
-    date.setHours(hours, minutes, 0, 0);
-  } else date.setHours(fallbackHour, 0, 0, 0);
-  return date;
+  const [hours, minutes] = time ? time.split(':').map(Number) : [fallbackHour, 0];
+  return new Date(Date.UTC(
+    parsed.year,
+    parsed.month - 1,
+    parsed.day,
+    hours,
+    minutes + BRAZIL_UTC_OFFSET_MINUTES,
+    0,
+    0,
+  ));
 }
 function crossesMidnight(leg?: FlightLeg): boolean {
   if (!leg) return false;
