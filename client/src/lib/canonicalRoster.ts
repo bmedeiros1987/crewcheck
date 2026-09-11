@@ -72,15 +72,27 @@ function formatDate(day: number, month: number, year: number) {
   return `${pad2(day)}/${pad2(month)}/${year}`;
 }
 
+const BRAZIL_UTC_OFFSET_MINUTES = 3 * 60;
+
+/**
+ * Horários publicados na escala são relógio operacional do Brasil.
+ * Convertemos a parede BRT (UTC-03) diretamente para instante UTC para
+ * que Node, browser, CI e servidor produzam o mesmo ISO independentemente
+ * do timezone do processo (#530).
+ */
 function dateAt(day: RosterDay, time: string | null, fallbackHour: number) {
   const parsed = parseRosterDate(day.date, day.month || 1, day.year || new Date().getFullYear());
-  const date = new Date(parsed.year, parsed.month - 1, parsed.day, fallbackHour, 0, 0, 0);
   const normalized = normalizeTime(time);
-  if (normalized) {
-    const [h, m] = normalized.split(':').map(Number);
-    date.setHours(h, m, 0, 0);
-  }
-  return date;
+  const [hour, minute] = normalized ? normalized.split(':').map(Number) : [fallbackHour, 0];
+  return new Date(Date.UTC(
+    parsed.year,
+    parsed.month - 1,
+    parsed.day,
+    hour,
+    minute + BRAZIL_UTC_OFFSET_MINUTES,
+    0,
+    0,
+  ));
 }
 
 function presentationIsUnsafe(presentation: string | null, departure: string | null) {
@@ -595,9 +607,9 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
         const departureMinute = minutes(departure) || 0;
         const arrivalMinute = minutes(arrival) || 0;
         while (previousArrivalAbsolute != null && departureMinute + physicalDayOffset * 1440 < previousArrivalAbsolute) physicalDayOffset += 1;
-        start.setDate(start.getDate() + physicalDayOffset);
+        start.setUTCDate(start.getUTCDate() + physicalDayOffset);
         const arrivalOffset = physicalDayOffset + (legCrossesNextDay(leg) || arrivalMinute < departureMinute ? 1 : 0);
-        end.setDate(end.getDate() + arrivalOffset);
+        end.setUTCDate(end.getUTCDate() + arrivalOffset);
         previousArrivalAbsolute = arrivalMinute + arrivalOffset * 1440;
         const isNextDay = physicalDayOffset > 0 || arrivalOffset > 0;
 
@@ -666,7 +678,7 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
     const hasExactContinuity = Boolean(continuityStart && continuityEnd && Number.isFinite(continuityStart.getTime()) && Number.isFinite(continuityEnd.getTime()) && continuityEnd >= continuityStart);
     const start = hasExactContinuity ? continuityStart! : dateAt(day, startTime, 0);
     const end = hasExactContinuity ? continuityEnd! : dateAt(day, endTime, 23);
-    if (!hasExactContinuity && (minutes(endTime) ?? 0) < (minutes(startTime) ?? 0)) end.setDate(end.getDate() + 1);
+    if (!hasExactContinuity && (minutes(endTime) ?? 0) < (minutes(startTime) ?? 0)) end.setUTCDate(end.getUTCDate() + 1);
 
     events.push({
       id: `${day.date}|${kind}|${day.pairingCode || day.type || 'event'}`,
@@ -681,7 +693,7 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
       presentation: startTime,
       departure: startTime,
       arrival: endTime,
-      isNextDay: end.getDate() !== start.getDate(),
+      isNextDay: end.getUTCDate() !== start.getUTCDate(),
       sourceConfidence: 'media',
       legIndex: 0,
       legCount: 1,
