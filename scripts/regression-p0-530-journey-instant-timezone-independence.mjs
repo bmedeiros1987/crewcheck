@@ -5,6 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
+// P0 #530: every assertion below must remain invariant across process.env.TZ.
 const root = process.cwd();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-p0-530-tz-'));
 const bundle = path.join(tmp, 'canonical.mjs');
