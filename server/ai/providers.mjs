@@ -62,7 +62,7 @@ export function createOpenRouterProvider({ apiKey, model = 'openrouter/free', fe
   };
 }
 
-export function createCloudflareProvider({ accountId, apiToken, model = '@cf/meta/llama-3.1-8b-instruct', fetchImpl = fetch, baseUrl = 'https://api.cloudflare.com/client/v4' } = {}) {
+export function createCloudflareProvider({ accountId, apiToken, model = '@cf/meta/llama-3.1-8b-instruct-fast', fetchImpl = fetch, baseUrl = 'https://api.cloudflare.com/client/v4' } = {}) {
   return {
     id: 'cloudflare', model, tier: 'light', enabled: Boolean(accountId && apiToken),
     async generate(request, { signal } = {}) {
