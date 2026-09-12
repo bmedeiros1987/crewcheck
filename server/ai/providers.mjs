@@ -8,9 +8,12 @@ function textFromOpenAi(payload) {
 }
 
 function providerHttpError(response, payload = {}) {
-  const message = payload?.error?.message || payload?.message || `AI provider unavailable (${response.status})`;
+  const cloudflareError = Array.isArray(payload?.errors) ? payload.errors.find((item) => item?.message || item?.code != null) : null;
+  const providerCode = payload?.error?.code ?? cloudflareError?.code ?? payload?.code ?? null;
+  const message = payload?.error?.message || cloudflareError?.message || payload?.message || `AI provider unavailable (${response.status})`;
   return Object.assign(new Error(message), {
     status: response.status,
+    code: providerCode,
     retryable: response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500,
   });
 }
@@ -18,7 +21,7 @@ function providerHttpError(response, payload = {}) {
 async function postJson({ fetchImpl, url, headers, body, signal }) {
   const response = await fetchImpl(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
+    headers: { 'content-type': 'application/json', accept: 'application/json', ...headers },
     body: JSON.stringify(body),
     signal,
   });
