@@ -1,11 +1,44 @@
 function textFromOpenAi(payload) {
-  return payload?.choices?.[0]?.message?.content || '';
+  const content = payload?.choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => typeof part === 'string' ? part : (part?.text || '')).join('');
+  }
+  return '';
+}
+
+function providerHttpError(response, payload = {}) {
+  const message = payload?.error?.message || payload?.message || `AI provider unavailable (${response.status})`;
+  return Object.assign(new Error(message), {
+    status: response.status,
+    retryable: response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500,
+  });
 }
 
 async function postJson({ fetchImpl, url, headers, body, signal }) {
-  const response = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error('AI provider unavailable'), { status: response.status, retryable: response.status === 429 || response.status >= 500 });
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    if (signal?.aborted || error?.name === 'AbortError') {
+      throw Object.assign(error, { retryable: true, code: 'provider_timeout' });
+    }
+    if (!response.ok) throw providerHttpError(response);
+    throw Object.assign(new Error('AI provider returned invalid JSON'), {
+      status: response.status,
+      retryable: response.status >= 500,
+      cause: error,
+    });
+  }
+
+  if (!response.ok) throw providerHttpError(response, payload);
   return payload;
 }
 
@@ -13,7 +46,17 @@ export function createOpenRouterProvider({ apiKey, model = 'openrouter/free', fe
   return {
     id: 'openrouter', model, tier: 'light', enabled: Boolean(apiKey),
     async generate(request, { signal } = {}) {
-      const payload = await postJson({ fetchImpl, url: `${baseUrl}/chat/completions`, headers: { authorization: `Bearer ${apiKey}` }, body: { model, messages: [{ role: 'user', content: request.prompt }] }, signal });
+      const payload = await postJson({
+        fetchImpl,
+        url: `${baseUrl}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}` },
+        body: {
+          model,
+          messages: [{ role: 'user', content: request.prompt }],
+          temperature: 0,
+        },
+        signal,
+      });
       return { text: textFromOpenAi(payload), usage: payload.usage || null };
     },
   };
