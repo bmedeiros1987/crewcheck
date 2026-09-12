@@ -39,10 +39,10 @@ Guia oficial REST: https://developers.cloudflare.com/workers-ai/get-started/rest
 AI_CLOUDFLARE_ENABLED=true
 CLOUDFLARE_ACCOUNT_ID=<account-id>
 CLOUDFLARE_AI_API_TOKEN=<secret>
-AI_CLOUDFLARE_MODEL=@cf/meta/llama-3.1-8b-instruct
+AI_CLOUDFLARE_MODEL=@cf/meta/llama-3.1-8b-instruct-fast
 ```
 
-A Cloudflare publica uma franquia gratuita diária de Workers AI; confira a página oficial de preços antes de alterar o modelo: https://developers.cloudflare.com/workers-ai/platform/pricing/
+O modelo `@cf/meta/llama-3.1-8b-instruct` foi descontinuado pela Cloudflare em 30/05/2026. O CrewCheck usa a variante ativa `-fast` para evitar erro 404 por modelo inválido. A Cloudflare publica uma franquia gratuita diária de Workers AI; confira a página oficial de preços antes de alterar o modelo: https://developers.cloudflare.com/workers-ai/platform/pricing/
 
 ## 3. Gemini API — terceiro fallback / modelo leve forte
 
