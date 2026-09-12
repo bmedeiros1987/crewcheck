@@ -44,7 +44,7 @@ type RosterEvent = {
   canonical?: { kind?: string; startDateTime?: string; endDateTime?: string; groundBeforeMinutes?: number; showPresentation?: boolean };
 };
 
-type ProgramMode = 'operating' | 'extra' | 'stay' | 'rest' | 'reserve' | 'standby' | 'training' | 'duty';
+type ProgramMode = 'operating' | 'extra' | 'stay' | 'rest' | 'journey-rest' | 'reserve' | 'standby' | 'training' | 'duty';
 
 type PerDiemItem = {
   eventId?: string;
@@ -106,6 +106,10 @@ function formatDate(date: Date) {
 }
 
 function duration(event: RosterEvent) {
+  if (event.canonical?.kind === 'journey-rest') {
+    const minutes = Number((event.canonical as any).restMinutes);
+    return Number.isFinite(minutes) ? Math.max(0, minutes / 60) : 0;
+  }
   const start = new Date(event.canonical?.startDateTime || 0);
   const end = new Date(event.canonical?.endDateTime || 0);
   return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) ? Math.max(0, (end.getTime() - start.getTime()) / 3600000) : 0;
@@ -117,6 +121,7 @@ function eventCode(event: RosterEvent) {
 
 function workMode(event: RosterEvent): ProgramMode {
   const code = eventCode(event);
+  if (event.canonical?.kind === 'journey-rest') return 'journey-rest';
   if (event.kind === 'stay' || /PERNOITE|ESTADIA|DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'stay';
   if (event.canonical?.kind === 'rest') return 'rest';
   if (event.kind === 'flight') {
@@ -139,6 +144,7 @@ function cardTitle(event: RosterEvent, mode: ProgramMode) {
     const location = event.destination || event.origin || event.day?.base || '';
     return /DESCANSO_BASE/.test(code) ? `Descanso entre jornadas na base · ${location}` : `Pernoite em ${location || 'localidade'}`;
   }
+  if (mode === 'journey-rest') return 'Repouso entre jornadas';
   if (mode === 'operating' || mode === 'extra') return `${event.flightNumber || 'Voo'} · ${event.origin || '—'} → ${event.destination || '—'}`;
   if (mode === 'reserve') return `Reserva · ${event.day?.pairingCode || event.day?.type || event.title || 'programação publicada'}`;
   if (mode === 'standby') return `Sobreaviso · ${event.day?.pairingCode || event.day?.type || event.title || 'programação publicada'}`;
@@ -151,6 +157,7 @@ const modeMeta: Record<ProgramMode, { label: string; shortLabel: string }> = {
   extra: { label: 'Voo de deslocamento ou extra', shortLabel: 'Extra' },
   stay: { label: 'Pernoite ou descanso', shortLabel: 'Pernoite' },
   rest: { label: 'Folga ou descanso publicado', shortLabel: 'Folga' },
+  'journey-rest': { label: 'Repouso entre jornadas · não operacional', shortLabel: 'Repouso' },
   reserve: { label: 'Reserva presencial', shortLabel: 'Reserva' },
   standby: { label: 'Sobreaviso', shortLabel: 'Sobreaviso' },
   training: { label: 'Treinamento', shortLabel: 'Treinamento' },
@@ -161,6 +168,7 @@ const paletteA11y: Partial<Record<ProgramMode, string>> = {
   operating: 'Verde · voo tripulando',
   extra: 'Cinza · deslocamento/extra',
   stay: 'Roxo · pernoite ou descanso',
+  'journey-rest': 'Azul · repouso entre jornadas, não operacional',
 };
 
 function modeIcon(mode: ProgramMode, atBase = false) {
@@ -169,6 +177,7 @@ function modeIcon(mode: ProgramMode, atBase = false) {
   if (mode === 'reserve') return <BriefcaseBusiness/>;
   if (mode === 'standby') return <Moon/>;
   if (mode === 'training') return <GraduationCap/>;
+  if (mode === 'journey-rest') return <Moon/>;
   return <ShieldCheck/>;
 }
 
@@ -243,7 +252,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   const totalKm = selectedSalaryRows.reduce((sum, row) => sum + Number(row.km || 0), 0);
   const perDiemTotal = selectedPerDiemRows.reduce((sum, row) => sum + Number(row.convertedBRL || 0), 0);
   const pendingCurrencies = Array.from(new Set(selectedPerDiemRows.filter((row) => row.convertedBRL === null).map((row) => row.currency)));
-  const dutyHours = ordered.filter((event) => !['stay', 'rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
+  const dutyHours = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
   const todayIso = isoOf({ id: 'today', date: new Date() });
 
   function goToday() {
@@ -342,6 +351,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
                 </div>}
 
                 {mode === 'stay' && <p className="cc-roster-summary-v1397">{hours ? `${readableHours(hours)} entre o fim da jornada e a próxima apresentação.` : 'Intervalo de continuidade entre jornadas.'} {event.hotel ? `Hotel: ${event.hotel}.` : atBase ? 'Endereço de casa salvo pode ser usado na Saída Inteligente.' : 'Hotel ainda não informado.'}</p>}
+                {mode === 'journey-rest' && <p className="cc-roster-summary-v1397">{event.subtitle || 'Intervalo entre jornadas. Não é tempo em solo, programação, pernoite ou deslocamento.'}</p>}
                 {mode === 'rest' && <p className="cc-roster-summary-v1397">{event.subtitle || 'Código e dia preservados conforme a escala publicada.'}</p>}
                 {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${event.departure || 'Horário a confirmar'} → ${event.arrival || 'Horário a confirmar'}`}</p>}
 

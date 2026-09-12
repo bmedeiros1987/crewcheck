@@ -231,7 +231,7 @@ function activityText(activity: ScheduleActivityLike): string {
 }
 
 function activitySemanticText(activity: ScheduleActivityLike): string {
-  return activityCodeValues(activity).join(' ');
+  return [...activityCodeValues(activity), normalize(activity.subtitle)].filter(Boolean).join(' ');
 }
 
 function hasFlightLegs(activity: ScheduleActivityLike): boolean {
@@ -338,7 +338,7 @@ function isStandby(activity: ScheduleActivityLike): boolean {
   return normalize(activity.kind) === 'STANDBY'
     || normalize(activity.canonical?.kind) === 'STANDBY'
     || hasCode(activity, STANDBY_CODES)
-    || /\bSOBREAVISO\b/.test(activityText(activity));
+    || /\bSOBREAVISO\b/.test(activitySemanticText(activity));
 }
 
 function isActivated(activity: ScheduleActivityLike): boolean {
@@ -346,13 +346,18 @@ function isActivated(activity: ScheduleActivityLike): boolean {
     activity.activated
     || activity.isActivated
     || hasFlightLegs(activity)
-    || /\b(?:ACIONADO|ACIONAMENTO|CHAMADO|CONVOCADO)\b/.test(activityText(activity)),
+    || /\b(?:ACIONADO|ACIONAMENTO|CHAMADO|CONVOCADO)\b/.test(activitySemanticText(activity)),
   );
 }
 
 function isRemoteActivity(activity: ScheduleActivityLike): boolean {
   if (hasCode(activity, ONLINE_CODES)) return true;
   return /\b(?:EAD|ONLINE|E-LEARNING|FOXSYSTEM|REMOTO)\b/.test(activityText(activity));
+}
+
+/** Journey-rest is visible timeline data, not a published program. */
+export function isJourneyRestScheduleActivity(activity: ScheduleActivityLike): boolean {
+  return normalize(activity?.canonical?.kind) === 'JOURNEY-REST';
 }
 
 /**
@@ -388,13 +393,17 @@ function hasContinuationPresentation(activity: ScheduleActivityLike): boolean {
 }
 
 export function isSmartDepartureEligible(activity: ScheduleActivityLike): boolean {
+  if (isJourneyRestScheduleActivity(activity)) return false;
   if (!isProgramScheduleActivity(activity)) return false;
   // Continuação de jornada carrega tempo de solo, não apresentação: planejar
   // saída a partir dela levaria a um horário que não existe (#512). Apresentação
   // apenas ausente não decide nada aqui — quem sabe disso é a camada de eventos.
   if (hasContinuationPresentation(activity)) return false;
+  const kind = normalize(activity.kind);
+  const canonicalKind = normalize(activity.canonical?.kind);
+  const isFlightEvent = kind === 'FLIGHT' || canonicalKind === 'FLIGHT';
+  if (isStandby(activity) && !isFlightEvent) return false;
   if (isFlightScheduleActivity(activity)) return true;
-  if (isStandby(activity) && !isActivated(activity)) return false;
   if (isRemoteActivity(activity)) return false;
   return true;
 }
