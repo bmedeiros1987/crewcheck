@@ -22,6 +22,7 @@ test('OpenRouter uses the free router by default and keeps the key in Authorizat
   assert.equal(provider.model, 'openrouter/free');
   assert.equal(seen.url, 'https://openrouter.ai/api/v1/chat/completions');
   assert.equal(seen.options.headers.authorization, 'Bearer secret-openrouter');
+  assert.equal(seen.options.headers.accept, 'application/json');
   assert.deepEqual(JSON.parse(seen.options.body), {
     model: 'openrouter/free',
     messages: [{ role: 'user', content: 'safe' }],
@@ -54,7 +55,7 @@ test('provider aborts are propagated instead of being converted into empty respo
   );
 });
 
-test('Cloudflare uses the documented Workers AI REST contract with an active model', async () => {
+test('Cloudflare uses the documented Workers AI REST contract', async () => {
   let seen;
   const fetchImpl = async (url, options) => {
     seen = { url, options };
@@ -65,8 +66,22 @@ test('Cloudflare uses the documented Workers AI REST contract with an active mod
   assert.equal(provider.model, '@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(seen.url, 'https://api.cloudflare.com/client/v4/accounts/acct-1/ai/run/@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(seen.options.headers.authorization, 'Bearer secret-cf');
+  assert.equal(seen.options.headers.accept, 'application/json');
   assert.deepEqual(JSON.parse(seen.options.body), { prompt: 'safe' });
   assert.equal(result.text, 'OK');
+});
+
+test('Cloudflare structured errors preserve provider code and message', async () => {
+  const fetchImpl = async () => fakeJsonResponse({
+    success: false,
+    errors: [{ code: 7003, message: 'No route for the URI' }],
+    messages: [],
+  }, { ok: false, status: 404 });
+  const provider = createCloudflareProvider({ accountId: 'bad-account', apiToken: 'secret-cf', fetchImpl });
+  await assert.rejects(
+    () => provider.generate({ prompt: 'safe' }),
+    (error) => error?.status === 404 && error?.code === 7003 && error?.message === 'No route for the URI' && error?.retryable === false,
+  );
 });
 
 test('Gemini uses the current Flash default and x-goog-api-key header', async () => {
