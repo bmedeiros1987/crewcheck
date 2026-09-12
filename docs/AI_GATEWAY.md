@@ -29,13 +29,15 @@ All providers are off by default and secrets are read only at runtime.
 | `AI_CLOUDFLARE_ENABLED` | Workers AI feature flag | `false` |
 | `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_AI_API_TOKEN` / `AI_CLOUDFLARE_MODEL` | Workers AI settings | secrets / small instruct model |
 | `AI_GEMINI_ENABLED` | Gemini feature flag | `false` |
-| `GEMINI_API_KEY` / `AI_GEMINI_MODEL` / `AI_GEMINI_TIER` | Gemini settings; tier may be `strong` | secret / Flash / `light` |
+| `GEMINI_API_KEY` / `AI_GEMINI_MODEL` / `AI_GEMINI_TIER` | Gemini settings; tier may be `strong` | secret / `gemini-3.8-flash` / `light` |
 | `AI_TIMEOUT_MS` / `AI_MAX_RETRIES` | bounded attempt policy | `2500` / `1` |
 | `AI_CIRCUIT_FAILURE_THRESHOLD` / `AI_CIRCUIT_RESET_MS` | circuit breaker | `3` / `60000` |
 | `AI_DAILY_BUDGET_UNITS` | process-local daily attempt ceiling | `1000` |
 | `AI_RATE_LIMIT_PER_MINUTE` | process-local limit per provider | `30` |
 
 The in-memory limits are safe defaults for one instance. Before horizontal production rollout, back the budget and rate counters with a shared atomic store; until then keep provider quotas as a second hard ceiling.
+
+Provider account/key onboarding and the safe smoke-test procedure are documented in [`docs/AI_PROVIDER_SETUP.md`](./AI_PROVIDER_SETUP.md).
 
 ## Integration contract
 
