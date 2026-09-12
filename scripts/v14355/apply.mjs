@@ -40,6 +40,14 @@ function insertAfterRequired(source, anchor, value, label) {
 const nearbyPlacesImport = `import { loadFreshNearbyCurrentGeo, loadNearbyPlacesOrigin, saveNearbyPlacesOrigin, type NearbyPlacesOriginMode } from '@/lib/nearbyPlacesOrigin';`;
 const nearbyPlacesLegacyImport = `import { loadNearbyPlacesOrigin, saveNearbyPlacesOrigin, type NearbyPlacesOriginMode } from '@/lib/nearbyPlacesOrigin';`;
 
+function ensureNearbyPlacesImport(source) {
+  let next = source.replace(nearbyPlacesLegacyImport, nearbyPlacesImport);
+  if (next.includes(nearbyPlacesImport)) return next;
+  const scheduleImport = next.match(/import \{[^}]*\} from '@\/lib\/scheduleActivityClassification';/)?.[0];
+  if (!scheduleImport) throw new Error('[v14355] Import da classificação de atividades ausente para ancorar Locais próximos.');
+  return insertAfterRequired(next, scheduleImport, nearbyPlacesImport, 'import da origem canônica de Locais próximos');
+}
+
 const openNearbyPlacesBefore = `function openNearbyPlaces(category: PlaceCategory, location = '', mode: 'layover' | 'current' = location ? 'layover' : 'current') {
   storage.set('crewcheck:places-category', category);
   storage.set('crewcheck:places-mode', mode);
@@ -131,13 +139,7 @@ const replacedCanonicalAppLocationLegacy = `  if (body.location && typeof body.l
   }`;
 
 export function patchNearbyPlacesHomeV14355(source) {
-  let next = source.replace(nearbyPlacesLegacyImport, nearbyPlacesImport);
-  next = insertAfterRequired(
-    next,
-    "import { countScheduleCategories, isProgramScheduleActivity, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
-    nearbyPlacesImport,
-    'import da origem canônica de Locais próximos',
-  );
+  let next = ensureNearbyPlacesImport(source);
   if (next.includes(conciergeAskLegacy)) next = next.replace(conciergeAskLegacy, conciergeAskAfter);
   next = replaceRequired(next, openNearbyPlacesBefore, openNearbyPlacesAfter, 'abertura de Locais próximos');
   next = replaceRequired(next, conciergeAskBefore, conciergeAskAfter, 'GPS fresco enviado pelo Concierge no app');
