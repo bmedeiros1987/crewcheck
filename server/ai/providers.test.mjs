@@ -22,8 +22,36 @@ test('OpenRouter uses the free router by default and keeps the key in Authorizat
   assert.equal(provider.model, 'openrouter/free');
   assert.equal(seen.url, 'https://openrouter.ai/api/v1/chat/completions');
   assert.equal(seen.options.headers.authorization, 'Bearer secret-openrouter');
-  assert.equal(JSON.parse(seen.options.body).model, 'openrouter/free');
+  assert.deepEqual(JSON.parse(seen.options.body), {
+    model: 'openrouter/free',
+    messages: [{ role: 'user', content: 'safe' }],
+    temperature: 0,
+  });
   assert.equal(result.text, 'OK');
+});
+
+test('OpenRouter accepts text-part arrays returned by compatible chat APIs', async () => {
+  const fetchImpl = async () => fakeJsonResponse({ choices: [{ message: { content: [{ type: 'text', text: 'O' }, { type: 'text', text: 'K' }] } }] });
+  const provider = createOpenRouterProvider({ apiKey: 'secret-openrouter', fetchImpl });
+  const result = await provider.generate({ prompt: 'safe' });
+  assert.equal(result.text, 'OK');
+});
+
+test('provider aborts are propagated instead of being converted into empty responses', async () => {
+  const controller = new AbortController();
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      controller.abort();
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    },
+  });
+  const provider = createOpenRouterProvider({ apiKey: 'secret-openrouter', fetchImpl });
+  await assert.rejects(
+    () => provider.generate({ prompt: 'safe' }, { signal: controller.signal }),
+    (error) => error?.name === 'AbortError' && error?.code === 'provider_timeout' && error?.retryable === true,
+  );
 });
 
 test('Cloudflare uses the documented Workers AI REST contract', async () => {
