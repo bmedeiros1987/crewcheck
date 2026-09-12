@@ -5,12 +5,15 @@ on:
     paths:
       - 'server/ai/**'
       - 'docs/AI_GATEWAY.md'
+      - 'docs/AI_DEV_ORCHESTRATOR.md'
+      - 'scripts/ai-dev-orchestrator.mjs'
       - '.github/workflows/ai-gateway.yml'
       - 'package.json'
   push:
     branches: [main]
     paths:
       - 'server/ai/**'
+      - 'scripts/ai-dev-orchestrator.mjs'
       - 'package.json'
 
 permissions:

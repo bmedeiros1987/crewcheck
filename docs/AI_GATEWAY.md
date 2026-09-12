@@ -39,6 +39,8 @@ The in-memory limits are safe defaults for one instance. Before horizontal produ
 
 Provider account/key onboarding and the safe smoke-test procedure are documented in [`docs/AI_PROVIDER_SETUP.md`](./AI_PROVIDER_SETUP.md).
 
+The separate internal engineering-review CLI is documented in [`docs/AI_DEV_ORCHESTRATOR.md`](./AI_DEV_ORCHESTRATOR.md). It reuses provider adapters but has no public endpoint and does not participate in product decisions.
+
 ## Integration contract
 
 Create providers with `providersFromEnv`, construct `AiGateway` with deterministic `localResolvers`, and inject a sanitized telemetry callback. Do not expose the gateway as a generic unauthenticated endpoint. A product integration must add authentication, an intent-specific request schema and per-user abuse controls. Provider responses remain advisory copy and must not mutate operational facts.
