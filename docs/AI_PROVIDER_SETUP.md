@@ -23,7 +23,7 @@ OPENROUTER_API_KEY=<secret>
 AI_OPENROUTER_MODEL=openrouter/free
 ```
 
-`openrouter/free` roteia automaticamente entre modelos gratuitos disponíveis. Como disponibilidade e limites mudam, o CrewCheck deve tratá-lo como fallback, nunca como dependência operacional crítica.
+`openrouter/free` roteia automaticamente entre modelos gratuitos disponíveis. Como disponibilidade e latência variam, o CrewCheck deve tratá-lo como fallback, nunca como dependência operacional crítica. O endpoint usado é o `POST /api/v1/chat/completions`, compatível com o contrato oficial do OpenRouter.
 
 ## 2. Cloudflare Workers AI — segundo fallback
 
@@ -65,16 +65,21 @@ No nível gratuito, a política do Google pode permitir uso do conteúdo para me
 
 ## 4. Controles globais recomendados
 
+Para provedores gratuitos, a latência pode ser bastante variável. O smoke test usa janela mais larga do que a experiência normal do produto.
+
 ```env
 AI_KILL_SWITCH=false
 AI_ALLOW_PAID=false
-AI_TIMEOUT_MS=2500
+AI_TIMEOUT_MS=12000
+AI_SMOKE_TIMEOUT_MS=30000
 AI_MAX_RETRIES=1
 AI_CIRCUIT_FAILURE_THRESHOLD=3
 AI_CIRCUIT_RESET_MS=60000
 AI_DAILY_BUDGET_UNITS=1000
 AI_RATE_LIMIT_PER_MINUTE=30
 ```
+
+`AI_TIMEOUT_MS` controla o gateway em uso normal. `AI_SMOKE_TIMEOUT_MS` existe apenas para testar conectividade do provedor sem confundir fila/latência de free tier com erro de credencial.
 
 O orçamento/rate limit atual é process-local. Antes de escalar horizontalmente, mover contadores para um storage atômico compartilhado.
 
@@ -86,7 +91,9 @@ Depois de cadastrar as variáveis no ambiente server-side, execute:
 node scripts/ai-provider-smoke.mjs
 ```
 
-O teste usa apenas o prompt sintético `Responda apenas OK.` e não lê escala, usuário, CrewLife ou banco. Ele imprime somente status/provedor/latência, sem exibir a API key.
+O teste usa apenas o prompt sintético `Responda apenas OK.` e não lê escala, usuário, CrewLife ou banco. Ele imprime somente status/provedor/modelo/latência e código HTTP quando houver erro, sem exibir a API key.
+
+Um timeout agora é reportado como timeout real; ele não deve ser convertido em `empty_response`. Se o OpenRouter gratuito estiver apenas lento, o smoke aguarda até `AI_SMOKE_TIMEOUT_MS` antes de falhar.
 
 ## 6. Ordem de ativação sugerida
 
