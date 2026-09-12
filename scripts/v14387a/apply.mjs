@@ -31,10 +31,17 @@ if (!roster.includes(importLine)) {
 }
 
 const workModeOld = `function workMode(event: RosterEvent): ProgramMode {\n  const code = eventCode(event);\n  if (event.kind === 'stay' || /PERNOITE|ESTADIA|DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'stay';\n  if (event.canonical?.kind === 'rest') return 'rest';`;
+const workModeOldJourneyRest = `function workMode(event: RosterEvent): ProgramMode {\n  const code = eventCode(event);\n  if (event.canonical?.kind === 'journey-rest') return 'journey-rest';\n  if (event.kind === 'stay' || /PERNOITE|ESTADIA|DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'stay';\n  if (event.canonical?.kind === 'rest') return 'rest';`;
 const workModeNew = `function workMode(event: RosterEvent): ProgramMode {\n  const code = eventCode(event);\n  const scheduleCategory = classifyScheduleActivity(event);\n  if (scheduleCategory === 'FOLGA' || scheduleCategory === 'REPOUSO') return 'rest';\n  if (scheduleCategory === 'PERNOITE') return 'stay';`;
+const workModeNewJourneyRest = `function workMode(event: RosterEvent): ProgramMode {\n  const code = eventCode(event);\n  if (event.canonical?.kind === 'journey-rest') return 'journey-rest';\n  const scheduleCategory = classifyScheduleActivity(event);\n  if (scheduleCategory === 'FOLGA' || scheduleCategory === 'REPOUSO') return 'rest';\n  if (scheduleCategory === 'PERNOITE') return 'stay';`;
 if (!roster.includes('const scheduleCategory = classifyScheduleActivity(event);')) {
-  if (!roster.includes(workModeOld)) throw new Error('[v14387a] workMode legado não encontrado.');
-  roster = roster.replace(workModeOld, workModeNew);
+  if (roster.includes(workModeOldJourneyRest)) {
+    roster = roster.replace(workModeOldJourneyRest, workModeNewJourneyRest);
+  } else if (roster.includes(workModeOld)) {
+    roster = roster.replace(workModeOld, workModeNew);
+  } else {
+    throw new Error('[v14387a] workMode legado não encontrado.');
+  }
 }
 
 if (!roster.includes(importLine)) throw new Error('[v14387a] classificação compartilhada não importada.');
