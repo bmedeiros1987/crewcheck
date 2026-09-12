@@ -143,6 +143,15 @@ function normalize(value: unknown): string {
     .toUpperCase();
 }
 
+// #303 — hierarquia de fontes de código.
+//
+// Nem todo campo tem o mesmo peso. `type` e `code` carregam o código formal
+// publicado na escala; `pairingCode`, `title` e `flightNumber` são rótulo humano
+// ou agrupamento, e mudam de redação sem que a escala mude. Quando as duas
+// camadas discordam, o código formal decide: um dia publicado como DO cujo rótulo
+// diz "Descanso" é folga, não repouso — antes desta separação ele era contado em
+// Descansos, porque o conjunto de repouso era consultado sobre todos os campos de
+// uma vez e "DESCANSO" saía do título.
 function formalCodeValues(activity: ScheduleActivityLike): string[] {
   const published = activity.canonical?.publishedDay;
   return [
@@ -156,6 +165,9 @@ function formalCodeValues(activity: ScheduleActivityLike): string[] {
     .filter(Boolean);
 }
 
+// Rótulo e agrupamento: só decidem quando o código formal não conclui nada.
+// É o caso de "Descanso na base", inferido por continuidade física e sem código
+// de folga publicado — segue sendo repouso.
 function fallbackCodeValues(activity: ScheduleActivityLike): string[] {
   const published = activity.canonical?.publishedDay;
   return [
@@ -244,8 +256,14 @@ export function classifyScheduleActivity(
   activity: ScheduleActivityLike,
 ): ScheduleActivityCategory {
   if (!activity || activity.placeholder) return 'DESCONHECIDA';
+
+  // Código formal publicado decide primeiro, e folga vence repouso quando os dois
+  // aparecem no mesmo nível formal: DO/DOF/FOLGA/DRC são folga ainda que o rótulo
+  // ou o pairingCode digam "Descanso".
   if (hasFormalCode(activity, DAY_OFF_CODES)) return 'FOLGA';
   if (hasFormalCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
+
+  // Sem código formal conclusivo, rótulo e pairingCode entram como fallback.
   if (hasCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
   if (hasCode(activity, DAY_OFF_CODES)) return 'FOLGA';
 
@@ -295,7 +313,13 @@ export function isProgramScheduleActivity(activity: ScheduleActivityLike): boole
   return classifyScheduleActivity(activity) === 'PROGRAMACAO';
 }
 
+/** Folga pedida (DR): subtipo de folga, nunca de repouso. */
 export function isRequestedDayOff(activity: ScheduleActivityLike): boolean {
+  // Folga pedida é subtipo de folga: se a classificação não disse FOLGA, não há
+  // subtipo a marcar. Sem esta guarda, um dia com código formal de repouso e um
+  // pairingCode DR era classificado REPOUSO e ao mesmo tempo marcado como folga
+  // pedida — o fallback passava por cima do código formal exatamente no ponto em
+  // que a hierarquia deveria mandar.
   if (classifyScheduleActivity(activity) !== 'FOLGA') return false;
   return hasFormalCode(activity, REQUESTED_DAY_OFF_CODES)
     || (!hasFormalCode(activity, DAY_OFF_CODES) && hasCode(activity, REQUESTED_DAY_OFF_CODES));
@@ -331,16 +355,36 @@ function isRemoteActivity(activity: ScheduleActivityLike): boolean {
   return /\b(?:EAD|ONLINE|E-LEARNING|FOXSYSTEM|REMOTO)\b/.test(activityText(activity));
 }
 
+/** Journey-rest is visible timeline data, not a published program. */
 export function isJourneyRestScheduleActivity(activity: ScheduleActivityLike): boolean {
   return normalize(activity?.canonical?.kind) === 'JOURNEY-REST';
 }
 
+/**
+ * Decide somente se a programação exige deslocamento.
+ *
+ * HSB não acionado e atividade remota continuam contando como programação,
+ * mas não podem abrir cálculo de saída.
+ */
+/**
+ * Apresentação realmente publicada da atividade, ou null.
+ *
+ * "Conexão/Solo" é o rótulo de uma etapa que continua DENTRO de uma jornada já
+ * iniciada: descreve espera em solo, não apresentação. Planejar saída a partir
+ * dele levaria o tripulante a um horário que não existe (#512).
+ */
 export function publishedPresentationOf(activity: ScheduleActivityLike): string | null {
   const presentation = String(activity?.presentation || '').trim();
   if (!presentation || presentation === '—' || presentation === CONTINUATION_PRESENTATION) return null;
   return /\d{1,2}:\d{2}/.test(presentation) ? presentation : null;
 }
 
+/**
+ * Rótulo que a etapa recebe quando continua dentro de uma jornada já aberta.
+ * Distingue-se de apresentação AUSENTE: ausência é apenas desconhecimento
+ * nesta camada, enquanto este rótulo é evidência positiva de que a etapa não
+ * tem apresentação própria.
+ */
 const CONTINUATION_PRESENTATION = 'Conexão/Solo';
 
 function hasContinuationPresentation(activity: ScheduleActivityLike): boolean {
@@ -351,6 +395,9 @@ function hasContinuationPresentation(activity: ScheduleActivityLike): boolean {
 export function isSmartDepartureEligible(activity: ScheduleActivityLike): boolean {
   if (isJourneyRestScheduleActivity(activity)) return false;
   if (!isProgramScheduleActivity(activity)) return false;
+  // Continuação de jornada carrega tempo de solo, não apresentação: planejar
+  // saída a partir dela levaria a um horário que não existe (#512). Apresentação
+  // apenas ausente não decide nada aqui — quem sabe disso é a camada de eventos.
   if (hasContinuationPresentation(activity)) return false;
   if (isStandby(activity) && !isActivated(activity)) return false;
   if (isFlightScheduleActivity(activity)) return true;
