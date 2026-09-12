@@ -54,7 +54,7 @@ test('provider aborts are propagated instead of being converted into empty respo
   );
 });
 
-test('Cloudflare uses the documented Workers AI REST contract', async () => {
+test('Cloudflare uses the documented Workers AI REST contract with an active model', async () => {
   let seen;
   const fetchImpl = async (url, options) => {
     seen = { url, options };
@@ -62,8 +62,8 @@ test('Cloudflare uses the documented Workers AI REST contract', async () => {
   };
   const provider = createCloudflareProvider({ accountId: 'acct-1', apiToken: 'secret-cf', fetchImpl });
   const result = await provider.generate({ prompt: 'safe' });
-  assert.equal(provider.model, '@cf/meta/llama-3.1-8b-instruct');
-  assert.equal(seen.url, 'https://api.cloudflare.com/client/v4/accounts/acct-1/ai/run/@cf/meta/llama-3.1-8b-instruct');
+  assert.equal(provider.model, '@cf/meta/llama-3.1-8b-instruct-fast');
+  assert.equal(seen.url, 'https://api.cloudflare.com/client/v4/accounts/acct-1/ai/run/@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(seen.options.headers.authorization, 'Bearer secret-cf');
   assert.deepEqual(JSON.parse(seen.options.body), { prompt: 'safe' });
   assert.equal(result.text, 'OK');
