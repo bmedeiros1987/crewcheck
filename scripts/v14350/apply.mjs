@@ -37,8 +37,22 @@ function insertBeforeRequired(source, anchor, value, label) {
   return source.replace(matched, `${withEol(value, eol)}${eol}${matched}`);
 }
 
+function hasCanonicalSmartDepartureEligibility(source) {
+  const functionStart = source.indexOf('function isOperationalEvent(event: ZeroLeg) {');
+  if (functionStart < 0) return false;
+  const functionEnd = source.indexOf('\n}', functionStart);
+  if (functionEnd < 0) return false;
+  const block = source.slice(functionStart, functionEnd + 2);
+  return block.includes('if (event.placeholder) return false;')
+    && block.includes('!isOperationalCanonicalEvent(event.canonical)')
+    && block.includes("return ['flight', 'duty', 'stay'].includes(event.kind);");
+}
+
 function replaceRequired(source, before, after, label) {
   if (variants(after.trim()).some((candidate) => source.includes(candidate))) return source;
+  if (label === 'elegibilidade da Saída Inteligente' && hasCanonicalSmartDepartureEligibility(source)) {
+    return source;
+  }
   const matched = variants(before).find((candidate) => source.includes(candidate));
   if (!matched) throw new Error(`[v14350] Bloco ausente: ${label}`);
   const eol = matched.includes('\r\n') ? '\r\n' : '\n';
