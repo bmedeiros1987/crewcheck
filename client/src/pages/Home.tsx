@@ -70,6 +70,7 @@ import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
+import { DOMESTIC_BREAKFAST_BRL, perDiemSlotAmount, roundCurrencyAmount } from '@/lib/financialAmounts';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
@@ -3214,8 +3215,10 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     usedRateKeys.add(classification.rateKey);
     const rate = cfg.rates[classification.rateKey];
     const value = slot === 'breakfast' && rate.currency === 'BRL' && cfg.learnedBreakfast !== null
-      ? cfg.learnedBreakfast
-      : slot === 'breakfast' ? rate.mainMeal * cfg.breakfastPercent : rate.mainMeal;
+      ? roundCurrencyAmount(cfg.learnedBreakfast)
+      : slot === 'breakfast' && classification.rateKey === 'domestic'
+        ? DOMESTIC_BREAKFAST_BRL
+      : perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent);
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
