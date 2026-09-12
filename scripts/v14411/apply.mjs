@@ -20,20 +20,29 @@ if (!fem.includes("import './crewlife-fem.css';")) {
 
 let view = must(VIEW);
 const femImport = "import CrewLifeFemPanel from '@/components/v14411/CrewLifeFemPanel';";
+const contextImport = "import { buildCrewLifeContext } from '@/lib/crewLifeContext';";
 if (!view.includes(femImport)) {
   const anchor = "import { toast } from 'sonner';";
   if (!view.includes(anchor)) throw new Error('[v14411] âncora de import do CrewCheck Life não encontrada');
   view = view.replace(anchor, `${anchor}\n${femImport}`);
 }
+if (!view.includes(contextImport)) view = view.replace(femImport, `${femImport}\n${contextImport}`);
+
+if (!view.includes('const crewLifeContext = useMemo(() => buildCrewLifeContext')) {
+  const anchor = '  const recommendation = useMemo(() => {';
+  if (!view.includes(anchor)) throw new Error('[v14411] âncora do contexto CrewLife não encontrada');
+  const context = `  const crewLifeContext = useMemo(() => buildCrewLifeContext({\n    nextProgram,\n    sleepHours: metrics.sleepHours,\n    activityMinutes: metrics.activityMinutes,\n  }), [metrics.activityMinutes, metrics.sleepHours, nextProgram]);\n\n`;
+  view = view.replace(anchor, `${context}${anchor}`);
+}
 
 if (!view.includes('<CrewLifeFemPanel')) {
   const anchor = '    <section className="cc-life-block cc-life-data-controls">';
   if (!view.includes(anchor)) throw new Error('[v14411] âncora de controles de dados não encontrada');
-  const panel = `    <CrewLifeFemPanel\n      nextPresentation={nextProgram?.presentation || nextProgram?.departure}\n      sleepHours={metrics.sleepHours}\n      activityMinutes={metrics.activityMinutes}\n    />\n\n`;
+  const panel = `    <CrewLifeFemPanel context={crewLifeContext} />\n\n`;
   view = view.replace(anchor, `${panel}${anchor}`);
 }
 
-if (!view.includes(femImport) || !view.includes('<CrewLifeFemPanel')) {
+if (!view.includes(femImport) || !view.includes(contextImport) || !view.includes('<CrewLifeFemPanel')) {
   throw new Error('[v14411] CrewLife Fem não foi integrado ao CrewCheck Life');
 }
 write(VIEW, view);

@@ -11,23 +11,12 @@ import {
   type FemSymptomKey,
   type FemWellbeing,
 } from '@/lib/crewLifeFem';
+import type { CrewLifeContext } from '@/lib/crewLifeContext';
+import { EMPTY_FEM_STORE, eraseFemVault, readFemVault, writeFemVault, type FemStore } from '@/lib/crewLifeFemStorage';
 
 type Props = {
-  nextPresentation?: string;
-  sleepHours?: number;
-  activityMinutes?: number;
+  context: CrewLifeContext;
 };
-
-type FemConsent = { active: boolean; acceptedAt: string; version: '1.0' };
-
-type FemStore = {
-  consent: FemConsent;
-  cycles: FemCycleRecord[];
-  checkins: FemCheckin[];
-};
-
-const KEY = 'crewcheck:life:fem:v1';
-const EMPTY: FemStore = { consent: { active: false, acceptedAt: '', version: '1.0' }, cycles: [], checkins: [] };
 
 const SYMPTOMS: Array<[FemSymptomKey, string]> = [
   ['cramps', 'Cólica/dor'],
@@ -45,30 +34,11 @@ const SYMPTOMS: Array<[FemSymptomKey, string]> = [
   ['exercise_discomfort', 'Treino desconfortável'],
 ];
 
-function readStore(): FemStore {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as Partial<FemStore>;
-    return {
-      consent: parsed.consent?.version === '1.0' ? parsed.consent : EMPTY.consent,
-      cycles: Array.isArray(parsed.cycles) ? parsed.cycles : [],
-      checkins: Array.isArray(parsed.checkins) ? parsed.checkins : [],
-    };
-  } catch {
-    return EMPTY;
-  }
-}
-
-function writeStore(value: FemStore) {
-  try { localStorage.setItem(KEY, JSON.stringify(value)); } catch {}
-}
-
 function today() { return new Date().toISOString().slice(0, 10); }
 function id(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
-export default function CrewLifeFemPanel({ nextPresentation, sleepHours, activityMinutes }: Props) {
-  const [store, setStore] = useState<FemStore>(() => readStore());
+export default function CrewLifeFemPanel({ context }: Props) {
+  const [store, setStore] = useState<FemStore>(() => readFemVault());
   const [consentChecked, setConsentChecked] = useState(false);
   const [periodStart, setPeriodStart] = useState(today());
   const [wellbeing, setWellbeing] = useState<FemWellbeing>('ok');
@@ -81,11 +51,11 @@ export default function CrewLifeFemPanel({ nextPresentation, sleepHours, activit
   const cycleContext = useMemo(() => estimateCycleContext(store.cycles), [store.cycles]);
   const insights = useMemo(() => buildFemInsights(store.cycles, store.checkins), [store.cycles, store.checkins]);
   const latestCheckin = store.checkins.slice().sort((a, b) => b.at.localeCompare(a.at))[0];
-  const suggestion = useMemo(() => buildRecoverySuggestion({ cycleContext, latestCheckin, insights, nextPresentation }), [cycleContext, latestCheckin, insights, nextPresentation]);
+  const suggestion = useMemo(() => buildRecoverySuggestion({ cycleContext, latestCheckin, insights, nextPresentation: context.nextProgram?.presentation }), [cycleContext, latestCheckin, insights, context]);
 
   function commit(next: FemStore) {
     setStore(next);
-    writeStore(next);
+    try { writeFemVault(next); } catch { toast.error('Não foi possível salvar o cofre privado neste aparelho.'); }
   }
 
   function activate() {
@@ -119,10 +89,11 @@ export default function CrewLifeFemPanel({ nextPresentation, sleepHours, activit
       symptoms,
       freeText: freeText.trim() || undefined,
       context: {
-        presentation: nextPresentation,
-        sleepHours: Number.isFinite(sleepHours) && Number(sleepHours) > 0 ? Number(sleepHours) : undefined,
-        trainingMinutes: Number.isFinite(activityMinutes) && Number(activityMinutes) > 0 ? Number(activityMinutes) : undefined,
-        earlyStart: Boolean(nextPresentation && /^0[0-5]:/.test(nextPresentation)),
+        presentation: context.nextProgram?.presentation,
+        sleepHours: context.routine.sleepHours,
+        trainingMinutes: context.routine.activityMinutes,
+        earlyStart: context.nextProgram?.window === 'early_start',
+        madrugada: context.nextProgram?.window === 'overnight',
       },
     };
     commit({ ...store, checkins: [...store.checkins, entry] });
@@ -138,8 +109,8 @@ export default function CrewLifeFemPanel({ nextPresentation, sleepHours, activit
 
   function erase() {
     if (!window.confirm('Apagar todos os dados locais do CrewLife Fem neste aparelho?')) return;
-    try { localStorage.removeItem(KEY); } catch {}
-    setStore(EMPTY);
+    try { eraseFemVault(); } catch {}
+    setStore(EMPTY_FEM_STORE);
     setConsentChecked(false);
     toast.success('Dados locais do CrewLife Fem apagados.');
   }
