@@ -1,0 +1,33 @@
+name: CrewLife Fem v14.4.11
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/crewLifeFem.ts'
+      - 'client/src/components/v14411/**'
+      - 'client/src/components/v1434/CrewCheckLifeView.tsx'
+      - 'scripts/v14411/**'
+      - 'scripts/regression-crewlife-fem-v14411.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/crewlife-fem-v14411.yml'
+  workflow_dispatch:
+
+jobs:
+  crewlife-fem:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: CrewLife Fem regression
+        run: node scripts/regression-crewlife-fem-v14411.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build
