@@ -37,6 +37,27 @@ function insertBeforeRequired(source, anchor, value, label) {
   return source.replace(matched, `${withEol(value, eol)}${eol}${matched}`);
 }
 
+function ensureScheduleClassificationImport(source) {
+  const requiredNames = ['countScheduleCategories', 'isRestScheduleActivity', 'isSmartDepartureEligible'];
+  const pattern = /import \{([^}]*)\} from '@\/lib\/scheduleActivityClassification';/;
+  const matched = source.match(pattern);
+  if (matched) {
+    const names = matched[1].split(',').map((name) => name.trim()).filter(Boolean);
+    const merged = [...names];
+    for (const name of requiredNames) {
+      if (!merged.includes(name)) merged.push(name);
+    }
+    if (merged.length === names.length) return source;
+    return source.replace(matched[0], `import { ${merged.join(', ')} } from '@/lib/scheduleActivityClassification';`);
+  }
+  return insertAfterRequired(
+    source,
+    "import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';",
+    "import { countScheduleCategories, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
+    'import da classificação de atividades',
+  );
+}
+
 function hasCanonicalSmartDepartureEligibility(source) {
   const functionStart = source.indexOf('function isOperationalEvent(event: ZeroLeg) {');
   if (functionStart < 0) return false;
@@ -75,12 +96,7 @@ update('client/src/pages/Home.tsx', (source) => {
       `const CREWCHECK_UI_CORE_NOTE = 'v${VERSION}: Folga, descanso, pernoite e programação com classificação única na interface';`,
     );
 
-  next = insertAfterRequired(
-    next,
-    "import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';",
-    "import { countScheduleCategories, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
-    'import da classificação de atividades',
-  );
+  next = ensureScheduleClassificationImport(next);
 
   next = replaceRequired(
     next,
