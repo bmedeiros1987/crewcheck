@@ -5,6 +5,7 @@
   "private": true,
   "description": "CrewCheck v13.9.9 - monthly roster, contractual-base allowances, premium responsive UI and Admin health",
   "scripts": {
+    "test:ai-gateway": "node --test server/ai/*.test.mjs",
     "prepare:v139": "node scripts/v139/apply.mjs",
     "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
     "build": "node scripts/v139/apply.mjs && vite build",
