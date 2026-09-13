@@ -50,6 +50,17 @@ required = [
     'agent_status',
     'structured_output_result',
     'timeout waiting for structured Manus verdict',
+    # Eventual-consistency / transport hardening. These assertions are
+    # intentionally specific so a future simplification cannot reintroduce
+    # the fail-fast 404 that used to kill the collector immediately after
+    # task.create.
+    "--write-out '%{http_code}'",
+    'MANUS_BODY_FILE="$(mktemp)"',
+    'if [ "$http_code" = "404" ] && [ "$attempt" -le 12 ]; then',
+    'Manus task not visible yet (404)',
+    'if [ "$http_code" = "429" ] || [[ "$http_code" =~ ^5[0-9][0-9]$ ]]; then',
+    'transient HTTP $http_code',
+    'post_comment "$body" || echo "WARNING: could not publish Manus bridge error comment" >&2',
 ]
 
 for fragment in required:
@@ -85,5 +96,6 @@ assert 'for attempt in $(seq 1 80)' in s, 'polling loop must be bounded'
 assert 'timeout-minutes: 30' in s, 'job must have a hard timeout'
 assert s.index('https://api.manus.ai/v2/task.create') < s.index('https://api.manus.ai/v2/task.listMessages'), 'polling must happen after task creation'
 assert s.index('current_sha=') < s.index('[MANUS-AUDIT] MANUS: MERGE'), 'exact-SHA revalidation must happen before publishing a merge verdict'
+assert s.index('if [ "$http_code" = "404" ]') < s.index('task.listMessages returned HTTP'), 'eventual-consistency 404 must be retried before hard failure'
 assert s.endswith('\n'), 'workflow must end with a newline'
-print('PASS: authorized Manus trigger, private async task, bounded polling, structured verdict, fail-closed waiting/error handling, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
+print('PASS: authorized Manus trigger, private async task, bounded polling, eventual-consistency retry, transient transport retry, structured verdict, fail-closed waiting/error handling, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
