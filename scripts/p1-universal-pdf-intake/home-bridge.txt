@@ -1,0 +1,45 @@
+  const [walletImport, setWalletImport] = useState<{ file: File; documentType?: string; finish: () => void } | null>(null);
+  const [pdfChoice, setPdfChoice] = useState<{ file: File; finish: (destination: 'roster' | 'wallet' | null) => void } | null>(null);
+  const nativePdfQueueRef = useRef(new PdfIntakeQueue());
+  const importSharedRosterRef = useRef(handleFile);
+  importSharedRosterRef.current = handleFile;
+  useEffect(() => {
+    let alive = true;
+    const consumeNativePdf = async (payload: any) => {
+      if (!alive || !payload?.dataBase64) return;
+      // Legacy payloads have no ID. Use content identity, never filename/length.
+      const shareId = String(payload.shareId || `legacy:${payload.dataBase64}`);
+      await nativePdfQueueRef.current.enqueue(shareId, async () => {
+        if (!alive) throw new Error('Recebimento interrompido. Compartilhe o PDF novamente.');
+        const file = decodeSharedPdf(payload);
+        toast.message('PDF recebido. Identificando o destino...');
+        const detection = await inspectIntakePdf(file);
+        if (!alive) throw new Error('Recebimento interrompido. Compartilhe o PDF novamente.');
+        const destination = detection.destination === 'choose'
+          ? await new Promise<'roster' | 'wallet' | null>((resolve) => setPdfChoice({ file, finish: resolve }))
+          : detection.destination;
+        setPdfChoice(null);
+        if (destination === 'roster') {
+          // Existing parse → preview → “Ativar esta escala?” → activation contract.
+          const handleFile = importSharedRosterRef.current;
+          await handleFile({ target: { files: [file] } } as unknown as ChangeEvent<HTMLInputElement>);
+        } else if (destination === 'wallet') {
+          await new Promise<void>((resolve) => {
+            setWalletImport({ file, documentType: detection.documentType, finish: resolve });
+            setView('crewlocker');
+          });
+          setWalletImport(null);
+        }
+        try { (window as any).AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId); } catch {}
+        const pending = (window as any).__crewcheckPendingNativePdf;
+        if (pending === payload || (pending?.shareId && pending.shareId === payload.shareId)) {
+          delete (window as any).__crewcheckPendingNativePdf;
+        }
+      }).catch((error) => toast.error(error instanceof Error ? error.message : 'Não consegui receber o PDF. Compartilhe novamente.'));
+    };
+    const onNativePdf = (event: Event) => { void consumeNativePdf((event as CustomEvent).detail); };
+    window.addEventListener('crewcheck:native-pdf', onNativePdf as EventListener);
+    const pending = (window as any).__crewcheckPendingNativePdf;
+    const timer = pending ? window.setTimeout(() => { void consumeNativePdf(pending); }, 0) : undefined;
+    return () => { alive = false; window.clearTimeout(timer); window.removeEventListener('crewcheck:native-pdf', onNativePdf as EventListener); };
+  }, []);

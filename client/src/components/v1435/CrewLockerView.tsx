@@ -16,7 +16,10 @@ import {
 
 const TYPES = ['CHT', 'CMA', 'Passaporte', 'Visto', 'Certificado de treinamento', 'Vacinação', 'Outro'];
 
-export default function CrewLockerView() {
+export default function CrewLockerView({ incoming, onIncomingDone }: {
+  incoming?: { file: File; documentType?: string };
+  onIncomingDone?: () => void;
+}) {
   const [pin, setPin] = useState('');
   const [key, setKey] = useState<CryptoKey | null>(null);
   const [documents, setDocuments] = useState<CrewDocumentRecord[]>([]);
@@ -27,6 +30,23 @@ export default function CrewLockerView() {
   const [issuer, setIssuer] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [storage, setStorage] = useState({ usage: 0, quota: 0, persistent: false });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!incoming) return;
+    setFile(incoming.file);
+    setType(incoming.documentType || 'Outro');
+    setDisplayName(incoming.file.name);
+    setHolderName('');
+    setIssuer(incoming.documentType ? 'ANAC' : '');
+    setExpiresAt('');
+  }, [incoming]);
+
+  function cancelIncoming() {
+    setFile(null);
+    setDisplayName('');
+    onIncomingDone?.();
+  }
 
   async function refresh() {
     setDocuments(await listCrewDocuments());
@@ -66,7 +86,8 @@ export default function CrewLockerView() {
   }
 
   async function saveDocument() {
-    if (!key || !file || !holderName.trim()) return;
+    if (saving || !key || !file || !holderName.trim()) return;
+    setSaving(true);
     try {
       await requestPersistentOfflineStorage();
       await storeCrewDocument(key, file, {
@@ -81,11 +102,12 @@ export default function CrewLockerView() {
       setDisplayName('');
       setIssuer('');
       setExpiresAt('');
+      onIncomingDone?.();
       await refresh();
       toast.success('Documento criptografado e salvo para acesso offline.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Falha ao salvar documento.');
-    }
+    } finally { setSaving(false); }
   }
 
   async function viewDocument(doc: CrewDocumentRecord, download = false) {
@@ -115,6 +137,7 @@ export default function CrewLockerView() {
   }
 
   if (!key) return <section className="cc-locker-shell">
+    {incoming && <p>PDF recebido: {incoming.file.name}. Desbloqueie para revisar e salvar na Crew Wallet. <button onClick={cancelIncoming}>Cancelar importação</button></p>}
     <header className="cc-locker-hero"><span><FileLock2/></span><div><small>DOCUMENTOS OPERACIONAIS OFFLINE</small><h1>CrewLocker</h1><p>Seus documentos ficam criptografados neste aparelho e disponíveis mesmo sem internet.</p></div></header>
     <article className="cc-locker-unlock">
       <ShieldCheck/>
@@ -137,6 +160,7 @@ export default function CrewLockerView() {
 
     <section className="cc-locker-card">
       <header><div><small>NOVO DOCUMENTO</small><h2>Guardar cópia offline</h2></div><UploadCloud/></header>
+      {incoming && <p>PDF recebido na Crew Wallet. Confira o tipo, o titular e a validade antes de salvar. <button disabled={saving} onClick={cancelIncoming}>Cancelar importação</button></p>}
       <div className="cc-locker-form">
         <label><span>Tipo</span><select value={type} onChange={(event) => setType(event.target.value)}>{TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
         <label><span>Nome no cartão</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ex.: CMA 2026"/></label>
@@ -145,7 +169,7 @@ export default function CrewLockerView() {
         <label><span>Validade</span><input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)}/></label>
         <label className="file"><span>Arquivo</span><input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
       </div>
-      <button className="primary" onClick={saveDocument} disabled={!file || !holderName.trim()}><Plus/> Criptografar e guardar offline</button>
+      <button className="primary" onClick={saveDocument} disabled={saving || !file || !holderName.trim()}><Plus/> {saving ? 'Salvando...' : 'Criptografar e guardar offline'}</button>
     </section>
 
     <section className="cc-locker-card">
