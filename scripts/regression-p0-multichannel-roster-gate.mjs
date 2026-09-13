@@ -36,8 +36,9 @@ assert.match(home, /const rosterEvents = useMemo\(\(\) => buildLegs\(rosterWindo
 assert.match(home, /openRosterDisplayWindow\(primary\)/);
 
 const cockpitRender = nearby(home, "{view === 'cockpit' && <Cockpit", 900);
-expectAll('Cockpit deve usar apenas events do bundle operacional ativo', cockpitRender, ['<Cockpit', 'events={events}']);
-assert.ok(!cockpitRender.includes('rosterEvents'), '[p0-multichannel] Cockpit não pode consumir a janela visual multi-competência');
+const cockpitTag = cockpitRender.match(/<Cockpit[\s\S]*?\/>/)?.[0] || '';
+expectAll('Cockpit deve usar apenas events do bundle operacional ativo', cockpitTag, ['<Cockpit', 'events={events}']);
+assert.ok(!cockpitTag.includes('rosterEvents'), '[p0-multichannel] Cockpit não pode consumir a janela visual multi-competência');
 
 if (home.includes("{view === 'roster' && <RosterLaunchView")) {
   const rosterRender = nearby(home, "{view === 'roster' && <RosterLaunchView", 900);
