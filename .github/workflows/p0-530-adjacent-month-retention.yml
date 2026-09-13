@@ -1,0 +1,37 @@
+name: P0 #530 adjacent month retention
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
+      - 'scripts/regression-p0-multichannel-roster-gate.mjs'
+      - '.github/workflows/p0-530-adjacent-month-retention.yml'
+  workflow_dispatch:
+
+jobs:
+  adjacent-month-retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Real August/September continuity regression
+        run: node scripts/regression-p0-530-adjacent-month-retention.mjs
+      - name: Existing exact-competence continuity regression
+        run: node scripts/regression-p0-580-exact-competence-open.mjs
+      - name: Multichannel operational isolation gate
+        run: node scripts/regression-p0-multichannel-roster-gate.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build without replaying preparers
+        run: npx vite build
