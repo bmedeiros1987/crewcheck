@@ -33,30 +33,51 @@ function mergeRosterDisplayAdjacent(primary: CrewRoster, adjacent: CrewRoster, p
   return { ...primary, days };
 }
 
-async function openDisplayAdjacentCandidate(
+async function openDisplayCompetenceCandidate(
   primary: CrewRoster,
   preferred: SavedRosterSummary,
-  offset: -1 | 1,
+  targetOrdinal: number,
   primaryCrew: string,
 ): Promise<CrewRoster | null> {
   const preferredOpened = await openSavedRoster(preferred.id, preferred).catch(() => null);
-  if (preferredOpened?.roster?.days?.length && crewIdentityToken(preferredOpened.roster) === primaryCrew) {
+  if (
+    preferredOpened?.roster?.days?.length
+    && crewIdentityToken(preferredOpened.roster) === primaryCrew
+    && rosterPeriodOrdinal(preferredOpened.roster) === targetOrdinal
+  ) {
     return preferredOpened.roster;
   }
 
-  // #663: a newer remote summary can legitimately win listSavedRosters() while its
-  // detail endpoint is temporarily unavailable. In that case, retry ONLY a device
-  // local publication for the same nominal competence and the same verified crew.
-  // Never broaden by id, adjacent date, another crew member or another period.
-  const localSameCrew = getLocalRosterSummaries(72).filter((item) => crewIdentityToken(item) === primaryCrew);
-  const localFallback = adjacentRosterSummary(localSameCrew, primary, offset);
+  // #663/#530: if the preferred remote detail is unavailable, retry ONLY the
+  // newest device-local publication for the same verified crew and exact nominal
+  // competence. Historical display may span more than the immediate adjacent month.
+  const localFallback = getLocalRosterSummaries(72)
+    .filter((item) => crewIdentityToken(item) === primaryCrew && rosterPeriodOrdinal(item) === targetOrdinal)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
   if (!localFallback) return null;
   const localOpened = await openSavedRoster(localFallback.id, localFallback).catch(() => null);
   if (!localOpened?.roster?.days?.length) return null;
   if (crewIdentityToken(localOpened.roster) !== primaryCrew) return null;
-  const wantedOrdinal = (rosterPeriodOrdinal(primary) ?? Number.NaN) + offset;
-  if (rosterPeriodOrdinal(localOpened.roster) !== wantedOrdinal) return null;
+  if (rosterPeriodOrdinal(localOpened.roster) !== targetOrdinal) return null;
   return localOpened.roster;
+}
+
+function newestDisplaySummaryByCompetence(
+  candidates: SavedRosterSummary[],
+  primaryOrdinal: number,
+): Array<{ summary: SavedRosterSummary; ordinal: number }> {
+  const byPeriod = new Map<number, SavedRosterSummary>();
+  for (const item of candidates) {
+    const ordinal = rosterPeriodOrdinal(item);
+    if (ordinal === null || ordinal === primaryOrdinal) continue;
+    const previous = byPeriod.get(ordinal);
+    if (!previous || String(item.createdAt || '').localeCompare(String(previous.createdAt || '')) > 0) {
+      byPeriod.set(ordinal, item);
+    }
+  }
+  return [...byPeriod.entries()]
+    .map(([ordinal, summary]) => ({ summary, ordinal }))
+    .sort((a, b) => a.ordinal - b.ordinal);
 }
 
 export async function openRosterDisplayWindow(primary: CrewRoster): Promise<CrewRoster> {
@@ -66,19 +87,19 @@ export async function openRosterDisplayWindow(primary: CrewRoster): Promise<Crew
 
   const summaries = await listSavedRosters(72).catch(() => getLocalRosterSummaries(72));
   const sameCrew = summaries.filter((item) => crewIdentityToken(item) === primaryCrew);
+  const historical = newestDisplaySummaryByCompetence(sameCrew, primaryOrdinal);
   let display = primary;
 
-  for (const offset of [-1, 1] as const) {
-    const adjacentSummary = adjacentRosterSummary(sameCrew, primary, offset);
-    if (!adjacentSummary) continue;
-    const adjacent = await openDisplayAdjacentCandidate(primary, adjacentSummary, offset, primaryCrew);
-    if (!adjacent?.days?.length) continue;
-    display = mergeRosterDisplayAdjacent(display, adjacent, offset < 0 ? 'prepend' : 'append');
+  for (const { summary, ordinal } of historical) {
+    const competence = await openDisplayCompetenceCandidate(primary, summary, ordinal, primaryCrew);
+    if (!competence?.days?.length) continue;
+    display = mergeRosterDisplayAdjacent(display, competence, ordinal < primaryOrdinal ? 'prepend' : 'append');
   }
 
-  // Keep primary metadata/rawText authoritative. Only the day window is expanded.
+  // Keep primary metadata/rawText authoritative. Only the historical day window is expanded.
   return { ...primary, days: display.days };
 }
+
 `;
   database = database.replace(anchor, `${block}${anchor}`);
 
@@ -93,9 +114,9 @@ export async function openRosterDisplayWindow(primary: CrewRoster): Promise<Crew
 for (const fragment of [
   marker,
   'export async function openRosterDisplayWindow(primary: CrewRoster)',
-  'openDisplayAdjacentCandidate(primary, adjacentSummary, offset, primaryCrew)',
-  'getLocalRosterSummaries(72).filter((item) => crewIdentityToken(item) === primaryCrew)',
-  'rosterPeriodOrdinal(localOpened.roster) !== wantedOrdinal',
+  'openDisplayCompetenceCandidate(primary, summary, ordinal, primaryCrew)',
+  'newestDisplaySummaryByCompetence(sameCrew, primaryOrdinal)',
+  'rosterPeriodOrdinal(localOpened.roster) !== targetOrdinal',
   'dedupeAdjacentRosterDays(primary.days || [], adjacent.days || [])',
   'const sameCrew = summaries.filter((item) => crewIdentityToken(item) === primaryCrew)',
   `window.dispatchEvent(new CustomEvent('${historyEvent}'))`,
