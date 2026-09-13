@@ -95,9 +95,9 @@ try {
   assert.equal((afterReimport.days || []).filter((day) => String(day.pairingCode) === 'HIST-06').length, 1, 'Junho deve permanecer navegável após reimportar Setembro');
 
   const source = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
-  assert.match(source, /P1_530_FULL_HISTORY_DISPLAY_WINDOW/);
-  assert.match(source, /const latestByPeriod = new Map<number, SavedRosterSummary>\(\);/);
-  assert.doesNotMatch(source, /for \(const offset of \[-1, 1\] as const\)/, 'janela visual não pode continuar limitada a vizinhos imediatos');
+  assert.match(source, /P0_530_ADJACENT_MONTH_DISPLAY_WINDOW/);
+  assert.match(source, /function newestDisplaySummaryByCompetence\(/);
+  assert.match(source, /const historical = newestDisplaySummaryByCompetence\(sameCrew, primaryOrdinal\);/);
 
   console.log('[p1-530-full-history] PASS — Junho a Setembro permanecem navegáveis após reimportar Setembro, sem trocar o roster operacional primário.');
 } finally {
