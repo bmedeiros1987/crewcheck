@@ -217,33 +217,105 @@ jobs:
 
           post_comment() {
             local body="$1"
-            local payload
+            local payload body_file headers_file http_code attempt delay retry_after reset_at now
             payload="$(jq -n --arg body "$body" '{body: $body}')"
-            curl --fail-with-body --silent --show-error \
-              --request POST \
-              --url "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              --header 'Accept: application/vnd.github+json' \
-              --header 'X-GitHub-Api-Version: 2022-11-28' \
-              --header 'Content-Type: application/json' \
-              --data-binary "$payload" >/dev/null
+            body_file="$(mktemp)"
+            headers_file="$(mktemp)"
+
+            for attempt in $(seq 1 8); do
+              : > "$body_file"
+              : > "$headers_file"
+              if ! http_code="$(curl --silent --show-error \
+                --request POST \
+                --url "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+                --header "Authorization: Bearer $GH_TOKEN" \
+                --header 'Accept: application/vnd.github+json' \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --header 'Content-Type: application/json' \
+                --data-binary "$payload" \
+                --dump-header "$headers_file" \
+                --output "$body_file" \
+                --write-out '%{http_code}')"; then
+                echo "GitHub comment transport error (attempt $attempt/8)" >&2
+                sleep $((attempt * 3))
+                continue
+              fi
+
+              if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+                rm -f "$body_file" "$headers_file"
+                return 0
+              fi
+
+              if [ "$http_code" = "403" ] || [ "$http_code" = "429" ] || [[ "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+                retry_after="$(awk 'BEGIN{IGNORECASE=1} /^retry-after:/ {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+                reset_at="$(awk 'BEGIN{IGNORECASE=1} /^x-ratelimit-reset:/ {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+                now="$(date +%s)"
+                delay=$((attempt * 5))
+                if [[ "$retry_after" =~ ^[0-9]+$ ]] && [ "$retry_after" -gt "$delay" ]; then
+                  delay="$retry_after"
+                elif [[ "$reset_at" =~ ^[0-9]+$ ]] && [ "$reset_at" -gt "$now" ]; then
+                  candidate=$((reset_at - now + 1))
+                  if [ "$candidate" -gt "$delay" ]; then delay="$candidate"; fi
+                fi
+                if [ "$delay" -gt 60 ]; then delay=60; fi
+                echo "GitHub comment transient HTTP $http_code (attempt $attempt/8); retrying in ${delay}s" >&2
+                sleep "$delay"
+                continue
+              fi
+
+              echo "GitHub comment failed with HTTP $http_code: $(cat "$body_file")" >&2
+              rm -f "$body_file" "$headers_file"
+              return 1
+            done
+
+            echo "GitHub comment publication exhausted retries: $(cat "$body_file")" >&2
+            rm -f "$body_file" "$headers_file"
+            return 1
           }
 
           bridge_error() {
             local reason="$1"
-            post_comment "$(printf '[MANUS-AUDIT] MANUS: BRIDGE_ERROR — SHA %s\n\nFail-closed: %s\nTask: %s' "$REQUESTED_SHA" "$reason" "$TASK_ID")"
+            local body
+            body="$(printf '[MANUS-AUDIT] MANUS: BRIDGE_ERROR — SHA %s\n\nFail-closed: %s\nTask: %s' "$REQUESTED_SHA" "$reason" "$TASK_ID")"
+            post_comment "$body" || echo "WARNING: could not publish Manus bridge error comment" >&2
             echo "Manus bridge error: $reason" >&2
             exit 1
           }
 
           RESULT_JSON=""
+          MANUS_BODY_FILE="$(mktemp)"
+          trap 'rm -f "$MANUS_BODY_FILE"' EXIT
+
           for attempt in $(seq 1 80); do
-            response="$(curl --fail-with-body --silent --show-error --get \
+            : > "$MANUS_BODY_FILE"
+            if ! http_code="$(curl --silent --show-error --get \
               --url 'https://api.manus.ai/v2/task.listMessages' \
               --header "x-manus-api-key: $MANUS_API_KEY" \
               --data-urlencode "task_id=$TASK_ID" \
               --data-urlencode 'order=desc' \
-              --data-urlencode 'limit=50')" || bridge_error "task.listMessages request failed"
+              --data-urlencode 'limit=50' \
+              --output "$MANUS_BODY_FILE" \
+              --write-out '%{http_code}')"; then
+              echo "Manus task.listMessages transport error (attempt $attempt/80); retrying" >&2
+              sleep 5
+              continue
+            fi
+
+            if [ "$http_code" = "404" ] && [ "$attempt" -le 12 ]; then
+              echo "Manus task not visible yet (404), attempt $attempt/12; allowing eventual consistency" >&2
+              sleep 5
+              continue
+            fi
+
+            if [ "$http_code" = "429" ] || [[ "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+              delay=$((attempt < 6 ? attempt * 5 : 30))
+              echo "Manus task.listMessages transient HTTP $http_code (attempt $attempt/80); retrying in ${delay}s" >&2
+              sleep "$delay"
+              continue
+            fi
+
+            [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || bridge_error "task.listMessages returned HTTP $http_code: $(cat "$MANUS_BODY_FILE")"
+            response="$(cat "$MANUS_BODY_FILE")"
 
             test "$(jq -r '.ok' <<<"$response")" = "true" || bridge_error "task.listMessages returned ok=false"
 
@@ -262,7 +334,6 @@ jobs:
             fi
 
             if [ "$status" = "stopped" ]; then
-              # Structured extraction is emitted after stopped; allow a few polls for it.
               sleep 5
             else
               sleep 15
