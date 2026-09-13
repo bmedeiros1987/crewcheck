@@ -1,0 +1,59 @@
+name: P0 #530 journey-rest clean-room
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/regression-p0-530-journey-rest-cleanroom.mjs'
+      - 'scripts/v14350/apply.mjs'
+      - 'scripts/v14353/apply.mjs'
+      - 'scripts/v14355/apply.mjs'
+      - 'scripts/v14387a/apply.mjs'
+      - '.github/workflows/p0-530-journey-rest-cleanroom.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/regression-p0-530-journey-rest-cleanroom.mjs'
+      - 'scripts/v14350/apply.mjs'
+      - 'scripts/v14353/apply.mjs'
+      - 'scripts/v14355/apply.mjs'
+      - 'scripts/v14387a/apply.mjs'
+      - '.github/workflows/p0-530-journey-rest-cleanroom.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  journey-rest-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Clean-room contract on committed state
+        run: node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+      - name: v14.3.50 replay is idempotent
+        run: |
+          node scripts/v14350/apply.mjs
+          node scripts/v14350/apply.mjs
+      - name: Full preparation chain remains replayable
+        run: node scripts/v139/apply.mjs
+      - name: Clean-room contract after preparation
+        run: node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build
+      - name: Diff whitespace guard
+        run: git diff --check
