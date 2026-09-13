@@ -26,33 +26,33 @@ const android = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainAc
 const platform = read('server/platform.mjs');
 const server = read('server.mjs');
 
-// One runtime snapshot must feed both the operational cockpit/FlyDeck surface
-// and the full roster view. Assert semantics inside the actual JSX render and
-// action blocks, without coupling the gate to attribute order or whitespace.
+// One canonical operational snapshot still feeds Cockpit and every operational
+// consumer. The Escala UI may expand only its visual calendar window with adjacent
+// saved competences; that visual window must never become the operational bundle.
 assert.match(home, /const \[bundle, setBundle\] = useState<BundleState>\(loadRoster\(\)\);/);
 assert.match(home, /const events = useMemo\(\(\) => buildLegs\(bundle\.roster\)/);
+assert.match(home, /const \[rosterWindow, setRosterWindow\] = useState<CrewRoster>/);
+assert.match(home, /const rosterEvents = useMemo\(\(\) => buildLegs\(rosterWindow\)/);
+assert.match(home, /openRosterDisplayWindow\(primary\)/);
 
 const cockpitRender = nearby(home, "{view === 'cockpit' && <Cockpit", 900);
-expectAll('Cockpit deve usar events do bundle ativo', cockpitRender, ['<Cockpit', 'events={events}']);
+const cockpitTag = cockpitRender.match(/<Cockpit[\s\S]*?\/>/)?.[0] || '';
+expectAll('Cockpit deve usar apenas events do bundle operacional ativo', cockpitTag, ['<Cockpit', 'events={events}']);
+assert.ok(!cockpitTag.includes('rosterEvents'), '[p0-multichannel] Cockpit não pode consumir a janela visual multi-competência');
 
 if (home.includes("{view === 'roster' && <RosterLaunchView")) {
   const rosterRender = nearby(home, "{view === 'roster' && <RosterLaunchView", 900);
-  expectAll('Escala canônica deve usar os mesmos events e finanças do bundle ativo', rosterRender, [
+  expectAll('Escala deve usar janela visual, mantendo finanças na competência operacional ativa', rosterRender, [
     '<RosterLaunchView',
-    'events={events}',
+    'events={rosterEvents}',
     'finance={financeSnapshot(bundle.roster)}',
   ]);
 } else {
-  const rosterRender = nearby(home, "{view === 'roster' && <Roster", 900);
-  expectAll('Escala legada deve usar o mesmo bundle/events do Cockpit', rosterRender, [
-    '<Roster',
-    'roster={bundle.roster}',
-    'events={events}',
-  ]);
+  throw new Error('[p0-multichannel] RosterLaunchView canônica ausente');
 }
 
 const openActiveAction = nearby(home, 'openActive: () => { openActiveRoster()', 1800);
-expectAll('abrir escala ativa deve substituir o bundle compartilhado', openActiveAction, [
+expectAll('abrir escala ativa deve continuar substituindo somente o bundle operacional compartilhado', openActiveAction, [
   'openActiveRoster()',
   'active?.roster',
   'setBundle({ roster: active.roster',
@@ -84,4 +84,4 @@ for (const script of [
   'scripts/regression-p0-active-roster-server.mjs',
 ]) run(script);
 
-console.log('[p0-multichannel] GREEN — PWA/APK share path, Telegram parser/persistence, active identity and Cockpit/Escala snapshot are protected by one release gate.');
+console.log('[p0-multichannel] GREEN — Cockpit permanece operacional-canônico; Escala pode reter competências adjacentes apenas na camada visual.');
