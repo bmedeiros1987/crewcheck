@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
   pull-requests: read
 
 jobs:
@@ -83,37 +82,23 @@ jobs:
           verdict="$(jq -r '.value.verdict' <<<"$result_json")"
           sha="$(jq -r '.value.sha' <<<"$result_json")"
           severity="$(jq -r '.value.severity' <<<"$result_json")"
-          summary="$(jq -r '.value.summary' <<<"$result_json")"
-          reproducer="$(jq -r '.value.reproducer' <<<"$result_json")"
-          expected="$(jq -r '.value.expected' <<<"$result_json")"
-          actual="$(jq -r '.value.actual' <<<"$result_json")"
-          root_cause="$(jq -r '.value.root_cause' <<<"$result_json")"
-
           test "$sha" = "$TARGET_SHA"
-          current_sha="$(curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/$TARGET_PR" | jq -r '.head.sha')"
-          test "$current_sha" = "$TARGET_SHA"
 
-          marker="<!-- manus-recovery:$TASK_ID:$TARGET_SHA -->"
-          existing="$(curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/${{ github.repository }}/issues/$TARGET_PR/comments?per_page=100" | jq -r --arg marker "$marker" '[.[] | select(.body | contains($marker))] | length')"
-          if [ "$existing" != "0" ]; then
-            echo "Recovery verdict already published for task $TASK_ID"
-            exit 0
-          fi
+          # GitHub REST is currently rate-limited for the Actions token. Revalidate
+          # the immutable PR head through the Git transport instead; this does not
+          # consume the REST API budget and still proves refs/pull/654/head.
+          current_sha="$(git ls-remote \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
+            "refs/pull/$TARGET_PR/head" | awk 'NR==1 {print $1}')"
+          [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$current_sha" = "$TARGET_SHA"
 
           case "$verdict" in
             MERGE)
               test "$severity" = "NONE"
-              comment="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s\n\nRecovered from already-created private task `%s` after bridge collector failure; exact HEAD revalidated before publication.\n%s' "$TARGET_SHA" "$summary" "$TASK_ID" "$marker")"
               ;;
             BLOCKER)
               case "$severity" in P0|P1|P2) ;; *) echo "Invalid blocker severity: $severity" >&2; exit 1 ;; esac
-              comment="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s\n\nRecovered from already-created private task `%s`; exact HEAD revalidated before publication.\n%s' "$TARGET_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause" "$TASK_ID" "$marker")"
               ;;
             *)
               echo "Unknown Manus verdict: $verdict" >&2
@@ -121,14 +106,7 @@ jobs:
               ;;
           esac
 
-          payload="$(jq -n --arg body "$comment" '{body: $body}')"
-          curl --fail-with-body --silent --show-error \
-            --request POST \
-            --url "https://api.github.com/repos/${{ github.repository }}/issues/$TARGET_PR/comments" \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header 'Accept: application/vnd.github+json' \
-            --header 'X-GitHub-Api-Version: 2022-11-28' \
-            --header 'Content-Type: application/json' \
-            --data-binary "$payload" >/dev/null
-
-          echo "Recovered and published Manus verdict for PR #$TARGET_PR at $TARGET_SHA"
+          echo "MANUS_RECOVERY_BEGIN"
+          jq -c '.value' <<<"$result_json"
+          echo "MANUS_RECOVERY_END"
+          echo "Recovered Manus task $TASK_ID and revalidated PR #$TARGET_PR at exact SHA $TARGET_SHA via git refs/pull/$TARGET_PR/head"
