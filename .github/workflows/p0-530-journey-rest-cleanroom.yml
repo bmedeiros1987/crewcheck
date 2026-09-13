@@ -36,11 +36,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Committed PR diff whitespace guard
+        if: github.event_name == 'pull_request'
+        run: git diff --check HEAD^1 HEAD^2
       - name: Clean-room contract on committed state
         run: node scripts/regression-p0-530-journey-rest-cleanroom.mjs
       - name: v14.3.50 replay is idempotent
@@ -55,5 +60,3 @@ jobs:
         run: npx tsc --noEmit
       - name: Production build
         run: npx vite build
-      - name: Diff whitespace guard
-        run: git diff --check
