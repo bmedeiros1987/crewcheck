@@ -117,6 +117,27 @@ const journeyRest = (events) => events.filter((event) => event.kind === 'journey
   assert.equal(selectNextRosterEvent(rest, new Date('2099-10-15T22:00:00.000Z')), null, 'rest alone is not an operational event');
 }
 
+// Cross-midnight boundary inside one published roster day. The parser may have
+// consumed a (+1) marker from the next presentation, but the canonical event
+// must still place that presentation on the unique occurrence after the prior
+// journey and at/before the next departure. It must never produce end < start.
+{
+  const events = buildCanonicalRosterEvents(roster([
+    day(syntheticDate, [
+      leg('MIDNIGHT-A', stations.home, stations.base, '16:00', '18:00'),
+      leg('MIDNIGHT-B', stations.base, stations.next, '04:00', '06:00', { presentationTime: '03:10' }),
+    ], { dutyReport: '15:00', dutyDebrief: null }),
+  ]));
+  const rest = journeyRest(events);
+  const nextFlight = flightEvents(events).find((event) => event.flightNumber === 'SYNTH-MIDNIGHT-B');
+  assert.equal(rest.length, 1, 'cross-midnight boundary must create one journey-rest');
+  assert.equal(nextFlight?.startDateTime, '2099-10-16T07:00:00.000Z', 'next flight must be physically placed on the following day');
+  assert.equal(rest[0].endDateTime, '2099-10-16T06:10:00.000Z', '03:10 presentation must inherit the next-day occurrence before the 04:00 departure');
+  assert.ok(new Date(rest[0].endDateTime).getTime() > new Date(rest[0].startDateTime).getTime(), 'journey-rest must never end before it starts');
+  assert.ok(new Date(rest[0].endDateTime).getTime() <= new Date(nextFlight.startDateTime).getTime(), 'journey-rest end must not pass the next flight start');
+  assert.equal(rest[0].restMinutes, undefined, 'missing debrief remains fail-closed; chronology repair must not invent rest duration');
+}
+
 // A same-civil-day boundary is also represented; without a provable debrief,
 // duration remains absent rather than being fabricated from arrival to STD.
 {
