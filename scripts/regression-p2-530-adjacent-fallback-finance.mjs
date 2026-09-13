@@ -8,10 +8,10 @@ const rosterView = fs.readFileSync('client/src/components/v1391/RosterLaunchView
 // Finding A: after a preferred adjacent publication fails to open, the fallback must
 // be selected from device-local history and remain constrained to the same verified
 // crew and exact adjacent nominal competence. No generic by-id or cross-period escape.
-assert.match(database, /async function openDisplayAdjacentCandidate\([\s\S]*preferredOpened[\s\S]*getLocalRosterSummaries\(72\)\.filter\(\(item\) => crewIdentityToken\(item\) === primaryCrew\)[\s\S]*adjacentRosterSummary\(localSameCrew, primary, offset\)/);
+assert.match(database, /async function openDisplayCompetenceCandidate\([\s\S]*preferredOpened[\s\S]*getLocalRosterSummaries\(72\)[\s\S]*rosterPeriodOrdinal\(item\) === targetOrdinal/);
 assert.match(database, /crewIdentityToken\(localOpened\.roster\) !== primaryCrew/);
-assert.match(database, /rosterPeriodOrdinal\(localOpened\.roster\) !== wantedOrdinal/);
-assert.match(database, /const adjacent = await openDisplayAdjacentCandidate\(primary, adjacentSummary, offset, primaryCrew\)/);
+assert.match(database, /rosterPeriodOrdinal\(localOpened\.roster\) !== targetOrdinal/);
+assert.match(database, /const competence = await openDisplayCompetenceCandidate\(primary, summary, ordinal, primaryCrew\)/);
 
 // Finding B: financeSnapshot(bundle.roster) remains tied to the operational primary
 // roster, and the visual month receives an explicit competence token. Adjacent months
