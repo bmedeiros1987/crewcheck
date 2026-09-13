@@ -41,6 +41,20 @@ function replaceRequired(source, before, after, label) {
   return source.replace(matched, withEol(after, eol));
 }
 
+function ensureProgramClassificationImport(source) {
+  const requiredNames = ['countScheduleCategories', 'isProgramScheduleActivity', 'isRestScheduleActivity', 'isSmartDepartureEligible'];
+  const pattern = /import \{([^}]*)\} from '@\/lib\/scheduleActivityClassification';/;
+  const matched = source.match(pattern);
+  if (!matched) throw new Error('[v14353] Import da classificação de atividades ausente.');
+  const names = matched[1].split(',').map((name) => name.trim()).filter(Boolean);
+  const merged = [...names];
+  for (const name of requiredNames) {
+    if (!merged.includes(name)) merged.push(name);
+  }
+  if (merged.length === names.length) return source;
+  return source.replace(matched[0], `import { ${merged.join(', ')} } from '@/lib/scheduleActivityClassification';`);
+}
+
 function patchBlock(source, startMarker, endMarker, label, transform) {
   const start = source.indexOf(startMarker);
   const end = start >= 0 ? source.indexOf(endMarker, start + startMarker.length) : -1;
@@ -65,12 +79,7 @@ export function patchFlyDeckHomeV14353(source) {
     "import OperationalDayTimeline from '@/components/v14349/OperationalDayTimeline';",
     'import da Linha do Dia',
   );
-  next = replaceRequired(
-    next,
-    "import { countScheduleCategories, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
-    "import { countScheduleCategories, isProgramScheduleActivity, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
-    'classificação de próxima programação',
-  );
+  next = ensureProgramClassificationImport(next);
 
   next = patchBlock(
     next,

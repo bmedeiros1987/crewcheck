@@ -1,7 +1,10 @@
 import type { CrewRoster, FlightLeg, RosterDay } from './pdfParser';
 import { completeContinuityDays } from './rosterContinuity';
 
-export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest';
+// `journey-rest` is the interval between real journeys. It is neither
+// intra-journey ground time nor a stay/overnight and therefore cannot be an
+// operational program.
+export type CanonicalRosterEventKind = 'flight' | 'duty' | 'stay' | 'rest' | 'journey-rest';
 
 export type CanonicalRosterEvent = {
   id: string;
@@ -31,6 +34,8 @@ export type CanonicalRosterEvent = {
   journeyId: string;
   /** Por que esta etapa abriu uma jornada. `null` quando é continuação. */
   journeyBoundary: JourneyBoundaryReason | null;
+  /** Proven duration of a journey-rest interval, when both endpoints exist. */
+  restMinutes?: number;
 };
 
 const MONTHS: Record<string, number> = {
@@ -587,11 +592,15 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   let currentJourneyId = '';
   let journeyPreviousLeg: FlightLeg | null = null;
   let journeyPreviousEndMs: number | null = null;
+  let journeyPreviousDay: RosterDay | null = null;
+  let journeyPreviousLegClosesDay = false;
 
   const closeJourney = () => {
     currentJourneyId = '';
     journeyPreviousLeg = null;
     journeyPreviousEndMs = null;
+    journeyPreviousDay = null;
+    journeyPreviousLegClosesDay = false;
   };
 
   normalized.days.forEach((day) => {
@@ -620,6 +629,86 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
         const showPresentation = boundary !== null;
         if (showPresentation) {
           currentJourneyId = `jornada|${start.toISOString()}|${leg.flightNumber}|${leg.origin}`;
+        }
+
+        // A real boundary is visible even when the gap is shorter than the
+        // overnight threshold. Ground time remains exclusively intra-journey.
+        // The location is published only when previous destination and next
+        // origin agree; the next day's hotel/pairing/base is never inherited.
+        if (showPresentation && gapMinutes != null && gapMinutes > 0 && journeyPreviousEndMs != null) {
+          const previousStation = airportCode(journeyPreviousLeg?.destination);
+          const nextStation = airportCode(leg.origin);
+          const station = previousStation && previousStation === nextStation ? previousStation : '';
+          if (station) {
+            const restStartProved = (() => {
+              if (!journeyPreviousDay || !journeyPreviousLegClosesDay) return null;
+              const debrief = normalizeTime(journeyPreviousDay.dutyDebrief);
+              const arrival = normalizeTime(journeyPreviousLeg?.arrivalTime);
+              if (!debrief || !arrival || debrief === arrival) return null;
+              const value = dateAt(journeyPreviousDay, debrief, 0);
+              if (value.getTime() < journeyPreviousEndMs) value.setUTCDate(value.getUTCDate() + 1);
+              if (value.getTime() >= start.getTime()) return null;
+              return value;
+            })();
+            const restEndProved = (() => {
+              const publishedPresentation = legPresentationIsPublished(leg)
+                ? normalizeTime(leg.presentationTime)
+                : (index === 0 && dayReportIsPublished(day) ? normalizeTime(day.dutyReport) : null);
+              if (!publishedPresentation) return null;
+              const value = dateAt(day, publishedPresentation, 0);
+              const upperBound = start.getTime();
+              const lowerBound = restStartProved?.getTime() ?? journeyPreviousEndMs;
+              while (value.getTime() > upperBound) value.setUTCDate(value.getUTCDate() - 1);
+              while (value.getTime() + 24 * 60 * 60_000 <= upperBound) value.setUTCDate(value.getUTCDate() + 1);
+              if (value.getTime() <= lowerBound || value.getTime() > upperBound) return null;
+              return value;
+            })();
+            const restStart = restStartProved || new Date(journeyPreviousEndMs);
+            const restEnd = restEndProved || new Date(start.getTime());
+            const provedRestMinutes = restStartProved && restEndProved
+              ? Math.round((restEndProved.getTime() - restStartProved.getTime()) / 60_000)
+              : undefined;
+            const restMinutes = provedRestMinutes != null && provedRestMinutes > 0 ? provedRestMinutes : undefined;
+            const restDate = formatDate(restStart.getUTCDate(), restStart.getUTCMonth() + 1, restStart.getUTCFullYear());
+            const restDay: RosterDay = {
+              ...day,
+              date: restDate,
+              dayNumber: restStart.getUTCDate(),
+              month: restStart.getUTCMonth() + 1,
+              year: restStart.getUTCFullYear(),
+              type: 'OTHER',
+              pairingCode: 'JOURNEY-REST',
+              dutyReport: null,
+              dutyDebrief: null,
+              legs: [],
+              hotel: null,
+              base: station,
+              rawText: '',
+            };
+            events.push({
+              id: `journey-rest|${restStart.toISOString()}|${station}`,
+              kind: 'journey-rest',
+              date: restDate,
+              publishedDay: restDay,
+              startDateTime: restStart.toISOString(),
+              endDateTime: restEnd.toISOString(),
+              flightNumber: '',
+              origin: station,
+              destination: station,
+              presentation: '',
+              departure: '',
+              arrival: '',
+              isNextDay: restStart.toISOString().slice(0, 10) !== restEnd.toISOString().slice(0, 10),
+              sourceConfidence: 'alta',
+              legIndex: -1,
+              legCount: 0,
+              showPresentation: false,
+              groundBeforeMinutes: null,
+              restMinutes,
+              journeyId: currentJourneyId,
+              journeyBoundary: boundary,
+            });
+          }
         }
 
         // Apresentação da jornada: evidência publicada da etapa, senão a do dia
@@ -657,6 +746,8 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
 
         journeyPreviousLeg = leg;
         journeyPreviousEndMs = end.getTime();
+        journeyPreviousDay = day;
+        journeyPreviousLegClosesDay = index === legs.length - 1;
       });
       return;
     }
@@ -707,8 +798,21 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
   return events.sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
 }
 
+/**
+ * Canonical operational consumers may select flight, duty, and stay events.
+ * Published rest and journey-rest remain timeline data but are never current
+ * or next operational events.
+ */
+export const OPERATIONAL_CANONICAL_EVENT_KINDS: CanonicalRosterEventKind[] = ['flight', 'duty', 'stay'];
+
+export function isOperationalCanonicalEvent(event: Pick<CanonicalRosterEvent, 'kind'> | null | undefined): boolean {
+  return Boolean(event && OPERATIONAL_CANONICAL_EVENT_KINDS.includes(event.kind));
+}
+
 export function selectNextRosterEvent(events: CanonicalRosterEvent[], now = new Date()): CanonicalRosterEvent | null {
-  const sorted = [...events].sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
+  const sorted = [...events]
+    .filter(isOperationalCanonicalEvent)
+    .sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
   const active = sorted.find((event) => {
     const start = new Date(event.startDateTime).getTime();
     const end = new Date(event.endDateTime).getTime();

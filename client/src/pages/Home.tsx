@@ -68,7 +68,8 @@ import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSe
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
-import { publishedPresentationOf } from '@/lib/scheduleActivityClassification';
+import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
+import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
@@ -93,7 +94,7 @@ type ZeroLeg = {
   id: string;
   day: RosterDay;
   leg?: FlightLeg;
-  kind: 'flight' | 'stay' | 'duty';
+  kind: 'flight' | 'stay' | 'duty' | 'journey-rest';
   title: string;
   subtitle: string;
   date: Date;
@@ -734,6 +735,7 @@ function clearPresentationLearning(event: ZeroLeg) {
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function applyPresentationManagement(event: ZeroLeg): ZeroLeg {
+  if (event.canonical?.kind === 'journey-rest') return event;
   const managed = managedPresentationForEvent(event);
   if (!managed.presentation || managed.presentation === event.presentation) {
     return { ...event, presentationSource: managed.source };
@@ -1103,6 +1105,31 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       };
     }
 
+    if (event.kind === 'journey-rest') {
+      const restMinutes = event.restMinutes;
+      const restLabel = restMinutes == null
+        ? 'Intervalo entre jornadas · duração a confirmar'
+        : `Repouso entre jornadas · ${Math.floor(restMinutes / 60)}h${restMinutes % 60 ? ` ${restMinutes % 60}min` : ''}`;
+      const location = safe(event.origin, 'Local não comprovado');
+      return {
+        id: event.id,
+        day,
+        kind: 'journey-rest',
+        date: d,
+        title: 'Repouso entre jornadas',
+        subtitle: restLabel,
+        origin: location,
+        destination: location,
+        flightNumber: '',
+        presentation: '',
+        departure: '',
+        arrival: '',
+        hotel: '',
+        timeRange: restMinutes == null ? 'Duração a confirmar' : `${restMinutes} min`,
+        canonical: event,
+      };
+    }
+
     const base = safe((day as any).base || (day as any).airport || (day as any).hotel || event.origin, roster.base || '—');
     const kind = event.kind === 'stay' ? 'stay' : 'duty';
     return {
@@ -1170,7 +1197,7 @@ function eventEndDateTime(event: ZeroLeg): Date {
 }
 function isOperationalEvent(event: ZeroLeg) {
   if (event.placeholder) return false;
-  if (event.canonical?.kind === 'rest') return false;
+  if (event.canonical && !isOperationalCanonicalEvent(event.canonical)) return false;
   const code = `${event.flightNumber} ${(event.day as any)?.type || ''} ${(event.day as any)?.pairingCode || ''}`.toUpperCase();
   if (/(^|\s)(DO|DOF|DOP|OFF|FOLGA|FÉRIAS|FERIAS|EAD)(\s|$)/.test(code)) return false;
   if (code.includes('SOBREAVISO') && !/(VOO|RESERVA|ACION|CHAMAD|LA\d+)/.test(code)) return false;
@@ -1677,8 +1704,9 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
 }
 
 function smartDepartureEligible(event: ZeroLeg): boolean {
-  const code = rosterCode(event.day).toUpperCase();
-  return !event.placeholder && publishedPresentationOf(event) !== null && (event.kind === 'flight' || ['ASB', 'RES', 'RSV', 'HSB', 'SA', 'RCFI', 'CRM', 'MCK', 'TRE', 'TRN'].includes(code));
+  if (event.canonical && !isOperationalCanonicalEvent(event.canonical)) return false;
+  if (event.placeholder || publishedPresentationOf(event) === null) return false;
+  return isSmartDepartureEligible(event);
 }
 
 
@@ -1934,12 +1962,14 @@ function rosterDaySummary(day: RosterDay, dayEvents: ZeroLeg[]): string {
 }
 function rosterEventTitle(event: ZeroLeg): string {
   if (event.kind === 'flight') return event.title;
+  if (event.canonical?.kind === 'journey-rest') return 'Repouso entre jornadas';
   const code = rosterCode(event.day);
   if (code === 'DR') return 'Descanso';
   return rosterCodeLabel(code);
 }
 function rosterEventLine(event: ZeroLeg): string {
   if (event.kind === 'flight') return `${event.origin} → ${event.destination} · ${event.timeRange} · ${city(event.origin)} → ${city(event.destination)}`;
+  if (event.canonical?.kind === 'journey-rest') return `${event.subtitle} · ${city(event.origin)}`;
   const code = rosterCode(event.day);
   const label = rosterCodeLabel(code);
   const range = rosterTimeRange(event.day, event);
@@ -1961,6 +1991,11 @@ function inlineEventEndDateTime(event: ZeroLeg): Date {
   return base;
 }
 function inlineDurationLabel(event: ZeroLeg): string {
+  if (event.canonical?.kind === 'journey-rest' && event.canonical.restMinutes == null) return 'Duração a confirmar';
+  if (event.canonical?.kind === 'journey-rest' && event.canonical.restMinutes != null) {
+    const total = event.canonical.restMinutes;
+    return `${Math.floor(total / 60)}:${pad2(total % 60)}`;
+  }
   const start = eventStartDateTime(event).getTime();
   const end = inlineEventEndDateTime(event).getTime();
   const total = Math.max(0, Math.round((end - start) / 60000));
@@ -1973,6 +2008,7 @@ function inlinePresentationSource(event: ZeroLeg): string {
 }
 function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) => void }) {
   const isFlight = event.kind === 'flight';
+  const isJourneyRest = event.canonical?.kind === 'journey-rest';
   const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
   const base = safe(event.origin || (event.day as any)?.base, 'BSB');
   const route = isFlight ? `${event.origin} → ${event.destination}` : `${base} · ${city(base)}`;
@@ -1992,7 +2028,12 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
     <header className="cz-day-group-head" style={{ marginBottom: 12 }}>
       <span className="cz-day-headline"><strong>{date}</strong>{' · '}{rosterEventTitle(event)}{' · '}{route}</span>
     </header>
-    <div className="cz-detail-grid">
+    {isJourneyRest ? <div className="cz-detail-grid">
+      <div><span>Categoria</span><strong>Repouso entre jornadas</strong></div>
+      <div><span>Local físico</span><strong>{safe(event.origin, 'Não comprovado')}</strong></div>
+      <div><span>Duração</span><strong>{inlineDurationLabel(event)}</strong></div>
+      <div><span>Programação</span><strong>Não operacional</strong></div>
+    </div> : <div className="cz-detail-grid">
       <div><span>Apresentação</span><strong>{safe(presentation, 'A confirmar')}</strong></div>
       <div><span>Decolagem/Início</span><strong>{safe(event.departure, 'A confirmar')}</strong></div>
       <div><span>Chegada/Fim</span><strong>{safe(event.arrival, 'A confirmar')}</strong></div>
@@ -2003,11 +2044,12 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <div><span>Matrícula</span><strong>{safe(event.registration, 'A confirmar')}</strong></div>
       <div><span>Portão/Terminal</span><strong>{safe(radar?.gate || event.gate, 'A confirmar')} · {safe(radar?.terminal || event.terminal, 'A confirmar')}</strong></div>
       <div><span>Hotel</span><strong>{safe(event.hotel, '—')}</strong></div>
-    </div>
-    <RosterInlineWeatherBlock event={event}/>
+    </div>}
+    {!isJourneyRest && <RosterInlineWeatherBlock event={event}/>}
+    {isJourneyRest && <p className="cz-mini-status">Este intervalo permanece visível na timeline, mas não alimenta programação atual/próxima, despertador, deslocamento, Radar, hotel, diárias ou salário.</p>}
     {Boolean(event.crew?.length) && <p className="cz-mini-status"><strong>Tripulação:</strong> {event.crew?.slice(0, 8).join(' · ')}</p>}
     {Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
-    <div className="cz-tool-actions" style={{ marginTop: 14 }}>
+    {!isJourneyRest && <div className="cz-tool-actions" style={{ marginTop: 14 }}>
       <button onClick={() => setView('presentation')}><Clock/> Gerenciador de apresentação</button>
       <button onClick={() => setView('departure')}><Car/> Saída</button>
       <button onClick={() => setView('radar')}><Radar/> Radar</button>
@@ -2015,7 +2057,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button>
       <button onClick={() => setView('perdiem')}><BriefcaseBusiness/> Diárias</button>
       <button onClick={() => setView('salary')}><DollarSign/> Salário</button>
-    </div>
+    </div>}
   </section>;
 }
 
@@ -2068,6 +2110,9 @@ function LayoverWeatherBadge({ event }: { event: ZeroLeg }) {
 }
 
 function RosterEventChips({ event }: { event: ZeroLeg }) {
+  if (event.canonical?.kind === 'journey-rest') {
+    return <div className="cz-roster-linked-chips" onClick={(click) => click.stopPropagation()}><span><Moon size={14}/> {event.subtitle}</span><span>Não é programação operacional</span></div>;
+  }
   const presentation = event.presentation === 'Conexão/Solo' ? event.departure : event.presentation;
   const isStay = event.kind === 'stay' || Boolean(event.hotel);
   return <div className="cz-roster-linked-chips" onClick={(click) => click.stopPropagation()}>
@@ -3422,7 +3467,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
       source: cfg.source,
     };
   });
-  const activityEvents = events.filter((event) => event.kind !== 'flight' && !event.placeholder);
+  const activityEvents = events.filter((event) => event.kind !== 'flight' && isOperationalEvent(event));
   const reserveEvents = activityEvents.filter((event) => /\b(ASB|RES|RESERVA|RSV)\b/i.test(financialEventCode(event)));
   const standbyEvents = activityEvents.filter((event) => /\b(HSB|HSBE|SOBREAVISO)\b/i.test(financialEventCode(event)));
   const reserveHours = reserveEvents.reduce((sum, event) => sum + durationHours(event), 0);

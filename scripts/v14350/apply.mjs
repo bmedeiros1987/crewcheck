@@ -37,8 +37,43 @@ function insertBeforeRequired(source, anchor, value, label) {
   return source.replace(matched, `${withEol(value, eol)}${eol}${matched}`);
 }
 
+function ensureScheduleClassificationImport(source) {
+  const requiredNames = ['countScheduleCategories', 'isRestScheduleActivity', 'isSmartDepartureEligible'];
+  const pattern = /import \{([^}]*)\} from '@\/lib\/scheduleActivityClassification';/;
+  const matched = source.match(pattern);
+  if (matched) {
+    const names = matched[1].split(',').map((name) => name.trim()).filter(Boolean);
+    const merged = [...names];
+    for (const name of requiredNames) {
+      if (!merged.includes(name)) merged.push(name);
+    }
+    if (merged.length === names.length) return source;
+    return source.replace(matched[0], `import { ${merged.join(', ')} } from '@/lib/scheduleActivityClassification';`);
+  }
+  return insertAfterRequired(
+    source,
+    "import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';",
+    "import { countScheduleCategories, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
+    'import da classificação de atividades',
+  );
+}
+
+function hasCanonicalSmartDepartureEligibility(source) {
+  const functionStart = source.indexOf('function isOperationalEvent(event: ZeroLeg) {');
+  if (functionStart < 0) return false;
+  const functionEnd = source.indexOf('\n}', functionStart);
+  if (functionEnd < 0) return false;
+  const block = source.slice(functionStart, functionEnd + 2);
+  return block.includes('if (event.placeholder) return false;')
+    && block.includes('!isOperationalCanonicalEvent(event.canonical)')
+    && block.includes("return ['flight', 'duty', 'stay'].includes(event.kind);");
+}
+
 function replaceRequired(source, before, after, label) {
   if (variants(after.trim()).some((candidate) => source.includes(candidate))) return source;
+  if (label === 'elegibilidade da Saída Inteligente' && hasCanonicalSmartDepartureEligibility(source)) {
+    return source;
+  }
   const matched = variants(before).find((candidate) => source.includes(candidate));
   if (!matched) throw new Error(`[v14350] Bloco ausente: ${label}`);
   const eol = matched.includes('\r\n') ? '\r\n' : '\n';
@@ -61,12 +96,7 @@ update('client/src/pages/Home.tsx', (source) => {
       `const CREWCHECK_UI_CORE_NOTE = 'v${VERSION}: Folga, descanso, pernoite e programação com classificação única na interface';`,
     );
 
-  next = insertAfterRequired(
-    next,
-    "import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';",
-    "import { countScheduleCategories, isRestScheduleActivity, isSmartDepartureEligible } from '@/lib/scheduleActivityClassification';",
-    'import da classificação de atividades',
-  );
+  next = ensureScheduleClassificationImport(next);
 
   next = replaceRequired(
     next,
