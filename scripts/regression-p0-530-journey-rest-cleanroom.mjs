@@ -160,8 +160,8 @@ assert.equal(classification.isJourneyRestScheduleActivity({ kind: 'duty', canoni
 assert.equal(classification.isSmartDepartureEligible({ kind: 'duty', canonical: { kind: 'journey-rest' } }), false);
 
 // Event-local identity wins over unrelated aggregate day.rawText: ASB/RES is
-// eligible, while an unactivated HSB never anchors physical displacement even
-// when the aggregate text contains activation vocabulary.
+// eligible, while unactivated HSB never inherits activation from sibling text.
+// A proven activated HSB preserves the #533 contract and may anchor departure.
 assert.equal(classification.isSmartDepartureEligible({
   kind: 'duty',
   title: 'ASB',
@@ -180,7 +180,7 @@ assert.equal(classification.isSmartDepartureEligible({
   presentation: '08:00',
   activated: true,
   day: { type: 'VOO', pairingCode: 'SYNTH', rawText: 'ASB ACIONADO em outro evento' },
-}), false, 'HSB never anchors physical displacement');
+}), true, 'proven activated HSB must preserve the #533 smart-departure contract');
 
 const selectorEvent = (id, kind, startDateTime, endDateTime, flightNumber = id) => ({
   id,
