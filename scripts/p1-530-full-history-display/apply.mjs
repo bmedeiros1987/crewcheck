@@ -9,6 +9,23 @@ if (source.includes(marker)) {
   console.log(`[${marker}] já aplicado; repetição segura ignorada.`);
   process.exit(0);
 }
+
+// The canonical #530 preparer may already contain the generalized all-competence
+// implementation. In that case this migration becomes a compatibility assertion,
+// not a second rewrite of the same code.
+if (
+  source.includes('async function openDisplayCompetenceCandidate(')
+  && source.includes('function newestDisplaySummaryByCompetence(')
+  && source.includes('const historical = newestDisplaySummaryByCompetence(sameCrew, primaryOrdinal);')
+) {
+  source = source.replace(
+    'P0_530_ADJACENT_MONTH_DISPLAY_WINDOW',
+    `P0_530_ADJACENT_MONTH_DISPLAY_WINDOW /* ${marker} */`,
+  );
+  fs.writeFileSync(databasePath, source, 'utf8');
+  console.log(`[${marker}] implementação canônica já generalizada; compatibilidade confirmada.`);
+  process.exit(0);
+}
 if (!source.includes('P0_530_ADJACENT_MONTH_DISPLAY_WINDOW')) {
   throw new Error(`[${marker}] requer a janela visual #530 adjacente antes da ampliação histórica`);
 }
