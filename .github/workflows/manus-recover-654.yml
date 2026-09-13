@@ -1,0 +1,134 @@
+name: Manus #654 recovery collector
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  recover-existing-task:
+    if: >-
+      github.repository == 'bmedeiros1987/crewcheck' &&
+      github.event.pull_request.number == 660 &&
+      github.event.pull_request.head.ref == 'infra/manus-bridge-eventual-consistency'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
+      TASK_ID: kP5jcBwDGRzBtkeq7cx4E7
+      TARGET_PR: '654'
+      TARGET_SHA: 4a5690deb1b9ed8e44a462a684bfd0895a8b1f05
+    steps:
+      - name: Recover exact-SHA Manus verdict
+        run: |
+          set -euo pipefail
+          test -n "$MANUS_API_KEY"
+
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+          result_json=""
+
+          for attempt in $(seq 1 40); do
+            : > "$body_file"
+            if ! http_code="$(curl --silent --show-error --get \
+              --url 'https://api.manus.ai/v2/task.listMessages' \
+              --header "x-manus-api-key: $MANUS_API_KEY" \
+              --data-urlencode "task_id=$TASK_ID" \
+              --data-urlencode 'order=desc' \
+              --data-urlencode 'limit=50' \
+              --output "$body_file" \
+              --write-out '%{http_code}')"; then
+              echo "Manus transport error on attempt $attempt/40" >&2
+              sleep 5
+              continue
+            fi
+
+            if [ "$http_code" = "404" ] && [ "$attempt" -le 12 ]; then
+              echo "Existing Manus task not visible yet (404), attempt $attempt/12" >&2
+              sleep 5
+              continue
+            fi
+            if [ "$http_code" = "429" ] || [[ "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+              echo "Transient Manus HTTP $http_code on attempt $attempt/40" >&2
+              sleep 10
+              continue
+            fi
+            [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Manus HTTP $http_code: $(cat "$body_file")" >&2; exit 1; }
+
+            response="$(cat "$body_file")"
+            test "$(jq -r '.ok' <<<"$response")" = "true"
+            status="$(jq -r '[.messages[] | select(.type == "status_update") | .status_update.agent_status][0] // "unknown"' <<<"$response")"
+            if [ "$status" = "error" ] || [ "$status" = "waiting" ]; then
+              echo "Manus task status is $status; refusing to invent a verdict" >&2
+              exit 1
+            fi
+
+            result_json="$(jq -c '[.messages[] | select(.type == "structured_output_result") | .structured_output_result][0] // empty' <<<"$response")"
+            if [ -n "$result_json" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          [ -n "$result_json" ] || { echo "No structured Manus verdict recovered" >&2; exit 1; }
+          test "$(jq -r '.success' <<<"$result_json")" = "true"
+
+          verdict="$(jq -r '.value.verdict' <<<"$result_json")"
+          sha="$(jq -r '.value.sha' <<<"$result_json")"
+          severity="$(jq -r '.value.severity' <<<"$result_json")"
+          summary="$(jq -r '.value.summary' <<<"$result_json")"
+          reproducer="$(jq -r '.value.reproducer' <<<"$result_json")"
+          expected="$(jq -r '.value.expected' <<<"$result_json")"
+          actual="$(jq -r '.value.actual' <<<"$result_json")"
+          root_cause="$(jq -r '.value.root_cause' <<<"$result_json")"
+
+          test "$sha" = "$TARGET_SHA"
+          current_sha="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$TARGET_PR" | jq -r '.head.sha')"
+          test "$current_sha" = "$TARGET_SHA"
+
+          marker="<!-- manus-recovery:$TASK_ID:$TARGET_SHA -->"
+          existing="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$TARGET_PR/comments?per_page=100" | jq -r --arg marker "$marker" '[.[] | select(.body | contains($marker))] | length')"
+          if [ "$existing" != "0" ]; then
+            echo "Recovery verdict already published for task $TASK_ID"
+            exit 0
+          fi
+
+          case "$verdict" in
+            MERGE)
+              test "$severity" = "NONE"
+              comment="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s\n\nRecovered from already-created private task `%s` after bridge collector failure; exact HEAD revalidated before publication.\n%s' "$TARGET_SHA" "$summary" "$TASK_ID" "$marker")"
+              ;;
+            BLOCKER)
+              case "$severity" in P0|P1|P2) ;; *) echo "Invalid blocker severity: $severity" >&2; exit 1 ;; esac
+              comment="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s\n\nRecovered from already-created private task `%s`; exact HEAD revalidated before publication.\n%s' "$TARGET_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause" "$TASK_ID" "$marker")"
+              ;;
+            *)
+              echo "Unknown Manus verdict: $verdict" >&2
+              exit 1
+              ;;
+          esac
+
+          payload="$(jq -n --arg body "$comment" '{body: $body}')"
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "https://api.github.com/repos/${{ github.repository }}/issues/$TARGET_PR/comments" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --header 'Content-Type: application/json' \
+            --data-binary "$payload" >/dev/null
+
+          echo "Recovered and published Manus verdict for PR #$TARGET_PR at $TARGET_SHA"
