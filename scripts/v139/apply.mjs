@@ -167,5 +167,6 @@ await import('../p0-580-post-anchor-continuity/apply.mjs');
 await import('../p0-580-local-period-identity/apply.mjs');
 await import('../p0-580-legend-terminal-rescues/apply.mjs');
 await import('../p0-530-adjacent-month-retention/apply.mjs');
+await import('../p1-530-full-history-display/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../ci/sync-canonical-manual.mjs');
