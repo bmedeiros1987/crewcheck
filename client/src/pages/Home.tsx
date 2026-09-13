@@ -1705,9 +1705,8 @@ function SmartCard({ event, setView }: { event: ZeroLeg; setView: (v: ZeroView) 
 
 function smartDepartureEligible(event: ZeroLeg): boolean {
   if (event.canonical && !isOperationalCanonicalEvent(event.canonical)) return false;
-  return !event.placeholder
-    && publishedPresentationOf(event) !== null
-    && isSmartDepartureEligible(event);
+  if (event.placeholder || publishedPresentationOf(event) === null) return false;
+  return isSmartDepartureEligible(event);
 }
 
 
