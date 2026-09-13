@@ -647,6 +647,7 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
               if (!debrief || !arrival || debrief === arrival) return null;
               const value = dateAt(journeyPreviousDay, debrief, 0);
               if (value.getTime() < journeyPreviousEndMs) value.setUTCDate(value.getUTCDate() + 1);
+              if (value.getTime() >= start.getTime()) return null;
               return value;
             })();
             const restEndProved = (() => {
@@ -655,14 +656,19 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
                 : (index === 0 && dayReportIsPublished(day) ? normalizeTime(day.dutyReport) : null);
               if (!publishedPresentation) return null;
               const value = dateAt(day, publishedPresentation, 0);
-              if (value.getTime() > start.getTime()) value.setUTCDate(value.getUTCDate() - 1);
+              const upperBound = start.getTime();
+              const lowerBound = restStartProved?.getTime() ?? journeyPreviousEndMs;
+              while (value.getTime() > upperBound) value.setUTCDate(value.getUTCDate() - 1);
+              while (value.getTime() + 24 * 60 * 60_000 <= upperBound) value.setUTCDate(value.getUTCDate() + 1);
+              if (value.getTime() <= lowerBound || value.getTime() > upperBound) return null;
               return value;
             })();
             const restStart = restStartProved || new Date(journeyPreviousEndMs);
             const restEnd = restEndProved || new Date(start.getTime());
-            const restMinutes = restStartProved && restEndProved
+            const provedRestMinutes = restStartProved && restEndProved
               ? Math.round((restEndProved.getTime() - restStartProved.getTime()) / 60_000)
               : undefined;
+            const restMinutes = provedRestMinutes != null && provedRestMinutes > 0 ? provedRestMinutes : undefined;
             const restDate = formatDate(restStart.getUTCDate(), restStart.getUTCMonth() + 1, restStart.getUTCFullYear());
             const restDay: RosterDay = {
               ...day,
