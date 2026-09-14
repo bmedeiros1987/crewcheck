@@ -42,16 +42,16 @@ function normalizeCrewToken(value: unknown): string {
 }
 
 /**
- * Regulatory history must never join publications by competence alone.
- * Prefer stable crew id; use the normalized published crew name only when an
- * id is unavailable. If neither is present, identity is unverified and the
- * carry-in path must fail closed.
+ * Regulatory carry-in is safety/compliance evidence, so identity must be stable.
+ * A display name is deliberately NOT authoritative: two different crew members can
+ * share the same name and a person's published name can change over time. The name
+ * may remain useful to the UI as display metadata, but it can never prove history.
+ *
+ * Fail closed whenever the stable crew id is absent.
  */
 export function regulatoryCrewIdentity(summary: Pick<RegulatoryRosterSummaryLike, 'crewId' | 'crewName'>): string | null {
   const crewId = normalizeCrewToken(summary?.crewId);
-  if (crewId) return `ID:${crewId}`;
-  const crewName = normalizeCrewToken(summary?.crewName);
-  return crewName ? `NAME:${crewName}` : null;
+  return crewId ? `ID:${crewId}` : null;
 }
 
 export function previousCompetence(year: number, month: number): { year: number; month: number } | null {
