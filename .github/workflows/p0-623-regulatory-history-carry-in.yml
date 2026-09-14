@@ -10,6 +10,7 @@ on:
       - 'scripts/v139/apply.mjs'
       - 'scripts/p0-623-regulatory-history-carry-in/**'
       - 'scripts/regression-p0-623-regulatory-history-carry-in.mjs'
+      - 'scripts/regression-p0-623-review-blockers.mjs'
       - 'scripts/regression-p1-526-rolling-boundaries.mjs'
       - 'scripts/regression-p1-526-rolling-28d.mjs'
       - 'scripts/regression-p1-526-rolling-plausibility.mjs'
@@ -31,6 +32,8 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Regulatory history carry-in regression
         run: node scripts/regression-p0-623-regulatory-history-carry-in.mjs
+      - name: Review blockers regression
+        run: node scripts/regression-p0-623-review-blockers.mjs
       - name: Existing 28-day boundary regression
         run: node scripts/regression-p1-526-rolling-boundaries.mjs
       - name: Existing rolling 28-day regression
