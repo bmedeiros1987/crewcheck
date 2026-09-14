@@ -6,7 +6,7 @@ services:
     branch: main
     autoDeployTrigger: commit
     buildCommand: npm ci && npm run build
-    startCommand: npm start
+    startCommand: node --import ./server/telegram-fast-ack.mjs server.mjs
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
