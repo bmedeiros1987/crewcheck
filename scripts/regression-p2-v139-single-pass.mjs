@@ -8,7 +8,7 @@ const apply = 'scripts/v139/apply.mjs';
 const statePath = 'node_modules/.cache/crewcheck-v139-preparation-state.json';
 
 function trackedDiffHash() {
-  const diff = execFileSync('git', ['diff', '--no-ext-diff', '--binary'], { encoding: 'utf8' });
+  const diff = execFileSync('git', ['diff', '--no-ext-diff', '--binary'], { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
   return createHash('sha256').update(diff).digest('hex');
 }
 
