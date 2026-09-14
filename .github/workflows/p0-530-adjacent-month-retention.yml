@@ -8,8 +8,10 @@ on:
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/v139/apply.mjs'
       - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/p0-673-order-independent-window/**'
       - 'scripts/p1-530-full-history-display/**'
       - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
+      - 'scripts/regression-p0-673-order-independent-window.mjs'
       - 'scripts/regression-p1-530-full-history-retention.mjs'
       - 'scripts/regression-p2-530-adjacent-fallback-finance.mjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
@@ -33,6 +35,8 @@ jobs:
         run: node scripts/regression-p0-530-adjacent-month-retention.mjs
       - name: Full June-September retention after September reimport
         run: node scripts/regression-p1-530-full-history-retention.mjs
+      - name: Order-independent historical window lifecycle
+        run: node scripts/regression-p0-673-order-independent-window.mjs
       - name: Adjacent fallback and finance scope regression
         run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - name: Existing exact-competence continuity regression
