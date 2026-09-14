@@ -95,7 +95,6 @@ try {
     alertsCount: 0, criticalAlertsCount: 0, isActive: true,
   };
 
-  // Successful account history lookup + previous competence present => complete.
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.startsWith('/api/rosters?')) return json({ ok: true, rosters: [febSummary, janSummary] });
@@ -109,7 +108,6 @@ try {
   assert.equal(violation(complete.compliance), true, '50h em janeiro + 50h em fevereiro deve confirmar 100h/28d no perfil NarrowBody');
   assert.equal(complete.compliance.metrics.totalFlightHours, 50, 'KPI da competência ativa deve continuar isolado em fevereiro');
 
-  // Successful account lookup without the preceding competence => incomplete.
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.startsWith('/api/rosters?')) return json({ ok: true, rosters: [febSummary] });
@@ -120,21 +118,32 @@ try {
   assert.equal(absent.history.source, 'account', 'consulta bem-sucedida sem histórico continua sendo account, não network_error');
   assert.equal(incomplete(absent.compliance), true, 'ausência confirmada deve preservar o alerta de avaliação incompleta');
 
-  // Network failure must not be masked by local fallback.
   globalThis.fetch = async () => json({ ok: false, message: 'offline' }, 503);
   const offline = await database.recomputeComplianceWithRegulatoryHistory(feb);
   assert.equal(offline.history.complete, false, 'falha de rede nunca pode declarar cobertura completa');
   assert.equal(offline.history.source, 'network_error', 'falha de rede deve ser distinguível de ausência real');
   assert.equal(incomplete(offline.compliance), true, 'fallback/offline deve manter avaliação incompleta');
 
-  // No authentication token is also fail-closed for account-history completeness.
   localStorage.removeItem('crewcheck_auth_token');
   const noToken = await database.recomputeComplianceWithRegulatoryHistory(feb);
   assert.equal(noToken.history.complete, false, 'ausência de token deve ser fail-closed');
   assert.equal(noToken.history.source, 'unauthenticated');
   assert.equal(incomplete(noToken.compliance), true);
 
-  console.log('[p0-623-regulatory-history] PASS — carry-in regulatório distingue conta, ausência, rede e autenticação sem contaminar KPI da competência ativa.');
+  // End-to-end consumer contract: every active/imported/opened roster already flows
+  // through bundle.roster, so Home must asynchronously refine ONLY bundle.compliance
+  // from proven account history without swapping the roster or creating a loop.
+  const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+  assert.match(home, /recomputeComplianceWithRegulatoryHistory/,
+    'Home deve importar o recomputador regulatório histórico');
+  assert.match(home, /recomputeComplianceWithRegulatoryHistory\(primary\)/,
+    'Home deve recomputar o bundle ativo quando a escala muda');
+  assert.match(home, /setBundle\(\(current\) => current\.roster === primary \? \{ \.\.\.current, compliance: result\.compliance \} : current\)/,
+    'Home deve atualizar somente compliance e preservar o roster operacional ativo');
+  assert.match(home, /\}, \[bundle\.roster\]\);/,
+    'recomputação deve reagir à troca de roster, não à troca de compliance');
+
+  console.log('[p0-623-regulatory-history] PASS — carry-in regulatório distingue conta, ausência, rede e autenticação, preserva KPI ativo e alimenta a Home sem trocar o roster.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
