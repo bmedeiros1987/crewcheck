@@ -96,7 +96,7 @@ export async function recomputeComplianceWithRegulatoryHistory(
 
   let accountSummaries: SavedRosterSummary[];
   try {
-    const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=72&manager=1`, { cache: 'no-store' });
+    const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>('/api/rosters?limit=72&manager=1', { cache: 'no-store' });
     accountSummaries = Array.isArray(payload?.rosters) ? payload.rosters : [];
   } catch {
     return {
