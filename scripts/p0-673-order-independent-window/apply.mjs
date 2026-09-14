@@ -87,8 +87,10 @@ for (const fragment of [
 }
 
 const refreshStart = source.indexOf('const refreshRosterWindow = () => {');
-const refreshSlice = source.slice(refreshStart, refreshStart + 1600);
-if (refreshSlice.includes('setRosterWindow(primary);')) {
+const openStart = source.indexOf('void openRosterDisplayWindow(primary)', refreshStart);
+if (refreshStart < 0 || openStart < 0) throw new Error(`[${marker}] refresh materializado não localizado`);
+const preOpenSlice = source.slice(refreshStart, openStart);
+if (preOpenSlice.includes('setRosterWindow(primary);')) {
   throw new Error(`[${marker}] refresh ainda encolhe a Escala antes da materialização histórica`);
 }
 
