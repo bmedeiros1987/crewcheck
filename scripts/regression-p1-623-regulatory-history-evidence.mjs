@@ -15,7 +15,7 @@ assert.deepEqual(previousCompetence(2026, 2), { year: 2026, month: 1 });
 assert.deepEqual(previousCompetence(2026, 1), { year: 2025, month: 12 });
 assert.equal(previousCompetence(2026, 13), null);
 assert.equal(regulatoryCrewIdentity({ crewId: '  abc-123 ', crewName: 'Outro Nome' }), 'ID:ABC-123');
-assert.equal(regulatoryCrewIdentity({ crewId: null, crewName: 'José da Silva' }), 'NAME:JOSE DA SILVA');
+assert.equal(regulatoryCrewIdentity({ crewId: null, crewName: 'José da Silva' }), null, 'display name must never become regulatory identity');
 assert.equal(regulatoryCrewIdentity({ crewId: null, crewName: null }), null);
 
 const active = { year: 2026, month: 2, crewId: 'crew-7', crewName: 'Tripulante' };
@@ -75,4 +75,16 @@ const unverifiedActive = selectRegulatoryCarryIn({
 assert.equal(unverifiedActive.historyProven, false);
 assert.equal(unverifiedActive.reason, 'active_identity_unverified');
 
-console.log('[regression:p1-623-history-evidence] PASS — exact crew/competence and fail-closed authority contract pinned.');
+const sameNameWithoutStableId = selectRegulatoryCarryIn({
+  summaries: [
+    { id: 'same-name-other-person', createdAt: '2026-01-22T10:00:00Z', year: 2026, month: 1, crewId: null, crewName: 'Maria da Silva' },
+  ],
+  authority: 'account_verified',
+  authenticated: true,
+  accountQuerySucceeded: true,
+}, { year: 2026, month: 2, crewId: null, crewName: 'Maria da Silva' });
+assert.equal(sameNameWithoutStableId.summary, null, 'same-name publication without stable id must not be selected');
+assert.equal(sameNameWithoutStableId.historyProven, false, 'same-name crews can never prove regulatory history without stable id');
+assert.equal(sameNameWithoutStableId.reason, 'active_identity_unverified');
+
+console.log('[regression:p1-623-history-evidence] PASS — exact stable crew id/competence and fail-closed authority contract pinned.');
