@@ -26,9 +26,16 @@ if (existingPreparationState) {
   process.exit(73);
 }
 writePreparationState('running');
+let preparationFailed = false;
+process.once('beforeExit', () => {
+  if (preparationFailed || Number(process.exitCode || 0) !== 0) return;
+  writePreparationState('complete');
+  console.log('[crewcheck:prepare:single-pass] PREPARATION_COMPLETE');
+});
 
 function persistPreparationFailure(error) {
   const message = error instanceof Error ? `${error.stack || error.message}` : String(error || 'Erro desconhecido na preparação canônica.');
+  preparationFailed = true;
   writePreparationState('failed', message.slice(0, 4000));
   console.error('[crewcheck:source-prepare-failure]', message);
   const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
@@ -196,6 +203,3 @@ await import('../p0-580-legend-terminal-rescues/apply.mjs');
 await import('../p0-530-adjacent-month-retention/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../ci/sync-canonical-manual.mjs');
-
-writePreparationState('complete');
-console.log('[crewcheck:prepare:single-pass] PREPARATION_COMPLETE');
