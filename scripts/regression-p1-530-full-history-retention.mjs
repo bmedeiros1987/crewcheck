@@ -35,6 +35,24 @@ function roster(month, marker) {
   };
 }
 
+function boundaryFlight(dutyReport) {
+  return {
+    date: '2026-07-01',
+    type: 'VOO',
+    pairingCode: 'BOUNDARY',
+    dutyReport,
+    dutyDebrief: '12:00',
+    isDayOff: false,
+    legs: [{
+      flightNumber: 'LA1234',
+      origin: 'BSB',
+      destination: 'GRU',
+      departureTime: '10:00',
+      arrivalTime: '11:30',
+    }],
+  };
+}
+
 function monthsOf(rosterValue) {
   return Array.from(new Set((rosterValue.days || []).map((day) => {
     const raw = String(day.date || '');
@@ -72,6 +90,11 @@ try {
   const august = roster(8, 'AUGUST ORIGINAL');
   const september = roster(9, 'SEPTEMBER ORIGINAL');
 
+  // Boundary reproducer: June carries a stale July 1 copy while the exact July
+  // competence has the corrected report time. The nominal competence must win.
+  june.days.push(boundaryFlight('09:00'));
+  july.days.push(boundaryFlight('09:30'));
+
   await database.saveRosterAnalysis({ roster: june, compliance, gym: [], sourceFileName: 'junho.pdf' });
   await database.saveRosterAnalysis({ roster: july, compliance, gym: [], sourceFileName: 'julho.pdf' });
   await database.saveRosterAnalysis({ roster: august, compliance, gym: [], sourceFileName: 'agosto.pdf' });
@@ -79,6 +102,9 @@ try {
 
   const initialWindow = await database.openRosterDisplayWindow(september);
   assert.deepEqual(monthsOf(initialWindow), ['2026-06', '2026-07', '2026-08', '2026-09'], 'junho-setembro devem coexistir na Escala antes da reimportação');
+  const julyBoundary = (initialWindow.days || []).filter((day) => String(day.date) === '2026-07-01');
+  assert.equal(julyBoundary.length, 1, 'a data limítrofe deve vir de uma única competência nominal');
+  assert.equal(julyBoundary[0]?.dutyReport, '09:30', 'a publicação nominal de Julho deve vencer o carry-over obsoleto de Junho');
 
   // Reproducer real informado em 13/09/2026: reimportar Setembro não pode fazer Junho
   // desaparecer do seletor. A nova publicação deve substituir apenas Setembro.
@@ -93,13 +119,18 @@ try {
   assert.equal(afterReimport.month, 9, 'janela visual não pode trocar a competência operacional primária');
   assert.equal((afterReimport.days || []).filter((day) => String(day.date) === '2026-09-21').length, 1, 'reimportação deve materializar somente a publicação nova de Setembro');
   assert.equal((afterReimport.days || []).filter((day) => String(day.pairingCode) === 'HIST-06').length, 1, 'Junho deve permanecer navegável após reimportar Setembro');
+  const julyBoundaryAfterReimport = (afterReimport.days || []).filter((day) => String(day.date) === '2026-07-01');
+  assert.equal(julyBoundaryAfterReimport.length, 1, 'reimportar Setembro não pode reintroduzir carry-over obsoleto na fronteira Junho/Julho');
+  assert.equal(julyBoundaryAfterReimport[0]?.dutyReport, '09:30', 'Julho nominal deve continuar soberano na fronteira após reimportação');
 
   const source = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   assert.match(source, /P0_530_ADJACENT_MONTH_DISPLAY_WINDOW/);
   assert.match(source, /function newestDisplaySummaryByCompetence\(/);
+  assert.match(source, /function displayDaysBeforeNominalMerge\(/);
+  assert.match(source, /const retainedPrimaryDays = displayDaysBeforeNominalMerge\(primary, adjacent\);/);
   assert.match(source, /const historical = newestDisplaySummaryByCompetence\(sameCrew, primaryOrdinal\);/);
 
-  console.log('[p1-530-full-history] PASS — Junho a Setembro permanecem navegáveis após reimportar Setembro, sem trocar o roster operacional primário.');
+  console.log('[p1-530-full-history] PASS — histórico completo retido e competência nominal soberana nas datas de fronteira.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
