@@ -1,8 +1,35 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const PREPARATION_STATE_PATH = path.join('node_modules', '.cache', 'crewcheck-v139-preparation-state.json');
+
+function readPreparationState() {
+  try { return JSON.parse(fs.readFileSync(PREPARATION_STATE_PATH, 'utf8')); }
+  catch { return null; }
+}
+
+function writePreparationState(status, detail = '') {
+  fs.mkdirSync(path.dirname(PREPARATION_STATE_PATH), { recursive: true });
+  fs.writeFileSync(PREPARATION_STATE_PATH, JSON.stringify({
+    version: 1,
+    status,
+    detail,
+    pid: process.pid,
+    updatedAt: new Date().toISOString(),
+  }, null, 2) + '\n', 'utf8');
+}
+
+const existingPreparationState = readPreparationState();
+if (existingPreparationState) {
+  const status = String(existingPreparationState.status || 'unknown').toUpperCase();
+  console.error(`[crewcheck:prepare:single-pass] PREPARATION_${status}: scripts/v139/apply.mjs já foi iniciado neste workspace. Remova ${PREPARATION_STATE_PATH} apenas ao reconstruir um checkout limpo.`);
+  process.exit(73);
+}
+writePreparationState('running');
+
 function persistPreparationFailure(error) {
   const message = error instanceof Error ? `${error.stack || error.message}` : String(error || 'Erro desconhecido na preparação canônica.');
+  writePreparationState('failed', message.slice(0, 4000));
   console.error('[crewcheck:source-prepare-failure]', message);
   const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
   if (!runnerTemp) return;
@@ -169,3 +196,6 @@ await import('../p0-580-legend-terminal-rescues/apply.mjs');
 await import('../p0-530-adjacent-month-retention/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../ci/sync-canonical-manual.mjs');
+
+writePreparationState('complete');
+console.log('[crewcheck:prepare:single-pass] PREPARATION_COMPLETE');
