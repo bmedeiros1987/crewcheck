@@ -1,0 +1,28 @@
+name: P1 #623 stable regulatory crew identity
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/regulatoryHistory.ts'
+      - 'scripts/regression-p1-623-regulatory-history-evidence.mjs'
+      - '.github/workflows/p1-623-regulatory-stable-crew-id.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Stable regulatory identity regression
+        run: node scripts/regression-p1-623-regulatory-history-evidence.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
