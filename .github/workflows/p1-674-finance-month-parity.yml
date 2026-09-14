@@ -1,0 +1,35 @@
+name: P1 #674 finance month parity
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/lib/financialCompetence.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/p1-674-finance-month-parity/**'
+      - 'scripts/regression-p1-674-finance-month-parity.mjs'
+      - '.github/workflows/p1-674-finance-month-parity.yml'
+  workflow_dispatch:
+
+jobs:
+  finance-month-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Active competence finance parity regression
+        run: node scripts/regression-p1-674-finance-month-parity.mjs
+      - name: Existing finance precision regression
+        run: node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build without replaying preparers
+        run: npx vite build
