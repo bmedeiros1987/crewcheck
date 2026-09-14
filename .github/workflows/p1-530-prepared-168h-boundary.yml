@@ -1,0 +1,42 @@
+name: P1 #530 prepared 168h timezone boundary
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14359/**'
+      - 'scripts/regression-p0-530-journey-instant-timezone-independence.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p1-530-prepared-168h-boundary.yml'
+  workflow_dispatch:
+
+jobs:
+  prepared-168h-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baseline #643 timezone regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Kiritimati; do
+            TZ="$zone" node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
+          done
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Prepared #643 timezone regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Kiritimati; do
+            TZ="$zone" node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
+          done
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build without replaying preparers
+        run: npx vite build
