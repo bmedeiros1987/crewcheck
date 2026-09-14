@@ -1,0 +1,27 @@
+name: P2 v139 single-pass guard
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-p2-v139-single-pass.mjs'
+      - '.github/workflows/p2-v139-single-pass.yml'
+  workflow_dispatch:
+
+jobs:
+  single-pass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: First pass plus fail-before second pass
+        run: node scripts/regression-p2-v139-single-pass.mjs
+      - name: TypeScript on prepared tree
+        run: npx tsc --noEmit
+      - name: Production build without replay
+        run: npx vite build
