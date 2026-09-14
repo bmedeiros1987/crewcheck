@@ -1,0 +1,29 @@
+name: P2 #659 Render build-start handoff
+
+on:
+  pull_request:
+    paths:
+      - 'render.yaml'
+      - 'package.json'
+      - 'scripts/regression-p2-659-render-build-start-handoff.mjs'
+      - '.github/workflows/p2-659-render-build-start-handoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Render build-to-runtime handoff regression
+        run: node scripts/regression-p2-659-render-build-start-handoff.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
