@@ -118,7 +118,6 @@ try {
   assert.equal(violation(complete.compliance), true, '50h em janeiro + 50h em fevereiro deve confirmar 100h/28d no perfil NarrowBody');
   assert.equal(complete.compliance.metrics.totalFlightHours, 50, 'KPI da competência ativa deve continuar isolado em fevereiro');
 
-  // Snapshot must declare both its own schema and the rolling-kernel version.
   const firstSnapshot = snapshotEntry();
   assert.ok(String(firstSnapshot.value.snapshotVersion || ''), 'snapshot deve declarar versão de schema');
   assert.ok(String(firstSnapshot.value.kernelVersion || ''), 'snapshot deve declarar versão do kernel #605/#526');
@@ -126,7 +125,6 @@ try {
   const baselineFingerprint = firstSnapshot.value.fingerprint;
   const baselineKernelVersion = firstSnapshot.value.kernelVersion;
 
-  // A stale kernel snapshot must be invalidated/replaced, never silently reused.
   localStorage.setItem(firstSnapshot.key, JSON.stringify({ ...firstSnapshot.value, kernelVersion: 'legacy-kernel' }));
   const probesBeforeKernelRefresh = accountProbeCount;
   await database.recomputeComplianceWithRegulatoryHistory(feb);
@@ -134,8 +132,6 @@ try {
   assert.equal(refreshedKernelSnapshot.value.kernelVersion, baselineKernelVersion, 'snapshot obsoleto deve ser regravado com versão atual do kernel');
   assert.ok(accountProbeCount > probesBeforeKernelRefresh, 'snapshot nunca pode suprimir a nova prova de histórico da conta');
 
-  // Same month/same day count but a different aircraft input must produce a new
-  // fingerprint and force another history probe.
   const aircraftChanged = clone(feb);
   aircraftChanged.days[0].legs[0].aircraftType = 'A350';
   const probesBeforeAircraftChange = accountProbeCount;
@@ -152,8 +148,6 @@ try {
   assert.notEqual(rawSnapshot.value.fingerprint, baselineFingerprint, 'roster.rawText relevante à classificação de aeronave deve participar do fingerprint');
   assert.ok(accountProbeCount > probesBeforeRawChange, 'mudança de rawText no mesmo mês deve redisparar history probe');
 
-  // Competence boundary: a future-publication day carried inside February must not
-  // be attributed to February's rolling window.
   const janZero = januaryRoster(0);
   const febBoundary = februaryRoster(10);
   febBoundary.days.push(leg('01/03/2032', 200, 'A320'));
@@ -199,8 +193,14 @@ try {
     'Home deve atualizar somente compliance e preservar o roster operacional ativo');
   assert.match(home, /\}, \[bundle\.roster\]\);/,
     'recomputação deve reagir à troca de roster, não à troca de compliance');
+  assert.match(home, /const compliance = \(await recomputeComplianceWithRegulatoryHistory\(data\.roster\)\)\.compliance;/,
+    'reabertura de escala salva deve recomputar compliance antes de setBundle');
+  assert.doesNotMatch(home, /const compliance = data\.compliance \|\| analyzeSafe\(data\.roster\);/,
+    'compliance persistido antigo não pode entrar no bundle na reabertura');
+  assert.match(home, /const compliance = \(await recomputeComplianceWithRegulatoryHistory\(active\.roster\)\)\.compliance;/,
+    'reconciliação da escala ativa deve recomputar compliance antes de setBundle');
 
-  console.log('[p0-623-regulatory-history] PASS — carry-in, fail-closed, snapshot versionado/fingerprint, fronteira de competência e Home estão protegidos.');
+  console.log('[p0-623-regulatory-history] PASS — carry-in, fail-closed, snapshot/fingerprint, fronteira e recomputação pré-bundle estão protegidos.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
