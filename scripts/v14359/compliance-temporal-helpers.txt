@@ -257,8 +257,10 @@ function maxEventsInRolling168h(events: RegulatoryNightEvent[]): number {
   let max = 0;
   for (const startEvent of events) {
     const end = startEvent.timestamp + 168 * HOUR_MS;
-    // The protected #643 contract is inclusive at the exact 168h boundary.
-    const count = events.filter((candidate) => candidate.segment === startEvent.segment && candidate.timestamp >= startEvent.timestamp && candidate.timestamp <= end).length;
+    // The protected #643 rolling window is chronological and inclusive at the
+    // exact 168h boundary. Recovery segmentation belongs only to consecutive-night
+    // streaks; it must not erase occurrences that still lie inside this window.
+    const count = events.filter((candidate) => candidate.timestamp >= startEvent.timestamp && candidate.timestamp <= end).length;
     max = Math.max(max, count);
   }
   return max;
