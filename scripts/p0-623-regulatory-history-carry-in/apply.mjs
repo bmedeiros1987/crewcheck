@@ -2,9 +2,10 @@ import fs from 'node:fs';
 
 const compliancePath = 'client/src/lib/complianceEngine.ts';
 const databasePath = 'client/src/lib/databaseClient.ts';
+const homePath = 'client/src/pages/Home.tsx';
 const marker = 'P0_623_REGULATORY_HISTORY_CARRY_IN';
 
-for (const file of [compliancePath, databasePath]) {
+for (const file of [compliancePath, databasePath, homePath]) {
   if (!fs.existsSync(file)) throw new Error(`[${marker}] arquivo ausente: ${file}`);
 }
 
@@ -168,4 +169,41 @@ for (const fragment of [
 }
 fs.writeFileSync(databasePath, database, 'utf8');
 
-console.log(`[${marker}] carry-in regulatório da competência anterior aplicado de forma fail-closed.`);
+let home = fs.readFileSync(homePath, 'utf8');
+if (!home.includes('recomputeComplianceWithRegulatoryHistory')) {
+  const importMatch = home.match(/^import \{[^\n]+\} from '@\/lib\/databaseClient';$/m)?.[0];
+  if (!importMatch) throw new Error(`[${marker}] import databaseClient da Home não localizado`);
+  const expandedImport = importMatch.replace(' } from', ', recomputeComplianceWithRegulatoryHistory } from');
+  home = home.replace(importMatch, expandedImport);
+
+  const stateAnchor = '  const [bundle, setBundle] = useState<BundleState>(loadRoster());';
+  if (!home.includes(stateAnchor)) throw new Error(`[${marker}] state do bundle não localizado`);
+  const effect = `${stateAnchor}
+  useEffect(() => {
+    // ${marker}: every imported/opened/remote-active roster already becomes
+    // bundle.roster. Refine only its compliance asynchronously from proven account
+    // history, and reject stale completions if the active roster changed meanwhile.
+    let alive = true;
+    const primary = bundle.roster;
+    void recomputeComplianceWithRegulatoryHistory(primary)
+      .then((result) => {
+        if (!alive) return;
+        setBundle((current) => current.roster === primary ? { ...current, compliance: result.compliance } : current);
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [bundle.roster]);`;
+  home = home.replace(stateAnchor, effect);
+}
+
+for (const fragment of [
+  'recomputeComplianceWithRegulatoryHistory',
+  'recomputeComplianceWithRegulatoryHistory(primary)',
+  'setBundle((current) => current.roster === primary ? { ...current, compliance: result.compliance } : current)',
+  '}, [bundle.roster]);',
+]) {
+  if (!home.includes(fragment)) throw new Error(`[${marker}] contrato Home ausente: ${fragment}`);
+}
+fs.writeFileSync(homePath, home, 'utf8');
+
+console.log(`[${marker}] carry-in regulatório aplicado e conectado à Home sem trocar o roster operacional.`);
