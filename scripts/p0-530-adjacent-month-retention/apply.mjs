@@ -24,11 +24,38 @@ if (!database.includes(marker)) {
 // operational-continuity proof. The operational active roster remains sovereign for
 // current/next, compliance, finance, alarms, Radar and every other operational
 // consumer. This window only lets the Escala UI navigate adjacent saved competences.
+function rosterDisplayDateKey(value?: string | null): string | null {
+  const date = parseCrewRosterDate(value);
+  if (!date) return null;
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+}
+
+function displayDaysBeforeNominalMerge(primary: CrewRoster, adjacent: CrewRoster) {
+  const year = Number(adjacent.year);
+  const month = Number(adjacent.month);
+  const nominalDateKeys = new Set(
+    (adjacent.days || [])
+      .map((day) => ({ day, date: parseCrewRosterDate(day.date), key: rosterDisplayDateKey(day.date) }))
+      .filter(({ date, key }) => Boolean(key && date && date.getFullYear() === year && date.getMonth() + 1 === month))
+      .map(({ key }) => key as string),
+  );
+  if (!nominalDateKeys.size) return primary.days || [];
+  return (primary.days || []).filter((day) => {
+    const key = rosterDisplayDateKey(day.date);
+    return !key || !nominalDateKeys.has(key);
+  });
+}
+
 function mergeRosterDisplayAdjacent(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {
-  const adjacentDays = dedupeAdjacentRosterDays(primary.days || [], adjacent.days || []);
+  // Boundary days may be repeated by the prior/next publication. Whenever the exact
+  // nominal competence has a row for that civil date, that publication is the display
+  // authority for the whole date. This prevents an older carry-over copy from hiding a
+  // corrected duty/flight in the month that actually owns the date.
+  const retainedPrimaryDays = displayDaysBeforeNominalMerge(primary, adjacent);
+  const adjacentDays = dedupeAdjacentRosterDays(retainedPrimaryDays, adjacent.days || []);
   const days = position === 'prepend'
-    ? [...adjacentDays, ...(primary.days || [])]
-    : [...(primary.days || []), ...adjacentDays];
+    ? [...adjacentDays, ...retainedPrimaryDays]
+    : [...retainedPrimaryDays, ...adjacentDays];
   days.sort((a, b) => (parseCrewRosterDate(a.date)?.getTime() || 0) - (parseCrewRosterDate(b.date)?.getTime() || 0));
   return { ...primary, days };
 }
@@ -117,7 +144,8 @@ for (const fragment of [
   'openDisplayCompetenceCandidate(primary, summary, ordinal, primaryCrew)',
   'newestDisplaySummaryByCompetence(sameCrew, primaryOrdinal)',
   'rosterPeriodOrdinal(localOpened.roster) !== targetOrdinal',
-  'dedupeAdjacentRosterDays(primary.days || [], adjacent.days || [])',
+  'displayDaysBeforeNominalMerge(primary, adjacent)',
+  'dedupeAdjacentRosterDays(retainedPrimaryDays, adjacent.days || [])',
   'const sameCrew = summaries.filter((item) => crewIdentityToken(item) === primaryCrew)',
   `window.dispatchEvent(new CustomEvent('${historyEvent}'))`,
 ]) {
