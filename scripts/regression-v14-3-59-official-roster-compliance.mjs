@@ -8,7 +8,7 @@ assert.match(source, /type RegulatoryNightKind = 'worked' \| 'standby';/);
 assert.match(source, /function analyzeConsecutiveOperationalWindow\(/);
 assert.match(source, /function summarizeRegulatoryNightEvents\(/);
 assert.match(source, /resetAfterFreeHours/);
-assert.match(source, /candidate\.timestamp < end/);
+assert.match(source, /candidate\.timestamp >= startEvent\.timestamp && candidate\.timestamp <= end/);
 assert.match(source, /HSB sem acionamento é exibido separadamente e não entra nesta soma/);
 assert.doesNotMatch(source, /let consecutiveWorkPeriods = 0;/);
 assert.doesNotMatch(source, /function getMadrugadaKeys\(/);
@@ -63,7 +63,7 @@ for (const event of workedNights) event.segment = resetBoundaries.filter((bounda
 let maxRolling = 0;
 for (const event of workedNights) {
   const end = event.timestamp + 168 * HOUR_MS;
-  const count = workedNights.filter((candidate) => candidate.segment === event.segment && candidate.timestamp >= event.timestamp && candidate.timestamp < end).length;
+  const count = workedNights.filter((candidate) => candidate.timestamp >= event.timestamp && candidate.timestamp <= end).length;
   maxRolling = Math.max(maxRolling, count);
 }
 assert.equal(maxRolling, fixture.expected.maxWorkedNightsIn168h);
