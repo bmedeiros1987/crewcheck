@@ -1,0 +1,43 @@
+name: P0 #623 regulatory history carry-in
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/rollingFlightHours.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/p0-623-regulatory-history-carry-in/**'
+      - 'scripts/regression-p0-623-regulatory-history-carry-in.mjs'
+      - 'scripts/regression-p1-526-rolling-boundaries.mjs'
+      - 'scripts/regression-p1-526-rolling-28d.mjs'
+      - 'scripts/regression-p1-526-rolling-plausibility.mjs'
+      - '.github/workflows/p0-623-regulatory-history-carry-in.yml'
+  workflow_dispatch:
+
+jobs:
+  regulatory-history-carry-in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Regulatory history carry-in regression
+        run: node scripts/regression-p0-623-regulatory-history-carry-in.mjs
+      - name: Existing 28-day boundary regression
+        run: node scripts/regression-p1-526-rolling-boundaries.mjs
+      - name: Existing rolling 28-day regression
+        run: node scripts/regression-p1-526-rolling-28d.mjs
+      - name: Existing plausibility regression
+        run: node scripts/regression-p1-526-rolling-plausibility.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build without replaying preparers
+        run: npx vite build
