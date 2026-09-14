@@ -104,8 +104,6 @@ function regulatoryRosterSignature(roster: CrewRoster): unknown {
     base: String(roster.base || ''),
     rank: String(roster.rank || ''),
     airline: String(roster.airline || ''),
-    // Aircraft legal-profile inference consumes rawText as a fallback, so it is a
-    // first-class fingerprint input rather than incidental display text.
     rawText: String(roster.rawText || ''),
     days: (roster.days || []).map((day) => ({
       date: String(day.date || ''),
@@ -186,8 +184,6 @@ export async function recomputeComplianceWithRegulatoryHistory(
 
   let accountSummaries: SavedRosterSummary[];
   try {
-    // The account probe is intentionally performed on every new roster identity.
-    // A local snapshot may accelerate analysis but never proves account history.
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>('/api/rosters?limit=72&manager=1', { cache: 'no-store' });
     accountSummaries = Array.isArray(payload?.rosters) ? payload.rosters : [];
   } catch {
@@ -321,14 +317,34 @@ if (!home.includes('recomputeComplianceWithRegulatoryHistory')) {
   home = home.replace(stateAnchor, effect);
 }
 
+const staleSavedCompliance = 'const compliance = data.compliance || analyzeSafe(data.roster);';
+if (home.includes(staleSavedCompliance)) {
+  home = home.replaceAll(staleSavedCompliance, 'const compliance = (await recomputeComplianceWithRegulatoryHistory(data.roster)).compliance;');
+}
+const staleActiveCompliance = 'const compliance = active.compliance || analyzeSafe(active.roster);';
+if (home.includes(staleActiveCompliance)) {
+  home = home.replaceAll(staleActiveCompliance, 'const compliance = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;');
+}
+const quickActiveOld = "openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster);";
+if (home.includes(quickActiveOld)) {
+  home = home.replace(
+    quickActiveOld,
+    "openActiveRoster().then(async active => { if (active?.roster) { const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;",
+  );
+}
+
 for (const fragment of [
   'recomputeComplianceWithRegulatoryHistory',
   'recomputeComplianceWithRegulatoryHistory(primary)',
   'setBundle((current) => current.roster === primary ? { ...current, compliance: result.compliance } : current)',
   '}, [bundle.roster]);',
+  'const compliance = (await recomputeComplianceWithRegulatoryHistory(data.roster)).compliance;',
+  'const compliance = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;',
 ]) {
   if (!home.includes(fragment)) throw new Error(`[${marker}] contrato Home ausente: ${fragment}`);
 }
+if (home.includes(staleSavedCompliance)) throw new Error(`[${marker}] compliance persistido antigo ainda entra no bundle de histórico`);
+if (home.includes(staleActiveCompliance)) throw new Error(`[${marker}] compliance ativo persistido ainda entra no bundle sem recomputação`);
 fs.writeFileSync(homePath, home, 'utf8');
 
-console.log(`[${marker}] carry-in, snapshot versionado/fingerprint e Home aplicados sem trocar o roster operacional.`);
+console.log(`[${marker}] carry-in, snapshot/fingerprint e recomputação pré-bundle aplicados sem trocar o roster operacional.`);
