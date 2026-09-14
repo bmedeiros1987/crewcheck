@@ -25,6 +25,20 @@ const flightDay = (date, pairingCode, dutyReport, legs) => ({
 
 const offDay = (date, code = 'DO') => ({ date, type: code, pairingCode: code, isDayOff: true, legs: [] });
 
+function juneRoster() {
+  return {
+    crewName: 'BRUNO SARAIVA', crewId: '04453812', base: 'BSB', year: 2026, month: 6, rawText: 'JUNE PUBLICATION',
+    days: [offDay('2026-06-01', 'VC'), offDay('2026-06-30')],
+  };
+}
+
+function julyRoster() {
+  return {
+    crewName: 'BRUNO SARAIVA', crewId: '04453812', base: 'BSB', year: 2026, month: 7, rawText: 'JULY PUBLICATION',
+    days: [offDay('2026-07-01'), offDay('2026-07-31')],
+  };
+}
+
 function augustRoster() {
   return {
     crewName: 'BRUNO SARAIVA', crewId: '04453812', base: 'BSB', year: 2026, month: 8, rawText: 'AUGUST PUBLICATION',
@@ -125,16 +139,26 @@ try {
   assert.equal(typeof database.openRosterDisplayWindow, 'function', 'P0 #530: janela visual multi-competência ainda não existe');
 
   const compliance = { score: 100, alerts: [] };
+  const june = juneRoster();
+  const july = julyRoster();
   const august = augustRoster();
   const september = septemberRoster();
 
   // Ordem real 1: Agosto -> Setembro. Setembro é a competência operacional,
   // mas Agosto inteiro deve continuar navegável na Escala.
+  await database.saveRosterAnalysis({ roster: june, compliance, gym: [], sourceFileName: 'junho.pdf' });
+  await database.saveRosterAnalysis({ roster: july, compliance, gym: [], sourceFileName: 'julho.pdf' });
   await database.saveRosterAnalysis({ roster: august, compliance, gym: [], sourceFileName: 'agosto.pdf' });
   await database.saveRosterAnalysis({ roster: september, compliance, gym: [], sourceFileName: 'setembro.pdf' });
+  // Reproducer real 13/09/2026: reimportar Setembro deve substituir apenas Setembro,
+  // sem limitar silenciosamente o seletor às três competências mais recentes.
+  await database.saveRosterAnalysis({ roster: september, compliance, gym: [], sourceFileName: 'setembro-reimportado.pdf' });
   const septemberWindow = await database.openRosterDisplayWindow(september);
   assert.equal(septemberWindow.year, 2026);
   assert.equal(septemberWindow.month, 9, 'janela visual não pode trocar a competência operacional primária');
+  assert.equal(countDate(septemberWindow, '2026-06-01'), 1, 'reimportar Setembro não pode remover Junho do histórico visual');
+  assert.equal(countDate(septemberWindow, '2026-06-30'), 1, 'fim de Junho deve continuar navegável após reimportação');
+  assert.equal(countDate(septemberWindow, '2026-07-01'), 1, 'Julho deve permanecer entre Junho e Agosto');
   assert.equal(countDate(septemberWindow, '2026-08-01'), 1, 'importar Setembro não pode apagar o início de Agosto');
   assert.equal(countDate(septemberWindow, '2026-08-29'), 1, 'carry-in 29/08 deve ser deduplicado');
   assert.equal(countDate(septemberWindow, '2026-08-30'), 1, 'carry-in 30/08 deve ser deduplicado');
@@ -164,7 +188,7 @@ try {
   assert.match(home, /view === 'roster'[\s\S]{0,900}events=\{rosterEvents\}/, 'Escala deve usar a janela visual multi-competência');
   assert.match(home, /finance=\{financeSnapshot\(bundle\.roster\)\}/, 'finanças devem continuar usando só a competência operacional ativa');
 
-  console.log('[p0-530-adjacent-month] PASS — Agosto e Setembro coexistem na Escala nas duas ordens de importação, sem contaminar consumidores operacionais.');
+  console.log('[p0-530-adjacent-month] PASS — Junho a Setembro sobrevivem à reimportação da competência ativa; ordens reversas e isolamento operacional preservados.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
