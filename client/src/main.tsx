@@ -20,6 +20,7 @@ import "./styles/web-desktop-shell.css";
 import "./styles/bottom-nav-clarity.css";
 import "./styles/opening-splash-identity.css";
 import "./styles/atlas-1c-semantic-navigation.css";
+import "./styles/visual-layout-containment-p0.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
