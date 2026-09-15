@@ -1,0 +1,34 @@
+name: P0 visual layout containment
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/styles/visual-layout-containment-p0.css'
+      - 'client/src/styles/ipad-shell-v14-3-94.css'
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/components/v1399/premium.css'
+      - 'scripts/regression-p0-visual-layout-containment.mjs'
+      - '.github/workflows/p0-visual-layout-containment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visual-layout-containment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Fail-closed visual containment regression
+        run: node scripts/regression-p0-visual-layout-containment.mjs
+      - name: Production build
+        run: npm run build
+      - name: TypeScript
+        run: npx tsc --noEmit
