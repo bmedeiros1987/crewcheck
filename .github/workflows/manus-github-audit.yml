@@ -21,12 +21,11 @@ permissions:
   pull-requests: read
   checks: read
 
-# One bridge run per PR at a time. A new trigger cancels the old poller; the
-# external Manus task may finish later, but only the current exact-SHA run may
-# publish an approval.
+# One bridge run per PR at a time. Only a genuinely authorized audit trigger
+# may cancel the current poller; unrelated issue comments must never do so.
 concurrency:
   group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') && (github.event.comment.body == '@manus' || startsWith(github.event.comment.body, '@manus '))) }}
 
 jobs:
   request-audit:
@@ -317,7 +316,23 @@ jobs:
             [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || bridge_error "task.listMessages returned HTTP $http_code: $(cat "$MANUS_BODY_FILE")"
             response="$(cat "$MANUS_BODY_FILE")"
 
-            test "$(jq -r '.ok' <<<"$response")" = "true" || bridge_error "task.listMessages returned ok=false"
+            if ! response_ok="$(jq -r '.ok // false' <<<"$response" 2>/dev/null)"; then
+              bridge_error "task.listMessages returned malformed JSON"
+            fi
+            test "$response_ok" = "true" || bridge_error "task.listMessages returned ok=false"
+
+            if ! messages_type="$(jq -r 'if .messages == null then "null" elif (.messages | type) == "array" then "array" else (.messages | type) end' <<<"$response" 2>/dev/null)"; then
+              bridge_error "task.listMessages returned malformed JSON"
+            fi
+            if [ "$messages_type" = "null" ]; then
+              if [ "$attempt" -le 12 ]; then
+                echo "Manus task messages not visible yet (null), attempt $attempt/12; allowing eventual consistency" >&2
+                sleep 5
+                continue
+              fi
+              bridge_error "task.listMessages messages remained null after 12 eventual-consistency attempts"
+            fi
+            test "$messages_type" = "array" || bridge_error "task.listMessages messages must be array or null, got $messages_type"
 
             status="$(jq -r '[.messages[] | select(.type == "status_update") | .status_update.agent_status][0] // "unknown"' <<<"$response")"
             if [ "$status" = "error" ]; then
