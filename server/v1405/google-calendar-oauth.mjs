@@ -21,8 +21,26 @@ function envAny(names = []) {
   return '';
 }
 
+// Host da plataforma Render, usado SOMENTE como fallback quando nenhuma base
+// pública foi configurada explicitamente. Restrito a `*.onrender.com`: um host
+// arbitrário nunca vira `redirect_uri`, e o esquema é forçado a https porque o
+// Render termina TLS no proxy e pode anunciar a origem interna como http.
+function renderPlatformBaseUrl() {
+  const raw = envAny(['RENDER_EXTERNAL_URL']);
+  const hostname = raw
+    ? (() => { try { return new URL(raw).hostname; } catch { return ''; } })()
+    : envAny(['RENDER_EXTERNAL_HOSTNAME']);
+  if (!hostname || !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.onrender\.com$/i.test(hostname)) return '';
+  return `https://${hostname}`;
+}
+
+// A base pública é explícita e fail-closed: sem configuração e sem host Render
+// reconhecido, devolve vazio, e `oauthConfig()` reprova o https do redirect_uri.
+// Nunca inventa um domínio literal — um redirect para outro host faz o callback
+// voltar numa origem que não possui o state da sessão.
 function publicBaseUrl() {
-  return (envAny(['CREWCHECK_PUBLIC_BASE_URL', 'CREWCHECK_APP_URL', 'PUBLIC_BASE_URL', 'TELEGRAM_PUBLIC_BASE_URL']) || 'https://crewcheck.online').replace(/\/+$/, '');
+  const explicit = envAny(['CREWCHECK_PUBLIC_BASE_URL', 'CREWCHECK_APP_URL', 'PUBLIC_BASE_URL', 'TELEGRAM_PUBLIC_BASE_URL']);
+  return (explicit || renderPlatformBaseUrl()).replace(/\/+$/, '');
 }
 
 function oauthConfig() {
