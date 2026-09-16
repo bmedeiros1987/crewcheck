@@ -102,6 +102,13 @@ withEnv({ ...SECRETS, RENDER_EXTERNAL_URL: 'https://attacker.example.com' }, () 
   check('host não-Render não é aceito como redirect_uri', !cfg.redirectUri.includes('attacker.example.com'), cfg.redirectUri);
 });
 
+// 8b. Host do Render em maiúsculas precisa ser normalizado: o redirect_uri é
+// comparado byte a byte com o Authorized redirect URI do Google Console.
+withEnv({ ...SECRETS, RENDER_EXTERNAL_HOSTNAME: 'CREWCHECK.ONRENDER.COM' }, () => {
+  const cfg = mod.__oauthConfig();
+  check('hostname em maiúsculas é normalizado para minúsculas', cfg.redirectUri === `https://crewcheck.onrender.com${CALLBACK}`, cfg.redirectUri);
+});
+
 // 9. Nenhum secret vaza na configuração inspecionável.
 withEnv({ ...SECRETS, RENDER_EXTERNAL_URL: 'https://crewcheck.onrender.com' }, () => {
   const cfg = mod.__oauthConfig();

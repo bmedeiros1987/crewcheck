@@ -30,8 +30,12 @@ function renderPlatformBaseUrl() {
   const hostname = raw
     ? (() => { try { return new URL(raw).hostname; } catch { return ''; } })()
     : envAny(['RENDER_EXTERNAL_HOSTNAME']);
-  if (!hostname || !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.onrender\.com$/i.test(hostname)) return '';
-  return `https://${hostname}`;
+  // Normalizado para minúsculas: o redirect_uri precisa bater byte a byte com o
+  // Authorized redirect URI cadastrado no Google, e `RENDER_EXTERNAL_HOSTNAME`
+  // chega como valor bruto do ambiente.
+  const normalized = hostname.trim().toLowerCase();
+  if (!normalized || !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.onrender\.com$/.test(normalized)) return '';
+  return `https://${normalized}`;
 }
 
 // A base pública é explícita e fail-closed: sem configuração e sem host Render
