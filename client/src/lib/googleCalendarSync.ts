@@ -4,6 +4,16 @@ import type { RoutineSuggestion } from './routinePlanner';
 import { generateICalendar, type CalendarExportMode } from './calendarExport';
 import { t } from './i18n';
 import { crewcheckAuthHeader } from './authClient';
+import {
+  GoogleCalendarBridgeError,
+  connectGoogleCalendarViaServer,
+  disconnectGoogleCalendarServerBridge,
+  hasServerGoogleCalendarMarker,
+  isEmbeddedCrewCheckWebView,
+  serverGoogleCalendarDiagnosticLabel,
+  serverGoogleCalendarFetch,
+  shouldUseServerGoogleCalendarBridge,
+} from './googleCalendarOAuthBridge';
 
 export type GoogleCalendarSyncStatus = 'idle' | 'connecting' | 'loading-calendars' | 'syncing' | 'success' | 'error';
 
@@ -83,18 +93,14 @@ type GoogleCalendarApiEvent = {
 const SETTINGS_KEY = 'crewcheck_google_calendar_settings';
 const CLIENT_ID_OVERRIDE_KEY = 'crewcheck_google_client_id_override';
 const TOKEN_KEY = 'crewcheck_google_calendar_token';
-const GOOGLE_CLIENT_ID_FALLBACK = '777637106343-1s0tejmffsrl6253hl6qp03idfu1mphf.apps.googleusercontent.com';
-const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
-].join(' ');
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.events.owned';
+const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v1';
 const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
 const TIME_ZONE = 'America/Sao_Paulo';
-const GOOGLE_ANDROID_SHA1_FINGERPRINT = '88caeec365ff17a8d45606ab3a1401c57653a2fa';
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = 'crewcheck@sonic-charmer-399015.iam.gserviceaccount.com';
 
 
 let tokenClient: GoogleTokenClient | null = null;
+let tokenClientErrorHandler: ((error: any) => void) | null = null;
 let loadingGoogleIdentity: Promise<void> | null = null;
 
 function defaultGoogleCalendarSettings(): GoogleCalendarSettings {
@@ -109,26 +115,46 @@ function defaultGoogleCalendarSettings(): GoogleCalendarSettings {
 
 
 export function googleCalendarIntegrationDiagnostics(): { label: string; value: string; tone: 'ok' | 'warn' | 'info' }[] {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'servidor';
   return [
-    { label: 'Conexão Google', value: isGoogleCalendarConfigured() ? 'Configurada' : 'Aguardando configuração', tone: isGoogleCalendarConfigured() ? 'ok' : 'warn' },
-    { label: 'Permissões', value: 'Eventos e lista de calendários autorizados pelo usuário', tone: 'info' },
-    { label: 'Calendário de destino', value: loadGoogleCalendarSettings().selectedCalendarName || 'Calendário principal', tone: 'ok' },
-    { label: 'Sincronização', value: 'Reconexão assistida quando a autorização expira.', tone: 'ok' },
+    { label: 'Conexão Google', value: hasGoogleCalendarToken() ? 'Conectada' : isGoogleCalendarConfigured() ? 'Pronta para conectar' : 'Aguardando configuração', tone: hasGoogleCalendarToken() ? 'ok' : isGoogleCalendarConfigured() ? 'info' : 'warn' },
+    { label: 'Autorização', value: serverGoogleCalendarDiagnosticLabel(), tone: 'info' },
+    { label: 'Permissão', value: 'Somente eventos no calendário principal pertencente ao usuário', tone: 'info' },
+    { label: 'Origem', value: origin, tone: 'info' },
+    { label: 'Sincronização', value: 'Reconexão segura e atualização sem duplicar eventos CrewCheck.', tone: 'ok' },
   ];
+}
+
+function isProductionGoogleOrigin(): boolean {
+  try {
+    const host = window.location.hostname.toLowerCase();
+    return host === 'crewcheck.online' || host === 'www.crewcheck.online' || host.endsWith('.onrender.com');
+  } catch { return true; }
 }
 
 export function getGoogleClientId(): string {
   const env = String((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_GOOGLE_CLIENT_ID || '').trim();
   const override = getGoogleClientIdOverride();
-  return env || override || GOOGLE_CLIENT_ID_FALLBACK;
+  return env || override;
 }
 
 export function getGoogleClientIdOverride(): string {
-  try { return localStorage.getItem(CLIENT_ID_OVERRIDE_KEY) || ''; } catch { return ''; }
+  try {
+    if (isProductionGoogleOrigin()) {
+      localStorage.removeItem(CLIENT_ID_OVERRIDE_KEY);
+      return '';
+    }
+    return localStorage.getItem(CLIENT_ID_OVERRIDE_KEY) || '';
+  } catch { return ''; }
 }
 
 export function saveGoogleClientIdOverride(value: string): void {
   try {
+    if (isProductionGoogleOrigin()) {
+      localStorage.removeItem(CLIENT_ID_OVERRIDE_KEY);
+      tokenClient = null;
+      return;
+    }
     const normalized = value.trim();
     if (normalized) localStorage.setItem(CLIENT_ID_OVERRIDE_KEY, normalized);
     else localStorage.removeItem(CLIENT_ID_OVERRIDE_KEY);
@@ -167,7 +193,7 @@ function saveToken(response: GoogleTokenResponse): void {
 
 export function hasGoogleCalendarToken(): boolean {
   const token = readToken();
-  return Boolean(token?.access_token && token.expires_at > Date.now());
+  return Boolean(token?.access_token && token.expires_at > Date.now()) || hasServerGoogleCalendarMarker();
 }
 
 function getValidAccessToken(): string | null {
@@ -201,6 +227,18 @@ function loadGoogleIdentityScript(): Promise<void> {
   return loadingGoogleIdentity;
 }
 
+function googleIdentityErrorMessage(error: any): string {
+  const type = String(error?.type || error?.error || error?.code || '').toLowerCase();
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  if (/popup_failed_to_open|popup_blocked/.test(type)) return 'O navegador bloqueou a janela do Google. Permita pop-ups para o CrewCheck e tente novamente.';
+  if (/popup_closed|access_denied|cancel/.test(type)) return 'A autorização do Google Calendar foi cancelada antes da conclusão.';
+  if (/origin_mismatch/.test(type)) return `A origem ${origin} não está autorizada no OAuth do Google Cloud. Cadastre exatamente essa origem no Client ID Web.`;
+  if (/invalid_client/.test(type)) return 'O Client ID do Google Calendar não corresponde ao projeto configurado. Revise o Client ID Web no Google Cloud.';
+  if (/disallowed_useragent|webview/.test(type)) return 'O Google não permite concluir esta autorização dentro da WebView. O CrewCheck abrirá o navegador seguro do aparelho.';
+  if (/admin_policy_enforced|org_internal/.test(type)) return 'A política da Conta Google bloqueou esta autorização. Use uma conta de teste autorizada ou ajuste o público do aplicativo no Google Cloud.';
+  return String(error?.message || error?.error_description || error?.type || 'O Google Identity Services não concluiu a autorização.');
+}
+
 async function getTokenClient(): Promise<GoogleTokenClient> {
   const clientId = getGoogleClientId();
   if (!clientId) throw new Error(t('googleNotConfigured') || 'Configure o Google Client ID para ativar a sincronização com Google Calendar.');
@@ -213,47 +251,68 @@ async function getTokenClient(): Promise<GoogleTokenClient> {
       scope: GOOGLE_SCOPES,
       prompt: '',
       callback: () => undefined,
-      include_granted_scopes: true,
+      include_granted_scopes: false,
+      error_callback: (error: any) => { if (tokenClientErrorHandler) tokenClientErrorHandler(error); },
     });
   }
   return tokenClient as GoogleTokenClient;
 }
 
+function confirmGoogleCalendarOwnedEventsDisclosure(): void {
+  try {
+    if (localStorage.getItem(GOOGLE_SCOPE_DISCLOSURE_KEY) === 'accepted') return;
+  } catch {}
+  const accepted = window.confirm([
+    'Conectar o Google Calendar?',
+    '',
+    'O CrewCheck usará uma única permissão para criar, consultar, atualizar e excluir somente eventos nos calendários Google que pertencem a você.',
+    '',
+    'A sincronização usa apenas o período da escala e remove somente eventos identificados como CrewCheck. Seus e-mails, arquivos, contatos e eventos pessoais sem a marca CrewCheck não são acessados para esta funcionalidade.',
+    '',
+    'Você poderá revogar a autorização a qualquer momento.'
+  ].join('\n'));
+  if (!accepted) throw new Error('Conexão com Google Calendar cancelada pelo usuário.');
+  try { localStorage.setItem(GOOGLE_SCOPE_DISCLOSURE_KEY, 'accepted'); } catch {}
+}
+
 export async function connectGoogleCalendar(prompt = 'consent select_account'): Promise<void> {
+  if (/consent|select_account/i.test(prompt)) confirmGoogleCalendarOwnedEventsDisclosure();
+  const embedded = isEmbeddedCrewCheckWebView();
+  if (embedded || isProductionGoogleOrigin() || hasServerGoogleCalendarMarker()) {
+    try {
+      await connectGoogleCalendarViaServer();
+      return;
+    } catch (error) {
+      if (embedded || isProductionGoogleOrigin() || !(error instanceof GoogleCalendarBridgeError) || error.code !== 'GOOGLE_OAUTH_SERVER_NOT_CONFIGURED') throw error;
+    }
+  }
+  if (embedded) throw new Error('Abra a autorização do Google Calendar no navegador seguro do aparelho.');
   const client = await getTokenClient();
   await new Promise<void>((resolve, reject) => {
     let settled = false;
-    const timer = window.setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        reject(new Error(t('googleTimeout') || 'O login do Google Calendar demorou demais ou foi bloqueado. Permita pop-ups e tente novamente.'));
-      }
-    }, 90_000);
-    client.callback = (response: GoogleTokenResponse) => {
+    const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
+      tokenClientErrorHandler = null;
       window.clearTimeout(timer);
-      if (response.error) {
-        reject(new Error(response.error_description || response.error || t('googleAuthOpenFailed') || 'Não foi possível abrir a autorização do Google.'));
-        return;
-      }
-      try {
-        saveToken(response);
-        resolve();
-      } catch (error) {
-        reject(error);
-      }
+      callback();
     };
-    try {
-      client.requestAccessToken({ prompt });
-    } catch (error) {
-      window.clearTimeout(timer);
-      reject(error instanceof Error ? error : new Error(t('googleAuthOpenFailed') || 'Não foi possível abrir a autorização do Google.'));
-    }
+    const timer = window.setTimeout(() => finish(() => reject(new Error(t('googleTimeout') || 'O login do Google Calendar demorou demais ou foi bloqueado. Permita pop-ups e tente novamente.'))), 90_000);
+    tokenClientErrorHandler = (error: any) => finish(() => reject(new Error(googleIdentityErrorMessage(error))));
+    client.callback = (response: GoogleTokenResponse) => {
+      if (response.error) return finish(() => reject(new Error(googleIdentityErrorMessage(response))));
+      finish(() => {
+        try { saveToken(response); resolve(); }
+        catch (error) { reject(error); }
+      });
+    };
+    try { client.requestAccessToken({ prompt }); }
+    catch (error) { finish(() => reject(new Error(googleIdentityErrorMessage(error)))); }
   });
 }
 
 export function disconnectGoogleCalendar(): void {
+  disconnectGoogleCalendarServerBridge();
   try {
     const token = readToken();
     if (token?.access_token && googleIdentityGlobal()?.accounts?.oauth2?.revoke) {
@@ -279,6 +338,16 @@ async function ensureAccessToken(promptFallback = true): Promise<string> {
 }
 
 async function googleFetch<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  if (await shouldUseServerGoogleCalendarBridge()) {
+    try { return await serverGoogleCalendarFetch<T>(path, init); }
+    catch (error) {
+      if (retry && error instanceof GoogleCalendarBridgeError && (error.code === 'GOOGLE_RECONNECT_REQUIRED' || error.status === 401)) {
+        await connectGoogleCalendarViaServer();
+        return serverGoogleCalendarFetch<T>(path, init);
+      }
+      throw error;
+    }
+  }
   const token = await ensureAccessToken();
   const response = await fetch(`${GOOGLE_API}${path}`, {
     ...init,
@@ -298,7 +367,7 @@ async function googleFetch<T>(path: string, init: RequestInit = {}, retry = true
   try { payload = text ? JSON.parse(text) : null; } catch { payload = { error: { message: text } }; }
   if (!response.ok) {
     const message = payload?.error?.message || payload?.error_description || `Google Calendar retornou erro ${response.status}.`;
-    throw new Error(`${message} Reconecte o Google Calendar no CrewCheck e confirme se o calendário selecionado permite edição.`);
+    throw new Error(`${message} Reconecte o Google Calendar no CrewCheck.`);
   }
   return payload as T;
 }
@@ -314,20 +383,13 @@ export function loadGoogleCalendarSettings(): GoogleCalendarSettings {
 }
 
 export function saveGoogleCalendarSettings(settings: GoogleCalendarSettings): GoogleCalendarSettings {
-  const saved: GoogleCalendarSettings = { ...defaultGoogleCalendarSettings(), ...settings };
+  const saved: GoogleCalendarSettings = { ...defaultGoogleCalendarSettings(), ...settings, selectedCalendarId: 'primary', selectedCalendarName: 'Calendário principal' };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(saved));
   return saved;
 }
 
 export async function listGoogleCalendars(): Promise<GoogleCalendarOption[]> {
-  const payload = await googleFetch<{ items?: Array<{ id: string; summary: string; primary?: boolean; accessRole?: string; backgroundColor?: string }> }>(
-    '/users/me/calendarList?minAccessRole=writer&showHidden=false'
-  );
-  const items: GoogleCalendarOption[] = (payload.items || [])
-    .filter((item) => item.id && item.summary)
-    .map((item) => ({ id: item.id, summary: item.summary, primary: item.primary, accessRole: item.accessRole, backgroundColor: item.backgroundColor }));
-  if (!items.some((item) => item.id === 'primary')) items.unshift({ id: 'primary', summary: 'Calendário principal', primary: true, accessRole: 'owner' });
-  return items;
+  return [{ id: 'primary', summary: 'Calendário principal', primary: true, accessRole: 'owner' }];
 }
 
 export async function getCalendarFeedInfo(): Promise<CalendarFeedInfo> {
@@ -348,7 +410,7 @@ export async function getCalendarFeedInfo(): Promise<CalendarFeedInfo> {
 }
 
 export async function syncRosterToGoogleCalendar(roster: CrewRoster, settings = loadGoogleCalendarSettings(), extras: GoogleCalendarSyncExtras = {}): Promise<GoogleSyncResult> {
-  const calendarId = settings.selectedCalendarId || 'primary';
+  const calendarId = 'primary';
   const mode = normalizeExportMode(settings.exportMode || 'flights-rest');
   const ical = generateICalendar(roster, extras.gymRecommendations, {
     mode,
@@ -591,7 +653,7 @@ function normalizeExportMode(mode: GoogleCalendarSyncMode): CalendarExportMode {
 }
 
 export function explainCalendarFeed(): string {
-  return 'Google Calendar direto via API: o CrewCheck pede autorização pelo Google Identity Services, lista seus calendários editáveis e sincroniza a escala sem duplicar eventos antigos do mesmo período.';
+  return 'Google Calendar direto e protegido: no Android, a autorização abre no navegador seguro; no web, o CrewCheck usa a conexão disponível e sincroniza somente eventos no calendário principal.';
 }
 
 export function googleCalendarSimpleLabel(): string {

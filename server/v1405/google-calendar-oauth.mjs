@@ -7,7 +7,6 @@ const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
-const FALLBACK_CLIENT_ID = '777637106343-1s0tejmffsrl6253hl6qp03idfu1mphf.apps.googleusercontent.com';
 const STORE_FILE = path.join(process.cwd(), '.crewcheck-google-oauth-store.json');
 const STATE_TTL_MS = 10 * 60_000;
 const TOKEN_REFRESH_SKEW_MS = 90_000;
@@ -26,7 +25,9 @@ function publicBaseUrl() {
 }
 
 function oauthConfig() {
-  const clientId = envAny(['GOOGLE_OAUTH_WEB_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_ID', 'VITE_GOOGLE_CLIENT_ID']) || FALLBACK_CLIENT_ID;
+  // Sem fallback embutido: client ID e configuracao. Um deploy sem a variavel
+  // precisa reprovar em `configured`, nao seguir usando o projeto de outro.
+  const clientId = envAny(['GOOGLE_OAUTH_WEB_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_ID', 'VITE_GOOGLE_CLIENT_ID']);
   const clientSecret = envAny(['GOOGLE_OAUTH_WEB_CLIENT_SECRET', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'GOOGLE_CLIENT_SECRET']);
   const redirectUri = envAny(['GOOGLE_OAUTH_REDIRECT_URI', 'GOOGLE_CALENDAR_REDIRECT_URI']) || `${publicBaseUrl()}/api/google-calendar/oauth/callback`;
   const encryptionSecret = envAny(['CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY', 'CREWCHECK_DATA_ENCRYPTION_KEY', 'CREWCHECK_AUTH_SECRET']);
