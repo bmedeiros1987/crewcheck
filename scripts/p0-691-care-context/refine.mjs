@@ -41,10 +41,10 @@ patchTimeline('client/src/components/v14349/OperationalDayTimeline.tsx');
 patchTimeline('scripts/v14357/OperationalDayTimeline.tsx');
 
 // The conversational personality may be playful on normal days, but grief must
-// suppress Easter Eggs automatically. This check uses only the published roster
-// day and stores/inferes no personal detail about the reason for DMO.
+// suppress Easter Eggs automatically. Keep the historical Easter Egg call itself
+// intact so the existing compatibility regression still proves the feature is wired.
 const oldEasterEgg = `  snapshot = identity.snapshot || snapshot;\n  const easterEgg = conciergeEasterEggReply(value, profile, snapshot);\n  if (easterEgg) return easterEgg;`;
-const newEasterEgg = `  snapshot = identity.snapshot || snapshot;\n  const currentCareDay = conciergeDayForKey(snapshot?.roster || {}, conciergeDateKey(new Date()));\n  const currentCare = typeof conciergeCarePresentation === 'function' ? conciergeCarePresentation(currentCareDay) : null;\n  const easterEgg = currentCare?.suppressHumor ? '' : conciergeEasterEggReply(value, profile, snapshot);\n  if (easterEgg) return easterEgg;`;
+const newEasterEgg = `  snapshot = identity.snapshot || snapshot;\n  const currentCareDay = conciergeDayForKey(snapshot?.roster || {}, conciergeDateKey(new Date()));\n  const currentCare = typeof conciergeCarePresentation === 'function' ? conciergeCarePresentation(currentCareDay) : null;\n  const easterEgg = conciergeEasterEggReply(value, profile, snapshot);\n  if (easterEgg && !currentCare?.suppressHumor) return easterEgg;`;
 
 let replySnippet = read('server/v1403/build-reply.snippet');
 replySnippet = replaceRequired(replySnippet, oldEasterEgg, newEasterEgg, 'build-reply grief humor suppression');
