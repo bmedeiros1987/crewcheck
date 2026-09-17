@@ -321,4 +321,5 @@ const premiumReplacement = `    const label = mode === 'today' ? 'Hoje' : 'Amanh
 premiumSnippet = replaceRequired(premiumSnippet, premiumAnchor, premiumReplacement, 'premium helper usa day explícito');
 write(premiumSnippetPath, premiumSnippet);
 
+await import('./refine.mjs');
 console.log(`${TAG} aplicado com sucesso.`);
