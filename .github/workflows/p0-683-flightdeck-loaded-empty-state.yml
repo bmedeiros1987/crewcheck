@@ -1,0 +1,33 @@
+name: P0 #683 FlightDeck loaded empty-state
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14353/flydeck-premium.snippet'
+      - 'scripts/regression-p0-683-flightdeck-loaded-empty-state.mjs'
+      - '.github/workflows/p0-683-flightdeck-loaded-empty-state.yml'
+      - 'scripts/v139/**'
+      - 'scripts/v14353/**'
+      - 'client/src/pages/Home.tsx'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Source contract
+        run: node scripts/regression-p0-683-flightdeck-loaded-empty-state.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Prepared contract
+        run: CHECK_PREPARED=1 node scripts/regression-p0-683-flightdeck-loaded-empty-state.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
