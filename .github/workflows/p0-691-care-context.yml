@@ -1,0 +1,41 @@
+name: P0 #691 care context
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/lib/rosterCodes.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'server.mjs'
+      - 'scripts/regression-p0-691-care-context.mjs'
+      - '.github/workflows/p0-691-care-context.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/lib/rosterCodes.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'server.mjs'
+      - 'scripts/regression-p0-691-care-context.mjs'
+      - '.github/workflows/p0-691-care-context.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  care-context:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Care semantics regression
+        run: node scripts/regression-p0-691-care-context.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build
