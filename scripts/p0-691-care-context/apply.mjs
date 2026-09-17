@@ -31,6 +31,36 @@ function replaceBetweenRequired(source, startMarker, endMarker, replacement, mar
   return `${source.slice(0, start)}${replacement}\n\n${source.slice(end)}`;
 }
 
+// Some anchors legitimately repeat verbatim at more than one call site (e.g.
+// the same day-off code list guards both a day summary and an event line
+// renderer). A plain single-shot replace would silently patch only the first
+// occurrence and leave the others stale/inconsistent. Replace every literal
+// occurrence, and treat "before" fully absent (already replaced everywhere)
+// as the idempotent success case rather than presence of "after" alone,
+// since "after" can appear from a single prior partial application.
+function replaceAllRequired(source, before, after, label) {
+  if (!source.includes(before)) {
+    if (source.includes(after)) return source;
+    throw new Error(`${TAG} âncora ausente: ${label}`);
+  }
+  return source.split(before).join(after);
+}
+
+// Named-import specifiers on a given module drift as other CrewCheck patches
+// land on main (more names get added to the same line). Anchoring on the
+// exact literal import statement makes this materializer brittle to that
+// drift. Insert the needed name into whatever the import list currently is,
+// instead of assuming today's exact text.
+function ensureNamedImport(source, modulePath, name, label) {
+  const pattern = new RegExp(`import \\{([^}]*)\\} from '${modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}';`);
+  const match = source.match(pattern);
+  if (!match) throw new Error(`${TAG} âncora ausente: ${label}`);
+  const names = match[1].split(',').map((n) => n.trim()).filter(Boolean);
+  if (names.includes(name)) return source;
+  names.unshift(name);
+  return source.replace(pattern, `import { ${names.join(', ')} } from '${modulePath}';`);
+}
+
 // ---------------------------------------------------------------------------
 // Shared client classification / Care Mode contract.
 // ---------------------------------------------------------------------------
@@ -109,6 +139,15 @@ export function careStateForScheduleActivity(activity: ScheduleActivityLike): Sc
   }
   if (formalState !== 'NONE') return formalState;
 
+  // Label/pairing/title fallbacks may only decide when the formal code
+  // concludes NOTHING at all (formalTokens empty) -- this mirrors the
+  // documented #303 source hierarchy just above (fallbackCodeValues exists
+  // for the "no published code at all" case, e.g. base rest inferred from
+  // continuity). A known-but-unrelated duty/reserve code (e.g. ASB) is a
+  // conclusive formal signal and must never be overwritten by a stray
+  // pairingCode/title/flightNumber: only the coarse DO/FOLGA wrapper above is
+  // allowed to be specialized by a published pairing code.
+  if (formalTokens.size > 0) return 'NONE';
   if (pairingSensitiveState !== 'NONE') return pairingSensitiveState;
   return resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
 }
@@ -180,10 +219,10 @@ write(classificationPath, classification);
 // ---------------------------------------------------------------------------
 const homePath = 'client/src/pages/Home.tsx';
 let home = read(homePath);
-home = replaceRequired(
+home = ensureNamedImport(
   home,
-  "import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';",
-  "import { careStateForScheduleActivity, isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';",
+  '@/lib/scheduleActivityClassification',
+  'careStateForScheduleActivity',
   'import de careStateForScheduleActivity',
 );
 home = replaceRequired(home, "    DR: 'Descanso regulamentar',", "    DR: 'Folga pedida',", 'rótulo DR');
@@ -195,16 +234,22 @@ if (!home.includes("    VC: 'Férias',") || !home.includes("    DMO: 'Luto',")) 
     'rótulos VC/DMO',
   );
 }
-home = replaceRequired(
+// Both the primary canonical-event selector (nextFlight) and its
+// chronological fallback (chronologicalNextRosterLeg) share this exact
+// filter; a care day must never surface as "next operational event" through
+// either path.
+home = replaceAllRequired(
   home,
-  ".filter((event) => !event.placeholder && isOperationalEvent(event))",
-  ".filter((event) => !event.placeholder && isOperationalEvent(event) && careStateForScheduleActivity(event) === 'NONE')",
+  ".filter((event) => !event.placeholder && isProgramScheduleActivity(event))",
+  ".filter((event) => !event.placeholder && isProgramScheduleActivity(event) && careStateForScheduleActivity(event) === 'NONE')",
   'selector FlightDeck ignora care days',
 );
-home = replaceRequired(
+// The same day-off code list guards both the day-summary copy and the
+// per-event line copy; both must recognize VC/DMO explicitly.
+home = replaceAllRequired(
   home,
-  "if (['DR', 'DO', 'DOF', 'DOP', 'OFF', 'FERIAS', 'FÉRIAS'].includes(code))",
-  "if (['DR', 'DO', 'DOF', 'DOP', 'OFF', 'VC', 'DMO', 'FERIAS', 'FÉRIAS'].includes(code))",
+  "['DR', 'DO', 'DOF', 'DOP', 'OFF', 'FERIAS', 'FÉRIAS'].includes(code)",
+  "['DR', 'DO', 'DOF', 'DOP', 'OFF', 'VC', 'DMO', 'FERIAS', 'FÉRIAS'].includes(code)",
   'copy de dia não operacional',
 );
 write(homePath, home);
