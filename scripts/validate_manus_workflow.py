@@ -4,6 +4,8 @@ import sys
 
 p = Path(sys.argv[1] if len(sys.argv) > 1 else '.github/workflows/manus-github-audit.yml')
 s = p.read_text()
+bootstrap_path = Path(sys.argv[2] if len(sys.argv) > 2 else '.github/workflows/manus-bridge-candidate-bootstrap.yml')
+bootstrap = bootstrap_path.read_text() if bootstrap_path.exists() else ''
 
 required = [
     'name: Manus audit bridge',
@@ -12,6 +14,7 @@ required = [
     'types: [created]',
     'workflow_dispatch:',
     'pr_number:',
+    'expected_sha:',
     "github.event.pull_request.number == 605",
     "github.event.pull_request.number == 626",
     "github.event.pull_request.number == 627",
@@ -30,6 +33,8 @@ required = [
     'test -n "$MANUS_GITHUB_CONNECTOR_ID"',
     'connectors: [$connector_id]',
     '[[ "$SHA" =~ ^[0-9a-f]{40}$ ]]',
+    'EXPECTED_SHA: ${{ inputs.expected_sha }}',
+    'RUN_SHA: ${{ github.sha }}',
     'share_visibility: "private"',
     'interactive_mode: false',
     'structured_output_schema:',
@@ -66,6 +71,16 @@ required = [
 
 for fragment in required:
     assert fragment in s, f'missing required fragment: {fragment}'
+
+bootstrap_required = [
+    "github.actor == 'bmedeiros1987'",
+    "github.event.pull_request.user.login == 'bmedeiros1987'",
+    'github.event.pull_request.head.repo.full_name == github.repository',
+    '--arg expected_sha "$HEAD_SHA"',
+    'inputs:{pr_number:$pr, expected_sha:$expected_sha}',
+]
+for fragment in bootstrap_required:
+    assert fragment in bootstrap, f'missing bootstrap trust/exact-SHA fragment: {fragment}'
 
 for forbidden in [
     'contents: write',
@@ -109,9 +124,11 @@ for fragment in [
 
 assert 'for attempt in $(seq 1 80)' in s, 'polling loop must be bounded'
 assert 'timeout-minutes: 30' in s, 'job must have a hard timeout'
+assert s.index('EXPECTED_SHA: ${{ inputs.expected_sha }}') < s.index('MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}'), 'immutable expected SHA must be available before Manus secret use'
+assert s.index('RUN_SHA: ${{ github.sha }}') < s.index('MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}'), 'workflow execution SHA must be available before Manus secret use'
 assert s.index('https://api.manus.ai/v2/task.create') < s.index('https://api.manus.ai/v2/task.listMessages'), 'polling must happen after task creation'
 assert s.index('current_sha=') < s.index('[MANUS-AUDIT] MANUS: MERGE'), 'exact-SHA revalidation must happen before publishing a merge verdict'
 assert s.index('if [ "$http_code" = "404" ]') < s.index('task.listMessages returned HTTP'), 'eventual-consistency 404 must be retried before hard failure'
 assert s.index('messages_type=') < s.index('.messages[] | select'), 'messages shape must be validated before any .messages[] iteration'
 assert s.endswith('\n'), 'workflow must end with a newline'
-print('PASS: authorized Manus trigger, cancellation isolation, private async task, bounded polling, 404/messages:null eventual-consistency retry, malformed messages fail-closed, transient transport retry, structured verdict, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
+print('PASS: authorized Manus trigger, trusted self-bootstrap actor, immutable expected-SHA gate before model call, cancellation isolation, private async task, bounded polling, 404/messages:null eventual-consistency retry, malformed messages fail-closed, transient transport retry, structured verdict, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
