@@ -1,0 +1,62 @@
+name: Manus bridge candidate bootstrap
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+      - '.github/workflows/manus-github-audit.yml'
+      - '.github/workflows/manus-github-audit-validate.yml'
+      - '.github/workflows/manus-bridge-candidate-bootstrap.yml'
+      - 'scripts/validate_manus_workflow.py'
+      - 'scripts/regression-manus-bridge-eventual-consistency.sh'
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+# Bridge changes need a way to audit the candidate bridge itself. Dispatch the
+# workflow at the PR head ref so the candidate implementation, not main's older
+# implementation, performs the exact-SHA round trip. Same-repository PRs only.
+concurrency:
+  group: manus-bridge-candidate-bootstrap-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch-candidate:
+    name: Dispatch candidate bridge self-audit
+    if: >-
+      github.repository == 'bmedeiros1987/crewcheck' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch candidate bridge at PR head ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$HEAD_REF"
+
+          payload="$(jq -n \
+            --arg ref "$HEAD_REF" \
+            --arg pr "$PR_NUMBER" \
+            '{ref:$ref, inputs:{pr_number:$pr}}')"
+
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "https://api.github.com/repos/${{ github.repository }}/actions/workflows/manus-github-audit.yml/dispatches" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --header 'Content-Type: application/json' \
+            --data-binary "$payload" >/dev/null
+
+          echo "Dispatched candidate Manus bridge for PR #$PR_NUMBER at $HEAD_REF ($HEAD_SHA)."
