@@ -7,6 +7,10 @@ on:
       - 'client/src/lib/rosterCodes.ts'
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
+      - 'server/v1403/telegram-human.mjs'
+      - 'server/v1403/premium-helpers.snippet'
+      - 'scripts/p0-691-care-context/apply.mjs'
+      - 'scripts/v139/apply.mjs'
       - 'scripts/regression-p0-691-care-context.mjs'
       - '.github/workflows/p0-691-care-context.yml'
   push:
@@ -16,6 +20,10 @@ on:
       - 'client/src/lib/rosterCodes.ts'
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
+      - 'server/v1403/telegram-human.mjs'
+      - 'server/v1403/premium-helpers.snippet'
+      - 'scripts/p0-691-care-context/apply.mjs'
+      - 'scripts/v139/apply.mjs'
       - 'scripts/regression-p0-691-care-context.mjs'
       - '.github/workflows/p0-691-care-context.yml'
 
@@ -25,15 +33,32 @@ permissions:
 jobs:
   care-context:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Care semantics regression
+      - name: Committed PR diff whitespace guard
+        if: github.event_name == 'pull_request'
+        run: git diff --check HEAD^1 HEAD^2
+      - name: Materialize Care Mode twice (idempotence)
+        run: |
+          node scripts/p0-691-care-context/apply.mjs
+          node scripts/p0-691-care-context/apply.mjs
+      - name: Care semantics regression on materialized source
+        run: node scripts/regression-p0-691-care-context.mjs
+      - name: Existing activity classification regression
+        run: node scripts/regression-v14-3-50-p0-activity-classification.mjs
+      - name: Existing rest versus overnight regression
+        run: node scripts/regression-p0-base-rest-vs-overnight.mjs
+      - name: Replay full canonical preparation
+        run: node scripts/v139/apply.mjs
+      - name: Care semantics regression after full preparation
         run: node scripts/regression-p0-691-care-context.mjs
       - name: TypeScript
         run: npx tsc --noEmit
