@@ -159,8 +159,13 @@ home = replaceRequired(
   'import de careStateForScheduleActivity',
 );
 home = replaceRequired(home, "    DR: 'Descanso regulamentar',", "    DR: 'Folga pedida',", 'rótulo DR');
-if (!home.includes("    VC: 'Férias',")) {
-  home = replaceRequired(home, "    OFF: 'Folga',\n    FERIAS: 'Férias',", "    OFF: 'Folga',\n    VC: 'Férias',\n    DMO: 'Luto',\n    FERIAS: 'Férias',", 'rótulos VC/DMO');
+if (!home.includes("    VC: 'Férias',") || !home.includes("    DMO: 'Luto',")) {
+  home = replaceRequired(
+    home,
+    "    OFF: 'Folga',\n    FERIAS: 'Férias',",
+    "    OFF: 'Folga',\n    VC: 'Férias',\n    DMO: 'Luto',\n    FERIAS: 'Férias',",
+    'rótulos VC/DMO',
+  );
 }
 home = replaceRequired(
   home,
@@ -215,8 +220,9 @@ function conciergeCarePresentation(day = null) {
 }`;
 if (!server.includes('function conciergeCareState(day = null)')) {
   const remoteStart = server.indexOf('const conciergeRemoteCodes = new Set(');
-  const remoteEnd = server.indexOf('\n', server.indexOf(']);', remoteStart));
-  if (remoteStart < 0 || remoteEnd < 0) throw new Error(`${TAG} conciergeRemoteCodes não localizado`);
+  const remoteClose = server.indexOf(']);', remoteStart);
+  const remoteEnd = server.indexOf('\n', remoteClose);
+  if (remoteStart < 0 || remoteClose < 0 || remoteEnd < 0) throw new Error(`${TAG} conciergeRemoteCodes não localizado`);
   server = `${server.slice(0, remoteEnd + 1)}${serverCareFunctions}\n${server.slice(remoteEnd + 1)}`;
 }
 server = replaceRequired(
@@ -232,38 +238,40 @@ write(serverPath, server);
 // ---------------------------------------------------------------------------
 const humanPath = 'server/v1403/telegram-human.mjs';
 let human = read(humanPath);
-const blankDayReplacement = `export function buildBlankDaySummary({ profile = {}, snapshot = {}, day = null, label = 'Hoje' } = {}) {
-  const greeting = premiumGreeting(profile, snapshot);
-  const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim().toUpperCase();
-  const type = normalize(day?.type);
-  const pairing = normalize(day?.pairingCode);
-  const code = type && type !== 'OTHER' ? type : (pairing || type);
-  const when = String(label || 'Hoje').trim();
-  const end = day?.restEnd || day?.offEnd || day?.folgaEnd || day?.dutyDebrief || day?.endTime || day?.dutyEnd;
-
-  if (code === 'DMO') {
-    return when.toLowerCase() === 'hoje'
-      ? 'Sua escala marca luto hoje. Sinto muito. Vou ficar mais discreto e só chamar sua atenção para algo realmente importante.'
-      : \\`${when}, sua escala marca luto. Vou manter o CrewCheck discreto e sem briefing operacional de rotina.\\`;
-  }
-  if (code === 'VC' || code === 'FERIAS') {
-    return when.toLowerCase() === 'hoje'
-      ? 'Você está de férias hoje. O CrewCheck fica quieto e mostra só o que você pedir.'
-      : \\`${when}, sua escala marca férias. Sem programação operacional.\\`;
-  }
-  if (['DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA'].includes(code)) {
-    if (end) return \\`${greeting} ${when.toLowerCase()}, sua folga termina às ${'${spokenTime(end)}'}. Depois desse horário, confirme a próxima programação publicada.\\`;
-    return when.toLowerCase() === 'hoje'
-      ? 'Hoje é folga. Sem programação operacional.'
-      : \\`${when} é folga. Sem programação operacional.\\`;
-  }
-  if (['REST', 'REPOUSO', 'DESCANSO', 'DESCANSO_REGULAMENTAR'].includes(code)) {
-    return when.toLowerCase() === 'hoje'
-      ? 'Hoje é repouso. Vou respeitar esse período e evitar briefing operacional de rotina.'
-      : \\`${when} é repouso. Sem briefing operacional de rotina.\\`;
-  }
-  return \\`${greeting} ${when.toLowerCase()}, seu dia está em branco na escala. Confirme com a escala antes de assumir que é folga.\\`;
-}`;
+const blankDayReplacement = [
+  "export function buildBlankDaySummary({ profile = {}, snapshot = {}, day = null, label = 'Hoje' } = {}) {",
+  '  const greeting = premiumGreeting(profile, snapshot);',
+  "  const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim().toUpperCase();",
+  '  const type = normalize(day?.type);',
+  '  const pairing = normalize(day?.pairingCode);',
+  "  const code = type && type !== 'OTHER' ? type : (pairing || type);",
+  "  const when = String(label || 'Hoje').trim();",
+  '  const end = day?.restEnd || day?.offEnd || day?.folgaEnd || day?.dutyDebrief || day?.endTime || day?.dutyEnd;',
+  '',
+  "  if (code === 'DMO') {",
+  "    return when.toLowerCase() === 'hoje'",
+  "      ? 'Sua escala marca luto hoje. Sinto muito. Vou ficar mais discreto e só chamar sua atenção para algo realmente importante.'",
+  '      : `${when}, sua escala marca luto. Vou manter o CrewCheck discreto e sem briefing operacional de rotina.`;',
+  '  }',
+  "  if (code === 'VC' || code === 'FERIAS') {",
+  "    return when.toLowerCase() === 'hoje'",
+  "      ? 'Você está de férias hoje. O CrewCheck fica quieto e mostra só o que você pedir.'",
+  '      : `${when}, sua escala marca férias. Sem programação operacional.`;',
+  '  }',
+  "  if (['DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA'].includes(code)) {",
+  '    if (end) return `${greeting} ${when.toLowerCase()}, sua folga termina às ${spokenTime(end)}. Depois desse horário, confirme a próxima programação publicada.`;',
+  "    return when.toLowerCase() === 'hoje'",
+  "      ? 'Hoje é folga. Sem programação operacional.'",
+  '      : `${when} é folga. Sem programação operacional.`;',
+  '  }',
+  "  if (['REST', 'REPOUSO', 'DESCANSO', 'DESCANSO_REGULAMENTAR'].includes(code)) {",
+  "    return when.toLowerCase() === 'hoje'",
+  "      ? 'Hoje é repouso. Vou respeitar esse período e evitar briefing operacional de rotina.'",
+  '      : `${when} é repouso. Sem briefing operacional de rotina.`;',
+  '  }',
+  '  return `${greeting} ${when.toLowerCase()}, seu dia está em branco na escala. Confirme com a escala antes de assumir que é folga.`;',
+  '}',
+].join('\n');
 human = replaceBetweenRequired(
   human,
   'export function buildBlankDaySummary(',
