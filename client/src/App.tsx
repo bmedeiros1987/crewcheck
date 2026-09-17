@@ -11,6 +11,7 @@ import InfoPage from "./pages/InfoPage";
 import LegalPage from "./pages/LegalPage";
 import OAuthVerificationPage from "./pages/OAuthVerificationPage";
 import WatchPage from "./pages/WatchPage";
+import PremiumTvPage from "./pages/PremiumTvPage";
 import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
 import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
@@ -130,6 +131,10 @@ function Router() {
     <Route path="/apple-watch">{() => <Protected><WatchPage device="apple" /></Protected>}</Route>
     <Route path="/aw">{() => <Protected><WatchPage device="apple" /></Protected>}</Route>
     <Route path="/watch/apple">{() => <Protected><WatchPage device="apple" /></Protected>}</Route>
+    <Route path="/tv">{() => <Protected><PremiumTvPage /></Protected>}</Route>
+    <Route path="/televisao">{() => <Protected><PremiumTvPage /></Protected>}</Route>
+    <Route path="/wall">{() => <Protected><PremiumTvPage /></Protected>}</Route>
+    <Route path="/display">{() => <Protected><PremiumTvPage /></Protected>}</Route>
     <Route path="/statistics">{() => <Protected><InfoPage page="statistics" /></Protected>}</Route>
     <Route path="/download">{() => <Protected><InfoPage page="download" /></Protected>}</Route>
     <Route path="/android">{() => <Protected><InfoPage page="download" /></Protected>}</Route>
