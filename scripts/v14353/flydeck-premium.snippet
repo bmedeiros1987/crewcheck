@@ -39,6 +39,16 @@ function flyDeckBriefingPhaseV14353(event: ZeroLeg, nowMs: number): string {
 function flyDeckLiveClockV14353(nowMs: number): string {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(nowMs));
 }
+function nextVacationRestV14353(events: ZeroLeg[], nowMs: number): ZeroLeg | null {
+  const futureRest = events
+    .filter((event) => !event.placeholder && event.canonical?.kind === 'rest')
+    .filter((event) => eventEndDateTime(event).getTime() >= nowMs)
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  return futureRest.find((event) => {
+    const code = String(event.day?.pairingCode || event.day?.type || event.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    return /(^|\s)(VC|FERIAS|VACATION)(\s|$)/.test(code);
+  }) || null;
+}
 
 function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
@@ -47,6 +57,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const alertCount = actionableComplianceAlerts(compliance).length;
   const departureEligible = loaded && !event.placeholder && isSmartDepartureEligible(event);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const vacationEvent = nextVacationRestV14353(events, nowMs);
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
     return () => window.clearInterval(timer);
@@ -57,8 +68,8 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
       <header className="cc-flydeck-topline"><div><small>FLYDECK</small><h1>Briefing operacional</h1></div><span className="cc-flydeck-live"><i/> SISTEMA ATIVO</span></header>
       <article className="cc-flydeck-empty">
         <Upload aria-hidden="true"/>
-        <div><h2>{loaded ? 'Sem programação futura' : 'Importe a escala oficial'}</h2><p>{loaded ? 'Confira o período importado ou sincronize novamente.' : 'O briefing aparecerá aqui com os dados reais da próxima programação.'}</p></div>
-        <button onClick={onUpload}>{loaded ? 'Reimportar escala' : 'Importar PDF'}</button>
+        <div><h2>{loaded ? (vacationEvent ? 'Férias na escala' : 'Sem programação operacional futura') : 'Importe a escala oficial'}</h2><p>{loaded ? (vacationEvent ? 'Sua escala está carregada. O FlightDeck volta a destacar a próxima programação operacional quando houver.' : 'Sua escala está carregada, mas não há uma próxima programação operacional neste período.') : 'O briefing aparecerá aqui com os dados reais da próxima programação.'}</p></div>
+        <button onClick={() => loaded ? setView('roster') : onUpload()}>{loaded ? 'Ver escala' : 'Importar PDF'}</button>
       </article>
       <aside className="cc-flydeck-official-note"><ShieldCheck aria-hidden="true"/><p><strong>Fonte operacional</strong> O CrewCheck organiza dados importados e não substitui a escala oficial nem as comunicações da empresa. Em caso de divergência, prevalece a fonte oficial.</p></aside>
     </main></>;
