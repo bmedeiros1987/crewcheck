@@ -17,9 +17,11 @@ permissions:
   contents: read
   pull-requests: read
 
-# Bridge changes need a way to audit the candidate bridge itself. Dispatch the
-# workflow at the PR head ref so the candidate implementation, not main's older
-# implementation, performs the exact-SHA round trip. Same-repository PRs only.
+# Bridge changes need a way to audit the candidate bridge itself. The candidate
+# workflow executes from the PR head with repository Actions context, so the
+# self-bootstrap is deliberately restricted to a same-repository PR authored
+# and triggered by the trusted repository owner. Forks and other actors cannot
+# dispatch a candidate workflow with repository credentials.
 concurrency:
   group: manus-bridge-candidate-bootstrap-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -29,11 +31,13 @@ jobs:
     name: Dispatch candidate bridge self-audit
     if: >-
       github.repository == 'bmedeiros1987/crewcheck' &&
+      github.actor == 'bmedeiros1987' &&
+      github.event.pull_request.user.login == 'bmedeiros1987' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Dispatch candidate bridge at PR head ref
+      - name: Dispatch candidate bridge at immutable PR head
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -48,7 +52,8 @@ jobs:
           payload="$(jq -n \
             --arg ref "$HEAD_REF" \
             --arg pr "$PR_NUMBER" \
-            '{ref:$ref, inputs:{pr_number:$pr}}')"
+            --arg expected_sha "$HEAD_SHA" \
+            '{ref:$ref, inputs:{pr_number:$pr, expected_sha:$expected_sha}}')"
 
           curl --fail-with-body --silent --show-error \
             --request POST \
