@@ -81,18 +81,14 @@ function parseDate(value?: string): Date | null {
   return null;
 }
 
-function relevanceFor(title: string, source: FeedConfig, airports: string[]) {
+function baseRelevanceFor(title: string, source: FeedConfig) {
   const upper = title.toUpperCase();
   let score = source.id === 'brazil-official' ? 3 : source.sourceKind === 'official' ? 2 : 0;
-  for (const airport of airports) {
-    const code = String(airport || '').trim().toUpperCase();
-    if (code && upper.includes(code)) score += 7;
-  }
   if (/ANAC|DECEA|INFRAERO|EMBRAER|LATAM|AEROPORTO|AVIATION|AVIAÇÃO/.test(upper)) score += 2;
   return score;
 }
 
-async function fetchFeed(feed: FeedConfig, airports: string[]): Promise<AviationNewsItem[]> {
+async function fetchFeed(feed: FeedConfig): Promise<AviationNewsItem[]> {
   const requestUrl = `${RSS2JSON_ENDPOINT}?rss_url=${encodeURIComponent(feed.rssUrl)}`;
   const response = await fetch(requestUrl, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Feed ${feed.label} indisponível.`);
@@ -105,7 +101,7 @@ async function fetchFeed(feed: FeedConfig, airports: string[]): Promise<Aviation
       const date = parseDate(item.pubDate);
       if (!title || !item.link) return null;
       if (date && now - date.getTime() > MAX_ITEM_AGE_MS) return null;
-      const relevance = relevanceFor(title, feed, airports) + (date ? Math.max(0, 4 - Math.floor((now - date.getTime()) / 86_400_000)) : 0);
+      const relevance = baseRelevanceFor(title, feed) + (date ? Math.max(0, 4 - Math.floor((now - date.getTime()) / 86_400_000)) : 0);
       return {
         id: String(item.guid || item.link || `${feed.id}-${index}`),
         title,
@@ -141,6 +137,8 @@ function readCache(): { savedAt: number; items: AviationNewsItem[] } | null {
 
 function writeCache(items: AviationNewsItem[]) {
   try {
+    // Cache only source/recency relevance. Route/base boosts are applied at read time,
+    // so one user's previous route cannot bias a later airport context.
     window.localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items: items.slice(0, 18) }));
   } catch {}
 }
@@ -157,30 +155,29 @@ function rescore(items: AviationNewsItem[], airports: string[]) {
   });
 }
 
+function sortContextual(items: AviationNewsItem[], airports: string[], limit: number) {
+  return rescore(items, airports)
+    .sort((a, b) => b.relevance - a.relevance || String(b.publishedAt || '').localeCompare(String(a.publishedAt || '')))
+    .slice(0, limit);
+}
+
 export async function loadAviationNews(airports: string[] = [], limit = 6): Promise<{ items: AviationNewsItem[]; stale: boolean }> {
   const cleanAirports = [...new Set(airports.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean))];
   const cached = readCache();
   if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) {
-    const items = rescore(cached.items, cleanAirports)
-      .sort((a, b) => b.relevance - a.relevance || String(b.publishedAt || '').localeCompare(String(a.publishedAt || '')))
-      .slice(0, limit);
-    return { items, stale: false };
+    return { items: sortContextual(cached.items, cleanAirports, limit), stale: false };
   }
 
-  const settled = await Promise.allSettled(FEEDS.map((feed) => fetchFeed(feed, cleanAirports)));
-  const fresh = dedupe(settled.flatMap((result) => result.status === 'fulfilled' ? result.value : []))
-    .sort((a, b) => b.relevance - a.relevance || String(b.publishedAt || '').localeCompare(String(a.publishedAt || '')));
+  const settled = await Promise.allSettled(FEEDS.map((feed) => fetchFeed(feed)));
+  const fresh = dedupe(settled.flatMap((result) => result.status === 'fulfilled' ? result.value : []));
 
   if (fresh.length) {
     writeCache(fresh);
-    return { items: fresh.slice(0, limit), stale: false };
+    return { items: sortContextual(fresh, cleanAirports, limit), stale: false };
   }
 
   if (cached?.items?.length) {
-    return {
-      items: rescore(cached.items, cleanAirports).sort((a, b) => b.relevance - a.relevance).slice(0, limit),
-      stale: true,
-    };
+    return { items: sortContextual(cached.items, cleanAirports, limit), stale: true };
   }
 
   return { items: [], stale: true };
