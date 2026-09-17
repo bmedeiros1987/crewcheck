@@ -1,0 +1,37 @@
+name: P0 #525 stay physical association
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'scripts/regression-p0-525-stay-physical-association.mjs'
+      - '.github/workflows/p0-525-stay-physical-association.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'scripts/regression-p0-525-stay-physical-association.mjs'
+      - '.github/workflows/p0-525-stay-physical-association.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stay-physical-association:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Physical boundary regression
+        run: node scripts/regression-p0-525-stay-physical-association.mjs
+      - name: Existing journey-rest contract
+        run: node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
