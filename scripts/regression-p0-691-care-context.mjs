@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
+const read = (relativePath) => fs.readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
+
 const harness = loadClientModules({
   prefix: 'crewcheck-p0-691-care-',
   stubs: TYPE_ONLY_PDF_PARSER_STUB,
@@ -39,6 +41,8 @@ const cases = [
   ['FÉRIAS', 'FERIAS', 'Férias'],
   ['DO', 'FOLGA', 'Folga'],
   ['DOF', 'FOLGA', 'Folga'],
+  ['DOP', 'FOLGA', 'Folga'],
+  ['DOPR', 'FOLGA', 'Folga'],
   ['OFF', 'FOLGA', 'Folga'],
   ['DR', 'FOLGA', 'Folga'],
   ['REST', 'REPOUSO', 'Repouso'],
@@ -61,6 +65,19 @@ for (const [code, expectedState, expectedLabel] of cases) {
 assert.equal(classification.isRequestedDayOff(activity('DR')), true, 'DR remains requested day off');
 assert.equal(classification.careStateForScheduleActivity(activity('XYZ')), 'NONE', 'unknown code must not invent a care state');
 
+// Formal code must win over a misleading label/pairing. Care cannot be inferred
+// from arbitrary raw text because that could turn an operational day into grief/vacation.
+assert.equal(
+  classification.careStateForScheduleActivity(activity('DO', { pairingCode: 'DMO' })),
+  'FOLGA',
+  'formal DO must remain day off even if a fallback label says DMO',
+);
+assert.equal(
+  classification.careStateForScheduleActivity({ kind: 'duty', type: 'ASB', day: { type: 'ASB', rawText: 'comentário menciona luto' } }),
+  'NONE',
+  'raw text must never invent a grief state',
+);
+
 const grief = classification.carePresentationForScheduleActivity(activity('DMO'));
 assert.equal(grief?.suppressRoutineProactivity, true, 'luto suppresses routine proactivity');
 assert.equal(grief?.suppressHumor, true, 'luto suppresses humor');
@@ -71,22 +88,54 @@ assert.doesNotMatch(grief?.message || '', /quem|familiar|causa|motivo/i, 'luto c
 const vacation = classification.carePresentationForScheduleActivity(activity('VC'));
 assert.equal(vacation?.suppressRoutineProactivity, true, 'férias suppress routine work briefing');
 assert.equal(vacation?.suppressHumor, false, 'férias need not globally suppress configured personality');
+assert.match(vacation?.message || '', /férias/i, 'vacation must be presented as vacation, not generic day off');
 
 const dayOff = classification.carePresentationForScheduleActivity(activity('DO'));
 assert.match(dayOff?.message || '', /Sem programação operacional/i, 'folga must be explicit, not roster-empty');
 
+const recovery = classification.carePresentationForScheduleActivity(activity('REST'));
+assert.match(recovery?.message || '', /repouso/i, 'recovery rest must remain distinct from day off/vacation/grief');
+
 // Server/Concierge integration gate: DMO must be inactive and the server must
 // have a dedicated care path so /hoje never falls through to generic programming.
-const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
+const server = read('server.mjs');
 assert.match(server, /conciergeInactiveCodes[^\n]*DMO|DMO[^\n]*conciergeInactiveCodes/s, 'Concierge inactive codes must include DMO');
-assert.match(server, /conciergeCareState|careStateForConcierge|conciergeCarePresentation/, 'Concierge must have an explicit care-state resolver');
+assert.match(server, /function conciergeCareState|function conciergeCarePresentation/, 'Concierge must have an explicit care-state resolver');
+assert.match(server, /conciergeCareState\(day\)\s*!==\s*'NONE'/, 'program record builder must exclude care days before briefing selection');
 assert.match(server, /Sinto muito/, 'Concierge luto response must be compassionate');
 assert.match(server, /Férias/, 'Concierge must present vacation explicitly');
 assert.match(server, /Hoje é folga|Hoje é uma folga|Sem programação operacional/, 'Concierge must present day off explicitly');
 
+// The shared human renderer is where `/hoje` lands when no operational record is
+// selected. It must distinguish care days instead of declaring the roster blank.
+const human = read('server/v1403/telegram-human.mjs');
+assert.match(human, /code === 'DMO'[\s\S]*?Sinto muito/, 'blank-day renderer must have dedicated grief copy');
+assert.match(human, /code === 'VC'[\s\S]*?FERIAS[\s\S]*?férias/i, 'blank-day renderer must have dedicated vacation copy');
+assert.match(human, /\['DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA'\][\s\S]*?Sem programação operacional/, 'blank-day renderer must have dedicated day-off copy');
+assert.match(human, /REST[\s\S]*?REPOUSO[\s\S]*?repouso/i, 'blank-day renderer must keep recovery rest distinct');
+
+// Home/FlightDeck must use human labels and must never let a care day become the
+// "next operational event" just because an older canonical snapshot typed it as duty.
+const home = read('client/src/pages/Home.tsx');
+assert.match(home, /careStateForScheduleActivity/, 'Home/FlightDeck must consume the shared care semantic layer');
+assert.match(home, /careStateForScheduleActivity\(event\) === 'NONE'/, 'nextFlight selector must skip care days and continue to the next real operation');
+assert.match(home, /VC:\s*'Férias'/, 'Home must label VC as Férias');
+assert.match(home, /DMO:\s*'Luto'/, 'Home must label DMO as Luto');
+assert.match(home, /DR:\s*'Folga pedida'/, 'Home must not label DR as regulatory rest');
+
 // Existing roster code remains the source for DMO meaning; do not invent a new parser code.
-const rosterCodes = fs.readFileSync(new URL('../client/src/lib/rosterCodes.ts', import.meta.url), 'utf8');
+const rosterCodes = read('client/src/lib/rosterCodes.ts');
 assert.match(rosterCodes, /code:\s*'DMO'[\s\S]*?description:\s*'Luto'/, 'DMO must remain mapped to Luto in the published code catalog');
+
+// The canonical preparation chain must reproduce the care patch on fresh build
+// workspaces. This prevents a green source-only test with a stale prepared bundle.
+const preparation = read('scripts/v139/apply.mjs');
+assert.match(preparation, /p0-691-care-context\/apply\.mjs/, 'full source preparation must include the Care Mode materializer');
+const materializer = read('scripts/p0-691-care-context/apply.mjs');
+assert.match(materializer, /careStateForScheduleActivity/, 'care materializer must patch the shared classification');
+assert.match(materializer, /conciergeCareState/, 'care materializer must patch Concierge runtime');
+assert.match(materializer, /buildBlankDaySummary/, 'care materializer must patch the human blank-day renderer');
+assert.doesNotMatch(materializer, /server\/rosterParser|aimsParser|complianceEngine/, 'Care Mode must not patch parser/APZ/journey/compliance engines');
 
 harness.cleanup();
 console.log('OK regression-p0-691-care-context');
