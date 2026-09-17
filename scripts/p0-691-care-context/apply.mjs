@@ -73,15 +73,43 @@ const careFunctions = `function resolveCareState(tokens: ReadonlySet<string>): S
   return 'NONE';
 }
 
+function publishedPairingTokens(activity: ScheduleActivityLike): Set<string> {
+  const published = activity.canonical?.publishedDay;
+  return tokensOfValues([
+    activity.pairingCode,
+    activity.day?.pairingCode,
+    published?.pairingCode,
+  ].map(normalize).filter(Boolean));
+}
+
 /**
- * Semântica humana separada da classificação operacional. O código formal
- * publicado sempre tem precedência; pairing/labels só entram quando o nível
- * formal não resolve. Raw text nunca cria luto/férias por inferência frouxa.
+ * Semântica humana separada da classificação operacional.
+ *
+ * O parser legado normaliza alguns códigos publicados de descanso para um tipo
+ * amplo (por exemplo, VC pode chegar como type=DO + pairingCode=VC). Por isso o
+ * código formal continua soberano para decidir que o dia é não-operacional, mas
+ * o pairingCode publicado pode especializar DO em Férias/Luto. Título/rawText
+ * nunca ganham esse poder e não podem inventar um estado sensível.
  */
 export function careStateForScheduleActivity(activity: ScheduleActivityLike): ScheduleCareState {
   if (!activity || activity.placeholder) return 'NONE';
-  const formalState = resolveCareState(tokensOfValues(formalCodeValues(activity)));
+  const formalTokens = tokensOfValues(formalCodeValues(activity));
+  const formalState = resolveCareState(formalTokens);
+  const pairingTokens = publishedPairingTokens(activity);
+  const pairingSensitiveState = matchesCodes(pairingTokens, GRIEF_CODES)
+    ? 'LUTO'
+    : (matchesCodes(pairingTokens, VACATION_CODES) ? 'FERIAS' : 'NONE');
+
+  // DO is a known coarse wrapper emitted by the PDF parser for VC/OFF/DOP.
+  // Only a published pairing code may specialize that wrapper; arbitrary labels
+  // and raw text remain incapable of creating grief/vacation semantics.
+  if (formalState === 'FOLGA' && pairingSensitiveState !== 'NONE') {
+    const coarseDayOff = [...formalTokens].some((token) => ['DO', 'FOLGA'].includes(token));
+    if (coarseDayOff) return pairingSensitiveState;
+  }
   if (formalState !== 'NONE') return formalState;
+
+  if (pairingSensitiveState !== 'NONE') return pairingSensitiveState;
   return resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
 }
 
@@ -200,6 +228,9 @@ const serverCareFunctions = `function conciergeCareCode(day = null) {
   const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim().toUpperCase();
   const type = normalize(day?.type);
   const pairing = normalize(day?.pairingCode);
+  // VC/DOP/OFF may be normalized by the parser as type=DO while the exact
+  // published code remains in pairingCode. Preserve the exact published code.
+  if (type === 'DO' && pairing) return pairing;
   return type && type !== 'OTHER' ? type : (pairing || type);
 }
 function conciergeCareState(day = null) {
@@ -244,7 +275,7 @@ const blankDayReplacement = [
   "  const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim().toUpperCase();",
   '  const type = normalize(day?.type);',
   '  const pairing = normalize(day?.pairingCode);',
-  "  const code = type && type !== 'OTHER' ? type : (pairing || type);",
+  "  const code = type === 'DO' && pairing ? pairing : (type && type !== 'OTHER' ? type : (pairing || type));",
   "  const when = String(label || 'Hoje').trim();",
   '  const end = day?.restEnd || day?.offEnd || day?.folgaEnd || day?.dutyDebrief || day?.endTime || day?.dutyEnd;',
   '',
