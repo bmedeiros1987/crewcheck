@@ -6,12 +6,16 @@ on:
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'client/src/lib/rosterCodes.ts'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v14349/OperationalDayTimeline.tsx'
       - 'server.mjs'
       - 'server/v1403/telegram-human.mjs'
       - 'server/v1403/premium-helpers.snippet'
-      - 'scripts/p0-691-care-context/apply.mjs'
+      - 'server/v1403/build-reply.snippet'
+      - 'scripts/v14357/OperationalDayTimeline.tsx'
+      - 'scripts/p0-691-care-context/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-p0-691-care-context.mjs'
+      - 'scripts/regression-p0-691-care-ui.mjs'
       - '.github/workflows/p0-691-care-context.yml'
   push:
     branches: [main]
@@ -19,12 +23,16 @@ on:
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'client/src/lib/rosterCodes.ts'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v14349/OperationalDayTimeline.tsx'
       - 'server.mjs'
       - 'server/v1403/telegram-human.mjs'
       - 'server/v1403/premium-helpers.snippet'
-      - 'scripts/p0-691-care-context/apply.mjs'
+      - 'server/v1403/build-reply.snippet'
+      - 'scripts/v14357/OperationalDayTimeline.tsx'
+      - 'scripts/p0-691-care-context/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-p0-691-care-context.mjs'
+      - 'scripts/regression-p0-691-care-ui.mjs'
       - '.github/workflows/p0-691-care-context.yml'
 
 permissions:
@@ -52,14 +60,22 @@ jobs:
           node scripts/p0-691-care-context/apply.mjs
       - name: Care semantics regression on materialized source
         run: node scripts/regression-p0-691-care-context.mjs
+      - name: Care UI/personality regression on materialized source
+        run: node scripts/regression-p0-691-care-ui.mjs
       - name: Existing activity classification regression
         run: node scripts/regression-v14-3-50-p0-activity-classification.mjs
       - name: Existing rest versus overnight regression
         run: node scripts/regression-p0-base-rest-vs-overnight.mjs
+      - name: Existing Concierge Easter Egg compatibility
+        run: node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
       - name: Replay full canonical preparation
         run: node scripts/v139/apply.mjs
       - name: Care semantics regression after full preparation
         run: node scripts/regression-p0-691-care-context.mjs
+      - name: Care UI/personality regression after full preparation
+        run: CHECK_PREPARED=1 node scripts/regression-p0-691-care-ui.mjs
+      - name: Easter Egg compatibility after full preparation
+        run: node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Production build
