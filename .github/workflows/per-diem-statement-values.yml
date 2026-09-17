@@ -1,0 +1,40 @@
+name: Per diem statement values
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialRules.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-demonstrated-per-diem-values.mjs'
+      - 'scripts/regression-v13-9-8-act-compensation-roster-precision.mjs'
+      - '.github/workflows/per-diem-statement-values.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialRules.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-demonstrated-per-diem-values.mjs'
+      - 'scripts/regression-v13-9-8-act-compensation-roster-precision.mjs'
+      - '.github/workflows/per-diem-statement-values.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify demonstrated values and financial integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs
+          node scripts/regression-p1-demonstrated-per-diem-values.mjs
+          node scripts/regression-v13-9-8-act-compensation-roster-precision.mjs
+          npx tsc --noEmit --pretty false

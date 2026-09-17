@@ -22,10 +22,10 @@ assert.equal(policy.freeDayPostponementIndemnity(4.01), 700);
 assert.equal(policy.freeDayPostponementIndemnity(12, true), 0);
 assert.equal(policy.freeDayPostponementIndemnity(12.01, true), 700);
 
-// Referência pública dos ACTs Latam 2025/2027 (SNA): manter separada de valores
-// observados em demonstrativos, que podem superar os pisos do ACT.
+// O perfil jurídico continua referenciado ao ACT. O default operacional nacional,
+// porém, vem de demonstrativo confirmado e não altera os demais valores por inferência.
 assert.match(financialRulesSource, /ACT-LATAM-2025-2027\.2025-12-SNA/);
-assert.match(financialRulesSource, /key: 'domestic'[\s\S]{0,100}?mainMeal: 105\.04/);
+assert.match(financialRulesSource, /key: 'domestic'[\s\S]{0,180}?mainMeal: DOMESTIC_MAIN_MEAL_BRL/);
 assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?dayKm: 0\.057349/);
 assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?nightKm: 0\.114698/);
 assert.match(financialRulesSource, /const CABIN_RATES[\s\S]{0,250}?reserveHour: 48\.75/);
@@ -36,7 +36,7 @@ assert.match(financialRulesSource, /embraer_first_officer:[\s\S]{0,250}?reserveH
 assert.match(financialRulesSource, /embraer_commander:[\s\S]{0,250}?reserveHour: 134\.90[\s\S]{0,250}?standbyHour: 44\.96/);
 assert.match(financialRulesSource, /north_america'[\s\S]{0,100}?mainMeal: 25\.70/);
 assert.match(financialRulesSource, /europe'[\s\S]{0,100}?mainMeal: 23\.00/);
-assert.match(financialRulesSource, /breakfastPercent: 0\.25/);
+assert.match(financialRulesSource, /breakfastPercent: BREAKFAST_PERCENT/);
 assert.match(financialRulesSource, /readRegisteredCrewFunction\(\) \|\| legal\.functionLabel/);
 
 // O cadastro precisa coletar a função antes de criar a conta e preservar o perfil
