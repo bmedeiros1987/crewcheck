@@ -1,4 +1,6 @@
 import { freshness, type TvSnapshot } from "./index";
+import { invokeTvRequest } from "./nativeRequest";
+
 export type DeviceCredential = {
   deviceId: string;
   token: string;
@@ -6,10 +8,40 @@ export type DeviceCredential = {
   privacy: "family" | "private";
 };
 export type TvStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type SnapshotValidationCode =
+  | "schema"
+  | "device"
+  | "privacy"
+  | "time"
+  | "days_type"
+  | "days_count"
+  | "summary"
+  | "changes"
+  | "ticker";
+
 const KEY = "crewcheck-tv-v1";
+
+export function snapshotValidationCode(
+  raw: any,
+  credential: DeviceCredential,
+  receivedAt: number,
+): SnapshotValidationCode | null {
+  if (raw?.schemaVersion !== 1) return "schema";
+  if (raw?.deviceId !== credential.deviceId) return "device";
+  if (raw?.privacy !== credential.privacy) return "privacy";
+  if (freshness(raw, receivedAt) === "unknown") return "time";
+  if (!Array.isArray(raw?.days)) return "days_type";
+  if (raw.days.length > 31) return "days_count";
+  if (!raw?.summary || typeof raw.summary !== "object") return "summary";
+  if (!Array.isArray(raw?.changes)) return "changes";
+  if (!Array.isArray(raw?.ticker)) return "ticker";
+  return null;
+}
+
 export class TvSession {
   credential: DeviceCredential | null = null;
-  snapshot: TvSnapshot | null = null;\n  private serverOffsetMs = 0;\n  private serverClockKnown = false;
+  snapshot: TvSnapshot | null = null;
+
   constructor(
     private storage: TvStorage,
     private request: typeof fetch,
@@ -23,8 +55,7 @@ export class TvSession {
     )
       throw new Error("HTTPS required");
   }
-  // Credential intentionally stays in memory until platform secure storage is
-  // verified. Cold launch requires pairing; snapshot alone never restores access.
+
   pair(credential: DeviceCredential) {
     this.clear();
     if (
@@ -36,6 +67,7 @@ export class TvSession {
       throw new Error("invalid_credential");
     this.credential = credential;
   }
+
   clear() {
     this.credential = null;
     this.snapshot = null;
@@ -43,10 +75,8 @@ export class TvSession {
       this.storage.removeItem(KEY);
     } catch {}
   }
+
   async call(path: string, body?: unknown) {
-    // webOS TV 4.x uses Chromium 53, which predates AbortController.
-    // Keep the same 8s lease with Promise.race and only attach a signal when
-    // the platform actually provides AbortController.
     const Controller =
       typeof AbortController === "function" ? AbortController : null;
     const controller = Controller ? new Controller() : null;
@@ -73,7 +103,7 @@ export class TvSession {
         }, 8000);
       });
       response = await Promise.race([
-        this.request(`${this.origin}/api/tv/${path}`, init),
+        invokeTvRequest(this.request, `${this.origin}/api/tv/${path}`, init),
         timeout,
       ]);
     } finally {
@@ -86,6 +116,7 @@ export class TvSession {
     if (!response.ok) throw new Error(`request_${response.status}`);
     return response.json();
   }
+
   async sync(now?: number) {
     const requestedAt = now ?? Date.now();
     const credential = this.credential;
@@ -93,34 +124,23 @@ export class TvSession {
       this.clear();
       throw new Error("pair_again");
     }
+
     const raw = await this.call("snapshot");
-    // Ignore delayed responses from a prior pairing/logout.
     if (this.credential !== credential) throw new Error("session_changed");
-    // The server generates a snapshot after the request began. Comparing it to
-    // request-start time incorrectly marks a normal fresh response as future.
-    // Production samples again AFTER receiving/parsing it; explicit test time
-    // remains deterministic. Future observations still fail closed.
-    const receivedAt = correctedNow();
+
+    const receivedAt = now ?? Date.now();
     if (Date.parse(credential.expiresAt) <= receivedAt) {
       this.clear();
       throw new Error("pair_again");
     }
-    if (
-      raw.schemaVersion !== 1 ||
-      raw.deviceId !== credential.deviceId ||
-      raw.privacy !== credential.privacy ||
-      freshness(raw, receivedAt) === "unknown" ||
-      !Array.isArray(raw.days) ||
-      raw.days.length > 31 ||
-      !raw.summary ||
-      !Array.isArray(raw.changes) ||
-      !Array.isArray(raw.ticker)
-    ) {
+
+    const invalid = snapshotValidationCode(raw, credential, receivedAt);
+    if (invalid) {
       this.clear();
-      throw new Error("invalid_snapshot");
+      throw new Error(`invalid_snapshot_${invalid}`);
     }
+
     this.snapshot = raw;
-    // Shared televisions never persist private snapshots to unverified storage.
     if (raw.privacy === "family")
       try {
         this.storage.setItem(
@@ -130,12 +150,12 @@ export class TvSession {
       } catch {}
     return this.snapshot;
   }
+
   offline(now = Date.now()) {
     if (!this.credential || Date.parse(this.credential.expiresAt) <= now) {
       this.clear();
       return null;
     }
-    // Offline leases cap exposure when remote revocation cannot be observed.
     if (
       !this.snapshot ||
       now - Date.parse(this.snapshot.generatedAt) > 900000
