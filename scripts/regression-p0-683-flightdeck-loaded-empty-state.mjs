@@ -10,6 +10,7 @@ function assertUiContract(source, label) {
   assert.ok(source.includes("vacationEvent ? 'Férias na escala' : 'Sem programação operacional futura'"), `${label}: vacation context must be explicit without pretending the roster is missing`);
   assert.ok(source.includes("event.canonical?.kind === 'rest'"), `${label}: vacation context must come from canonical rest events`);
   assert.ok(source.includes("pairingCode || event.day?.type"), `${label}: vacation detection must use published roster code evidence`);
+  assert.ok(!source.includes("event.day?.pairingCode || event.day?.type || event.title"), `${label}: display-only title must never invent vacation state without published roster evidence`);
 }
 
 const snippet = fs.readFileSync('scripts/v14353/flydeck-premium.snippet', 'utf8');
