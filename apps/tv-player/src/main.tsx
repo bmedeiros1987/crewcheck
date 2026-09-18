@@ -17,7 +17,7 @@ const demo = config.VITE_TV_DEMO === "true";
 const enabled = demo || config.VITE_CREWCHECK_TV_ENABLED === "true";
 const platform = config.VITE_TV_PLATFORM || "android-tv";
 const legacyWebOS4 =
-  platform === "lg-webos" && /Chrome\\/(?:[0-5]\\d)\\./.test(navigator.userAgent);
+  platform === "lg-webos" && navigator.userAgent.indexOf("Chrome/53.") !== -1;
 if (legacyWebOS4) document.documentElement.classList.add("legacy-webos4");
 const session = new TvSession(
   sessionStorage,
