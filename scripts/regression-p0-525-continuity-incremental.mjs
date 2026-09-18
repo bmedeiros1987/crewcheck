@@ -69,6 +69,16 @@ try {
   assert.deepEqual(gapStaged, gapFull, 'segmented fresh/staged normalization must converge');
   assert.deepEqual(complete(gapStaged, roster), gapStaged, 'segment reprocessing must not duplicate stays');
 
+  // A republication can insert a source day inside an old inferred interval or
+  // change its end. Recomposition must not preserve now-contradicted derivatives.
+  const withInsertedDay = complete([...gapPart, b], roster);
+  assert.deepEqual(withInsertedDay, complete([a, b, laterB], roster), 'new published activity inside old gap must invalidate stale inferred segments');
+  assert.equal(markers(withInsertedDay).length, 1, 'old multiday stays cannot survive an intervening published flight');
+  const revisedB = { ...b, dutyReport: '09:10' };
+  const withRevisedBoundary = complete([...first.filter((day) => day !== b), revisedB, c, d], roster);
+  assert.deepEqual(withRevisedBoundary, complete([a, revisedB, c, d], roster), 'changed boundary must replace old derived interval, not duplicate it');
+  assert.equal(markers(withRevisedBoundary).length, 2, 'a revised report time must not add a third stay');
+
   // An inferred marker is never an operational source from which to infer more
   // stays. Preserve projections containing only that marker without expanding it.
   const inferredOnly = markers(first);
