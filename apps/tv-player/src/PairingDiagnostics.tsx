@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
 import './pairing-diagnostics.css';
-export const PAIRING_BUILD = '0.1.8';
+export const PAIRING_BUILD = '0.1.9';
 export type PairingCode = {deviceCode:string;userCode:string;verificationUri:string;expiresIn:number;interval:number;deadline:number};
 export function validatePairing(raw:any, origin:string, now=Date.now()): PairingCode {
   if (!raw || typeof raw.deviceCode!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(raw.deviceCode) ||
@@ -20,6 +20,22 @@ export function pairingFailure(error:unknown): {code:string;message:string} {
   if(message==='request_timeout') return {code:'TV-NET-02',message:'O servidor não respondeu a tempo. Tente novamente.'};
   if(message==='pair_again') return {code:'TV-AUTH-01',message:'Solicitação recusada. Confira a autorização do piloto.'};
   if(message==='invalid_pairing_response') return {code:'TV-PAIR-01',message:'O servidor retornou um código de vínculo inválido.'};
+  const snapshot=message.match(/^invalid_snapshot_(schema|device|privacy|time|days_type|days_count|summary|changes|ticker)$/);
+  if(snapshot){
+    const details={
+      schema:['TV-DATA-SCHEMA','A versão dos dados recebidos não é compatível com esta TV.'],
+      device:['TV-DATA-DEVICE','A escala recebida pertence a outro vínculo de TV.'],
+      privacy:['TV-DATA-PRIVACY','O modo de privacidade da escala não corresponde ao autorizado.'],
+      time:['TV-DATA-TIME','A validade temporal da escala recebida não pôde ser confirmada.'],
+      days_type:['TV-DATA-DAYS','O calendário recebido não está no formato esperado.'],
+      days_count:['TV-DATA-DAYS','O calendário recebido excedeu o limite mensal esperado.'],
+      summary:['TV-DATA-SUMMARY','O resumo mensal recebido está incompleto.'],
+      changes:['TV-DATA-CHANGES','A lista de mudanças recebida não está no formato esperado.'],
+      ticker:['TV-DATA-TICKER','As mensagens de contexto recebidas não estão no formato esperado.'],
+    } as const;
+    const detail=details[snapshot[1] as keyof typeof details];
+    return {code:detail[0],message:detail[1]};
+  }
   if(message==='invalid_snapshot') return {code:'TV-DATA-01',message:'A TV recusou uma escala que não passou na validação.'};
   const status=message.match(/^request_(\d{3})$/);
   if(status){const s=Number(status[1]);return {code:'TV-HTTP-'+s,message:s===404?'Pareamento não habilitado neste endereço.':s===429?'Muitas tentativas. Aguarde um minuto.':s>=500?'Serviço temporariamente indisponível.':'O servidor recusou a solicitação.'};}
