@@ -568,6 +568,21 @@ footer > span {
 .legacy-webos4 .times strong {
   font-size: 68px;
 }
+.legacy-webos4 .times {
+  display: flex;
+}
+.legacy-webos4 .times > div {
+  width: 48%;
+}
+.legacy-webos4 .times > div + div {
+  margin-left: 4%;
+}
+.legacy-webos4 .hero-bottom {
+  display: flex;
+}
+.legacy-webos4 .hero-bottom > * + * {
+  margin-left: 18px;
+}
 .legacy-webos4 .live {
   display: flex;
 }
