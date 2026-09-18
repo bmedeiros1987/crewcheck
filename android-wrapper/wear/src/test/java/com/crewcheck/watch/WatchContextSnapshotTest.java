@@ -1,0 +1,68 @@
+package com.crewcheck.watch;
+
+import org.json.JSONObject;
+import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+public final class WatchContextSnapshotTest {
+    private static final long NOW = 1_800_000_000_000L;
+
+    @Test
+    public void parsesCanonicalProjectionWithoutOperationalRecalculation() {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("state", "LEAVE_SOON")
+                .put("headline", "SAIR EM 18 MIN")
+                .put("presentationTime", "13:30")
+                .put("currentFlight", "LA3721"));
+
+        assertEquals("SAIR18", snapshot.complicationShortText(NOW));
+        assertEquals("LA3721", snapshot.currentFlight);
+        assertFalse(snapshot.isStale(NOW));
+    }
+
+    @Test
+    public void remoteGateIsAlwaysExplicit() {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("gate", "Remota")
+                .put("headline", "EMBARQUE"));
+
+        assertTrue(snapshot.remoteStand);
+        assertEquals("REMOTA", snapshot.gateLabel());
+        assertEquals("REMOTA", snapshot.complicationShortText(NOW));
+    }
+
+    @Test
+    public void rejectsUnknownSchemaAndSensitiveFields() {
+        assertThrows(IllegalArgumentException.class, () ->
+                WatchContextSnapshot.fromJson(base().put("schemaVersion", 2)));
+        assertThrows(IllegalArgumentException.class, () ->
+                WatchContextSnapshot.fromJson(base().put("cpf", "00000000000")));
+    }
+
+    @Test
+    public void rejectsMissingExpiryAndMarksExpiredSnapshotAsStale() {
+        assertThrows(IllegalArgumentException.class, () ->
+                WatchContextSnapshot.fromJson(base().remove("validUntilEpochMs")));
+
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("validUntilEpochMs", NOW - 1));
+
+        assertTrue(snapshot.isStale(NOW));
+        assertEquals("ABRIR", snapshot.complicationShortText(NOW));
+    }
+
+    private static JSONObject base() {
+        return new JSONObject()
+                .put("schemaVersion", 1)
+                .put("contextId", "test")
+                .put("generatedAtEpochMs", NOW - 60_000L)
+                .put("validUntilEpochMs", NOW + 60_000L)
+                .put("state", "UNKNOWN")
+                .put("headline", "PRÓXIMO PASSO")
+                .put("source", "canonical-roster");
+    }
+}
