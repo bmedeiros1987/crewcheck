@@ -1,0 +1,30 @@
+name: Cirium route-match guard
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14409/**'
+      - 'scripts/regression-v14-4-09-cirium-route-match.mjs'
+      - 'scripts/p0-build-identity/**'
+      - 'server.mjs'
+      - 'client/src/pages/Home.tsx'
+      - '.github/workflows/cirium-route-match.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cirium-route-match:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Verify Cirium route matching fails closed
+        run: node scripts/regression-v14-4-09-cirium-route-match.mjs
