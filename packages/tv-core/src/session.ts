@@ -86,20 +86,30 @@ export class TvSession {
     if (!response.ok) throw new Error(`request_${response.status}`);
     return response.json();
   }
-  async sync(now = Date.now()) {
+  async sync(now?: number) {
+    const requestedAt = now ?? Date.now();
     const credential = this.credential;
-    if (!credential || Date.parse(credential.expiresAt) <= now) {
+    if (!credential || Date.parse(credential.expiresAt) <= requestedAt) {
       this.clear();
       throw new Error("pair_again");
     }
     const raw = await this.call("snapshot");
     // Ignore delayed responses from a prior pairing/logout.
     if (this.credential !== credential) throw new Error("session_changed");
+    // The server generates a snapshot after the request began. Comparing it to
+    // request-start time incorrectly marks a normal fresh response as future.
+    // Production samples again AFTER receiving/parsing it; explicit test time
+    // remains deterministic. Future observations still fail closed.
+    const receivedAt = now ?? Date.now();
+    if (Date.parse(credential.expiresAt) <= receivedAt) {
+      this.clear();
+      throw new Error("pair_again");
+    }
     if (
       raw.schemaVersion !== 1 ||
       raw.deviceId !== credential.deviceId ||
       raw.privacy !== credential.privacy ||
-      freshness(raw, now) === "unknown" ||
+      freshness(raw, receivedAt) === "unknown" ||
       !Array.isArray(raw.days) ||
       raw.days.length > 31 ||
       !raw.summary ||
