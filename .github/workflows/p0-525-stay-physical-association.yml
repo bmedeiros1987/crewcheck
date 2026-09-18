@@ -1,4 +1,4 @@
-name: P0 #525 stay physical association
+name: "P0 #525 stay physical association"
 
 on:
   workflow_dispatch:
@@ -7,6 +7,9 @@ on:
       - 'client/src/lib/rosterContinuity.ts'
       - 'client/src/lib/canonicalRoster.ts'
       - 'scripts/regression-p0-525-stay-physical-association.mjs'
+      - 'scripts/regression-p0-525-continuity-incremental.mjs'
+      - 'scripts/lib/ts-module-harness.mjs'
+      - 'scripts/v139/**'
       - '.github/workflows/p0-525-stay-physical-association.yml'
   push:
     branches: [main]
@@ -14,6 +17,9 @@ on:
       - 'client/src/lib/rosterContinuity.ts'
       - 'client/src/lib/canonicalRoster.ts'
       - 'scripts/regression-p0-525-stay-physical-association.mjs'
+      - 'scripts/regression-p0-525-continuity-incremental.mjs'
+      - 'scripts/lib/ts-module-harness.mjs'
+      - 'scripts/v139/**'
       - '.github/workflows/p0-525-stay-physical-association.yml'
 
 permissions:
@@ -22,17 +28,35 @@ permissions:
 jobs:
   stay-physical-association:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Physical boundary regression
+      - name: Source physical boundary regression
         run: node scripts/regression-p0-525-stay-physical-association.mjs
+      - name: Source incremental continuity
+        run: node scripts/regression-p0-525-continuity-incremental.mjs
       - name: Existing journey-rest contract
         run: node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Prepared physical and journey-rest contracts
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-525-stay-physical-association.mjs
+          node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+      - name: Prepared incremental continuity across runtime timezones
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo America/Los_Angeles; do
+            TZ="$zone" node scripts/regression-p0-525-continuity-incremental.mjs
+          done
       - name: TypeScript
         run: npx tsc --noEmit
