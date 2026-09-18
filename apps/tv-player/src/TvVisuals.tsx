@@ -1,6 +1,7 @@
 import React from 'react';
 import { CloudSun, Wind, Radio, CalendarDays, CalendarRange, RefreshCw, Settings, Newspaper, Plane, Car, Clock3, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles } from 'lucide-react';
 import { weatherArt } from './presentation';
+import './weather.css';
 // The mobile preparation script v14340 copies this exact PNG to its v3 alias.
 // Import the original bytes, never redraw/recolor the user's brand or fetch remotely.
 import originalLogo from '../../../client/public/icons/crewcheck-icon-v2.png';
