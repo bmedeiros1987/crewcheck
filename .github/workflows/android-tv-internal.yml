@@ -1,0 +1,62 @@
+name: Android TV internal candidate
+on:
+  push:
+    branches: [codex/android-tv-internal-release]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  signed-tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: TV TypeScript and regression tests
+        run: |
+          npx tsc -p tsconfig.tv.json
+          node scripts/test-android-tv.mjs
+      - name: Build shared player
+        env:
+          VITE_CREWCHECK_TV_ENABLED: 'true'
+          VITE_TV_PLATFORM: android-tv
+        run: npx vite build --config apps/tv-player/vite.config.mjs
+      - name: Sign and verify TV bundle
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+          CREWCHECK_STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CREWCHECK_STORE_FILE="$RUNNER_TEMP/crewcheck-tv-upload.jks"
+          trap 'rm -f "$CREWCHECK_STORE_FILE"' EXIT
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CREWCHECK_STORE_FILE"
+          chmod 600 "$CREWCHECK_STORE_FILE"
+          gradle -p apps/android-tv --no-daemon :app:lintRelease :app:bundleRelease :app:assembleRelease
+          mkdir -p tv-release
+          cp apps/android-tv/app/build/outputs/bundle/release/*.aab tv-release/crewcheck-tv-1-internal.aab
+          cp apps/android-tv/app/build/outputs/apk/release/*.apk tv-release/crewcheck-tv-1-internal.apk
+          jarsigner -verify tv-release/crewcheck-tv-1-internal.aab | tee tv-release/signature.txt
+          grep -q 'jar verified' tv-release/signature.txt
+          sha256sum tv-release/*.aab tv-release/*.apk > tv-release/SHA256SUMS.txt
+          printf '%s\n' "$GITHUB_SHA" > tv-release/COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crewcheck-tv-internal-${{ github.sha }}
+          path: tv-release/
+          if-no-files-found: error
+          retention-days: 14

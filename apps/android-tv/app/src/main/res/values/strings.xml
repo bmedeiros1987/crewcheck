@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">CrewCheck TV</string>
+    <style name="TvTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">#061522</item>
+        <item name="android:colorAccent">#42E8E0</item>
+        <item name="android:colorPrimary">#061522</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

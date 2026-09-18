@@ -1,0 +1,45 @@
+plugins { id 'com.android.application' }
+
+def signingValues = ['CREWCHECK_STORE_FILE','CREWCHECK_STORE_PASSWORD','CREWCHECK_KEY_ALIAS','CREWCHECK_KEY_PASSWORD'].collectEntries { [(it): System.getenv(it)] }
+def signingReady = signingValues.values().every { it }
+android {
+    namespace 'com.crewcheck.tv'
+    compileSdk 36
+    buildFeatures { buildConfig true }
+    defaultConfig {
+        applicationId 'com.crewcheck.tv'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0-internal'
+    }
+    signingConfigs {
+        release {
+            if (signingReady) {
+                storeFile file(signingValues.CREWCHECK_STORE_FILE)
+                storePassword signingValues.CREWCHECK_STORE_PASSWORD
+                keyAlias signingValues.CREWCHECK_KEY_ALIAS
+                keyPassword signingValues.CREWCHECK_KEY_PASSWORD
+            }
+        }
+    }
+    buildTypes {
+        release { debuggable false; minifyEnabled false; signingConfig signingConfigs.release }
+        debug { applicationIdSuffix '.debug'; debuggable true }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/tvAssets')
+    lint { abortOnError true; checkReleaseBuilds true }
+}
+tasks.register('bundleTvPlayer', Sync) {
+    from '../../../dist/tv-player'
+    into layout.buildDirectory.dir('generated/tvAssets/player')
+    doFirst {
+        if (!file('../../../dist/tv-player/index.html').exists()) throw new GradleException('Build shared TV player first: npm run build:tv')
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'bundleTvPlayer' }
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.toLowerCase().contains('release') } && !signingReady)
+        throw new GradleException('Release signing is mandatory; configure CREWCHECK_STORE_FILE/STORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD.')
+}

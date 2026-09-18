@@ -1,0 +1,82 @@
+import { buildCanonicalRosterEvents, selectNextRosterEvent, type CanonicalRosterEvent } from '../../../client/src/lib/canonicalRoster';
+import type { CrewRoster } from '../../../client/src/lib/pdfParser';
+
+export type Privacy = 'family' | 'private';
+export type TvActivity = {
+  id: string; journeyId: string; kind: CanonicalRosterEvent['kind']; date: string;
+  startAt: string; endAt: string; presentation: string | null;
+  flight: string | null; origin: string | null; destination: string | null;
+  groundBeforeMinutes: number | null; confidence: string;
+};
+export type TvCalendarDay = { date: string; activities: TvActivity[] };
+export type TvMonthSummary = { month: string; flights: number; journeys: number; stays: number };
+export type TvFact<T> = { value: T; source: string; observedAt: string; expiresAt: string };
+export type TvSnapshot = {
+  schemaVersion: 1; snapshotId: string; deviceId: string; sourceVersion: string;
+  generatedAt: string; expiresAt: string; privacy: Privacy; mode: 'live' | 'briefing' | 'ambient';
+  next: TvActivity | null; days: TvCalendarDay[]; summary: TvMonthSummary;
+  leaveAt: TvFact<string> | null; gate: TvFact<{ label: string; remoteStand: boolean | null }> | null;
+  weather: TvFact<{ airport: string; temperature: number; label: string }> | null;
+  changes: string[]; ticker: string[];
+};
+
+function calendarDate(date: string): string {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(date);
+  if (!match) throw new Error('Invalid canonical date');
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+function projectEvent(e: CanonicalRosterEvent, privacy: Privacy): TvActivity {
+  return {
+    id: e.id, journeyId: e.journeyId, kind: e.kind, date: calendarDate(e.date),
+    startAt: e.startDateTime, endAt: e.endDateTime,
+    presentation: e.showPresentation && e.presentation ? e.presentation : null,
+    flight: privacy === 'private' ? e.flightNumber || null : null,
+    origin: privacy === 'private' ? e.origin || null : null,
+    destination: privacy === 'private' ? e.destination || null : null,
+    groundBeforeMinutes: privacy === 'private' ? e.groundBeforeMinutes : null,
+    confidence: e.sourceConfidence,
+  };
+}
+export function monthDates(month: string): string[] {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('Invalid month');
+  const [year, m] = month.split('-').map(Number);
+  const count = new Date(Date.UTC(year, m, 0)).getUTCDate();
+  return Array.from({length: count}, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
+}
+// The only domain dependency is the existing canonical engine. No TV parser,
+// APZ fallback, journey boundary inference, or chronological selector lives here.
+export function projectRoster(roster: CrewRoster, options: {
+  deviceId: string; snapshotId: string; sourceVersion: string; month: string;
+  generatedAt: string; expiresAt: string; privacy?: Privacy; now?: Date;
+}): TvSnapshot {
+  const privacy = options.privacy === 'private' ? 'private' : 'family';
+  const events = buildCanonicalRosterEvents(roster);
+  const next = selectNextRosterEvent(events, options.now ?? new Date());
+  const activities = events.map(e => projectEvent(e, privacy));
+  const days = monthDates(options.month).map(date => ({date, activities: activities.filter(a => a.date === date)}));
+  const selected = days.flatMap(d => d.activities);
+  return {
+    schemaVersion: 1, snapshotId: options.snapshotId, deviceId: options.deviceId,
+    sourceVersion: options.sourceVersion, generatedAt: options.generatedAt, expiresAt: options.expiresAt,
+    privacy, mode: next ? 'live' : 'ambient', next: next ? projectEvent(next, privacy) : null, days,
+    summary: {month: options.month, flights: selected.filter(a => a.kind === 'flight').length,
+      journeys: new Set(selected.filter(a => ['flight','duty'].includes(a.kind)).map(a => a.journeyId)).size,
+      stays: selected.filter(a => a.kind === 'stay').length},
+    leaveAt: null, gate: null, weather: null, changes: [], ticker: [],
+  };
+}
+export function freshness(value: {generatedAt: string; expiresAt: string}, now = Date.now()) {
+  const start = Date.parse(value.generatedAt), end = Date.parse(value.expiresAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > now || end <= start) return 'unknown';
+  return now < end ? 'current' : 'stale';
+}
+export function currentFact<T>(fact: TvFact<T> | null, now = Date.now()): T | null {
+  return fact && fact.source && freshness({generatedAt: fact.observedAt, expiresAt: fact.expiresAt}, now) === 'current' ? fact.value : null;
+}
+export function remoteAction(key: string | number): 'left'|'right'|'up'|'down'|'ok'|'back'|null {
+  const keys: Record<string, 'left'|'right'|'up'|'down'|'ok'|'back'> = {
+    ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down', Enter:'ok', Escape:'back', Backspace:'back',
+    '37':'left','39':'right','38':'up','40':'down','13':'ok','10009':'back','461':'back','4':'back',
+  };
+  return keys[String(key)] ?? null;
+}

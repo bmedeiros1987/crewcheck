@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","include":["apps/tv-player/src/**/*","packages/tv-core/src/**/*"],"compilerOptions":{"incremental":false}}
