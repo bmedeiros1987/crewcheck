@@ -41,6 +41,7 @@ export function snapshotValidationCode(
 export class TvSession {
   credential: DeviceCredential | null = null;
   snapshot: TvSnapshot | null = null;
+  private lastServerNow: number | null = null;
 
   constructor(
     private storage: TvStorage,
@@ -114,6 +115,9 @@ export class TvSession {
       throw new Error("pair_again");
     }
     if (!response.ok) throw new Error(`request_${response.status}`);
+    const serverNow = Number(response.headers.get("X-CrewCheck-Server-Time"));
+    this.lastServerNow =
+      Number.isFinite(serverNow) && serverNow > 0 ? serverNow : null;
     return response.json();
   }
 
@@ -128,7 +132,7 @@ export class TvSession {
     const raw = await this.call("snapshot");
     if (this.credential !== credential) throw new Error("session_changed");
 
-    const receivedAt = now ?? Date.now();
+    const receivedAt = now ?? this.lastServerNow ?? Date.now();
     if (Date.parse(credential.expiresAt) <= receivedAt) {
       this.clear();
       throw new Error("pair_again");
