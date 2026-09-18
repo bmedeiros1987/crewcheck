@@ -102,6 +102,18 @@ assert.equal(
   'operational ASB cannot be overwritten by a misleading VC fallback',
 );
 assert.equal(
+  classification.careStateForScheduleActivity({
+    kind: 'rest',
+    type: 'DO',
+    code: 'DO',
+    pairingCode: 'ASB',
+    canonical: { kind: 'rest', code: 'DO', publishedDay: { type: 'DO', pairingCode: 'ASB', legs: [] } },
+    day: { type: 'DO', pairingCode: 'ASB', legs: [] },
+  }),
+  'FOLGA',
+  'coarse DO must remain Folga when pairingCode is unrelated to care/day-off semantics',
+);
+assert.equal(
   classification.careStateForScheduleActivity({ kind: 'duty', type: 'ASB', day: { type: 'ASB', rawText: 'comentário menciona luto' } }),
   'NONE',
   'raw text must never invent a grief state',
@@ -135,7 +147,8 @@ assert.match(recovery?.message || '', /repouso/i, 'recovery rest must remain dis
 const server = read('server.mjs');
 assert.match(server, /conciergeInactiveCodes[^\n]*DMO|DMO[^\n]*conciergeInactiveCodes/s, 'Concierge inactive codes must include DMO');
 assert.match(server, /function conciergeCareState|function conciergeCarePresentation/, 'Concierge must have an explicit care-state resolver');
-assert.match(server, /type === 'DO' && pairing/, 'Concierge care resolver must honor parser-normalized DO + precise pairing code');
+assert.match(server, /publishedDayOff[\s\S]*?type === 'DO' && publishedDayOff\.has\(pairing\)/, 'Concierge care resolver must only specialize coarse DO with known published day-off/care pairings');
+assert.doesNotMatch(server, /type === 'DO' && pairing\) return pairing;/, 'unrelated residual pairingCode must not erase formal DO and create roster-empty semantics');
 assert.match(server, /conciergeCareState\(day\)\s*!==\s*'NONE'/, 'program record builder must exclude care days before briefing selection');
 assert.match(server, /Sinto muito/, 'Concierge luto response must be compassionate');
 assert.match(server, /Férias/, 'Concierge must present vacation explicitly');
@@ -144,7 +157,8 @@ assert.match(server, /Hoje é folga|Hoje é uma folga|Sem programação operacio
 // The shared human renderer is where `/hoje` lands when no operational record is
 // selected. It must distinguish care days instead of declaring the roster blank.
 const human = read('server/v1403/telegram-human.mjs');
-assert.match(human, /type === 'DO' && pairing/, 'human renderer must preserve the exact pairing code hidden by coarse DO type');
+assert.match(human, /publishedDayOff[\s\S]*?type === 'DO' && publishedDayOff\.has\(pairing\)/, 'human renderer must only specialize coarse DO with known published day-off/care pairings');
+assert.doesNotMatch(human, /type === 'DO' && pairing \? pairing/, 'human renderer must not let arbitrary residual pairingCode erase formal DO');
 assert.match(human, /code === 'DMO'[\s\S]*?Sinto muito/, 'blank-day renderer must have dedicated grief copy');
 assert.match(human, /code === 'VC'[\s\S]*?FERIAS[\s\S]*?férias/i, 'blank-day renderer must have dedicated vacation copy');
 assert.match(human, /\['DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA'\][\s\S]*?Sem programação operacional/, 'blank-day renderer must have dedicated day-off copy');
