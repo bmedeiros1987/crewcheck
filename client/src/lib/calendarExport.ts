@@ -87,15 +87,11 @@ function pairingRoute(day: RosterDay): string {
 }
 
 function buildPairingSummary(day: RosterDay): string {
-  const report = pairingStartTime(day);
-  const route = pairingRoute(day);
-  return report ? `Apres. ${report} · ${route}` : route;
+  return `CrewCheck · Voo · ${pairingRoute(day).replace(/-/g, ' → ')}`;
 }
 
 function buildDutyCalendarSummary(day: RosterDay): string {
-  const start = day.dutyReport || '';
-  const label = getDutySummary(day);
-  return start ? `${start} · ${label}` : label;
+  return `CrewCheck · ${getDutySummary(day)}`;
 }
 
 function pairingStartTime(day: RosterDay): string {
@@ -282,7 +278,7 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
         uid,
         now,
         date: day.date,
-        summary: getRestSummary(day),
+        summary: `CrewCheck · ${getRestSummary(day)}`,
         description: buildRestDescription(roster, day),
         categories: day.type === 'LAYOVER' ? 'CrewCheck,Layover' : 'CrewCheck,Rest',
         color: calendarColorForDay(day),
@@ -402,32 +398,26 @@ function buildAllDayEvent(args: {
 }
 
 function buildPairingDescription(roster: CrewRoster, day: RosterDay, endNextDay: boolean): string {
-  const route = pairingRoute(day);
   const legs = day.legs || [];
   return [
-    route,
+    'ESCALA CREWCHECK',
+    `Data: ${displayDate(day.date)}`,
+    'Referência dos horários: Brasília (America/Sao_Paulo).',
+    'O Google Agenda pode exibir os eventos no fuso escolhido por você.',
     '',
-    `Apresentação: ${pairingStartTime(day)} LOCAL`,
+    'JORNADA',
+    day.dutyReport ? `Apresentação: ${day.dutyReport}` : 'Apresentação: não informada na escala.',
+    day.dutyDebrief ? `Término: ${day.dutyDebrief}${endNextDay ? ' (dia seguinte)' : ''}` : 'Término da jornada: não informado; evento termina na última chegada.',
+    `Rota: ${pairingRoute(day).replace(/-/g, ' → ')}`,
     '',
-    'C/I:',
-    `  ${toUtcLabel(day.date, pairingStartTime(day))} (${pairingStartTime(day)} LOCAL)`,
-    `  ${pairingStartTime(day)} America/Sao_Paulo`,
-    'C/O:',
-    `  ${toUtcLabel(day.date, pairingEndTime(day), endNextDay ? 1 : 0)} (${pairingEndTime(day)} LOCAL${endNextDay ? ' +1' : ''})`,
-    `  ${pairingEndTime(day)} America/Sao_Paulo`,
-    '-----------',
+    'ETAPAS',
+    ...legs.map((leg, index) => `${index + 1}. ${leg.flightNumber || 'Voo sem número'} · ${leg.origin} → ${leg.destination} · ${leg.departureTime}–${leg.arrivalTime}${leg.isNextDay || arrivesNextDay(leg.departureTime, leg.arrivalTime) ? ' (chegada no dia seguinte)' : ''}${isPositioningLeg(leg) ? ' · Posicionamento / passageiro' : ''}${leg.aircraftType ? ` · Aeronave: ${leg.aircraftType}` : ''}`),
+    ...(day.hotel ? ['', `Pernoite / hotel: ${day.hotel}`] : []),
     '',
-    'Voos:',
-    ...legs.map((leg) => `  ${leg.flightNumber}: ${leg.origin}-${leg.destination} ${leg.departureTime}–${leg.arrivalTime}${leg.isNextDay ? ' (+1)' : ''}${leg.aircraftType ? ` · Aircraft: ${leg.aircraftType}` : ''}${isPositioningLeg(leg) ? ' · PS/Extra' : ''}`),
-    '',
-    ...buildCrewDescriptionLines(roster, legs[0] || ({} as FlightLeg)),
-    '',
-    `Crew: (${roster.crewId || 'sem BP'}) ${titleCase(roster.crewName)}`,
     `Base: ${roster.base} · ${cityOnly(roster.base)}`,
-    'Notes:',
-    `  Aircraft: ${Array.from(new Set(legs.map((leg) => leg.aircraftType).filter(Boolean))).join(', ') || 'não informado'}`,
+    'Confira alterações na escala oficial da companhia.',
     '#CREWCHECK',
-  ].filter(Boolean).join('\n');
+  ].join('\n');
 }
 
 function buildPairingLocation(day: RosterDay): string {
@@ -543,9 +533,9 @@ function buildRestDescription(roster: CrewRoster, day: RosterDay): string {
 }
 
 function getDutySummary(day: RosterDay): string {
-  if (day.type === 'HSB') return 'HSB · Home Stand By';
-  if (day.type === 'HSBE') return 'HSBE · Home Stand By Extra';
-  if (day.type === 'ASB') return 'ASB · Airport Stand By';
+  if (day.type === 'HSB') return 'Sobreaviso em casa · HSB';
+  if (day.type === 'HSBE') return 'Sobreaviso extra em casa · HSBE';
+  if (day.type === 'ASB') return 'Reserva no aeroporto · ASB';
   if (/^C\d{2,3}F$/i.test(day.pairingCode || '') || /\bC\d{2,3}F\b/i.test(day.rawText || '')) return `${day.pairingCode || 'C32F'} · Check de competência A32F`;
   if (day.pairingCode === 'CBF') return 'CBF · EAD - Combate ao Fogo';
   if (day.pairingCode === 'EMER') return 'EMER · EAD - Emergências Gerais';
@@ -556,7 +546,8 @@ function getDutySummary(day: RosterDay): string {
   if (rosterCode.endsWith('J') && rosterCode !== 'IJ') return `${rosterCode} · Justificado`;
   if (rosterCode === 'IJ') return 'IJ · Interrupção de jornada';
   if (rosterCode === 'DM') return 'DM · Dispensa médica';
-  if (day.type === 'CRM') return 'CRM · Corporate Resource Management';
+  if (day.type === 'RES') return 'Reserva · RES';
+  if (day.type === 'CRM') return 'Treinamento CRM';
   if (day.type === 'OTHER' && day.pairingCode) return `${day.pairingCode} · Atividade programada`;
   return `${day.type} · Atividade`;
 }
@@ -740,9 +731,9 @@ function getRosterCode(day: RosterDay): string {
 }
 
 function translateDutyType(day: RosterDay): string {
-  if (day.type === 'ASB') return 'ASB · Airport Stand By';
-  if (day.type === 'HSB') return 'HSB · Home Stand By';
-  if (day.type === 'HSBE') return 'HSBE · Home Stand By Extra';
+  if (day.type === 'ASB') return 'Reserva no aeroporto · ASB';
+  if (day.type === 'HSB') return 'Sobreaviso em casa · HSB';
+  if (day.type === 'HSBE') return 'Sobreaviso extra em casa · HSBE';
   if (/^C\d{2,3}F$/i.test(day.pairingCode || '') || /\bC\d{2,3}F\b/i.test(day.rawText || '')) return 'C32F · Check de competência A32F';
   if (day.pairingCode === 'CBF') return 'CBF · EAD - Combate ao Fogo';
   if (day.pairingCode === 'EMER') return 'EMER · EAD - Emergências Gerais';
@@ -753,7 +744,8 @@ function translateDutyType(day: RosterDay): string {
   if (rosterCode.endsWith('J') && rosterCode !== 'IJ') return `${rosterCode} · Justificado`;
   if (rosterCode === 'IJ') return 'IJ · Interrupção de jornada';
   if (rosterCode === 'DM') return 'DM · Dispensa médica';
-  if (day.type === 'CRM') return 'CRM · Corporate Resource Management';
+  if (day.type === 'RES') return 'Reserva · RES';
+  if (day.type === 'CRM') return 'Treinamento CRM';
   return day.pairingCode || day.type;
 }
 
