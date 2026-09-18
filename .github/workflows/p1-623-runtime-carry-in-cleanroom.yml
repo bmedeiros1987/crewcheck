@@ -1,0 +1,42 @@
+name: P1 #623 runtime regulatory carry-in clean-room
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/regulatoryHistory.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/p1-623-runtime-carry-in/**'
+      - 'scripts/regression-p1-623-runtime-carry-in-cleanroom.mjs'
+      - '.github/workflows/p1-623-runtime-carry-in-cleanroom.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-carry-in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Stable identity evidence contract
+        run: node scripts/regression-p1-623-regulatory-history-evidence.mjs
+      - name: Runtime carry-in contract
+        run: node scripts/regression-p1-623-runtime-carry-in-cleanroom.mjs
+      - name: Rolling 28-day boundary
+        run: node scripts/regression-p1-526-rolling-boundaries.mjs
+      - name: Rolling 28-day
+        run: node scripts/regression-p1-526-rolling-28d.mjs
+      - name: Plausibility
+        run: node scripts/regression-p1-526-rolling-plausibility.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build
