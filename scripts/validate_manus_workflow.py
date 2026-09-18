@@ -15,6 +15,7 @@ required = [
     'workflow_dispatch:',
     'pr_number:',
     'expected_sha:',
+    'recovery_task_id:',
     "github.event.pull_request.number == 605",
     "github.event.pull_request.number == 626",
     "github.event.pull_request.number == 627",
@@ -34,7 +35,15 @@ required = [
     'connectors: [$connector_id]',
     '[[ "$SHA" =~ ^[0-9a-f]{40}$ ]]',
     'EXPECTED_SHA: ${{ inputs.expected_sha }}',
+    'RECOVERY_TASK_ID: ${{ inputs.recovery_task_id }}',
+    'ACTOR: ${{ github.actor }}',
     'RUN_SHA: ${{ github.sha }}',
+    '[[ "$RECOVERY_TASK_ID" =~ ^[A-Za-z0-9_-]+$ ]]',
+    '[ "$ACTOR" != "bmedeiros1987" ]',
+    'echo "recovery_task_id=$RECOVERY_TASK_ID" >> "$GITHUB_OUTPUT"',
+    "if: steps.request.outputs.ready == 'true' && steps.request.outputs.recovery_task_id == ''",
+    "if: steps.request.outputs.ready == 'true' && (steps.request.outputs.recovery_task_id != '' || steps.create.outputs.task_id != '')",
+    'TASK_ID: ${{ steps.request.outputs.recovery_task_id || steps.create.outputs.task_id }}',
     'share_visibility: "private"',
     'interactive_mode: false',
     'structured_output_schema:',
@@ -125,10 +134,11 @@ for fragment in [
 assert 'for attempt in $(seq 1 80)' in s, 'polling loop must be bounded'
 assert 'timeout-minutes: 30' in s, 'job must have a hard timeout'
 assert s.index('EXPECTED_SHA: ${{ inputs.expected_sha }}') < s.index('MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}'), 'immutable expected SHA must be available before Manus secret use'
+assert s.index('RECOVERY_TASK_ID: ${{ inputs.recovery_task_id }}') < s.index('MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}'), 'recovery task must be validated before Manus secret use'
 assert s.index('RUN_SHA: ${{ github.sha }}') < s.index('MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}'), 'workflow execution SHA must be available before Manus secret use'
-assert s.index('https://api.manus.ai/v2/task.create') < s.index('https://api.manus.ai/v2/task.listMessages'), 'polling must happen after task creation'
+assert s.index('https://api.manus.ai/v2/task.create') < s.index('https://api.manus.ai/v2/task.listMessages'), 'polling must happen after task creation in the normal path'
 assert s.index('current_sha=') < s.index('[MANUS-AUDIT] MANUS: MERGE'), 'exact-SHA revalidation must happen before publishing a merge verdict'
 assert s.index('if [ "$http_code" = "404" ]') < s.index('task.listMessages returned HTTP'), 'eventual-consistency 404 must be retried before hard failure'
 assert s.index('messages_type=') < s.index('.messages[] | select'), 'messages shape must be validated before any .messages[] iteration'
 assert s.endswith('\n'), 'workflow must end with a newline'
-print('PASS: authorized Manus trigger, trusted self-bootstrap actor, immutable expected-SHA gate before model call, cancellation isolation, private async task, bounded polling, 404/messages:null eventual-consistency retry, malformed messages fail-closed, transient transport retry, structured verdict, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
+print('PASS: authorized Manus trigger, trusted self-bootstrap actor, immutable expected-SHA gate before model call, owner-only recovery of an existing task without duplicate creation, cancellation isolation, private async task, bounded polling, 404/messages:null eventual-consistency retry, malformed messages fail-closed, transient transport retry, structured verdict, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
