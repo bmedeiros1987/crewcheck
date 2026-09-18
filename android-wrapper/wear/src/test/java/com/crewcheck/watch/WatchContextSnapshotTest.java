@@ -46,8 +46,10 @@ public final class WatchContextSnapshotTest {
 
     @Test
     public void rejectsMissingExpiryAndMarksExpiredSnapshotAsStale() throws Exception {
+        JSONObject missingExpiry = base();
+        missingExpiry.remove("validUntilEpochMs");
         assertThrows(IllegalArgumentException.class, () ->
-                WatchContextSnapshot.fromJson(base().remove("validUntilEpochMs")));
+                WatchContextSnapshot.fromJson(missingExpiry));
 
         WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
                 .put("validUntilEpochMs", NOW - 1));
