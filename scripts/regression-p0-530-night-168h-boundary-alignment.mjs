@@ -29,11 +29,15 @@ const harness = loadClientModules({
 });
 const { analyzeCompliance } = harness.load('complianceEngine');
 
-const ground = (date, report='00:00') => ({
+const ground = (date, report='00:00', debrief='02:00') => ({
   date, dayNumber:Number(date.slice(0,2)), month:Number(date.slice(3,5)), year:Number(date.slice(6)),
-  dayOfWeek:'synthetic', type:'OTHER', pairingCode:'CRM', dutyReport:report, dutyDebrief:'02:00',
+  dayOfWeek:'synthetic', type:'OTHER', pairingCode:'CRM', dutyReport:report, dutyDebrief:debrief,
   dutyHours:2, flyingHours:0, isNextDay:false, hotel:null, base:'AAA', legs:[], rawText:'CRM synthetic',
 });
+const bridge = (date) => ground(date, '12:00', '13:00');
+// Keep less than 48h free between operational intervals so the prepared
+// resetAfterFreeHours segmentation does not hide the 168h endpoint semantics.
+const bridges = [bridge('02/09/2026'), bridge('04/09/2026'), bridge('06/09/2026')];
 const flight = (date, departure='00:00') => ({
   date, dayNumber:Number(date.slice(0,2)), month:Number(date.slice(3,5)), year:Number(date.slice(6)),
   dayOfWeek:'synthetic', type:'VOO', pairingCode:'SYNTH', dutyReport:departure, dutyDebrief:'01:00',
@@ -43,14 +47,14 @@ const flight = (date, departure='00:00') => ({
 const roster = (days) => ({crewName:'Synthetic Crew',crewId:'qa-only',base:'AAA',month:9,year:2026,rawText:'',days});
 
 try {
-  const exact = analyzeCompliance(roster([ground('01/09/2026'), flight('08/09/2026')]));
+  const exact = analyzeCompliance(roster([ground('01/09/2026'), ...bridges, flight('08/09/2026')]));
   assert.equal(
     exact.metrics.maxNightOps168hCount,
     1,
     'half-open [start,start+168h): an occurrence exactly +168h must not be counted in the same rolling window',
   );
 
-  const inside = analyzeCompliance(roster([ground('01/09/2026'), flight('07/09/2026')]));
+  const inside = analyzeCompliance(roster([ground('01/09/2026'), ...bridges, flight('07/09/2026')]));
   assert.equal(
     inside.metrics.maxNightOps168hCount,
     2,
