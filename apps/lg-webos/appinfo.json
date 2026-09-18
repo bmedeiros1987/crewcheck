@@ -1,0 +1,13 @@
+{
+  "id": "online.crewcheck.tv",
+  "version": "0.1.0",
+  "vendor": "CrewCheck",
+  "type": "web",
+  "main": "index.html",
+  "title": "CrewCheck TV",
+  "icon": "icon.png",
+  "largeIcon": "large-icon.png",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": false
+}

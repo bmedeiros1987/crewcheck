@@ -1,0 +1,30 @@
+name: TV family isolated pilot
+on:
+  pull_request:
+    paths: ['packages/tv-core/**', 'apps/**', 'server/tv/**', 'scripts/tv-*.mjs', 'client/src/pages/TvPairPage.tsx', 'docs/tv/**', 'tsconfig.tv.json', '.github/workflows/tv-family.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  web-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - run: node scripts/tv-server-build.mjs
+      - run: node scripts/tv-build.mjs samsung-tizen
+      - run: node scripts/tv-build.mjs lg-webos
+      - run: node scripts/tv-build.mjs android-tv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tv-web-staging-not-native-packages
+          path: |
+            dist/samsung-tizen
+            dist/lg-webos
+            apps/android-tv/app/src/main/assets/tv
