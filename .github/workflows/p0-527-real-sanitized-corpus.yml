@@ -27,6 +27,8 @@ jobs:
         run: node scripts/regression-p0-527-real-sanitized-corpus.mjs
       - name: Existing #510 segmentation oracle
         run: node scripts/regression-p1-server-510-aims-duty-segmentation.mjs
+      - name: Materialize canonical sources for sovereign #580 gate
+        run: node scripts/v139/apply.mjs
       - name: Existing #580 real VC/LEGEND boundary
         run: node scripts/regression-p0-580-real-vc-legend-boundary.mjs
       - name: TypeScript
