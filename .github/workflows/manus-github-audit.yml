@@ -435,18 +435,43 @@ jobs:
             exit 0
           fi
 
+          # Preserve the validated verdict before best-effort GitHub publication.
+          # A comment-permission failure must never erase a valid audit or invite
+          # a duplicate external task retry.
           case "$verdict" in
             MERGE)
               test "$severity" = "NONE" || bridge_error "MERGE verdict must have severity NONE"
-              post_comment "$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s' "$REQUESTED_SHA" "$summary")"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\\n\\n%s' \"$REQUESTED_SHA\" \"$summary\")"
               ;;
             BLOCKER)
               case "$severity" in P0|P1|P2) ;; *) bridge_error "BLOCKER verdict must have severity P0, P1, or P2" ;; esac
-              post_comment "$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s' "$REQUESTED_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause")"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\\nSeverity: %s\\n\\nSummary: %s\\n\\nReproducer: %s\\nExpected: %s\\nActual: %s\\nRoot cause: %s' \"$REQUESTED_SHA\" \"$severity\" \"$summary\" \"$reproducer\" \"$expected\" \"$actual\" \"$root_cause\")"
               ;;
             *)
               bridge_error "unknown structured verdict: $verdict"
               ;;
           esac
 
-          echo "Published Manus verdict for PR #$PR_NUMBER at exact SHA $REQUESTED_SHA"
+          jq -n --arg verdict "$verdict" --arg sha "$REQUESTED_SHA" --arg severity "$severity" --arg summary "$summary" --arg reproducer "$reproducer" --arg expected "$expected" --arg actual "$actual" --arg root_cause "$root_cause" '{verdict:$verdict,sha:$sha,severity:$severity,summary:$summary,reproducer:$reproducer,expected:$expected,actual:$actual,root_cause:$root_cause,exact_sha_validated:true}' > manus-verdict.json
+          {
+            echo "## Manus exact-SHA audit"
+            echo
+            echo "$REQUESTED_SHA — $verdict ($severity)"
+            echo
+            echo "$summary"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if post_comment "$BODY"; then
+            echo "Published Manus verdict comment for PR #$PR_NUMBER at exact SHA $REQUESTED_SHA"
+          else
+            echo "WARNING: GitHub comment publication unavailable; validated verdict preserved as workflow artifact/step summary." >&2
+          fi
+
+      - name: Preserve validated Manus verdict
+        if: always() && steps.request.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: manus-verdict-pr-${{ steps.request.outputs.pr_number }}-${{ steps.request.outputs.sha }}
+          path: manus-verdict.json
+          if-no-files-found: ignore
+          retention-days: 30
