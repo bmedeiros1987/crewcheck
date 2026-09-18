@@ -1,11 +1,10 @@
 package com.crewcheck.tv;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
+import androidx.activity.ComponentActivity;
+import androidx.activity.OnBackPressedCallback;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
@@ -18,7 +17,7 @@ import java.io.IOException;
 import java.util.Collections;
 
 /** Packaged shared player, same-origin HTTPS gateway, no native credential bridge. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends ComponentActivity {
     private static final String HOST = "crewcheck.online";
     private static final String PREFIX = "/tv-native/";
     private WebView player;
@@ -63,24 +62,18 @@ public final class MainActivity extends Activity {
         setContentView(player);
         player.requestFocus();
         player.loadUrl("https://" + HOST + PREFIX + "index.html");
-        if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::handleBack);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override public void handleOnBackPressed() { handleBack(); }
+        });
     }
     private static WebResourceResponse failure(int status, String reason) {
         return new WebResourceResponse("text/plain", "UTF-8", status, reason, Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
-    }
-    @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            if (event.getAction() == KeyEvent.ACTION_UP) handleBack();
-            return true;
-        }
-        return super.dispatchKeyEvent(event);
     }
     private void handleBack() {
         player.evaluateJavascript("Boolean(window.crewcheckTvBack && window.crewcheckTvBack())", handled -> {
             if (!"true".equals(handled)) finish();
         });
     }
-    @Override public void onBackPressed() { handleBack(); }
     @Override protected void onPause() { player.onPause(); super.onPause(); }
     @Override protected void onResume() { super.onResume(); if (player != null) player.onResume(); }
     @Override protected void onDestroy() { if (player != null) { player.stopLoading(); player.destroy(); } super.onDestroy(); }

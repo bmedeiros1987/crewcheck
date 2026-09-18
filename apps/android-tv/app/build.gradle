@@ -43,3 +43,5 @@ gradle.taskGraph.whenReady { graph ->
     if (graph.allTasks.any { it.name.toLowerCase().contains('release') } && !signingReady)
         throw new GradleException('Release signing is mandatory; configure CREWCHECK_STORE_FILE/STORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD.')
 }
+
+dependencies { implementation 'androidx.activity:activity:1.10.1' }

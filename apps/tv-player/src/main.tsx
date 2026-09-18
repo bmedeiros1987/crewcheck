@@ -82,7 +82,7 @@ function App(){
     };
     document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);
   },[view]);
-  useEffect(()=>{main.current?.querySelector<HTMLElement>('button')?.focus();},[view,!!snapshot]);
+  useEffect(()=>{(main.current?.querySelector<HTMLElement>(view==='Dia'?'.detail button':'nav button.active')||main.current?.querySelector<HTMLElement>('button'))?.focus();},[view,!!snapshot]);
   if(!enabled)return <main className="pair"><h1>CrewCheck TV</h1><p>Piloto ainda não disponível.</p></main>;
   const next=snapshot?.next,gate=currentFact(snapshot?.gate||null),weather=currentFact(snapshot?.weather||null),leave=currentFact(snapshot?.leaveAt||null);
   const activity=(a:TvActivity)=><article className="activity" key={a.id}><strong>{a.flight||labels[a.kind]}</strong><span>{a.origin&&`${a.origin} → ${a.destination}`}</span><span>Apresentação {a.presentation||'indisponível'}</span><span>{time(a.startAt)} — {time(a.endAt)}</span>{a.groundBeforeMinutes!==null&&<span>Em solo: {a.groundBeforeMinutes} min</span>}<small>Confiança: {a.confidence}</small></article>;
@@ -101,4 +101,5 @@ function App(){
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);
+
 
