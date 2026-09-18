@@ -13,3 +13,14 @@ html,body,#root{overflow:hidden}
 .screen-care-settings small{font-size:.7vw;display:block;line-height:1.4;margin:.5vh 0 0}
 .theme-mobile .screen-care-settings{background:#fff;border-color:#dce6f0}
 .theme-mobile .screen-care-settings p{color:#35465a}
+
+/* Explicit on/off control. No change to native LG screen saver or panel power. */
+.screen-care-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:.7vh}
+.screen-care-heading h2{margin:0}
+button.screen-care-toggle{display:flex;align-items:center;font-size:.92vw;min-width:11vw;justify-content:center}
+.screen-care-toggle-track{display:inline-block;position:relative;width:2.5vw;height:1.35vw;border-radius:1vw;background:#69768a;margin-right:.6vw;flex-shrink:0}
+.screen-care-toggle-track>span{position:absolute;top:.2vw;left:.2vw;width:.95vw;height:.95vw;background:#fff;border-radius:50%;transition:transform .15s}
+[aria-checked=true]>.screen-care-toggle-track{background:#9a4dff}
+[aria-checked=true]>.screen-care-toggle-track>span{transform:translateX(1.15vw)}
+.screen-care-settings .screen-care-warning{padding:.7vw .9vw;border:1px solid #9b753d;border-radius:.6vw;background:#2f2519;color:#ffe2af;font-size:.82vw;line-height:1.4}
+.theme-mobile .screen-care-settings .screen-care-warning{background:#fff4dd;color:#654200;border-color:#c3913e}

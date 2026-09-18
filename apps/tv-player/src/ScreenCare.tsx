@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { carePhase, careProfile, careShift, careSpot, nextCareElapsed, CARE_PROFILES, type CarePhase, type CareProfile } from './screenCarePolicy';
+import { careEnabled, carePhase, careProfile, careShift, careSpot, nextCareElapsed, CARE_PROFILES, type CarePhase, type CareProfile } from './screenCarePolicy';
 import { readVisualSetting, writeVisualSetting, formatTvTime } from './presentation';
 import './screen-care.css';
 
 /** No wake locks, artificial input, panel-service calls, or backend mutations. */
 export function useScreenCare(motionAllowed: boolean, onActivity: () => void) {
+  const [enabled, setEnabled] = useState(() => careEnabled(readVisualSetting('crewcheck-tv-screen-care-enabled', ['true','false'], 'true')));
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const [profile, setProfile] = useState<CareProfile>(() => careProfile(readVisualSetting('crewcheck-tv-screen-care', ['oled','balanced','reading'], 'balanced')));
   const [sample, setSample] = useState({elapsed:0,idle:0,manual:false});
   const runtime = useRef({elapsed:0,lastActivity:0,wall:Date.now(),mono:0,manual:false});
@@ -23,7 +26,7 @@ export function useScreenCare(motionAllowed: boolean, onActivity: () => void) {
   function publish() {
     const r = advance(); setSample({elapsed:r.elapsed,idle:idleOf(r),manual:r.manual});
   }
-  const phase: CarePhase = carePhase(sample.idle,profile,motionAllowed);
+  const phase: CarePhase = carePhase(sample.idle,profile,motionAllowed,enabled);
   const covered = phase !== 'active';
   useEffect(() => {
     const r = runtime.current; r.wall=Date.now(); r.mono=monotonic();
@@ -47,7 +50,7 @@ export function useScreenCare(motionAllowed: boolean, onActivity: () => void) {
       const current=advance();
       if (swallowedKey && event.type==='keydown' && key===swallowedKey && (keyboard.repeat || current.elapsed < swallowClickUntil)) {event.preventDefault();event.stopImmediatePropagation();return;}
       if (event.type==='keydown' && !keyboard.repeat && current.elapsed >= swallowClickUntil) swallowedKey=null;
-      const sleeping=carePhase(idleOf(current),profileRef.current,motionRef.current)!=='active';
+      const sleeping=carePhase(idleOf(current),profileRef.current,motionRef.current,enabledRef.current)!=='active';
       if (sleeping) {
         event.preventDefault(); event.stopImmediatePropagation();
         swallowClickUntil=current.elapsed+500;
@@ -67,7 +70,7 @@ export function useScreenCare(motionAllowed: boolean, onActivity: () => void) {
     function tick() {
       if(document.hidden) return;
       const current=advance();
-      if (carePhase(idleOf(current),profileRef.current,motionRef.current)!=='active') rememberFocus();
+      if (carePhase(idleOf(current),profileRef.current,motionRef.current,enabledRef.current)!=='active') rememberFocus();
       setSample({elapsed:current.elapsed,idle:idleOf(current),manual:current.manual});
     }
     const events=['keydown','mousedown','touchstart','wheel'];
@@ -80,11 +83,23 @@ export function useScreenCare(motionAllowed: boolean, onActivity: () => void) {
   function choose(value:CareProfile) {
     const normalized=careProfile(value);profileRef.current=normalized;setProfile(normalized);writeVisualSetting('crewcheck-tv-screen-care',normalized);publish();
   }
+  function chooseEnabled(value: boolean) {
+    // Apply immediately and start a fresh idle interval when enabled again.
+    enabledRef.current = value;
+    setEnabled(value);
+    writeVisualSetting('crewcheck-tv-screen-care-enabled', value ? 'true' : 'false');
+    const current = advance();
+    current.manual = false;
+    current.lastActivity = current.elapsed;
+    activityRef.current();
+    setSample({elapsed:current.elapsed,idle:0,manual:false});
+  }
   function preview() {
+    if (!enabledRef.current) return;
     returnFocus.current=document.activeElement as HTMLElement;
     const current=advance();current.manual=true;current.lastActivity=current.elapsed;publish();
   }
-  return {profile,phase,covered,shift:covered ? {x:0,y:0}:careShift(sample.elapsed,sample.idle,motionAllowed),spot:careSpot(sample.idle-CARE_PROFILES[profile].saverAt),choose,preview};
+  return {enabled,chooseEnabled,profile,phase,covered,shift:covered ? {x:0,y:0}:careShift(sample.elapsed,sample.idle,motionAllowed,enabled),spot:careSpot(sample.idle-CARE_PROFILES[profile].saverAt),choose,preview};
 }
 export type ScreenCare = ReturnType<typeof useScreenCare>;
 export function ScreenCareCover({care,clock}:{care:ScreenCare;clock:Date}) {
@@ -97,9 +112,23 @@ export function ScreenCareCover({care,clock}:{care:ScreenCare;clock:Date}) {
   </section>;
 }
 export function ScreenCareSettings({care}:{care:ScreenCare}) {
-  return <article className="screen-care-settings"><h2>Proteção de tela</h2>
-    <p>Pausa por inatividade. Não é garantia contra burn-in e não desliga a televisão.</p>
-    <div className="options">{([['oled','2 min · OLED'],['balanced','5 min · padrão'],['reading','15 min · leitura']] as [CareProfile,string][]).map(([value,label])=><button key={value} aria-pressed={care.profile===value} onClick={()=>care.choose(value)}>{label}</button>)}<button onClick={care.preview}>Testar proteção agora</button></div>
-    <small>Após {CARE_PROFILES[care.profile].blackAt/60000} minutos sem interação: fundo preto sem texto. Com movimento desligado, o fundo preto entra já na primeira pausa. As proteções da própria TV devem continuar ligadas.</small>
+  return <article className="screen-care-settings">
+    <div className="screen-care-heading">
+      <h2>Proteção de tela</h2>
+      <button type="button" role="switch" aria-checked={care.enabled}
+        aria-label="Proteção de tela do CrewCheck" aria-describedby="screen-care-description"
+        className="screen-care-toggle" onClick={() => care.chooseEnabled(!care.enabled)}>
+        <span className="screen-care-toggle-track" aria-hidden="true"><span/></span>
+        <span>{care.enabled ? 'Ativada' : 'Desativada'}</span>
+      </button>
+    </div>
+    <p id="screen-care-description">{care.enabled
+      ? 'Pausa automática do CrewCheck. A escolha fica salva nesta TV.'
+      : 'Sem pausa automática nem deslocamento preventivo do CrewCheck. As animações do clima e dos cards seguem sua configuração de movimento.'}</p>
+    {!care.enabled && <p className="screen-care-warning" role="status">A tela pode permanecer fixa por longos períodos. Isso pode favorecer retenção de imagem ou burn-in, especialmente em OLED. As proteções da própria televisão continuam independentes.</p>}
+    <div className="options">{([['oled','2 min · OLED'],['balanced','5 min · padrão'],['reading','15 min · leitura']] as [CareProfile,string][]).map(([value,label])=><button key={value} disabled={!care.enabled} aria-pressed={care.profile===value} onClick={()=>care.choose(value)}>{label}</button>)}<button disabled={!care.enabled} onClick={care.preview}>Testar proteção agora</button></div>
+    <small>{care.enabled
+      ? 'Após ' + (CARE_PROFILES[care.profile].blackAt/60000) + ' minutos sem interação: fundo preto sem texto. Com movimento desligado, o fundo preto entra já na primeira pausa.'
+      : 'Sua preferência de tempo foi mantida. Ao reativar, a contagem de inatividade recomeça.'} Esta opção não desliga a televisão, não desativa a proteção nativa da LG e não é garantia contra burn-in.</small>
   </article>;
 }

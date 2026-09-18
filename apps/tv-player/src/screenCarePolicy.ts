@@ -2,6 +2,8 @@
 export type CareProfile = 'oled' | 'balanced' | 'reading';
 export type CarePhase = 'active' | 'saver' | 'black';
 const MINUTE = 60000;
+// Existing installations default to enabled. Only an explicit saved false opts out.
+export function careEnabled(value: unknown): boolean { return value !== 'false'; }
 export const CARE_PROFILES = {
   oled: { saverAt: 2 * MINUTE, blackAt: 5 * MINUTE },
   balanced: { saverAt: 5 * MINUTE, blackAt: 15 * MINUTE },
@@ -10,7 +12,8 @@ export const CARE_PROFILES = {
 export function careProfile(value: string): CareProfile {
   return value === 'oled' || value === 'reading' ? value : 'balanced';
 }
-export function carePhase(idleMs: number, profile: CareProfile, motionAllowed = true): CarePhase {
+export function carePhase(idleMs: number, profile: CareProfile, motionAllowed = true, enabled = true): CarePhase {
+  if (!enabled) return 'active';
   if (!Number.isFinite(idleMs)) return 'black';
   const policy = CARE_PROFILES[careProfile(profile)];
   if (idleMs >= policy.blackAt) return 'black';
@@ -18,8 +21,8 @@ export function carePhase(idleMs: number, profile: CareProfile, motionAllowed = 
   return 'active';
 }
 const ORBIT = [[0,0],[2,0],[4,2],[2,4],[0,4],[-2,2],[-4,0],[-2,-2],[0,-4],[2,-2]];
-export function careShift(elapsedMs: number, idleMs: number, motionAllowed: boolean): {x: number;y: number} {
-  if (!motionAllowed || idleMs < 10000 || !Number.isFinite(elapsedMs)) return {x:0,y:0};
+export function careShift(elapsedMs: number, idleMs: number, motionAllowed: boolean, enabled = true): {x: number;y: number} {
+  if (!enabled || !motionAllowed || idleMs < 10000 || !Number.isFinite(elapsedMs)) return {x:0,y:0};
   const point = ORBIT[Math.floor(Math.max(0,elapsedMs) / 120000) % ORBIT.length];
   return {x:point[0], y:point[1]};
 }
