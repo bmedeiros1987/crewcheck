@@ -16,8 +16,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 30
         targetSdk 36
-        versionCode 140375
-        versionName '14.3.75-watch-mvp'
+        versionCode 140376
+        versionName '14.3.76-watch-alpha'
         buildConfigField 'String', 'CREWCHECK_WATCH_ENDPOINT', '"' + escapedEndpoint + '"'
         buildConfigField 'String', 'CREWCHECK_WATCH_TOKEN', '"' + escapedToken + '"'
     }
@@ -45,4 +45,16 @@ android {
             debuggable true
         }
     }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-wearable:20.0.1'
+
+    implementation 'androidx.wear.tiles:tiles:1.6.2'
+    implementation 'androidx.wear.protolayout:protolayout:1.4.2'
+
+    implementation 'androidx.wear.watchface:watchface-complications-data:1.3.0'
+    implementation 'androidx.wear.watchface:watchface-complications-data-source:1.3.0'
+
+    implementation 'com.google.guava:guava:33.4.8-android'
 }

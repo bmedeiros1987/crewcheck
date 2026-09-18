@@ -1,7 +1,12 @@
 package com.crewcheck.watch;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,42 +17,75 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import org.json.JSONObject;
+import com.crewcheck.watch.data.SnapshotRepository;
+import com.crewcheck.watch.data.WatchStateStore;
+import com.crewcheck.watch.model.WatchContextSnapshot;
+import com.crewcheck.watch.notification.WatchNotificationHelper;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.time.LocalTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-public class MainActivity extends Activity {
-    private static final int BG = Color.rgb(5, 11, 20);
-    private static final int CARD = Color.rgb(12, 24, 36);
-    private static final int TEXT = Color.rgb(245, 248, 250);
-    private static final int MUTED = Color.rgb(166, 178, 190);
-    private static final int TEAL = Color.rgb(40, 215, 192);
-    private static final int GREEN = Color.rgb(91, 226, 118);
-    private static final int ORANGE = Color.rgb(255, 177, 66);
+public final class MainActivity extends Activity {
+    private static final int BG = Color.rgb(7, 20, 37);
+    private static final int SURFACE = Color.rgb(14, 31, 52);
+    private static final int SURFACE_ALT = Color.rgb(20, 39, 64);
+    private static final int TEXT = Color.rgb(247, 250, 252);
+    private static final int MUTED = Color.rgb(169, 183, 198);
+    private static final int CYAN = Color.rgb(85, 217, 242);
+    private static final int VIOLET = Color.rgb(137, 92, 246);
+    private static final int MAGENTA = Color.rgb(242, 85, 164);
+    private static final int WARNING = Color.rgb(255, 190, 92);
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
+
+    private SnapshotRepository repository;
     private LinearLayout content;
+    private TextView clock;
     private TextView syncStatus;
+    private Button refreshButton;
+
+    private final Runnable clockTick = new Runnable() {
+        @Override
+        public void run() {
+            if (clock != null) {
+                clock.setText(DateTimeFormatter.ofPattern("HH:mm")
+                        .withZone(ZoneId.systemDefault())
+                        .format(Instant.now()));
+            }
+            main.postDelayed(this, 30_000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        repository = new SnapshotRepository(this);
+        WatchNotificationHelper.ensureChannel(this);
+        requestNotificationPermissionIfNeeded();
         renderShell();
+        render(repository.current());
         refresh();
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        main.removeCallbacks(clockTick);
+        main.post(clockTick);
+        if (repository != null) render(repository.current());
+    }
+
+    @Override
+    protected void onPause() {
+        main.removeCallbacks(clockTick);
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
-        executor.shutdownNow();
+        if (repository != null) repository.shutdown();
+        main.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
 
@@ -55,204 +93,253 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(BG);
         scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_HORIZONTAL);
-        int pad = dp(18);
-        content.setPadding(pad, dp(10), pad, dp(24));
+        content.setPadding(dp(18), dp(12), dp(18), dp(28));
         scroll.addView(content, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT));
+                ScrollView.LayoutParams.WRAP_CONTENT
+        ));
 
-        TextView brand = label("CREWWATCH", 12, TEAL, true);
+        TextView brand = text("CREWCHECK", 11, CYAN, true);
         brand.setLetterSpacing(.18f);
         content.addView(brand);
 
-        TextView clock = label(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")), 26, TEXT, true);
-        clock.setPadding(0, dp(2), 0, dp(4));
+        clock = text("--:--", 27, TEXT, true);
+        clock.setPadding(0, dp(1), 0, dp(1));
         content.addView(clock);
 
-        syncStatus = label("Sincronizando…", 10, MUTED, false);
+        syncStatus = text("Carregando…", 10, MUTED, false);
+        syncStatus.setPadding(0, 0, 0, dp(7));
         content.addView(syncStatus);
 
-        Button refresh = new Button(this);
-        refresh.setText("Atualizar");
-        refresh.setTextColor(TEXT);
-        refresh.setTextSize(11);
-        refresh.setAllCaps(false);
-        refresh.setBackgroundColor(Color.rgb(18, 48, 56));
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(dp(132), dp(42));
-        buttonParams.setMargins(0, dp(8), 0, dp(10));
-        refresh.setLayoutParams(buttonParams);
-        refresh.setOnClickListener(v -> refresh());
-        content.addView(refresh);
+        refreshButton = new Button(this);
+        refreshButton.setText("Atualizar");
+        refreshButton.setAllCaps(false);
+        refreshButton.setTextColor(TEXT);
+        refreshButton.setTextSize(11);
+        refreshButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        refreshButton.setMinHeight(0);
+        refreshButton.setMinimumHeight(0);
+        refreshButton.setPadding(dp(18), 0, dp(18), 0);
+        refreshButton.setBackground(rounded(SURFACE_ALT, dp(18), CYAN, 1));
+        refreshButton.setOnClickListener(v -> refresh());
+
+        LinearLayout.LayoutParams buttonParams =
+                new LinearLayout.LayoutParams(dp(128), dp(38));
+        buttonParams.setMargins(0, 0, 0, dp(10));
+        content.addView(refreshButton, buttonParams);
 
         setContentView(scroll);
     }
 
     private void refresh() {
-        syncStatus.setText("Sincronizando…");
-        executor.execute(() -> {
-            try {
-                CrewWatchState state = BuildConfig.CREWCHECK_WATCH_ENDPOINT.isBlank()
-                        ? CrewWatchState.demo()
-                        : loadRemoteState();
-                main.post(() -> renderState(state));
-            } catch (Exception error) {
+        refreshButton.setEnabled(false);
+        syncStatus.setText(repository.hasRemoteEndpoint()
+                ? "Sincronizando…"
+                : "Aguardando celular • cache local");
+
+        repository.refresh(new SnapshotRepository.Callback() {
+            @Override
+            public void onSuccess(WatchStateStore.SavedState state) {
                 main.post(() -> {
-                    syncStatus.setText("Sem conexão • mostrando dados demo");
-                    renderState(CrewWatchState.demo());
+                    refreshButton.setEnabled(true);
+                    render(state);
+                });
+            }
+
+            @Override
+            public void onError(Throwable error, WatchStateStore.SavedState cachedState) {
+                main.post(() -> {
+                    refreshButton.setEnabled(true);
+                    render(cachedState);
+                    syncStatus.setText("Sem conexão • último estado salvo");
                 });
             }
         });
     }
 
-    private CrewWatchState loadRemoteState() throws Exception {
-        URL url = new URL(BuildConfig.CREWCHECK_WATCH_ENDPOINT);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setConnectTimeout(7000);
-        connection.setReadTimeout(7000);
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("Accept", "application/json");
-        if (!BuildConfig.CREWCHECK_WATCH_TOKEN.isBlank()) {
-            connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.CREWCHECK_WATCH_TOKEN);
+    private void render(WatchStateStore.SavedState saved) {
+        while (content.getChildCount() > 4) {
+            content.removeViewAt(4);
         }
 
-        int status = connection.getResponseCode();
-        if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status);
+        WatchContextSnapshot snapshot = saved.snapshot;
+        boolean stale = snapshot.isStale(System.currentTimeMillis());
 
-        StringBuilder body = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) body.append(line);
-        } finally {
-            connection.disconnect();
+        if (saved.demoFallback) {
+            syncStatus.setText("Modo demonstração • sem escala sincronizada");
+        } else if (stale) {
+            syncStatus.setText("Dados desatualizados • toque em Atualizar");
+        } else {
+            String source = "phone-data-item".equals(saved.source)
+                    || "phone-message".equals(saved.source)
+                    ? "celular"
+                    : saved.source;
+            syncStatus.setText("Sincronizado • " + source);
         }
-        return CrewWatchState.fromJson(new JSONObject(body.toString()));
+
+        addHero(snapshot, stale || saved.demoFallback);
+
+        addInfoCard(
+                "APRESENTAÇÃO",
+                value(snapshot.presentationTime),
+                value(snapshot.presentationPlace),
+                CYAN
+        );
+
+        addInfoCard(
+                "VOO",
+                value(snapshot.currentFlight),
+                flightDetail(snapshot),
+                VIOLET
+        );
+
+        addInfoCard(
+                "PORTÃO",
+                snapshot.displayGate(),
+                "REMOTA".equals(snapshot.displayGate())
+                        ? "Embarque em posição remota"
+                        : value(snapshot.currentRoute),
+                "REMOTA".equals(snapshot.displayGate()) ? WARNING : MAGENTA
+        );
+
+        if (!snapshot.connection.isEmpty() || !snapshot.nextFlight.isEmpty()) {
+            addInfoCard(
+                    "CONEXÃO",
+                    value(snapshot.connection),
+                    join(snapshot.nextFlight, snapshot.nextDetail),
+                    CYAN
+            );
+        }
+
+        if (!snapshot.overnight.isEmpty() || !snapshot.hotelPickup.isEmpty()) {
+            addInfoCard(
+                    "PERNOITE",
+                    value(snapshot.overnight),
+                    value(snapshot.hotelPickup),
+                    WARNING
+            );
+        }
+
+        TextView footer = text(
+                saved.demoFallback
+                        ? "Exemplo visual — não use como escala operacional"
+                        : "O relógio exibe a projeção canônica do CrewCheck",
+                9,
+                MUTED,
+                false
+        );
+        footer.setPadding(dp(8), dp(8), dp(8), dp(4));
+        content.addView(footer);
     }
 
-    private void renderState(CrewWatchState state) {
-        while (content.getChildCount() > 4) content.removeViewAt(4);
-        syncStatus.setText(state.demo ? "Modo demo • endpoint não configurado" : "Sincronizado agora");
+    private void addHero(WatchContextSnapshot snapshot, boolean warn) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
+        card.setBackground(rounded(SURFACE_ALT, dp(24), warn ? WARNING : VIOLET, 2));
 
-        addCard("APRESENTAÇÃO", state.presentationTime, state.presentationPlace, TEAL);
-        addCard("HORA DE SAIR", state.leaveTime, state.trafficDetail, GREEN);
-        addCard("VOO ATUAL", state.currentFlight, state.currentRoute + " • ETA " + state.eta, TEXT);
-        addCard("CONEXÃO", state.connection, state.nextFlight + " • " + state.nextDetail, TEAL);
-        addCard("PERNOITE", state.overnight, state.hotelPickup, ORANGE);
+        TextView label = text(snapshot.nextStepLabel(), 11, warn ? WARNING : MAGENTA, true);
+        label.setLetterSpacing(.08f);
+        card.addView(label);
+
+        TextView value = text(snapshot.nextStepValue(), 28, TEXT, true);
+        value.setPadding(0, dp(1), 0, dp(3));
+        card.addView(value);
+
+        TextView detail = text(snapshot.nextStepDetail(), 11, MUTED, false);
+        detail.setMaxLines(3);
+        card.addView(detail);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, 0, 0, dp(8));
+        content.addView(card, params);
     }
 
-    private void addCard(String eyebrow, String mainValue, String detail, int accent) {
+    private void addInfoCard(String label, String value, String detail, int accent) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setPadding(dp(14), dp(11), dp(14), dp(11));
-        card.setBackgroundColor(CARD);
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackground(rounded(SURFACE, dp(18), Color.TRANSPARENT, 0));
 
-        TextView top = label(eyebrow, 9, accent, true);
-        top.setLetterSpacing(.12f);
-        card.addView(top);
+        TextView eyebrow = text(label, 9, accent, true);
+        eyebrow.setLetterSpacing(.10f);
+        card.addView(eyebrow);
 
-        TextView value = label(mainValue, 22, TEXT, true);
-        value.setPadding(0, dp(2), 0, dp(2));
-        card.addView(value);
+        TextView mainValue = text(value, 20, TEXT, true);
+        mainValue.setPadding(0, dp(1), 0, dp(1));
+        card.addView(mainValue);
 
-        TextView sub = label(detail, 11, MUTED, false);
-        sub.setGravity(Gravity.CENTER);
+        TextView sub = text(detail, 10, MUTED, false);
+        sub.setMaxLines(3);
         card.addView(sub);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(4), 0, dp(4));
-        card.setLayoutParams(params);
-        card.setOnClickListener(v -> toggleDetail(sub));
-        content.addView(card);
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(3), 0, dp(3));
+        content.addView(card, params);
     }
 
-    private void toggleDetail(TextView detail) {
-        detail.setVisibility(detail.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
-    }
-
-    private TextView label(String text, int sp, int color, boolean bold) {
+    private TextView text(String value, int sp, int color, boolean bold) {
         TextView view = new TextView(this);
-        view.setText(text == null || text.isBlank() ? "—" : text);
+        view.setText(value(value));
         view.setTextColor(color);
         view.setTextSize(sp);
         view.setGravity(Gravity.CENTER);
-        if (bold) view.setTypeface(view.getTypeface(), android.graphics.Typeface.BOLD);
+        view.setMaxLines(2);
+        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         return view;
+    }
+
+    private GradientDrawable rounded(int fill, int radius, int strokeColor, int strokeDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(radius);
+        if (strokeDp > 0 && strokeColor != Color.TRANSPARENT) {
+            drawable.setStroke(dp(strokeDp), strokeColor);
+        }
+        return drawable;
+    }
+
+    private static String flightDetail(WatchContextSnapshot snapshot) {
+        String eta = snapshot.eta.isEmpty() ? "" : "ETA " + snapshot.eta;
+        return join(snapshot.currentRoute, eta);
+    }
+
+    private static String join(String first, String second) {
+        String a = value(first);
+        String b = value(second);
+        if ("—".equals(a)) return b;
+        if ("—".equals(b)) return a;
+        return a + " • " + b;
+    }
+
+    private static String value(String value) {
+        return value == null || value.isBlank() ? "—" : value;
     }
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    static final class CrewWatchState {
-        final boolean demo;
-        final String presentationTime;
-        final String presentationPlace;
-        final String leaveTime;
-        final String trafficDetail;
-        final String currentFlight;
-        final String currentRoute;
-        final String eta;
-        final String connection;
-        final String nextFlight;
-        final String nextDetail;
-        final String overnight;
-        final String hotelPickup;
-
-        CrewWatchState(boolean demo, String presentationTime, String presentationPlace, String leaveTime,
-                       String trafficDetail, String currentFlight, String currentRoute, String eta,
-                       String connection, String nextFlight, String nextDetail, String overnight,
-                       String hotelPickup) {
-            this.demo = demo;
-            this.presentationTime = presentationTime;
-            this.presentationPlace = presentationPlace;
-            this.leaveTime = leaveTime;
-            this.trafficDetail = trafficDetail;
-            this.currentFlight = currentFlight;
-            this.currentRoute = currentRoute;
-            this.eta = eta;
-            this.connection = connection;
-            this.nextFlight = nextFlight;
-            this.nextDetail = nextDetail;
-            this.overnight = overnight;
-            this.hotelPickup = hotelPickup;
-        }
-
-        static CrewWatchState fromJson(JSONObject json) {
-            return new CrewWatchState(false,
-                    json.optString("presentationTime", "—"),
-                    json.optString("presentationPlace", "—"),
-                    json.optString("leaveTime", "—"),
-                    json.optString("trafficDetail", "—"),
-                    json.optString("currentFlight", "—"),
-                    json.optString("currentRoute", "—"),
-                    json.optString("eta", "—"),
-                    json.optString("connection", "—"),
-                    json.optString("nextFlight", "—"),
-                    json.optString("nextDetail", "—"),
-                    json.optString("overnight", "—"),
-                    json.optString("hotelPickup", "—"));
-        }
-
-        static CrewWatchState demo() {
-            return new CrewWatchState(true,
-                    "12:45",
-                    "CGH • apresentação",
-                    "11:30",
-                    "Trânsito normal • 38 min",
-                    "LA3149",
-                    "POA → CGH",
-                    "14:50",
-                    "1h20",
-                    "LA3102",
-                    "Gate 24 • embarque 15:35",
-                    "GYN",
-                    "Hotel confirmado • pickup 09:20");
-        }
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                8801
+        );
     }
 }

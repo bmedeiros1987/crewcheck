@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "sample-2026-09-18-r1",
+  "journeyId": "journey-sample",
+  "generatedAt": "2026-09-18T12:00:00Z",
+  "validUntil": "2026-09-18T18:00:00Z",
+  "phase": "LEAVE",
+  "nextAction": {
+    "label": "SAIR EM",
+    "value": "18 MIN",
+    "detail": "APZ 13:30 • BSB",
+    "at": "2026-09-18T12:18:00Z"
+  },
+  "presentation": {
+    "time": "13:30",
+    "place": "BSB • apresentação"
+  },
+  "leave": {
+    "time": "12:42",
+    "detail": "Trânsito normal • 28 min"
+  },
+  "currentLeg": {
+    "flight": "LA3721",
+    "route": "BSB → GRU",
+    "eta": "15:35",
+    "gate": "24",
+    "gateMode": "JET_BRIDGE"
+  },
+  "connectionInfo": {
+    "duration": "1H20",
+    "nextFlight": "LA3102",
+    "detail": "Portão 18 • embarque 16:15"
+  },
+  "overnightInfo": {
+    "station": "GYN",
+    "detail": "Hotel confirmado • pickup 09:20"
+  },
+  "alert": {
+    "id": "",
+    "title": "",
+    "body": ""
+  }
+}
