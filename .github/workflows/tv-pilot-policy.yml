@@ -1,7 +1,7 @@
 name: TV restricted pilot safety
 on:
   pull_request:
-    paths: ['server/tv/**', 'scripts/tv-*', '.github/workflows/tv-pilot-policy.yml']
+    paths: ['server/tv/**', 'client/src/pages/TvPairPage.tsx', 'scripts/tv-*', '.github/workflows/tv-pilot-policy.yml']
 permissions:
   contents: read
 concurrency:
@@ -27,6 +27,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-pilot-policy-test.mjs
+      - run: node scripts/tv-pilot-config-test.mjs
       - run: node scripts/tv-pilot-mysql-test.mjs
         env:
           TV_TEST_DATABASE_URL: mysql://root:tv-test-only@127.0.0.1:3306/crewcheck_tv_test
