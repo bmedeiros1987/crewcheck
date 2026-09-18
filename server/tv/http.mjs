@@ -7,9 +7,17 @@ import { createPilotStore } from './pilot-store.mjs';
 import { readPilotPolicy } from './pilot-policy.mjs';
 import { createTvHandler } from './routes.mjs';
 const execFileAsync = promisify(execFile);
+const safeCodes = new Set(['ERR_MODULE_NOT_FOUND','ERR_PACKAGE_PATH_NOT_EXPORTED','ENOENT','EACCES','ECONNREFUSED','ETIMEDOUT','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR','ER_PARSE_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR']);
+async function prepareStep(stage, action) {
+  try { return await action(); }
+  catch (error) {
+    // Fixed stage names and bounded codes only. Never print message/stack,
+    // SQL, child stderr, environment, account identity or device credentials.
+    console.warn('[tv:prepare] '+JSON.stringify({stage,code:safeCodes.has(error?.code)?error.code:'preparation_failed',exitCode:typeof error?.code==='number'?error.code:null}));
+    throw error;
+  }
+}
 
-// Only the already-existing Render preview is activated. Main remains unchanged.
-// The compiled canonical projector is prepared once, never from user input.
 export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiveRoster, readBody }) {
   let ready;
   const policy = () => readPilotPolicy();
@@ -18,14 +26,12 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
     if (!settings.enabled) throw new Error('pilot_unavailable');
     if (settings.bootstrap) {
       const cwd = fileURLToPath(new URL('../../', import.meta.url));
-      await execFileAsync(process.execPath, ['scripts/tv-server-build.mjs'], { cwd, timeout: 45000, maxBuffer: 1000000 });
+      await prepareStep('projection-build', () => execFileAsync(process.execPath, ['scripts/tv-server-build.mjs'], { cwd, timeout: 45000, maxBuffer: 1000000 }));
     }
-    const { projectRoster } = await import('../../dist/tv-server/core.mjs');
+    const { projectRoster } = await prepareStep('projection-import', () => import('../../dist/tv-server/core.mjs'));
     const store = createPilotStore(getDatabase);
-    // Explicit, preview-only opt-in. Creates a separate bounded registry and does
-    // not touch main's existing TV registry, accounts, rosters or operational data.
-    if (settings.bootstrap) await store.initialize();
-    await store.check();
+    if (settings.bootstrap) await prepareStep('registry-init', () => store.initialize());
+    await prepareStep('registry-check', () => store.check());
     const devices = createDeviceService({ store, pairingOrigin: settings.origin, accountAllowed: user => policy().allows(user) });
     const handler = createTvHandler({
       enabled: true,
@@ -81,7 +87,7 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
       const { handler, store } = await ready;
       if (!policy().enabled) { send(403, { error: 'pilot_not_authorized' }); return true; }
       if (req.method === 'GET' && url.pathname === '/api/tv/status') {
-        await store.check();
+        await prepareStep('registry-status', () => store.check());
         send(200, { schemaVersion: 1, available: true, mode: 'restricted-pilot', pairing: true, news: false, commit: process.env.RENDER_GIT_COMMIT || null });
         return true;
       }
