@@ -52,11 +52,30 @@ jobs:
           set -euo pipefail
           node scripts/regression-p0-525-stay-physical-association.mjs
           node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+          node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
       - name: Prepared incremental continuity across runtime timezones
         run: |
           set -euo pipefail
           for zone in UTC America/Sao_Paulo America/Los_Angeles; do
             TZ="$zone" node scripts/regression-p0-525-continuity-incremental.mjs
           done
+      - name: Preserve existing sovereign VC and carry-over guards
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-580-real-vc-legend-boundary.mjs
+          node scripts/regression-p0-580-transposed-vc-boundary.mjs
+          node scripts/regression-p0-580-overlap-reimport.mjs
+          node scripts/regression-p0-580-exact-competence-open.mjs
+          node scripts/regression-p0-580-adjacent-crew-identity.mjs
+          node scripts/regression-p0-580-active-body-fingerprint.mjs
+          node scripts/regression-p0-580-previous-source-order.mjs
+          node scripts/regression-p0-580-invalid-placeholders.mjs
+          node scripts/regression-p0-580-residual-source-order.mjs
+          node scripts/regression-p0-580-post-anchor-residual.mjs
+          node scripts/p0-580-transposed-vc-boundary/regression-airport-sentinel.mjs
+          node scripts/regression-p0-580-residual-object-identity.mjs
+          node scripts/regression-p0-580-boundary-clock-independence.mjs
+          node scripts/regression-p0-580-local-identity-collision.mjs
+          node scripts/regression-p0-580-local-period-identity.mjs
       - name: TypeScript
         run: npx tsc --noEmit
