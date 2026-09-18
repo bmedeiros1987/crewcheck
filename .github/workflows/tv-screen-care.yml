@@ -1,0 +1,46 @@
+name: TV screen care development package
+on:
+  pull_request:
+    paths: ['apps/tv-player/**', 'apps/lg-webos/**', 'scripts/tv-*', '.github/workflows/tv-screen-care.yml']
+permissions:
+  contents: read
+concurrency:
+  group: tv-screen-care-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lg-screen-care:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      VITE_TV_DEMO: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-brand-test.mjs
+      - run: node scripts/tv-screen-care-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - run: node scripts/tv-build.mjs lg-webos
+      - name: Package LG demo with screen care
+        run: |
+          npm install --prefix "$RUNNER_TEMP/webos-cli" --no-audit --no-fund @webos-tools/cli@3.2.6
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-config" --profile tv
+          mkdir -p dist/tv-screen-care
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --no-minify dist/lg-webos --outdir dist/tv-screen-care
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --info dist/tv-screen-care/*.ipk
+          cp dist/lg-webos/tv-build.json dist/tv-screen-care/BUILD.json
+          (cd dist/tv-screen-care && sha256sum *.ipk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-LG-Screen-Care-DEMO-0.1.3
+          path: |
+            dist/tv-screen-care
+            dist/lg-webos
+            apps/tv-player/src
+            docs/tv/SCREEN-CARE.md
+          if-no-files-found: error
+          retention-days: 14

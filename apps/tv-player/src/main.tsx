@@ -8,6 +8,7 @@ import { demoSnapshot } from './demo';
 import { formatTvTime as time, formatMonth, activityLabel, readVisualSetting, writeVisualSetting } from './presentation';
 import { TvBrand, NavIcon, WeatherArtwork, Car, Clock3, Plane, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles } from './TvVisuals';
 import './tv.css';
+import { useScreenCare, ScreenCareCover, ScreenCareSettings } from './ScreenCare';
 
 const config = import.meta.env;
 const demo = config.VITE_TV_DEMO === 'true';
@@ -38,6 +39,7 @@ function App() {
   const generation = useRef(0), lastInput = useRef(Date.now()), dayReturn = useRef<View>('Mês');
   const main = useRef<HTMLElement>(null);
   const effectiveMotion = reduced ? 'off' : motion;
+  const care = useScreenCare(effectiveMotion !== 'off', () => { lastInput.current = Date.now(); });
   const clear = () => {
     generation.current++;
     session.clear();
@@ -124,10 +126,10 @@ function App() {
     query.addListener(update); return () => query.removeListener(update);
   }, []);
   useEffect(() => {
-    if (paused || effectiveMotion === 'off') return;
+    if (paused || care.covered || effectiveMotion === 'off') return;
     const timer = setInterval(() => setTickerIndex(i => i + 1), 14000);
     return () => clearInterval(timer);
-  }, [paused, effectiveMotion]);
+  }, [paused, care.covered, effectiveMotion]);
   function openDay(date: string, from: View) { dayReturn.current = from; setDay(date); setView('Dia'); }
   function goBack() {
     if (exitRequested) { setExitRequested(false); return; }
@@ -160,12 +162,13 @@ function App() {
     document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);
   }, [view, exitRequested]);
   useEffect(() => {
+    if (care.covered) return;
     let target: HTMLElement | null = null;
     if (exitRequested) target = document.querySelector('.exit-dialog button');
     else if (view === 'Dia') target = main.current?.querySelector('.detail button') || null;
     else if (view === 'Mês' || view === 'Semana') target = main.current?.querySelector('[data-date="' + day + '"]') || null;
     (target || main.current?.querySelector<HTMLElement>('nav .active,button'))?.focus();
-  }, [view, !!snapshot, exitRequested]);
+  }, [view, !!snapshot, exitRequested, care.covered]);
   const next = snapshot?.next;
   const gate = currentFact(snapshot?.gate || null), weather = currentFact(snapshot?.weather || null), leave = currentFact(snapshot?.leaveAt || null);
   const shownWeather = weather && Number.isFinite(weather.temperature) ? weather : null;
@@ -196,8 +199,8 @@ function App() {
     {a.groundBeforeMinutes !== null && <p>Em solo <strong>{a.groundBeforeMinutes} min</strong></p>}
     <small>Informações da escala · confiança {a.confidence}</small>
   </article>;
-  return <main ref={main} className={'tv-app theme-' + theme} data-motion={effectiveMotion} data-paused={paused ? 'true' : 'false'} style={themeStyle} onMouseDown={() => { lastInput.current = Date.now(); }}>
-    <header><TvBrand/><div className={'header-status state-' + dataState}><i/>{demo ? 'DEMONSTRAÇÃO · DADOS FICTÍCIOS' : status}<small>{demo ? 'Prévia visual 0.1.1 · não é sua escala' : snapshot ? (snapshot.privacy === 'family' ? 'Modo família' : 'Modo privado') + ' · atualização ' + time(snapshot.generatedAt) : 'Autorização pelo celular'}</small></div><div className="clock">{time(clock.toISOString())}<small>Brasília · {clock.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'America/Sao_Paulo' })}</small></div></header>
+  return <><main ref={main} className={'tv-app theme-' + theme} data-motion={effectiveMotion} data-paused={paused || care.covered ? 'true' : 'false'} data-screen-care={care.covered ? 'covered' : 'active'} aria-hidden={care.covered} style={{...themeStyle, left: care.shift.x, top: care.shift.y}} onMouseDown={() => { lastInput.current = Date.now(); }}>
+    <header><TvBrand/><div className={'header-status state-' + dataState}><i/>{demo ? 'DEMONSTRAÇÃO · DADOS FICTÍCIOS' : status}<small>{demo ? 'Prévia visual 0.1.3 · não é sua escala' : snapshot ? (snapshot.privacy === 'family' ? 'Modo família' : 'Modo privado') + ' · atualização ' + time(snapshot.generatedAt) : 'Autorização pelo celular'}</small></div><div className="clock">{time(clock.toISOString())}<small>Brasília · {clock.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'America/Sao_Paulo' })}</small></div></header>
     {!enabled ? <section className="pair"><div><p className="eyebrow">CREWCHECK TV</p><h1>Piloto ainda não disponível.</h1><p>A liberação da sua conta será feita no aplicativo.</p></div></section> : !snapshot ? <section className="pair view-enter"><div><p className="eyebrow"><ShieldCheck/> BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1><p>Autorize esta tela pelo CrewCheck no celular.</p><button className="primary-button" onClick={begin}>{demo ? 'Voltar à demonstração' : pairing ? 'Gerar novo código' : 'Vincular TV'} <ArrowRight/></button><p role="status">{status}</p><small>Nenhuma senha da sua conta fica nesta televisão.</small></div>{pairing && <aside><img src={qr} alt="QR Code para autorizar a televisão"/><h2>{pairing.userCode}</h2><p>Válido por 5 minutos</p></aside>}</section> : <>
       <nav aria-label="Navegação principal">{views.map(v => <button key={v} className={view === v ? 'active' : ''} aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}><NavIcon name={v}/><span>{v}</span></button>)}<span className="month-label">{formatMonth(snapshot.summary.month)}</span></nav>
       <div className="view-content view-enter" key={view}>
@@ -221,11 +224,11 @@ function App() {
       {view === 'Dia' && <section className="detail"><button className="back-button" onClick={() => setView(dayReturn.current)}><ChevronLeft/> Voltar</button><h1>{day.split('-').reverse().join('/')}</h1><div className="activities">{selected?.activities.length ? selected.activities.map(activity) : <article className="empty-card">Nenhuma programação publicada para este dia.</article>}</div></section>}
       {view === 'Mudanças' && <section className="detail"><p className="eyebrow">INFORMAÇÃO COM CONTEXTO</p><h1>O que mudou</h1>{snapshot.changes.length ? snapshot.changes.map((c, i) => <article className="change-item" key={i}><NavIcon name="Mudanças"/>{c}</article>) : <article className="empty-card">Nenhuma atualização confirmada disponível.</article>}</section>}
       {view === 'Notícias' && <section className="detail"><p className="eyebrow">SEU INFORMATIVO</p><h1>Notícias da aviação</h1>{news.length ? news.map(n => <article className="news-item" key={n.id}><h2>{n.title}</h2><p>{n.source} · {n.publishedAt || n.freshness}</p></article>) : <article className="empty-card"><NavIcon name="Notícias"/><h2>Nenhuma manchete disponível agora.</h2><p>Esta área depende das fontes de notícias. Sua escala continua funcionando independentemente dela.</p></article>}<p className="note">Notícias são conteúdo editorial, não informação operacional do seu voo.</p></section>}
-      {view === 'Configurações' && <section className="detail settings"><p className="eyebrow">DO SEU JEITO</p><h1>Sua TV, seu CrewCheck.</h1><div className="settings-row"><article><h2>Aparência</h2><p>A mesma identidade do aplicativo, adaptada à televisão.</p><div className="options"><button aria-pressed={theme === 'night'} onClick={() => setPreference('theme','night')}><Moon/> Escuro</button><button aria-pressed={theme === 'mobile'} onClick={() => setPreference('theme','mobile')}><Sun/> Claro</button></div></article><article><h2>Movimento</h2><p>Personalize as animações sem alterar as informações.</p><div className="options"><button aria-pressed={motion === 'full'} onClick={() => setPreference('motion','full')}>Completo</button><button aria-pressed={motion === 'soft'} onClick={() => setPreference('motion','soft')}>Suave</button><button aria-pressed={motion === 'off'} onClick={() => setPreference('motion','off')}>Desligado</button></div>{reduced && <small>A preferência de reduzir movimento do sistema está ativa.</small>}</article></div><div className="settings-row"><article><h2>Modo do painel</h2><div className="options">{[['auto','Automático'],['ambient','Ambient'],['live','Live']].map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setView('Agora'); }}>{label}</button>)}</div></article><article><h2>{demo ? 'Demonstração' : 'Sua conexão'}</h2><p>{demo ? 'Você está explorando dados fictícios. Nenhuma conta real foi vinculada.' : 'Modo ' + (snapshot.privacy === 'family' ? 'família' : 'privado') + '. Altere a privacidade somente pelo celular.'}</p><button onClick={async () => { if (!demo) { try { await session.call('logout', {}); } catch {} } clear(); }}>{demo ? 'Reiniciar demonstração' : 'Desvincular esta TV'}</button><small>{demo ? 'Este pacote não deve ser enviado à loja.' : 'Autorização de até 24 horas; reiniciar exige novo pareamento neste piloto.'}</small></article></div></section>}
+      {view === 'Configurações' && <section className="detail settings"><p className="eyebrow">DO SEU JEITO</p><h1>Sua TV, seu CrewCheck.</h1><ScreenCareSettings care={care}/><div className="settings-row"><article><h2>Aparência</h2><p>A mesma identidade do aplicativo, adaptada à televisão.</p><div className="options"><button aria-pressed={theme === 'night'} onClick={() => setPreference('theme','night')}><Moon/> Escuro</button><button aria-pressed={theme === 'mobile'} onClick={() => setPreference('theme','mobile')}><Sun/> Claro</button></div></article><article><h2>Movimento</h2><p>Personalize as animações sem alterar as informações.</p><div className="options"><button aria-pressed={motion === 'full'} onClick={() => setPreference('motion','full')}>Completo</button><button aria-pressed={motion === 'soft'} onClick={() => setPreference('motion','soft')}>Suave</button><button aria-pressed={motion === 'off'} onClick={() => setPreference('motion','off')}>Desligado</button></div>{reduced && <small>A preferência de reduzir movimento do sistema está ativa.</small>}</article></div><div className="settings-row"><article><h2>Modo do painel</h2><div className="options">{[['auto','Automático'],['ambient','Ambient'],['live','Live']].map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setView('Agora'); }}>{label}</button>)}</div></article><article><h2>{demo ? 'Demonstração' : 'Sua conexão'}</h2><p>{demo ? 'Você está explorando dados fictícios. Nenhuma conta real foi vinculada.' : 'Modo ' + (snapshot.privacy === 'family' ? 'família' : 'privado') + '. Altere a privacidade somente pelo celular.'}</p><button onClick={async () => { if (!demo) { try { await session.call('logout', {}); } catch {} } clear(); }}>{demo ? 'Reiniciar demonstração' : 'Desvincular esta TV'}</button><small>{demo ? 'Este pacote não deve ser enviado à loja.' : 'Autorização de até 24 horas; reiniciar exige novo pareamento neste piloto.'}</small></article></div></section>}
       </div>
       <footer><strong><Headphones/> CREWCIERGE</strong><div className="ticker"><span className="ticker-message" key={effectiveMotion === 'off' ? 'static' : currentTicker}>{currentTicker}</span></div><span className="remote-hint">Setas · OK · Voltar</span></footer>
     </>}
     {exitRequested && <section className="exit-dialog" role="dialog" aria-modal="true" aria-label="Sair do CrewCheck TV"><h2>Sair do CrewCheck TV?</h2><p>Você pode voltar pelo menu da televisão.</p><button onClick={() => setExitRequested(false)}>Continuar</button><button onClick={() => { clear(); window.close(); }}>Sair</button></section>}
-  </main>;
+  </main><ScreenCareCover care={care} clock={clock}/></>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);
