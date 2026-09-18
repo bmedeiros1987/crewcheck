@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {mkdir,readFile} from 'node:fs/promises';
+await mkdir('dist/tv-pair-tests',{recursive:true});
+await build({entryPoints:{session:'packages/tv-core/src/session.ts',nativeRequest:'packages/tv-core/src/nativeRequest.ts',PairingDiagnostics:'apps/tv-player/src/PairingDiagnostics.tsx'},bundle:true,platform:'node',format:'esm',outdir:'dist/tv-pair-tests',outExtension:{'.js':'.mjs'},loader:{'.css':'empty'}});
+const {TvSession,snapshotValidationCode}=await import('../dist/tv-pair-tests/session.mjs');
+const {validatePairing,pairingFailure}=await import('../dist/tv-pair-tests/PairingDiagnostics.mjs');
+const storage={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};const fakeWindow={};global.window=fakeWindow;
+let calls=0;
+function checkedFetch(input,init){assert.equal(this,fakeWindow,'Native Window receiver must be retained');calls++;assert.equal(init.credentials,'omit');return Promise.resolve(new Response(JSON.stringify({ready:true})));}
+const client=new TvSession(storage,checkedFetch,'https://pilot.example.test');
+assert.deepEqual(await client.call('status'),{ready:true});assert.equal(calls,1);delete global.window;
+const raw={deviceCode:'a'.repeat(43),userCode:'A123456789',verificationUri:'https://pilot.example.test/tv-pair?code=A123456789',expiresIn:300,interval:5};
+assert.equal(validatePairing(raw,'https://pilot.example.test',1000).deadline,301000);
+for(const patch of [{deviceCode:'x'},{expiresIn:Infinity},{expiresIn:-1},{interval:0},{verificationUri:'https://evil.example/tv-pair?code=A123456789'},{verificationUri:raw.verificationUri+'&token=secret'},{verificationUri:'http://pilot.example.test/tv-pair?code=A123456789'}])assert.throws(()=>validatePairing({...raw,...patch},'https://pilot.example.test'));
+for(const [error,code] of [[new TypeError('Illegal invocation'),'TV-NET-01'],[new Error('request_timeout'),'TV-NET-02'],[new Error('request_503'),'TV-HTTP-503'],[new Error('request_429'),'TV-HTTP-429'],[new Error('pair_again'),'TV-AUTH-01'],[new SyntaxError('secret'),'TV-DATA-02'],[new Error('token=SECRET'),'TV-NET-03']]){assert.equal(pairingFailure(error).code,code);assert.ok(!JSON.stringify(pairingFailure(error)).includes('SECRET'));}
+const main=await readFile('apps/tv-player/src/main.tsx','utf8');assert.ok(main.indexOf('setPairing(p)')<main.indexOf('QRCode.toDataURL(p.verificationUri)'));assert.match(main,/pairBusyRef.current/);assert.match(main,/TV-QR-01/);
+await build({entryPoints:['packages/tv-core/src/nativeRequest.ts'],bundle:true,platform:'browser',format:'iife',globalName:'TvNativeRequest',target:'chrome53',outfile:'dist/tv-pair-tests/native-browser.js'});
+// A television with a badly skewed wall clock must still validate a fresh server snapshot.
+let now=Date.parse('2026-09-18T22:45:00Z');
+const skewedWindow={};global.window=skewedWindow;
+const snapshot={schemaVersion:1,snapshotId:'s',deviceId:'d',sourceVersion:'v',generatedAt:new Date(now).toISOString(),expiresAt:new Date(now+60000).toISOString(),privacy:'private',mode:'ambient',next:null,days:[],summary:{month:'2026-09',flights:0,journeys:0,stays:0},leaveAt:null,gate:null,weather:null,changes:[],ticker:[]};
+const credential={deviceId:'d',token:'t',expiresAt:new Date(now+86400000).toISOString(),privacy:'private'};
+function response(body,serverNow){return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json','X-CrewCheck-Server-Time':String(serverNow)}});}
+const skewedFetch=function(input){assert.equal(this,skewedWindow);return Promise.resolve(response(snapshot,now));};
+const skewed=new TvSession(storage,skewedFetch,'https://pilot.example.test');skewed.pair(credential);
+const realNow=Date.now;Date.now=()=>now-9*3600000;
+try{assert.equal((await skewed.sync()).snapshotId,'s');}finally{Date.now=realNow;delete global.window;}
+assert.equal(snapshotValidationCode({...snapshot,schemaVersion:2},credential,now),'schema');
+assert.equal(snapshotValidationCode({...snapshot,deviceId:'other'},credential,now),'device');
+assert.equal(snapshotValidationCode({...snapshot,privacy:'family'},credential,now),'privacy');
+assert.equal(snapshotValidationCode({...snapshot,generatedAt:new Date(now+60000).toISOString()},credential,now),'time');
+assert.equal(snapshotValidationCode({...snapshot,days:null},credential,now),'days_type');
+assert.equal(snapshotValidationCode({...snapshot,days:Array.from({length:32},()=>({date:'2026-09-01',activities:[]}))},credential,now),'days_count');
+assert.equal(snapshotValidationCode({...snapshot,summary:null},credential,now),'summary');
+assert.equal(snapshotValidationCode({...snapshot,changes:null},credential,now),'changes');
+assert.equal(snapshotValidationCode({...snapshot,ticker:null},credential,now),'ticker');
+for(const [message,code] of [['invalid_snapshot_schema','TV-DATA-SCHEMA'],['invalid_snapshot_device','TV-DATA-DEVICE'],['invalid_snapshot_privacy','TV-DATA-PRIVACY'],['invalid_snapshot_time','TV-DATA-TIME'],['invalid_snapshot_days_type','TV-DATA-DAYS'],['invalid_snapshot_summary','TV-DATA-SUMMARY']]) assert.equal(pairingFailure(new Error(message)).code,code);
+console.log('Pairing assertions passed: receiver, response bounds, trusted URL, sanitized diagnostics, QR-independent code, granular snapshot reasons and trusted server-time freshness.');

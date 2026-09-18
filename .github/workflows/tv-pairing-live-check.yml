@@ -1,0 +1,35 @@
+name: TV pairing public transport check # capacity recovered
+on:
+  pull_request:
+    paths: ['.github/workflows/tv-pairing-live-check.yml']
+permissions:
+  contents: read
+jobs:
+  public-transport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe readiness, CORS and code creation only
+        run: |
+          node --input-type=module <<'JS'
+          const base='https://crewcheck-pr-698.onrender.com';
+          const checks=[['GET','status',null],['OPTIONS','pair','file://online.crewcheck.tv.pilot'],['POST','pair','null'],['POST','pair','file://online.crewcheck.tv.pilot'],['GET','devices',null],['OPTIONS','approve','file://online.crewcheck.tv.pilot']];
+          for(const [method,path,origin] of checks){
+            const started=Date.now();
+            const headers={};if(origin)headers.Origin=origin;
+            if(method==='OPTIONS'){headers['Access-Control-Request-Method']='POST';headers['Access-Control-Request-Headers']='content-type';}
+            if(method==='POST')headers['Content-Type']='application/json';
+            try{
+              const r=await fetch(base+'/api/tv/'+path,{method,headers,credentials:'omit',signal:AbortSignal.timeout(15000),...(method==='POST'?{body:JSON.stringify({platform:'lg-webos'})}:{})});
+              const b=r.status===204?{}:await r.json();
+              const safe={method,path,origin,status:r.status,ms:Date.now()-started,cors:r.headers.get('access-control-allow-origin')};
+              if(path==='status')Object.assign(safe,{available:b.available===true,pairing:b.pairing===true,commit:typeof b.commit==='string'&&/^[a-f0-9]{40}$/.test(b.commit)?b.commit:null});
+              if(method==='POST'&&r.ok)Object.assign(safe,{deviceCodeLength:typeof b.deviceCode==='string'?b.deviceCode.length:0,userCodeLength:typeof b.userCode==='string'?b.userCode.length:0,verificationPathValid:typeof b.verificationUri==='string'&&new URL(b.verificationUri).origin===base&&new URL(b.verificationUri).pathname==='/tv-pair',expiresIn:b.expiresIn});
+              if(typeof b.error==='string'&&/^[a-z_]{1,60}$/.test(b.error))safe.error=b.error;
+              console.log(JSON.stringify(safe));
+            }catch{console.log(JSON.stringify({method,path,origin,error:'probe_transport_failure',ms:Date.now()-started}));}
+          }
+          JS
