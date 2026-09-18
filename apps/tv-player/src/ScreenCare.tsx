@@ -45,7 +45,8 @@ export function useScreenCare(motionAllowed: boolean, onActivity: () => void) {
       // Do not swallow power/volume/home keys handled by the television.
       if (event.type==='keydown' && ![13,27,37,38,39,40,461,10009,9,32].includes(keyboard.keyCode) && !['Enter','Escape','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Tab',' '].includes(keyboard.key)) return;
       const current=advance();
-      if (swallowedKey && event.type==='keydown' && key===swallowedKey) {event.preventDefault();event.stopImmediatePropagation();return;}
+      if (swallowedKey && event.type==='keydown' && key===swallowedKey && (keyboard.repeat || current.elapsed < swallowClickUntil)) {event.preventDefault();event.stopImmediatePropagation();return;}
+      if (event.type==='keydown' && !keyboard.repeat && current.elapsed >= swallowClickUntil) swallowedKey=null;
       const sleeping=carePhase(idleOf(current),profileRef.current,motionRef.current)!=='active';
       if (sleeping) {
         event.preventDefault(); event.stopImmediatePropagation();
