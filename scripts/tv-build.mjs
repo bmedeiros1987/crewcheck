@@ -57,10 +57,17 @@ if (demo && platform === "samsung-tizen") {
   const manifest = await readFile(`${target}/config.xml`, "utf8");
   await writeFile(`${target}/config.xml`, manifest.replaceAll("CrewChkTV1", "CrewChkDm1").replace("<name>CrewCheck TV</name>", "<name>CrewCheck TV Demo</name>"));
 }
+const operational =
+  !demo && process.env.VITE_CREWCHECK_TV_ENABLED === "true";
 await writeFile(`${target}/tv-build.json`, JSON.stringify({
-  platform, demo, operational: false,
+  platform,
+  demo,
+  operational,
+  apiOrigin: process.env.VITE_TV_API_ORIGIN || "https://crewcheck.online",
   commit: process.env.GITHUB_SHA || null,
-  note: "Experimental build; not store approved. Runtime feature gates still apply.",
+  note: operational
+    ? "Operational candidate; backend feature gate and device pairing still required."
+    : "Experimental build; not store approved. Runtime feature gates still apply.",
 }, null, 2));
 console.log(
   `Staged ${platform}: ${target}. Native packaging/signing NOT performed.`,
