@@ -1,0 +1,44 @@
+name: TV pairing native browser fix
+on:
+  pull_request:
+    paths: ['apps/tv-player/**','packages/tv-core/**','scripts/tv-*','.github/workflows/tv-pairing-runtime.yml']
+permissions:
+  contents: read
+concurrency:
+  group: tv-pairing-fix-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pairing-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
+      - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
+      - run: node scripts/tv-test.mjs && node scripts/tv-session-receive-time-test.mjs
+      - run: node scripts/tv-brand-test.mjs && node scripts/tv-screen-care-test.mjs && node scripts/tv-screen-care-opt-out-test.mjs
+      - run: node scripts/tv-channel-test.mjs && node scripts/tv-broadcast-test.mjs && node scripts/tv-broadcast-fit-test.mjs
+      - run: node scripts/tv-pairing-test.mjs && npx tsc --noEmit -p tsconfig.tv.json
+      - name: Stage corrected pilot, leaving owner media local
+        env:
+          TV_PILOT_API_ORIGIN: https://crewcheck-pr-698.onrender.com
+        run: |
+          node scripts/tv-broadcast-stage.mjs pilot
+          node --input-type=module -e "import{readFile,writeFile}from'node:fs/promises';const p='dist/lg-webos/appinfo.json';const a=JSON.parse(await readFile(p,'utf8'));a.version='0.1.8';await writeFile(p,JSON.stringify(a,null,2));"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-Pairing-018-UNFINALIZED
+          path: |
+            dist/lg-webos
+            dist/tv-pair-tests
+            apps/tv-player/src
+            packages/tv-core/src/session.ts
+            packages/tv-core/src/nativeRequest.ts
+            scripts/tv-pairing-*.mjs
+          if-no-files-found: error
+          retention-days: 14
