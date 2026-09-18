@@ -1,0 +1,34 @@
+/* Chromium 53 has no CSS Grid, flex gap, clamp or :focus-visible.
+   Keep these overrides isolated from the Android player. */
+button:focus,a:focus{outline:4px solid #6ce9ff;outline-offset:3px;background:#1c425b}
+header,nav,.live,.side,.side-top,.times,.gate,.hero-bottom,footer,.calendar-title,.weekdays,.days,.activities,.activity{gap:0}
+main{background:#051121}
+article{background:#10273c}
+header>*+*{margin-left:20px}
+nav button+button{margin-left:12px}
+.live{display:flex}
+.hero{flex:1.2;min-width:0;margin-right:22px}
+.side{display:flex;flex-direction:column;flex:1;min-width:0}
+.side>article{margin-top:16px}
+.side-top{display:flex}
+.side-top>article{flex:1;min-width:0}
+.side-top>article+article{margin-left:18px}
+.news{flex:1}
+h1{font-size:70px}
+.times strong{font-size:78px}
+.times>div+div{margin-left:50px}
+.gate>*+*{margin-left:24px}
+.hero-bottom>*+*{margin-left:12px}
+.side h2{font-size:48px}
+footer>*+*{margin-left:24px}
+.calendar h1,.detail h1{font-size:36px}
+.calendar-title>*+*{margin-left:18px}
+.weekdays{display:flex}
+.weekdays>span{width:14.2857%}
+.days{display:flex;flex-wrap:wrap;align-content:stretch;margin:0 -5px}
+.days>button,.days>div{flex:0 0 calc(14.2857% - 10px);width:calc(14.2857% - 10px);margin:4px 5px}
+.days b{font-size:24px}
+.days span,.days small{font-size:16px;margin-top:3px}
+.activities{display:flex;flex-wrap:wrap}
+.activity{width:calc(33.3333% - 20px);margin:0 20px 20px 0}
+.activity>*+*{margin-top:18px}
