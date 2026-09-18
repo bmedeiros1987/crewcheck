@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "packages/tv-core/src/**/*.ts",
+    "apps/tv-player/src/**/*.ts",
+    "apps/tv-player/src/**/*.tsx"
+  ],
+  "compilerOptions": { "incremental": false, "jsx": "react-jsx" }
+}
