@@ -1,0 +1,48 @@
+name: P0 #530 exact 168h night boundary
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/actRules.ts'
+      - 'scripts/v14359/**'
+      - 'scripts/v139/**'
+      - 'scripts/regression-v14-3-59-official-roster-compliance.mjs'
+      - 'scripts/regression-p0-530-night-168h-boundary.mjs'
+      - 'scripts/regression-p0-530-journey-instant-timezone-independence.mjs'
+      - '.github/workflows/p0-530-night-168h-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Source exact-boundary contract
+        run: node scripts/regression-p0-530-night-168h-boundary.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Prepared exact-boundary contract
+        run: node scripts/regression-p0-530-night-168h-boundary.mjs
+      - name: Existing official roster compliance
+        run: node scripts/regression-v14-3-59-official-roster-compliance.mjs
+      - name: Existing timezone/journey contract
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Kiritimati; do
+            TZ="$zone" node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
+          done
+      - name: TypeScript
+        run: npx tsc --noEmit
