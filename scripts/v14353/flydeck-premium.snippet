@@ -44,10 +44,11 @@ function nextVacationRestV14353(events: ZeroLeg[], nowMs: number): ZeroLeg | nul
     .filter((event) => !event.placeholder && event.canonical?.kind === 'rest')
     .filter((event) => eventEndDateTime(event).getTime() >= nowMs)
     .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
-  return futureRest.find((event) => {
-    const code = String(event.day?.pairingCode || event.day?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    return /(^|\s)(VC|FERIAS|VACATION)(\s|$)/.test(code);
-  }) || null;
+  // Later vacation cannot override a nearer published day off or recovery rest.
+  const event = futureRest[0];
+  if (!event) return null;
+  const code = String(event.day?.pairingCode || event.day?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return /(^|\s)(VC|FERIAS|VACATION)(\s|$)/.test(code) ? event : null;
 }
 
 function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
