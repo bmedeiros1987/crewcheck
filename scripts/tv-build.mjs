@@ -20,6 +20,12 @@ if (
 await rm(resolvedTarget, { recursive: true, force: true });
 await mkdir(target, { recursive: true });
 await cp("dist/tv-player", target, { recursive: true });
+if (platform === "android-tv") {
+  const html = await readFile(`${target}/index.html`, "utf8");
+  const viewport = 'content="width=device-width,initial-scale=1"';
+  if (!html.includes(viewport)) throw new Error("Android TV viewport template changed");
+  await writeFile(`${target}/index.html`, html.replace(viewport, 'content="width=1280"'));
+}
 if (platform === "samsung-tizen")
   await cp("apps/samsung-tizen/config.xml", `${target}/config.xml`);
 if (platform === "lg-webos")

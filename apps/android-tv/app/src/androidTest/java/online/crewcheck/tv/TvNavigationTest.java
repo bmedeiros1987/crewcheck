@@ -44,9 +44,18 @@ public final class TvNavigationTest {
         fail("Missing visible text: " + text + "; body=" + evaluate("document.body.innerText"));
     }
 
+    private void assertLayoutFits() throws Exception {
+        String geometry = "JSON.stringify({width:innerWidth,height:innerHeight,scroll:document.documentElement.scrollHeight,footer:document.querySelector('footer')?.getBoundingClientRect().top})";
+        String fits = "(() => {const f=document.querySelector('footer').getBoundingClientRect();const c=document.querySelector('.live,.calendar').getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth+2 && document.documentElement.scrollHeight<=innerHeight+2 && c.bottom<=f.top+2 && f.bottom<=innerHeight+2;})()";
+        assertEquals("TV layout clipped or overlapping: " + evaluate(geometry), "true", evaluate(fits));
+        String liveFits = "(() => {const h=document.querySelector('.hero-bottom');return !h || h.getBoundingClientRect().bottom<=document.querySelector('footer').getBoundingClientRect().top;})()";
+        assertEquals("Hero actions overlap ticker", "true", evaluate(liveFits));
+    }
+
     @Test public void testDemoRemoteNavigationAndBack() throws Exception {
         awaitText("DEMONSTRA");
         awaitText("PRÓXIMA JORNADA");
+        assertLayoutFits();
         // Native remote events, not DOM clicks: Agora -> Semana -> Mês.
         getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
         getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
@@ -56,6 +65,7 @@ public final class TvNavigationTest {
             Thread.sleep(250);
         }
         assertTrue("D-pad must open month", evaluate("document.querySelector('nav .active')?.textContent").contains("Mês"));
+        assertLayoutFits();
         getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
         awaitText("PRÓXIMA JORNADA");
         assertTrue("Back must return to Agora", evaluate("document.querySelector('nav .active')?.textContent").contains("Agora"));
