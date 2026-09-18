@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://crewcheck.online/tv" version="0.1.0" viewmodes="maximized">
+  <tizen:application id="CrewChkTV1.Player" package="CrewChkTV1" required_version="7.0"/>
+  <content src="index.html"/>
+  <name>CrewCheck TV</name><icon src="icon.png"/>
+  <tizen:profile name="tv-samsung"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <access origin="https://crewcheck.online" subdomains="false"/>
+  <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+  <tizen:content-security-policy>default-src 'self'; connect-src https://crewcheck.online; img-src 'self' data:; style-src 'self'; script-src 'self'</tizen:content-security-policy>
+</widget>
+
