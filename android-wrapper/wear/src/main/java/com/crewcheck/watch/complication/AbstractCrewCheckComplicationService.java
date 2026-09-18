@@ -2,6 +2,7 @@ package com.crewcheck.watch.complication;
 
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.os.RemoteException;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -33,12 +34,17 @@ abstract class AbstractCrewCheckComplicationService extends ComplicationDataSour
             @NonNull ComplicationRequestListener listener
     ) {
         WatchContextSnapshot snapshot = new WatchStateStore(this).load().snapshot;
-        listener.onComplicationData(build(
-                request.getComplicationType(),
-                shortValue(snapshot),
-                title(snapshot),
-                longValue(snapshot)
-        ));
+        try {
+            listener.onComplicationData(build(
+                    request.getComplicationType(),
+                    shortValue(snapshot),
+                    title(snapshot),
+                    longValue(snapshot)
+            ));
+        } catch (RemoteException ignored) {
+            // The watch-face binder may disappear while the request is in flight.
+            // The next platform update request will recover without losing cached data.
+        }
     }
 
     @Nullable
