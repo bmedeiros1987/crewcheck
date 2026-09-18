@@ -124,6 +124,42 @@ assert.equal(
   'title/raw text cannot specialize an ordinary DO into luto',
 );
 
+// Care state alone is not a sufficient oracle: the operational classifier,
+// FlightDeck predicate, counters and mobility decision must agree with it.
+for (const [code, kind, requiresDeparture] of [
+  ['ASB', 'duty', true],
+  ['HSB', 'standby', false],
+  ['EAD', 'activity', false],
+]) {
+  for (const pairingCode of ['VC', 'FERIAS', 'DO', 'DR', 'REST', 'DESCANSO']) {
+    const item = {
+      kind, type: code, code, pairingCode,
+      canonical: { kind, code, publishedDay: { type: code, pairingCode, legs: [] } },
+      day: { type: code, pairingCode, legs: [] },
+    };
+    const before = JSON.stringify(item);
+    const label = `${code} + residual ${pairingCode}`;
+    assert.equal(classification.careStateForScheduleActivity(item), 'NONE', `${label}: no care state`);
+    assert.equal(classification.classifyScheduleActivity(item), 'PROGRAMACAO', `${label}: formal operation must survive the second classifier fallback`);
+    assert.equal(classification.isProgramScheduleActivity(item), true, `${label}: remains selectable by FlightDeck`);
+    assert.equal(classification.isSmartDepartureEligible(item), requiresDeparture, `${label}: preserve presencial/remote mobility semantics`);
+    const counts = classification.countScheduleCategories([item]);
+    assert.equal(counts.programming, 1, `${label}: must count as programming`);
+    assert.equal(counts.daysOff, 0, `${label}: must not inflate days off`);
+    assert.equal(JSON.stringify(item), before, `${label}: consumer classification must not mutate canonical input`);
+  }
+}
+
+// An absent formal code is not permission to invent grief/vacation from a
+// display label. Published pairing evidence remains covered separately above.
+for (const field of ['title', 'flightNumber']) {
+  for (const value of ['DMO', 'VC', 'FERIAS', 'FÉRIAS']) {
+    const item = { kind: 'duty', [field]: value };
+    assert.equal(classification.careStateForScheduleActivity(item), 'NONE', `${field}=${value} without published code must not infer sensitive care`);
+    assert.equal(classification.carePresentationForScheduleActivity(item), null, `${field}=${value} must not generate a sensitive message`);
+  }
+}
+
 const grief = classification.carePresentationForScheduleActivity(activity('DMO'));
 assert.equal(grief?.suppressRoutineProactivity, true, 'luto suppresses routine proactivity');
 assert.equal(grief?.suppressHumor, true, 'luto suppresses humor');
