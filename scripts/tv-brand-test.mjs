@@ -15,13 +15,27 @@ try {
   assert.equal(activityLabel(null),'Sem programação'); assert.equal(activityLabel({kind:'duty',publishedCode:'OFF'}),'Folga');
   assert.equal(activityLabel({kind:'duty',publishedCode:'HSB'}),'Sobreaviso'); assert.equal(activityLabel({kind:'rest',publishedCode:'DR'}),'Descanso');
   const main=await readFile('apps/tv-player/src/main.tsx','utf8'), css=await readFile('apps/tv-player/src/tv.css','utf8'), icons=await readFile('apps/tv-player/src/TvVisuals.tsx','utf8');
-  assert.ok(main.indexOf('SAIR DE CASA') < main.indexOf('APRESENTAÇÃO'));
-  assert.ok(icons.includes("client/public/icons/crewcheck-icon-v2.png"));
+  const broadcast=main.includes("from './BroadcastPanels'");
+  const panels=broadcast?await readFile('apps/tv-player/src/BroadcastPanels.tsx','utf8'):main;
+  // The timing render moved to the focused component; keep the semantic guard
+  // on the actual active rendering source rather than its old file location.
+  assert.ok(panels.indexOf('SAIR DE CASA')>=0 && panels.indexOf('SAIR DE CASA') < panels.indexOf('APRESENTAÇÃO'));
+  if(broadcast){
+    assert.ok(main.includes('<OfficialTvBrand/>'));
+    assert.ok(panels.includes("asset('crewcheck-horizontal-night.png')"));
+    assert.ok(panels.includes("asset('crewcheck-horizontal-light.png')"));
+    assert.ok(panels.includes('snapshot.next?.presentation'));
+    assert.ok(panels.includes('currentFact(snapshot.weather)'));
+    const assets=JSON.parse(await readFile('apps/tv-player/brand-assets.json','utf8'));
+    assert.ok(assets.files.some(a=>a.file==='crewcheck-horizontal-night.png'&&a.sha256==='d23c0dcc78311445ac0452b8de239a5e795868a02e4b548ee04dfe7b02df428e'));
+  }else{
+    assert.ok(icons.includes("client/public/icons/crewcheck-icon-v2.png"));
+    assert.ok(main.includes('next?.presentation'));assert.ok(main.includes('currentFact(snapshot?.weather'));
+  }
   assert.ok(main.includes("client/src/lib/brand"));
   assert.ok(css.includes('[data-motion=off]')); assert.ok(css.includes('prefers-reduced-motion')); assert.ok(css.includes('[data-paused=true]'));
   assert.doesNotMatch(css,/display:\s*grid\b/); assert.doesNotMatch(css,/(?:^|[;{])\s*gap\s*:/);
   assert.ok(main.includes("if (demo) { clear(); return; }"));
-  assert.ok(main.includes('next?.presentation')); assert.ok(main.includes('currentFact(snapshot?.weather'));
-  assert.doesNotMatch(main,/departureTime|dutyReport|parsePDF/);
-  console.log('TV brand: 18 weather cases + time/month/labels + source/brand/motion/scope guards passed');
+  assert.doesNotMatch(main+panels,/departureTime|dutyReport|parsePDF/);
+  console.log('TV brand: 18 weather cases + time/month/labels + active rendering source/brand/motion/scope guards passed');
 } finally { await unlink(out).catch(()=>{}); }
