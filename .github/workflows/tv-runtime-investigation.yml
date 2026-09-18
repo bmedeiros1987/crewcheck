@@ -1,0 +1,58 @@
+name: TV actual runtime investigation
+on:
+  pull_request:
+    paths: ['.github/workflows/tv-runtime-investigation.yml']
+permissions:
+  contents: read
+jobs:
+  prepared-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1885959f87582e342eb56edf6b2a7dc466afab46
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Preserve prepared source for exact runtime review
+        run: |
+          mkdir -p /tmp/tv-review/original /tmp/tv-review/prepared
+          cp server/platform.mjs /tmp/tv-review/original/
+          node scripts/v139/apply.mjs >/tmp/tv-review/preparation.log 2>&1
+          cp server/platform.mjs /tmp/tv-review/prepared/
+          cp package.json package-lock.json /tmp/tv-review/
+          cp -R server/tv server/v139 client/src/lib/authClient* client/src/pages/TvPairPage* /tmp/tv-review/
+          cp client/src/App.tsx /tmp/tv-review/
+          cp -R scripts/v139 /tmp/tv-review/preparers
+          tar -czf /tmp/tv-review/source-and-deps.tgz server client/src shared packages scripts package.json package-lock.json node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TV-Prepared-Backend-Review
+          path: /tmp/tv-review
+          retention-days: 2
+      - name: Check actual status and a single unapproved pairing, no secrets in logs
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const base='https://crewcheck-pr-698.onrender.com';
+          let healthy=true;
+          for(const [method,path,origin] of [['GET','status','null'],['OPTIONS','pair','file://online.crewcheck.tv.pilot'],['POST','pair','file://online.crewcheck.tv.pilot'],['GET','devices',null]]){
+            try {
+              const headers={};if(origin)headers.Origin=origin;
+              if(method==='OPTIONS'){headers['Access-Control-Request-Method']='POST';headers['Access-Control-Request-Headers']='content-type';}
+              if(method==='POST')headers['Content-Type']='application/json';
+              const t=Date.now();const r=await fetch(base+'/api/tv/'+path,{method,headers,credentials:'omit',signal:AbortSignal.timeout(12000),...(method==='POST'?{body:JSON.stringify({platform:'lg-webos'})}:{})});
+              const b=r.status===204?{}:await r.json();
+              const result={method,path,status:r.status,ms:Date.now()-t,cors:r.headers.get('access-control-allow-origin')};
+              if(path==='status'){result.available=b.available===true;result.commit=/^[a-f0-9]{40}$/.test(b.commit||'')?b.commit:null;healthy &&=r.status===200&&b.pairing===true;}
+              if(method==='POST'){result.validCode=typeof b.userCode==='string'&&b.userCode.length===10&&typeof b.deviceCode==='string'&&b.deviceCode.length===43;healthy &&=r.ok&&result.validCode;}
+              if(typeof b.error==='string'&&/^[a-z_]{1,60}$/.test(b.error))result.error=b.error;
+              if(path==='devices')healthy &&=r.status===401;
+              console.log(JSON.stringify(result));
+            }catch{healthy=false;console.log(JSON.stringify({method,path,error:'transport_failure'}));}
+          }
+          assert.equal(healthy,true,'Actual pilot transport not healthy; artifact/CI does not imply account linkage');
+          JS
