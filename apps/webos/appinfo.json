@@ -1,0 +1,15 @@
+{
+  "id": "com.crewcheck.tv",
+  "version": "1.0.0",
+  "vendor": "CrewCheck",
+  "type": "web",
+  "main": "index.html",
+  "title": "CrewCheck TV",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": false,
+  "iconColor": "#051121",
+  "requiredACG": []
+}
