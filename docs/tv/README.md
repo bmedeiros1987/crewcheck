@@ -65,3 +65,14 @@ Não há migration automática, deployment, assinatura ou publicação implícit
 Pendências de release: SDKs nativos, pacotes assinados, emuladores, TVs físicas, MySQL real, conta/roster reais, regressão canônica preparada completa, entitlement e providers externos, acessibilidade em TV, revisão de loja. O PR #693 continua separado; não mesclar seus fallbacks/APIs RSS ao novo player.
 
 Refs #686 #687 #689 #690 #693 #694 #530 #607.
+
+## Evidências desta entrega
+
+PRs draft empilhados: [#698 core/API](https://github.com/bmedeiros1987/crewcheck/pull/698) → [#699 player](https://github.com/bmedeiros1987/crewcheck/pull/699) → [#700 plataformas](https://github.com/bmedeiros1987/crewcheck/pull/700). Revisar/mesclar nesta ordem, somente após os gates; nenhum foi mesclado.
+
+- CI TV aprovado no commit `265a9d2e7e8b2c3ff34a3f02d63fda313e283eab`: [execução 35303904210](https://github.com/bmedeiros1987/crewcheck/actions/runs/35303904210). Inclui 17 testes, TypeScript TV, bundle servidor e staging web Android/Tizen/LG. Artefatos não são pacotes nativos assinados.
+- Gate multicanal aprovado no CI do core `e123e9e0d8a730d15d6af9f0c1dc710da9d79e74`: [execução 35303904907](https://github.com/bmedeiros1987/crewcheck/actions/runs/35303904907).
+- Preparação completa, TypeScript e 17 testes TV também passaram localmente na árvore preparada. A integração foi corrigida para preservar as âncoras dos scripts legados de preparação.
+- Divergência local registrada: `regression-v14-3-74-for-cgh.mjs` acusa duas jornadas em 01/08 onde espera uma, tanto no core TV quanto no main original `78b1dc1ba5e36a282e76d6d96a9506bffda8b323`, com dependências instaladas sem scripts. O CI multicanal com seu fluxo normal passou. Não alteramos parser, fixture nem expectativa para contornar o resultado; a diferença de preparação/ambiente precisa ser investigada no P0 antes de liberar piloto operacional.
+
+CI verde nesses recortes não fecha #530/#607 e não comprova backend real, entitlement, feeds licenciados ou hardware.
