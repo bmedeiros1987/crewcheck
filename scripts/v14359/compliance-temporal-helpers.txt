@@ -257,7 +257,7 @@ function maxEventsInRolling168h(events: RegulatoryNightEvent[]): number {
   let max = 0;
   for (const startEvent of events) {
     const end = startEvent.timestamp + 168 * HOUR_MS;
-    const count = events.filter((candidate) => candidate.segment === startEvent.segment && candidate.timestamp >= startEvent.timestamp && candidate.timestamp < end).length;
+    const count = events.filter((candidate) => candidate.segment === startEvent.segment && candidate.timestamp >= startEvent.timestamp && candidate.timestamp <= end).length;
     max = Math.max(max, count);
   }
   return max;
