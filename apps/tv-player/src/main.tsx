@@ -16,6 +16,9 @@ const config = import.meta.env;
 const demo = config.VITE_TV_DEMO === "true";
 const enabled = demo || config.VITE_CREWCHECK_TV_ENABLED === "true";
 const platform = config.VITE_TV_PLATFORM || "android-tv";
+const legacyWebOS4 =
+  platform === "lg-webos" && /Chrome\\/(?:[0-5]\\d)\\./.test(navigator.userAgent);
+if (legacyWebOS4) document.documentElement.classList.add("legacy-webos4");
 const session = new TvSession(
   sessionStorage,
   fetch,
@@ -279,10 +282,11 @@ function App() {
       offset) /
       7,
   );
-  const weekActivities =
-    snapshot?.days
-      .filter((_, i) => Math.floor((i + offset) / 7) === week)
-      .flatMap((d) => d.activities) || [];
+  const weekActivities = snapshot
+    ? snapshot.days
+        .filter((_, i) => Math.floor((i + offset) / 7) === week)
+        .reduce<TvActivity[]>((all, item) => all.concat(item.activities), [])
+    : [];
   const weekFlights = weekActivities.filter((a) => a.kind === "flight").length;
   const weekJourneys = new Set(
     weekActivities
