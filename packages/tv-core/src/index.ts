@@ -57,6 +57,9 @@ export type TvSnapshot = {
   ticker: string[];
 };
 
+function twoDigits(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
+}
 function calendarDate(date: string): string {
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(date);
   if (!match) throw new Error("Invalid canonical date");
@@ -94,7 +97,7 @@ export function monthDates(month: string): string[] {
   const count = new Date(Date.UTC(year, m, 0)).getUTCDate();
   return Array.from(
     { length: count },
-    (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`,
+    (_, i) => `${month}-${twoDigits(i + 1)}`,
   );
 }
 // The only domain dependency is the existing canonical engine. No TV parser,
@@ -131,7 +134,10 @@ export function projectRoster(
     date,
     activities: activities.filter((a) => a.date === date),
   }));
-  const selected = days.flatMap((d) => d.activities);
+  const selected = days.reduce<TvActivity[]>(
+    (all, item) => all.concat(item.activities),
+    [],
+  );
   return {
     schemaVersion: 1,
     snapshotId: options.snapshotId,

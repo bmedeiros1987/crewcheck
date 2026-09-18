@@ -85,11 +85,15 @@ nav {
 nav button {
   background: transparent;
   border-color: transparent;
+  padding: 11px 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 nav button.active {
-  color: #7ae8ff;
-  background: #123147;
-  border-color: #29566e;
+  color: #8cecff;
+  background: linear-gradient(145deg, #163b54, #102a40);
+  border-color: #3b7893;
+  box-shadow: inset 0 0 0 1px #5ddcf522, 0 8px 24px #00111f33;
 }
 nav > span {
   margin-left: auto;
@@ -113,9 +117,12 @@ article {
   padding: 32px;
   display: flex;
   flex-direction: column;
+  border-color: #315b72;
+  box-shadow: 0 18px 54px #000b1638;
   background:
-    radial-gradient(ellipse at 80% 15%, #19708a33, transparent 70%),
-    linear-gradient(145deg, #113a52, #09192e);
+    radial-gradient(ellipse at 82% 10%, #1b9dbb2b, transparent 58%),
+    radial-gradient(ellipse at 18% 86%, #0a6f8e22, transparent 54%),
+    linear-gradient(145deg, #123b53, #08182c);
 }
 .eyebrow {
   font-size: 12px;
@@ -135,39 +142,75 @@ h1 {
   line-height: 1.08;
 }
 .flight {
-  font-size: 26px;
-  color: #a9cee2;
-  margin: 14px 0 26px;
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 24px;
+  font-weight: 700;
+  color: #bfe5f5;
+  margin: 10px 0 22px;
+  padding: 7px 12px;
+  border: 1px solid #31566c;
+  border-radius: 999px;
+  background: #081d31aa;
 }
 .times {
   display: flex;
-  gap: 50px;
+  gap: 16px;
   border-top: 1px solid #315069;
   border-bottom: 1px solid #315069;
-  padding: 24px 0;
+  padding: 18px 0;
 }
-.times label {
+.time-card {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #284c64;
+  border-radius: 14px;
+  padding: 16px 20px;
+  background: linear-gradient(145deg, #0c2238cc, #112e44bb);
+}
+.time-card label {
   display: block;
   font-size: 12px;
   letter-spacing: 2px;
   color: #b6ccda;
 }
-.times strong {
+.time-card strong {
   display: block;
-  font-size: clamp(40px, 4.6vw, 82px);
+  font-size: clamp(40px, 4.5vw, 78px);
   letter-spacing: -3px;
-  margin-top: 10px;
+  margin-top: 7px;
+  line-height: 1;
 }
-.times > div + div strong {
+.time-card small {
+  display: block;
+  margin-top: 7px;
+  color: #7f9db2;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.time-primary {
+  border-color: #2b7c97;
+  background:
+    radial-gradient(ellipse at 80% 20%, #1eb6dc22, transparent 65%),
+    linear-gradient(145deg, #103a51, #0b2439);
+}
+.time-primary strong {
   color: #6be2fb;
+}
+.time-secondary strong {
+  color: #f3f8fb;
 }
 .gate {
   display: flex;
   align-items: center;
   gap: 24px;
   font-size: 13px;
-  padding: 24px 0;
+  margin-top: 14px;
+  padding: 14px 16px;
   color: #b4c8d7;
+  border: 1px solid #27475c;
+  border-radius: 12px;
+  background: #071b2e99;
 }
 .gate b {
   font-size: 26px;
@@ -203,6 +246,13 @@ h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px;
+}
+.side article {
+  border-color: #284b62;
+  box-shadow: 0 12px 34px #000a1426;
+  background:
+    radial-gradient(ellipse at 90% 10%, #1685a51a, transparent 65%),
+    linear-gradient(145deg, #123047cc, #0a1d31e6);
 }
 .side h2 {
   font-size: 48px;
@@ -549,4 +599,109 @@ footer > span {
 }
 .exit-dialog button {
   margin: 20px 20px 0 0;
+}
+
+
+/* LG webOS 4.x / Chromium 53 fallback.
+   Modern platforms keep the grid layout above; this block is activated only
+   when the player detects the legacy LG engine. */
+.legacy-webos4 button:focus,
+.legacy-webos4 a:focus {
+  outline: 4px solid #6ce9ff;
+  outline-offset: 4px;
+  background: #1c425b;
+  box-shadow: 0 0 30px #42d6ff44;
+}
+.legacy-webos4 h1 {
+  font-size: 64px;
+}
+.legacy-webos4 .times strong {
+  font-size: 68px;
+}
+.legacy-webos4 .times {
+  display: flex;
+}
+.legacy-webos4 .times > div {
+  width: 48%;
+}
+.legacy-webos4 .times > div + div {
+  margin-left: 4%;
+}
+.legacy-webos4 .time-card {
+  padding: 14px 18px;
+}
+.legacy-webos4 .time-card strong {
+  line-height: 1;
+}
+.legacy-webos4 .hero-bottom {
+  display: flex;
+}
+.legacy-webos4 .hero-bottom > * + * {
+  margin-left: 18px;
+}
+.legacy-webos4 .live {
+  display: flex;
+}
+.legacy-webos4 .hero {
+  width: 58%;
+}
+.legacy-webos4 .side {
+  display: flex;
+  flex-direction: column;
+  width: 42%;
+  margin-left: 22px;
+}
+.legacy-webos4 .side > article {
+  margin-top: 18px;
+}
+.legacy-webos4 .side-top {
+  display: flex;
+}
+.legacy-webos4 .side-top > article {
+  width: 50%;
+}
+.legacy-webos4 .side-top > article + article {
+  margin-left: 18px;
+}
+.legacy-webos4 .weekdays,
+.legacy-webos4 .days {
+  display: flex;
+  flex-wrap: wrap;
+}
+.legacy-webos4 .weekdays > span,
+.legacy-webos4 .days > button,
+.legacy-webos4 .days > div {
+  width: calc(14.2857% - 10px);
+  margin: 5px;
+}
+.legacy-webos4 .activities {
+  display: flex;
+  flex-wrap: wrap;
+}
+.legacy-webos4 .activity {
+  width: calc(33.3333% - 20px);
+  margin: 10px;
+}
+.legacy-webos4 .exit-dialog {
+  top: 25%;
+  right: 25%;
+  bottom: 25%;
+  left: 25%;
+}
+.legacy-webos4 nav > * + * {
+  margin-left: 12px;
+}
+.legacy-webos4 .gate > * + * {
+  margin-left: 18px;
+}
+.legacy-webos4 footer > * + * {
+  margin-left: 18px;
+}
+@media (max-height: 800px) {
+  .legacy-webos4 h1 {
+    font-size: 42px;
+  }
+  .legacy-webos4 .times strong {
+    font-size: 48px;
+  }
 }

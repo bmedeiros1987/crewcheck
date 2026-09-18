@@ -1,5 +1,7 @@
 # CrewCheck TV — família de apps (piloto, não publicado)
 
+Atualização de builds: o PR [#702](https://github.com/bmedeiros1987/crewcheck/pull/702) acrescenta builds pelo GitHub Actions de APK/AAB Android debug, IPK LG e contêiner WGT Samsung sem assinatura, todos com dados e IDs de demonstração. Consulte [ACTIONS.md](ACTIONS.md) para artefatos, evidências e instalação. Os resultados abaixo de #698–#700 descrevem a etapa anterior, limitada a staging web.
+
 ## Estrutura
 
 - `packages/tv-core`: contratos TvSnapshot/TvActivity/TvCalendarDay/TvMonthSummary, projeção do motor canônico existente, freshness, entrada remota e sessão.

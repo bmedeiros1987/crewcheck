@@ -16,6 +16,9 @@ const config = import.meta.env;
 const demo = config.VITE_TV_DEMO === "true";
 const enabled = demo || config.VITE_CREWCHECK_TV_ENABLED === "true";
 const platform = config.VITE_TV_PLATFORM || "android-tv";
+const legacyWebOS4 =
+  platform === "lg-webos" && navigator.userAgent.indexOf("Chrome/53.") !== -1;
+if (legacyWebOS4) document.documentElement.classList.add("legacy-webos4");
 const session = new TvSession(
   sessionStorage,
   fetch,
@@ -59,13 +62,21 @@ function App() {
   const clear = () => {
     generation.current++;
     session.clear();
-    setSnapshot(null);
+    setSnapshot(demo ? demoSnapshot() : null);
     setNews([]);
     setPairing(null);
     setView("Agora");
-    setStatus("Vincule sua TV");
+    setStatus(demo ? "Demonstração · dados fictícios" : "Vincule sua TV");
   };
   async function begin() {
+    if (demo) {
+      setPairing(null);
+      setSnapshot(demoSnapshot());
+      setView("Agora");
+      setMode("live");
+      setStatus("Demonstração · dados fictícios");
+      return;
+    }
     clear();
     const run = generation.current;
     try {
@@ -279,10 +290,11 @@ function App() {
       offset) /
       7,
   );
-  const weekActivities =
-    snapshot?.days
-      .filter((_, i) => Math.floor((i + offset) / 7) === week)
-      .flatMap((d) => d.activities) || [];
+  const weekActivities = snapshot
+    ? snapshot.days
+        .filter((_, i) => Math.floor((i + offset) / 7) === week)
+        .reduce<TvActivity[]>((all, item) => all.concat(item.activities), [])
+    : [];
   const weekFlights = weekActivities.filter((a) => a.kind === "flight").length;
   const weekJourneys = new Set(
     weekActivities
@@ -318,7 +330,7 @@ function App() {
       <header>
         <div className="brand">
           CREW<span>CHECK</span>
-          <small>TV / VOYAGE</small>
+          <small>TV · CREW OPERATIONS</small>
         </div>
         <div className="header-status">
           <i />
@@ -409,13 +421,15 @@ function App() {
                       : "Nenhuma próxima atividade publicada")}
                 </p>
                 <div className="times">
-                  <div>
-                    <label>APRESENTAÇÃO</label>
-                    <strong>{next?.presentation || "—"}</strong>
-                  </div>
-                  <div>
+                  <div className="time-card time-primary">
                     <label>SAIR DE CASA</label>
                     <strong>{leave || "—"}</strong>
+                    <small>horário recomendado</small>
+                  </div>
+                  <div className="time-card time-secondary">
+                    <label>APRESENTAÇÃO</label>
+                    <strong>{next?.presentation || "—"}</strong>
+                    <small>horário publicado</small>
                   </div>
                 </div>
                 <div className="gate">

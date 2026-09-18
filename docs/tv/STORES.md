@@ -1,6 +1,6 @@
 # Toolchains e envio às lojas — guia de preparação
 
-**Nenhuma loja recebeu este app. Nenhum pacote nativo assinado foi gerado.** IDs abaixo são candidatos técnicos, não reservas aprovadas nos consoles. Guarde certificados fora do Git; use os mesmos IDs/chaves para upgrades. Reconfirme políticas no console no momento do envio.
+**Nenhuma loja recebeu este app. Não há pacote assinado com chave de release.** O Actions já compila APK/AAB Android com certificado debug e IPK LG de demonstração; também gera contêiner WGT Samsung sem assinatura. Esses artefatos usam IDs separados e não são submissões de loja. Veja [ACTIONS.md](ACTIONS.md). IDs de produção abaixo são candidatos técnicos, não reservas aprovadas nos consoles. Guarde certificados fora do Git; use os mesmos IDs/chaves para upgrades. Reconfirme políticas no console no momento do envio.
 
 ## Google TV / Android TV
 

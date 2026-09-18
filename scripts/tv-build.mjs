@@ -1,5 +1,5 @@
 import { build } from "vite";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 const platform = process.argv[2] || "web";
 if (!["web", "android-tv", "samsung-tizen", "lg-webos"].includes(platform))
@@ -20,16 +20,55 @@ if (
 await rm(resolvedTarget, { recursive: true, force: true });
 await mkdir(target, { recursive: true });
 await cp("dist/tv-player", target, { recursive: true });
+if (platform === "android-tv") {
+  const html = await readFile(`${target}/index.html`, "utf8");
+  const viewport = 'content="width=device-width,initial-scale=1"';
+  if (!html.includes(viewport)) throw new Error("Android TV viewport template changed");
+  await writeFile(`${target}/index.html`, html.replace(viewport, 'content="width=1280"'));
+}
 if (platform === "samsung-tizen")
   await cp("apps/samsung-tizen/config.xml", `${target}/config.xml`);
-if (platform === "lg-webos")
+if (platform === "lg-webos") {
   await cp("apps/lg-webos/appinfo.json", `${target}/appinfo.json`);
+  const cssFile = (await import("node:fs/promises")).readdir(target).then((files) => files.find((file) => file.endsWith(".css")));
+  const cssName = await cssFile;
+  if (!cssName) throw new Error("LG webOS legacy CSS bundle missing");
+  const legacyBoot = `<script>(function(){window.onerror=function(message,source,line,column,error){var root=document.getElementById("root");if(root){root.innerHTML='<main style="min-height:100vh;background:#051121;color:#edf7ff;font-family:Arial,sans-serif;padding:70px"><h1 style="font-size:54px">CrewCheck TV</h1><h2 style="color:#6ee7fa">Falha ao iniciar</h2><p style="font-size:24px;line-height:1.5">'+String(message)+'</p><p>Linha '+String(line||"?")+' · Coluna '+String(column||"?")+'</p><p style="color:#9db7ca">Envie uma foto desta tela para o suporte.</p></main>'; } return false;};if(!Object.getOwnPropertyDescriptors){Object.getOwnPropertyDescriptors=function(object){var descriptors={};Object.getOwnPropertyNames(object).forEach(function(key){descriptors[key]=Object.getOwnPropertyDescriptor(object,key);});if(Object.getOwnPropertySymbols){Object.getOwnPropertySymbols(object).forEach(function(key){descriptors[key]=Object.getOwnPropertyDescriptor(object,key);});}return descriptors;};}})();</script>`;
+  await writeFile(
+    `${target}/index.html`,
+    `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=1920"><title>CrewCheck TV</title><link rel="stylesheet" href="./${cssName}"></head><body><div id="root"><main style="min-height:100vh;background:#051121;color:#edf7ff;font-family:Arial,sans-serif;padding:70px"><h1 style="font-size:54px">CrewCheck TV</h1><p style="font-size:24px;color:#9db7ca">Inicializando…</p></main></div>${legacyBoot}<script src="./crewcheck-tv.js"></script></body></html>`,
+  );
+}
 if (platform === "samsung-tizen")
   await cp("apps/tv-assets/icon-512.png", `${target}/icon.png`);
 if (platform === "lg-webos") {
   await cp("apps/tv-assets/icon-80.png", `${target}/icon.png`);
   await cp("apps/tv-assets/icon-130.png", `${target}/large-icon.png`);
 }
+// Demo identities cannot replace a production installation.
+const demo = process.env.VITE_TV_DEMO === "true";
+if (demo && platform === "lg-webos") {
+  const manifest = JSON.parse(await readFile(`${target}/appinfo.json`, "utf8"));
+  manifest.id += ".demo";
+  manifest.title += " Demo";
+  await writeFile(`${target}/appinfo.json`, JSON.stringify(manifest, null, 2));
+}
+if (demo && platform === "samsung-tizen") {
+  const manifest = await readFile(`${target}/config.xml`, "utf8");
+  await writeFile(`${target}/config.xml`, manifest.replaceAll("CrewChkTV1", "CrewChkDm1").replace("<name>CrewCheck TV</name>", "<name>CrewCheck TV Demo</name>"));
+}
+const operational =
+  !demo && process.env.VITE_CREWCHECK_TV_ENABLED === "true";
+await writeFile(`${target}/tv-build.json`, JSON.stringify({
+  platform,
+  demo,
+  operational,
+  apiOrigin: process.env.VITE_TV_API_ORIGIN || "https://crewcheck.online",
+  commit: process.env.GITHUB_SHA || null,
+  note: operational
+    ? "Operational candidate; backend feature gate and device pairing still required."
+    : "Experimental build; not store approved. Runtime feature gates still apply.",
+}, null, 2));
 console.log(
   `Staged ${platform}: ${target}. Native packaging/signing NOT performed.`,
 );

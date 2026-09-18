@@ -44,25 +44,40 @@ export class TvSession {
     } catch {}
   }
   async call(path: string, body?: unknown) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    // webOS TV 4.x uses Chromium 53, which predates AbortController.
+    // Keep the same 8s lease with Promise.race and only attach a signal when
+    // the platform actually provides AbortController.
+    const Controller =
+      typeof AbortController === "function" ? AbortController : null;
+    const controller = Controller ? new Controller() : null;
+    const init: RequestInit = {
+      method: body === undefined ? "GET" : "POST",
+      credentials: "omit",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.credential
+          ? { Authorization: `Bearer ${this.credential.token}` }
+          : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    };
+    if (controller) init.signal = controller.signal;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     let response: Response;
     try {
-      response = await this.request(`${this.origin}/api/tv/${path}`, {
-        method: body === undefined ? "GET" : "POST",
-        credentials: "omit",
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.credential
-            ? { Authorization: `Bearer ${this.credential.token}` }
-            : {}),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: controller.signal,
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          if (controller) controller.abort();
+          reject(new Error("request_timeout"));
+        }, 8000);
       });
+      response = await Promise.race([
+        this.request(`${this.origin}/api/tv/${path}`, init),
+        timeout,
+      ]);
     } finally {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
     }
     if (response.status === 401 || response.status === 403) {
       this.clear();
