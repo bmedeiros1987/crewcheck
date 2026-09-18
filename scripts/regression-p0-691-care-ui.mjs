@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 
@@ -27,8 +29,90 @@ assert.match(refine, /patchTimeline\('client\/src\/components\/v14349\/Operation
 assert.match(refine, /patchTimeline\('scripts\/v14357\/OperationalDayTimeline\.tsx'\)/, 'refinement must patch authoritative prepared timeline source');
 assert.doesNotMatch(refine, /rosterParser|aimsParser|complianceEngine/, 'UI/humor refinement must not touch protected engines');
 
+function assertPreparedConciergeOperations(server) {
+  // Extract complete declarations from the actual prepared runtime. Never import
+  // server.mjs: that would start HTTP/DB/notification side effects in a QA job.
+  const ts = createRequire(import.meta.url)('typescript');
+  const source = ts.createSourceFile('server.mjs', server, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const names = [
+    'conciergeCareCode', 'conciergeCareState', 'conciergeRosterDayParts',
+    'conciergeTime', 'conciergeProgramDate', 'conciergeProgramRecords',
+    'conciergeNextProgram', 'conciergeInactiveCodes', 'conciergeRemoteCodes',
+  ];
+  const declarations = new Map();
+  for (const node of source.statements) {
+    if (ts.isFunctionDeclaration(node) && node.name && names.includes(node.name.text)) {
+      assert.equal(declarations.has(node.name.text), false, `duplicate runtime function: ${node.name.text}`);
+      declarations.set(node.name.text, node.getText(source));
+    }
+    if (ts.isVariableStatement(node)) {
+      for (const declaration of node.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && names.includes(declaration.name.text)) {
+          assert.equal(declarations.has(declaration.name.text), false, `duplicate runtime constant: ${declaration.name.text}`);
+          declarations.set(declaration.name.text, `const ${declaration.getText(source)};`);
+        }
+      }
+    }
+  }
+  for (const name of names) assert.ok(declarations.has(name), `prepared runtime declaration missing: ${name}`);
+  const runtime = new vm.Script(`${names.map((name) => declarations.get(name)).join('\n')}\n({
+    care: conciergeCareState, records: conciergeProgramRecords,
+    next: conciergeNextProgram, remote: conciergeRemoteCodes,
+  });`, { filename: 'care-prepared-server-runtime.mjs' }).runInNewContext({ Date, Intl }, { timeout: 5000 });
+  const now = new Date('2026-09-18T08:00:00-03:00');
+  const day = (type, pairingCode = type) => ({
+    date: '18/09/2026', type, pairingCode, legs: [],
+    dutyReport: '09:00', dutyDebrief: '14:00',
+  });
+
+  // careState=NONE is necessary, not sufficient. A second pairing-first filter
+  // must not silently remove formal duties or corrupt their remote/presential code.
+  let combinations = 0;
+  for (const [type, remote] of [['ASB', false], ['HSB', true], ['EAD', true]]) {
+    for (const pairing of ['DMO', 'VC', 'FERIAS', 'FÉRIAS', 'DO', 'DOF', 'OFF', 'DR', 'REST', 'REPOUSO', 'DESCANSO']) {
+      const roster = { days: [day(type, pairing)] };
+      const before = JSON.stringify(roster);
+      const label = `${type} + residual ${pairing}`;
+      assert.equal(runtime.care(roster.days[0]), 'NONE', `${label}: no sensitive care state`);
+      const records = runtime.records(roster);
+      assert.equal(records.length, 1, `${label}: prepared Concierge must retain formal operational programming`);
+      assert.equal(records[0].code, type, `${label}: published formal code must reach consumers`);
+      assert.equal(runtime.next(roster, now)?.day, roster.days[0], `${label}: real next programming remains selectable`);
+      assert.equal(runtime.remote.has(records[0].code), remote, `${label}: preserve remote/presential mobility classification`);
+      assert.equal(records[0].start.toISOString(), '2026-09-18T12:00:00.000Z', `${label}: preserve published presentation`);
+      assert.equal(records[0].end.toISOString(), '2026-09-18T17:00:00.000Z', `${label}: preserve published end`);
+      assert.equal(JSON.stringify(roster), before, `${label}: do not mutate canonical input`);
+      combinations += 1;
+    }
+  }
+
+  const laterFlight = {
+    date: '19/09/2026', type: 'FLIGHT', pairingCode: 'PAIR_SYNTHETIC',
+    dutyReport: '09:25', dutyDebrief: '13:00',
+    legs: [{ flightNumber: 'LA9001', origin: 'BSB', destination: 'GRU', departureTime: '10:25', arrivalTime: '12:00' }],
+  };
+  for (const [type, pairing, state] of [
+    ['DMO', 'DMO', 'LUTO'], ['VC', 'VC', 'FERIAS'],
+    ['FERIAS', 'FERIAS', 'FERIAS'], ['FÉRIAS', 'FÉRIAS', 'FERIAS'],
+    ['DO', 'VC', 'FERIAS'], ['DO', 'ASB', 'FOLGA'],
+    ['DO', 'DO', 'FOLGA'], ['DOF', 'DOF', 'FOLGA'],
+    ['OFF', 'OFF', 'FOLGA'], ['DR', 'DR', 'FOLGA'],
+    ['REST', 'REST', 'REPOUSO'],
+  ]) {
+    const careDay = day(type, pairing);
+    assert.equal(runtime.care(careDay), state, `${type}/${pairing}: preserve published care state`);
+    assert.equal(runtime.records({ days: [careDay] }).length, 0, `${type}/${pairing}: care never becomes operational`);
+    const next = runtime.next({ days: [careDay, laterFlight] }, now);
+    assert.equal(next?.day, laterFlight, `${type}/${pairing}: later real operation must not be hidden`);
+    assert.equal(next.startTime, '09:25', `${type}/${pairing}: never replace published APZ with departure`);
+    assert.equal(next.code, 'PAIR_SYNTHETIC', 'ordinary flight pairing identity remains unchanged');
+  }
+  console.log(`OK prepared Concierge: ${combinations} formal-duty/residual-care combinations + 11 care/next-flight cases`);
+}
+
 if (process.env.CHECK_PREPARED === '1') {
   const server = read('server.mjs');
+  assertPreparedConciergeOperations(server);
   assert.match(server, /currentCareDay[\s\S]*?conciergeCarePresentation/, 'prepared runtime must carry grief humor guard');
   assert.match(server, /const easterEgg = conciergeEasterEggReply\(value, profile, snapshot\);/, 'prepared runtime must preserve normal Easter Egg wiring');
   assert.match(server, /easterEgg && !currentCare\?\.suppressHumor/, 'prepared runtime must suppress humor only when care context says so');
