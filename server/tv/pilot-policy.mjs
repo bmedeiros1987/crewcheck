@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { allowsTvBrowserOrigin } from './browser-origins.mjs';
 
 // Shared environment groups can reach production and other previews. A scoped
 // config must match Render's service identity AND URL AND PR-preview marker.
@@ -33,8 +34,6 @@ function scopedEnvironment(env) {
 // Configuration is re-read per request; no personal email is committed to Git.
 export function readPilotPolicy(env = process.env) {
   env = scopedEnvironment(env);
-  // Compact configuration uses one Render slot. It grants no trust by itself:
-  // identity, HTTPS origin and the preview-only bootstrap are still enforced.
   let configuration;
   if (env.CREWCHECK_TV_PILOT_CONFIG !== undefined) {
     try {
@@ -74,7 +73,7 @@ export function readPilotPolicy(env = process.env) {
       return timingSafeEqual(actual, Buffer.from(hash, 'hex'));
     },
     allowsOrigin(value, accountRoute = false) {
-      return !value || value === origin || (!accountRoute && ['null', 'https://appassets.androidplatform.net'].includes(value));
+      return allowsTvBrowserOrigin(value, origin, accountRoute);
     },
   };
 }
