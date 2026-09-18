@@ -9,7 +9,7 @@ export type TvStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const KEY = "crewcheck-tv-v1";
 export class TvSession {
   credential: DeviceCredential | null = null;
-  snapshot: TvSnapshot | null = null;
+  snapshot: TvSnapshot | null = null;\n  private serverOffsetMs = 0;\n  private serverClockKnown = false;
   constructor(
     private storage: TvStorage,
     private request: typeof fetch,
@@ -100,7 +100,7 @@ export class TvSession {
     // request-start time incorrectly marks a normal fresh response as future.
     // Production samples again AFTER receiving/parsing it; explicit test time
     // remains deterministic. Future observations still fail closed.
-    const receivedAt = now ?? Date.now();
+    const receivedAt = correctedNow();
     if (Date.parse(credential.expiresAt) <= receivedAt) {
       this.clear();
       throw new Error("pair_again");
