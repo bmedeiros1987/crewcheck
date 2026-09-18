@@ -10,3 +10,11 @@
 }
 .theme-mobile .weather-card .weather-value small { color: #5d7083; }
 .theme-mobile .news p + p { border-color: #dce6f0; }
+/* Values arrive from CREWCHECK_BRAND in main.tsx; fallbacks stay in tv.css. */
+.tv-app nav button.active,
+.tv-app button.primary-button,
+.tv-app button[aria-pressed=true] {
+  background: linear-gradient(115deg, var(--brand-violet), var(--brand-pink));
+}
+.tv-app button:focus, .tv-app button:hover { outline-color: var(--brand-cyan); }
+.tv-app .kind-flight { border-left-color: var(--brand-violet); }
