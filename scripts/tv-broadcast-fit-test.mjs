@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const root='apps/tv-player/src/';
+const main=await readFile(root+'main.tsx','utf8'),css=await readFile(root+'broadcast.css','utf8');
+assert.ok(main.includes("(target || main.current?.querySelector<HTMLElement>('nav .active') || main.current?.querySelector<HTMLElement>('button'))?.focus();"));
+assert.ok(!main.includes("(target || main.current?.querySelector<HTMLElement>('nav .active,button'))?.focus();"));
+assert.equal(css.split('broadcast-fit-017').length-1,1);
+assert.ok(css.includes('.calendar:not(.week-view) .day-button span{position:absolute;'));
+assert.ok(css.includes('.calendar:not(.week-view) .day-button small{position:absolute;'));
+assert.ok(css.includes('.broadcast-column>.broadcast-card{padding:1.1vw 1.55vw}'));
+assert.doesNotMatch(css,/display:\s*grid\b/);
+console.log('7 layout composition/focus/idempotency guards passed; browser bounds remain separate validation.');

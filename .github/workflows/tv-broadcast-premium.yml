@@ -20,6 +20,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-broadcast-prepare.mjs
       - run: node scripts/tv-broadcast-prepare.mjs
+      - run: node scripts/tv-broadcast-fit.mjs
+      - run: node scripts/tv-broadcast-fit.mjs
       - run: node scripts/tv-test.mjs
       - run: node scripts/tv-session-receive-time-test.mjs
       - run: node scripts/tv-brand-test.mjs
@@ -27,6 +29,7 @@ jobs:
       - run: node scripts/tv-screen-care-opt-out-test.mjs
       - run: node scripts/tv-channel-test.mjs
       - run: node scripts/tv-broadcast-test.mjs
+      - run: node scripts/tv-broadcast-fit-test.mjs
       - run: npx tsc --noEmit -p tsconfig.tv.json
       - name: Stage both LG test identities without private original media
         env:
