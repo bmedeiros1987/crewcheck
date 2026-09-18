@@ -14,6 +14,10 @@ on:
         required: true
         type: string
         default: '605'
+      expected_sha:
+        description: Immutable 40-character PR head SHA authorized by the caller
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -70,11 +74,15 @@ jobs:
           MANUS_GITHUB_CONNECTOR_ID: ${{ vars.MANUS_GITHUB_CONNECTOR_ID }}
           MANUS_PROJECT_ID: ${{ vars.MANUS_AUDIT_PROJECT_ID }}
           EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          test -n "$MANUS_GITHUB_CONNECTOR_ID"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             SHA="${{ github.event.pull_request.head.sha }}"
@@ -92,7 +100,28 @@ jobs:
             HEAD_REPO="$(jq -r '.head.repo.full_name' <<<"$PR_JSON")"
           fi
 
-          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # The scheduler executes trusted main workflow code to audit a pinned
+            # PR SHA. Candidate bootstrap instead executes that very candidate.
+            # RUN_REF is GitHub context, never a caller-controlled workflow input.
+            if ! [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+               { [ "$RUN_REF" != "refs/heads/main" ] && [ "$RUN_SHA" != "$EXPECTED_SHA" ]; } ||
+               [ "$SHA" != "$EXPECTED_SHA" ] ||
+               [ "$PR_STATE" != "open" ] ||
+               [ "$HEAD_REPO" != "${{ github.repository }}" ]; then
+              echo '[MANUS-AUDIT] MANUS: STALE — immutable dispatch preflight rejected; no model task created.'
+              jq -n --arg body '[MANUS-AUDIT] MANUS: STALE — immutable dispatch preflight rejected (expected/run/current SHA or PR state/repository mismatch). No model task created.' '{body:$body}' > stale-comment.json
+              curl --fail-with-body --silent --show-error \
+                --request POST -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                --data-binary @stale-comment.json \
+                "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments"
+              exit 0
+            fi
+            SHA="$EXPECTED_SHA"
+          fi
+
+          test -n "$MANUS_GITHUB_CONNECTOR_ID"
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$PR_STATE" = "open"
           test "$HEAD_REPO" = "${{ github.repository }}"
@@ -181,9 +210,11 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "request_json=$PWD/request.json" >> "$GITHUB_OUTPUT"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Create Manus audit task
         id: create
+        if: steps.request.outputs.ready == 'true'
         env:
           MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
           REQUEST_JSON: ${{ steps.request.outputs.request_json }}
@@ -205,6 +236,7 @@ jobs:
           echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
 
       - name: Poll Manus, validate exact SHA, and publish verdict
+        if: steps.request.outputs.ready == 'true' && steps.create.outputs.task_id != ''
         env:
           GH_TOKEN: ${{ github.token }}
           MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
