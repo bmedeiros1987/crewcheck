@@ -1,0 +1,170 @@
+name: Apply CrewWatch phone bridge
+
+on:
+  push:
+    branches:
+      - feature/crewwatch-wearos-mvp
+    paths:
+      - '.github/workflows/crewwatch-phone-bridge-apply.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/crewwatch-wearos-mvp
+          fetch-depth: 0
+
+      - name: Apply native phone-to-watch bridge
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java')
+          build_path = Path('android-wrapper/app/build.gradle')
+          main = main_path.read_text(encoding='utf-8')
+
+          facade = next((line for line in main.splitlines() if '"window.CrewCheckNative={openExternal:function(url)' in line), None)
+          if not facade:
+              raise SystemExit('[crewwatch-phone] fachada CrewCheckNative não encontrada')
+          if 'syncWatchSnapshot:function' not in facade:
+              extended = '''                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +'''
+              main = main.replace(facade, extended, 1)
+
+          premium = '                "window.CrewCheckPremium=window.CrewCheckNative;" +'
+          listener = '''                "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener('crewcheck:watch-snapshot',function(event){try{window.CrewCheckNative.syncWatchSnapshot(event&&event.detail?event.detail:{});}catch(e){}});}" +'''
+          if '__crewcheckWatchSnapshotListener' not in main:
+              if premium not in main:
+                  raise SystemExit('[crewwatch-phone] âncora Premium ausente')
+              main = main.replace(premium, listener + '\n' + premium, 1)
+
+          bridge_anchor = '    public class CrewCheckNativeBridge {'
+          dispatch = '''    private void dispatchCrewCheckWatchSyncResult(boolean ok, String code, String message) {
+              try {
+                  if (webView == null) return;
+                  JSONObject payload = new JSONObject();
+                  payload.put("ok", ok);
+                  payload.put("code", code == null ? "" : code);
+                  payload.put("message", message == null ? "" : message);
+                  payload.put("at", System.currentTimeMillis());
+                  final String js = "(function(){try{var detail=" + payload.toString() + ";" +
+                          "window.__crewcheckLastWatchSync=detail;" +
+                          "window.dispatchEvent(new CustomEvent('crewcheck:watch-sync-result',{detail:detail}));" +
+                          "}catch(e){}})();";
+                  runOnUiThread(() -> {
+                      try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+                  });
+              } catch (Exception ignored) {}
+          }
+
+          '''
+          if 'dispatchCrewCheckWatchSyncResult(boolean ok' not in main:
+              if bridge_anchor not in main:
+                  raise SystemExit('[crewwatch-phone] classe CrewCheckNativeBridge ausente')
+              main = main.replace(bridge_anchor, dispatch + bridge_anchor, 1)
+
+          schedule_anchor = '''        @JavascriptInterface
+                  public boolean scheduleNotification(final String title, final String body, final String epochMillis) {'''
+          watch_methods = '''        @JavascriptInterface
+                  public boolean watchSyncAvailable() {
+                      return true;
+                  }
+
+                  @JavascriptInterface
+                  public boolean syncWatchSnapshot(final String snapshotJson) {
+                      if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
+                          dispatchCrewCheckWatchSyncResult(false, "invalid_snapshot", "Snapshot vazio.");
+                          return false;
+                      }
+                      CrewCheckWatchPublisher.publish(
+                              MainActivity.this,
+                              snapshotJson,
+                              MainActivity.this::dispatchCrewCheckWatchSyncResult
+                      );
+                      return true;
+                  }
+
+                  @JavascriptInterface
+                  public boolean requestWatchSnapshot() {
+                      runOnUiThread(() -> {
+                          try {
+                              if (webView == null) return;
+                              webView.evaluateJavascript(
+                                      "(function(){try{window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot-request',{detail:{reason:'native-request'}}));}catch(e){}})();",
+                                      null
+                              );
+                          } catch (Exception ignored) {}
+                      });
+                      return true;
+                  }
+
+          '''
+          if 'public boolean syncWatchSnapshot(final String snapshotJson)' not in main:
+              if schedule_anchor not in main:
+                  raise SystemExit('[crewwatch-phone] âncora scheduleNotification ausente')
+              main = main.replace(schedule_anchor, watch_methods + schedule_anchor, 1)
+
+          main_path.write_text(main, encoding='utf-8')
+
+          build = build_path.read_text(encoding='utf-8')
+          billing = '    implementation "com.android.billingclient:billing:$billing_version"'
+          wearable = "    implementation 'com.google.android.gms:play-services-wearable:20.0.1'"
+          if wearable not in build:
+              if billing not in build:
+                  raise SystemExit('[crewwatch-phone] dependência Billing âncora ausente')
+              build = build.replace(billing, billing + '\n' + wearable, 1)
+              build_path.write_text(build, encoding='utf-8')
+
+          required = [
+              'syncWatchSnapshot:function',
+              'crewcheck:watch-sync-result',
+              'public boolean syncWatchSnapshot(final String snapshotJson)',
+          ]
+          for marker in required:
+              if marker not in main:
+                  raise SystemExit(f'[crewwatch-phone] marcador ausente: {marker}')
+          print('[crewwatch-phone] ponte aplicada')
+          PY
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile phone and watch
+        run: gradle -p android-wrapper :app:assembleDebug :wear:assembleDebug :wear:bundleRelease
+
+      - name: Commit validated bridge
+        shell: bash
+        run: |
+          if git diff --quiet -- android-wrapper/app/build.gradle android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java; then
+            echo 'Phone bridge already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android-wrapper/app/build.gradle android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          git commit -m 'feat(crewwatch): connect Android phone Data Layer publisher'
+          git push origin HEAD:feature/crewwatch-wearos-mvp
+
+      - name: Upload validated Android artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: crewcheck-phone-watch-validated
+          path: |
+            android-wrapper/app/build/outputs/apk/debug/*.apk
+            android-wrapper/wear/build/outputs/apk/debug/*.apk
+            android-wrapper/wear/build/outputs/bundle/release/*.aab

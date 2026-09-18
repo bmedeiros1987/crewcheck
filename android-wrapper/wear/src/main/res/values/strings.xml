@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">CrewCheck</string>
+    <string name="tile_label">Próximo passo CrewCheck</string>
+    <string name="tile_description">Mostra a próxima ação relevante da sua jornada.</string>
+    <string name="complication_next_step">CrewCheck • Próximo passo</string>
+    <string name="complication_flight">CrewCheck • Voo</string>
+    <string name="complication_gate">CrewCheck • Portão</string>
+</resources>

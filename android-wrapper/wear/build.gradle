@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+def watchEndpoint = project.findProperty('CREWCHECK_WATCH_ENDPOINT') ?: System.getenv('CREWCHECK_WATCH_ENDPOINT') ?: ''
+def watchToken = project.findProperty('CREWCHECK_WATCH_TOKEN') ?: System.getenv('CREWCHECK_WATCH_TOKEN') ?: ''
+
+def escapedEndpoint = watchEndpoint.replace('\\', '\\\\').replace('"', '\\"')
+def escapedToken = watchToken.replace('\\', '\\\\').replace('"', '\\"')
+
+android {
+    namespace 'com.crewcheck.watch'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.crewcheck.app'
+        minSdk 30
+        targetSdk 36
+        versionCode 140376
+        versionName '14.3.76-watch-alpha'
+        buildConfigField 'String', 'CREWCHECK_WATCH_ENDPOINT', '"' + escapedEndpoint + '"'
+        buildConfigField 'String', 'CREWCHECK_WATCH_TOKEN', '"' + escapedToken + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+        debug {
+            debuggable true
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-wearable:20.0.1'
+
+    implementation 'androidx.wear.tiles:tiles:1.6.2'
+    implementation 'androidx.wear.protolayout:protolayout:1.4.2'
+
+    implementation 'androidx.wear.watchface:watchface-complications-data:1.3.0'
+    implementation 'androidx.wear.watchface:watchface-complications-data-source:1.3.0'
+
+    implementation 'com.google.guava:guava:33.4.8-android'
+}
