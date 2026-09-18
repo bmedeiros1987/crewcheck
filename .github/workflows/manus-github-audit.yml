@@ -30,10 +30,11 @@ permissions:
   pull-requests: read
   checks: read
 
-# One bridge run per PR at a time. Only a genuinely authorized audit trigger
-# may cancel the current poller; unrelated issue comments must never do so.
+# One bridge run per PR at a time. Pre-merge candidate workflow_dispatch runs
+# are isolated from the default-branch bridge so old main issue-comment runs
+# cannot cancel candidate polling before this fix itself reaches main.
 concurrency:
-  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}-${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'candidate' || 'main' }}
   cancel-in-progress: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') && (github.event.comment.body == '@manus' || startsWith(github.event.comment.body, '@manus '))) }}
 
 jobs:
