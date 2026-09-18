@@ -85,6 +85,7 @@ bootstrap_required = [
     "github.actor == 'bmedeiros1987'",
     "github.event.pull_request.user.login == 'bmedeiros1987'",
     'github.event.pull_request.head.repo.full_name == github.repository',
+    'github.event.pull_request.draft == false',
     '--arg expected_sha "$HEAD_SHA"',
     'inputs:{pr_number:$pr, expected_sha:$expected_sha}',
 ]
@@ -116,6 +117,7 @@ for lineno, line in enumerate(s.splitlines(), 1):
 concurrency_group = re.search(r'^\s*group:\s*(.+)$', s, re.MULTILINE)
 assert concurrency_group, 'missing concurrency group'
 assert 'sha' not in concurrency_group.group(1).lower(), 'concurrency group must not contain SHA'
+assert "github.ref != 'refs/heads/main'" in concurrency_group.group(1), 'candidate workflow_dispatch must use a concurrency namespace isolated from default-branch main'
 
 cancel_line = re.search(r'^\s*cancel-in-progress:\s*(.+)$', s, re.MULTILINE)
 assert cancel_line, 'missing cancel-in-progress policy'
@@ -141,4 +143,4 @@ assert s.index('current_sha=') < s.index('[MANUS-AUDIT] MANUS: MERGE'), 'exact-S
 assert s.index('if [ "$http_code" = "404" ]') < s.index('task.listMessages returned HTTP'), 'eventual-consistency 404 must be retried before hard failure'
 assert s.index('messages_type=') < s.index('.messages[] | select'), 'messages shape must be validated before any .messages[] iteration'
 assert s.endswith('\n'), 'workflow must end with a newline'
-print('PASS: authorized Manus trigger, trusted self-bootstrap actor, immutable expected-SHA gate before model call, owner-only recovery of an existing task without duplicate creation, cancellation isolation, private async task, bounded polling, 404/messages:null eventual-consistency retry, malformed messages fail-closed, transient transport retry, structured verdict, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
+print('PASS: authorized Manus trigger, trusted review-ready self-bootstrap actor, immutable expected-SHA gate before model call, owner-only recovery of an existing task without duplicate creation, candidate/main concurrency isolation, cancellation isolation, private async task, bounded polling, 404/messages:null eventual-consistency retry, malformed messages fail-closed, transient transport retry, structured verdict, exact-SHA revalidation, YAML top-level integrity, and GitHub round-trip comment publishing')
