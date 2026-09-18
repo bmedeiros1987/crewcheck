@@ -20,6 +20,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-test.mjs
       - run: node scripts/tv-brand-test.mjs
+      - run: node scripts/tv-screen-care-test.mjs
+      - run: node scripts/tv-screen-care-opt-out-test.mjs
       - run: npx tsc --noEmit -p tsconfig.tv.json
       - run: node scripts/tv-pilot-build.mjs
         env:
