@@ -85,11 +85,15 @@ nav {
 nav button {
   background: transparent;
   border-color: transparent;
+  padding: 11px 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 nav button.active {
-  color: #7ae8ff;
-  background: #123147;
-  border-color: #29566e;
+  color: #8cecff;
+  background: linear-gradient(145deg, #163b54, #102a40);
+  border-color: #3b7893;
+  box-shadow: inset 0 0 0 1px #5ddcf522, 0 8px 24px #00111f33;
 }
 nav > span {
   margin-left: auto;
@@ -113,9 +117,12 @@ article {
   padding: 32px;
   display: flex;
   flex-direction: column;
+  border-color: #315b72;
+  box-shadow: 0 18px 54px #000b1638;
   background:
-    radial-gradient(ellipse at 80% 15%, #19708a33, transparent 70%),
-    linear-gradient(145deg, #113a52, #09192e);
+    radial-gradient(ellipse at 82% 10%, #1b9dbb2b, transparent 58%),
+    radial-gradient(ellipse at 18% 86%, #0a6f8e22, transparent 54%),
+    linear-gradient(145deg, #123b53, #08182c);
 }
 .eyebrow {
   font-size: 12px;
@@ -135,9 +142,16 @@ h1 {
   line-height: 1.08;
 }
 .flight {
-  font-size: 26px;
-  color: #a9cee2;
-  margin: 14px 0 26px;
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 24px;
+  font-weight: 700;
+  color: #bfe5f5;
+  margin: 10px 0 22px;
+  padding: 7px 12px;
+  border: 1px solid #31566c;
+  border-radius: 999px;
+  background: #081d31aa;
 }
 .times {
   display: flex;
@@ -191,8 +205,12 @@ h1 {
   align-items: center;
   gap: 24px;
   font-size: 13px;
-  padding: 24px 0;
+  margin-top: 14px;
+  padding: 14px 16px;
   color: #b4c8d7;
+  border: 1px solid #27475c;
+  border-radius: 12px;
+  background: #071b2e99;
 }
 .gate b {
   font-size: 26px;
@@ -228,6 +246,13 @@ h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px;
+}
+.side article {
+  border-color: #284b62;
+  box-shadow: 0 12px 34px #000a1426;
+  background:
+    radial-gradient(ellipse at 90% 10%, #1685a51a, transparent 65%),
+    linear-gradient(145deg, #123047cc, #0a1d31e6);
 }
 .side h2 {
   font-size: 48px;
@@ -618,12 +643,12 @@ footer > span {
   display: flex;
 }
 .legacy-webos4 .hero {
-  width: 56%;
+  width: 58%;
 }
 .legacy-webos4 .side {
   display: flex;
   flex-direction: column;
-  width: 44%;
+  width: 42%;
   margin-left: 22px;
 }
 .legacy-webos4 .side > article {
