@@ -68,7 +68,7 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
   return async (req, res, url) => {
     if (!url.pathname.startsWith('/api/tv/')) return false;
     const send = (status, body) => {
-      res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' });
+      res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-CrewCheck-Server-Time': String(Date.now()), 'Access-Control-Expose-Headers': 'X-CrewCheck-Server-Time', Vary: 'Origin' });
       res.end(status === 204 ? undefined : JSON.stringify(body));
     };
     const settings = policy();
