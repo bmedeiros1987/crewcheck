@@ -27,7 +27,7 @@ jobs:
         run: node scripts/regression-p0-527-real-sanitized-corpus.mjs
       - name: Existing #510 segmentation oracle
         run: node scripts/regression-p1-server-510-aims-duty-segmentation.mjs
-      - name: Existing #533 corpus gate
-        run: node scripts/regression-p0-527-corpus-gate.mjs
+      - name: Existing #580 real VC/LEGEND boundary
+        run: node scripts/regression-p0-580-real-vc-legend-boundary.mjs
       - name: TypeScript
         run: npx tsc --noEmit
