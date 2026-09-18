@@ -54,22 +54,30 @@ jobs:
       - name: Committed PR diff whitespace guard
         if: github.event_name == 'pull_request'
         run: git diff --check HEAD^1 HEAD^2
+      - name: Existing activity classification regression on its source contract
+        run: |
+          node scripts/v14350/apply.mjs
+          node scripts/regression-v14-3-50-p0-activity-classification.mjs
+      - name: Prepare current canonical source from committed files
+        run: |
+          git restore --source=HEAD --worktree .
+          node scripts/v139/apply.mjs
       - name: Materialize Care Mode twice (idempotence)
         run: |
           node scripts/p0-691-care-context/apply.mjs
           node scripts/p0-691-care-context/apply.mjs
-      - name: Care semantics regression on materialized source
+      - name: Care semantics regression on prepared source
         run: node scripts/regression-p0-691-care-context.mjs
-      - name: Care UI/personality regression on materialized source
-        run: node scripts/regression-p0-691-care-ui.mjs
-      - name: Existing activity classification regression
-        run: node scripts/regression-v14-3-50-p0-activity-classification.mjs
+      - name: Care UI/personality regression on prepared source
+        run: CHECK_PREPARED=1 node scripts/regression-p0-691-care-ui.mjs
       - name: Existing rest versus overnight regression
         run: node scripts/regression-p0-base-rest-vs-overnight.mjs
       - name: Existing Concierge Easter Egg compatibility
         run: node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
-      - name: Replay full canonical preparation
-        run: node scripts/v139/apply.mjs
+      - name: Replay full canonical preparation from committed files
+        run: |
+          git restore --source=HEAD --worktree .
+          node scripts/v139/apply.mjs
       - name: Care semantics regression after full preparation
         run: node scripts/regression-p0-691-care-context.mjs
       - name: Care UI/personality regression after full preparation
