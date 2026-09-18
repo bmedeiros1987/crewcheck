@@ -62,13 +62,21 @@ function App() {
   const clear = () => {
     generation.current++;
     session.clear();
-    setSnapshot(null);
+    setSnapshot(demo ? demoSnapshot() : null);
     setNews([]);
     setPairing(null);
     setView("Agora");
-    setStatus("Vincule sua TV");
+    setStatus(demo ? "Demonstração · dados fictícios" : "Vincule sua TV");
   };
   async function begin() {
+    if (demo) {
+      setPairing(null);
+      setSnapshot(demoSnapshot());
+      setView("Agora");
+      setMode("live");
+      setStatus("Demonstração · dados fictícios");
+      return;
+    }
     clear();
     const run = generation.current;
     try {
