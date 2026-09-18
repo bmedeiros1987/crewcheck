@@ -3,7 +3,7 @@ import {build} from 'esbuild';
 import {mkdir,readFile} from 'node:fs/promises';
 await mkdir('dist/tv-pair-tests',{recursive:true});
 await build({entryPoints:{session:'packages/tv-core/src/session.ts',nativeRequest:'packages/tv-core/src/nativeRequest.ts',PairingDiagnostics:'apps/tv-player/src/PairingDiagnostics.tsx'},bundle:true,platform:'node',format:'esm',outdir:'dist/tv-pair-tests',outExtension:{'.js':'.mjs'},loader:{'.css':'empty'}});
-const {TvSession}=await import('../dist/tv-pair-tests/session.mjs');
+const {TvSession,snapshotValidationCode}=await import('../dist/tv-pair-tests/session.mjs');
 const {validatePairing,pairingFailure}=await import('../dist/tv-pair-tests/PairingDiagnostics.mjs');
 const storage={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};const fakeWindow={};global.window=fakeWindow;
 let calls=0;
@@ -21,9 +21,19 @@ let now=Date.parse('2026-09-18T22:45:00Z');
 const skewedWindow={};global.window=skewedWindow;
 const snapshot={schemaVersion:1,snapshotId:'s',deviceId:'d',sourceVersion:'v',generatedAt:new Date(now).toISOString(),expiresAt:new Date(now+60000).toISOString(),privacy:'private',mode:'ambient',next:null,days:[],summary:{month:'2026-09',flights:0,journeys:0,stays:0},leaveAt:null,gate:null,weather:null,changes:[],ticker:[]};
 const credential={deviceId:'d',token:'t',expiresAt:new Date(now+86400000).toISOString(),privacy:'private'};
-function response(body,date){return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json','Date':date}});}
-const skewedFetch=function(input){assert.equal(this,skewedWindow);return Promise.resolve(response(snapshot,new Date(now).toUTCString()));};
+function response(body,serverNow){return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json','X-CrewCheck-Server-Time':String(serverNow)}});}
+const skewedFetch=function(input){assert.equal(this,skewedWindow);return Promise.resolve(response(snapshot,now));};
 const skewed=new TvSession(storage,skewedFetch,'https://pilot.example.test');skewed.pair(credential);
 const realNow=Date.now;Date.now=()=>now-9*3600000;
 try{assert.equal((await skewed.sync()).snapshotId,'s');}finally{Date.now=realNow;delete global.window;}
-console.log('Pairing assertions passed: receiver, response bounds, trusted URL, sanitized diagnostics, QR-independent code and bounded server-clock correction.');
+assert.equal(snapshotValidationCode({...snapshot,schemaVersion:2},credential,now),'schema');
+assert.equal(snapshotValidationCode({...snapshot,deviceId:'other'},credential,now),'device');
+assert.equal(snapshotValidationCode({...snapshot,privacy:'family'},credential,now),'privacy');
+assert.equal(snapshotValidationCode({...snapshot,generatedAt:new Date(now+60000).toISOString()},credential,now),'time');
+assert.equal(snapshotValidationCode({...snapshot,days:null},credential,now),'days_type');
+assert.equal(snapshotValidationCode({...snapshot,days:Array.from({length:32},()=>({date:'2026-09-01',activities:[]}))},credential,now),'days_count');
+assert.equal(snapshotValidationCode({...snapshot,summary:null},credential,now),'summary');
+assert.equal(snapshotValidationCode({...snapshot,changes:null},credential,now),'changes');
+assert.equal(snapshotValidationCode({...snapshot,ticker:null},credential,now),'ticker');
+for(const [message,code] of [['invalid_snapshot_schema','TV-DATA-SCHEMA'],['invalid_snapshot_device','TV-DATA-DEVICE'],['invalid_snapshot_privacy','TV-DATA-PRIVACY'],['invalid_snapshot_time','TV-DATA-TIME'],['invalid_snapshot_days_type','TV-DATA-DAYS'],['invalid_snapshot_summary','TV-DATA-SUMMARY']]) assert.equal(pairingFailure(new Error(message)).code,code);
+console.log('Pairing assertions passed: receiver, response bounds, trusted URL, sanitized diagnostics, QR-independent code, granular snapshot reasons and trusted server-time freshness.');
