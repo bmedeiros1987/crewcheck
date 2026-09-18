@@ -28,8 +28,16 @@ if (platform === "android-tv") {
 }
 if (platform === "samsung-tizen")
   await cp("apps/samsung-tizen/config.xml", `${target}/config.xml`);
-if (platform === "lg-webos")
+if (platform === "lg-webos") {
   await cp("apps/lg-webos/appinfo.json", `${target}/appinfo.json`);
+  const cssFile = (await import("node:fs/promises")).readdir(target).then((files) => files.find((file) => file.endsWith(".css")));
+  const cssName = await cssFile;
+  if (!cssName) throw new Error("LG webOS legacy CSS bundle missing");
+  await writeFile(
+    `${target}/index.html`,
+    `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=1920"><title>CrewCheck TV</title><link rel="stylesheet" href="./${cssName}"></head><body><div id="root"></div><script src="./crewcheck-tv.js"></script></body></html>`,
+  );
+}
 if (platform === "samsung-tizen")
   await cp("apps/tv-assets/icon-512.png", `${target}/icon.png`);
 if (platform === "lg-webos") {
