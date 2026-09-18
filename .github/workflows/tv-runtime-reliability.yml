@@ -33,7 +33,9 @@ jobs:
       - run: node scripts/tv-pilot-policy-test.mjs && node scripts/tv-pilot-config-test.mjs && node scripts/tv-browser-origins-test.mjs
       - run: node scripts/tv-test.mjs && node scripts/tv-server-build.mjs
       - run: npx tsc --noEmit && npx tsc --noEmit -p tsconfig.tv.json
-      - run: npm run build
+      # Full canonical preparation already ran above. Do not execute legacy
+      # non-idempotent preparers again; the clean-build job tests npm run build.
+      - run: npx vite build
       - uses: actions/upload-artifact@v4
         with:
           name: TV-Runtime-Reliability-Evidence
@@ -44,3 +46,15 @@ jobs:
             client/src/pages/AuthPage.tsx
             client/src/lib/tvPairReturn.ts
           retention-days: 3
+  clean-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node --check server/platform.mjs && node --check server/v139/common.mjs
