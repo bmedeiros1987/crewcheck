@@ -55,6 +55,22 @@ write('server/v1403/build-reply.snippet', replySnippet);
 const serverPath = 'server.mjs';
 let server = read(serverPath);
 server = replaceOptional(server, oldEasterEgg, newEasterEgg);
+
+// The legacy parser can intentionally emit type=DO while preserving a more
+// precise published day-off code in pairingCode (VC/OFF/DOP, etc). Only those
+// known published care/day-off codes may specialize the coarse DO wrapper.
+// An unrelated residual pairingCode (for example ASB) must not erase the formal
+// DO signal and fall through to roster-empty/reimport semantics.
+const oldServerPairing = `  if (type === 'DO' && pairing) return pairing;\n  return type && type !== 'OTHER' ? type : (pairing || type);`;
+const newServerPairing = `  const publishedDayOff = new Set(['DMO', 'VC', 'FERIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA']);\n  if (type === 'DO' && publishedDayOff.has(pairing)) return pairing;\n  return type && type !== 'OTHER' ? type : (pairing || type);`;
+server = replaceRequired(server, oldServerPairing, newServerPairing, 'server DO pairing allowlist');
 write(serverPath, server);
+
+const humanPath = 'server/v1403/telegram-human.mjs';
+let human = read(humanPath);
+const oldHumanPairing = `  const code = type === 'DO' && pairing ? pairing : (type && type !== 'OTHER' ? type : (pairing || type));`;
+const newHumanPairing = `  const publishedDayOff = new Set(['DMO', 'VC', 'FERIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA']);\n  const code = type === 'DO' && publishedDayOff.has(pairing) ? pairing : (type && type !== 'OTHER' ? type : (pairing || type));`;
+human = replaceRequired(human, oldHumanPairing, newHumanPairing, 'human DO pairing allowlist');
+write(humanPath, human);
 
 console.log(`${TAG} aplicado com sucesso.`);
