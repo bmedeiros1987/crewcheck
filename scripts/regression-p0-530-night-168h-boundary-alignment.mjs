@@ -65,7 +65,7 @@ try {
   const sameNightB = {
     ...flight('03/09/2026','02:10'),
     pairingCode:'SYNTH2',
-    legs:[{flightNumber:'LA9003',origin:'BBB',destination:'CCC',departureTime:'02:10',arrivalTime:'03:10',presentationTime:'02:10',workType:'OP'}],
+    legs:[{flightNumber:'LA9003',origin:'CCC',destination:'DDD',departureTime:'02:10',arrivalTime:'03:10',presentationTime:'02:10',workType:'OP'}],
   };
   const sameNight = analyzeCompliance(roster([sameNightA, sameNightB]));
   assert.equal(sameNight.metrics.maxNightOps168hCount, 2, 'distinct qualifying journeys in the same night remain two occurrences');
