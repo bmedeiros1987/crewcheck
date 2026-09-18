@@ -1,4 +1,4 @@
-name: TV pairing public transport check
+name: TV pairing public transport check # capacity recovered
 on:
   pull_request:
     paths: ['.github/workflows/tv-pairing-live-check.yml']
