@@ -1,0 +1,24 @@
+name: TV visitor consent foundation
+on:
+  pull_request:
+    paths:
+      - 'server/tv/guest/**'
+      - 'scripts/tv-guest-test.mjs'
+      - 'docs/tv/LG-FIRST-VISITOR-RELEASE.md'
+      - '.github/workflows/tv-visitor-consent.yml'
+permissions:
+  contents: read
+concurrency:
+  group: tv-visitor-consent-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  visitor-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check server/tv/guest/policy.mjs && node --check server/tv/guest/reader.mjs && node --check server/tv/guest/view-model.mjs
+      - run: node --test scripts/tv-guest-test.mjs
