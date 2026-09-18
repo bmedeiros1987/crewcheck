@@ -330,7 +330,7 @@ function App() {
       <header>
         <div className="brand">
           CREW<span>CHECK</span>
-          <small>TV / VOYAGE</small>
+          <small>TV · CREW OPERATIONS</small>
         </div>
         <div className="header-status">
           <i />
@@ -421,13 +421,15 @@ function App() {
                       : "Nenhuma próxima atividade publicada")}
                 </p>
                 <div className="times">
-                  <div>
-                    <label>APRESENTAÇÃO</label>
-                    <strong>{next?.presentation || "—"}</strong>
-                  </div>
-                  <div>
+                  <div className="time-card time-primary">
                     <label>SAIR DE CASA</label>
                     <strong>{leave || "—"}</strong>
+                    <small>horário recomendado</small>
+                  </div>
+                  <div className="time-card time-secondary">
+                    <label>APRESENTAÇÃO</label>
+                    <strong>{next?.presentation || "—"}</strong>
+                    <small>horário publicado</small>
                   </div>
                 </div>
                 <div className="gate">
