@@ -550,3 +550,87 @@ footer > span {
 .exit-dialog button {
   margin: 20px 20px 0 0;
 }
+
+
+/* LG webOS 4.x / Chromium 53 fallback.
+   Modern platforms keep the grid layout above; this block is activated only
+   when the player detects the legacy LG engine. */
+.legacy-webos4 button:focus,
+.legacy-webos4 a:focus {
+  outline: 4px solid #6ce9ff;
+  outline-offset: 4px;
+  background: #1c425b;
+  box-shadow: 0 0 30px #42d6ff44;
+}
+.legacy-webos4 h1 {
+  font-size: 64px;
+}
+.legacy-webos4 .times strong {
+  font-size: 68px;
+}
+.legacy-webos4 .live {
+  display: flex;
+}
+.legacy-webos4 .hero {
+  width: 56%;
+}
+.legacy-webos4 .side {
+  display: flex;
+  flex-direction: column;
+  width: 44%;
+  margin-left: 22px;
+}
+.legacy-webos4 .side > article {
+  margin-top: 18px;
+}
+.legacy-webos4 .side-top {
+  display: flex;
+}
+.legacy-webos4 .side-top > article {
+  width: 50%;
+}
+.legacy-webos4 .side-top > article + article {
+  margin-left: 18px;
+}
+.legacy-webos4 .weekdays,
+.legacy-webos4 .days {
+  display: flex;
+  flex-wrap: wrap;
+}
+.legacy-webos4 .weekdays > span,
+.legacy-webos4 .days > button,
+.legacy-webos4 .days > div {
+  width: calc(14.2857% - 10px);
+  margin: 5px;
+}
+.legacy-webos4 .activities {
+  display: flex;
+  flex-wrap: wrap;
+}
+.legacy-webos4 .activity {
+  width: calc(33.3333% - 20px);
+  margin: 10px;
+}
+.legacy-webos4 .exit-dialog {
+  top: 25%;
+  right: 25%;
+  bottom: 25%;
+  left: 25%;
+}
+.legacy-webos4 nav > * + * {
+  margin-left: 12px;
+}
+.legacy-webos4 .gate > * + * {
+  margin-left: 18px;
+}
+.legacy-webos4 footer > * + * {
+  margin-left: 18px;
+}
+@media (max-height: 800px) {
+  .legacy-webos4 h1 {
+    font-size: 42px;
+  }
+  .legacy-webos4 .times strong {
+    font-size: 48px;
+  }
+}
