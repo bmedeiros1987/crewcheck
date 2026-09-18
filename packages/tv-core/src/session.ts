@@ -48,9 +48,7 @@ export class TvSession {
     // Keep the same 8s lease with Promise.race and only attach a signal when
     // the platform actually provides AbortController.
     const Controller =
-      typeof globalThis.AbortController === "function"
-        ? globalThis.AbortController
-        : null;
+      typeof AbortController === "function" ? AbortController : null;
     const controller = Controller ? new Controller() : null;
     const init: RequestInit = {
       method: body === undefined ? "GET" : "POST",
