@@ -64,6 +64,13 @@ server = replaceOptional(server, oldEasterEgg, newEasterEgg);
 const oldServerPairing = `  if (type === 'DO' && pairing) return pairing;\n  return type && type !== 'OTHER' ? type : (pairing || type);`;
 const newServerPairing = `  const publishedDayOff = new Set(['DMO', 'VC', 'FERIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA']);\n  if (type === 'DO' && publishedDayOff.has(pairing)) return pairing;\n  return type && type !== 'OTHER' ? type : (pairing || type);`;
 server = replaceRequired(server, oldServerPairing, newServerPairing, 'server DO pairing allowlist');
+
+// Care NONE alone is insufficient: the legacy inactive filter also reads code.
+// Keep published ASB/HSB/EAD duties operational with their own mobility identity,
+// even when a weaker pairing carries a care label. Preserve flight pairings.
+const oldProgramIdentity = `function conciergeProgramRecords(roster = {}) {\n  const records = [];\n  for (const day of Array.isArray(roster.days) ? roster.days : []) {\n    const legs = Array.isArray(day?.legs) ? day.legs : [];\n    const code = String(day?.pairingCode || day?.type || '').trim().toUpperCase();`;
+const newProgramIdentity = `function conciergeProgramRecords(roster = {}) {\n  const records = [];\n  for (const day of Array.isArray(roster.days) ? roster.days : []) {\n    const legs = Array.isArray(day?.legs) ? day.legs : [];\n    const formalCode = String(day?.type || '').trim().toUpperCase();\n    const code = ['ASB', 'HSB', 'EAD'].includes(formalCode)\n      ? formalCode\n      : String(day?.pairingCode || day?.type || '').trim().toUpperCase();`;
+server = replaceRequired(server, oldProgramIdentity, newProgramIdentity, 'formal Concierge duty survives residual care pairing');
 write(serverPath, server);
 
 const humanPath = 'server/v1403/telegram-human.mjs';
