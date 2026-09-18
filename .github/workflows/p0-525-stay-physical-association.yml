@@ -52,7 +52,6 @@ jobs:
           set -euo pipefail
           node scripts/regression-p0-525-stay-physical-association.mjs
           node scripts/regression-p0-530-journey-rest-cleanroom.mjs
-          node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
       - name: Prepared incremental continuity across runtime timezones
         run: |
           set -euo pipefail
@@ -79,3 +78,26 @@ jobs:
           node scripts/regression-p0-580-local-period-identity.mjs
       - name: TypeScript
         run: npx tsc --noEmit
+      - name: Full existing timezone and 168h contract (no bypass)
+        run: node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
+
+  # Comparative evidence only: do not change the test or expected regulatory
+  # value merely because a candidate and its base disagree with that contract.
+  baseline-timezone-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare unchanged PR base
+        run: node scripts/v139/apply.mjs
+      - name: Run identical timezone and 168h assertion on base
+        run: node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
