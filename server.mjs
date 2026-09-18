@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { handleTvRoute } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
 import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
@@ -3910,6 +3911,7 @@ http.createServer(async (req, res) => {
     res.writeHead(308, { location: `https://crewcheck.online${url.pathname}${url.search}`, 'cache-control': 'public, max-age=3600' });
     return res.end();
   }
+  if (await handleTvRoute(req, res, url)) return;
   if (await handleV139Route(req, res, url)) return;
   if (['/crewcheck-repair','/repair','/safe-start','/emergency'].includes(url.pathname) || /^\/__crewcheck_boot_rescue_\d+\.html$/.test(url.pathname)) return handleCrewCheckStaticShell(req, res);
 

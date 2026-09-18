@@ -2573,7 +2573,6 @@ async function handleAccountDeletion(req, res) {
 }
 
 export async function handlePlatformRoute(req, res, url) {
-  if (await handleTv(req, res, url)) return true;
   const legacy = url.pathname === '/api/db/status' || url.pathname === '/api/stats' || url.pathname === '/api/rosters' || url.pathname.startsWith('/api/rosters/');
   if (!url.pathname.startsWith('/api/platform/') && !legacy) return false;
   if (!legacy && !enforcePlatformMethod(req, res, url.pathname)) return true;
@@ -2635,3 +2634,5 @@ export async function handlePlatformRoute(req, res, url) {
 }
 
 export const crewCheckPlatform = { version: APP_VERSION, defaultTimezone: DEFAULT_TIMEZONE, supportedLocales: [...SUPPORTED_LOCALES] };
+// Separate entry keeps historical platform preparation anchors intact.
+export { handleTv as handleTvRoute };
