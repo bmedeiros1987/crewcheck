@@ -78,7 +78,7 @@ if (!source.includes(marker)) {
 
   replaceRequired(
     `      title: 'Madrugadas em 168h — revisar janela real',\n      description: \`Até \${maxNightOpsWindow} madrugada(s) em janela móvel de 168h. Revise a sequência real no PDF.\`,\n      details: 'O sistema conta voo que toca 00:00–06:00 e sobreaviso que começa na madrugada; folga, reserva sem voo e voo sem madrugada quebram sequência. Mantido como atenção para evitar falso positivo.',`,
-    `      title: 'Madrugadas trabalhadas em 168h — revisar janela real',\n      description: 'Até ' + maxNightOpsWindow + ' madrugada(s) efetivamente trabalhada(s) em janela móvel de 168h.',\n      details: 'A janela usa o horário real em que cada atividade toca 00:00–06:00, é semiaberta (não duplica o limite exato de 168h) e reinicia após ' + actRules.nightOps.resetAfterFreeHours + 'h livres. HSB sem acionamento é exibido separadamente e não entra nesta soma.',`,
+    `      title: 'Madrugadas trabalhadas em 168h — revisar janela real',\n      description: 'Até ' + maxNightOpsWindow + ' madrugada(s) efetivamente trabalhada(s) em janela móvel de 168h.',\n      details: 'A janela usa o horário real em que cada atividade toca 00:00–06:00 e, por convenção conservadora do CrewCheck, inclui a ocorrência exatamente no limite de 168h; esse caso-limite deve ser revisado conforme a regra aplicável. A contagem reinicia após ' + actRules.nightOps.resetAfterFreeHours + 'h livres. HSB sem acionamento é exibido separadamente e não entra nesta soma.',`,
     'texto da janela de 168h',
   );
 
