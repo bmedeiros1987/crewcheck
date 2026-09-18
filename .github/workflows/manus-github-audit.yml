@@ -441,11 +441,11 @@ jobs:
           case "$verdict" in
             MERGE)
               test "$severity" = "NONE" || bridge_error "MERGE verdict must have severity NONE"
-              BODY="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\\n\\n%s' \"$REQUESTED_SHA\" \"$summary\")"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s' "$REQUESTED_SHA" "$summary")"
               ;;
             BLOCKER)
               case "$severity" in P0|P1|P2) ;; *) bridge_error "BLOCKER verdict must have severity P0, P1, or P2" ;; esac
-              BODY="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\\nSeverity: %s\\n\\nSummary: %s\\n\\nReproducer: %s\\nExpected: %s\\nActual: %s\\nRoot cause: %s' \"$REQUESTED_SHA\" \"$severity\" \"$summary\" \"$reproducer\" \"$expected\" \"$actual\" \"$root_cause\")"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s' "$REQUESTED_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause")"
               ;;
             *)
               bridge_error "unknown structured verdict: $verdict"
