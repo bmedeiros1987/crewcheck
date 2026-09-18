@@ -1,0 +1,43 @@
+name: LG restricted account pilot package
+on:
+  pull_request:
+    paths: ['apps/tv-player/**', 'scripts/tv-*', 'packages/tv-core/**', '.github/workflows/tv-account-pilot-client.yml']
+permissions:
+  contents: read
+concurrency:
+  group: tv-account-pilot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lg-account-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-brand-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - run: node scripts/tv-pilot-build.mjs
+        env:
+          TV_PILOT_API_ORIGIN: https://crewcheck-pr-698.onrender.com
+      - name: Package restricted test client
+        run: |
+          npm install --prefix "$RUNNER_TEMP/webos-cli" --no-audit --no-fund @webos-tools/cli@3.2.6
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-config" --profile tv
+          mkdir -p dist/tv-account-pilot
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --no-minify dist/lg-webos --outdir dist/tv-account-pilot
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --info dist/tv-account-pilot/*.ipk
+          cp dist/lg-webos/tv-build.json dist/tv-account-pilot/BUILD.json
+          (cd dist/tv-account-pilot && sha256sum *.ipk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-LG-Restricted-Account-Pilot
+          path: |
+            dist/tv-account-pilot
+            dist/lg-webos
+          if-no-files-found: error
+          retention-days: 14

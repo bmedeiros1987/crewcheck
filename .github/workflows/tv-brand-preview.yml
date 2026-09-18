@@ -1,0 +1,52 @@
+name: TV mobile brand and LG preview
+on:
+  pull_request:
+    paths:
+      - 'apps/tv-player/**'
+      - 'apps/lg-webos/**'
+      - 'scripts/tv-brand-test.mjs'
+      - '.github/workflows/tv-brand-preview.yml'
+      - 'docs/tv/LG-PUBLICACAO.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tv-brand-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lg-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      VITE_TV_DEMO: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-brand-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - run: node scripts/tv-build.mjs lg-webos
+      - name: Package development IPK
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lg" --no-audit --no-fund @webos-tools/cli@3.2.6
+          "$RUNNER_TEMP/lg/node_modules/.bin/ares-config" --profile tv
+          mkdir -p dist/tv-brand-preview
+          "$RUNNER_TEMP/lg/node_modules/.bin/ares-package" --no-minify dist/lg-webos --outdir dist/tv-brand-preview
+          "$RUNNER_TEMP/lg/node_modules/.bin/ares-package" --info dist/tv-brand-preview/*.ipk
+          cp docs/tv/LG-PUBLICACAO.md dist/tv-brand-preview/
+          cp dist/lg-webos/tv-build.json dist/tv-brand-preview/BUILD.json
+          cd dist/tv-brand-preview && sha256sum *.ipk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-LG-Mobile-Brand-Preview
+          path: |
+            dist/tv-brand-preview
+            dist/lg-webos
+            apps/tv-player/src
+            scripts/tv-brand-test.mjs
+          retention-days: 14
+          if-no-files-found: error
