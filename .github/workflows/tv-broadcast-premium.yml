@@ -1,0 +1,56 @@
+name: TV official brand broadcast preview
+on:
+  pull_request:
+    paths: ['apps/tv-player/**', 'scripts/tv-broadcast-*', '.github/workflows/tv-broadcast-premium.yml', 'docs/tv/BROADCAST-017.md']
+permissions:
+  contents: read
+concurrency:
+  group: tv-broadcast-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  broadcast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-broadcast-prepare.mjs
+      - run: node scripts/tv-broadcast-prepare.mjs
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-session-receive-time-test.mjs
+      - run: node scripts/tv-brand-test.mjs
+      - run: node scripts/tv-screen-care-test.mjs
+      - run: node scripts/tv-screen-care-opt-out-test.mjs
+      - run: node scripts/tv-channel-test.mjs
+      - run: node scripts/tv-broadcast-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - name: Stage both LG test identities without private original media
+        env:
+          TV_PILOT_API_ORIGIN: https://crewcheck-pr-698.onrender.com
+        run: |
+          mkdir -p dist/broadcast
+          node scripts/tv-broadcast-stage.mjs demo
+          cp -R dist/lg-webos dist/broadcast/demo
+          node scripts/tv-broadcast-stage.mjs pilot
+          cp -R dist/lg-webos dist/broadcast/pilot
+          printf 'UNFINALIZED: original owner branding/music assets must be verified and attached before IPK packaging. No account credentials or third-party API secrets.\n' > dist/broadcast/README.txt
+      - name: Export official LG packager for local asset finalization
+        run: |
+          npm install --prefix "$RUNNER_TEMP/webos-cli" --no-audit --no-fund @webos-tools/cli@3.2.6
+          tar -czf dist/broadcast/webos-packager.tgz -C "$RUNNER_TEMP" webos-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-Broadcast-017-UNFINALIZED
+          path: |
+            dist/broadcast
+            apps/tv-player/src
+            apps/tv-player/brand-assets.json
+            apps/tv-player/music-manifest.json
+            scripts/tv-broadcast-*.mjs
+            docs/tv/BROADCAST-017.md
+          if-no-files-found: error
+          retention-days: 14
