@@ -33,9 +33,10 @@ if (platform === "lg-webos") {
   const cssFile = (await import("node:fs/promises")).readdir(target).then((files) => files.find((file) => file.endsWith(".css")));
   const cssName = await cssFile;
   if (!cssName) throw new Error("LG webOS legacy CSS bundle missing");
+  const legacyBoot = `<script>(function(){window.onerror=function(message,source,line,column,error){var root=document.getElementById("root");if(root){root.innerHTML='<main style="min-height:100vh;background:#051121;color:#edf7ff;font-family:Arial,sans-serif;padding:70px"><h1 style="font-size:54px">CrewCheck TV</h1><h2 style="color:#6ee7fa">Falha ao iniciar</h2><p style="font-size:24px;line-height:1.5">'+String(message)+'</p><p>Linha '+String(line||"?")+' · Coluna '+String(column||"?")+'</p><p style="color:#9db7ca">Envie uma foto desta tela para o suporte.</p></main>'; } return false;};if(!Object.getOwnPropertyDescriptors){Object.getOwnPropertyDescriptors=function(object){var descriptors={};Object.getOwnPropertyNames(object).forEach(function(key){descriptors[key]=Object.getOwnPropertyDescriptor(object,key);});if(Object.getOwnPropertySymbols){Object.getOwnPropertySymbols(object).forEach(function(key){descriptors[key]=Object.getOwnPropertyDescriptor(object,key);});}return descriptors;};}})();</script>`;
   await writeFile(
     `${target}/index.html`,
-    `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=1920"><title>CrewCheck TV</title><link rel="stylesheet" href="./${cssName}"></head><body><div id="root"></div><script src="./crewcheck-tv.js"></script></body></html>`,
+    `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=1920"><title>CrewCheck TV</title><link rel="stylesheet" href="./${cssName}"></head><body><div id="root"><main style="min-height:100vh;background:#051121;color:#edf7ff;font-family:Arial,sans-serif;padding:70px"><h1 style="font-size:54px">CrewCheck TV</h1><p style="font-size:24px;color:#9db7ca">Inicializando…</p></main></div>${legacyBoot}<script src="./crewcheck-tv.js"></script></body></html>`,
   );
 }
 if (platform === "samsung-tizen")
