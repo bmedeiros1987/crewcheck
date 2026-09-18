@@ -120,3 +120,43 @@ jobs:
           path: dist/tv-packages
           if-no-files-found: error
           retention-days: 14
+
+
+  lg-official-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VITE_TV_DEMO: 'false'
+      VITE_CREWCHECK_TV_ENABLED: 'true'
+      VITE_TV_API_ORIGIN: 'https://crewcheck.online'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Build official LG webOS candidate
+        run: node scripts/tv-build.mjs lg-webos
+      - name: Package official LG IPK
+        run: |
+          npm install --prefix "$RUNNER_TEMP/webos-cli" --no-audit --no-fund @webos-tools/cli@3.2.5
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-config" --profile tv
+          mkdir -p dist/tv-packages/lg-official
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --no-minify dist/lg-webos --outdir dist/tv-packages/lg-official
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --info dist/tv-packages/lg-official/*.ipk
+      - name: Verify production identity and record provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"id": "online.crewcheck.tv"' dist/lg-webos/appinfo.json
+          grep -q '"demo": false' dist/lg-webos/tv-build.json
+          grep -q '"operational": true' dist/lg-webos/tv-build.json
+          printf 'Commit: %s\nID: online.crewcheck.tv\nAPI: https://crewcheck.online\nOperational candidate only. Requires CREWCHECK_TV_ENABLED=true on backend and real pairing validation before release/store submission.\n' "$GITHUB_SHA" > dist/tv-packages/lg-official/BUILD.txt
+          (cd dist/tv-packages/lg-official && sha256sum *.ipk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-LG-OFFICIAL-CANDIDATE
+          path: dist/tv-packages/lg-official
+          if-no-files-found: error
+          retention-days: 14
