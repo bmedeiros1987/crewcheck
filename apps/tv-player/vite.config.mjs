@@ -10,6 +10,9 @@ export default defineConfig({
   root: "apps/tv-player",
   base: "./",
   plugins: [react()],
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
   build: legacyLg
     ? {
         outDir: "../../dist/tv-player",
