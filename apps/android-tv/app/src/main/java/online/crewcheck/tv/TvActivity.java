@@ -40,7 +40,7 @@ public final class TvActivity extends Activity {
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
             if (event.getAction() == KeyEvent.ACTION_UP) web.evaluateJavascript(
-                "(function(){if(document.querySelector('nav .active')?.textContent==='Agora'||!document.querySelector('nav'))return 'exit';document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));return 'handled';})()",
+                "(function(){var care=document.querySelector('.screen-care-cover');if(!care&&(document.querySelector('nav .active')?.textContent==='Agora'||!document.querySelector('nav')))return 'exit';document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape'}));return 'handled';})()",
                 result -> { if ("\"exit\"".equals(result)) finish(); });
             return true;
         }
