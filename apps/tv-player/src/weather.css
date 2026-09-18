@@ -1,0 +1,12 @@
+/* Keep temperature units on the number's baseline; secondary card captions
+   use display:block elsewhere. Deliberate specificity works on webOS 4. */
+.weather-card .weather-value small {
+  display: inline;
+  margin: 0 0 0 .3vw;
+  font-size: 1.35vw;
+  line-height: 1;
+  vertical-align: baseline;
+  color: #d7e3f3;
+}
+.theme-mobile .weather-card .weather-value small { color: #5d7083; }
+.theme-mobile .news p + p { border-color: #dce6f0; }
