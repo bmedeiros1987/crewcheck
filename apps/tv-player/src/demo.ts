@@ -7,20 +7,23 @@ import {
 export function demoSnapshot(): TvSnapshot {
   const now = new Date();
   const generatedAt = now.toISOString();
-  const activity = (day: number): TvActivity => ({
+  const activity = (day: number): TvActivity => {
+    const dd = day < 10 ? `0${day}` : String(day);
+    return {
     id: `demo-${day}`,
     journeyId: `demo-journey-${day}`,
     kind: "flight",
-    date: `2026-09-${String(day).padStart(2, "0")}`,
-    startAt: `2026-09-${String(day).padStart(2, "0")}T19:25:00Z`,
-    endAt: `2026-09-${String(day).padStart(2, "0")}T23:40:00Z`,
+    date: `2026-09-${dd}`,
+    startAt: `2026-09-${dd}T19:25:00Z`,
+    endAt: `2026-09-${dd}T23:40:00Z`,
     presentation: "16:25",
     flight: "LA3301",
     origin: "BSB",
     destination: "GRU",
     groundBeforeMinutes: null,
     confidence: "alta",
-  });
+  };
+  };
   return {
     schemaVersion: 1,
     snapshotId: "synthetic",
