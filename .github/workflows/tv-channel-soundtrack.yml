@@ -1,0 +1,52 @@
+name: TV channel and soundtrack staging
+on:
+  pull_request:
+    paths: ['apps/tv-player/**', 'apps/lg-webos/**', 'scripts/tv-*', '.github/workflows/tv-channel-soundtrack.yml']
+permissions:
+  contents: read
+concurrency:
+  group: tv-channel-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  channel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-session-receive-time-test.mjs
+      - run: node scripts/tv-brand-test.mjs
+      - run: node scripts/tv-screen-care-test.mjs
+      - run: node scripts/tv-screen-care-opt-out-test.mjs
+      - run: node scripts/tv-channel-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - name: Stage separate demo and real-account clients
+        env:
+          TV_PILOT_API_ORIGIN: https://crewcheck-pr-698.onrender.com
+        run: |
+          node scripts/tv-channel-stage.mjs demo
+          mkdir -p dist/channel/demo dist/channel/pilot
+          cp -a dist/lg-webos/. dist/channel/demo/
+          node scripts/tv-channel-stage.mjs pilot
+          cp -a dist/lg-webos/. dist/channel/pilot/
+      - name: Export official local packager for owner-asset finalization
+        run: |
+          npm install --prefix "$RUNNER_TEMP/webos-cli" --no-audit --no-fund @webos-tools/cli@3.2.6
+          tar -C "$RUNNER_TEMP" -czf dist/channel/webos-packager.tgz webos-cli
+          echo 'UNFINALIZED: original MP3s intentionally not published in this repository. Run the hash-verified attachment script and official ares-package before installation.' > dist/channel/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-Channel-0.1.6-UNFINALIZED
+          path: |
+            dist/channel
+            apps/tv-player/src
+            apps/tv-player/music-manifest.json
+            scripts/tv-channel-*.mjs
+            docs/tv/CHANNEL-MUSIC.md
+          if-no-files-found: error
+          retention-days: 14

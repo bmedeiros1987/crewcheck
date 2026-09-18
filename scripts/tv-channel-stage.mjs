@@ -1,0 +1,17 @@
+import { spawnSync } from 'node:child_process';
+import { readFile, writeFile } from 'node:fs/promises';
+const demo=process.argv[2]==='demo';
+if(!['demo','pilot'].includes(process.argv[2])) throw Error('Choose demo or pilot');
+const origin=process.env.TV_PILOT_API_ORIGIN;
+if(!demo && (!origin || new URL(origin).protocol!=='https:' || new URL(origin).origin!==origin)) throw Error('Exact HTTPS pilot origin required');
+const run=spawnSync(process.execPath,['scripts/tv-build.mjs','lg-webos'],{stdio:'inherit',env:{...process.env,VITE_TV_DEMO:String(demo),VITE_CREWCHECK_TV_ENABLED:String(!demo),VITE_TV_API_ORIGIN:origin||'https://crewcheck.online'}});
+if(run.status!==0) throw Error('TV build failed');
+const root='dist/lg-webos';
+const manifest=JSON.parse(await readFile(root+'/appinfo.json','utf8'));
+manifest.id=demo?'online.crewcheck.tv.demo':'online.crewcheck.tv.pilot';
+manifest.title=demo?'CrewCheck TV Demo':'CrewCheck TV Piloto';manifest.version='0.1.6';
+await writeFile(root+'/appinfo.json',JSON.stringify(manifest,null,2));
+const meta=JSON.parse(await readFile(root+'/tv-build.json','utf8'));
+meta.operational=false;meta.demo=demo;meta.realAccountPilot=!demo;meta.soundtrackBundled=false;
+meta.note='Unfinalized channel assets. Attach verified owner MP3 files with tv-channel-attach-music.mjs before packaging. Not a store release.';
+await writeFile(root+'/tv-build.json',JSON.stringify(meta,null,2));
