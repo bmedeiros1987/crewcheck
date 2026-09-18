@@ -2,6 +2,7 @@ package com.crewcheck.watch;
 
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.os.RemoteException;
 
 import androidx.wear.watchface.complications.data.ComplicationData;
 import androidx.wear.watchface.complications.data.ComplicationType;
@@ -18,7 +19,11 @@ public final class CrewCheckComplicationService extends ComplicationDataSourceSe
             ComplicationRequest request,
             ComplicationRequestListener listener
     ) {
-        listener.onComplicationData(buildData(request.getComplicationType(), false));
+        try {
+            listener.onComplicationData(buildData(request.getComplicationType(), false));
+        } catch (RemoteException ignored) {
+            // The system complication host may disappear before the asynchronous reply arrives.
+        }
     }
 
     @Override
