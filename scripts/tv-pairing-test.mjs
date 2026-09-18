@@ -16,4 +16,14 @@ for(const patch of [{deviceCode:'x'},{expiresIn:Infinity},{expiresIn:-1},{interv
 for(const [error,code] of [[new TypeError('Illegal invocation'),'TV-NET-01'],[new Error('request_timeout'),'TV-NET-02'],[new Error('request_503'),'TV-HTTP-503'],[new Error('request_429'),'TV-HTTP-429'],[new Error('pair_again'),'TV-AUTH-01'],[new SyntaxError('secret'),'TV-DATA-02'],[new Error('token=SECRET'),'TV-NET-03']]){assert.equal(pairingFailure(error).code,code);assert.ok(!JSON.stringify(pairingFailure(error)).includes('SECRET'));}
 const main=await readFile('apps/tv-player/src/main.tsx','utf8');assert.ok(main.indexOf('setPairing(p)')<main.indexOf('QRCode.toDataURL(p.verificationUri)'));assert.match(main,/pairBusyRef.current/);assert.match(main,/TV-QR-01/);
 await build({entryPoints:['packages/tv-core/src/nativeRequest.ts'],bundle:true,platform:'browser',format:'iife',globalName:'TvNativeRequest',target:'chrome53',outfile:'dist/tv-pair-tests/native-browser.js'});
-console.log('Pairing assertions passed: receiver, response bounds, trusted URL, sanitized diagnostics and QR-independent code.');
+// A television with a badly skewed wall clock must still validate a fresh server snapshot.
+let now=Date.parse('2026-09-18T22:45:00Z');
+const skewedWindow={};global.window=skewedWindow;
+const snapshot={schemaVersion:1,snapshotId:'s',deviceId:'d',sourceVersion:'v',generatedAt:new Date(now).toISOString(),expiresAt:new Date(now+60000).toISOString(),privacy:'private',mode:'ambient',next:null,days:[],summary:{month:'2026-09',flights:0,journeys:0,stays:0},leaveAt:null,gate:null,weather:null,changes:[],ticker:[]};
+const credential={deviceId:'d',token:'t',expiresAt:new Date(now+86400000).toISOString(),privacy:'private'};
+function response(body,date){return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json','Date':date}});}
+const skewedFetch=function(input){assert.equal(this,skewedWindow);return Promise.resolve(response(snapshot,new Date(now).toUTCString()));};
+const skewed=new TvSession(storage,skewedFetch,'https://pilot.example.test');skewed.pair(credential);
+const realNow=Date.now;Date.now=()=>now-9*3600000;
+try{assert.equal((await skewed.sync()).snapshotId,'s');}finally{Date.now=realNow;delete global.window;}
+console.log('Pairing assertions passed: receiver, response bounds, trusted URL, sanitized diagnostics, QR-independent code and bounded server-clock correction.');
