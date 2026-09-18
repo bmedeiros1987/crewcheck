@@ -1,5 +1,5 @@
 import { build } from "vite";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 const platform = process.argv[2] || "web";
 if (!["web", "android-tv", "samsung-tizen", "lg-webos"].includes(platform))
@@ -30,6 +30,23 @@ if (platform === "lg-webos") {
   await cp("apps/tv-assets/icon-80.png", `${target}/icon.png`);
   await cp("apps/tv-assets/icon-130.png", `${target}/large-icon.png`);
 }
+// Demo identities cannot replace a production installation.
+const demo = process.env.VITE_TV_DEMO === "true";
+if (demo && platform === "lg-webos") {
+  const manifest = JSON.parse(await readFile(`${target}/appinfo.json`, "utf8"));
+  manifest.id += ".demo";
+  manifest.title += " Demo";
+  await writeFile(`${target}/appinfo.json`, JSON.stringify(manifest, null, 2));
+}
+if (demo && platform === "samsung-tizen") {
+  const manifest = await readFile(`${target}/config.xml`, "utf8");
+  await writeFile(`${target}/config.xml`, manifest.replaceAll("CrewChkTV1", "CrewChkDm1").replace("<name>CrewCheck TV</name>", "<name>CrewCheck TV Demo</name>"));
+}
+await writeFile(`${target}/tv-build.json`, JSON.stringify({
+  platform, demo, operational: false,
+  commit: process.env.GITHUB_SHA || null,
+  note: "Experimental build; not store approved. Runtime feature gates still apply.",
+}, null, 2));
 console.log(
   `Staged ${platform}: ${target}. Native packaging/signing NOT performed.`,
 );

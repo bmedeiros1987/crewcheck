@@ -1,0 +1,122 @@
+name: TV demo packages and Android TV emulator
+
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'packages/tv-core/**'
+      - 'scripts/tv-*'
+      - '.github/workflows/tv-packages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: tv-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+# These are synthetic demo packages with separate IDs, never store releases.
+# No production credentials, repository signing secrets or deployment are used.
+env:
+  VITE_TV_DEMO: 'true'
+
+jobs:
+  android-tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-build.mjs android-tv
+      - name: Compile demo APK, debug AAB and instrumentation tests
+        working-directory: apps/android-tv
+        run: gradle --no-daemon -PtvDemo=true :app:assembleDebug :app:bundleDebug :app:assembleDebugAndroidTest :app:lintDebug
+      - name: Verify APK signature and record provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/tv-packages/android
+          cp apps/android-tv/app/build/outputs/apk/debug/app-debug.apk dist/tv-packages/android/CrewCheck-TV-DEMO-debug.apk
+          cp apps/android-tv/app/build/outputs/bundle/debug/app-debug.aab dist/tv-packages/android/CrewCheck-TV-DEMO-debug.aab
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$signer" verify --verbose dist/tv-packages/android/CrewCheck-TV-DEMO-debug.apk
+          printf 'Commit: %s\nID: online.crewcheck.tv.demo\nDEBUG certificate; synthetic demo only. Not for Play submission.\n' "$GITHUB_SHA" > dist/tv-packages/android/BUILD.txt
+          (cd dist/tv-packages/android && sha256sum *.apk *.aab > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-Android-DEMO-debug
+          path: dist/tv-packages/android
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install and test on Android TV emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: android-tv
+          arch: x86
+          profile: tv_1080p
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/tv-android-smoke.sh
+      - name: Upload emulator evidence and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-Android-emulator-evidence
+          path: |
+            dist/tv-emulator
+            apps/android-tv/app/build/reports
+            apps/android-tv/app/build/outputs/androidTest-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  webos-tizen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-build.mjs lg-webos
+      - name: Package LG IPK with official CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/webos-cli" --no-audit --no-fund @webos-tools/cli@3.2.5
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-config" --profile tv
+          mkdir -p dist/tv-packages/lg
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --no-minify dist/lg-webos --outdir dist/tv-packages/lg
+          "$RUNNER_TEMP/webos-cli/node_modules/.bin/ares-package" --info dist/tv-packages/lg/*.ipk
+      - run: node scripts/tv-build.mjs samsung-tizen
+      - name: Create and inspect unsigned Samsung widget container
+        run: python3 scripts/tv-package-widget.py
+      - name: Record package provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Commit: %s\nLG: official CLI IPK, Developer Mode testing only, not store approved.\nSamsung: unsigned ZIP widget container; requires Samsung certificates before installation.\nAll packages contain synthetic DEMO data and separate demo IDs.\n' "$GITHUB_SHA" > dist/tv-packages/BUILD.txt
+          (cd dist/tv-packages && sha256sum lg/*.ipk samsung/*.wgt > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-LG-IPK-Samsung-UNSIGNED-DEMO
+          path: dist/tv-packages
+          if-no-files-found: error
+          retention-days: 14
