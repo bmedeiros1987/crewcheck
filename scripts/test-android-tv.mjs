@@ -19,3 +19,13 @@ session.pair(credential);response=new Response('{}',{status:401});await assert.r
 session.pair(credential);response=new Response(JSON.stringify({...snapshot,deviceId:'other'}));await assert.rejects(()=>session.sync(now));assert.equal(session.credential,null);
 session.pair({...credential,privacy:'private'});response=new Response(JSON.stringify({...snapshot,privacy:'private'}));await session.sync(now);assert.equal(saved.size,0,'private snapshots never persist');
 console.log('PASS: TV calendar, remote input, freshness, lease expiry, revocation, device isolation and private persistence');
+const roster={crewName:'PRIVATE NAME',crewId:'PRIVATE-ID',base:'BSB',rank:'CCM',month:9,year:2026,rawText:'SECRET PDF',days:[{date:'18/09/2026',dayOfWeek:'SEX',month:9,year:2026,type:'VOO',pairingCode:'',dutyReport:'16:25',dutyDebrief:'20:30',dutyHours:null,flyingHours:null,isNextDay:false,hotel:'SECRET HOTEL',base:'BSB',legs:[{flightNumber:'LA3301',origin:'BSB',destination:'GRU',departureTime:'17:20',arrivalTime:'19:30',workType:'OP',presentationTime:'16:25'}]}]};
+const opts={deviceId:'test',snapshotId:'synthetic',sourceVersion:'1',month:'2026-09',generatedAt:'2026-09-18T12:00:00Z',expiresAt:'2026-09-18T12:01:00Z',now:new Date('2026-09-18T12:00:00Z')};
+const projected=tv.projectRoster(roster,opts);
+for(const value of ['PRIVATE','SECRET','LA3301','BSB','GRU'])assert.ok(!JSON.stringify(projected).includes(value),`family redacts ${value} including IDs`);
+assert.equal(projected.next.presentation,'16:25');
+const privateProjection=tv.projectRoster(roster,{...opts,privacy:'private'});
+assert.equal(privateProjection.next.flight,'LA3301');assert.equal(privateProjection.next.presentation,'16:25');
+const noApz=structuredClone(roster);noApz.days[0].dutyReport=null;delete noApz.days[0].legs[0].presentationTime;
+assert.equal(tv.projectRoster(noApz,opts).next.presentation,null,'missing APZ never falls back to STD');
+console.log('PASS: canonical projection, family identifier redaction, APZ distinct from STD and missing-APZ fail-closed');

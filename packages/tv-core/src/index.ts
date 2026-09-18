@@ -26,10 +26,13 @@ function calendarDate(date: string): string {
   return `${match[3]}-${match[2]}-${match[1]}`;
 }
 function projectEvent(e: CanonicalRosterEvent, privacy: Privacy): TvActivity {
+  // Fail closed on the legacy canonical fallback: require published evidence,
+  // but never calculate or substitute a presentation in this consumer.
+  const publishedPresentation = e.leg?.presentationTime || e.publishedDay?.dutyReport;
   return {
     id: e.id, journeyId: e.journeyId, kind: e.kind, date: calendarDate(e.date),
     startAt: e.startDateTime, endAt: e.endDateTime,
-    presentation: e.showPresentation && e.presentation ? e.presentation : null,
+    presentation: e.showPresentation && e.presentation && publishedPresentation ? e.presentation : null,
     flight: privacy === 'private' ? e.flightNumber || null : null,
     origin: privacy === 'private' ? e.origin || null : null,
     destination: privacy === 'private' ? e.destination || null : null,
@@ -52,13 +55,18 @@ export function projectRoster(roster: CrewRoster, options: {
   const privacy = options.privacy === 'private' ? 'private' : 'family';
   const events = buildCanonicalRosterEvents(roster);
   const next = selectNextRosterEvent(events, options.now ?? new Date());
-  const activities = events.map(e => projectEvent(e, privacy));
+  const journeyIds = [...new Set(events.map(e => e.journeyId))];
+  const activities = events.map((e, index) => ({...projectEvent(e, privacy),
+    // Canonical IDs can contain flight/airport strings. Family transport uses
+    // source-version-scoped references so redaction covers identifiers too.
+    ...(privacy === 'family' ? {id:`activity-${index}`,journeyId:`journey-${journeyIds.indexOf(e.journeyId)}`} : {}),
+  }));
   const days = monthDates(options.month).map(date => ({date, activities: activities.filter(a => a.date === date)}));
   const selected = days.flatMap(d => d.activities);
   return {
     schemaVersion: 1, snapshotId: options.snapshotId, deviceId: options.deviceId,
     sourceVersion: options.sourceVersion, generatedAt: options.generatedAt, expiresAt: options.expiresAt,
-    privacy, mode: next ? 'live' : 'ambient', next: next ? projectEvent(next, privacy) : null, days,
+    privacy, mode: next ? 'live' : 'ambient', next: next ? activities[events.indexOf(next)] : null, days,
     summary: {month: options.month, flights: selected.filter(a => a.kind === 'flight').length,
       journeys: new Set(selected.filter(a => ['flight','duty'].includes(a.kind)).map(a => a.journeyId)).size,
       stays: selected.filter(a => a.kind === 'stay').length},
