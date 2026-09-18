@@ -29,10 +29,10 @@ jobs:
           TV_PILOT_API_ORIGIN: https://crewcheck-pr-698.onrender.com
         run: |
           node scripts/tv-broadcast-stage.mjs pilot
-          node --input-type=module -e "import{readFile,writeFile}from'node:fs/promises';const p='dist/lg-webos/appinfo.json';const a=JSON.parse(await readFile(p,'utf8'));a.version='0.1.8';await writeFile(p,JSON.stringify(a,null,2));"
+          node --input-type=module -e "import{readFile,writeFile}from'node:fs/promises';const p='dist/lg-webos/appinfo.json';const a=JSON.parse(await readFile(p,'utf8'));a.version='0.1.9';await writeFile(p,JSON.stringify(a,null,2));"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-TV-Pairing-018-UNFINALIZED
+          name: CrewCheck-TV-Pairing-019-UNFINALIZED
           path: |
             dist/lg-webos
             dist/tv-pair-tests
