@@ -45,7 +45,7 @@ function nextVacationRestV14353(events: ZeroLeg[], nowMs: number): ZeroLeg | nul
     .filter((event) => eventEndDateTime(event).getTime() >= nowMs)
     .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
   return futureRest.find((event) => {
-    const code = String(event.day?.pairingCode || event.day?.type || event.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const code = String(event.day?.pairingCode || event.day?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
     return /(^|\s)(VC|FERIAS|VACATION)(\s|$)/.test(code);
   }) || null;
 }
