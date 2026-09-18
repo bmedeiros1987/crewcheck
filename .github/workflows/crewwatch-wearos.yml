@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'android-wrapper/wear/**'
+      - 'android-wrapper/app/build.gradle'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java'
       - 'android-wrapper/settings.gradle'
       - 'android-wrapper/build.gradle'
       - '.github/workflows/crewwatch-wearos.yml'
@@ -44,3 +47,5 @@ jobs:
           path: |
             android-wrapper/wear/build/outputs/apk/debug/*.apk
             android-wrapper/wear/build/outputs/bundle/release/*.aab
+            android-wrapper/app/build.gradle
+            android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
