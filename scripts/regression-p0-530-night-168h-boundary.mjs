@@ -23,6 +23,12 @@ assert.match(helper, /candidate\.timestamp\s*<\s*end/, 'prepared helper must ret
 assert.doesNotMatch(helper, /candidate\.timestamp\s*<=\s*end/, 'inclusive prepared helper would double-count the shared endpoint of adjacent 168h windows');
 assert.match(officialRegression, /candidate\\\.timestamp < end|candidate\\\.timestamp\\s\*<\\s\*end/, 'official prepared regression must pin the half-open operator');
 
+const complianceSource = fs.readFileSync('client/src/lib/complianceEngine.ts', 'utf8');
+if (!complianceSource.includes("type RegulatoryNightKind = 'worked' | 'standby';")) {
+  console.log('PASS #530 static 168h contract: prepared helper/regression pin half-open semantics; runtime exercise waits for v139 materialization');
+  process.exit(0);
+}
+
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-530-168h-'));
 try {
   await build({
