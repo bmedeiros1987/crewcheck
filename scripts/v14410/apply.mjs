@@ -55,10 +55,6 @@ function patchServer(source) {
   const routineStart = next.includes('async function conciergeRoutineReply(') ? 'async function conciergeRoutineReply(' : 'function conciergeRoutineReply(';
   next = replaceBetween(next, gymStart, routineStart, conciergeGyms, 'Concierge Wellhub');
 
-  // Generic words like "modalidade" are not sufficient to route into the gym
-  // state machine. Natural activity preferences are admitted only by the hardened
-  // helper below, preventing unrelated corporate/payment modality messages from
-  // silently persisting gymPlan=wellhub.
   const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
   next = replaceAllGymDispatchers(next, dispatch);
 
@@ -142,3 +138,5 @@ function patchWhatsApp(source) {
 update('server.mjs', patchServer);
 update('server/whatsapp.mjs', patchWhatsApp);
 console.log(`${TAG} Concierge Wellhub: plano/modalidade naturais + geografia fail-closed + paridade de localização no WhatsApp.`);
+
+await import('../v14411/apply.mjs');
