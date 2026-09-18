@@ -94,4 +94,3 @@ tvOS: compartilhar contrato JSON e design tokens; renderer nativo SwiftUI/UIKit,
 - [ ] Gates #530/#607 liberados; revisão de loja concluída; evidência de aprovação anexada.
 
 Até todos os itens aplicáveis terem evidência, registrar **experimental / não publicado**, nunca “suportado”.
-

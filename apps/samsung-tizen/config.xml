@@ -9,4 +9,3 @@
   <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
   <tizen:content-security-policy>default-src 'self'; connect-src https://crewcheck.online; img-src 'self' data:; style-src 'self'; script-src 'self'</tizen:content-security-policy>
 </widget>
-
