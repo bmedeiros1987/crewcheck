@@ -1,5 +1,6 @@
 package com.crewcheck.watch;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
@@ -112,7 +113,11 @@ public final class WatchContextSnapshot {
         if (raw.getBytes(StandardCharsets.UTF_8).length > WatchContract.MAX_SNAPSHOT_BYTES) {
             throw new IllegalArgumentException("Snapshot excede 16 KiB.");
         }
-        return fromJson(new JSONObject(raw));
+        try {
+            return fromJson(new JSONObject(raw));
+        } catch (JSONException error) {
+            throw new IllegalArgumentException("JSON de snapshot inválido.", error);
+        }
     }
 
     public static WatchContextSnapshot fromJson(JSONObject json) {
@@ -182,32 +187,36 @@ public final class WatchContextSnapshot {
     }
 
     public JSONObject toJson() {
-        return new JSONObject()
-                .put("schemaVersion", schemaVersion)
-                .put("contextId", contextId)
-                .put("generatedAtEpochMs", generatedAtEpochMs)
-                .put("validUntilEpochMs", validUntilEpochMs)
-                .put("state", state)
-                .put("headline", headline)
-                .put("primaryTime", primaryTime)
-                .put("detail", detail)
-                .put("presentationTime", presentationTime)
-                .put("presentationPlace", presentationPlace)
-                .put("leaveTime", leaveTime)
-                .put("trafficDetail", trafficDetail)
-                .put("currentFlight", currentFlight)
-                .put("currentRoute", currentRoute)
-                .put("gate", gate)
-                .put("remoteStand", remoteStand)
-                .put("boardingTime", boardingTime)
-                .put("eta", eta)
-                .put("connection", connection)
-                .put("nextFlight", nextFlight)
-                .put("nextDetail", nextDetail)
-                .put("overnight", overnight)
-                .put("hotelPickup", hotelPickup)
-                .put("changed", changed)
-                .put("source", source);
+        try {
+            return new JSONObject()
+                    .put("schemaVersion", schemaVersion)
+                    .put("contextId", contextId)
+                    .put("generatedAtEpochMs", generatedAtEpochMs)
+                    .put("validUntilEpochMs", validUntilEpochMs)
+                    .put("state", state)
+                    .put("headline", headline)
+                    .put("primaryTime", primaryTime)
+                    .put("detail", detail)
+                    .put("presentationTime", presentationTime)
+                    .put("presentationPlace", presentationPlace)
+                    .put("leaveTime", leaveTime)
+                    .put("trafficDetail", trafficDetail)
+                    .put("currentFlight", currentFlight)
+                    .put("currentRoute", currentRoute)
+                    .put("gate", gate)
+                    .put("remoteStand", remoteStand)
+                    .put("boardingTime", boardingTime)
+                    .put("eta", eta)
+                    .put("connection", connection)
+                    .put("nextFlight", nextFlight)
+                    .put("nextDetail", nextDetail)
+                    .put("overnight", overnight)
+                    .put("hotelPickup", hotelPickup)
+                    .put("changed", changed)
+                    .put("source", source);
+        } catch (JSONException error) {
+            throw new IllegalStateException("Não foi possível serializar o snapshot.", error);
+        }
     }
 
     public boolean isStale(long nowEpochMs) {
@@ -264,32 +273,36 @@ public final class WatchContextSnapshot {
     }
 
     public static WatchContextSnapshot demo(long nowEpochMs) {
-        return fromJson(new JSONObject()
-                .put("schemaVersion", 1)
-                .put("contextId", "debug-demo")
-                .put("generatedAtEpochMs", nowEpochMs)
-                .put("validUntilEpochMs", nowEpochMs + 3_600_000L)
-                .put("state", "LEAVE_SOON")
-                .put("headline", "SAIR EM 18 MIN")
-                .put("primaryTime", "12:42")
-                .put("detail", "APZ 13:30 • BSB")
-                .put("presentationTime", "13:30")
-                .put("presentationPlace", "BSB")
-                .put("leaveTime", "12:42")
-                .put("trafficDetail", "38 min • trânsito normal")
-                .put("currentFlight", "LA3721")
-                .put("currentRoute", "BSB → GRU")
-                .put("gate", "24")
-                .put("remoteStand", false)
-                .put("boardingTime", "13:45")
-                .put("eta", "15:10")
-                .put("connection", "")
-                .put("nextFlight", "")
-                .put("nextDetail", "")
-                .put("overnight", "")
-                .put("hotelPickup", "")
-                .put("changed", false)
-                .put("source", "debug-demo"));
+        try {
+            return fromJson(new JSONObject()
+                    .put("schemaVersion", 1)
+                    .put("contextId", "debug-demo")
+                    .put("generatedAtEpochMs", nowEpochMs)
+                    .put("validUntilEpochMs", nowEpochMs + 3_600_000L)
+                    .put("state", "LEAVE_SOON")
+                    .put("headline", "SAIR EM 18 MIN")
+                    .put("primaryTime", "12:42")
+                    .put("detail", "APZ 13:30 • BSB")
+                    .put("presentationTime", "13:30")
+                    .put("presentationPlace", "BSB")
+                    .put("leaveTime", "12:42")
+                    .put("trafficDetail", "38 min • trânsito normal")
+                    .put("currentFlight", "LA3721")
+                    .put("currentRoute", "BSB → GRU")
+                    .put("gate", "24")
+                    .put("remoteStand", false)
+                    .put("boardingTime", "13:45")
+                    .put("eta", "15:10")
+                    .put("connection", "")
+                    .put("nextFlight", "")
+                    .put("nextDetail", "")
+                    .put("overnight", "")
+                    .put("hotelPickup", "")
+                    .put("changed", false)
+                    .put("source", "debug-demo"));
+        } catch (JSONException error) {
+            throw new IllegalStateException("Não foi possível criar o snapshot de demonstração.", error);
+        }
     }
 
     private static void rejectSensitiveFields(JSONObject json) {

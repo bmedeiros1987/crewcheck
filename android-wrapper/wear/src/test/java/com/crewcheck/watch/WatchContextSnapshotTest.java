@@ -1,5 +1,6 @@
 package com.crewcheck.watch;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.Test;
 
@@ -12,7 +13,7 @@ public final class WatchContextSnapshotTest {
     private static final long NOW = 1_800_000_000_000L;
 
     @Test
-    public void parsesCanonicalProjectionWithoutOperationalRecalculation() {
+    public void parsesCanonicalProjectionWithoutOperationalRecalculation() throws Exception {
         WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
                 .put("state", "LEAVE_SOON")
                 .put("headline", "SAIR EM 18 MIN")
@@ -25,7 +26,7 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
-    public void remoteGateIsAlwaysExplicit() {
+    public void remoteGateIsAlwaysExplicit() throws Exception {
         WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
                 .put("gate", "Remota")
                 .put("headline", "EMBARQUE"));
@@ -36,7 +37,7 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
-    public void rejectsUnknownSchemaAndSensitiveFields() {
+    public void rejectsUnknownSchemaAndSensitiveFields() throws Exception {
         assertThrows(IllegalArgumentException.class, () ->
                 WatchContextSnapshot.fromJson(base().put("schemaVersion", 2)));
         assertThrows(IllegalArgumentException.class, () ->
@@ -44,7 +45,7 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
-    public void rejectsMissingExpiryAndMarksExpiredSnapshotAsStale() {
+    public void rejectsMissingExpiryAndMarksExpiredSnapshotAsStale() throws Exception {
         assertThrows(IllegalArgumentException.class, () ->
                 WatchContextSnapshot.fromJson(base().remove("validUntilEpochMs")));
 
@@ -55,7 +56,7 @@ public final class WatchContextSnapshotTest {
         assertEquals("ABRIR", snapshot.complicationShortText(NOW));
     }
 
-    private static JSONObject base() {
+    private static JSONObject base() throws JSONException {
         return new JSONObject()
                 .put("schemaVersion", 1)
                 .put("contextId", "test")
