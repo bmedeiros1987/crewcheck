@@ -15,7 +15,7 @@ export function createTvHandler({
     try {
       if (!(await rateLimit(ip, path))) throw new TvError(429, "rate_limited");
       if (method === "POST" && path === "/api/tv/pair")
-        return { status: 200, body: await devices.begin(body.platform) };
+        return { status: 200, body: await devices.begin(body.platform, body.trusted === true) };
       if (method === "POST" && path === "/api/tv/poll")
         return { status: 200, body: await devices.poll(body.deviceCode) };
       if (
