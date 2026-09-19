@@ -67,6 +67,8 @@ assert.match(prep,/trusted:trustedTv/);
 assert.match(prep,/Restaurando TV confiável/);
 assert.match(prep,/session\.renew/);
 assert.match(prep,/Fechar app/);
-assert.match(prep,/Desvincular esta TV/);
+assert.match(prep,/session\.clear\(forgetTrusted\)/);
+const main=await readFile('apps/tv-player/src/main.tsx','utf8');
+assert.match(main,/Desvincular esta TV/);
 
 console.log('PASS: trusted personal TV survives restart, renews, keeps offline snapshot bounded and remains explicitly revocable.');
