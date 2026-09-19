@@ -49,6 +49,15 @@ function assertPreparedHomeRosterIdentity(home) {
     }
   }
 
+  // Formal care/day-off/recovery identities are authoritative too. An unrelated
+  // operational-looking residual pairing must not visually erase a published
+  // Luto/Férias/Folga/Repouso day after the operational classifier has already
+  // recognized it as non-operational.
+  for (const type of ['DMO', 'VC', 'FERIAS', 'FÉRIAS', 'DOF', 'DOP', 'DR', 'OFF', 'REST', 'REPOUSO']) {
+    assert.equal(runtime.rosterCode({ type, pairingCode: 'ASB' }), type, `${type} + residual ASB: Home visible code must preserve formal care/day-off identity`);
+    combinations += 1;
+  }
+
   // Keep the one intentional exception: the parser may publish coarse type=DO
   // while pairingCode carries the exact day-off meaning. Known care/day-off
   // pairings can specialize DO; unrelated operational residue cannot erase it.
@@ -57,7 +66,7 @@ function assertPreparedHomeRosterIdentity(home) {
   assert.equal(runtime.rosterCode({ type: 'DO', pairingCode: 'ASB' }), 'DO', 'coarse DO + unrelated ASB residue must remain Folga');
   assert.equal(runtime.rosterCodeLabel('DO'), 'Folga', 'formal DO display label must remain Folga');
 
-  console.log(`OK prepared Home roster identity: ${combinations} formal-duty/residual-care combinations + coarse DO authority`);
+  console.log(`OK prepared Home roster identity: ${combinations} formal/residual combinations + coarse DO authority`);
 }
 
 assertTimeline(read('client/src/components/v14349/OperationalDayTimeline.tsx'), 'client timeline');
