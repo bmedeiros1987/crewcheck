@@ -1,0 +1,19 @@
+name: TV trusted-device persistence
+on:
+  pull_request:
+    paths: ['server/tv/devices.mjs','server/tv/routes.mjs','scripts/tv-trusted-device-test.mjs','.github/workflows/tv-trusted-device.yml']
+permissions:
+  contents: read
+jobs:
+  trusted-device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-trusted-device-test.mjs
+      - run: node scripts/tv-test.mjs
