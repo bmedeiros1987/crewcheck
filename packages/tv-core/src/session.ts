@@ -6,6 +6,7 @@ export type DeviceCredential = {
   token: string;
   expiresAt: string;
   privacy: "family" | "private";
+  trusted?: boolean;
 };
 export type TvStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type SnapshotValidationCode =
@@ -20,6 +21,19 @@ export type SnapshotValidationCode =
   | "ticker";
 
 const KEY = "crewcheck-tv-v1";
+const TRUST_KEY = "crewcheck-tv-trusted-device-v1";
+
+function validCredential(value: any): value is DeviceCredential {
+  return Boolean(
+    value &&
+    typeof value.deviceId === "string" &&
+    value.deviceId.length === 43 &&
+    typeof value.token === "string" &&
+    value.token.length === 43 &&
+    Number.isFinite(Date.parse(value.expiresAt)) &&
+    ["family", "private"].includes(value.privacy),
+  );
+}
 
 export function snapshotValidationCode(
   raw: any,
@@ -47,6 +61,7 @@ export class TvSession {
     private storage: TvStorage,
     private request: typeof fetch,
     private origin: string,
+    private persistentStorage: TvStorage | null = null,
   ) {
     const url = new URL(origin);
     if (
@@ -55,26 +70,60 @@ export class TvSession {
       url.hostname !== "127.0.0.1"
     )
       throw new Error("HTTPS required");
+    this.restoreTrusted();
+  }
+
+  restoreTrusted(): boolean {
+    if (!this.persistentStorage) return false;
+    try {
+      const raw = this.persistentStorage.getItem(TRUST_KEY);
+      if (!raw) return false;
+      const value = JSON.parse(raw);
+      if (!validCredential(value) || value.trusted !== true) {
+        this.persistentStorage.removeItem(TRUST_KEY);
+        return false;
+      }
+      this.credential = value;
+      return true;
+    } catch {
+      try { this.persistentStorage.removeItem(TRUST_KEY); } catch {}
+      return false;
+    }
+  }
+
+  private persistCredential() {
+    if (!this.persistentStorage || !this.credential?.trusted) return;
+    try {
+      this.persistentStorage.setItem(TRUST_KEY, JSON.stringify({
+        deviceId: this.credential.deviceId,
+        token: this.credential.token,
+        expiresAt: this.credential.expiresAt,
+        privacy: this.credential.privacy,
+        trusted: true,
+      }));
+    } catch {}
   }
 
   pair(credential: DeviceCredential) {
-    this.clear();
-    if (
-      !credential.deviceId ||
-      !credential.token ||
-      !Number.isFinite(Date.parse(credential.expiresAt)) ||
-      !["family", "private"].includes(credential.privacy)
-    )
-      throw new Error("invalid_credential");
-    this.credential = credential;
+    this.clear(true);
+    if (!validCredential(credential)) throw new Error("invalid_credential");
+    this.credential = { ...credential, trusted: credential.trusted === true };
+    this.persistCredential();
   }
 
-  clear() {
+  renew(expiresAt: string) {
+    if (!this.credential?.trusted || !Number.isFinite(Date.parse(expiresAt))) return;
+    this.credential = { ...this.credential, expiresAt };
+    this.persistCredential();
+  }
+
+  clear(forgetTrusted = true) {
     this.credential = null;
     this.snapshot = null;
-    try {
-      this.storage.removeItem(KEY);
-    } catch {}
+    try { this.storage.removeItem(KEY); } catch {}
+    if (forgetTrusted && this.persistentStorage) {
+      try { this.persistentStorage.removeItem(TRUST_KEY); } catch {}
+    }
   }
 
   async call(path: string, body?: unknown) {
@@ -111,7 +160,7 @@ export class TvSession {
       if (timer) clearTimeout(timer);
     }
     if (response.status === 401 || response.status === 403) {
-      this.clear();
+      this.clear(true);
       throw new Error("pair_again");
     }
     if (!response.ok) throw new Error(`request_${response.status}`);
@@ -124,8 +173,11 @@ export class TvSession {
   async sync(now?: number) {
     const requestedAt = now ?? Date.now();
     const credential = this.credential;
-    if (!credential || Date.parse(credential.expiresAt) <= requestedAt) {
-      this.clear();
+    if (
+      !credential ||
+      (!credential.trusted && Date.parse(credential.expiresAt) <= requestedAt)
+    ) {
+      this.clear(true);
       throw new Error("pair_again");
     }
 
@@ -133,14 +185,14 @@ export class TvSession {
     if (this.credential !== credential) throw new Error("session_changed");
 
     const receivedAt = now ?? this.lastServerNow ?? Date.now();
-    if (Date.parse(credential.expiresAt) <= receivedAt) {
-      this.clear();
+    if (!credential.trusted && Date.parse(credential.expiresAt) <= receivedAt) {
+      this.clear(true);
       throw new Error("pair_again");
     }
 
     const invalid = snapshotValidationCode(raw, credential, receivedAt);
     if (invalid) {
-      this.clear();
+      this.clear(true);
       throw new Error(`invalid_snapshot_${invalid}`);
     }
 
@@ -156,8 +208,9 @@ export class TvSession {
   }
 
   offline(now = Date.now()) {
-    if (!this.credential || Date.parse(this.credential.expiresAt) <= now) {
-      this.clear();
+    if (!this.credential) return null;
+    if (!this.credential.trusted && Date.parse(this.credential.expiresAt) <= now) {
+      this.clear(true);
       return null;
     }
     if (
@@ -165,9 +218,7 @@ export class TvSession {
       now - Date.parse(this.snapshot.generatedAt) > 900000
     ) {
       this.snapshot = null;
-      try {
-        this.storage.removeItem(KEY);
-      } catch {}
+      try { this.storage.removeItem(KEY); } catch {}
       return null;
     }
     return this.snapshot;
