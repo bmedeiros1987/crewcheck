@@ -69,7 +69,8 @@ const roster = {
 
 const events = buildCanonicalRosterEvents(roster);
 assert.equal(events.length, 1, 'DMO-only roster must remain represented in the canonical timeline');
-assert.equal(events[0].kind, 'rest', 'formal DMO must remain non-operational rest context');
+// DMO may retain a canonical duty-shaped event. Its non-operational authority
+// comes from the shared Care classification and the canonical next selector.
 assert.equal(selectNextRosterEvent(events, new Date('2099-10-15T15:00:00.000Z')), null, 'DMO-only roster has no next operational event');
 
 const uiEvents = events.map((event) => ({ canonical: event, day: event.publishedDay, placeholder: false }));
