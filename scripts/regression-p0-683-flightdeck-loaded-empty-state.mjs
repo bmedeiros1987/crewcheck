@@ -70,6 +70,10 @@ function assertNearestRestContract(source, homeSource, label) {
   }
   const wrappedVacation = { ...rest('DO'), day: { type: 'DO', pairingCode: 'VC' } };
   check('published VC may specialize coarse DO', [wrappedVacation], wrappedVacation);
+  const formalVacationWithResidual = { ...rest('VC'), day: { type: 'VC', pairingCode: 'ASB' } };
+  check('formal VC outranks unrelated residual pairing', [formalVacationWithResidual], formalVacationWithResidual);
+  const formalGriefWithResidualVacation = { ...rest('DMO'), day: { type: 'DMO', pairingCode: 'VC' } };
+  check('formal DMO cannot be relabeled as vacation by residual pairing', [formalGriefWithResidualVacation], null);
   const typeOnlyVacation = { ...rest('VC'), day: { type: 'VC' } };
   check('published type VC without pairing remains vacation', [typeOnlyVacation], typeOnlyVacation);
   check('ongoing DO precedes future vacation', [rest('DO', '2099-10-14T00:00:00.000Z'), laterVacation], null);
