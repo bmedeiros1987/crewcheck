@@ -14,6 +14,52 @@ function assertTimeline(source, label) {
   assert.match(source, /eyebrow: copy\.eyebrow/, `${label}: care-specific eyebrow must reach rendered timeline item`);
 }
 
+function extractPreparedFunctions(text, names, label) {
+  const ts = createRequire(import.meta.url)('typescript');
+  const source = ts.createSourceFile(`${label}.tsx`, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const declarations = new Map();
+  for (const node of source.statements) {
+    if (ts.isFunctionDeclaration(node) && node.name && names.includes(node.name.text)) {
+      assert.equal(declarations.has(node.name.text), false, `${label}: duplicate function ${node.name.text}`);
+      declarations.set(node.name.text, node.getText(source));
+    }
+  }
+  for (const name of names) assert.ok(declarations.has(name), `${label}: missing function ${name}`);
+  const compiled = ts.transpileModule(names.map((name) => declarations.get(name)).join('\n'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
+  }).outputText;
+  return new vm.Script(`${compiled}\n({ ${names.join(', ')} });`, { filename: `${label}-runtime.js` })
+    .runInNewContext({ String }, { timeout: 5000 });
+}
+
+function assertPreparedHomeRosterIdentity(home) {
+  const runtime = extractPreparedFunctions(home, ['rosterCode', 'rosterCodeLabel'], 'prepared-home-roster-labels');
+
+  // The same formal-code authority already enforced in Care classification and
+  // Concierge must reach the visible Home/Roster label. Otherwise a real ASB,
+  // HSB or EAD with stale residual pairingCode=VC/DMO can remain operational in
+  // selectors while being shown to the crew as the sensitive state Férias/Luto.
+  let combinations = 0;
+  for (const type of ['ASB', 'HSB', 'EAD']) {
+    for (const pairingCode of ['DMO', 'VC', 'FERIAS', 'FÉRIAS', 'DO', 'DR', 'REST']) {
+      const code = runtime.rosterCode({ type, pairingCode });
+      assert.equal(code, type, `${type} + residual ${pairingCode}: Home visible code must preserve formal operational identity`);
+      assert.doesNotMatch(runtime.rosterCodeLabel(code), /^(?:Luto|Férias)$/i, `${type} + residual ${pairingCode}: Home must not display a sensitive care label`);
+      combinations += 1;
+    }
+  }
+
+  // Keep the one intentional exception: the parser may publish coarse type=DO
+  // while pairingCode carries the exact day-off meaning. Known care/day-off
+  // pairings can specialize DO; unrelated operational residue cannot erase it.
+  assert.equal(runtime.rosterCode({ type: 'DO', pairingCode: 'VC' }), 'VC', 'coarse DO + published VC must still display Férias');
+  assert.equal(runtime.rosterCodeLabel('VC'), 'Férias', 'VC display label must remain Férias');
+  assert.equal(runtime.rosterCode({ type: 'DO', pairingCode: 'ASB' }), 'DO', 'coarse DO + unrelated ASB residue must remain Folga');
+  assert.equal(runtime.rosterCodeLabel('DO'), 'Folga', 'formal DO display label must remain Folga');
+
+  console.log(`OK prepared Home roster identity: ${combinations} formal-duty/residual-care combinations + coarse DO authority`);
+}
+
 assertTimeline(read('client/src/components/v14349/OperationalDayTimeline.tsx'), 'client timeline');
 assertTimeline(read('scripts/v14357/OperationalDayTimeline.tsx'), 'v14357 authoritative timeline');
 
@@ -113,6 +159,8 @@ function assertPreparedConciergeOperations(server) {
 if (process.env.CHECK_PREPARED === '1') {
   const server = read('server.mjs');
   assertPreparedConciergeOperations(server);
+  const home = read('client/src/pages/Home.tsx');
+  assertPreparedHomeRosterIdentity(home);
   assert.match(server, /currentCareDay[\s\S]*?conciergeCarePresentation/, 'prepared runtime must carry grief humor guard');
   assert.match(server, /const easterEgg = conciergeEasterEggReply\(value, profile, snapshot\);/, 'prepared runtime must preserve normal Easter Egg wiring');
   assert.match(server, /easterEgg && !currentCare\?\.suppressHumor/, 'prepared runtime must suppress humor only when care context says so');
