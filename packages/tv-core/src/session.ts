@@ -27,12 +27,18 @@ function validCredential(value: any): value is DeviceCredential {
   return Boolean(
     value &&
     typeof value.deviceId === "string" &&
-    value.deviceId.length === 43 &&
+    value.deviceId.length > 0 &&
     typeof value.token === "string" &&
-    value.token.length === 43 &&
+    value.token.length > 0 &&
     Number.isFinite(Date.parse(value.expiresAt)) &&
     ["family", "private"].includes(value.privacy),
   );
+}
+function validTrustedCredential(value: any): value is DeviceCredential {
+  return validCredential(value) &&
+    value.deviceId.length === 43 &&
+    value.token.length === 43 &&
+    value.trusted === true;
 }
 
 export function snapshotValidationCode(
@@ -79,7 +85,7 @@ export class TvSession {
       const raw = this.persistentStorage.getItem(TRUST_KEY);
       if (!raw) return false;
       const value = JSON.parse(raw);
-      if (!validCredential(value) || value.trusted !== true) {
+      if (!validTrustedCredential(value)) {
         this.persistentStorage.removeItem(TRUST_KEY);
         return false;
       }
@@ -92,7 +98,7 @@ export class TvSession {
   }
 
   private persistCredential() {
-    if (!this.persistentStorage || !this.credential?.trusted) return;
+    if (!this.persistentStorage || !validTrustedCredential(this.credential)) return;
     try {
       this.persistentStorage.setItem(TRUST_KEY, JSON.stringify({
         deviceId: this.credential.deviceId,
