@@ -1,15 +1,15 @@
 export const CREW_TRACKS = [
-  { id: 'theme', title: 'CrewCheck Theme', src: './music/crewcheck-theme.mp3' },
-  { id: 'suite', title: 'CrewCheck Suite', src: './music/crewcheck-suite.mp3' },
-  { id: 'clear', title: 'Clear for Flight', src: './music/clear-for-flight.mp3' },
-  { id: 'ascent', title: 'Effortless Ascent', src: './music/effortless-ascent.mp3' },
+  { id: 'theme', title: 'CrewCheck Theme', src: 'music/crewcheck-theme.mp3' },
+  { id: 'suite', title: 'CrewCheck Suite', src: 'music/crewcheck-suite.mp3' },
+  { id: 'clear', title: 'Clear for Flight', src: 'music/clear-for-flight.mp3' },
+  { id: 'ascent', title: 'Effortless Ascent', src: 'music/effortless-ascent.mp3' },
 ] as const;
 export type SoundStatus = 'off' | 'starting' | 'playing' | 'paused' | 'suspended' | 'blocked' | 'error';
 export type SoundState = { index: number; volume: number; status: SoundStatus; wanted: boolean };
 export type AudioPort = Pick<HTMLAudioElement, 'src' | 'volume' | 'preload' | 'currentTime' | 'paused' | 'error' | 'play' | 'pause' | 'load' | 'addEventListener' | 'removeEventListener'>;
 export function musicVolume(value: unknown): number {
   const n = value === null || value === '' ? NaN : Number(value);
-  return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 15;
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 22;
 }
 export function musicIndex(value: unknown): number {
   const n = Number(value); return Number.isInteger(n) && n >= 0 && n < CREW_TRACKS.length ? n : 0;
@@ -27,7 +27,7 @@ export class CrewSoundtrack {
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   constructor(private audio: AudioPort, private notify: (state: SoundState) => void, index = 0, volume = 15) {
     this.state = {index: musicIndex(index), volume: musicVolume(volume), status: 'off', wanted: false};
-    audio.preload = 'none'; audio.volume = 0;
+    audio.preload = 'metadata'; audio.volume = 0;
     audio.addEventListener('playing', this.playing);
     audio.addEventListener('ended', this.ended);
     audio.addEventListener('error', this.failed);
@@ -80,7 +80,10 @@ export class CrewSoundtrack {
     if (this.suspended) { this.emit('suspended'); return; }
     this.clearTimers(); const epoch = ++this.epoch;
     if (this.loadedIndex !== this.state.index) {
+      // webOS resolves packaged media relative to index.html. Keep a simple
+      // app-relative path so the hardware decoder sees a normal local MP3 URI.
       this.audio.src = CREW_TRACKS[this.state.index].src;
+      this.audio.preload = 'auto';
       this.loadedIndex = this.state.index; this.audio.load();
     }
     this.audio.volume = 0; this.emit('starting');
@@ -88,7 +91,7 @@ export class CrewSoundtrack {
       if (epoch === this.epoch && this.state.status === 'starting') {
         this.state.wanted = false; this.quiet(); this.emit('blocked');
       }
-    }, 12000);
+    }, 8000);
     try {
       const result = this.audio.play();
       if (result && typeof result.then === 'function') result.catch(error => {
