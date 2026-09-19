@@ -289,8 +289,9 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   const mobilePresentation = mobileNext && ['operating', 'extra'].includes(mobileNextMode || '')
     ? (mobileNext.presentation && mobileNext.presentation !== 'Conexão/Solo' ? mobileNext.presentation : '')
     : '';
-  const mobilePrimaryLabel = mobileNextMode && ['operating', 'extra'].includes(mobileNextMode) ? 'Apresentação' : 'Início';
-  const mobilePrimaryTime = mobilePresentation || mobileWindow.start || 'A confirmar';
+  const mobileIsFlight = mobileNextMode === 'operating' || mobileNextMode === 'extra';
+  const mobilePrimaryLabel = mobileIsFlight ? 'Apresentação' : 'Início';
+  const mobilePrimaryTime = mobileIsFlight ? (mobilePresentation || 'Não informada') : (mobileWindow.start || 'A confirmar');
 
   function goToday() {
     const month = todayIso.slice(0, 7);
