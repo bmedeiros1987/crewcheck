@@ -85,6 +85,12 @@ write(humanPath, human);
 // and rest checks, before consulting weaker pairing/title evidence.
 const classificationPath = 'client/src/lib/scheduleActivityClassification.ts';
 let classification = read(classificationPath);
+classification = replaceRequired(
+  classification,
+  `  const coarseDayOff = [...formalTokens].some((token) => ['DO', 'FOLGA'].includes(token));`,
+  `  const coarseDayOff = [...formalTokens].some((token) => token === 'DO');`,
+  'only coarse DO may be specialized by residual care pairing',
+);
 const oldOperationalFallback = `  // Sem código formal conclusivo, rótulo e pairingCode entram como fallback.\n  if (hasCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';`;
 const newOperationalFallback = `  // Formal operational identity cannot be erased by a residual care label.\n  const formalKind = normalize(activity.canonical?.kind || activity.kind);\n  if (formalCodeValues(activity).length > 0\n    && ['FLIGHT', 'DUTY', 'RESERVE', 'STANDBY', 'ACTIVITY', 'GROUND'].includes(formalKind)) {\n    return 'PROGRAMACAO';\n  }\n\n  // Sem código formal conclusivo, rótulo e pairingCode entram como fallback.\n  if (hasCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';`;
 classification = replaceRequired(classification, oldOperationalFallback, newOperationalFallback, 'formal operation survives residual care labels');
