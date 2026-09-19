@@ -1,29 +1,34 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+
 const hash = value => createHash('sha256').update(String(value)).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const SESSION_LEASE_MS = 86400000;
+const TRUSTED_LEASE_MS = 365 * 86400000;
+
 export class TvError extends Error {
   constructor(status, code) { super(code); this.status = status; }
 }
-// accountAllowed is injected by the HTTP bridge. Existing isolated domain tests
-// keep the unrestricted default; there is no unrestricted HTTP composition.
+
 export function createDeviceService({ store, now = Date.now, pairingOrigin, accountAllowed = () => true }) {
   if (new URL(pairingOrigin).protocol !== 'https:') throw new Error('HTTPS pairing origin required');
   const requireAccount = userId => {
     if (!userId) throw new TvError(401, 'authentication_required');
     if (!accountAllowed(userId)) throw new TvError(403, 'pilot_not_authorized');
   };
+  const leaseFor = trusted => now() + (trusted ? TRUSTED_LEASE_MS : SESSION_LEASE_MS);
   return {
-    async begin(platform) {
+    async begin(platform, trusted = false) {
       if (!['android-tv', 'samsung-tizen', 'lg-webos'].includes(platform)) throw new TvError(400, 'invalid_platform');
       const deviceCode = secret(), userCode = randomBytes(5).toString('hex').toUpperCase();
+      const persistent = trusted === true;
       await store.transaction(state => {
         state.pairings ??= {}; state.devices ??= {};
         for (const [key, p] of Object.entries(state.pairings)) if (p.expiresAt <= now()) delete state.pairings[key];
         if (Object.keys(state.pairings).length >= 1000) throw new TvError(429, 'pairing_capacity');
-        state.pairings[hash(deviceCode)] = { userCode, platform, expiresAt: now() + 300000, lastPoll: 0 };
+        state.pairings[hash(deviceCode)] = { userCode, platform, trusted: persistent, expiresAt: now() + 300000, lastPoll: 0 };
       });
-      return { deviceCode, userCode, expiresIn: 300, interval: 5, verificationUri: `${pairingOrigin}/tv-pair?code=${userCode}` };
+      return { deviceCode, userCode, expiresIn: 300, interval: 5, trusted: persistent, verificationUri: `${pairingOrigin}/tv-pair?code=${userCode}` };
     },
     async approve(userId, userCode, privacy = 'family') {
       requireAccount(userId);
@@ -48,10 +53,10 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         requireAccount(p.userId);
         for (const [id, d] of Object.entries(state.devices)) if (d.expiresAt <= now()) delete state.devices[id];
         if (Object.keys(state.devices).length >= 1000) throw new TvError(429, 'device_capacity');
-        const token = secret(), deviceId = secret(), expiresAt = now() + 86400000;
-        state.devices[deviceId] = { deviceId, userId: p.userId, privacy: p.privacy, platform: p.platform, tokenHash: hash(token), expiresAt, lastSeenAt: now(), scopes: ['tv:read'], revoked: false };
+        const token = secret(), deviceId = secret(), trusted = p.trusted === true, expiresAt = leaseFor(trusted);
+        state.devices[deviceId] = { deviceId, userId: p.userId, privacy: p.privacy, platform: p.platform, trusted, tokenHash: hash(token), expiresAt, lastSeenAt: now(), scopes: ['tv:read'], revoked: false };
         delete state.pairings[key];
-        return { deviceId, token, expiresAt: new Date(expiresAt).toISOString(), privacy: p.privacy };
+        return { deviceId, token, trusted, expiresAt: new Date(expiresAt).toISOString(), privacy: p.privacy };
       });
     },
     async authorize(token) {
@@ -60,7 +65,7 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         const d = Object.values(state.devices ?? {}).find(d => equal(d.tokenHash, hash(token)));
         if (!d || d.revoked || d.expiresAt <= now() || !d.scopes.includes('tv:read')) throw new TvError(401, 'invalid_device');
         requireAccount(d.userId);
-        return { deviceId: d.deviceId, userId: d.userId, privacy: d.privacy, platform: d.platform };
+        return { deviceId: d.deviceId, userId: d.userId, privacy: d.privacy, platform: d.platform, trusted: d.trusted === true };
       });
     },
     async heartbeat(token) {
@@ -69,7 +74,9 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         const d = state.devices[auth.deviceId];
         requireAccount(auth.userId);
         if (!d || d.revoked || d.expiresAt <= now()) throw new TvError(401, 'invalid_device');
-        d.lastSeenAt = now(); return { ok: true };
+        d.lastSeenAt = now();
+        if (d.trusted === true) d.expiresAt = leaseFor(true);
+        return { ok: true, trusted: d.trusted === true, expiresAt: new Date(d.expiresAt).toISOString() };
       });
     },
     async revoke(userId, deviceId) {
@@ -82,7 +89,15 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
     },
     async list(userId) {
       requireAccount(userId);
-      return store.transaction(state => Object.values(state.devices ?? {}).filter(d => d.userId === userId).map(d => ({ deviceId: d.deviceId, platform: d.platform, privacy: d.privacy, lastSeenAt: d.lastSeenAt, revoked: d.revoked })));
+      return store.transaction(state => Object.values(state.devices ?? {}).filter(d => d.userId === userId).map(d => ({
+        deviceId: d.deviceId,
+        platform: d.platform,
+        privacy: d.privacy,
+        trusted: d.trusted === true,
+        expiresAt: new Date(d.expiresAt).toISOString(),
+        lastSeenAt: d.lastSeenAt,
+        revoked: d.revoked,
+      })));
     },
   };
 }
