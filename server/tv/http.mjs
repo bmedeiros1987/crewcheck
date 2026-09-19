@@ -18,6 +18,60 @@ async function prepareStep(stage, action) {
   }
 }
 
+const tvWeatherCache = new Map();
+function tvAirportCode(value) {
+  const code = String(value || '').trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : null;
+}
+function tvNextStayAirport(snapshot, nowMs) {
+  if (!snapshot || snapshot.privacy !== 'private' || !Array.isArray(snapshot.days)) return null;
+  const stays = snapshot.days.flatMap(day => Array.isArray(day.activities) ? day.activities : [])
+    .filter(activity => activity?.kind === 'stay' && Number.isFinite(Date.parse(activity.endAt)) && Date.parse(activity.endAt) > nowMs)
+    .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+  const stay = stays[0];
+  return tvAirportCode(stay?.destination) || tvAirportCode(stay?.origin);
+}
+async function tvWeatherContext(origin, airport, role, now) {
+  if (!airport) return null;
+  const key = airport;
+  const cached = tvWeatherCache.get(key);
+  if (cached && cached.until > now.getTime()) return { ...cached.value, role };
+  let timer;
+  try {
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('weather_timeout')), 4500); });
+    const response = await Promise.race([
+      fetch(origin + '/api/weather/airport?airport=' + encodeURIComponent(airport), { headers: { Accept: 'application/json' } }),
+      timeout,
+    ]);
+    if (!response?.ok) return null;
+    const payload = await response.json();
+    if (!payload || payload.ok !== true || tvAirportCode(payload.airport) !== airport || !Number.isFinite(Number(payload.temperature))) return null;
+    const observedAt = now.toISOString();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+    const value = {
+      role,
+      airport,
+      city: typeof payload.city === 'string' ? payload.city.slice(0, 80) : null,
+      temperature: Number(payload.temperature),
+      label: typeof payload.condition === 'string' ? payload.condition.slice(0, 80) : 'Condição atual',
+      wind: Number.isFinite(Number(payload.wind)) ? Number(payload.wind) : null,
+      rainChance: Number.isFinite(Number(payload.rainChance)) ? Number(payload.rainChance) : null,
+      source: 'crewcheck-weather/airport',
+      observedAt,
+      expiresAt,
+    };
+    tvWeatherCache.set(key, { value: { ...value, role: 'base' }, until: now.getTime() + 5 * 60 * 1000 });
+    if (tvWeatherCache.size > 24) {
+      for (const [cacheKey, entry] of tvWeatherCache) if (entry.until <= now.getTime()) tvWeatherCache.delete(cacheKey);
+    }
+    return value;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiveRoster, readBody }) {
   let ready;
   const policy = () => readPilotPolicy();
@@ -54,12 +108,24 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
         const data = await loadActiveRoster(auth.userId);
         if (!data?.roster || !policy().allows(auth.userId)) return null;
         const now = new Date();
-        return projectRoster(data.roster, {
+        const snapshot = projectRoster(data.roster, {
           deviceId: auth.deviceId, snapshotId: randomUUID(), sourceVersion: data.sourceVersion,
           month: `${data.roster.year}-${String(data.roster.month).padStart(2, '0')}`,
           privacy: auth.privacy, generatedAt: now.toISOString(),
           expiresAt: new Date(now.getTime() + 60000).toISOString(), now,
         });
+        const settings = policy();
+        const base = tvAirportCode(data.roster.base);
+        const stay = tvNextStayAirport(snapshot, now.getTime());
+        const targets = [{ role: 'base', airport: base }, ...(stay && stay !== base ? [{ role: 'stay', airport: stay }] : [])];
+        const weatherContexts = (await Promise.all(targets.map(target => tvWeatherContext(settings.origin, target.airport, target.role, now)))).filter(Boolean);
+        snapshot.weatherContexts = weatherContexts;
+        const primary = weatherContexts.find(item => item.role === 'base') || weatherContexts[0] || null;
+        snapshot.weather = primary ? {
+          value: { airport: primary.airport, temperature: primary.temperature, label: primary.label },
+          source: primary.source, observedAt: primary.observedAt, expiresAt: primary.expiresAt,
+        } : null;
+        return snapshot;
       },
       news: async () => ({ generatedAt: new Date().toISOString(), stale: true, items: [] }),
     });
