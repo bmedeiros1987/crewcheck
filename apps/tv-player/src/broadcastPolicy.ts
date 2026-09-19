@@ -1,5 +1,6 @@
 import type { TvActivity, TvSnapshot } from '../../../packages/tv-core/src/index';
 import { currentFact } from '../../../packages/tv-core/src/index';
+import { currentWeatherContexts } from './premiumContext';
 
 export type QuickView = 'Agora' | 'Meteorologia' | 'Radar' | 'Apresentação' | 'Pernoite';
 // Presentation-only filtering of already-canonical stays; never infer a hotel,
@@ -23,7 +24,7 @@ export function isCiriumSource(source: string | undefined): boolean {
 export function quickAvailability(snapshot: TvSnapshot | null, now=Date.now()) {
   return {
     presentation: Boolean(snapshot?.next),
-    weather: Boolean(currentFact(snapshot?.weather || null,now)),
+    weather: Boolean(currentWeatherContexts(snapshot,now).length || currentFact(snapshot?.weather || null,now)),
     radar: Boolean(currentFact(snapshot?.gate || null,now)),
     stay: Boolean(upcomingStay(snapshot,now)),
   };

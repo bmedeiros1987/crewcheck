@@ -34,6 +34,22 @@ export type TvFact<T> = {
   observedAt: string;
   expiresAt: string;
 };
+export type TvWeatherContext = {
+  role: "base" | "stay";
+  airport: string;
+  city: string | null;
+  temperature: number;
+  label: string;
+  wind: number | null;
+  rainChance: number | null;
+  source: string;
+  observedAt: string;
+  expiresAt: string;
+};
+export type TvProfileContext = {
+  base: string | null;
+  airline: string | null;
+};
 export type TvSnapshot = {
   schemaVersion: 1;
   snapshotId: string;
@@ -53,10 +69,21 @@ export type TvSnapshot = {
     temperature: number;
     label: string;
   }> | null;
+  profile?: TvProfileContext;
+  weatherContexts?: TvWeatherContext[];
   changes: string[];
   ticker: string[];
 };
 
+function tvAirlineName(roster: CrewRoster, events: CanonicalRosterEvent[]): string | null {
+  const declared = String(roster.airline || "").trim();
+  if (declared) return declared.slice(0, 60);
+  const numbers = events.map(event => String(event.flightNumber || "").trim().toUpperCase()).filter(Boolean);
+  if (numbers.some(value => /^LA\s*\d/.test(value))) return "LATAM";
+  if (numbers.some(value => /^G3\s*\d/.test(value))) return "GOL";
+  if (numbers.some(value => /^AD\s*\d/.test(value))) return "AZUL";
+  return null;
+}
 function twoDigits(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
@@ -162,6 +189,11 @@ export function projectRoster(
     leaveAt: null,
     gate: null,
     weather: null,
+    profile: {
+      base: privacy === "private" && /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
+      airline: tvAirlineName(roster, events),
+    },
+    weatherContexts: [],
     changes: [],
     ticker: [],
   };
