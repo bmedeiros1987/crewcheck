@@ -175,7 +175,7 @@ export function projectRoster(
     gate: null,
     weather: null,
     profile: {
-      base: /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
+      base: privacy === "private" && /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
       airline: tvAirlineName(roster, events),
     },
     weatherContexts: [],
