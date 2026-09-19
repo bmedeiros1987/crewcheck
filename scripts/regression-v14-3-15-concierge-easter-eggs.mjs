@@ -4,32 +4,54 @@ import vm from 'node:vm';
 const path = 'server/v1403/build-reply.snippet';
 const source = fs.readFileSync(path, 'utf8');
 const helperSource = source.split('async function buildTelegramConciergeReply')[0];
-const context = { Math, JSON, String, Array, RegExp };
+let sampleIndex = 0;
+const sampleMath = Object.create(Math);
+const context = { Math: sampleMath, JSON, String, Array, RegExp, variantCount: 1 };
+sampleMath.random = () => (sampleIndex + 0.5) / context.variantCount;
 vm.createContext(context);
-vm.runInContext(`${helperSource}\nthis.reply = conciergeEasterEggReply;`, context);
+vm.runInContext(`${helperSource}
+const originalPick = conciergeEasterEggPick;
+conciergeEasterEggPick = (options = []) => {
+  this.variantCount = options.filter(Boolean).length || 1;
+  return originalPick(options);
+};
+this.reply = conciergeEasterEggReply;`, context);
 
 const reply = context.reply;
 if (typeof reply !== 'function') throw new Error('[v14.3.15] conciergeEasterEggReply não foi carregada.');
 
+// Exercise every existing reply, rather than letting Math.random hide a mismatch.
+function forEachReply(input, snapshot, check) {
+  context.variantCount = 1;
+  sampleIndex = 0;
+  do {
+    const output = String(reply(input, {}, snapshot) || '');
+    check(output);
+    sampleIndex += 1;
+  } while (sampleIndex < context.variantCount);
+}
+
 function expectMatch(input, pattern, snapshot = null) {
-  const output = String(reply(input, {}, snapshot) || '');
-  if (!pattern.test(output)) throw new Error(`[v14.3.15] Resposta inválida para "${input}": ${output}`);
+  forEachReply(input, snapshot, (output) => {
+    if (!pattern.test(output)) throw new Error(`[v14.3.15] Resposta inválida para "${input}" (variante ${sampleIndex}): ${output}`);
+  });
 }
 
 function expectEmpty(input) {
-  const output = String(reply(input, {}, null) || '');
-  if (output) throw new Error(`[v14.3.15] Falso positivo para "${input}": ${output}`);
+  forEachReply(input, null, (output) => {
+    if (output) throw new Error(`[v14.3.15] Falso positivo para "${input}": ${output}`);
+  });
 }
 
 expectMatch('Quem é você?', /Bruno Saraiva|Concierge do CrewCheck/);
 expectMatch('Qual é seu nome?', /Bruno Saraiva|Concierge do CrewCheck/);
 expectMatch('Você é um bot?', /tecnologia|humanidade|colega confiável/i);
-expectMatch('Qual é sua missão?', /cuida|cuidar|operação sozinho/i);
+expectMatch('Qual é sua missão?', /cuida|cuidar|operação sozinho|reduzir sua carga mental/i);
 expectMatch('Qual é seu lema?', /sozinho|cuida|cuidar/i);
 expectMatch('Quem te criou?', /tripulante/i);
 expectMatch('Você é casado?', /Marina Alves/);
 expectMatch('Você tem filhos?', /Laura/);
-expectMatch('Você dorme?', /descanso|dormir/i);
+expectMatch('Você dorme?', /descanso|dormir|poupar sua atenção/i);
 expectMatch('Você fica cansado?', /cansado|descanso|atenção/i);
 expectMatch('Você sonha?', /tranquil|CrewCheck/i);
 expectMatch('Você sente saudade?', /saudade|casa|família/i);
