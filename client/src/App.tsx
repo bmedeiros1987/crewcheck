@@ -18,6 +18,7 @@ import AboutUsPage from "./pages/AboutUsPage";
 import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
 import GuardianPublicPage from './pages/GuardianPublicPage';
+import VoyagePublicPage from './pages/VoyagePublicPage';
 import { AuthClientError, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
@@ -119,6 +120,9 @@ function Router() {
     <Route path="/about" component={AboutUsPage} />
     <Route path="/status" component={SystemStatusPage} />
     <Route path="/system-status" component={SystemStatusPage} />
+    <Route path="/voyage/privacy">{() => <VoyagePublicPage kind="privacy" />}</Route>
+    <Route path="/voyage/terms">{() => <VoyagePublicPage kind="terms" />}</Route>
+    <Route path="/voyage">{() => <VoyagePublicPage kind="home" />}</Route>
     <Route path="/">{() => <Protected><Home /></Protected>}</Route>
     <Route path="/app">{() => <Protected><Home /></Protected>}</Route>
     <Route path="/home">{() => <Protected><Home /></Protected>}</Route>
@@ -193,7 +197,7 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const publicPaths = ['/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
+  const publicPaths = ['/voyage', '/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
   const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !publicPaths.some((path) => currentPath.startsWith(path)));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
