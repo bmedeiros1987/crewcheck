@@ -75,6 +75,15 @@ export type TvSnapshot = {
   ticker: string[];
 };
 
+function tvAirlineName(roster: CrewRoster, events: CanonicalRosterEvent[]): string | null {
+  const declared = String(roster.airline || "").trim();
+  if (declared) return declared.slice(0, 60);
+  const numbers = events.map(event => String(event.flightNumber || "").trim().toUpperCase()).filter(Boolean);
+  if (numbers.some(value => /^LA\s*\d/.test(value))) return "LATAM";
+  if (numbers.some(value => /^G3\s*\d/.test(value))) return "GOL";
+  if (numbers.some(value => /^AD\s*\d/.test(value))) return "AZUL";
+  return null;
+}
 function twoDigits(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
@@ -182,7 +191,7 @@ export function projectRoster(
     weather: null,
     profile: {
       base: /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
-      airline: String(roster.airline || "").trim() || null,
+      airline: tvAirlineName(roster, events),
     },
     weatherContexts: [],
     changes: [],
