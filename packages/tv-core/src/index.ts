@@ -34,6 +34,22 @@ export type TvFact<T> = {
   observedAt: string;
   expiresAt: string;
 };
+export type TvWeatherContext = {
+  role: "base" | "stay";
+  airport: string;
+  city: string | null;
+  temperature: number;
+  label: string;
+  wind: number | null;
+  rainChance: number | null;
+  source: string;
+  observedAt: string;
+  expiresAt: string;
+};
+export type TvProfileContext = {
+  base: string | null;
+  airline: string | null;
+};
 export type TvSnapshot = {
   schemaVersion: 1;
   snapshotId: string;
@@ -53,6 +69,8 @@ export type TvSnapshot = {
     temperature: number;
     label: string;
   }> | null;
+  profile?: TvProfileContext;
+  weatherContexts?: TvWeatherContext[];
   changes: string[];
   ticker: string[];
 };
@@ -156,6 +174,11 @@ export function projectRoster(
     leaveAt: null,
     gate: null,
     weather: null,
+    profile: {
+      base: /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
+      airline: String(roster.airline || "").trim() || null,
+    },
+    weatherContexts: [],
     changes: [],
     ticker: [],
   };
