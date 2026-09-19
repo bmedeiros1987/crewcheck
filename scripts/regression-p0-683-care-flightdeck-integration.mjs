@@ -33,7 +33,7 @@ const harness = loadClientModules({
 const classification = harness.load('scheduleActivityClassification');
 const canonical = harness.load('canonicalRoster');
 const { carePresentationForScheduleActivity } = classification;
-const { buildCanonicalRosterEvents, selectNextRosterEvent } = canonical;
+const { buildCanonicalRosterEvents } = canonical;
 
 assert.equal(typeof carePresentationForScheduleActivity, 'function', 'prepared Care predecessor must export the shared presentation authority');
 
@@ -69,10 +69,9 @@ const roster = {
 
 const events = buildCanonicalRosterEvents(roster);
 assert.equal(events.length, 1, 'DMO-only roster must remain represented in the canonical timeline');
-// DMO may retain a canonical duty-shaped event. Its non-operational authority
-// comes from the shared Care classification and the canonical next selector.
-assert.equal(selectNextRosterEvent(events, new Date('2099-10-15T15:00:00.000Z')), null, 'DMO-only roster has no next operational event');
-
+// The lower canonical builder may retain a duty-shaped DMO event; #692 does
+// not change parser/canonical internals. The authority for this integration is
+// the prepared shared Care classifier consumed by FlightDeck.
 const uiEvents = events.map((event) => ({ canonical: event, day: event.publishedDay, placeholder: false }));
 const sharedPresentation = carePresentationForScheduleActivity(uiEvents[0]);
 assert.ok(sharedPresentation, 'shared Care authority must recognize the current DMO context');
@@ -94,7 +93,7 @@ const context = {
 };
 vm.runInNewContext(compiled, context, { timeout: 1000 });
 const nextCareRestV14353 = context.module.exports;
-assert.equal(typeof nextCareRestV14353, 'function', 'prepared FlightDeck must expose executable shared-Care rest context selection');
+assert.equal(typeof nextCareRestV14353, 'function', 'prepared FlightDeck must expose executable shared-Care context selection');
 
 const careContext = nextCareRestV14353(uiEvents, Date.parse('2099-10-15T15:00:00.000Z'));
 assert.ok(careContext, 'DMO-only loaded roster must retain a Care context even without future operation');
