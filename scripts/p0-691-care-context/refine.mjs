@@ -99,12 +99,12 @@ write(classificationPath, classification);
 
 // Home/Roster must use the same authority hierarchy as the shared classifier
 // and Concierge. A residual pairing code may specialize only the parser's
-// intentionally coarse DO wrapper; it must never relabel a formal ASB/HSB/EAD
-// duty as a sensitive care state such as Luto/Férias.
+// intentionally coarse DO wrapper. Explicit operational, care, day-off and
+// recovery identities remain authoritative and cannot be relabelled by residue.
 const homePath = 'client/src/pages/Home.tsx';
 let home = read(homePath);
 const oldHomeRosterCode = `function rosterCode(day?: RosterDay): string {\n  return String((day as any)?.pairingCode || (day as any)?.type || '').trim().toUpperCase();\n}`;
-const newHomeRosterCode = `function rosterCode(day?: RosterDay): string {\n  const type = String((day as any)?.type || '').trim().toUpperCase();\n  const pairing = String((day as any)?.pairingCode || '').trim().toUpperCase();\n  if (['ASB', 'HSB', 'EAD'].includes(type)) return type;\n  const publishedDayOff = new Set(['DMO', 'VC', 'FERIAS', 'FÉRIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA']);\n  if (type === 'DO') return publishedDayOff.has(pairing) ? pairing : type;\n  return pairing || type;\n}`;
+const newHomeRosterCode = `function rosterCode(day?: RosterDay): string {\n  const type = String((day as any)?.type || '').trim().toUpperCase();\n  const pairing = String((day as any)?.pairingCode || '').trim().toUpperCase();\n  const formalIdentity = new Set([\n    'ASB', 'HSB', 'EAD',\n    'DMO', 'VC', 'FERIAS', 'FÉRIAS',\n    'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA',\n    'REST', 'REPOUSO', 'DESCANSO', 'DESCANSO_REGULAMENTAR',\n  ]);\n  if (formalIdentity.has(type)) return type;\n  const publishedDayOff = new Set(['DMO', 'VC', 'FERIAS', 'FÉRIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA']);\n  if (type === 'DO') return publishedDayOff.has(pairing) ? pairing : type;\n  return pairing || type;\n}`;
 home = replaceRequired(home, oldHomeRosterCode, newHomeRosterCode, 'Home formal duty survives residual care pairing');
 write(homePath, home);
 
