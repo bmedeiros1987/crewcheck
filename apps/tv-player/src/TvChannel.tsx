@@ -6,7 +6,7 @@ import './tv-channel.css';
 const read = (key:string) => {try{return localStorage.getItem(key);}catch{return null;}};
 const save = (key:string,value:string) => {try{localStorage.setItem(key,value);}catch{}};
 const now = () => typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-export function useTvChannel(options:{view:string;setView:(view:ChannelView)=>void;hasSnapshot:boolean;hasChanges:boolean;hasNews:boolean;quick?:{presentation:boolean;weather:boolean;radar:boolean;stay:boolean};covered:boolean;hidden:boolean;exitRequested:boolean}) {
+export function useTvChannel<T extends string>(options:{view:T;setView:(view:T)=>void;hasSnapshot:boolean;hasChanges:boolean;hasNews:boolean;quick?:{presentation:boolean;weather:boolean;radar:boolean;stay:boolean};covered:boolean;hidden:boolean;exitRequested:boolean}) {
   const [enabled,setEnabled] = useState(()=>read('crewcheck-tv-auto-screens')!=='false');
   const [interval,setIntervalValue] = useState(()=>channelInterval(read('crewcheck-tv-auto-interval')));
   const [countdown,setCountdown] = useState(interval), [reading,setReading] = useState(false);
@@ -41,7 +41,7 @@ export function useTvChannel(options:{view:string;setView:(view:ChannelView)=>vo
       const instant=now(),delta=instant-last;last=instant;const c=current.current;
       const deck=channelDeck(c.hasSnapshot,c.hasChanges,c.hasNews,c.quick);
       const allowed=c.enabled&&!c.covered&&!c.hidden&&!document.hidden&&!c.exitRequested&&deck.includes(c.view as ChannelView);
-      if(schedule.current.step(delta,allowed)) {const next=nextChannelView(c.view,deck);if(next)c.setView(next);}
+      if(schedule.current.step(delta,allowed)) {const next=nextChannelView(c.view,deck);if(next)c.setView(next as T);}
       setReading(schedule.current.hold>0);setCountdown(Math.ceil(schedule.current.remaining/1000));
     },1000);
     context();
@@ -54,7 +54,7 @@ export function useTvChannel(options:{view:string;setView:(view:ChannelView)=>vo
   return {enabled,interval,countdown,reading:isReading,sound,
     toggle:()=>{const value=!current.current.enabled;setEnabled(value);save('crewcheck-tv-auto-screens',String(value));schedule.current.resume();setReading(false);},
     chooseInterval:(value:number)=>{const seconds=channelInterval(value);setIntervalValue(seconds);save('crewcheck-tv-auto-interval',String(seconds));},
-    resume:()=>{schedule.current.resume();setReading(false);options.setView('Agora');},
+    resume:()=>{schedule.current.resume();setReading(false);options.setView('Agora' as T);},
     music:()=>player.current?.toggle(),select:(index:number)=>player.current?.select(index),move:(delta:number)=>player.current?.move(delta),volume:(value:number)=>player.current?.setVolume(value),
   };
 }
