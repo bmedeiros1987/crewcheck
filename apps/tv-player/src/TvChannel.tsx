@@ -19,7 +19,7 @@ export function useTvChannel(options:{view:string;setView:(view:ChannelView)=>vo
     const audio=document.createElement('audio'); audio.id='crewcheck-soundtrack';
     // Do not use display:none on physical webOS: the hardware media pipeline is
     // more reliable when the single audio element remains attached/renderable.
-    audio.preload='metadata'; audio.controls=false; audio.autoplay=false; audio.muted=false;
+    audio.preload='metadata'; audio.controls=false; audio.muted=false;
     audio.setAttribute('aria-hidden','true'); audio.setAttribute('playsinline','true');
     audio.style.position='fixed';audio.style.width='1px';audio.style.height='1px';audio.style.left='-2px';audio.style.bottom='-2px';audio.style.opacity='0.01';audio.style.pointerEvents='none';
     document.body.appendChild(audio);
