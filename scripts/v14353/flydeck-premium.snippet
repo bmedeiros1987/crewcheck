@@ -47,7 +47,11 @@ function nextVacationRestV14353(events: ZeroLeg[], nowMs: number): ZeroLeg | nul
   // Later vacation cannot override a nearer published day off or recovery rest.
   const event = futureRest[0];
   if (!event) return null;
-  const code = String(event.day?.pairingCode || event.day?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const fallbackCode = String(event.day?.pairingCode || event.day?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const formalType = String(event.day?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  // Formal published rest identity wins unrelated residual pairing. Only the
+  // coarse parser wrapper DO may be specialized by its published pairing code.
+  const code = formalType === 'DO' ? fallbackCode : (formalType || fallbackCode);
   return /(^|\s)(VC|FERIAS|VACATION)(\s|$)/.test(code) ? event : null;
 }
 
