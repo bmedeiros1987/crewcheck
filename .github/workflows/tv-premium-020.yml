@@ -39,7 +39,8 @@ jobs:
           await writeFile(p,JSON.stringify(a,null,2));
           const m='dist/lg-webos/tv-build.json';
           const meta=JSON.parse(await readFile(m,'utf8'));
-          meta.premiumContext020=true;\n          meta.trustedPersonalTv=true;
+          meta.premiumContext020=true;
+          meta.trustedPersonalTv=true;
           meta.weatherContexts=['base','next-stay-private'];
           meta.airlineVisual='roster-airline-or-published-flight-prefix';
           meta.postPairProgress=true;
