@@ -68,6 +68,8 @@ jobs:
           node scripts/p0-691-care-context/apply.mjs
       - name: Care semantics regression on prepared source
         run: node scripts/regression-p0-691-care-context.mjs
+      - name: Formal FOLGA authority regression on prepared source
+        run: node scripts/p0-691-care-context/regression-formal-folga-authority.mjs
       - name: Care UI/personality regression on prepared source
         run: CHECK_PREPARED=1 node scripts/regression-p0-691-care-ui.mjs
       - name: Existing rest versus overnight regression
@@ -80,6 +82,8 @@ jobs:
           node scripts/v139/apply.mjs
       - name: Care semantics regression after full preparation
         run: node scripts/regression-p0-691-care-context.mjs
+      - name: Formal FOLGA authority regression after full preparation
+        run: node scripts/p0-691-care-context/regression-formal-folga-authority.mjs
       - name: Care UI/personality regression after full preparation
         run: CHECK_PREPARED=1 node scripts/regression-p0-691-care-ui.mjs
       - name: Easter Egg compatibility after full preparation
