@@ -115,7 +115,7 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
           expiresAt: new Date(now.getTime() + 60000).toISOString(), now,
         });
         const settings = policy();
-        const base = tvAirportCode(data.roster.base);
+        const base = auth.privacy === 'private' ? tvAirportCode(data.roster.base) : null;
         const stay = tvNextStayAirport(snapshot, now.getTime());
         const targets = [{ role: 'base', airport: base }, ...(stay && stay !== base ? [{ role: 'stay', airport: stay }] : [])];
         const weatherContexts = (await Promise.all(targets.map(target => tvWeatherContext(settings.origin, target.airport, target.role, now)))).filter(Boolean);
