@@ -54,6 +54,18 @@ function nextVacationRestV14353(events: ZeroLeg[], nowMs: number): ZeroLeg | nul
   const code = formalType === 'DO' ? fallbackCode : (formalType || fallbackCode);
   return /(^|\s)(VC|FERIAS|VACATION)(\s|$)/.test(code) ? event : null;
 }
+function nextCareRestV14353(events: ZeroLeg[], nowMs: number): { event: ZeroLeg; presentation: NonNullable<ReturnType<typeof carePresentationForScheduleActivity>> } | null {
+  const relevant = events
+    .filter((event) => !event.placeholder)
+    .filter((event) => eventEndDateTime(event).getTime() >= nowMs)
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+  // Do not search ahead for a later sensitive label. The nearest current/future
+  // published context wins; shared Care semantics decide whether it is Care.
+  const event = relevant[0];
+  if (!event) return null;
+  const presentation = carePresentationForScheduleActivity(event);
+  return presentation ? { event, presentation } : null;
+}
 
 function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
@@ -62,7 +74,9 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const alertCount = actionableComplianceAlerts(compliance).length;
   const departureEligible = loaded && !event.placeholder && isSmartDepartureEligible(event);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const careContext = nextCareRestV14353(events, nowMs);
   const vacationEvent = nextVacationRestV14353(events, nowMs);
+  const careTitle = careContext ? `${careContext.presentation.label} na escala` : 'Sem programação operacional futura';
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
     return () => window.clearInterval(timer);
@@ -73,7 +87,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
       <header className="cc-flydeck-topline"><div><small>FLYDECK</small><h1>Briefing operacional</h1></div><span className="cc-flydeck-live"><i/> SISTEMA ATIVO</span></header>
       <article className="cc-flydeck-empty">
         <Upload aria-hidden="true"/>
-        <div><h2>{loaded ? (vacationEvent ? 'Férias na escala' : 'Sem programação operacional futura') : 'Importe a escala oficial'}</h2><p>{loaded ? (vacationEvent ? 'Sua escala está carregada. O FlightDeck volta a destacar a próxima programação operacional quando houver.' : 'Sua escala está carregada, mas não há uma próxima programação operacional neste período.') : 'O briefing aparecerá aqui com os dados reais da próxima programação.'}</p></div>
+        <div><h2>{loaded ? (careContext ? careTitle : (vacationEvent ? 'Férias na escala' : 'Sem programação operacional futura')) : 'Importe a escala oficial'}</h2><p>{loaded ? (careContext ? careContext.presentation.message : (vacationEvent ? 'Sua escala está carregada. O FlightDeck volta a destacar a próxima programação operacional quando houver.' : 'Sua escala está carregada, mas não há uma próxima programação operacional neste período.')) : 'O briefing aparecerá aqui com os dados reais da próxima programação.'}</p></div>
         <button onClick={() => loaded ? setView('roster') : onUpload()}>{loaded ? 'Ver escala' : 'Importar PDF'}</button>
       </article>
       <aside className="cc-flydeck-official-note"><ShieldCheck aria-hidden="true"/><p><strong>Fonte operacional</strong> O CrewCheck organiza dados importados e não substitui a escala oficial nem as comunicações da empresa. Em caso de divergência, prevalece a fonte oficial.</p></aside>
