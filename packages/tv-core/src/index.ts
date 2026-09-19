@@ -176,7 +176,7 @@ export function projectRoster(
     weather: null,
     profile: {
       base: /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
-      airline: String(roster.airline || "").trim() || null,
+      airline: tvAirlineName(roster, events),
     },
     weatherContexts: [],
     changes: [],
