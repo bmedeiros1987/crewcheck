@@ -1,0 +1,24 @@
+name: Mobile TV-style roster
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1397/roster-premium.css'
+      - 'scripts/regression-mobile-tv-style-roster.mjs'
+      - '.github/workflows/mobile-tv-style-roster.yml'
+permissions:
+  contents: read
+jobs:
+  mobile-roster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/regression-mobile-tv-style-roster.mjs
+      - run: npx tsc --noEmit
+      - run: npm run build
