@@ -97,4 +97,15 @@ const newCareFallback = `  if (pairingSensitiveState !== 'NONE') return pairingS
 classification = replaceRequired(classification, oldCareFallback, newCareFallback, 'sensitive care requires published evidence');
 write(classificationPath, classification);
 
+// Home/Roster must use the same authority hierarchy as the shared classifier
+// and Concierge. A residual pairing code may specialize only the parser's
+// intentionally coarse DO wrapper; it must never relabel a formal ASB/HSB/EAD
+// duty as a sensitive care state such as Luto/Férias.
+const homePath = 'client/src/pages/Home.tsx';
+let home = read(homePath);
+const oldHomeRosterCode = `function rosterCode(day?: RosterDay): string {\n  return String((day as any)?.pairingCode || (day as any)?.type || '').trim().toUpperCase();\n}`;
+const newHomeRosterCode = `function rosterCode(day?: RosterDay): string {\n  const type = String((day as any)?.type || '').trim().toUpperCase();\n  const pairing = String((day as any)?.pairingCode || '').trim().toUpperCase();\n  if (['ASB', 'HSB', 'EAD'].includes(type)) return type;\n  const publishedDayOff = new Set(['DMO', 'VC', 'FERIAS', 'FÉRIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA']);\n  if (type === 'DO') return publishedDayOff.has(pairing) ? pairing : type;\n  return pairing || type;\n}`;
+home = replaceRequired(home, oldHomeRosterCode, newHomeRosterCode, 'Home formal duty survives residual care pairing');
+write(homePath, home);
+
 console.log(`${TAG} aplicado com sucesso.`);
