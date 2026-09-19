@@ -1,6 +1,31 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
+import { createTvHttpBridge } from './tv/http.mjs';
+
+const handleTv = createTvHttpBridge({
+  getDatabase: () => pool(),
+  readBody: (...args) => readBody(...args),
+  authenticateAccount: async token => {
+    const identity = verifyJwt(token);
+    if (!identity?.email || !Number.isFinite(Number(identity.exp)) || Number(identity.exp) <= Date.now()/1000 || identity.aud === 'crewcheck-visitor' || identity.role === 'visitor') return null;
+    const db = await pool();
+    if (!db) throw new Error('database_unavailable');
+    const result = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [safeEmail(identity.email)]);
+    return result.rows[0]?.email || null;
+  },
+  loadActiveRoster: async userId => {
+    const db = await pool();
+    if (!db) return null;
+    const profile = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [userId]);
+    if (!profile.rows.length) return null;
+    // Do not silently choose a revision if active identity is ambiguous.
+    const result = await db.query('SELECT id,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE', [userId]);
+    if (result.rows.length !== 1) return null;
+    const row = result.rows[0];
+    return {roster: row.roster, sourceVersion: crypto.createHash('sha256').update(`${row.id}:${row.updated_at}`).digest('hex')};
+  },
+});
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -2609,3 +2634,5 @@ export async function handlePlatformRoute(req, res, url) {
 }
 
 export const crewCheckPlatform = { version: APP_VERSION, defaultTimezone: DEFAULT_TIMEZONE, supportedLocales: [...SUPPORTED_LOCALES] };
+// Separate entry keeps historical platform preparation anchors intact.
+export { handleTv as handleTvRoute };

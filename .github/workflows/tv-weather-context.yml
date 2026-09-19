@@ -1,0 +1,20 @@
+name: TV contextual weather safety
+on:
+  pull_request:
+    paths: ['server/tv/**','packages/tv-core/**','scripts/tv-weather-context-test.mjs','.github/workflows/tv-weather-context.yml']
+permissions:
+  contents: read
+jobs:
+  weather-context:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-weather-context-test.mjs
+      - run: node scripts/tv-test.mjs && node scripts/tv-server-build.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json

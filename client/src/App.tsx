@@ -11,6 +11,7 @@ import InfoPage from "./pages/InfoPage";
 import LegalPage from "./pages/LegalPage";
 import OAuthVerificationPage from "./pages/OAuthVerificationPage";
 import WatchPage from "./pages/WatchPage";
+import TvPairPage from "./pages/TvPairPage";
 import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
 import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
@@ -127,6 +128,7 @@ function Router() {
     <Route path="/watch">{() => <Protected><WatchPage device="samsung" /></Protected>}</Route>
     <Route path="/w">{() => <Protected><WatchPage device="samsung" /></Protected>}</Route>
     <Route path="/wear">{() => <Protected><WatchPage device="samsung" /></Protected>}</Route>
+    <Route path="/tv-pair">{() => <Protected><TvPairPage /></Protected>}</Route>
     <Route path="/apple-watch">{() => <Protected><WatchPage device="apple" /></Protected>}</Route>
     <Route path="/aw">{() => <Protected><WatchPage device="apple" /></Protected>}</Route>
     <Route path="/watch/apple">{() => <Protected><WatchPage device="apple" /></Protected>}</Route>

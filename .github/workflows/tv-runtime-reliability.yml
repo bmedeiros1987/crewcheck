@@ -1,0 +1,60 @@
+name: TV bounded database and login reliability
+on:
+  pull_request:
+    paths: ['server/tv/**', 'client/src/lib/tvPairReturn.ts', 'scripts/tv-*', 'scripts/v139/apply.mjs', '.github/workflows/tv-runtime-reliability.yml']
+permissions:
+  contents: read
+jobs:
+  reliability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: tv-test-only
+          MYSQL_DATABASE: crewcheck_tv_test
+        ports: ['3306:3306']
+        options: --health-cmd="mysqladmin ping -h localhost -ptv-test-only" --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/tv-runtime-reliability/apply.mjs && node scripts/tv-runtime-reliability/apply.mjs
+      - run: node --check server/platform.mjs && node --check server/v139/common.mjs
+      - run: node scripts/tv-pool-lifecycle-test.mjs && node scripts/tv-pair-return-test.mjs
+      - run: node scripts/tv-pool-mysql-test.mjs && node scripts/tv-pilot-mysql-test.mjs
+        env:
+          TV_TEST_DATABASE_URL: mysql://root:tv-test-only@127.0.0.1:3306/crewcheck_tv_test
+      - run: node scripts/tv-pilot-policy-test.mjs && node scripts/tv-pilot-config-test.mjs && node scripts/tv-browser-origins-test.mjs
+      - run: node scripts/tv-test.mjs && node scripts/tv-server-build.mjs
+      - run: npx tsc --noEmit && npx tsc --noEmit -p tsconfig.tv.json
+      # Full canonical preparation already ran above. Do not execute legacy
+      # non-idempotent preparers again; the clean-build job tests npm run build.
+      - run: npx vite build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TV-Runtime-Reliability-Evidence
+          path: |
+            server/platform.mjs
+            server/v139/common.mjs
+            client/src/App.tsx
+            client/src/pages/AuthPage.tsx
+            client/src/lib/tvPairReturn.ts
+          retention-days: 3
+  clean-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node --check server/platform.mjs && node --check server/v139/common.mjs
