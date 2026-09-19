@@ -8,14 +8,14 @@ if(!session.includes('invokeTvRequest')){
 }
 const file='apps/tv-player/src/main.tsx';let main=await readFile(file,'utf8');
 if(!main.includes("from './PairingDiagnostics'")){
- main=replace(main,"import QRCode from 'qrcode';","import QRCode from 'qrcode';\nimport { PairingDiagnostics, validatePairing, pairingFailure } from './PairingDiagnostics';");
- main=replace(main,"  const [qr, setQr] = useState('');","  const [qr, setQr] = useState('');\n  const [pairBusy, setPairBusy] = useState(false);\n  const pairBusyRef = useRef(false);\n  const [pairDiagnostic, setPairDiagnostic] = useState('');");
+ main=replace(main,"import QRCode from 'qrcode';","import QRCode from 'qrcode';\nimport { PairingDiagnostics, validatePairing, pairingFailure } from './PairingDiagnostics';\nimport { SyncProgress, type SyncStage } from './SyncProgress';");
+ main=replace(main,"  const [qr, setQr] = useState('');","  const [qr, setQr] = useState('');\n  const [pairBusy, setPairBusy] = useState(false);\n  const pairBusyRef = useRef(false);\n  const [pairDiagnostic, setPairDiagnostic] = useState('');\n  const [syncStage, setSyncStage] = useState<SyncStage | null>(null);");
  const start=main.indexOf('  async function begin() {'),end=main.indexOf('  useEffect(() => {',start);
  if(start<0||end<0)throw Error('Pairing block missing');
  main=main.slice(0,start)+`  async function begin() {
     if (demo) { clear(); return; }
     if (pairBusyRef.current) return;
-    pairBusyRef.current=true; setPairBusy(true); clear(); setPairDiagnostic('');
+    pairBusyRef.current=true; setPairBusy(true); clear(); setPairDiagnostic(''); setSyncStage(null);
     const run=generation.current;
     setStatus('Conectando ao servidor…');
     try {
@@ -47,11 +47,11 @@ if(!main.includes("from './PairingDiagnostics'")){
   }
 `+main.slice(end);
  main=replace(main,'          session.pair(result);','          session.pair(result);\n          setPairing(null); setQr(\'\'); setStatus(\'TV autorizada. Buscando sua escala…\');');
- main=replace(main,"} catch { if (!cancelled && run === generation.current) setStatus('Aguardando confirmação ou conexão.'); }","} catch(error) { if (run === generation.current) { const problem=pairingFailure(error);setPairDiagnostic(problem.code);setStatus(session.credential?'TV autorizada; a escala ainda não pôde ser carregada.':problem.message); } }");
+ main=replace(main,"} catch { if (!cancelled && run === generation.current) setStatus('Aguardando confirmação ou conexão.'); }","} catch(error) { if (run === generation.current) { setSyncStage(null); const problem=pairingFailure(error);setPairDiagnostic(problem.code);setStatus(session.credential?'TV autorizada; a escala ainda não pôde ser carregada.':problem.message); } }");
  const a=main.indexOf(': !snapshot ? <section className="pair view-enter">'),b=main.indexOf('</section> : <>',a);
  if(a<0||b<0)throw Error('Pairing JSX boundary changed');
  main=main.slice(0,a)+': !snapshot ? <PairingDiagnostics status={status} code={pairDiagnostic} busy={pairBusy} pairing={pairing} qr={qr} origin={config.VITE_TV_API_ORIGIN || \'https://crewcheck.online\'} onBegin={begin} onCheck={checkConnection}/> : <>'+main.slice(b+'</section> : <>'.length);
- main=main.replaceAll('Prévia visual 0.1.7','Prévia visual 0.1.8');
+ main=main.replaceAll('Prévia visual 0.1.7','Prévia visual 0.2.0');
  await writeFile(file,main);
 }
 console.log('Prepared native-fetch receiver fix, non-secret diagnostics and independent QR fallback.');
