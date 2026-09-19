@@ -1,4 +1,4 @@
-name: TV premium context 0.2.0
+name: TV premium context 0.2.1
 on:
   pull_request:
     paths: ['apps/tv-player/**','packages/tv-core/**','server/tv/**','scripts/tv-*','.github/workflows/tv-premium-020.yml']
@@ -20,7 +20,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
       - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
-      - run: node scripts/tv-premium-020-test.mjs
+      - run: node scripts/tv-premium-020-test.mjs && node scripts/tv-trusted-client-test.mjs
       - run: node scripts/tv-test.mjs && node scripts/tv-session-receive-time-test.mjs
       - run: node scripts/tv-brand-test.mjs && node scripts/tv-screen-care-test.mjs && node scripts/tv-screen-care-opt-out-test.mjs
       - run: node scripts/tv-channel-test.mjs && node scripts/tv-broadcast-test.mjs && node scripts/tv-broadcast-fit-test.mjs
@@ -34,12 +34,12 @@ jobs:
           import {readFile,writeFile} from 'node:fs/promises';
           const p='dist/lg-webos/appinfo.json';
           const a=JSON.parse(await readFile(p,'utf8'));
-          a.version='0.2.0';
+          a.version='0.2.1';
           a.requiredACG=[];
           await writeFile(p,JSON.stringify(a,null,2));
           const m='dist/lg-webos/tv-build.json';
           const meta=JSON.parse(await readFile(m,'utf8'));
-          meta.premiumContext020=true;
+          meta.premiumContext020=true;\n          meta.trustedPersonalTv=true;
           meta.weatherContexts=['base','next-stay-private'];
           meta.airlineVisual='roster-airline-or-published-flight-prefix';
           meta.postPairProgress=true;
@@ -49,7 +49,7 @@ jobs:
           JS
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-TV-Premium-020-UNFINALIZED
+          name: CrewCheck-TV-Premium-021-UNFINALIZED
           path: |
             dist/lg-webos
             apps/tv-player/src
