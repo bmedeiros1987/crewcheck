@@ -75,6 +75,15 @@ export type TvSnapshot = {
   ticker: string[];
 };
 
+function tvAirlineName(roster: CrewRoster, events: CanonicalRosterEvent[]): string | null {
+  const declared = String(roster.airline || "").trim();
+  if (declared) return declared.slice(0, 60);
+  const numbers = events.map(event => String(event.flightNumber || "").trim().toUpperCase()).filter(Boolean);
+  if (numbers.some(value => /^LA\s*\d/.test(value))) return "LATAM";
+  if (numbers.some(value => /^G3\s*\d/.test(value))) return "GOL";
+  if (numbers.some(value => /^AD\s*\d/.test(value))) return "AZUL";
+  return null;
+}
 function calendarDate(date: string): string {
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(date);
   if (!match) throw new Error("Invalid canonical date");
