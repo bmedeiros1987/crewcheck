@@ -1,0 +1,552 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #051121;
+  color: #edf7ff;
+  font-family: Arial, sans-serif;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid #29445d;
+  background: #10273c;
+  border-radius: 10px;
+  padding: 12px 22px;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 4px solid #6ce9ff;
+  outline-offset: 4px;
+  background: #1c425b;
+  box-shadow: 0 0 30px #42d6ff44;
+}
+main {
+  min-height: 100vh;
+  padding: 3vh 3.5vw;
+  background:
+    radial-gradient(ellipse at 20% 30%, #10354b88, transparent 60%), #051121;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #23405a;
+  padding-bottom: 2vh;
+}
+.brand {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+.brand span {
+  color: #6ee7fa;
+}
+.brand small {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 6px;
+  margin-top: 8px;
+  color: #85a2b9;
+}
+.header-status {
+  font-size: 12px;
+  color: #a4bacb;
+}
+.header-status i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: #55e6c0;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.clock {
+  text-align: right;
+  font-size: 36px;
+  font-weight: 700;
+}
+.clock small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 5px;
+  color: #afc3d3;
+}
+nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2vh 0;
+}
+nav button {
+  background: transparent;
+  border-color: transparent;
+}
+nav button.active {
+  color: #7ae8ff;
+  background: #123147;
+  border-color: #29566e;
+}
+nav > span {
+  margin-left: auto;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #8da9bf;
+}
+.live {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 22px;
+  min-height: 65vh;
+}
+article {
+  border: 1px solid #284256;
+  border-radius: 16px;
+  background: linear-gradient(130deg, #15344b99, #0c1e33cc);
+  padding: 24px;
+}
+.hero {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse at 80% 15%, #19708a33, transparent 70%),
+    linear-gradient(145deg, #113a52, #09192e);
+}
+.eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #a6c7db;
+  margin: 0 0 18px;
+}
+.eyebrow span {
+  color: #7ce8fa;
+  float: right;
+}
+h1 {
+  font-size: clamp(32px, 4.3vw, 78px);
+  letter-spacing: -2px;
+  margin: 22px 0 8px;
+  line-height: 1.08;
+}
+.flight {
+  font-size: 26px;
+  color: #a9cee2;
+  margin: 14px 0 26px;
+}
+.times {
+  display: flex;
+  gap: 50px;
+  border-top: 1px solid #315069;
+  border-bottom: 1px solid #315069;
+  padding: 24px 0;
+}
+.times label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #b6ccda;
+}
+.times strong {
+  display: block;
+  font-size: clamp(40px, 4.6vw, 82px);
+  letter-spacing: -3px;
+  margin-top: 10px;
+}
+.times > div + div strong {
+  color: #6be2fb;
+}
+.gate {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 13px;
+  padding: 24px 0;
+  color: #b4c8d7;
+}
+.gate b {
+  font-size: 26px;
+  color: #fff;
+  margin-left: 12px;
+}
+.gate em {
+  background: #57472e;
+  color: #f2d38d;
+  padding: 8px 12px;
+  font-style: normal;
+  border-radius: 5px;
+}
+.gate > span:last-child {
+  margin-left: auto;
+  font-size: 10px;
+}
+.hero-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  color: #91acbf;
+  font-size: 12px;
+}
+.side {
+  display: grid;
+  grid-template-rows: 1fr auto 1.2fr;
+  gap: 18px;
+}
+.side-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.side h2 {
+  font-size: 48px;
+  margin: 10px 0;
+}
+.side h2 small {
+  font-size: 16px;
+  display: inline;
+  margin-left: 12px;
+}
+.side p {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.side .eyebrow {
+  font-size: 11px;
+}
+.side small {
+  color: #8ba7bd;
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.news p {
+  margin: 8px 0 16px;
+}
+footer {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border: 1px solid #294356;
+  background: #0b1c30;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+  font-size: 13px;
+}
+footer strong {
+  color: #83e7fb;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+.ticker {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+footer > span {
+  font-size: 10px;
+  color: #8aa5b9;
+}
+.calendar-title {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+}
+.calendar h1,
+.detail h1 {
+  font-size: 36px;
+}
+.calendar-title p {
+  color: #9eb8ca;
+  margin-left: auto;
+  font-size: 14px;
+}
+.weekdays,
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+.weekdays {
+  margin: 22px 0 12px;
+  color: #90aebf;
+  font-size: 12px;
+  text-align: center;
+}
+.days button {
+  min-height: 82px;
+  text-align: left;
+  padding: 10px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: #0b1d30;
+}
+.days button.has-flight {
+  border-left: 3px solid #56dafa;
+  background: #103044;
+}
+.days b {
+  font-size: 22px;
+}
+.days span {
+  font-size: 12px;
+}
+.days small {
+  color: #a0bed3;
+  font-size: 12px;
+}
+.note {
+  font-size: 12px;
+  color: #9db7ca;
+}
+.detail {
+  min-height: 65vh;
+  padding: 25px 0;
+}
+.detail > button {
+  margin-right: 15px;
+}
+.activities {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.activity {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.activity strong {
+  font-size: 28px;
+}
+.activity small {
+  color: #9bbaca;
+}
+.pair {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  min-height: 72vh;
+}
+.pair img {
+  width: 240px;
+  border-radius: 15px;
+}
+.pair h2 {
+  text-align: center;
+  letter-spacing: 6px;
+}
+.pair p {
+  color: #b3cada;
+}
+.ambient .hero {
+  background: linear-gradient(140deg, #142d43, #0a192b);
+}
+@media (min-width: 1800px) {
+  body {
+    font-size: 22px;
+  }
+  .side p {
+    font-size: 20px;
+  }
+  .days button {
+    min-height: 120px;
+  }
+  .days span,
+  .days small {
+    font-size: 17px;
+  }
+  .eyebrow {
+    font-size: 17px;
+  }
+  .side .eyebrow {
+    font-size: 16px;
+  }
+  footer {
+    font-size: 18px;
+  }
+  .header-status {
+    font-size: 17px;
+  }
+  .clock {
+    font-size: 48px;
+  }
+  .brand {
+    font-size: 38px;
+  }
+  .clock small {
+    font-size: 17px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.days {
+  height: 51vh;
+  grid-auto-rows: minmax(0, 1fr);
+}
+.days button {
+  min-height: 0;
+}
+.calendar-title h1 {
+  margin: 12px 0;
+}
+.calendar-title {
+  min-height: 58px;
+}
+.days button:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+.days .kind-rest {
+  border-left-color: #ad98ed;
+}
+.days .kind-duty {
+  border-left-color: #f0c26e;
+}
+.days .kind-stay {
+  border-left-color: #85b8ff;
+}
+@media (max-height: 800px) {
+  .days button {
+    padding: 6px 10px;
+    gap: 2px;
+  }
+  .days b {
+    font-size: 16px;
+  }
+  .days span,
+  .days small {
+    font-size: 11px;
+  }
+  .calendar-title {
+    min-height: 40px;
+  }
+  .calendar h1 {
+    font-size: 28px;
+  }
+  .weekdays {
+    margin: 10px 0;
+  }
+  .times {
+    padding: 16px 0;
+  }
+  .hero {
+    padding: 24px;
+  }
+  .gate {
+    gap: 12px;
+  }
+  .side article {
+    padding: 18px;
+  }
+  .calendar-title p {
+    font-size: 12px;
+  }
+}
+@media (max-height: 800px) {
+  .days {
+    height: 46vh;
+  }
+  .live {
+    height: 60vh;
+    min-height: 0;
+    gap: 16px;
+  }
+  .hero {
+    padding: 18px;
+  }
+  .hero .eyebrow {
+    margin-bottom: 8px;
+    font-size: 11px;
+  }
+  .hero h1 {
+    font-size: 42px;
+    margin: 8px 0 0;
+  }
+  .flight {
+    font-size: 24px;
+    margin: 4px 0 12px;
+  }
+  .times {
+    padding: 12px 0;
+  }
+  .times label {
+    font-size: 10px;
+  }
+  .times strong {
+    font-size: 48px;
+    margin-top: 5px;
+  }
+  .gate {
+    padding: 12px 0;
+    font-size: 11px;
+  }
+  .gate em {
+    padding: 6px;
+  }
+  .hero-bottom button {
+    padding: 8px 12px;
+  }
+  .side {
+    gap: 12px;
+    grid-template-rows: 1fr 0.65fr 1fr;
+  }
+  .side-top {
+    gap: 12px;
+  }
+  .side article {
+    padding: 14px;
+    min-height: 0;
+  }
+  .side .eyebrow {
+    margin-bottom: 10px;
+    font-size: 10px;
+  }
+  .side h2 {
+    font-size: 40px;
+    margin: 6px 0;
+  }
+  .side p {
+    font-size: 13px;
+    margin: 8px 0;
+    line-height: 1.3;
+  }
+  .side small {
+    font-size: 10px;
+  }
+  footer {
+    padding: 14px;
+    margin-top: 14px;
+    gap: 14px;
+    font-size: 11px;
+  }
+  footer > span {
+    font-size: 9px;
+  }
+}
+.exit-dialog {
+  position: fixed;
+  z-index: 10;
+  inset: 25% 25%;
+  padding: 40px;
+  background: #10273c;
+  border: 2px solid #6ce9ff;
+  border-radius: 18px;
+  box-shadow: 0 0 0 100vmax #020811dd;
+}
+.exit-dialog button {
+  margin: 20px 20px 0 0;
+}
