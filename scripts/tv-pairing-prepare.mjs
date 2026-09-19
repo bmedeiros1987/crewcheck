@@ -10,6 +10,7 @@ const file='apps/tv-player/src/main.tsx';let main=await readFile(file,'utf8');
 if(!main.includes("from './PairingDiagnostics'")){
  main=replace(main,"const session = new TvSession(sessionStorage, fetch, config.VITE_TV_API_ORIGIN || 'https://crewcheck.online');","const session = new TvSession(sessionStorage, fetch, config.VITE_TV_API_ORIGIN || 'https://crewcheck.online', localStorage);");
  main=replace(main,"  const [status, setStatus] = useState(demo ? 'Dados fictícios · teste visual' : 'Vincule sua TV');","  const [status, setStatus] = useState(demo ? 'Dados fictícios · teste visual' : session.credential?.trusted ? 'Restaurando TV confiável…' : 'Vincule sua TV');");
+ main=replace(main,"  const clear = () => {\n    generation.current++;\n    session.clear();","  const clear = (forgetTrusted = true) => {\n    generation.current++;\n    session.clear(forgetTrusted);");
  main=replace(main,"import QRCode from 'qrcode';","import QRCode from 'qrcode';\nimport { PairingDiagnostics, validatePairing, pairingFailure } from './PairingDiagnostics';\nimport { SyncProgress, type SyncStage } from './SyncProgress';");
  main=replace(main,"  const [qr, setQr] = useState('');","  const [qr, setQr] = useState('');\n  const [pairBusy, setPairBusy] = useState(false);\n  const pairBusyRef = useRef(false);\n  const [pairDiagnostic, setPairDiagnostic] = useState('');\n  const [trustedTv, setTrustedTv] = useState(()=>{try{return localStorage.getItem('crewcheck-tv-trusted-choice')!=='false';}catch{return true;}});\n  const [syncStage, setSyncStage] = useState<SyncStage | null>(()=>session.credential?.trusted?'roster':null);");
  const start=main.indexOf('  async function begin() {'),end=main.indexOf('  useEffect(() => {',start);
@@ -17,7 +18,7 @@ if(!main.includes("from './PairingDiagnostics'")){
  main=main.slice(0,start)+`  async function begin() {
     if (demo) { clear(); return; }
     if (pairBusyRef.current) return;
-    pairBusyRef.current=true; setPairBusy(true); clear(); setPairDiagnostic(''); setSyncStage(null);
+    pairBusyRef.current=true; setPairBusy(true); clear(false); setPairDiagnostic(''); setSyncStage(null);
     const run=generation.current;
     setStatus('Conectando ao servidor…');
     try {
