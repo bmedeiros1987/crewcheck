@@ -19,6 +19,8 @@ import {
   Sparkles,
   Utensils,
   WalletCards,
+  ArrowRight,
+  ChevronRight,
 } from 'lucide-react';
 import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
@@ -219,6 +221,32 @@ function publishedProgramWindow(event: RosterEvent) {
   };
 }
 
+function monthShortLabel(value: string) {
+  const [year, month] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat('pt-BR', { month: 'short' })
+    .format(new Date(year, month - 1, 1))
+    .replace('.', '')
+    .toUpperCase();
+}
+
+function eventEndMs(event: RosterEvent) {
+  const exact = Date.parse(String(event.canonical?.endDateTime || ''));
+  if (Number.isFinite(exact)) return exact;
+  return dateOf(event).getTime();
+}
+
+function mobileNextLabel(event: RosterEvent | null) {
+  if (!event) return 'Nenhuma próxima atividade publicada';
+  const mode = workMode(event);
+  if (mode === 'operating' || mode === 'extra') return 'PRÓXIMA JORNADA';
+  if (mode === 'stay') return 'PRÓXIMO PERNOITE';
+  if (mode === 'rest') return 'PRÓXIMA FOLGA';
+  if (mode === 'reserve') return 'PRÓXIMA RESERVA';
+  if (mode === 'standby') return 'PRÓXIMO SOBREAVISO';
+  if (mode === 'training') return 'PRÓXIMO TREINAMENTO';
+  return 'PRÓXIMA ATIVIDADE';
+}
+
 export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
@@ -254,6 +282,15 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   const pendingCurrencies = Array.from(new Set(selectedPerDiemRows.filter((row) => row.convertedBRL === null).map((row) => row.currency)));
   const dutyHours = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
   const todayIso = isoOf({ id: 'today', date: new Date() });
+  const nowMs = Date.now();
+  const mobileNext = allOrdered.find((event) => workMode(event) !== 'journey-rest' && eventEndMs(event) >= nowMs) || null;
+  const mobileNextMode = mobileNext ? workMode(mobileNext) : null;
+  const mobileWindow = mobileNext ? publishedProgramWindow(mobileNext) : { start: '', end: '' };
+  const mobilePresentation = mobileNext && ['operating', 'extra'].includes(mobileNextMode || '')
+    ? (mobileNext.presentation && mobileNext.presentation !== 'Conexão/Solo' ? mobileNext.presentation : '')
+    : '';
+  const mobilePrimaryLabel = mobileNextMode && ['operating', 'extra'].includes(mobileNextMode) ? 'Apresentação' : 'Início';
+  const mobilePrimaryTime = mobilePresentation || mobileWindow.start || 'A confirmar';
 
   function goToday() {
     const month = todayIso.slice(0, 7);
@@ -263,6 +300,69 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
 
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
+
+    <section className="cc-roster-mobile-broadcast-v140" aria-label="Resumo operacional da escala">
+      <article className="cc-mobile-now-v140" data-mode={mobileNextMode || 'rest'}>
+        <div className="cc-mobile-now-glow-v140" aria-hidden="true"/>
+        <header>
+          <span><Sparkles/>{mobileNextLabel(mobileNext)}</span>
+          <button type="button" onClick={goToday}><Clock/> Hoje</button>
+        </header>
+        <div className="cc-mobile-now-main-v140">
+          <div>
+            <small>{mobileNext ? formatDate(dateOf(mobileNext)) : 'Sua escala está em dia'}</small>
+            <h2>{mobileNext ? cardTitle(mobileNext, mobileNextMode || 'duty') : 'Seu tempo, no seu ritmo.'}</h2>
+            {mobileNext && (mobileNextMode === 'operating' || mobileNextMode === 'extra') && (
+              <p className="cc-mobile-route-v140">
+                <b>{mobileNext.origin || '—'}</b><ArrowRight/><b>{mobileNext.destination || '—'}</b>
+                {mobileNext.flightNumber && <span>{mobileNext.flightNumber}</span>}
+              </p>
+            )}
+            {mobileNext && !['operating', 'extra'].includes(mobileNextMode || '') && (
+              <p className="cc-mobile-route-v140"><span>{mobileNext.subtitle || modeMeta[mobileNextMode || 'duty'].label}</span></p>
+            )}
+          </div>
+          <span className="cc-mobile-now-icon-v140">{mobileNextMode ? modeIcon(mobileNextMode, /DESCANSO_BASE/.test(eventCode(mobileNext!))) : <ShieldCheck/>}</span>
+        </div>
+        {mobileNext && (
+          <div className="cc-mobile-time-strip-v140">
+            <span className="primary"><small>{mobilePrimaryLabel}</small><b>{mobilePrimaryTime}</b></span>
+            {(mobileNextMode === 'operating' || mobileNextMode === 'extra') && <>
+              <span><small>Partida</small><b>{mobileNext.departure || '—'}</b></span>
+              <span><small>Chegada</small><b>{mobileNext.arrival || '—'}</b></span>
+            </>}
+            {!['operating', 'extra'].includes(mobileNextMode || '') && <>
+              <span><small>Fim</small><b>{mobileWindow.end || 'A confirmar'}</b></span>
+              <span><small>Duração</small><b>{duration(mobileNext) ? readableHours(duration(mobileNext)) : '—'}</b></span>
+            </>}
+          </div>
+        )}
+        <div className="cc-mobile-now-footer-v140">
+          <span><ShieldCheck/>Dados da escala ativa</span>
+          {mobileNext && <button type="button" onClick={() => {
+            const iso = isoOf(mobileNext);
+            const month = iso.slice(0, 7);
+            if (months.includes(month)) setSelectedMonth(month);
+            window.setTimeout(() => document.querySelector(`[data-roster-iso="${iso}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+          }}>Ver dia <ChevronRight/></button>}
+        </div>
+      </article>
+
+      <div className="cc-mobile-month-summary-v140">
+        <article><Plane/><strong>{flights}</strong><span>voos</span></article>
+        <article><Hotel/><strong>{stays}</strong><span>pernoites</span></article>
+        <article><Clock/><strong>{readableHours(dutyHours)}</strong><span>programação</span></article>
+      </div>
+
+      <div className="cc-mobile-month-tabs-v140" aria-label="Meses da escala">
+        {months.map((month) => <button
+          type="button"
+          key={month}
+          aria-pressed={selectedMonth === month}
+          onClick={() => setSelectedMonth(month)}
+        ><small>{monthShortLabel(month)}</small><b>{month.slice(0,4)}</b></button>)}
+      </div>
+    </section>
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
       <div><small>PERÍODO EXIBIDO</small><strong>{monthLabel(selectedMonth)}</strong><span>Totais financeiros e horas isolados por mês.</span></div>
