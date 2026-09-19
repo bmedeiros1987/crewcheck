@@ -46,11 +46,16 @@ if(!main.includes("from './PairingDiagnostics'")){
     finally {pairBusyRef.current=false;setPairBusy(false);}
   }
 `+main.slice(end);
- main=replace(main,'          session.pair(result);','          session.pair(result);\n          setPairing(null); setQr(\'\'); setStatus(\'TV autorizada. Buscando sua escala…\');');
+ main=replace(main,'          session.pair(result);',
+`          setPairing(null); setQr(''); setSyncStage('authorized'); setStatus('TV autorizada com sucesso.');
+          session.pair(result);
+          setSyncStage('validating'); setStatus('Validando vínculo seguro…');
+          await new Promise(resolve=>setTimeout(resolve,140));
+          setSyncStage('roster'); setStatus('Sincronizando sua escala…');`);
  main=replace(main,"} catch { if (!cancelled && run === generation.current) setStatus('Aguardando confirmação ou conexão.'); }","} catch(error) { if (run === generation.current) { setSyncStage(null); const problem=pairingFailure(error);setPairDiagnostic(problem.code);setStatus(session.credential?'TV autorizada; a escala ainda não pôde ser carregada.':problem.message); } }");
  const a=main.indexOf(': !snapshot ? <section className="pair view-enter">'),b=main.indexOf('</section> : <>',a);
  if(a<0||b<0)throw Error('Pairing JSX boundary changed');
- main=main.slice(0,a)+': !snapshot ? <PairingDiagnostics status={status} code={pairDiagnostic} busy={pairBusy} pairing={pairing} qr={qr} origin={config.VITE_TV_API_ORIGIN || \'https://crewcheck.online\'} onBegin={begin} onCheck={checkConnection}/> : <>'+main.slice(b+'</section> : <>'.length);
+ main=main.slice(0,a)+': !snapshot ? (syncStage ? <SyncProgress stage={syncStage}/> : <PairingDiagnostics status={status} code={pairDiagnostic} busy={pairBusy} pairing={pairing} qr={qr} origin={config.VITE_TV_API_ORIGIN || \'https://crewcheck.online\'} onBegin={begin} onCheck={checkConnection}/>) : <>'+main.slice(b+'</section> : <>'.length);
  main=main.replaceAll('Prévia visual 0.1.7','Prévia visual 0.2.0');
  await writeFile(file,main);
 }
