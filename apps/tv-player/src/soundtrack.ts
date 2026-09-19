@@ -5,8 +5,8 @@ export const CREW_TRACKS = [
   { id: 'ascent', title: 'Effortless Ascent', src: 'music/effortless-ascent.mp3' },
 ] as const;
 export type SoundStatus = 'off' | 'starting' | 'playing' | 'paused' | 'suspended' | 'blocked' | 'error';
-export type SoundState = { index: number; volume: number; status: SoundStatus; wanted: boolean };
-export type AudioPort = Pick<HTMLAudioElement, 'src' | 'volume' | 'preload' | 'currentTime' | 'paused' | 'error' | 'play' | 'pause' | 'load' | 'addEventListener' | 'removeEventListener'>;
+export type SoundState = { index: number; volume: number; status: SoundStatus; wanted: boolean; diagnostic?: string };
+export type AudioPort = Pick<HTMLAudioElement, 'src' | 'volume' | 'preload' | 'currentTime' | 'paused' | 'error' | 'play' | 'pause' | 'load' | 'addEventListener' | 'removeEventListener'> & { canPlayType?: (type:string)=>string };
 export function musicVolume(value: unknown): number {
   const n = value === null || value === '' ? NaN : Number(value);
   return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 22;
@@ -26,14 +26,15 @@ export class CrewSoundtrack {
   private fade: ReturnType<typeof setInterval> | null = null;
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   constructor(private audio: AudioPort, private notify: (state: SoundState) => void, index = 0, volume = 15) {
-    this.state = {index: musicIndex(index), volume: musicVolume(volume), status: 'off', wanted: false};
+    this.state = {index: musicIndex(index), volume: musicVolume(volume), status: 'off', wanted: false, diagnostic: undefined};
     audio.preload = 'metadata'; audio.volume = 0;
     audio.addEventListener('playing', this.playing);
     audio.addEventListener('ended', this.ended);
     audio.addEventListener('error', this.failed);
   }
-  private emit(status?: SoundStatus) {
+  private emit(status?: SoundStatus, diagnostic?: string) {
     if (status) this.state.status = status;
+    if (diagnostic !== undefined) this.state.diagnostic = diagnostic || undefined;
     if (!this.disposed) this.notify({...this.state});
   }
   private clearTimers() {
@@ -79,6 +80,9 @@ export class CrewSoundtrack {
     if (this.disposed || !this.state.wanted || !this.available) return;
     if (this.suspended) { this.emit('suspended'); return; }
     this.clearTimers(); const epoch = ++this.epoch;
+    if (typeof this.audio.canPlayType === 'function' && this.audio.canPlayType('audio/mpeg') === '') {
+      this.state.wanted = false; this.quiet(); this.emit('error','TV-AUDIO-CODEC'); return;
+    }
     if (this.loadedIndex !== this.state.index) {
       // webOS resolves packaged media relative to index.html. Keep a simple
       // app-relative path so the hardware decoder sees a normal local MP3 URI.
@@ -86,10 +90,10 @@ export class CrewSoundtrack {
       this.audio.preload = 'auto';
       this.loadedIndex = this.state.index; this.audio.load();
     }
-    this.audio.volume = 0; this.emit('starting');
+    this.audio.volume = 0; this.emit('starting','');
     this.watchdog = setTimeout(() => {
       if (epoch === this.epoch && this.state.status === 'starting') {
-        this.state.wanted = false; this.quiet(); this.emit('blocked');
+        this.state.wanted = false; this.quiet(); this.emit('blocked','TV-AUDIO-TIMEOUT');
       }
     }, 8000);
     try {
@@ -97,14 +101,14 @@ export class CrewSoundtrack {
       if (result && typeof result.then === 'function') result.catch(error => {
         if (epoch !== this.epoch || this.disposed) return;
         if (error && error.name === 'NotAllowedError') {
-          this.state.wanted = false; this.quiet(); this.emit('blocked');
+          this.state.wanted = false; this.quiet(); this.emit('blocked','TV-AUDIO-POLICY');
         } else this.failed();
       });
     } catch { this.failed(); }
   }
   private playing = () => {
     if (this.disposed || !this.state.wanted || !this.available || this.suspended) { this.quiet(); return; }
-    this.clearTimers(); this.failures.clear(); this.emit('playing');
+    this.clearTimers(); this.failures.clear(); this.emit('playing','');
     // Short sequential fade-in, not a two-decoder crossfade.
     let step = 0;
     this.fade = setInterval(() => {
@@ -116,7 +120,7 @@ export class CrewSoundtrack {
   private failed = () => {
     if (this.disposed || !this.state.wanted || this.suspended) return;
     this.quiet(); this.failures.add(this.state.index);
-    if (this.failures.size >= CREW_TRACKS.length) { this.state.wanted = false; this.emit('error'); return; }
+    if (this.failures.size >= CREW_TRACKS.length) { this.state.wanted = false; this.emit('error','TV-AUDIO-LOAD'); return; }
     let next = (this.state.index + 1) % CREW_TRACKS.length;
     while (this.failures.has(next)) next = (next + 1) % CREW_TRACKS.length;
     this.state.index = next; this.loadedIndex = -1; this.request();
