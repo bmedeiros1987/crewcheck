@@ -52,6 +52,11 @@ if(!main.includes("from './PairingDiagnostics'")){
           setSyncStage('validating'); setStatus('Validando vínculo seguro…');
           await new Promise(resolve=>setTimeout(resolve,140));
           setSyncStage('roster'); setStatus('Sincronizando sua escala…');`);
+ main=replace(main,"          setSnapshot(value); setPairing(null); setQr(''); setStatus('Sincronizado');",
+`          setSyncStage('dashboard'); setStatus('Preparando seu painel…');
+          await new Promise(resolve=>setTimeout(resolve,320));
+          if (cancelled || run !== generation.current) return;
+          setSnapshot(value); setSyncStage(null); setPairing(null); setQr(''); setStatus('Sincronizado');`);
  main=replace(main,"} catch { if (!cancelled && run === generation.current) setStatus('Aguardando confirmação ou conexão.'); }","} catch(error) { if (run === generation.current) { setSyncStage(null); const problem=pairingFailure(error);setPairDiagnostic(problem.code);setStatus(session.credential?'TV autorizada; a escala ainda não pôde ser carregada.':problem.message); } }");
  const a=main.indexOf(': !snapshot ? <section className="pair view-enter">'),b=main.indexOf('</section> : <>',a);
  if(a<0||b<0)throw Error('Pairing JSX boundary changed');
