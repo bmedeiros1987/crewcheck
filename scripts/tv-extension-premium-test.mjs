@@ -57,11 +57,11 @@ assert.match(uber,/A TV não confirma nem compra a corrida/);
 
 const broadcast=await readFile('apps/tv-player/src/BroadcastPanels.tsx','utf8');
 const airlinePhotos=await readFile('apps/tv-player/src/licensedAirlinePhotos.ts','utf8');
-assert.match(airlinePhotos,/airline-latam\.jpg/);
+assert.match(airlinePhotos,/LATAM_AIRLINES_Airbus_A_320_NEO/);
 assert.match(airlinePhotos,/CC BY 2\.0/);
-assert.match(airlinePhotos,/airline-gol\.jpg/);
+assert.match(airlinePhotos,/Golrightside737\.jpg/);
 assert.match(airlinePhotos,/Public domain/);
-assert.match(airlinePhotos,/airline-azul\.jpg/);
+assert.match(airlinePhotos,/Azul_Linhas_A%/);
 assert.match(airlinePhotos,/CC BY-SA 4\.0/);
 assert.match(broadcast,/packagedAirlinePhoto/);
 assert.match(broadcast,/O QUE IMPORTA PARA APRESENTAR/);
