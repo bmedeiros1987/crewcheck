@@ -154,6 +154,7 @@ assert.match(prefs,/newsAirports:true/);
 assert.match(http,/enrichTvSnapshotWeather/);
 assert.match(http,/createNewsGateway/);
 assert.match(http,/aeroflap/);
+assert.match(http,/aeroin/,'a second Brazilian aviation feed must remain available as editorial redundancy');
 assert.doesNotMatch(http,/items:\s*\[\]\s*,?\s*\}\),/,'production TV gateway must not be hard-wired to an empty feed');
 
 console.log('PASS: CrewCheck TV 0.4 Weather & News normalizes rich weather, keeps private enrichment fail-closed, filters fresh editorial news, renders TV-safe animated weather and enables contextual news.');
