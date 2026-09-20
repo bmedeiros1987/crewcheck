@@ -1,4 +1,4 @@
-name: TV premium context 0.2.1
+name: TV premium context 0.2.2
 on:
   pull_request:
     paths: ['apps/tv-player/**','packages/tv-core/**','server/tv/**','scripts/tv-*','.github/workflows/tv-premium-020.yml']
@@ -34,13 +34,15 @@ jobs:
           import {readFile,writeFile} from 'node:fs/promises';
           const p='dist/lg-webos/appinfo.json';
           const a=JSON.parse(await readFile(p,'utf8'));
-          a.version='0.2.1';
+          a.version='0.2.2';
           a.requiredACG=[];
           await writeFile(p,JSON.stringify(a,null,2));
           const m='dist/lg-webos/tv-build.json';
           const meta=JSON.parse(await readFile(m,'utf8'));
           meta.premiumContext020=true;
           meta.trustedPersonalTv=true;
+          meta.fullProgrammingDrilldown=true;
+          meta.packagedLicensedAirlinePhotos=true;
           meta.weatherContexts=['base','next-stay-private'];
           meta.airlineVisual='roster-airline-or-published-flight-prefix';
           meta.postPairProgress=true;
@@ -50,7 +52,7 @@ jobs:
           JS
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-TV-Premium-021-UNFINALIZED
+          name: CrewCheck-TV-Premium-022-UNFINALIZED
           path: |
             dist/lg-webos
             apps/tv-player/src
