@@ -11,6 +11,7 @@ on:
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/watchContext.ts'
       - 'android-wrapper/settings.gradle'
       - 'android-wrapper/build.gradle'
       - 'scripts/regression-crewwatch-v2-premium.mjs'
