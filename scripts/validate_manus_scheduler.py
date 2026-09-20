@@ -20,7 +20,8 @@ required = [
     '[MANUS-AUDIT] MANUS: MERGE',
     '[MANUS-AUDIT] MANUS: BLOCKER',
     'actions/workflows/manus-github-audit.yml/dispatches',
-    "'{ref:\"main\", inputs:{pr_number:$pr}}'",
+    "'{ref:\"main\", inputs:{pr_number:$pr, expected_sha:$sha}}'",
+    '--arg sha "$SHA"',
     'Dispatched Manus audit for PR #$PR_NUMBER at exact SHA $SHA.',
 ]
 for fragment in required:
