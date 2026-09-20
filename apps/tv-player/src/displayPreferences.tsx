@@ -62,11 +62,11 @@ const rows:Array<[keyof TvDisplayPreferences,string,string,React.ReactNode,boole
 ];
 
 export function TvDisplaySettings({prefs}:{prefs:TvDisplayPreferencesApi}){
-  return <article className="tv-display-settings"><h2>O que importa para você</h2><p>Escolha o que merece espaço na TV. Campos sensíveis continuam dependendo da autorização do CrewCheck no celular.</p>
+  return <article className="tv-display-settings"><h2>O que importa para você</h2><p>Escolha o que merece espaço na TV. Campos sensíveis e o modo visitante real continuam dependendo da autorização do CrewCheck no celular.</p>
     <div className="display-preset-row" aria-label="Perfis de exibição">
       <button type="button" onClick={()=>prefs.applyPreset('operacional')}>Operacional</button>
       <button type="button" onClick={()=>prefs.applyPreset('equilibrado')}>Equilibrado</button>
-      <button type="button" onClick={()=>prefs.applyPreset('visitante')}>Visitante</button>
+      <button type="button" onClick={()=>prefs.applyPreset('visitante')}>Explicativo</button>
       <button type="button" onClick={()=>prefs.applyPreset('minimalista')}>Minimalista</button>
     </div>
     <div className="display-pref-grid">{rows.map(([key,title,detail,icon,sensitive])=><button key={key} type="button" aria-pressed={prefs.value[key]} onClick={()=>prefs.set(key,!prefs.value[key])}>
