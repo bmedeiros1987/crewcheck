@@ -255,66 +255,6 @@ home = replaceAllRequired(
 write(homePath, home);
 
 // ---------------------------------------------------------------------------
-// Mobile Roster consumer: use the same Care authority as FlightDeck/Concierge.
-// This is presentation-only: canonical kind/date/APZ/journey remain untouched.
-// ---------------------------------------------------------------------------
-const rosterLaunchPath = 'client/src/components/v1391/RosterLaunchView.tsx';
-let rosterLaunch = read(rosterLaunchPath);
-if (!rosterLaunch.includes("carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification'")) {
-  rosterLaunch = replaceRequired(
-    rosterLaunch,
-    "import { V139Header } from '@/components/v139/Shell';",
-    "import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';\nimport { V139Header } from '@/components/v139/Shell';",
-    'import de Care Mode no RosterLaunchView',
-  );
-}
-rosterLaunch = replaceRequired(
-  rosterLaunch,
-  `function workMode(event: RosterEvent): ProgramMode {
-  const code = eventCode(event);
-  if (event.canonical?.kind === 'journey-rest') return 'journey-rest';`,
-  `function workMode(event: RosterEvent): ProgramMode {
-  const code = eventCode(event);
-  const carePresentation = carePresentationForScheduleActivity(event);
-  if (carePresentation) return 'rest';
-  if (event.canonical?.kind === 'journey-rest') return 'journey-rest';`,
-  'Roster usa Care antes da classificação visual',
-);
-rosterLaunch = replaceRequired(
-  rosterLaunch,
-  `  if (mode === 'rest') {
-    if (/(DO|DOF|DOP|OFF)/.test(code)) return \`Folga publicada\${code ? \` · \${code}\` : ''}\`;
-    return \`Descanso publicado\${code ? \` · \${code}\` : ''}\`;
-  }`,
-  `  if (mode === 'rest') {
-    const presentation = carePresentationForScheduleActivity(event);
-    if (presentation?.state === 'FERIAS') return 'Férias';
-    if (presentation?.state === 'LUTO') return 'Luto';
-    if (presentation?.state === 'FOLGA') return 'Folga';
-    if (presentation?.state === 'REPOUSO') return 'Repouso';
-    if (/(DO|DOF|DOP|OFF)/.test(code)) return \`Folga publicada\${code ? \` · \${code}\` : ''}\`;
-    return \`Descanso publicado\${code ? \` · \${code}\` : ''}\`;
-  }`,
-  'Roster cardTitle care-aware',
-);
-rosterLaunch = replaceRequired(
-  rosterLaunch,
-  `              const meta = modeMeta[mode];
-              const hours = duration(event);`,
-  `              const meta = modeMeta[mode];
-              const carePresentation = mode === 'rest' ? carePresentationForScheduleActivity(event) : null;
-              const hours = duration(event);`,
-  'Roster calcula apresentação Care por card',
-);
-rosterLaunch = replaceRequired(
-  rosterLaunch,
-  `<div><small>{meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
-  `<div><small>{carePresentation?.label || meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
-  'Roster exibe rótulo Care',
-);
-write(rosterLaunchPath, rosterLaunch);
-
-// ---------------------------------------------------------------------------
 // Concierge runtime: DMO/férias/folgas are care days, not roster-empty/programs.
 // ---------------------------------------------------------------------------
 const serverPath = 'server.mjs';
