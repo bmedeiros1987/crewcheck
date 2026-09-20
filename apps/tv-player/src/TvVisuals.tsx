@@ -5,7 +5,7 @@ import './weather.css';
 // The mobile preparation script v14340 copies this exact PNG to its v3 alias.
 // Import the original bytes, never redraw/recolor the user's brand or fetch remotely.
 import originalLogo from '../../../client/public/icons/crewcheck-icon-v2.png';
-export { Plane, Car, Clock3, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles };
+export { Plane, Car, Clock3, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles, CloudSun };
 export function TvBrand() {
   return <div className="brand"><img src={originalLogo} alt="CrewCheck" className="brand-logo"/><div><strong>CrewCheck <span className="tv-badge">TV</span></strong><small>ROSTER INTELLIGENCE</small></div></div>;
 }
