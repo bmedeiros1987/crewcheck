@@ -261,12 +261,14 @@ write(homePath, home);
 // ---------------------------------------------------------------------------
 const rosterLaunchPath = 'client/src/components/v1391/RosterLaunchView.tsx';
 let rosterLaunch = read(rosterLaunchPath);
-rosterLaunch = ensureNamedImport(
-  rosterLaunch,
-  '@/lib/scheduleActivityClassification',
-  'carePresentationForScheduleActivity',
-  'import de Care Mode no RosterLaunchView',
-);
+if (!rosterLaunch.includes("import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';")) {
+  rosterLaunch = replaceRequired(
+    rosterLaunch,
+    "import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';",
+    "import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';\nimport { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';",
+    'import separado de Care Mode no RosterLaunchView',
+  );
+}
 rosterLaunch = replaceRequired(
   rosterLaunch,
   `  if (mode === 'rest') {
