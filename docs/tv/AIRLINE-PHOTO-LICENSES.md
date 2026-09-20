@@ -1,6 +1,6 @@
 # CrewCheck TV packaged airline photography
 
-The TV may use a real airline photo only when the asset has an explicit redistribution license. The image is decorative context; it never identifies the actual aircraft assigned to a flight.
+The TV may use a real airline photo only when the asset has an explicit redistribution license. The image is decorative context; it never identifies the actual aircraft assigned to a flight. The client uses the Wikimedia Commons redirect for these known files, so no extra Render environment variable is required.
 
 ## LATAM
 - File: `brand/airline-latam.jpg`
@@ -22,4 +22,4 @@ The TV may use a real airline photo only when the asset has an explicit redistri
 - License: CC BY-SA 4.0
 - Required visible credit: `Alexandro Dias · Wikimedia Commons · CC BY-SA 4.0`
 
-These binaries are attached only in the local finalization pack; the public source branch contains only the mapping and license record. If an asset is missing, the TV falls back to CrewCheck illustrative artwork rather than downloading an unverified image.
+If a licensed remote image cannot be loaded, the TV falls back to CrewCheck illustrative artwork. It must never search for or substitute an unverified third-party image.
