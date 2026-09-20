@@ -62,5 +62,85 @@
                 android:name="androidx.watchface.complications.datasource.DEFAULT_CONFIG_SUPPORTED"
                 android:value="true" />
         </service>
+
+        <service
+            android:name=".NextStepComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_crewcheck_complication"
+            android:label="@string/complication_next_step"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="300" />
+            <meta-data
+                android:name="androidx.watchface.complications.datasource.DEFAULT_CONFIG_SUPPORTED"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".GateComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_crewcheck_complication"
+            android:label="@string/complication_gate"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="300" />
+            <meta-data
+                android:name="androidx.watchface.complications.datasource.DEFAULT_CONFIG_SUPPORTED"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".CrewLifeComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_crewcheck_complication"
+            android:label="@string/complication_crewlife"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="1800" />
+            <meta-data
+                android:name="androidx.watchface.complications.datasource.DEFAULT_CONFIG_SUPPORTED"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".RoutineComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_crewcheck_complication"
+            android:label="@string/complication_routine"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="1800" />
+            <meta-data
+                android:name="androidx.watchface.complications.datasource.DEFAULT_CONFIG_SUPPORTED"
+                android:value="true" />
+        </service>
     </application>
 </manifest>

@@ -92,14 +92,28 @@ public final class SecureSnapshotStore {
         return generator.generateKey();
     }
 
+    /**
+     * Refresca todas as fontes que leem a projeção operacional.
+     *
+     * Cada provider é uma fonte de dados distinta no seletor do Wear OS, então cada um precisa
+     * ser acordado por ComponentName. CrewLife e Rotina ficam de fora de propósito: mudança na
+     * escala não deve provocar leitura do canal de saúde.
+     */
     private void requestComplicationUpdate() {
-        try {
-            ComplicationDataSourceUpdateRequester.create(
-                    context,
-                    new ComponentName(context, CrewCheckComplicationService.class)
-            ).requestUpdateAll();
-        } catch (Exception ignored) {
-            // The app still works when no complication is configured.
+        Class<?>[] providers = {
+                CrewCheckComplicationService.class,
+                NextStepComplicationService.class,
+                GateComplicationService.class
+        };
+        for (Class<?> provider : providers) {
+            try {
+                ComplicationDataSourceUpdateRequester.create(
+                        context,
+                        new ComponentName(context, provider)
+                ).requestUpdateAll();
+            } catch (Exception ignored) {
+                // The app still works when no complication is configured.
+            }
         }
     }
 }
