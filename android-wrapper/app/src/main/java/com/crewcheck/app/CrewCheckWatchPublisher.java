@@ -8,6 +8,7 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
@@ -130,6 +131,7 @@ public final class CrewCheckWatchPublisher {
         copyString(source, out, "hotelPickup", 64);
         out.put("changed", source.optBoolean("changed", false));
         out.put("source", "canonical-roster");
+        copySchedule(source, out);
 
         rejectSensitiveFields(source);
 
@@ -138,6 +140,30 @@ public final class CrewCheckWatchPublisher {
             throw new IllegalArgumentException("Snapshot normalizado excede 16 KiB.");
         }
         return normalized;
+    }
+
+    private static void copySchedule(JSONObject source, JSONObject target) throws Exception {
+        JSONArray input = source.optJSONArray("schedule");
+        if (input == null) return;
+
+        JSONArray output = new JSONArray();
+        int limit = Math.min(input.length(), 8);
+        for (int i = 0; i < limit; i++) {
+            JSONObject item = input.optJSONObject(i);
+            if (item == null) continue;
+
+            JSONObject cleanItem = new JSONObject();
+            copyString(item, cleanItem, "id", 80);
+            copyString(item, cleanItem, "kind", 12);
+            copyString(item, cleanItem, "time", 12);
+            copyString(item, cleanItem, "title", 24);
+            copyString(item, cleanItem, "route", 32);
+            copyString(item, cleanItem, "presentation", 12);
+            copyString(item, cleanItem, "gate", 18);
+            copyString(item, cleanItem, "detail", 64);
+            if (cleanItem.length() > 0) output.put(cleanItem);
+        }
+        if (output.length() > 0) target.put("schedule", output);
     }
 
     private static void rejectSensitiveFields(JSONObject source) {
