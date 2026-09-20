@@ -1,17 +1,21 @@
 package com.crewcheck.watch;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 /**
  * Compact projection of the canonical CrewCheck roster.
  *
- * This class validates presentation-ready fields only. It deliberately contains no PDF parsing,
- * journey reconstruction, APZ calculation, duty-time calculation or regulatory decision logic.
+ * Presentation-only values live here. The watch never parses PDFs, reconstructs journeys,
+ * calculates APZ, duty rules or compliance.
  */
 public final class WatchContextSnapshot {
     private static final Set<String> STATES = Set.of(
@@ -25,6 +29,66 @@ public final class WatchContextSnapshot {
             "CHANGED",
             "UNKNOWN"
     );
+
+    public static final class ScheduleItem {
+        public final String id;
+        public final String kind;
+        public final String time;
+        public final String title;
+        public final String route;
+        public final String presentation;
+        public final String gate;
+        public final String detail;
+
+        private ScheduleItem(
+                String id,
+                String kind,
+                String time,
+                String title,
+                String route,
+                String presentation,
+                String gate,
+                String detail
+        ) {
+            this.id = id;
+            this.kind = kind;
+            this.time = time;
+            this.title = title;
+            this.route = route;
+            this.presentation = presentation;
+            this.gate = gate;
+            this.detail = detail;
+        }
+
+        static ScheduleItem fromJson(JSONObject json) {
+            String kind = clean(json.optString("kind", "duty"), 12).toLowerCase(Locale.ROOT);
+            if (!kind.equals("flight") && !kind.equals("stay") && !kind.equals("duty")) {
+                kind = "duty";
+            }
+            return new ScheduleItem(
+                    clean(json.optString("id", ""), 80),
+                    kind,
+                    clean(json.optString("time", ""), 12),
+                    clean(json.optString("title", ""), 24),
+                    clean(json.optString("route", ""), 32),
+                    clean(json.optString("presentation", ""), 12),
+                    clean(json.optString("gate", ""), 18),
+                    clean(json.optString("detail", ""), 64)
+            );
+        }
+
+        JSONObject toJson() throws JSONException {
+            return new JSONObject()
+                    .put("id", id)
+                    .put("kind", kind)
+                    .put("time", time)
+                    .put("title", title)
+                    .put("route", route)
+                    .put("presentation", presentation)
+                    .put("gate", gate)
+                    .put("detail", detail);
+        }
+    }
 
     public final int schemaVersion;
     public final String contextId;
@@ -51,6 +115,7 @@ public final class WatchContextSnapshot {
     public final String hotelPickup;
     public final boolean changed;
     public final String source;
+    public final List<ScheduleItem> schedule;
 
     private WatchContextSnapshot(
             int schemaVersion,
@@ -77,7 +142,8 @@ public final class WatchContextSnapshot {
             String overnight,
             String hotelPickup,
             boolean changed,
-            String source
+            String source,
+            List<ScheduleItem> schedule
     ) {
         this.schemaVersion = schemaVersion;
         this.contextId = contextId;
@@ -104,6 +170,7 @@ public final class WatchContextSnapshot {
         this.hotelPickup = hotelPickup;
         this.changed = changed;
         this.source = source;
+        this.schedule = Collections.unmodifiableList(new ArrayList<>(schedule));
     }
 
     public static WatchContextSnapshot fromJson(String raw) {
@@ -157,6 +224,18 @@ public final class WatchContextSnapshot {
             headline = defaultHeadline(state, remoteStand, changed);
         }
 
+        List<ScheduleItem> schedule = new ArrayList<>();
+        JSONArray scheduleArray = json.optJSONArray("schedule");
+        if (scheduleArray != null) {
+            int limit = Math.min(scheduleArray.length(), 8);
+            for (int i = 0; i < limit; i++) {
+                JSONObject item = scheduleArray.optJSONObject(i);
+                if (item == null) continue;
+                ScheduleItem parsed = ScheduleItem.fromJson(item);
+                if (!parsed.title.isBlank() || !parsed.route.isBlank()) schedule.add(parsed);
+            }
+        }
+
         return new WatchContextSnapshot(
                 schemaVersion,
                 clean(json.optString("contextId", ""), 80),
@@ -182,13 +261,14 @@ public final class WatchContextSnapshot {
                 clean(json.optString("overnight", ""), 24),
                 clean(json.optString("hotelPickup", ""), 64),
                 changed,
-                clean(json.optString("source", "canonical-roster"), 40)
+                clean(json.optString("source", "canonical-roster"), 40),
+                schedule
         );
     }
 
     public JSONObject toJson() {
         try {
-            return new JSONObject()
+            JSONObject json = new JSONObject()
                     .put("schemaVersion", schemaVersion)
                     .put("contextId", contextId)
                     .put("generatedAtEpochMs", generatedAtEpochMs)
@@ -214,6 +294,11 @@ public final class WatchContextSnapshot {
                     .put("hotelPickup", hotelPickup)
                     .put("changed", changed)
                     .put("source", source);
+
+            JSONArray items = new JSONArray();
+            for (ScheduleItem item : schedule) items.put(item.toJson());
+            json.put("schedule", items);
+            return json;
         } catch (JSONException error) {
             throw new IllegalStateException("Não foi possível serializar o snapshot.", error);
         }
@@ -248,7 +333,7 @@ public final class WatchContextSnapshot {
             String minutes = normalized.substring("SAIR EM ".length()).replaceAll("[^0-9]", "");
             if (!minutes.isBlank()) return truncate("SAIR" + minutes, 7);
         }
-        if (!gate.isBlank()) return truncate("P" + gate.replaceAll("\\s+", ""), 7);
+        if (!gate.isBlank()) return truncate("P" + gate.replaceAll("\s+", ""), 7);
         if (!currentFlight.isBlank()) return truncate(currentFlight, 7);
         if (!presentationTime.isBlank()) {
             return truncate("APZ" + presentationTime.replace(":", ""), 7);
@@ -274,6 +359,33 @@ public final class WatchContextSnapshot {
 
     public static WatchContextSnapshot demo(long nowEpochMs) {
         try {
+            JSONArray schedule = new JSONArray()
+                    .put(new JSONObject()
+                            .put("id", "demo-flight-1")
+                            .put("kind", "flight")
+                            .put("time", "13:45")
+                            .put("title", "LA3721")
+                            .put("route", "BSB → GRU")
+                            .put("presentation", "13:30")
+                            .put("gate", "24")
+                            .put("detail", "Embarque 13:45"))
+                    .put(new JSONObject()
+                            .put("id", "demo-flight-2")
+                            .put("kind", "flight")
+                            .put("time", "16:30")
+                            .put("title", "LA3102")
+                            .put("route", "GRU → GYN")
+                            .put("presentation", "16:05")
+                            .put("gate", "18")
+                            .put("detail", "Próxima perna"))
+                    .put(new JSONObject()
+                            .put("id", "demo-stay")
+                            .put("kind", "stay")
+                            .put("time", "19:00")
+                            .put("title", "Pernoite")
+                            .put("route", "GYN")
+                            .put("detail", "Hotel confirmado"));
+
             return fromJson(new JSONObject()
                     .put("schemaVersion", 1)
                     .put("contextId", "debug-demo")
@@ -294,19 +406,23 @@ public final class WatchContextSnapshot {
                     .put("boardingTime", "13:45")
                     .put("eta", "15:10")
                     .put("connection", "")
-                    .put("nextFlight", "")
-                    .put("nextDetail", "")
-                    .put("overnight", "")
-                    .put("hotelPickup", "")
+                    .put("nextFlight", "LA3102")
+                    .put("nextDetail", "GRU → GYN • Portão 18")
+                    .put("overnight", "GYN")
+                    .put("hotelPickup", "Pickup 20:00")
                     .put("changed", false)
-                    .put("source", "debug-demo"));
+                    .put("source", "debug-demo")
+                    .put("schedule", schedule));
         } catch (JSONException error) {
             throw new IllegalStateException("Não foi possível criar o snapshot de demonstração.", error);
         }
     }
 
     private static void rejectSensitiveFields(JSONObject json) {
-        String[] prohibited = {"cpf", "email", "phone", "crewName", "hotelRoom", "roomNumber"};
+        String[] prohibited = {
+                "cpf", "email", "phone", "crewName", "hotelRoom", "roomNumber",
+                "token", "accessToken", "refreshToken", "authorization"
+        };
         for (String key : prohibited) {
             if (json.has(key)) {
                 throw new IllegalArgumentException("Campo pessoal não permitido no relógio: " + key);
@@ -331,7 +447,7 @@ public final class WatchContextSnapshot {
 
     private static String clean(String value, int maxLength) {
         if (value == null) return "";
-        String normalized = value.replaceAll("[\\p{Cntrl}&&[^\n\t]]", " ")
+        String normalized = value.replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
         return truncate(normalized, maxLength);
