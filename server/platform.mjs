@@ -20,10 +20,28 @@ const handleTv = createTvHttpBridge({
     const profile = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [userId]);
     if (!profile.rows.length) return null;
     // Do not silently choose a revision if active identity is ambiguous.
-    const result = await db.query('SELECT id,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE', [userId]);
+    const result = await db.query('SELECT id,roster,roster_key,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE', [userId]);
     if (result.rows.length !== 1) return null;
     const row = result.rows[0];
-    return {roster: row.roster, sourceVersion: crypto.createHash('sha256').update(`${row.id}:${row.updated_at}`).digest('hex')};
+    let stays = [];
+    if (row.roster_key) {
+      try {
+        const stayResult = await db.query(
+          'SELECT stay_date,hotel_name,airport,presentation_time,lead_minutes,updated_at FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2 ORDER BY stay_date LIMIT 90',
+          [userId, row.roster_key],
+        );
+        stays = stayResult.rows;
+      } catch {
+        // Stay storage is optional. Its absence must never block the roster.
+        stays = [];
+      }
+    }
+    return {
+      roster: row.roster,
+      rosterKey: row.roster_key || null,
+      stays,
+      sourceVersion: crypto.createHash('sha256').update(`${row.id}:${row.updated_at}`).digest('hex'),
+    };
   },
 });
 
