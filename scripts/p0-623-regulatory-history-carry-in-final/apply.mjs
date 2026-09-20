@@ -340,8 +340,17 @@ if (home.includes(staleSavedCompliance)) {
 }
 const staleActiveCompliance = 'const compliance = active.compliance || analyzeSafe(active.roster);';
 if (home.includes(staleActiveCompliance)) {
+  home = home.replaceAll('openActiveRoster().then((active) => {', 'openActiveRoster().then(async (active) => {');
   home = home.replaceAll(staleActiveCompliance, 'const compliance = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;');
 }
+const importComplianceOld = 'const newCompliance = saveRoster(roster, file.name);';
+if (home.includes(importComplianceOld)) {
+  home = home.replace(
+    importComplianceOld,
+    "saveRoster(roster, file.name);\n      const newCompliance = (await recomputeComplianceWithRegulatoryHistory(roster)).compliance;",
+  );
+}
+
 const quickActiveOld = "openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster);";
 if (home.includes(quickActiveOld)) {
   home = home.replace(
@@ -357,6 +366,7 @@ for (const fragment of [
   '}, [bundle.roster]);',
   'const compliance = (await recomputeComplianceWithRegulatoryHistory(data.roster)).compliance;',
   'const compliance = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;',
+  'const newCompliance = (await recomputeComplianceWithRegulatoryHistory(roster)).compliance;',
 ]) {
   if (!home.includes(fragment)) throw new Error(`[${marker}] contrato Home ausente: ${fragment}`);
 }
