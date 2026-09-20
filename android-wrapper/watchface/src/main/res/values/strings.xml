@@ -2,4 +2,8 @@
 <resources>
     <string name="watch_face_name">CrewCheck Pulse</string>
     <string name="next_step_label">Próximo passo CrewCheck</string>
+    <string name="gate_label">Portão CrewCheck</string>
+    <string name="crewlife_label">CrewLife</string>
+    <string name="routine_label">Rotina CrewCheck</string>
+    <string name="battery_label">Bateria do relógio</string>
 </resources>
