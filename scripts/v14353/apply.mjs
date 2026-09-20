@@ -42,7 +42,7 @@ function replaceRequired(source, before, after, label) {
 }
 
 function ensureProgramClassificationImport(source) {
-  const requiredNames = ['countScheduleCategories', 'isProgramScheduleActivity', 'isRestScheduleActivity', 'isSmartDepartureEligible'];
+  const requiredNames = ['countScheduleCategories', 'isProgramScheduleActivity', 'isRestScheduleActivity', 'isSmartDepartureEligible', 'carePresentationForScheduleActivity'];
   const pattern = /import \{([^}]*)\} from '@\/lib\/scheduleActivityClassification';/;
   const matched = source.match(pattern);
   if (!matched) throw new Error('[v14353] Import da classificação de atividades ausente.');
