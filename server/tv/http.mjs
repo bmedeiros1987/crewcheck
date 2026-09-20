@@ -108,15 +108,31 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
         const data = await loadActiveRoster(auth.userId);
         if (!data?.roster || !policy().allows(auth.userId)) return null;
         const now = new Date();
+        const preferences = auth.preferences || { audience: 'owner', share: {} };
+        const audience = ['owner','family','visitor'].includes(preferences.audience) ? preferences.audience : 'owner';
+        // Family/visitor projection is redacted before any enrichment. Client
+        // visibility is never treated as a privacy boundary.
+        const effectivePrivacy = audience === 'owner' ? auth.privacy : 'family';
         const snapshot = projectRoster(data.roster, {
           deviceId: auth.deviceId, snapshotId: randomUUID(), sourceVersion: data.sourceVersion,
           month: `${data.roster.year}-${String(data.roster.month).padStart(2, '0')}`,
-          privacy: auth.privacy, generatedAt: now.toISOString(),
+          privacy: effectivePrivacy, generatedAt: now.toISOString(),
           expiresAt: new Date(now.getTime() + 60000).toISOString(), now,
         });
+        snapshot.audience = audience;
+        snapshot.sharePermissions = {
+          operational: preferences.share?.operational !== false,
+          weather: preferences.share?.weather !== false,
+          hotel: audience === 'owner' && preferences.share?.hotel === true,
+          crew: audience === 'owner' && preferences.share?.crew === true,
+          finance: audience === 'owner' && preferences.share?.finance === true,
+          mobility: audience === 'owner' && preferences.share?.mobility === true,
+        };
+        snapshot.journeyDetails = {};
+        snapshot.mobility = null;
         const settings = policy();
-        const base = auth.privacy === 'private' ? tvAirportCode(data.roster.base) : null;
-        const stay = tvNextStayAirport(snapshot, now.getTime());
+        const base = audience === 'owner' && effectivePrivacy === 'private' && snapshot.sharePermissions.weather ? tvAirportCode(data.roster.base) : null;
+        const stay = audience === 'owner' && snapshot.sharePermissions.weather ? tvNextStayAirport(snapshot, now.getTime()) : null;
         const targets = [{ role: 'base', airport: base }, ...(stay && stay !== base ? [{ role: 'stay', airport: stay }] : [])];
         const weatherContexts = (await Promise.all(targets.map(target => tvWeatherContext(settings.origin, target.airport, target.role, now)))).filter(Boolean);
         snapshot.weatherContexts = weatherContexts;
@@ -140,7 +156,7 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
     const settings = policy();
     if (!settings.enabled) { send(404, { error: 'unavailable' }); return true; }
     const origin = String(req.headers.origin || '');
-    const accountRoute = ['/api/tv/approve', '/api/tv/revoke', '/api/tv/devices'].includes(url.pathname);
+    const accountRoute = ['/api/tv/approve', '/api/tv/revoke', '/api/tv/devices', '/api/tv/preferences'].includes(url.pathname);
     if (!settings.allowsOrigin(origin, accountRoute)) { send(403, { error: 'origin_not_allowed' }); return true; }
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     if (req.method === 'OPTIONS') {
