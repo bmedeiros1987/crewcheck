@@ -84,6 +84,12 @@
                 outlinePadding="2.0"
                 cornerRadius="42" />
 
+            <DefaultProviderPolicy
+                primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewCheckComplicationService"
+                primaryProviderType="LONG_TEXT"
+                defaultSystemProvider="EMPTY"
+                defaultSystemProviderType="EMPTY" />
+
             <Complication type="LONG_TEXT">
                 <PartText x="18" y="18" width="300" height="30">
                     <Text align="CENTER" ellipsis="TRUE">
