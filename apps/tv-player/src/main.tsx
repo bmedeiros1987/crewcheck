@@ -10,6 +10,7 @@ import { TvBrand, NavIcon, Car, Clock3, Plane, MapPin, Headphones, ShieldCheck, 
 import './tv.css';
 import { useScreenCare, ScreenCareCover, ScreenCareSettings } from './ScreenCare';
 import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';
+import { SyncProgress, type SyncStage } from './SyncProgress';
 import { DayProgrammingView, ProgramOverview, ProgramDetails } from './ProgrammingDetails';
 import { useTvDisplayPreferences, TvDisplaySettings } from './displayPreferences';
 import { calendarProgramSummary, isVisitorPresentation } from './programming';
@@ -43,6 +44,7 @@ function App() {
   const [paused, setPaused] = useState(document.hidden);
   const [tickerIndex, setTickerIndex] = useState(0);
   const [programKey, setProgramKey] = useState<string | null>(null);
+  const [syncStage, setSyncStage] = useState<SyncStage | null>(null);
   const displayPrefs = useTvDisplayPreferences();
   const generation = useRef(0), lastInput = useRef(Date.now()), dayReturn = useRef<View>('Mês');
   const main = useRef<HTMLElement>(null);
@@ -53,7 +55,7 @@ function App() {
     generation.current++;
     session.clear();
     setSnapshot(demo ? demoSnapshot() : null);
-    setNews(demo ? demoNews() : []); setPairing(null); setQr(''); setView('Agora');
+    setNews(demo ? demoNews() : []); setPairing(null); setQr(''); setSyncStage(null); setView('Agora');
     setStatus(demo ? 'Dados fictícios · teste visual' : 'Vincule sua TV');
   };
   async function begin() {
@@ -83,10 +85,21 @@ function App() {
         const result = await session.call('poll', { deviceCode: pairing.deviceCode });
         if (cancelled || run !== generation.current) return;
         if (!result.pending) {
+          setSyncStage('authorized');
+          await new Promise(resolve => setTimeout(resolve, 180));
+          if (cancelled || run !== generation.current) return;
+          setSyncStage('validating');
           session.pair(result);
+          await new Promise(resolve => setTimeout(resolve, 180));
+          if (cancelled || run !== generation.current) return;
+          setSyncStage('roster');
           const value = await session.sync();
           if (cancelled || run !== generation.current) return;
+          setSyncStage('dashboard');
           setSnapshot(value); setPairing(null); setQr(''); setStatus('Sincronizado');
+          setTimeout(() => {
+            if (!cancelled && run === generation.current) setSyncStage(null);
+          }, 520);
         }
       } catch { if (!cancelled && run === generation.current) setStatus('Aguardando confirmação ou conexão.'); }
       finally { busy = false; }
@@ -220,7 +233,7 @@ function App() {
   </article>;
   return <><main ref={main} className={'tv-app theme-' + theme} data-motion={effectiveMotion} data-paused={paused || care.covered ? 'true' : 'false'} data-screen-care={care.covered ? 'covered' : 'active'} aria-hidden={care.covered} style={{...themeStyle, left: care.shift.x, top: care.shift.y}} onMouseDown={() => { lastInput.current = Date.now(); }}>
     <header><TvBrand/><div className={'header-status state-' + dataState}><i/>{demo ? 'DEMONSTRAÇÃO · DADOS FICTÍCIOS' : status}<small>{demo ? 'Prévia visual 0.1.6 · não é sua escala' : snapshot ? (snapshot.privacy === 'family' ? 'Modo família' : 'privado') + ' · atualização ' + time(snapshot.generatedAt) : 'Autorização pelo celular'}</small></div><div className="clock">{time(clock.toISOString())}<small>Brasília · {clock.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'America/Sao_Paulo' })}</small></div></header>
-    {!enabled ? <section className="pair"><div><p className="eyebrow">CREWCHECK TV</p><h1>Piloto ainda não disponível.</h1><p>A liberação da sua conta será feita no aplicativo.</p></div></section> : !snapshot ? <section className="pair view-enter"><div><p className="eyebrow"><ShieldCheck/> BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1><p>Autorize esta tela pelo CrewCheck no celular.</p><button className="primary-button" onClick={begin}>{demo ? 'Voltar à demonstração' : pairing ? 'Gerar novo código' : 'Vincular TV'} <ArrowRight/></button><p role="status">{status}</p><small>Nenhuma senha da sua conta fica nesta televisão.</small></div>{pairing && <aside><img src={qr} alt="QR Code para autorizar a televisão"/><h2>{pairing.userCode}</h2><p>Válido por 5 minutos</p></aside>}</section> : <>
+    {syncStage ? <SyncProgress stage={syncStage}/> : !enabled ? <section className="pair"><div><p className="eyebrow">CREWCHECK TV</p><h1>Piloto ainda não disponível.</h1><p>A liberação da sua conta será feita no aplicativo.</p></div></section> : !snapshot ? <section className="pair view-enter"><div><p className="eyebrow"><ShieldCheck/> BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1><p>Autorize esta tela pelo CrewCheck no celular.</p><button className="primary-button" onClick={begin}>{demo ? 'Voltar à demonstração' : pairing ? 'Gerar novo código' : 'Vincular TV'} <ArrowRight/></button><p role="status">{status}</p><small>Nenhuma senha da sua conta fica nesta televisão.</small></div>{pairing && <aside><img src={qr} alt="QR Code para autorizar a televisão"/><h2>{pairing.userCode}</h2><p>Válido por 5 minutos</p></aside>}</section> : <>
       <nav aria-label="Navegação principal">{navigationViews.map(v => <button key={v} className={view === v ? 'active' : ''} aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}><NavIcon name={v}/><span>{v}</span></button>)}<span className="month-label">{formatMonth(snapshot.summary.month)}</span></nav>
       <div className="view-content view-enter" key={view}>
       {view === 'Agora' && <section className={'live ' + (resolvedMode === 'ambient' ? 'ambient' : '')}>
