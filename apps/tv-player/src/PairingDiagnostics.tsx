@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
 import './pairing-diagnostics.css';
-export const PAIRING_BUILD = '0.2.1';
+export const PAIRING_BUILD = '0.2.2';
 export type PairingCode = {deviceCode:string;userCode:string;verificationUri:string;expiresIn:number;interval:number;deadline:number;trusted?:boolean};
 export function validatePairing(raw:any, origin:string, now=Date.now()): PairingCode {
   if (!raw || typeof raw.deviceCode!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(raw.deviceCode) ||
