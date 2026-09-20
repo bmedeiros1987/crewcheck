@@ -126,3 +126,8 @@
 .uber-handoff-compact .uber-handoff-qr{flex-basis:6.8vw;margin-left:.6vw}
 .uber-handoff-compact .uber-handoff-qr img{width:5.2vw;height:5.2vw}
 .uber-handoff-compact .uber-handoff-qr b{font-size:.48vw}
+
+.display-preset-row{display:flex!important;flex-wrap:wrap!important;margin:.65vh -.25vw .45vh!important}
+.display-preset-row button{margin:.25vw!important;padding:.5vw .75vw!important;border:1px solid #3a5069!important;border-radius:.6vw!important;background:rgba(9,29,49,.72)!important;color:#dceaf6!important;font-size:.62vw!important;font-weight:850!important}
+.display-preset-row button:focus{outline:3px solid #fff!important;outline-offset:2px!important}
+.theme-mobile .display-preset-row button{background:#fff!important;color:#0b2034!important;border-color:#d4e0e8!important}
