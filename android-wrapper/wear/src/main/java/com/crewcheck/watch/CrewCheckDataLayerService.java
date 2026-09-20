@@ -24,10 +24,20 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
         for (DataEvent event : dataEvents) {
-            if (event.getType() != DataEvent.TYPE_CHANGED) continue;
-
             String path = event.getDataItem().getUri().getPath();
             if (path == null) continue;
+
+            // Revogação: o celular apaga o item e o relógio precisa esquecer o dado de saúde
+            // que já tinha em cache. A escala não é apagada por esse caminho.
+            if (event.getType() == DataEvent.TYPE_DELETED) {
+                if (WatchContract.CREWLIFE_PATH.equals(path)) {
+                    new WellbeingStore(this).clearCrewLife();
+                } else if (WatchContract.ROUTINE_PATH.equals(path)) {
+                    new WellbeingStore(this).clearRoutine();
+                }
+                continue;
+            }
+            if (event.getType() != DataEvent.TYPE_CHANGED) continue;
 
             try {
                 DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
