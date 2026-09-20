@@ -27,6 +27,8 @@ assert.equal(mod.programRouteCodes(programs[0]).join('>'),'BSB>GRU>REC>FOR');
 assert.equal(mod.programPresentation(programs[0]),'08:50');
 assert.match(mod.programTitle(programs[0],false),/BSB → GRU → REC → FOR/);
 assert.match(mod.programTitle(programs[0],true),/Brasília \(BSB\)/);
+assert.equal(mod.visitorAirportLabel('SBBR',true),'Brasília (BSB · SBBR)');
+assert.equal(mod.visitorAirportLabel('SCEL',true),'Santiago (SCL · SCEL)');
 assert.equal(programs[1].kind,'stay');
 assert.match(mod.programTitle(programs[1],false),/Pernoite/);
 const summary=mod.calendarProgramSummary(values,false);
