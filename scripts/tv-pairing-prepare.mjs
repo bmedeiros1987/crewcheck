@@ -8,11 +8,19 @@ if(!session.includes('invokeTvRequest')){
 }
 const file='apps/tv-player/src/main.tsx';let main=await readFile(file,'utf8');
 if(!main.includes("from './PairingDiagnostics'")){
+ const hadSyncProgress=main.includes("from './SyncProgress'");
+ const hadSyncStage=main.includes("const [syncStage, setSyncStage]");
  main=replace(main,"const session = new TvSession(sessionStorage, fetch, config.VITE_TV_API_ORIGIN || 'https://crewcheck.online');","const session = new TvSession(sessionStorage, fetch, config.VITE_TV_API_ORIGIN || 'https://crewcheck.online', localStorage);");
  main=replace(main,"  const [status, setStatus] = useState(demo ? 'Dados fictícios · teste visual' : 'Vincule sua TV');","  const [status, setStatus] = useState(demo ? 'Dados fictícios · teste visual' : session.credential?.trusted ? 'Restaurando TV confiável…' : 'Vincule sua TV');");
  main=replace(main,"  const clear = () => {\n    generation.current++;\n    session.clear();","  const clear = (forgetTrusted = true) => {\n    generation.current++;\n    session.clear(forgetTrusted);");
- main=replace(main,"import QRCode from 'qrcode';","import QRCode from 'qrcode';\nimport { PairingDiagnostics, validatePairing, pairingFailure } from './PairingDiagnostics';\nimport { SyncProgress, type SyncStage } from './SyncProgress';");
- main=replace(main,"  const [qr, setQr] = useState('');","  const [qr, setQr] = useState('');\n  const [pairBusy, setPairBusy] = useState(false);\n  const pairBusyRef = useRef(false);\n  const [pairDiagnostic, setPairDiagnostic] = useState('');\n  const [trustedTv, setTrustedTv] = useState(()=>{try{return localStorage.getItem('crewcheck-tv-trusted-choice')!=='false';}catch{return true;}});\n  const [syncStage, setSyncStage] = useState<SyncStage | null>(()=>session.credential?.trusted?'roster':null);");
+ const pairingImports="import QRCode from 'qrcode';\nimport { PairingDiagnostics, validatePairing, pairingFailure } from './PairingDiagnostics';"+(hadSyncProgress?"":"\nimport { SyncProgress, type SyncStage } from './SyncProgress';");
+ main=replace(main,"import QRCode from 'qrcode';",pairingImports);
+ let pairingState="  const [qr, setQr] = useState('');\n  const [pairBusy, setPairBusy] = useState(false);\n  const pairBusyRef = useRef(false);\n  const [pairDiagnostic, setPairDiagnostic] = useState('');\n  const [trustedTv, setTrustedTv] = useState(()=>{try{return localStorage.getItem('crewcheck-tv-trusted-choice')!=='false';}catch{return true;}});";
+ if(!hadSyncStage) pairingState+="\n  const [syncStage, setSyncStage] = useState<SyncStage | null>(()=>session.credential?.trusted?'roster':null);";
+ main=replace(main,"  const [qr, setQr] = useState('');",pairingState);
+ if(hadSyncStage){
+   main=replace(main,"  const [syncStage, setSyncStage] = useState<SyncStage | null>(null);","  const [syncStage, setSyncStage] = useState<SyncStage | null>(()=>session.credential?.trusted?'roster':null);");
+ }
  const start=main.indexOf('  async function begin() {'),end=main.indexOf('  useEffect(() => {',start);
  if(start<0||end<0)throw Error('Pairing block missing');
  main=main.slice(0,start)+`  async function begin() {
@@ -76,17 +84,19 @@ if(!main.includes("from './PairingDiagnostics'")){
   }, []);
   useEffect(() => {`);
  main=replace(main,"        await session.call('heartbeat', {});","        const lease=await session.call('heartbeat', {});\n        if(lease?.expiresAt)session.renew(lease.expiresAt);");
- main=replace(main,'          session.pair(result);',
+ if(!hadSyncStage){
+   main=replace(main,'          session.pair(result);',
 `          setPairing(null); setQr(''); setSyncStage('authorized'); setStatus('TV autorizada com sucesso.');
           session.pair(result);
           setSyncStage('validating'); setStatus('Validando vínculo seguro…');
           await new Promise(resolve=>setTimeout(resolve,140));
           setSyncStage('roster'); setStatus('Sincronizando sua escala…');`);
- main=replace(main,"          setSnapshot(value); setPairing(null); setQr(''); setStatus('Sincronizado');",
+   main=replace(main,"          setSnapshot(value); setPairing(null); setQr(''); setStatus('Sincronizado');",
 `          setSyncStage('dashboard'); setStatus('Preparando seu painel…');
           await new Promise(resolve=>setTimeout(resolve,320));
           if (cancelled || run !== generation.current) return;
           setSnapshot(value); setSyncStage(null); setPairing(null); setQr(''); setStatus('Sincronizado');`);
+ }
  main=replace(main,"} catch { if (!cancelled && run === generation.current) setStatus('Aguardando confirmação ou conexão.'); }","} catch(error) { if (run === generation.current) { setSyncStage(null); const problem=pairingFailure(error);setPairDiagnostic(problem.code);setStatus(session.credential?'TV autorizada; a escala ainda não pôde ser carregada.':problem.message); } }");
  const a=main.indexOf(': !snapshot ? <section className="pair view-enter">'),b=main.indexOf('</section> : <>',a);
  if(a<0||b<0)throw Error('Pairing JSX boundary changed');
