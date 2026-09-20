@@ -8,6 +8,11 @@ const activity = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/Ma
 const faceInfo = read('android-wrapper/watchface/src/main/res/xml/watch_face_info.xml');
 const face = read('android-wrapper/watchface/src/main/res/raw/watchface.xml');
 const gradle = read('android-wrapper/wear/build.gradle');
+const phoneGradle = read('android-wrapper/app/build.gradle');
+const phoneManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
+const phoneActivity = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
+const phonePublisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java');
+const home = read('client/src/pages/Home.tsx');
 
 assert.match(manifest, /android\.permission\.WAKE_LOCK/, 'ambient support requires WAKE_LOCK');
 assert.match(manifest, /android:screenOrientation="portrait"/, 'watch activity must not rotate with wrist sensors');
@@ -30,4 +35,13 @@ assert.match(faceInfo, /<MultipleInstancesAllowed value="false" \/>/, 'pilot fac
 assert.match(face, /<Variant mode="AMBIENT"/, 'watch face must explicitly handle ambient mode');
 assert.match(face, /<!\[CDATA\[AGORA\]\]>/, 'watch face should expose the next-action concept');
 
-console.log('PASS CrewWatch v2: portrait lock, ambient support, glance-first hierarchy and face contract');
+assert.match(phoneGradle, /play-services-wearable:20\.0\.1/, 'paired phone shell must include Wear Data Layer transport');
+assert.match(phoneManifest, /CrewCheckWatchSyncService/, 'phone must answer watch resync requests in background');
+assert.match(phoneActivity, /syncWatchSnapshot/, 'native phone bridge must accept canonical watch snapshots');
+assert.match(phonePublisher, /\/crewcheck\/watch\/context\/v1/, 'phone and watch must use the same snapshot path');
+assert.match(phonePublisher, /rejectSensitiveFields/, 'phone publisher must reject sensitive fields before Data Layer transport');
+assert.match(home, /buildCrewCheckWatchSnapshot/, 'web runtime must project the active canonical roster for the watch');
+assert.match(home, /crewcheck:watch-snapshot/, 'web runtime must publish live watch snapshots');
+assert.match(home, /crewcheck_watch_route_minutes/, 'fresh route duration must feed leave-time projection without creating a second parser');
+
+console.log('PASS CrewWatch v2: hardware-safe round UI, live phone sync, portrait lock, ambient support, glance-first hierarchy and face contract');
