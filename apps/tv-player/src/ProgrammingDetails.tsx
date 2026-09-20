@@ -59,7 +59,13 @@ export function DayProgrammingView({snapshot,date,onBack,onOpenProgram}:{snapsho
       {programs.length?programs.map(program=><button key={program.key} className={'program-card program-'+program.kind} onClick={()=>onOpenProgram(program.key)}>
         <span className="program-card-icon">{programIcon(program)}</span>
         <div className="program-card-copy"><small>{programKicker(program)}</small><h2>{programTitle(program,visitor)}</h2>
-          {program.kind==='journey'&&<div className="program-route-mini">{programRouteCodes(program).map((code,index)=><React.Fragment key={code+'-'+index}><b>{visitorAirportLabel(code,visitor)}</b>{index<programRouteCodes(program).length-1&&<i/>}</React.Fragment>)}</div>}
+          {program.kind==='journey'&&<>
+            <div className="program-route-mini">{programRouteCodes(program).map((code,index)=><React.Fragment key={code+'-'+index}><b>{visitorAirportLabel(code,visitor)}</b>{index<programRouteCodes(program).length-1&&<i/>}</React.Fragment>)}</div>
+            <div className="program-leg-strip" aria-label="Etapas da programação">
+              {program.flights.slice(0,4).map((leg,index)=><span key={leg.id}><small>{leg.flight||`Etapa ${index+1}`}</small><b>{visitorAirportLabel(leg.origin,visitor)} → {visitorAirportLabel(leg.destination,visitor)}</b><em>{time(leg.startAt)}–{time(leg.endAt)}</em></span>)}
+              {program.flights.length>4&&<span className="program-leg-more"><b>+{program.flights.length-4}</b><small>etapas</small></span>}
+            </div>
+          </>}
           {program.kind==='stay'&&<p>Descanso publicado · visual separado de voo</p>}
           <div className="program-card-meta"><span><Clock3/>{fullProgramTime(program)}</span>{programPresentation(program)&&<span><ShieldCheck/>Apresentação {programPresentation(program)}</span>}</div>
         </div>
