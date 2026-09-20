@@ -10,7 +10,7 @@ export function TvBrand() {
   return <div className="brand"><img src={originalLogo} alt="CrewCheck" className="brand-logo"/><div><strong>CrewCheck <span className="tv-badge">TV</span></strong><small>ROSTER INTELLIGENCE</small></div></div>;
 }
 export function NavIcon({ name }: { name: string }) {
-  const Icon = name === 'Agora' ? Radio : name === 'Semana' ? CalendarRange : name === 'Mês' ? CalendarDays : name === 'Mudanças' ? RefreshCw : name === 'Notícias' ? Newspaper : Settings;
+  const Icon = name === 'Agora' ? Radio : name === 'Semana' ? CalendarRange : name === 'Mês' ? CalendarDays : name === 'Mudanças' ? RefreshCw : name === 'Meteorologia' ? CloudSun : name === 'Notícias' ? Newspaper : Settings;
   return <Icon aria-hidden="true" />;
 }
 export function WeatherArtwork({ label }: { label?: string | null }) {
