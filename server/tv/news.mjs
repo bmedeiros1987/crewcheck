@@ -1,5 +1,14 @@
 // Provider adapters return normalized editorial items. URLs are constrained on
 // both collection and article output; personalized context never leaves gateway.
+function categoryFor(title=''){
+  const text=String(title).toLowerCase();
+  if(/chuva|temporal|tempest|vento|clima|meteor|nevoa|névoa/.test(text))return 'weather';
+  if(/anac|rbac|regula|norma|decea|icao|oaci|faa|easa/.test(text))return 'regulation';
+  if(/acidente|incidente|segurança|seguranca|safety|cenipa/.test(text))return 'safety';
+  if(/aeroporto|terminal|pista|slot|gate|portão|portao/.test(text))return 'airport';
+  if(/latam|gol|azul|companhia|airline|rota|voo|flight/.test(text))return 'airline';
+  return 'industry';
+}
 export function createNewsGateway({ sources, fetchItems, now = Date.now }) {
   const cache = new Map();
   const ttl = 900000,
@@ -41,7 +50,7 @@ export function createNewsGateway({ sources, fetchItems, now = Date.now }) {
                 !source.hosts.includes(url.hostname) ||
                 !Number.isFinite(date) ||
                 date > now() ||
-                now() - date > 21 * 86400000
+                now() - date > Number(source.maxArticleAgeMs || 3 * 86400000)
               )
                 return [];
               url.hash = "";
@@ -58,8 +67,10 @@ export function createNewsGateway({ sources, fetchItems, now = Date.now }) {
                   url: url.href,
                   title,
                   publishedAt: new Date(date).toISOString(),
-                  source: source.id,
-                  sourceKind: "official",
+                  source: source.label || source.id,
+                  sourceId: source.id,
+                  sourceKind: source.kind || "syndicated",
+                  category: categoryFor(title),
                 },
               ];
             } catch {
