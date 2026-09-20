@@ -1,0 +1,48 @@
+name: Build Laurinha Sync Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [build/laurinha-sync-win32]
+    paths:
+      - 'tools/laurinha-sync/**'
+      - '.github/workflows/laurinha-sync-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build EXE
+        shell: cmd
+        working-directory: tools\\laurinha-sync
+        run: |
+          cl /nologo /O2 /utf-8 /D_CRT_SECURE_NO_WARNINGS LaurinhaSync.c /Fe:LaurinhaSync.exe /link /SUBSYSTEM:WINDOWS comctl32.lib shell32.lib ole32.lib
+      - name: Verify PE
+        shell: cmd
+        working-directory: tools\\laurinha-sync
+        run: |
+          dumpbin /headers LaurinhaSync.exe | findstr /I "machine subsystem"
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\\LaurinhaSync | Out-Null
+          Copy-Item tools\\laurinha-sync\\LaurinhaSync.exe dist\\LaurinhaSync\\
+          Copy-Item tools\\laurinha-sync\\README.txt dist\\LaurinhaSync\\
+          Copy-Item tools\\laurinha-sync\\LaurinhaSync.c dist\\LaurinhaSync\\
+          Compress-Archive -Path dist\\LaurinhaSync\\* -DestinationPath dist\\LaurinhaSync-Windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LaurinhaSync-Windows-x64
+          path: |
+            dist/LaurinhaSync-Windows-x64.zip
+            dist/LaurinhaSync/LaurinhaSync.exe
+          retention-days: 7
+          if-no-files-found: error
