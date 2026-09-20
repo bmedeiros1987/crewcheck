@@ -41,17 +41,23 @@ function normalizeCrewToken(value: unknown): string {
     .replace(/\s+/g, ' ');
 }
 
+function isRegulatoryCrewIdSentinel(value: string): boolean {
+  const compact = value.replace(/[\s._:/-]+/g, '');
+  return /^(?:UNKNOWN|MISSING|INVALID|PLACEHOLDER)\d*$/.test(compact)
+    || /^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA)$/.test(compact);
+}
+
 /**
  * Regulatory carry-in is safety/compliance evidence, so identity must be stable.
  * A display name is deliberately NOT authoritative: two different crew members can
  * share the same name and a person's published name can change over time. The name
  * may remain useful to the UI as display metadata, but it can never prove history.
  *
- * Fail closed whenever the stable crew id is absent.
+ * Fail closed whenever the stable crew id is absent or is only a placeholder token.
  */
 export function regulatoryCrewIdentity(summary: Pick<RegulatoryRosterSummaryLike, 'crewId' | 'crewName'>): string | null {
   const crewId = normalizeCrewToken(summary?.crewId);
-  return crewId ? `ID:${crewId}` : null;
+  return crewId && !isRegulatoryCrewIdSentinel(crewId) ? `ID:${crewId}` : null;
 }
 
 export function previousCompetence(year: number, month: number): { year: number; month: number } | null {
