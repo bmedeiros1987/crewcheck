@@ -62,11 +62,31 @@ export function programRouteCodes(program:TvProgram):string[]{
   return codes;
 }
 
+const ICAO_TO_IATA:Record<string,string>={
+  SBBR:'BSB',SBGR:'GRU',SBSP:'CGH',SBKP:'VCP',SBRJ:'SDU',SBGL:'GIG',SBCF:'CNF',SBCT:'CWB',
+  SBPA:'POA',SBFL:'FLN',SBSV:'SSA',SBRF:'REC',SBFZ:'FOR',SBBE:'BEL',SBEG:'MAO',SBSL:'SLZ',
+  SBSG:'NAT',SBMO:'MCZ',SBAR:'AJU',SBPJ:'PMW',SBTE:'THE',SBVT:'VIX',SBGO:'GYN',SBCY:'CGB',
+  SBCG:'CGR',SBRP:'RAO',SBCX:'CXJ',SBFI:'IGU',SBNF:'NVT',SBJP:'JPA',
+  SCEL:'SCL',SPJC:'LIM',SAEZ:'EZE',SABE:'AEP',SUMU:'MVD',SGAS:'ASU',SKBO:'BOG',KMIA:'MIA',KMCO:'MCO',
+};
+export function airportCodeExplanation(code:string|null|undefined):{iata:string;icao:string|null;city:string}|null{
+  const raw=String(code||'').trim().toUpperCase();
+  if(!raw)return null;
+  const iata=raw.length===4?(ICAO_TO_IATA[raw]||''):raw;
+  const icao=raw.length===4?raw:null;
+  if(!iata)return{ iata:raw, icao, city:raw };
+  return{ iata, icao, city:airportCity(iata,iata) };
+}
+
 export function visitorAirportLabel(code:string|null|undefined, visitor=false):string{
   const normalized=String(code||'').trim().toUpperCase();
   if(!normalized)return 'Local não informado';
-  const city=airportCity(normalized,normalized);
-  return visitor && city!==normalized?`${city} (${normalized})`:normalized;
+  if(!visitor)return normalized;
+  const explained=airportCodeExplanation(normalized);
+  if(!explained)return normalized;
+  if(explained.city===explained.iata && !explained.icao)return explained.iata;
+  const codes=explained.icao?`${explained.iata} · ${explained.icao}`:explained.iata;
+  return explained.city!==explained.iata?`${explained.city} (${codes})`:`${codes}`;
 }
 
 export function programTitle(program:TvProgram,visitor=false):string{
