@@ -39,9 +39,23 @@ export type TvWeatherContext = {
   airport: string;
   city: string | null;
   temperature: number;
+  feelsLike?: number | null;
+  minTemperature?: number | null;
+  maxTemperature?: number | null;
+  humidity?: number | null;
   label: string;
+  kind?: "clear" | "partly-cloudy" | "cloudy" | "rain" | "storm" | "fog" | "snow" | "unknown";
+  isDay?: boolean;
   wind: number | null;
+  windGust?: number | null;
   rainChance: number | null;
+  hourly?: Array<{
+    at: string;
+    temperature: number | null;
+    rainChance: number | null;
+    kind: string;
+    label: string;
+  }>;
   source: string;
   observedAt: string;
   expiresAt: string;
