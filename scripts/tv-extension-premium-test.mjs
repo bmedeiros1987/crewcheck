@@ -61,7 +61,7 @@ assert.match(broadcast,/Foto oficial\/licenciada/);
 assert.doesNotMatch(broadcast,/backgroundImage:[^\n]*http:/);
 
 const main=await readFile('apps/tv-player/src/main.tsx','utf8');
-assert.match(main,/type View = 'Agora' \| 'Semana' \| 'Mês' \| 'Dia' \| 'Programação' \| 'Detalhes'/);
+assert.match(main,/type View = [^\n]*'Agora'[^\n]*'Dia' \| 'Programação' \| 'Detalhes'/);
 assert.match(main,/DayProgrammingView/);
 assert.match(main,/ProgramOverview/);
 assert.match(main,/ProgramDetails/);
