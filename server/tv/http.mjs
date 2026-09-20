@@ -120,6 +120,28 @@ async function tvGateContext(origin, flight, now) {
   }
 }
 
+function tvAttachStayDetails(snapshot, stays, allowed) {
+  if (!allowed || snapshot?.privacy !== 'private' || !Array.isArray(stays)) return {};
+  const details = {};
+  const activities = (snapshot.days || []).flatMap(day => Array.isArray(day.activities) ? day.activities : []);
+  for (const activity of activities) {
+    if (activity?.kind !== 'stay' || !activity.journeyId) continue;
+    const date=String(activity.date||'').slice(0,10);
+    const airport=tvAirportCode(activity.destination)||tvAirportCode(activity.origin);
+    const matches=stays.filter(stay=>String(stay?.stay_date||'').slice(0,10)===date);
+    const stay=matches.find(item=>!airport||tvAirportCode(item?.airport)===airport)||matches[0];
+    if (!stay?.hotel_name) continue;
+    details[activity.journeyId]={
+      hotel:{
+        name:String(stay.hotel_name).trim().slice(0,180),
+        room:null,
+        transport:null,
+      },
+    };
+  }
+  return details;
+}
+
 async function tvWeatherContext(origin, airport, role, now) {
   if (!airport) return null;
   const key = airport;
@@ -217,7 +239,11 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
           finance: audience === 'owner' && preferences.share?.finance === true,
           mobility: audience === 'owner' && preferences.share?.mobility === true,
         };
-        snapshot.journeyDetails = {};
+        snapshot.journeyDetails = tvAttachStayDetails(
+          snapshot,
+          data.stays,
+          snapshot.sharePermissions.hotel === true,
+        );
         snapshot.mobility = null;
         if (snapshot.profile) {
           snapshot.profile.airlineVisual = airlineVisualFor(
