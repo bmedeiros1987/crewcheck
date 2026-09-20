@@ -1,0 +1,27 @@
+name: P1 #530 mobile active-roster Care parity
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/regression-p1-530-mobile-account-roster-care-parity.mjs'
+      - '.github/workflows/p1-530-mobile-account-roster-care-parity.yml'
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Reproduce mobile stale-cache and Care parity contract
+        run: node scripts/regression-p1-530-mobile-account-roster-care-parity.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
