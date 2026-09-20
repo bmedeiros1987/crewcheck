@@ -95,6 +95,12 @@ assert.match(mobile,/\/api\/tv\/context/);
 
 const http=await readFile('server/tv/http.mjs','utf8');
 const routes=await readFile('server/tv/routes.mjs','utf8');
+const platform=await readFile('server/platform.mjs','utf8');
+assert.match(platform,/SELECT stay_date,hotel_name,airport,presentation_time,lead_minutes,updated_at FROM crewcheck_platform_stays/);
+assert.doesNotMatch(platform,/SELECT stay_date,hotel_name,airport,room_cipher[^\n]+crewcheck_platform_stays/);
+assert.match(http,/tvAttachStayDetails/);
+assert.match(http,/room:null/);
+assert.match(http,/snapshot\.sharePermissions\.hotel === true/);
 assert.match(http,/\/api\/tv\/preferences/);
 assert.match(http,/const effectivePrivacy = audience === 'owner' \? auth\.privacy : 'family'/);
 assert.match(http,/audience === 'owner' && preferences\.share\?\.crew === true/);
