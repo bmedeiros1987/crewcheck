@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="watch_face_name">CrewCheck Pulse</string>
+    <string name="watch_face_name">CrewWatch Official</string>
     <string name="next_step_label">Próximo passo CrewCheck</string>
     <string name="gate_label">Portão CrewCheck</string>
     <string name="crewlife_label">CrewLife</string>
