@@ -50,16 +50,6 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 36 and build tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-
       - name: Validate CrewCheck signing secrets
         shell: bash
         run: |
