@@ -35,11 +35,6 @@ export function createTvHandler({
             status: 200,
             body: await devices.revoke(userId, body.deviceId),
           };
-        if (path.endsWith("/preferences") && method === "GET")
-          return {
-            status: 200,
-            body: await devices.preferencesFor(userId, body.deviceId || ""),
-          };
         if (path.endsWith("/preferences") && method === "POST")
           return {
             status: 200,
