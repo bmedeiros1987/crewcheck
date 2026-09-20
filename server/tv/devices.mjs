@@ -14,6 +14,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
     crew: false,
     finance: false,
     mobility: false,
+    traffic: false,
   },
 });
 function normalizePreferences(value = {}) {
@@ -28,6 +29,7 @@ function normalizePreferences(value = {}) {
       crew: source.crew === true,
       finance: source.finance === true,
       mobility: source.mobility === true,
+      traffic: source.traffic === true,
     },
   };
 }
@@ -91,7 +93,9 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         const d = Object.values(state.devices ?? {}).find(d => equal(d.tokenHash, hash(token)));
         if (!d || d.revoked || d.expiresAt <= now() || !d.scopes.includes('tv:read')) throw new TvError(401, 'invalid_device');
         requireAccount(d.userId);
-        return { deviceId: d.deviceId, userId: d.userId, privacy: d.privacy, platform: d.platform, trusted: d.trusted === true, preferences: normalizePreferences(d.preferences) };
+        const context = d.context && Number(d.context.expiresAt || 0) > now() ? structuredClone(d.context) : null;
+        if (!context && d.context) delete d.context;
+        return { deviceId: d.deviceId, userId: d.userId, privacy: d.privacy, platform: d.platform, trusted: d.trusted === true, preferences: normalizePreferences(d.preferences), context };
       });
     },
     async heartbeat(token) {
@@ -122,6 +126,32 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         return { deviceId: d.deviceId, preferences: normalizePreferences(d.preferences) };
       });
     },
+    async updateContext(userId, deviceId, value = {}) {
+      requireAccount(userId);
+      return store.transaction(state => {
+        const d = state.devices?.[deviceId];
+        if (!d || d.userId !== userId || d.revoked) throw new TvError(404, 'device_not_found');
+        const preferences = normalizePreferences(d.preferences);
+        if (preferences.audience !== 'owner' || preferences.share.traffic !== true) {
+          delete d.context;
+          throw new TvError(403, 'traffic_context_not_authorized');
+        }
+        const latitude = Number(value?.routeOrigin?.latitude);
+        const longitude = Number(value?.routeOrigin?.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180)
+          throw new TvError(400, 'invalid_route_origin');
+        const requestedTtl = Math.max(60_000, Math.min(10 * 60_000, Number(value?.ttlMs || 5 * 60_000)));
+        d.context = {
+          routeOrigin: {
+            latitude,
+            longitude,
+            label: String(value?.routeOrigin?.label || 'Localização autorizada').trim().slice(0,80) || 'Localização autorizada',
+          },
+          expiresAt: now() + requestedTtl,
+        };
+        return { ok: true, deviceId: d.deviceId, expiresAt: new Date(d.context.expiresAt).toISOString() };
+      });
+    },
     async revoke(userId, deviceId) {
       requireAccount(userId);
       return store.transaction(state => {
@@ -141,6 +171,7 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         lastSeenAt: d.lastSeenAt,
         revoked: d.revoked,
         preferences: normalizePreferences(d.preferences),
+        contextActive: Boolean(d.context && Number(d.context.expiresAt || 0) > now()),
       })));
     },
   };
