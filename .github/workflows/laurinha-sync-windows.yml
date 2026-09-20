@@ -46,3 +46,4 @@ jobs:
             dist/LaurinhaSync/LaurinhaSync.exe
           retention-days: 7
           if-no-files-found: error
+# rebuild after source fix
