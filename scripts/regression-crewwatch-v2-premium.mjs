@@ -21,6 +21,9 @@ assert.doesNotMatch(activity, /text\(LocalTime\.now\(\)\.format\(clockFormatter\
 assert.match(activity, /"HORA DE SAIR"/, 'leave-by state must be first-class');
 assert.match(activity, /"APRESENTAÇÃO"/, 'reporting state must be first-class');
 assert.match(activity, /"PERNOITE"/, 'overnight state must be first-class');
+assert.match(activity, /isRoundScreen\(\) \? dp\(38\) : dp\(20\)/, 'Galaxy Watch round screen needs hardware-validated horizontal safe inset');
+assert.match(activity, /int topSafe = isRoundScreen\(\) \? dp\(24\) : dp\(10\)/, 'round screen needs top arc safe inset');
+assert.match(activity, /"Abra no celular"/, 'empty state must fit the round screen without awkward CrewCheck word wrapping');
 
 assert.match(gradle, /androidx\.wear:wear:1\.4\.0/, 'stable Wear AndroidX ambient dependency must be pinned');
 assert.match(faceInfo, /<MultipleInstancesAllowed value="false" \/>/, 'pilot face should use a single stable instance');
