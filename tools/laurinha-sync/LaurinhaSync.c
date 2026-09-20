@@ -4,10 +4,12 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <stdio.h>
-#include <string.h>\n#include <stdlib.h>
+#include <string.h>
+#include <stdlib.h>
 
 #pragma comment(lib, "comctl32.lib")
-#pragma comment(lib, "shell32.lib")\n#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
 
 #define ID_ADD_MUSIC 1001
 #define ID_ADD_PHOTOS 1002
@@ -16,7 +18,9 @@
 #define ID_REFRESH 1005
 #define ID_HUB 1006
 #define ID_INSTALL 1007
-#define ID_PREVIEW 1008\n#define ID_TEST_TV 1009\n#define ID_SYNC_TV 1010
+#define ID_PREVIEW 1008
+#define ID_TEST_TV 1009
+#define ID_SYNC_TV 1010
 #define ID_STATUS 1100
 #define ID_MUSIC_COUNT 1101
 #define ID_PHOTO_COUNT 1102
