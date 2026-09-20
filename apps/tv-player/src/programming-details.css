@@ -117,3 +117,12 @@
 .theme-mobile .program-card-copy h2,.theme-mobile .program-overview-head h1,.theme-mobile .program-detail-title h1,.theme-mobile .program-route-heading strong,.theme-mobile .flight-leg-main h3,.theme-mobile .program-key-facts strong,.theme-mobile .detail-module dd{color:#0b2034}
 .theme-mobile .stay-exclusive-card{background:linear-gradient(145deg,#f7f2ff,#eef6ff);color:#17213c}.theme-mobile .stay-exclusive-card h2{color:#17213c}
 .theme-mobile .display-pref-grid>button{background:#fff!important;color:#0b2034!important;border-color:#d2e0e9!important}
+
+.uber-handoff-compact{min-height:9.5vh;margin-top:.8vh;padding:.65vw .8vw;border-radius:.7vw}
+.uber-handoff-compact .uber-handoff-copy>p{margin:0;font-size:.52vw}
+.uber-handoff-compact .uber-handoff-copy h3{font-size:.92vw;margin:.2vh 0}
+.uber-handoff-compact .uber-handoff-copy>span{font-size:.58vw}
+.uber-handoff-compact .uber-handoff-copy>small{font-size:.5vw;margin-top:.35vh}
+.uber-handoff-compact .uber-handoff-qr{flex-basis:6.8vw;margin-left:.6vw}
+.uber-handoff-compact .uber-handoff-qr img{width:5.2vw;height:5.2vw}
+.uber-handoff-compact .uber-handoff-qr b{font-size:.48vw}
