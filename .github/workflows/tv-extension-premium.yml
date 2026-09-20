@@ -1,0 +1,29 @@
+name: TV extension premium drilldown
+on:
+  pull_request:
+    paths:
+      - 'apps/tv-player/**'
+      - 'packages/tv-core/**'
+      - 'scripts/tv-extension-premium-test.mjs'
+      - 'scripts/tv-broadcast-prepare.mjs'
+      - 'scripts/tv-pairing-prepare.mjs'
+      - '.github/workflows/tv-extension-premium.yml'
+permissions:
+  contents: read
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-extension-premium-test.mjs
+      - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
+      - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
+      - run: node scripts/tv-extension-premium-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json
+      - run: node scripts/tv-test.mjs && node scripts/tv-channel-test.mjs && node scripts/tv-broadcast-test.mjs
