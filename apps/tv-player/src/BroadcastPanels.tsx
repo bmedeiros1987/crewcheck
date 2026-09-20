@@ -5,6 +5,7 @@ import { WeatherArtwork } from './TvVisuals';
 import { formatTvTime as time, formatMonth, activityLabel } from './presentation';
 import { countdown, upcomingStay, isCiriumSource, type QuickView } from './broadcastPolicy';
 import { airlineTheme, weatherFor } from './premiumContext';
+import { packagedAirlinePhoto } from './licensedAirlinePhotos';
 import type { TvDisplayPreferences } from './displayPreferences';
 import './broadcast.css';
 
@@ -46,12 +47,14 @@ function Title({title,kicker,icon}:{title:string;kicker:string;icon:React.ReactN
 function trustedAirlinePhoto(snapshot:TvSnapshot,prefs:TvDisplayPreferences):{url:string;credit:string}|null{
   if(!prefs.airlinePhoto)return null;
   const visual=snapshot.profile?.airlineVisual;
-  if(!visual?.licensed || !visual.imageUrl || !visual.source)return null;
-  try{
-    const url=new URL(visual.imageUrl);
-    if(url.protocol!=='https:')return null;
-    return{url:url.toString(),credit:visual.attribution||visual.source};
-  }catch{return null;}
+  if(visual?.licensed && visual.imageUrl && visual.source){
+    try{
+      const url=new URL(visual.imageUrl);
+      if(url.protocol==='https:')return{url:url.toString(),credit:visual.attribution||visual.source};
+    }catch{}
+  }
+  const packaged=packagedAirlinePhoto(snapshot.profile?.airline);
+  return packaged?{url:packaged.url,credit:`${packaged.credit} · ${packaged.license}`}:null;
 }
 type WeatherDisplay={airport:string;city?:string|null;temperature:number;label:string;wind?:number|null;rainChance?:number|null;observedAt?:string;expiresAt?:string};
 function WeatherLocation({title,weather,empty}:{title:string;weather:WeatherDisplay|null;empty:string}) {
