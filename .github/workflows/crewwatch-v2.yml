@@ -1,4 +1,4 @@
-name: CrewCheck Watch v2 premium
+name: CrewCheck Watch Pulse signed release
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 jobs:
-  watch-v2:
+  watch-pulse-release:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -32,24 +32,28 @@ jobs:
       KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
       KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
       CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@v5
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - name: Setup Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.13'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android build tools
+      - name: Install Android API 36 and build tools
         shell: bash
         run: |
           set -euo pipefail
@@ -86,16 +90,15 @@ jobs:
       - name: Snapshot contract
         run: gradle -p android-wrapper :wear:testDebugUnitTest
 
-      - name: Build paired phone shell
+      - name: Build paired phone pilot
         run: gradle -p android-wrapper :app:assembleDebug
 
-      - name: Build CrewWatch debug
-        run: gradle -p android-wrapper :wear:assembleDebug
+      - name: Build debug wearable packages
+        run: |
+          gradle -p android-wrapper :wear:assembleDebug
+          gradle -p android-wrapper :watchface:assembleDebug
 
-      - name: Build CrewCheck Face debug
-        run: gradle -p android-wrapper :watchface:assembleDebug
-
-      - name: Build signed CrewWatch and Watch Face releases
+      - name: Build signed release APK and AAB
         working-directory: android-wrapper
         env:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
@@ -104,12 +107,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon --console=plain             :wear:assembleRelease :wear:bundleRelease             :watchface:assembleRelease :watchface:bundleRelease
+          gradle --no-daemon --console=plain \
+            :wear:assembleRelease \
+            :wear:bundleRelease \
+            :watchface:assembleRelease \
+            :watchface:bundleRelease
 
       - name: Android lint
         run: gradle -p android-wrapper :wear:lintDebug
 
-      - name: Verify signed Wear OS artifacts
+      - name: Verify APK and AAB signatures
         shell: bash
         run: |
           set -euo pipefail
@@ -129,26 +136,11 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$face_apk"
 
           for aab in "$wear_aab" "$face_aab"; do
-            log="$RUNNER_TEMP/$(basename "$aab").verify.log"
-            jarsigner -verify -verbose -certs "$aab" > "$log" 2>&1
-            cat "$log"
-            grep -Eq '^jar verified\.|^jar verified, with signer errors\.      - name: Upload pilot artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: crewwatch-v2-premium
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            android-wrapper/app/build/outputs/apk/debug/*.apk
-            android-wrapper/wear/build/outputs/apk/debug/*.apk
-            android-wrapper/wear/build/outputs/apk/release/*.apk
-            android-wrapper/wear/build/outputs/bundle/release/*.aab
-            android-wrapper/watchface/build/outputs/apk/debug/*.apk
-            android-wrapper/watchface/build/outputs/apk/release/*.apk
-            android-wrapper/watchface/build/outputs/bundle/release/*.aab
-            android-wrapper/wear/build/reports/tests/testDebugUnitTest/**
- "$log"
-            ! grep -Fqi 'jar is unsigned' "$log"
+            verify_log="$RUNNER_TEMP/$(basename "$aab").verify.log"
+            jarsigner -verify -verbose -certs "$aab" > "$verify_log" 2>&1
+            cat "$verify_log"
+            grep -Eq '^jar verified\.|^jar verified, with signer errors\.$' "$verify_log"
+            ! grep -Fqi 'jar is unsigned' "$verify_log"
           done
 
       - name: Stage signed CrewCheck wearable release
@@ -158,14 +150,26 @@ jobs:
           out="$RUNNER_TEMP/crewcheck-wear-signed"
           mkdir -p "$out"
 
-          cp android-wrapper/wear/build/outputs/apk/release/wear-release.apk             "$out/CrewCheck-Watch-Pulse-signed-release.apk"
-          cp android-wrapper/wear/build/outputs/bundle/release/wear-release.aab             "$out/CrewCheck-Watch-Pulse-Play-Console.aab"
-          cp android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk             "$out/CrewCheck-Pulse-WatchFace-signed-release.apk"
-          cp android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab             "$out/CrewCheck-Pulse-WatchFace-Play-Console.aab"
+          cp android-wrapper/wear/build/outputs/apk/release/wear-release.apk \
+            "$out/CrewCheck-Watch-Pulse-signed-release.apk"
+          cp android-wrapper/wear/build/outputs/bundle/release/wear-release.aab \
+            "$out/CrewCheck-Watch-Pulse-Play-Console.aab"
+          cp android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk \
+            "$out/CrewCheck-Pulse-WatchFace-signed-release.apk"
+          cp android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab \
+            "$out/CrewCheck-Pulse-WatchFace-Play-Console.aab"
 
-          (cd "$out" && sha256sum             CrewCheck-Watch-Pulse-signed-release.apk             CrewCheck-Watch-Pulse-Play-Console.aab             CrewCheck-Pulse-WatchFace-signed-release.apk             CrewCheck-Pulse-WatchFace-Play-Console.aab             > SHA256SUMS.txt)
+          (
+            cd "$out"
+            sha256sum \
+              CrewCheck-Watch-Pulse-signed-release.apk \
+              CrewCheck-Watch-Pulse-Play-Console.aab \
+              CrewCheck-Pulse-WatchFace-signed-release.apk \
+              CrewCheck-Pulse-WatchFace-Play-Console.aab \
+              > SHA256SUMS.txt
+          )
 
-      - name: Upload signed CrewCheck wearable release
+      - name: Upload signed wearable release
         uses: actions/upload-artifact@v6
         with:
           name: crewwatch-pulse-signed-release
@@ -178,16 +182,14 @@ jobs:
             ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-Pulse-WatchFace-Play-Console.aab
             ${{ runner.temp }}/crewcheck-wear-signed/SHA256SUMS.txt
 
-      - name: Upload pilot artifacts
+      - name: Upload pilot/debug artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: crewwatch-v2-premium
+          name: crewwatch-pulse-pilot
           if-no-files-found: error
           retention-days: 14
           path: |
             android-wrapper/app/build/outputs/apk/debug/*.apk
             android-wrapper/wear/build/outputs/apk/debug/*.apk
-            android-wrapper/wear/build/outputs/bundle/release/*.aab
             android-wrapper/watchface/build/outputs/apk/debug/*.apk
-            android-wrapper/watchface/build/outputs/bundle/release/*.aab
             android-wrapper/wear/build/reports/tests/testDebugUnitTest/**
