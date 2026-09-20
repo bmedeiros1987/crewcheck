@@ -8,8 +8,13 @@ function replace(text,old,next){if(!text.includes(old))throw Error('Broadcast pr
 let main=await read('main.tsx');
 if(!main.includes("from './BroadcastPanels'")){
  main=replace(main,"import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';","import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';\nimport { BroadcastPanel, OfficialTvBrand, ProviderCredit, CreatorCredit } from './BroadcastPanels';\nimport { quickAvailability } from './broadcastPolicy';");
- main=replace(main,"type View = 'Agora' |","type View = 'Meteorologia' | 'Radar' | 'Apresentação' | 'Pernoite' | 'Agora' |");
- main=replace(main,"const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Notícias', 'Configurações'];","const views: View[] = ['Agora', 'Mês', 'Meteorologia', 'Radar', 'Apresentação', 'Pernoite', 'Configurações'];");
+ if(main.includes("'Meteorologia'")){
+   main=replace(main,"type View = 'Agora' |","type View = 'Radar' | 'Apresentação' | 'Pernoite' | 'Agora' |");
+   main=replace(main,"const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Meteorologia', 'Notícias', 'Configurações'];","const views: View[] = ['Agora', 'Mês', 'Meteorologia', 'Radar', 'Apresentação', 'Pernoite', 'Notícias', 'Configurações'];");
+ } else {
+   main=replace(main,"type View = 'Agora' |","type View = 'Meteorologia' | 'Radar' | 'Apresentação' | 'Pernoite' | 'Agora' |");
+   main=replace(main,"const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Notícias', 'Configurações'];","const views: View[] = ['Agora', 'Mês', 'Meteorologia', 'Radar', 'Apresentação', 'Pernoite', 'Notícias', 'Configurações'];");
+ }
  main=replace(main,'hasChanges:!!snapshot?.changes.length, hasNews:news.length>0, covered:',
    'hasChanges:displayPrefs.value.changes&&!!snapshot?.changes.length, hasNews:displayPrefs.value.news&&news.length>0, quick:quickAvailability(snapshot,clock.getTime(),displayPrefs.value), covered:');
  main=replace(main,"className={'tv-app theme-' + theme}","className={'tv-app tv-broadcast theme-' + theme}");
@@ -18,7 +23,7 @@ if(!main.includes("from './BroadcastPanels'")){
  main=replace(main,'<span>{v}</span>',"<span>{v==='Mês'?'Escala':v==='Meteorologia'?'Clima':v}</span>");
  const a=main.indexOf("      {view === 'Agora' && <section"),b=main.indexOf("      {(view === 'Mês'",a);
  if(a<0||b<a)throw Error('Broadcast view boundaries changed');
- main=main.slice(0,a)+"      {(['Agora','Meteorologia','Radar','Apresentação','Pernoite'] as string[]).includes(view) && <BroadcastPanel view={view as any} snapshot={snapshot} demo={demo} clock={clock} openDay={date=>openDay(date,view)} openView={setView} prefs={displayPrefs.value}/> }\n"+main.slice(b);
+ main=main.slice(0,a)+"      {(['Agora','Radar','Apresentação','Pernoite'] as string[]).includes(view) && <BroadcastPanel view={view as any} snapshot={snapshot} demo={demo} clock={clock} openDay={date=>openDay(date,view)} openView={setView} prefs={displayPrefs.value}/> }\n"+main.slice(b);
  main=replace(main,'<div className="calendar-actions">','<div className="calendar-actions"><button onClick={()=>setView(view===\'Mês\'?\'Semana\':\'Mês\')}>{view===\'Mês\'?\'Ver semana\':\'Ver mês\'}</button>');
  main=replace(main,'<p className="note">Selecione um dia com OK. Dias sem programação não significam folga confirmada.</p>','<div className="note"><span>OK abre o dia. Sem programação não significa folga confirmada.</span><ProviderCredit provider="crewtopia" demo={demo}/></div>');
  main=replace(main,'<ChannelDock channel={channel}/></footer>','<ChannelDock channel={channel}/><CreatorCredit/></footer>');
@@ -27,7 +32,7 @@ if(!main.includes("from './BroadcastPanels'")){
 let visuals=await read('TvVisuals.tsx');
 if(!visuals.includes("name === 'Radar'")){
  visuals=replace(visuals,'import { CloudSun, Wind, Radio,','import { Radar, CloudSun, Wind, Radio,');
- visuals=replace(visuals,"const Icon = name === 'Agora'","const Icon = name === 'Radar' ? Radar : name === 'Meteorologia' ? CloudSun : name === 'Apresentação' ? Car : name === 'Pernoite' ? BedDouble : name === 'Agora'");
+ visuals=replace(visuals,"const Icon = name === 'Agora'","const Icon = name === 'Radar' ? Radar : name === 'Apresentação' ? Car : name === 'Pernoite' ? BedDouble : name === 'Agora'");
  await save('TvVisuals.tsx',visuals);
 }
 let policy=await read('channelPolicy.ts');

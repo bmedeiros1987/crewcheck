@@ -9,6 +9,8 @@ export type TvDisplayPreferences={
   week:boolean;
   changes:boolean;
   news:boolean;
+  newsAirline:boolean;
+  newsAirports:boolean;
   finance:boolean;
   crew:boolean;
   hotel:boolean;
@@ -17,7 +19,7 @@ export type TvDisplayPreferences={
 };
 const KEY='crewcheck-tv-display-preferences-v1';
 export const DEFAULT_TV_DISPLAY_PREFERENCES:TvDisplayPreferences={
-  gate:true,traffic:true,weather:true,week:true,changes:true,news:false,
+  gate:true,traffic:true,weather:true,week:true,changes:true,news:true,newsAirline:true,newsAirports:true,
   finance:false,crew:false,hotel:true,visitorExplanations:true,airlinePhoto:true,
 };
 
@@ -30,10 +32,10 @@ function load():TvDisplayPreferences{
 function save(value:TvDisplayPreferences){try{localStorage.setItem(KEY,JSON.stringify(value));}catch{}}
 
 const PRESETS:Record<TvPreset,TvDisplayPreferences>={
-  operacional:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,weather:true,week:true,changes:true,news:false,finance:false,crew:false,hotel:true,visitorExplanations:false,airlinePhoto:true},
+  operacional:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,weather:true,week:true,changes:true,news:true,newsAirline:true,newsAirports:true,finance:false,crew:false,hotel:true,visitorExplanations:false,airlinePhoto:true},
   equilibrado:{...DEFAULT_TV_DISPLAY_PREFERENCES},
-  visitante:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:false,traffic:false,weather:true,week:true,changes:false,news:false,finance:false,crew:false,hotel:false,visitorExplanations:true,airlinePhoto:true},
-  minimalista:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,weather:false,week:false,changes:false,news:false,finance:false,crew:false,hotel:false,visitorExplanations:false,airlinePhoto:true},
+  visitante:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:false,traffic:false,weather:true,week:true,changes:false,news:true,newsAirline:false,newsAirports:true,finance:false,crew:false,hotel:false,visitorExplanations:true,airlinePhoto:true},
+  minimalista:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,weather:false,week:false,changes:false,news:false,newsAirline:false,newsAirports:false,finance:false,crew:false,hotel:false,visitorExplanations:false,airlinePhoto:true},
 };
 export function useTvDisplayPreferences(){
   const [value,setValue]=useState<TvDisplayPreferences>(load);
@@ -53,7 +55,9 @@ const rows:Array<[keyof TvDisplayPreferences,string,string,React.ReactNode,boole
   ['weather','Meteorologia','Clima da base, origem e próximo pernoite quando disponível.',<CloudSun/>],
   ['week','Resumo da semana','Voos, jornadas e pernoites no painel inicial.',<Plane/>],
   ['changes','Mudanças','Mostrar alterações confirmadas da escala.',<Plane/>],
-  ['news','Notícias','Conteúdo editorial; nunca interfere na operação.',<Newspaper/>],
+  ['news','Notícias','Ativar o CrewCheck News e o informativo editorial.',<Newspaper/>],
+  ['newsAirline','Notícias da companhia','Priorizar notícias relacionadas à companhia do usuário.',<Plane/>],
+  ['newsAirports','Notícias dos aeroportos','Priorizar notícias relacionadas à base e à próxima jornada.',<MapPin/>],
   ['hotel','Pernoite','Mostrar contexto de hotel quando autorizado.',<BedDouble/>],
   ['crew','Tripulação','Só aparece se o compartilhamento sensível tiver sido autorizado no celular.',<Users/>,true],
   ['finance','Financeiro','Só aparece se o compartilhamento sensível tiver sido autorizado no celular.',<WalletCards/>,true],

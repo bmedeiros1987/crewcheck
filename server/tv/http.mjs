@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { createDeviceService } from "./devices.mjs";
 import { createMysqlTvStore } from "./mysql-store.mjs";
 import { createTvHandler } from "./routes.mjs";
+import { createNewsGateway } from "./news.mjs";
+import { fetchRssItems } from "./rss.mjs";
+import { createTvWeatherProvider, enrichTvSnapshotWeather } from "./weather.mjs";
 
 export function createTvHttpBridge({
   getDatabase,
@@ -10,6 +13,28 @@ export function createTvHttpBridge({
   readBody,
 }) {
   let handler;
+  const readWeather = createTvWeatherProvider();
+  const readNews = createNewsGateway({
+    fetchItems: fetchRssItems,
+    sources: [
+      {
+        id: "aeroflap",
+        label: "Aeroflap",
+        kind: "syndicated",
+        url: "https://www.aeroflap.com.br/feed/",
+        hosts: ["www.aeroflap.com.br", "aeroflap.com.br"],
+        maxArticleAgeMs: 3 * 86400000,
+      },
+      {
+        id: "aeroin",
+        label: "AEROIN",
+        kind: "syndicated",
+        url: "https://aeroin.net/feed/",
+        hosts: ["aeroin.net", "www.aeroin.net"],
+        maxArticleAgeMs: 3 * 86400000,
+      },
+    ],
+  });
   return async (req, res, url) => {
     if (!url.pathname.startsWith("/api/tv/")) return false;
     const send = (status, body) => {
@@ -90,7 +115,7 @@ export function createTvHttpBridge({
             const data = await loadActiveRoster(auth.userId);
             if (!data?.roster) return null;
             const now = new Date();
-            return projectRoster(data.roster, {
+            const snapshot = projectRoster(data.roster, {
               deviceId: auth.deviceId,
               snapshotId: randomUUID(),
               sourceVersion: data.sourceVersion,
@@ -100,14 +125,11 @@ export function createTvHttpBridge({
               expiresAt: new Date(now.getTime() + 60000).toISOString(),
               now,
             });
+            return enrichTvSnapshotWeather(snapshot, readWeather, { now: now.getTime() });
           },
-          // #694 gateway seam stays editorial-only. Production providers require
-          // verified feed endpoints/licensing and server-side entitlement first.
-          news: async () => ({
-            generatedAt: new Date().toISOString(),
-            stale: true,
-            items: [],
-          }),
+          // Editorial only: headlines come from a source-provided RSS feed,
+          // remain isolated from operational truth, and fail closed when unavailable.
+          news: async () => readNews(),
         });
       }
       const token =
