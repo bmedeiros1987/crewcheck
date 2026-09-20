@@ -220,11 +220,15 @@ public final class MainActivity extends FragmentActivity
             demo.setPadding(dp(8), dp(6), dp(8), dp(7));
             demo.setOnClickListener(view -> {
                 long generated = System.currentTimeMillis();
-                store.save(WatchContextSnapshot.demo(generated).toJson().toString());
-                wellbeingStore.saveCrewLife(CrewLifeSnapshot.demo(generated).toJson().toString());
-                wellbeingStore.saveRoutine(RoutineSnapshot.demo(generated).toJson().toString());
-                screenMode = MODE_NOW;
-                renderSnapshot();
+                try {
+                    store.save(WatchContextSnapshot.demo(generated).toJson().toString());
+                    wellbeingStore.saveCrewLife(CrewLifeSnapshot.demo(generated).toJson().toString());
+                    wellbeingStore.saveRoutine(RoutineSnapshot.demo(generated).toJson().toString());
+                    screenMode = MODE_NOW;
+                    renderSnapshot();
+                } catch (Exception error) {
+                    if (transientStatus != null) transientStatus.setText("Demo indisponível");
+                }
             });
             content.addView(demo);
         }
