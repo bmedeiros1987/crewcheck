@@ -25,6 +25,14 @@ export function createTvHttpBridge({
         hosts: ["www.aeroflap.com.br", "aeroflap.com.br"],
         maxArticleAgeMs: 3 * 86400000,
       },
+      {
+        id: "aeroin",
+        label: "AEROIN",
+        kind: "syndicated",
+        url: "https://aeroin.net/feed/",
+        hosts: ["aeroin.net", "www.aeroin.net"],
+        maxArticleAgeMs: 3 * 86400000,
+      },
     ],
   });
   return async (req, res, url) => {
