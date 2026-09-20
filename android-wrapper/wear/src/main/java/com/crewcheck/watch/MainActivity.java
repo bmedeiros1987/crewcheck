@@ -136,8 +136,10 @@ public final class MainActivity extends FragmentActivity
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_HORIZONTAL);
-        int horizontal = isRoundScreen() ? dp(29) : dp(20);
-        content.setPadding(horizontal, dp(8), horizontal, dp(22));
+        int horizontal = isRoundScreen() ? dp(38) : dp(20);
+        int topSafe = isRoundScreen() ? dp(24) : dp(10);
+        int bottomSafe = isRoundScreen() ? dp(34) : dp(22);
+        content.setPadding(horizontal, topSafe, horizontal, bottomSafe);
 
         scroll.addView(content, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
@@ -247,13 +249,14 @@ public final class MainActivity extends FragmentActivity
         LinearLayout hero = heroCard(VIOLET);
         hero.addView(text("AINDA NÃO CONECTADO", 9, VIOLET, true, Gravity.CENTER));
 
-        TextView title = text("Abra o CrewCheck", 21, WHITE, true, Gravity.CENTER);
-        title.setPadding(0, dp(8), 0, dp(4));
+        TextView title = text("Abra no celular", 18, WHITE, true, Gravity.CENTER);
+        title.setPadding(0, dp(7), 0, dp(3));
+        title.setMaxLines(2);
         hero.addView(title);
 
         TextView detail = text(
-                "No celular, abra o CrewCheck e sincronize o relógio.",
-                11,
+                "Abra o CrewCheck no celular e sincronize o relógio.",
+                10,
                 MUTED,
                 false,
                 Gravity.CENTER
@@ -279,7 +282,7 @@ public final class MainActivity extends FragmentActivity
 
         TextView value = text(
                 stale ? "Confira no celular" : primary.value,
-                primary.value.length() > 14 ? 22 : 31,
+                primary.value.length() > 14 ? 20 : 27,
                 WHITE,
                 true,
                 Gravity.CENTER
@@ -288,14 +291,14 @@ public final class MainActivity extends FragmentActivity
         hero.addView(value);
 
         if (!primary.detail.isBlank()) {
-            TextView detail = text(primary.detail, 11, stale ? WARNING : WHITE,
+            TextView detail = text(primary.detail, 10, stale ? WARNING : WHITE,
                     false, Gravity.CENTER);
             detail.setMaxLines(2);
             hero.addView(detail);
         }
 
         if (!primary.secondary.isBlank()) {
-            TextView secondary = text(primary.secondary, 10, MUTED,
+            TextView secondary = text(primary.secondary, 9, MUTED,
                     false, Gravity.CENTER);
             secondary.setPadding(0, dp(5), 0, 0);
             secondary.setMaxLines(2);
@@ -467,7 +470,7 @@ public final class MainActivity extends FragmentActivity
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
-        card.setPadding(dp(14), dp(15), dp(14), dp(14));
+        card.setPadding(dp(12), dp(12), dp(12), dp(11));
 
         GradientDrawable background = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
