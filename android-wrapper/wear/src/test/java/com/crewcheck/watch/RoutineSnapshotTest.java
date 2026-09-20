@@ -80,4 +80,12 @@ public final class RoutineSnapshotTest {
                 .put("generatedAtEpochMs", NOW - 60_000L)
                 .put("validUntilEpochMs", NOW + 18 * 60 * 60 * 1000L);
     }
+
+    @Test
+    public void accentedPriorityNormalizesInsteadOfDegrading() throws Exception {
+        for (String written : new String[]{"recuperação", "RECUPERAÇÃO", "Recuperacao"}) {
+            JSONObject json = RoutineSnapshot.demo(NOW).toJson().put("priority", written);
+            assertEquals(written, "RECUPERACAO", RoutineSnapshot.fromJson(json).priority);
+        }
+    }
 }

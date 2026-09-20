@@ -96,4 +96,12 @@ public final class CrewLifeSnapshotTest {
                 .put("generatedAtEpochMs", NOW - 60_000L)
                 .put("validUntilEpochMs", NOW + 6 * 60 * 60 * 1000L);
     }
+
+    @Test
+    public void accentedRecoveryLabelNormalizesInsteadOfDegrading() throws Exception {
+        for (String written : new String[]{"ótima", "ÓTIMA", "Ótima", "OTIMA"}) {
+            JSONObject json = CrewLifeSnapshot.demo(NOW).toJson().put("recoveryLabel", written);
+            assertEquals(written, "OTIMA", CrewLifeSnapshot.fromJson(json).recoveryLabel);
+        }
+    }
 }

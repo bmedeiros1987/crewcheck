@@ -4,6 +4,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.Locale;
 import java.util.Set;
 
@@ -103,7 +104,7 @@ public final class CrewLifeSnapshot {
             throw new IllegalArgumentException("validUntilEpochMs anterior à geração.");
         }
 
-        String label = clean(json.optString("recoveryLabel", "DESCONHECIDA"), 12).toUpperCase(Locale.ROOT);
+        String label = normalizeLabel(json.optString("recoveryLabel", "DESCONHECIDA"), 12);
         if (!LABELS.contains(label)) label = "DESCONHECIDA";
 
         return new CrewLifeSnapshot(
@@ -230,5 +231,17 @@ public final class CrewLifeSnapshot {
         if (value == null) return "";
         String normalized = value.replaceAll("[\\p{Cntrl}]", " ").replaceAll("\\s+", " ").trim();
         return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength).trim();
+    }
+
+    /**
+     * Maiúsculas sem acento, via Normalizer.
+     *
+     * Trocar caractere a caractere não escala: "ÓTIMA" passava direto e virava DESCONHECIDA,
+     * porque só Ç e Ã estavam mapeados. NFD decompõe a letra do acento e a marca combinante é
+     * descartada, então ótima/ÓTIMA/Otima chegam todos em OTIMA.
+     */
+    private static String normalizeLabel(String value, int maxLength) {
+        String cleaned = clean(value, maxLength).toUpperCase(Locale.ROOT);
+        return Normalizer.normalize(cleaned, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
     }
 }

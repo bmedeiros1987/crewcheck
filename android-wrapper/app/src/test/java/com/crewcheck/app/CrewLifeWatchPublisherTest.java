@@ -37,6 +37,7 @@ public final class CrewLifeWatchPublisherTest {
                 .put("title", "TREINO LEVE")
                 .put("durationMinutes", 25)
                 .put("reason", "Apresentação em 8h")
+                .put("nextAction", "Caminhada 25 min")
                 .put("priority", "recuperação");
     }
 
@@ -65,6 +66,81 @@ public final class CrewLifeWatchPublisherTest {
         assertFalse("batimento não concedido", out.has("restingHeartRate"));
         assertFalse("HRV não concedida", out.has("hrvMs"));
         assertFalse("passos não concedidos", out.has("steps"));
+    }
+
+    // --- vazamento entre categorias por texto livre -------------------------------------
+
+    @Test
+    public void narrativeDoesNotTravelWithPartialHealthConsent() throws Exception {
+        JSONObject json = crewLife().put("detail", "Dormiu 4h10 e FC de repouso 78");
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeCrewLife(
+                json.toString(),
+                Set.of(WatchHealthConsent.CATEGORY_RECOVERY)
+        ));
+        assertEquals(78, out.getInt("recoveryScore"));
+        assertFalse("recommendation narra o quadro inteiro", out.has("recommendation"));
+        assertFalse("detail entregaria sono e batimento", out.has("detail"));
+    }
+
+    @Test
+    public void narrativeTravelsOnlyWithCompleteHealthConsent() throws Exception {
+        JSONObject json = crewLife().put("detail", "Treino leve");
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeCrewLife(json.toString(), ALL));
+        assertEquals("RECUPERAÇÃO BOA", out.getString("recommendation"));
+        assertEquals("Treino leve", out.getString("detail"));
+    }
+
+    @Test
+    public void routineNarrativeIsGatedByHealthConsentToo() throws Exception {
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(
+                routine().toString(),
+                Set.of(WatchHealthConsent.CATEGORY_ROUTINE)
+        ));
+        assertEquals("TREINO LEVE", out.getString("title"));
+        assertEquals(25, out.getInt("durationMinutes"));
+        assertFalse("reason justifica citando saúde", out.has("reason"));
+        assertFalse("nextAction idem", out.has("nextAction"));
+    }
+
+    @Test
+    public void routineNarrativeTravelsWithCompleteHealthConsent() throws Exception {
+        JSONObject out = new JSONObject(
+                CrewLifeWatchPublisher.sanitizeRoutine(routine().toString(), ALL));
+        assertEquals("Apresentação em 8h", out.getString("reason"));
+        assertEquals("Caminhada 25 min", out.getString("nextAction"));
+    }
+
+    // --- diacríticos ----------------------------------------------------------------------
+
+    @Test
+    public void accentedLabelsNormalizeInsteadOfDegrading() throws Exception {
+        for (String written : new String[]{"ótima", "ÓTIMA", "Ótima", "OTIMA"}) {
+            JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeCrewLife(
+                    crewLife().put("recoveryLabel", written).toString(), ALL));
+            assertEquals(written, "OTIMA", out.getString("recoveryLabel"));
+        }
+    }
+
+    @Test
+    public void accentedPrioritiesNormalizeInsteadOfDegrading() throws Exception {
+        for (String written : new String[]{"recuperação", "RECUPERAÇÃO", "Recuperacao"}) {
+            JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(
+                    routine().put("priority", written).toString(), ALL));
+            assertEquals(written, "RECUPERACAO", out.getString("priority"));
+        }
+    }
+
+    // --- categorias de saúde reais --------------------------------------------------------
+
+    @Test
+    public void routineAloneIsNotHealthConsent() {
+        assertFalse(
+                "rotina é agenda, não medição do corpo",
+                WatchHealthConsent.HEALTH_CATEGORIES.contains(WatchHealthConsent.CATEGORY_ROUTINE)
+        );
+        for (String category : WatchHealthConsent.HEALTH_CATEGORIES) {
+            assertTrue(category, WatchHealthConsent.CATEGORIES.contains(category));
+        }
     }
 
     @Test
@@ -196,7 +272,7 @@ public final class CrewLifeWatchPublisherTest {
 
     @Test
     public void routineNormalizesPriority() throws Exception {
-        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(routine().toString()));
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(routine().toString(), ALL));
         assertEquals("RECUPERACAO", out.getString("priority"));
         assertEquals("TREINO LEVE", out.getString("title"));
         assertEquals(25, out.getInt("durationMinutes"));
@@ -205,14 +281,14 @@ public final class CrewLifeWatchPublisherTest {
     @Test
     public void routineWithUnknownPriorityDegrades() throws Exception {
         JSONObject out = new JSONObject(
-                CrewLifeWatchPublisher.sanitizeRoutine(routine().put("priority", "HIIT").toString()));
+                CrewLifeWatchPublisher.sanitizeRoutine(routine().put("priority", "HIIT").toString(), ALL));
         assertEquals("DESCONHECIDA", out.getString("priority"));
     }
 
     @Test
     public void routineRefusesImplausibleDuration() throws Exception {
         try {
-            CrewLifeWatchPublisher.sanitizeRoutine(routine().put("durationMinutes", 5000).toString());
+            CrewLifeWatchPublisher.sanitizeRoutine(routine().put("durationMinutes", 5000).toString(), ALL);
             fail("deveria recusar duração implausível");
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("durationMinutes"));
@@ -222,7 +298,7 @@ public final class CrewLifeWatchPublisherTest {
     @Test
     public void routineRefusesIdentity() throws Exception {
         try {
-            CrewLifeWatchPublisher.sanitizeRoutine(routine().put("crewId", "123").toString());
+            CrewLifeWatchPublisher.sanitizeRoutine(routine().put("crewId", "123").toString(), ALL);
             fail("deveria recusar identidade");
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("crewId"));

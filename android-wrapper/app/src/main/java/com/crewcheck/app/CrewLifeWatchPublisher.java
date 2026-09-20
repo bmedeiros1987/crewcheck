@@ -2,6 +2,8 @@ package com.crewcheck.app;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.PutDataMapRequest;
@@ -11,6 +13,7 @@ import com.google.android.gms.wearable.Wearable;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.Locale;
 import java.util.Set;
 
@@ -60,8 +63,14 @@ public final class CrewLifeWatchPublisher {
 
     public static void publishCrewLife(Context context, String rawJson, Callback callback) {
         Callback safeCallback = callback == null ? (ok, code, message) -> {} : callback;
+        if (WatchHealthConsent.isRevocationPending(context)) {
+            safeCallback.onResult(false, "revocation_pending", "Revogação anterior ainda não confirmada no relógio.");
+            return;
+        }
+
         WatchHealthConsent consent = WatchHealthConsent.read(context);
-        if (!consent.isActive()) {
+        if (!consent.allowsAnyHealth()) {
+            // Só "routine" concedida não abre o canal CrewLife: rotina é agenda, não medição.
             safeCallback.onResult(false, "consent_required", "Bem-estar no relógio não está autorizado.");
             return;
         }
@@ -78,6 +87,11 @@ public final class CrewLifeWatchPublisher {
 
     public static void publishRoutine(Context context, String rawJson, Callback callback) {
         Callback safeCallback = callback == null ? (ok, code, message) -> {} : callback;
+        if (WatchHealthConsent.isRevocationPending(context)) {
+            safeCallback.onResult(false, "revocation_pending", "Revogação anterior ainda não confirmada no relógio.");
+            return;
+        }
+
         WatchHealthConsent consent = WatchHealthConsent.read(context);
         if (!consent.allows(WatchHealthConsent.CATEGORY_ROUTINE)) {
             safeCallback.onResult(false, "consent_required", "Rotina no relógio não está autorizada.");
@@ -86,7 +100,7 @@ public final class CrewLifeWatchPublisher {
 
         String payload;
         try {
-            payload = sanitizeRoutine(rawJson);
+            payload = sanitizeRoutine(rawJson, consent.categories());
         } catch (Exception error) {
             safeCallback.onResult(false, "invalid_routine", safeMessage(error));
             return;
@@ -98,19 +112,69 @@ public final class CrewLifeWatchPublisher {
      * Revoga: apaga o consentimento e remove os itens do Data Layer, o que faz o relógio
      * limpar o próprio cache. A escala continua publicada — revogar saúde não pode cegar o
      * piloto para a própria escala.
+     *
+     * deleteDataItems é assíncrono. Disparar e responder "revogado" na mesma linha é mentir:
+     * a exclusão pode falhar com o relógio fora de alcance e o dado de saúde fica no pulso.
+     * Aqui a conclusão só é reportada depois que TODOS os caminhos confirmam, com retentativa
+     * em backoff; enquanto não confirma, fica uma pendência registrada que bloqueia novas
+     * publicações até a limpeza acontecer.
      */
     public static void revoke(Context context, Callback callback) {
         Callback safeCallback = callback == null ? (ok, code, message) -> {} : callback;
         Context app = context.getApplicationContext();
-        WatchHealthConsent.revoke(app);
 
-        try {
-            Wearable.getDataClient(app).deleteDataItems(wearUri(CREWLIFE_PATH));
-            Wearable.getDataClient(app).deleteDataItems(wearUri(ROUTINE_PATH));
-            safeCallback.onResult(true, "revoked", "Bem-estar removido do relógio.");
-        } catch (Exception error) {
-            safeCallback.onResult(false, "data_layer_error", safeMessage(error));
+        // O consentimento local morre primeiro e incondicionalmente: mesmo que o enlace caia,
+        // o celular para de publicar na hora.
+        WatchHealthConsent.revoke(app);
+        WatchHealthConsent.setRevocationPending(app, true);
+
+        RevocationRetry.run(
+                new String[]{CREWLIFE_PATH, ROUTINE_PATH},
+                wearableDeleter(app),
+                mainThreadScheduler(),
+                (allDeleted, failedPaths) -> {
+                    if (allDeleted) {
+                        WatchHealthConsent.setRevocationPending(app, false);
+                        safeCallback.onResult(true, "revoked", "Bem-estar removido do relógio.");
+                        return;
+                    }
+                    safeCallback.onResult(
+                            false,
+                            "revocation_incomplete",
+                            "Consentimento revogado no celular, mas "
+                                    + failedPaths
+                                    + " canal(is) não confirmaram a limpeza no relógio. Será repetido."
+                    );
+                }
+        );
+    }
+
+    /** Retoma uma revogação que ficou pela metade, por exemplo ao religar o app. */
+    public static void retryPendingRevocation(Context context, Callback callback) {
+        Context app = context.getApplicationContext();
+        if (!WatchHealthConsent.isRevocationPending(app)) {
+            if (callback != null) callback.onResult(true, "nothing_pending", "Nada pendente.");
+            return;
         }
+        revoke(app, callback);
+    }
+
+    private static RevocationRetry.Deleter wearableDeleter(Context app) {
+        return (path, onSuccess, onFailure) -> {
+            try {
+                Wearable.getDataClient(app)
+                        .deleteDataItems(wearUri(path))
+                        .addOnSuccessListener(deleted -> onSuccess.run())
+                        .addOnFailureListener(error -> onFailure.run());
+            } catch (Exception error) {
+                onFailure.run();
+            }
+        };
+    }
+
+    private static RevocationRetry.Scheduler mainThreadScheduler() {
+        Handler handler = new Handler(Looper.getMainLooper());
+        return (delayMs, action) -> handler.postDelayed(action, delayMs);
     }
 
     // --- sanitização pura, testável em JVM ---------------------------------------------
@@ -119,15 +183,20 @@ public final class CrewLifeWatchPublisher {
         JSONObject source = parse(rawJson);
 
         JSONObject out = envelope(source, CREWLIFE_SCHEMA_VERSION);
+        boolean narrative = categories.containsAll(WatchHealthConsent.HEALTH_CATEGORIES);
+
         if (categories.contains(WatchHealthConsent.CATEGORY_RECOVERY)) {
             putBounded(source, out, "recoveryScore", 0, 100);
-            String label = clean(source.optString("recoveryLabel", ""), 16)
-                    .toUpperCase(Locale.ROOT)
-                    .replace('Ç', 'C')
-                    .replace('Ã', 'A');
+            String label = normalizeLabel(source.optString("recoveryLabel", ""), 16);
             out.put("recoveryLabel", RECOVERY_LABELS.contains(label) ? label : "DESCONHECIDA");
-            copyString(source, out, "recommendation", 32);
-            copyString(source, out, "detail", 48);
+
+            // "dormiu 4h, FC alta, pegue leve" entrega sono e batimento mesmo com só
+            // recuperação concedida. Não dá para saber de qual categoria cada frase veio,
+            // então a narrativa exige o consentimento de saúde completo.
+            if (narrative) {
+                copyString(source, out, "recommendation", 32);
+                copyString(source, out, "detail", 48);
+            }
         }
         if (categories.contains(WatchHealthConsent.CATEGORY_SLEEP)) {
             putBounded(source, out, "sleepMinutes", 0, 1440);
@@ -144,19 +213,21 @@ public final class CrewLifeWatchPublisher {
         return finish(out);
     }
 
-    static String sanitizeRoutine(String rawJson) throws Exception {
+    static String sanitizeRoutine(String rawJson, Set<String> categories) throws Exception {
         JSONObject source = parse(rawJson);
 
         JSONObject out = envelope(source, ROUTINE_SCHEMA_VERSION);
         copyString(source, out, "title", 24);
         putBounded(source, out, "durationMinutes", 0, 720);
-        copyString(source, out, "reason", 48);
-        copyString(source, out, "nextAction", 32);
 
-        String priority = clean(source.optString("priority", ""), 16)
-                .toUpperCase(Locale.ROOT)
-                .replace('Ç', 'C')
-                .replace('Ã', 'A');
+        // reason e nextAction justificam a sugestão, e justificar quase sempre é citar saúde
+        // ("apresentação em 8h e você dormiu 4h"). Mesma regra do CrewLife.
+        if (categories.containsAll(WatchHealthConsent.HEALTH_CATEGORIES)) {
+            copyString(source, out, "reason", 48);
+            copyString(source, out, "nextAction", 32);
+        }
+
+        String priority = normalizeLabel(source.optString("priority", ""), 16);
         out.put("priority", ROUTINE_PRIORITIES.contains(priority) ? priority : "DESCONHECIDA");
         return finish(out);
     }
@@ -215,6 +286,12 @@ public final class CrewLifeWatchPublisher {
             throws Exception {
         String value = clean(source.optString(key, ""), max);
         if (!value.isBlank() && !"null".equalsIgnoreCase(value)) target.put(key, value);
+    }
+
+    /** Maiúsculas sem acento via Normalizer: ótima/ÓTIMA/Otima chegam todos em OTIMA. */
+    private static String normalizeLabel(String value, int max) {
+        String cleaned = clean(value, max).toUpperCase(Locale.ROOT);
+        return Normalizer.normalize(cleaned, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
     }
 
     private static String clean(String value, int max) {

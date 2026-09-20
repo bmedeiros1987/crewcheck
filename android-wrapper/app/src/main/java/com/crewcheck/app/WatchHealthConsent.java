@@ -37,11 +37,25 @@ public final class WatchHealthConsent {
             CATEGORY_ROUTINE
     );
 
+    /**
+     * As categorias que são de fato leitura de saúde.
+     *
+     * "routine" fica de fora: é sugestão de agenda, não medição do corpo. Autorizar rotina não
+     * pode, sozinho, liberar o canal CrewLife.
+     */
+    public static final Set<String> HEALTH_CATEGORIES = Set.of(
+            CATEGORY_RECOVERY,
+            CATEGORY_SLEEP,
+            CATEGORY_ACTIVITY,
+            CATEGORY_HEART
+    );
+
     private static final String PREFS = "crewcheck_watch_health_consent";
     private static final String KEY_ENABLED = "enabled";
     private static final String KEY_VERSION = "consent_version";
     private static final String KEY_CATEGORIES = "categories";
     private static final String KEY_ACCEPTED_AT = "accepted_at_epoch_ms";
+    private static final String KEY_REVOCATION_PENDING = "revocation_pending";
 
     private final boolean enabled;
     private final String version;
@@ -102,6 +116,21 @@ public final class WatchHealthConsent {
         return read(context);
     }
 
+    /**
+     * Marca que o relógio ainda pode estar com dado de saúde em cache.
+     *
+     * O consentimento local morre na hora, mas a exclusão no Data Layer pode falhar. Enquanto
+     * esta marca estiver de pé, publicar bem-estar fica bloqueado mesmo que o usuário volte a
+     * conceder: primeiro limpa-se o que ficou para trás.
+     */
+    public static void setRevocationPending(Context context, boolean pending) {
+        prefs(context).edit().putBoolean(KEY_REVOCATION_PENDING, pending).apply();
+    }
+
+    public static boolean isRevocationPending(Context context) {
+        return prefs(context).getBoolean(KEY_REVOCATION_PENDING, false);
+    }
+
     public boolean isActive() {
         return enabled && CONSENT_VERSION.equals(version) && !categories.isEmpty();
     }
@@ -112,6 +141,28 @@ public final class WatchHealthConsent {
 
     public Set<String> categories() {
         return isActive() ? categories : Collections.emptySet();
+    }
+
+    /** Pelo menos uma medição do corpo foi concedida. Sem isso o canal CrewLife nem abre. */
+    public boolean allowsAnyHealth() {
+        if (!isActive()) return false;
+        for (String category : HEALTH_CATEGORIES) {
+            if (categories.contains(category)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Texto livre só viaja com o consentimento de saúde COMPLETO.
+     *
+     * recommendation, detail, reason e nextAction são narrativa derivada do quadro inteiro:
+     * "dormiu 4h, FC de repouso alta, pegue leve" entrega sono e batimento mesmo que só
+     * recuperação tenha sido concedida. Como não dá para garantir de qual categoria cada frase
+     * veio, a regra é fechada: faltando qualquer categoria de saúde, a narrativa não sai e só
+     * os números concedidos viajam.
+     */
+    public boolean allowsNarrative() {
+        return isActive() && categories.containsAll(HEALTH_CATEGORIES);
     }
 
     public long acceptedAtEpochMs() {
