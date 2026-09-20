@@ -4,23 +4,25 @@ import QRCode from 'qrcode';
 import { currentFact, freshness, remoteAction, type TvSnapshot, type TvActivity } from '../../../packages/tv-core/src/index';
 import { TvSession } from '../../../packages/tv-core/src/session';
 import { CREWCHECK_BRAND } from '../../../client/src/lib/brand';
-import { demoSnapshot } from './demo';
+import { demoSnapshot, demoNews } from './demo';
 import { formatTvTime as time, formatMonth, activityLabel, readVisualSetting, writeVisualSetting } from './presentation';
-import { TvBrand, NavIcon, WeatherArtwork, Car, Clock3, Plane, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles } from './TvVisuals';
+import { TvBrand, NavIcon, Car, Clock3, Plane, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles } from './TvVisuals';
 import './tv.css';
 import { useScreenCare, ScreenCareCover, ScreenCareSettings } from './ScreenCare';
 import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';
 import { DayProgrammingView, ProgramOverview, ProgramDetails } from './ProgrammingDetails';
 import { useTvDisplayPreferences, TvDisplaySettings } from './displayPreferences';
 import { calendarProgramSummary, isVisitorPresentation } from './programming';
+import { weatherFor } from './premiumContext';
+import { WeatherMini, WeatherCenter, NewsPanel, NewsCenter, weatherInsight, type TvNewsItem } from './WeatherNews';
 
 const config = import.meta.env;
 const demo = config.VITE_TV_DEMO === 'true';
 const enabled = demo || config.VITE_CREWCHECK_TV_ENABLED === 'true';
 const platform = config.VITE_TV_PLATFORM || 'android-tv';
 const session = new TvSession(sessionStorage, fetch, config.VITE_TV_API_ORIGIN || 'https://crewcheck.online');
-type View = 'Agora' | 'Semana' | 'Mês' | 'Dia' | 'Programação' | 'Detalhes' | 'Mudanças' | 'Notícias' | 'Configurações';
-const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Notícias', 'Configurações'];
+type View = 'Agora' | 'Semana' | 'Mês' | 'Dia' | 'Programação' | 'Detalhes' | 'Mudanças' | 'Meteorologia' | 'Notícias' | 'Configurações';
+const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Meteorologia', 'Notícias', 'Configurações'];
 const weekdays = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'];
 const themeStyle = { '--brand-violet': CREWCHECK_BRAND.palette.violet, '--brand-pink': CREWCHECK_BRAND.palette.magenta, '--brand-cyan': CREWCHECK_BRAND.palette.cyan } as React.CSSProperties;
 
@@ -33,7 +35,7 @@ function App() {
   const [qr, setQr] = useState('');
   const [clock, setClock] = useState(new Date());
   const [mode, setMode] = useState('auto');
-  const [news, setNews] = useState<any[]>([]);
+  const [news, setNews] = useState<TvNewsItem[]>(() => demo ? demoNews() : []);
   const [exitRequested, setExitRequested] = useState(false);
   const [theme, setTheme] = useState(() => readVisualSetting('crewcheck-tv-theme', ['night', 'mobile'], 'night'));
   const [motion, setMotion] = useState(() => readVisualSetting('crewcheck-tv-motion', ['full', 'soft', 'off'], 'full'));
@@ -51,7 +53,7 @@ function App() {
     generation.current++;
     session.clear();
     setSnapshot(demo ? demoSnapshot() : null);
-    setNews([]); setPairing(null); setQr(''); setView('Agora');
+    setNews(demo ? demoNews() : []); setPairing(null); setQr(''); setView('Agora');
     setStatus(demo ? 'Dados fictícios · teste visual' : 'Vincule sua TV');
   };
   async function begin() {
@@ -182,6 +184,13 @@ function App() {
   const next = snapshot?.next;
   const gate = currentFact(snapshot?.gate || null), weather = currentFact(snapshot?.weather || null), leave = currentFact(snapshot?.leaveAt || null);
   const shownWeather = weather && Number.isFinite(weather.temperature) ? weather : null;
+  const baseWeather = snapshot ? (weatherFor(snapshot,'base',clock.getTime()) || (shownWeather ? {
+    role:'base' as const, airport:shownWeather.airport, city:null, temperature:shownWeather.temperature,
+    label:shownWeather.label, wind:null, rainChance:null, source:snapshot.weather?.source||'crewcheck',
+    observedAt:snapshot.weather?.observedAt||snapshot.generatedAt, expiresAt:snapshot.weather?.expiresAt||snapshot.expiresAt,
+  } : null)) : null;
+  const weatherNote = snapshot ? weatherInsight(snapshot,clock.getTime()) : null;
+  const navigationViews = views.filter(item => (item !== 'Notícias' || displayPrefs.value.news) && (item !== 'Meteorologia' || displayPrefs.value.weather));
   const dataDays = snapshot?.days || [];
   const offset = dataDays.length ? (new Date(dataDays[0].date + 'T12:00:00Z').getUTCDay() + 6) % 7 : 0;
   const dayIndex = Math.max(0, dataDays.findIndex(d => d.date === day));
@@ -212,20 +221,22 @@ function App() {
   return <><main ref={main} className={'tv-app theme-' + theme} data-motion={effectiveMotion} data-paused={paused || care.covered ? 'true' : 'false'} data-screen-care={care.covered ? 'covered' : 'active'} aria-hidden={care.covered} style={{...themeStyle, left: care.shift.x, top: care.shift.y}} onMouseDown={() => { lastInput.current = Date.now(); }}>
     <header><TvBrand/><div className={'header-status state-' + dataState}><i/>{demo ? 'DEMONSTRAÇÃO · DADOS FICTÍCIOS' : status}<small>{demo ? 'Prévia visual 0.1.6 · não é sua escala' : snapshot ? (snapshot.privacy === 'family' ? 'Modo família' : 'privado') + ' · atualização ' + time(snapshot.generatedAt) : 'Autorização pelo celular'}</small></div><div className="clock">{time(clock.toISOString())}<small>Brasília · {clock.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'America/Sao_Paulo' })}</small></div></header>
     {!enabled ? <section className="pair"><div><p className="eyebrow">CREWCHECK TV</p><h1>Piloto ainda não disponível.</h1><p>A liberação da sua conta será feita no aplicativo.</p></div></section> : !snapshot ? <section className="pair view-enter"><div><p className="eyebrow"><ShieldCheck/> BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1><p>Autorize esta tela pelo CrewCheck no celular.</p><button className="primary-button" onClick={begin}>{demo ? 'Voltar à demonstração' : pairing ? 'Gerar novo código' : 'Vincular TV'} <ArrowRight/></button><p role="status">{status}</p><small>Nenhuma senha da sua conta fica nesta televisão.</small></div>{pairing && <aside><img src={qr} alt="QR Code para autorizar a televisão"/><h2>{pairing.userCode}</h2><p>Válido por 5 minutos</p></aside>}</section> : <>
-      <nav aria-label="Navegação principal">{views.map(v => <button key={v} className={view === v ? 'active' : ''} aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}><NavIcon name={v}/><span>{v}</span></button>)}<span className="month-label">{formatMonth(snapshot.summary.month)}</span></nav>
+      <nav aria-label="Navegação principal">{navigationViews.map(v => <button key={v} className={view === v ? 'active' : ''} aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}><NavIcon name={v}/><span>{v}</span></button>)}<span className="month-label">{formatMonth(snapshot.summary.month)}</span></nav>
       <div className="view-content view-enter" key={view}>
       {view === 'Agora' && <section className={'live ' + (resolvedMode === 'ambient' ? 'ambient' : '')}>
         <article className="hero"><div className="hero-aura" aria-hidden="true"/><div className="eyebrow">{resolvedMode === 'ambient' ? 'SEU TEMPO, NO SEU RITMO' : 'PRÓXIMA JORNADA'}<span className="mode-pill"><i/>{modeName}</span></div>
           <div className="route-heading"><h1>{next?.origin ? <>{next.origin}<ArrowRight/>{next.destination}</> : next ? 'Sua próxima atividade' : 'Aproveite seu tempo.'}</h1><p className="flight"><Plane/>{next ? activityLabel(next) : 'Nenhuma próxima atividade publicada'}</p></div>
           <div className="times"><div className="time-card time-primary"><label><Car/> SAIR DE CASA</label><strong>{leave || '—'}</strong><small>{leave ? 'horário recomendado' : 'aguardando recomendação válida'}</small></div><div className="time-card time-secondary"><label><Clock3/> APRESENTAÇÃO</label><strong>{next?.presentation || '—'}</strong><small>{next?.presentation ? 'horário publicado na escala' : 'não informada na escala'}</small></div></div>
           <div className="gate"><div><MapPin/><span>PORTÃO <b>{gate?.label || '—'}</b></span></div>{gate?.remoteStand === true && <em>REMOTA</em>}<small>{gate ? 'Informação com fonte e validade' : 'Aguardando confirmação'}</small></div>
+          {displayPrefs.value.weather&&weatherNote&&<div className="weather-operational-note"><CloudSun/><span>{weatherNote}</span></div>}
           <div className="route-ribbon" aria-hidden="true"><span className="route-dot"/><span className="route-line"/><Plane/><span className="route-line"/><span className="route-dot destination"/></div>
           <div className="hero-bottom"><span><ShieldCheck/>A escala oficial é a referência.</span><button onClick={() => { const date = next?.date || dataDays[0]?.date; if (date) openDay(date, 'Agora'); }}>Ver jornada <ArrowRight/></button></div>
         </article>
-        <aside className="side"><article className="weather-card"><div><p className="eyebrow"><Sun/> CLIMA · {shownWeather?.airport || '—'}</p><div className="weather-value">{shownWeather ? <>{Math.round(shownWeather.temperature)}<small>°C</small></> : '—'}</div><p className="weather-label">{shownWeather?.label || 'Dados indisponíveis'}</p></div><WeatherArtwork label={shownWeather?.label}/></article>
-          <article className="week-card"><p className="eyebrow"><NavIcon name="Semana"/> SUA SEMANA</p><div className="week-stats"><div><Plane/><strong>{weekFlights}</strong><span>voos</span></div><div><BriefcaseBusiness/><strong>{weekJourneys}</strong><span>jornadas</span></div><div><BedDouble/><strong>{weekActivities.filter(a => a.kind === 'stay').length}</strong><span>pernoites</span></div></div></article>
-          <article className="changes-card"><p className="eyebrow"><NavIcon name="Mudanças"/> O QUE MUDOU</p><p>{snapshot.changes[0] || 'Nenhuma atualização confirmada disponível.'}</p></article>
-          <article className="news"><p className="eyebrow"><NavIcon name="Notícias"/> NOTÍCIAS DA AVIAÇÃO</p>{news.length ? news.slice(0, 2).map(n => <p key={n.id}>{n.title}<small>{n.source} · {n.publishedAt ? time(n.publishedAt) : n.freshness}</small></p>) : <p>Seu informativo de aviação.<small>As manchetes aparecerão quando o serviço estiver disponível.</small></p>}<small>Conteúdo editorial não substitui avisos operacionais.</small></article>
+        <aside className="side">
+          {displayPrefs.value.weather&&<WeatherMini weather={baseWeather} title="CLIMA NA SUA BASE"/>}
+          {displayPrefs.value.week&&<article className="week-card"><p className="eyebrow"><NavIcon name="Semana"/> SUA SEMANA</p><div className="week-stats"><div><Plane/><strong>{weekFlights}</strong><span>voos</span></div><div><BriefcaseBusiness/><strong>{weekJourneys}</strong><span>jornadas</span></div><div><BedDouble/><strong>{weekActivities.filter(a => a.kind === 'stay').length}</strong><span>pernoites</span></div></div></article>}
+          {displayPrefs.value.changes&&<article className="changes-card"><p className="eyebrow"><NavIcon name="Mudanças"/> O QUE MUDOU</p><p>{snapshot.changes[0] || 'Nenhuma atualização confirmada disponível.'}</p></article>}
+          {displayPrefs.value.news&&<NewsPanel items={news} snapshot={snapshot} prefs={displayPrefs.value}/>}
         </aside>
       </section>}
       {(view === 'Mês' || view === 'Semana') && <section className={'calendar ' + (view === 'Semana' ? 'week-view' : '')}><div className="calendar-title"><div><p className="eyebrow">{formatMonth(snapshot.summary.month)}</p><h1>{view === 'Mês' ? 'Sua escala completa' : 'Sua semana'}</h1></div><div className="calendar-actions">{view === 'Semana' && <><button aria-label="Semana anterior" disabled={week === 0} onClick={() => setDay(dataDays[Math.max(0, dayIndex - 7)].date)}><ChevronLeft/></button><button aria-label="Próxima semana" disabled={week >= Math.floor((dataDays.length - 1 + offset) / 7)} onClick={() => setDay(dataDays[Math.min(dataDays.length - 1, dayIndex + 7)].date)}><ChevronRight/></button></>}<span>{snapshot.summary.flights} voos · {snapshot.summary.journeys} jornadas</span></div></div>
@@ -235,7 +246,8 @@ function App() {
       {view === 'Programação' && programKey && <ProgramOverview snapshot={snapshot} programKey={programKey} onBack={() => setView('Dia')} onDetails={() => setView('Detalhes')}/>}
       {view === 'Detalhes' && programKey && <ProgramDetails snapshot={snapshot} programKey={programKey} prefs={displayPrefs.value} onBack={() => setView('Programação')}/>} 
       {view === 'Mudanças' && <section className="detail"><p className="eyebrow">INFORMAÇÃO COM CONTEXTO</p><h1>O que mudou</h1>{snapshot.changes.length ? snapshot.changes.map((c, i) => <article className="change-item" key={i}><NavIcon name="Mudanças"/>{c}</article>) : <article className="empty-card">Nenhuma atualização confirmada disponível.</article>}</section>}
-      {view === 'Notícias' && <section className="detail"><p className="eyebrow">SEU INFORMATIVO</p><h1>Notícias da aviação</h1>{news.length ? news.map(n => <article className="news-item" key={n.id}><h2>{n.title}</h2><p>{n.source} · {n.publishedAt || n.freshness}</p></article>) : <article className="empty-card"><NavIcon name="Notícias"/><h2>Nenhuma manchete disponível agora.</h2><p>Esta área depende das fontes de notícias. Sua escala continua funcionando independentemente dela.</p></article>}<p className="note">Notícias são conteúdo editorial, não informação operacional do seu voo.</p></section>}
+      {view === 'Meteorologia' && (displayPrefs.value.weather ? <WeatherCenter snapshot={snapshot} now={clock.getTime()}/> : <section className="detail"><article className="empty-card"><CloudSun/><h2>Meteorologia oculta.</h2><p>Reative em Configurações quando quiser.</p></article></section>)}
+      {view === 'Notícias' && (displayPrefs.value.news ? <NewsCenter items={news} snapshot={snapshot} prefs={displayPrefs.value}/> : <section className="detail"><article className="empty-card"><NavIcon name="Notícias"/><h2>Notícias ocultas.</h2><p>Reative em Configurações quando quiser.</p></article></section>)}
       {view === 'Configurações' && <section className="detail settings"><p className="eyebrow">DO SEU JEITO</p><h1>Sua TV, seu CrewCheck.</h1><TvDisplaySettings prefs={displayPrefs}/><ChannelSettings channel={channel}/><ScreenCareSettings care={care}/><div className="settings-row"><article><h2>Aparência</h2><p>A mesma identidade do aplicativo, adaptada à televisão.</p><div className="options"><button aria-pressed={theme === 'night'} onClick={() => setPreference('theme','night')}><Moon/> Escuro</button><button aria-pressed={theme === 'mobile'} onClick={() => setPreference('theme','mobile')}><Sun/> Claro</button></div></article><article><h2>Movimento</h2><p>Personalize as animações sem alterar as informações.</p><div className="options"><button aria-pressed={motion === 'full'} onClick={() => setPreference('motion','full')}>Completo</button><button aria-pressed={motion === 'soft'} onClick={() => setPreference('motion','soft')}>Suave</button><button aria-pressed={motion === 'off'} onClick={() => setPreference('motion','off')}>Desligado</button></div>{reduced && <small>A preferência de reduzir movimento do sistema está ativa.</small>}</article></div><div className="settings-row"><article><h2>Modo do painel</h2><div className="options">{[['auto','Automático'],['ambient','Ambient'],['live','Live']].map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setView('Agora'); }}>{label}</button>)}</div></article><article><h2>{demo ? 'Demonstração' : 'Sua conexão'}</h2><p>{demo ? 'Você está explorando dados fictícios. Nenhuma conta real foi vinculada.' : 'Modo ' + (snapshot.privacy === 'family' ? 'família' : 'privado') + '. Altere a privacidade somente pelo celular.'}</p><button onClick={async () => { if (!demo) { try { await session.call('logout', {}); } catch {} } clear(); }}>{demo ? 'Reiniciar demonstração' : 'Desvincular esta TV'}</button><small>{demo ? 'Este pacote não deve ser enviado à loja.' : 'Autorização de até 24 horas; reiniciar exige novo pareamento neste piloto.'}</small></article></div></section>}
       </div>
       <footer><strong><Headphones/> CREWCIERGE</strong><div className="ticker"><span className="ticker-message" key={effectiveMotion === 'off' ? 'static' : currentTicker}>{currentTicker}</span></div><ChannelDock channel={channel}/></footer>
