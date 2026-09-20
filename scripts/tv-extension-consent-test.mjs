@@ -69,6 +69,10 @@ assert.match(http,/audience === 'owner' && preferences\.share\?\.finance === tru
 assert.match(http,/audience === 'owner' && preferences\.share\?\.hotel === true/);
 assert.match(http,/audience === 'owner' && preferences\.share\?\.mobility === true/);
 assert.match(http,/buildUberPhoneHandoff/);
+assert.match(http,/tvGateContext/);
+assert.match(http,/source:'crewcheck-radar'/);
+assert.match(http,/snapshot\.traffic = null/);
+assert.match(http,/TV never infers current\/home location/);
 assert.match(http,/airlineVisualFor/);
 assert.match(http,/CREWCHECK_TV_AIRLINE_VISUALS_JSON/);
 assert.match(http,/snapshot\.journeyDetails = \{\}/);
