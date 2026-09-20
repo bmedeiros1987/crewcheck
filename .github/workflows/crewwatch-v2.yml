@@ -80,6 +80,9 @@ jobs:
       - name: Snapshot contract
         run: gradle -p android-wrapper :wear:testDebugUnitTest
 
+      - name: Phone wellbeing publisher contract
+        run: gradle -p android-wrapper :app:testDebugUnitTest
+
       - name: Build paired phone pilot
         run: gradle -p android-wrapper :app:assembleDebug
 
