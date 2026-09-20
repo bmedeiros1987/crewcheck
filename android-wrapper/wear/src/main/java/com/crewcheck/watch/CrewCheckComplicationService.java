@@ -39,14 +39,17 @@ public final class CrewCheckComplicationService extends ComplicationDataSourceSe
 
         String shortText;
         String longText;
+        String title;
         String description;
         if (snapshot == null) {
             shortText = "ABRIR";
             longText = "Abra o CrewCheck no celular";
+            title = "CREWCHECK";
             description = "Abra o CrewCheck no celular para sincronizar a escala.";
         } else {
             shortText = snapshot.complicationShortText(now);
             longText = snapshot.complicationLongText(now);
+            title = snapshot.complicationTitle(now);
             description = snapshot.accessibilityDescription(now);
         }
 
@@ -61,13 +64,13 @@ public final class CrewCheckComplicationService extends ComplicationDataSourceSe
         PlainComplicationText descriptionText = text(description);
         if (ComplicationType.LONG_TEXT.equals(type)) {
             return new LongTextComplicationData.Builder(text(longText), descriptionText)
-                    .setTitle(text("CrewCheck"))
+                    .setTitle(text(title))
                     .setTapAction(tapAction)
                     .build();
         }
 
         return new ShortTextComplicationData.Builder(text(shortText), descriptionText)
-                .setTitle(text("Crew"))
+                .setTitle(text(title))
                 .setTapAction(tapAction)
                 .build();
     }
