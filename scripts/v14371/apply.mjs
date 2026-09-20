@@ -46,6 +46,15 @@ const newBlock = `export async function openActiveRoster(): Promise<{ roster: Cr
         const conflict = new Error('Escala ativa precisa de confirmação: servidor e dispositivo possuem versões diferentes.');
         (conflict as any).code = 'ACTIVE_ROSTER_CONFLICT';
         (conflict as any).comparison = reconciliation.comparison;
+        // The default contract remains fail-closed. The verified account-sync
+        // consumer may adjudicate this exact conflict without refetching or
+        // mistaking device fallback bytes for account authority.
+        (conflict as any).remoteCandidate = {
+          roster: payload.data.roster,
+          compliance: payload.data.compliance as any,
+          gym: payload.data.gym || [],
+          summary: payload.roster || null,
+        };
         throw conflict;
       }
 
