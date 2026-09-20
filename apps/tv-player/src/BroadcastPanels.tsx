@@ -78,7 +78,8 @@ export function BroadcastPanel({view,snapshot,demo,clock,openDay,openView,prefs}
       <div className="hero-bottom-panel"><Timings snapshot={snapshot}/><div className="broadcast-hero-foot"><FactStatus snapshot={snapshot}/><button className="primary-button" disabled={!next} onClick={()=>next&&openDay(next.date)}>Ver jornada <ChevronRight/></button></div></div>
     </article>
     <aside className="broadcast-column">
-      <article className="broadcast-card presentation-essentials-card"><Eyebrow><ShieldCheck/> O QUE IMPORTA PARA APRESENTAR</Eyebrow>
+      <article className="broadcast-card presentation-essentials-card"><Eyebrow>{!next&&prefs.weather&&baseWeather?<><CloudSun/> AGORA NA SUA BASE</>:<><ShieldCheck/> O QUE IMPORTA PARA APRESENTAR</>}</Eyebrow>
+        {!next&&prefs.weather&&baseWeather&&<div className="offday-base-context"><strong>{Math.round(baseWeather.temperature)}°C</strong><span>{baseWeather.city||baseWeather.airport} · {baseWeather.label}</span></div>}
         <div className="essential-grid">
           <div><Clock3/><small>Apresentação</small><b>{next?.presentation||'Não informada'}</b></div>
           {prefs.gate&&<div><MapPin/><small>Portão</small><b>{gate?.label||'Não confirmado'}</b>{gate?.remoteStand===true&&<em>REMOTA</em>}</div>}
