@@ -91,7 +91,12 @@ public final class WatchHealthConsent {
      */
     public static WatchHealthConsent grant(Context context, String consentVersion, Set<String> categories) {
         if (!CONSENT_VERSION.equals(consentVersion)) {
-            return revoke(context);
+            // Versão desconhecida não é só "não aceitar": o pulso pode estar com dado de uma
+            // versão anterior. Revogar local e marcar pendência garante que a limpeza do Data
+            // Layer acontece no próximo retryPendingRevocation(), em vez de ficar só local.
+            WatchHealthConsent rejected = revoke(context);
+            setRevocationPending(context, true);
+            return rejected;
         }
         Set<String> granted = normalize(categories);
         if (granted.isEmpty()) {

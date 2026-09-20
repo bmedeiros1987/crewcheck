@@ -104,4 +104,60 @@ public final class CrewLifeSnapshotTest {
             assertEquals(written, "OTIMA", CrewLifeSnapshot.fromJson(json).recoveryLabel);
         }
     }
+
+    // --- ausência não pode virar zero no cache do relógio -------------------------------
+
+    @Test
+    public void absentCategoriesAreNotResurrectedAsZeroOnRoundTrip() throws Exception {
+        JSONObject onlySleep = new JSONObject()
+                .put("schemaVersion", WatchContract.CREWLIFE_SCHEMA_VERSION)
+                .put("generatedAtEpochMs", NOW)
+                .put("validUntilEpochMs", NOW + 3_600_000L)
+                .put("sleepMinutes", 412)
+                .put("sleepLabel", "6h52");
+
+        // É isto que o WellbeingStore grava: fromJson -> toJson.
+        JSONObject cached = CrewLifeSnapshot.fromJson(onlySleep).toJson();
+
+        assertEquals(412, cached.getInt("sleepMinutes"));
+        assertEquals("6h52", cached.getString("sleepLabel"));
+        for (String absent : new String[]{
+                "steps", "activeMinutes", "restingHeartRate", "hrvMs",
+                "recoveryScore", "recoveryLabel", "recommendation", "detail"}) {
+            assertFalse("ausência virou valor: " + absent, cached.has(absent));
+        }
+    }
+
+    @Test
+    public void aRealZeroStillTravelsAndIsDistinctFromAbsence() throws Exception {
+        JSONObject withZero = new JSONObject()
+                .put("schemaVersion", WatchContract.CREWLIFE_SCHEMA_VERSION)
+                .put("generatedAtEpochMs", NOW)
+                .put("validUntilEpochMs", NOW + 3_600_000L)
+                .put("steps", 0);
+
+        CrewLifeSnapshot snapshot = CrewLifeSnapshot.fromJson(withZero);
+        assertTrue("zero medido é dado", snapshot.has("steps"));
+        assertFalse("sono não veio", snapshot.has("sleepMinutes"));
+
+        JSONObject cached = snapshot.toJson();
+        assertTrue(cached.has("steps"));
+        assertEquals(0, cached.getInt("steps"));
+        assertFalse(cached.has("sleepMinutes"));
+    }
+
+    @Test
+    public void severalRoundTripsDoNotAccumulateFields() throws Exception {
+        JSONObject onlyHeart = new JSONObject()
+                .put("schemaVersion", WatchContract.CREWLIFE_SCHEMA_VERSION)
+                .put("generatedAtEpochMs", NOW)
+                .put("validUntilEpochMs", NOW + 3_600_000L)
+                .put("restingHeartRate", 58);
+
+        JSONObject once = CrewLifeSnapshot.fromJson(onlyHeart).toJson();
+        JSONObject twice = CrewLifeSnapshot.fromJson(once).toJson();
+        assertEquals(once.length(), twice.length());
+        assertFalse(twice.has("steps"));
+        assertFalse(twice.has("sleepMinutes"));
+    }
 }
