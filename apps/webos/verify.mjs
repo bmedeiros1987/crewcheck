@@ -56,7 +56,23 @@ const bootBlock = css.slice(css.indexOf('.boot'), css.indexOf('.boot-code') + 20
 for (const banned of ['display:grid', 'clamp(', ':focus-visible', 'gap:']) {
   assert.ok(!bootBlock.includes(banned), `o CSS da Home minima usa "${banned}"`);
 }
-ok('CSS: overrides do legacy.css presentes e Home minima sem recurso moderno');
+// Presenca nao basta: o legacy.css so corrige grid/clamp/:focus-visible se
+// vier DEPOIS do tv.css na folha final. Reordenar os imports do entry.ts
+// quebraria o layout da TV sem quebrar nenhum teste - por isso a precedencia
+// e verificada, nao presumida.
+const order = [
+  ['.live', '.live{display:grid', '.live{display:flex'],
+  ['h1', 'h1{font-size:clamp(', 'h1{font-size:70px'],
+  ['foco', ':focus-visible', 'button:focus,a:focus'],
+];
+for (const [label, original, override] of order) {
+  const at = css.indexOf(original);
+  const overrideAt = css.indexOf(override);
+  assert.ok(at >= 0 && overrideAt >= 0, `marcadores de "${label}" ausentes no app.css`);
+  assert.ok(overrideAt > at,
+    `o override de "${label}" vem ANTES do tv.css na folha final: o legacy.css perde a cascata`);
+}
+ok('CSS: overrides do legacy.css vencem o tv.css e Home minima sem recurso moderno');
 
 // --- 4. CSP -----------------------------------------------------------------
 const html = await read('index.html');

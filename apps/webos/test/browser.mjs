@@ -9,6 +9,7 @@
 // degradacao com Hub/internet fora do ar e imagem quebrada.
 
 import {chromium} from 'playwright-core';
+import {build} from 'esbuild';
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
@@ -19,6 +20,34 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const pageUrl = 'file://' + path.join(root, 'dist/webos/index.html');
 const shots = path.join(root, 'dist/webos-shots');
 fs.mkdirSync(shots, {recursive: true});
+
+/**
+ * O harness da fronteira de erro e construido aqui, sob demanda.
+ *
+ * Antes ele dependia de um comando avulso rodado a mao: o teste passava na
+ * maquina de quem tinha o diretorio e quebrava no CI, que nao tinha. Um teste
+ * que so roda onde ja rodou nao prova nada - entao ele produz o que consome.
+ *
+ * Sai em dist/webos-harness, fora de dist/webos: o verify.mjs reprova
+ * qualquer arquivo extra dentro do pacote.
+ */
+async function ensureHarness() {
+  const dir = path.join(root, 'dist/webos-harness');
+  fs.mkdirSync(dir, {recursive: true});
+  await build({
+    absWorkingDir: root,
+    entryPoints: ['apps/webos/test/fixtures/errorBoundaryHarness.tsx'],
+    outfile: path.join(dir, 'harness.js'),
+    bundle: true, format: 'iife', target: ['chrome53'], minify: true,
+    define: {'process.env.NODE_ENV': '"production"'},
+  });
+  fs.writeFileSync(path.join(dir, 'index.html'),
+    '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=1920,initial-scale=1"><title>Harness</title>'
+    + '<link rel="stylesheet" href="harness.css"></head>'
+    + '<body><div id="root"></div><script src="harness.js"></script></body></html>');
+  return path.join(dir, 'index.html');
+}
 
 const results = [];
 function report(id, label, passed, detail = '') {
@@ -87,6 +116,8 @@ async function assertNotBlank(page, name) {
 // --no-proxy-server: este sandbox roteia todo HTTP por um proxy de saida que
 // recusaria a LAN. host-resolver-rules aponta o IP real do Hub para o stub
 // local, para exercitar a origem exata que vai no CSP do pacote.
+const harnessUrl = 'file://' + await ensureHarness();
+
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--no-proxy-server', '--host-resolver-rules=MAP 192.168.0.32 127.0.0.1'],
@@ -240,7 +271,7 @@ try {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('file://' + path.join(root, 'dist/webos-harness/index.html'));
+    await page.goto(harnessUrl);
     await page.waitForTimeout(900);
     const {text} = await assertNotBlank(page, 'P0-3b-fronteira-erro');
     const code = await page.evaluate(() => window.__code);
