@@ -9,6 +9,17 @@ export type CrewCheckWatchState =
   | 'CHANGED'
   | 'UNKNOWN';
 
+export type CrewCheckWatchScheduleItem = {
+  id: string;
+  kind: 'flight' | 'stay' | 'duty';
+  time: string;
+  title: string;
+  route: string;
+  presentation: string;
+  gate: string;
+  detail: string;
+};
+
 export type CrewCheckWatchSnapshot = {
   schemaVersion: 1;
   contextId: string;
@@ -35,6 +46,7 @@ export type CrewCheckWatchSnapshot = {
   hotelPickup: string;
   changed: boolean;
   source: 'canonical-roster';
+  schedule: CrewCheckWatchScheduleItem[];
 };
 
 export type WatchEventLike = {
@@ -130,6 +142,7 @@ export function buildCrewCheckWatchSnapshot(
       hotelPickup: '',
       changed: false,
       source: 'canonical-roster',
+      schedule: [],
     };
   }
 
@@ -214,6 +227,45 @@ export function buildCrewCheckWatchSnapshot(
     ? [clean(event.origin), clean(event.destination)].filter(Boolean).join(' → ')
     : '';
 
+  const schedule = events
+    .filter((candidate) => !candidate.placeholder && ['flight', 'stay', 'duty'].includes(candidate.kind))
+    .filter((candidate) => {
+      const start = candidate.canonical?.startDateTime
+        ? new Date(candidate.canonical.startDateTime).getTime()
+        : Number.POSITIVE_INFINITY;
+      return !Number.isFinite(start) || start >= now - 2 * HOUR_MS;
+    })
+    .slice(0, 8)
+    .map((candidate): CrewCheckWatchScheduleItem => {
+      const start = candidate.canonical?.startDateTime
+        ? new Date(candidate.canonical.startDateTime).getTime()
+        : 0;
+      const kind: CrewCheckWatchScheduleItem['kind'] =
+        candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
+      const title = kind === 'flight'
+        ? clean(candidate.flightNumber) || 'Voo'
+        : kind === 'stay'
+          ? 'Pernoite'
+          : clean(candidate.flightNumber) || 'Programação';
+      const route = kind === 'flight'
+        ? [clean(candidate.origin), clean(candidate.destination)].filter(Boolean).join(' → ')
+        : clean(candidate.destination) || clean(candidate.origin);
+      const rawGate = clean(candidate.gate);
+      const remote = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
+      return {
+        id: clean(candidate.canonical?.id) || candidate.id,
+        kind,
+        time: clockLabel(start),
+        title,
+        route,
+        presentation: /^\d{1,2}:\d{2}$/.test(String(candidate.presentation || ''))
+          ? String(candidate.presentation)
+          : '',
+        gate: remote ? 'REMOTA' : rawGate,
+        detail: kind === 'stay' ? clean(candidate.hotel) : clean(candidate.subtitle),
+      };
+    });
+
   return {
     schemaVersion: 1,
     contextId: clean(canonical?.id) || event.id,
@@ -253,5 +305,6 @@ export function buildCrewCheckWatchSnapshot(
     hotelPickup: '',
     changed: false,
     source: 'canonical-roster',
+    schedule,
   };
 }
