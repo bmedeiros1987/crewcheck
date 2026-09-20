@@ -80,6 +80,19 @@ assert.equal(visual?.imageUrl,'https://media.example.test/latam-hero.jpg');
 assert.equal(airlineVisualFor('GOL',JSON.stringify({GOL:{imageUrl:'http://insecure.example/gol.jpg',source:'bad',licensed:true}})),null);
 assert.equal(airlineVisualFor('AZUL',JSON.stringify({AZUL:{imageUrl:'https://media.example.test/azul.jpg',source:'',licensed:true}})),null);
 
+const mobile=await readFile('client/src/pages/TvPairPage.tsx','utf8');
+assert.match(mobile,/Quem está vendo esta TV/);
+assert.match(mobile,/Só eu — experiência completa autorizável/);
+assert.match(mobile,/Visitante — linguagem simples/);
+assert.match(mobile,/Tripulação/);
+assert.match(mobile,/Financeiro/);
+assert.match(mobile,/Uber no celular/);
+assert.match(mobile,/Compartilhar origem para trânsito por 5 min/);
+assert.match(mobile,/ttlMs:5\*60\*1000/);
+assert.match(mobile,/A coordenada é temporária e não é exibida na TV/);
+assert.match(mobile,/\/api\/tv\/preferences/);
+assert.match(mobile,/\/api\/tv\/context/);
+
 const http=await readFile('server/tv/http.mjs','utf8');
 const routes=await readFile('server/tv/routes.mjs','utf8');
 assert.match(http,/\/api\/tv\/preferences/);
