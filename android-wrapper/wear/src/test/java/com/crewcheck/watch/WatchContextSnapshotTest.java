@@ -1,5 +1,6 @@
 package com.crewcheck.watch;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -34,6 +35,29 @@ public final class WatchContextSnapshotTest {
         assertTrue(snapshot.remoteStand);
         assertEquals("REMOTA", snapshot.gateLabel());
         assertEquals("REMOTA", snapshot.complicationShortText(NOW));
+    }
+
+    @Test
+    public void carriesCompactRosterScheduleWithoutChangingOperationalMeaning() throws Exception {
+        JSONArray schedule = new JSONArray()
+                .put(new JSONObject()
+                        .put("id", "f1")
+                        .put("kind", "flight")
+                        .put("time", "13:45")
+                        .put("title", "LA3721")
+                        .put("route", "BSB → GRU")
+                        .put("presentation", "13:30")
+                        .put("gate", "24"));
+
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("state", "REPORTING")
+                .put("presentationTime", "13:30")
+                .put("schedule", schedule));
+
+        assertEquals(1, snapshot.schedule.size());
+        assertEquals("LA3721", snapshot.schedule.get(0).title);
+        assertEquals("BSB → GRU", snapshot.schedule.get(0).route);
+        assertEquals("APRESENTAÇÃO", snapshot.complicationTitle(NOW));
     }
 
     @Test
