@@ -69,13 +69,20 @@ const ICAO_TO_IATA:Record<string,string>={
   SBCG:'CGR',SBRP:'RAO',SBCX:'CXJ',SBFI:'IGU',SBNF:'NVT',SBJP:'JPA',
   SCEL:'SCL',SPJC:'LIM',SAEZ:'EZE',SABE:'AEP',SUMU:'MVD',SGAS:'ASU',SKBO:'BOG',KMIA:'MIA',KMCO:'MCO',
 };
+const VISITOR_CITY_NAMES:Record<string,string>={
+  SCL:'Santiago',LIM:'Lima',EZE:'Buenos Aires',AEP:'Buenos Aires',MVD:'Montevidéu',
+  ASU:'Assunção',BOG:'Bogotá',MIA:'Miami',MCO:'Orlando',
+};
+function visitorCityFor(iata:string){
+  return VISITOR_CITY_NAMES[iata]||airportCity(iata,iata);
+}
 export function airportCodeExplanation(code:string|null|undefined):{iata:string;icao:string|null;city:string}|null{
   const raw=String(code||'').trim().toUpperCase();
   if(!raw)return null;
   const iata=raw.length===4?(ICAO_TO_IATA[raw]||''):raw;
   const icao=raw.length===4?raw:null;
   if(!iata)return{ iata:raw, icao, city:raw };
-  return{ iata, icao, city:airportCity(iata,iata) };
+  return{ iata, icao, city:visitorCityFor(iata) };
 }
 
 export function visitorAirportLabel(code:string|null|undefined, visitor=false):string{
