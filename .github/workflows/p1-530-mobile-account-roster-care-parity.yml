@@ -19,6 +19,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Prepare canonical production runtime
+        run: node scripts/v139/apply.mjs
       - name: Reproduce mobile stale-cache and Care parity contract
         run: node scripts/regression-p1-530-mobile-account-roster-care-parity.mjs
       - name: TypeScript
