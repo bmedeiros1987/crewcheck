@@ -6,7 +6,7 @@ import { createDeviceService } from './devices.mjs';
 import { createPilotStore } from './pilot-store.mjs';
 import { readPilotPolicy } from './pilot-policy.mjs';
 import { createTvHandler } from './routes.mjs';
-import { buildUberPhoneHandoff } from './mobility.mjs';
+import { buildUberPhoneHandoff, tvAirportMobilityPoint } from './mobility.mjs';
 import { airlineVisualFor } from './airline-visual.mjs';
 const execFileAsync = promisify(execFile);
 const safeCodes = new Set(['ERR_MODULE_NOT_FOUND','ERR_PACKAGE_PATH_NOT_EXPORTED','ENOENT','EACCES','ECONNREFUSED','ETIMEDOUT','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR','ER_PARSE_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR']);
@@ -50,6 +50,44 @@ function tvNextFlight(snapshot, nowMs) {
     .filter(activity => activity?.kind === 'flight' && activity.flight && Number.isFinite(Date.parse(activity.endAt)) && Date.parse(activity.endAt) > nowMs)
     .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0] || null;
 }
+async function tvTrafficContext(origin, flight, routeOrigin, now) {
+  if (!flight?.origin || !routeOrigin) return null;
+  const airport=tvAirportMobilityPoint(flight.origin);
+  const latitude=Number(routeOrigin.latitude), longitude=Number(routeOrigin.longitude);
+  if (!airport || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  let timer;
+  try {
+    const endpoint=new URL(origin + '/api/maps/route-preview');
+    endpoint.searchParams.set('origin',`${latitude},${longitude}`);
+    endpoint.searchParams.set('destination',`${airport.lat},${airport.lon}`);
+    endpoint.searchParams.set('mode','driving');
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('traffic_timeout')),4500);});
+    const response=await Promise.race([fetch(endpoint,{headers:{Accept:'application/json'}}),timeout]);
+    if (!response?.ok) return null;
+    const payload=await response.json();
+    if (!payload?.ok) return null;
+    const durationText=String(payload.durationInTrafficText||payload.durationText||'').trim().slice(0,48)||null;
+    const delayText=String(payload.trafficDelayText||'').trim().slice(0,48)||null;
+    const incidents=Array.isArray(payload.incidents)?payload.incidents.length:null;
+    if (!durationText && !delayText) return null;
+    return {
+      value:{
+        durationText,
+        delayText,
+        status: payload.hasRoadClosure ? 'Via com bloqueio' : delayText ? 'Trânsito com impacto' : 'Rota atualizada',
+        incidents,
+      },
+      source:'crewcheck-route-preview',
+      observedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+3*60*1000).toISOString(),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function tvGateContext(origin, flight, now) {
   if (!flight?.flight || !flight?.origin || !flight?.destination) return null;
   let timer;
@@ -207,9 +245,10 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
         });
         const nextFlight = audience === 'owner' && effectivePrivacy === 'private' && snapshot.sharePermissions.operational ? tvNextFlight(snapshot, now.getTime()) : null;
         snapshot.gate = nextFlight ? await tvGateContext(settings.origin, nextFlight, now) : null;
-        // Traffic stays fail-closed until the main CrewCheck supplies a fresh,
-        // user-authorized route origin. TV never infers current/home location.
-        snapshot.traffic = null;
+        const routeOrigin = audience === 'owner' && effectivePrivacy === 'private' && preferences.share?.traffic === true
+          ? auth.context?.routeOrigin || null
+          : null;
+        snapshot.traffic = nextFlight && routeOrigin ? await tvTrafficContext(settings.origin, nextFlight, routeOrigin, now) : null;
         return snapshot;
       },
       news: async () => ({ generatedAt: new Date().toISOString(), stale: true, items: [] }),
@@ -225,7 +264,7 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
     const settings = policy();
     if (!settings.enabled) { send(404, { error: 'unavailable' }); return true; }
     const origin = String(req.headers.origin || '');
-    const accountRoute = ['/api/tv/approve', '/api/tv/revoke', '/api/tv/devices', '/api/tv/preferences'].includes(url.pathname);
+    const accountRoute = ['/api/tv/approve', '/api/tv/revoke', '/api/tv/devices', '/api/tv/preferences', '/api/tv/context'].includes(url.pathname);
     if (!settings.allowsOrigin(origin, accountRoute)) { send(403, { error: 'origin_not_allowed' }); return true; }
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     if (req.method === 'OPTIONS') {
