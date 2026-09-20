@@ -25,6 +25,16 @@ function number(value){
   const parsed=Number(value);
   return Number.isFinite(parsed)?parsed:null;
 }
+function withOffset(value,offsetSeconds=0){
+  const text=String(value||'').trim();
+  if(!text||/[zZ]$|[+-]\d{2}:\d{2}$/.test(text))return text;
+  const total=Math.trunc(Number(offsetSeconds)||0);
+  const sign=total<0?'-':'+';
+  const abs=Math.abs(total);
+  const hours=String(Math.floor(abs/3600)).padStart(2,'0');
+  const minutes=String(Math.floor((abs%3600)/60)).padStart(2,'0');
+  return text+sign+hours+':'+minutes;
+}
 function airportCode(value){
   const code=String(value||'').trim().toUpperCase();
   return /^[A-Z]{3}$/.test(code)?code:'';
@@ -62,14 +72,16 @@ export function createTvWeatherProvider({fetchImpl=fetch,now=Date.now}={}){
       if(!response.ok||!payload)return cached?.value||null;
       const current=payload.current||{};
       const meta=weatherMeta(current.weather_code);
-      const observedAt=String(current.time||new Date(now()).toISOString());
+      const localObservedAt=String(current.time||'');
+      const offsetSeconds=Number(payload.utc_offset_seconds)||0;
+      const observedAt=localObservedAt?withOffset(localObservedAt,offsetSeconds):new Date(now()).toISOString();
       const hourlyTimes=Array.isArray(payload.hourly?.time)?payload.hourly.time:[];
-      const currentIndex=Math.max(0,hourlyTimes.findIndex(value=>String(value)>=observedAt.slice(0,13)));
+      const currentIndex=Math.max(0,hourlyTimes.findIndex(value=>String(value)>=localObservedAt.slice(0,13)));
       const hourly=hourlyTimes.slice(currentIndex,currentIndex+8).map((at,index)=>{
         const sourceIndex=currentIndex+index;
         const hourMeta=weatherMeta(payload.hourly?.weather_code?.[sourceIndex]);
         return{
-          at:String(at),
+          at:withOffset(at,offsetSeconds),
           temperature:number(payload.hourly?.temperature_2m?.[sourceIndex]),
           rainChance:number(payload.hourly?.precipitation_probability?.[sourceIndex]),
           kind:hourMeta.kind,
