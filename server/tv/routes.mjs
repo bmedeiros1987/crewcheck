@@ -52,10 +52,11 @@ export function createTvHandler({
         return { status: 200, body: await devices.heartbeat(token) };
       if (path === "/api/tv/snapshot" && method === "GET") {
         const snapshot = await loadProjection(auth);
+        const expectedPrivacy = auth.preferences?.audience && auth.preferences.audience !== "owner" ? "family" : auth.privacy;
         if (
           !snapshot ||
           snapshot.deviceId !== auth.deviceId ||
-          snapshot.privacy !== auth.privacy
+          snapshot.privacy !== expectedPrivacy
         )
           throw new TvError(503, "projection_unavailable");
         return { status: 200, body: snapshot };
