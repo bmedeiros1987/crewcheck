@@ -341,13 +341,42 @@ public final class WatchContextSnapshot {
         return "CREW";
     }
 
+    public String complicationTitle(long nowEpochMs) {
+        if (isStale(nowEpochMs)) return "CREWCHECK";
+        return switch (state) {
+            case "LEAVE_SOON" -> "SAÍDA";
+            case "REPORTING" -> "APRESENTAÇÃO";
+            case "BOARDING" -> "EMBARQUE";
+            case "IN_FLIGHT" -> "VOO ATUAL";
+            case "CONNECTION" -> "PRÓXIMO VOO";
+            case "OVERNIGHT" -> "PERNOITE";
+            case "CHANGED" -> "ALTERAÇÃO";
+            default -> "CREWCHECK";
+        };
+    }
+
     public String complicationLongText(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "Abra o CrewCheck no celular";
-        StringBuilder text = new StringBuilder(headline);
-        if (!primaryTime.isBlank()) text.append(" • ").append(primaryTime);
-        if (remoteStand) text.append(" • REMOTA");
-        else if (!gate.isBlank()) text.append(" • Portão ").append(gate);
-        return truncate(text.toString(), 48);
+
+        return truncate(switch (state) {
+            case "LEAVE_SOON" -> {
+                String value = !leaveTime.isBlank() ? "Sair " + leaveTime : headline;
+                String apz = presentationTime.isBlank() ? "" : " • APZ " + presentationTime;
+                yield value + apz;
+            }
+            case "REPORTING" -> "APZ " + firstNonBlank(presentationTime, primaryTime)
+                    + (presentationPlace.isBlank() ? "" : " • " + presentationPlace);
+            case "BOARDING" -> firstNonBlank(currentFlight, headline)
+                    + (remoteStand ? " • REMOTA" : gate.isBlank() ? "" : " • P" + gate);
+            case "IN_FLIGHT" -> firstNonBlank(currentFlight, headline)
+                    + (currentRoute.isBlank() ? "" : " • " + currentRoute)
+                    + (eta.isBlank() ? "" : " • ETA " + eta);
+            case "CONNECTION" -> firstNonBlank(nextFlight, headline)
+                    + (connection.isBlank() ? "" : " • " + connection);
+            case "OVERNIGHT" -> firstNonBlank(overnight, headline)
+                    + (hotelPickup.isBlank() ? "" : " • " + hotelPickup);
+            default -> headline + (primaryTime.isBlank() ? "" : " • " + primaryTime);
+        }, 48);
     }
 
     public String accessibilityDescription(long nowEpochMs) {
@@ -428,6 +457,13 @@ public final class WatchContextSnapshot {
                 throw new IllegalArgumentException("Campo pessoal não permitido no relógio: " + key);
             }
         }
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) return value;
+        }
+        return "";
     }
 
     private static String defaultHeadline(String state, boolean remoteStand, boolean changed) {
