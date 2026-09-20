@@ -255,6 +255,55 @@ home = replaceAllRequired(
 write(homePath, home);
 
 // ---------------------------------------------------------------------------
+// Mobile Roster consumer: same Care presentation authority as FlightDeck.
+// v14.3.87a already routes Care classifications into visual rest mode; here we
+// only specialize the human copy. Canonical data remains untouched.
+// ---------------------------------------------------------------------------
+const rosterLaunchPath = 'client/src/components/v1391/RosterLaunchView.tsx';
+let rosterLaunch = read(rosterLaunchPath);
+rosterLaunch = ensureNamedImport(
+  rosterLaunch,
+  '@/lib/scheduleActivityClassification',
+  'carePresentationForScheduleActivity',
+  'import de Care Mode no RosterLaunchView',
+);
+rosterLaunch = replaceRequired(
+  rosterLaunch,
+  `  if (mode === 'rest') {
+    if (/DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'Descanso na base';
+    if (/(DO|DOF|DOP|OFF)/.test(code)) return \`Folga publicada\${code ? \` · \${code}\` : ''}\`;
+    return 'Descanso publicado';
+  }`,
+  `  if (mode === 'rest') {
+    const presentation = carePresentationForScheduleActivity(event);
+    if (presentation?.state === 'FERIAS') return 'Férias';
+    if (presentation?.state === 'LUTO') return 'Luto';
+    if (presentation?.state === 'FOLGA') return 'Folga';
+    if (presentation?.state === 'REPOUSO') return 'Repouso';
+    if (/DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'Descanso na base';
+    if (/(DO|DOF|DOP|OFF)/.test(code)) return \`Folga publicada\${code ? \` · \${code}\` : ''}\`;
+    return 'Descanso publicado';
+  }`,
+  'Roster cardTitle care-aware após v14.3.93',
+);
+rosterLaunch = replaceRequired(
+  rosterLaunch,
+  `              const meta = modeMeta[mode];
+              const hours = duration(event);`,
+  `              const meta = modeMeta[mode];
+              const carePresentation = mode === 'rest' ? carePresentationForScheduleActivity(event) : null;
+              const hours = duration(event);`,
+  'Roster calcula apresentação Care por card',
+);
+rosterLaunch = replaceRequired(
+  rosterLaunch,
+  `<div><small>{meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
+  `<div><small>{carePresentation?.label || meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
+  'Roster exibe rótulo Care',
+);
+write(rosterLaunchPath, rosterLaunch);
+
+// ---------------------------------------------------------------------------
 // Concierge runtime: DMO/férias/folgas are care days, not roster-empty/programs.
 // ---------------------------------------------------------------------------
 const serverPath = 'server.mjs';
