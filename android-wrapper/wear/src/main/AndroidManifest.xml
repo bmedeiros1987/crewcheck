@@ -5,7 +5,7 @@
         android:required="true" />
 
     <!-- Required by AndroidX ambient support. The app does not hold the screen bright. -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
