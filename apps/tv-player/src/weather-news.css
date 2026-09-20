@@ -82,3 +82,7 @@
 [data-motion=off] .premium-weather-scene *{animation:none!important}
 @media(prefers-reduced-motion:reduce){.premium-weather-scene *{animation:none!important}}
 @media(max-height:600px){.weather-center-card{padding:1vw}.weather-center-main{margin:1vh 0}.weather-center-main>strong{font-size:4.8vw}.weather-hourly{margin-top:.8vh}.news-center-card{min-height:15vh}}
+
+.weather-operational-note{display:flex;align-items:center;margin-top:1vh;padding:.72vw .9vw;border:1px solid rgba(39,195,232,.28);border-radius:.7vw;background:linear-gradient(110deg,rgba(39,195,232,.11),rgba(154,77,255,.08));color:#cbeef6;font-size:.75vw}
+.weather-operational-note svg{width:1.1vw;height:1.1vw;margin-right:.55vw;color:#67d9ef}
+.theme-mobile .weather-operational-note{background:linear-gradient(110deg,#eafaff,#f5efff);border-color:#b9dce7;color:#28445a}
