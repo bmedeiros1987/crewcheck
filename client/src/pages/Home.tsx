@@ -4634,23 +4634,10 @@ export default function Home() {
 
   useEffect(() => {
     // A escala ativa pertence à conta, não ao cache deste dispositivo.
-    // O cache local é apenas bootstrap/offline: sempre consulte a publicação
-    // ativa da conta para que uma republicação vista na TV também chegue ao app.
+    if (Array.isArray(bundle.roster.days) && bundle.roster.days.length) return;
     let alive = true;
-    const startupFingerprint = Array.isArray(bundle.roster.days) && bundle.roster.days.length
-      ? rosterFingerprint(bundle.roster)
-      : '';
     openActiveRoster().then((active) => {
       if (!alive || !active?.roster?.days?.length) return;
-      const currentLocal = loadRoster();
-      const currentFingerprint = Array.isArray(currentLocal.roster.days) && currentLocal.roster.days.length
-        ? rosterFingerprint(currentLocal.roster)
-        : '';
-      // Não sobrescreva uma importação que o usuário concluiu enquanto a
-      // consulta de startup ainda estava em voo.
-      if (startupFingerprint && currentFingerprint && currentFingerprint !== startupFingerprint) return;
-      const activeFingerprint = rosterFingerprint(active.roster);
-      if (currentFingerprint && activeFingerprint === currentFingerprint) return;
       const compliance = active.compliance || analyzeSafe(active.roster);
       saveRoster(active.roster, 'Escala ativa sincronizada');
       setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
