@@ -57,7 +57,7 @@ assert.match(
 );
 assert.match(
   roster,
-  /presentation\.state === 'FERIAS'/,
+  /presentation\?\.state === 'FERIAS'/,
   'Roster must expose an explicit vacation presentation path',
 );
 assert.match(
