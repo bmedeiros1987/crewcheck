@@ -105,3 +105,21 @@ export function simpleCodeExplanation(code:string|null|undefined):string|null{
 export function isVisitorPresentation(snapshot:TvSnapshot):boolean{
   return snapshot.privacy==='family' || (snapshot as any).audience==='visitor';
 }
+
+export function calendarProgramSummary(activities:TvActivity[]=[],visitor=false):{kind:TvProgramKind;title:string;meta:string;programs:number}{
+  const programs=programsForDay(activities);
+  if(!programs.length)return{kind:'duty',title:'Sem programação',meta:'',programs:0};
+  if(programs.length===1){
+    const program=programs[0];
+    const meta=program.kind==='journey'
+      ? (program.flights.length===1?'1 etapa':`${program.flights.length} etapas`)
+      : program.kind==='stay'?'Pernoite'
+      : program.kind==='rest'?'Descanso':'Programação';
+    return{kind:program.kind,title:programTitle(program,visitor),meta,programs:1};
+  }
+  const flightPrograms=programs.filter(program=>program.kind==='journey');
+  const stayPrograms=programs.filter(program=>program.kind==='stay');
+  const totalLegs=flightPrograms.reduce((sum,program)=>sum+program.flights.length,0);
+  const parts=[totalLegs?`${totalLegs} etapas`:'',stayPrograms.length?`${stayPrograms.length} pernoite${stayPrograms.length>1?'s':''}`:''].filter(Boolean);
+  return{kind:flightPrograms.length?'journey':programs[0].kind,title:`${programs.length} programações`,meta:parts.join(' · '),programs:programs.length};
+}
