@@ -105,6 +105,7 @@ export function ProgramOverview({snapshot,programKey,onBack,onDetails}:{snapshot
 }
 
 function LockedSection({title}:{title:string}){return <div className="sensitive-locked"><LockKeyhole/><div><b>{title}</b><span>Ative este compartilhamento no CrewCheck do celular.</span></div></div>;}
+function UnavailableSection({title,message}:{title:string;message:string}){return <div className="sensitive-locked sensitive-unavailable"><Info/><div><b>{title}</b><span>{message}</span></div></div>;}
 
 export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSnapshot;programKey:string;prefs:TvDisplayPreferences;onBack:()=>void}){
   const program=programForKey(snapshot,programKey);
@@ -135,15 +136,15 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
       </article>}
 
       {prefs.crew&&<article className="detail-module sensitive-module"><header><Users/><div><small>DADO SENSÍVEL</small><h2>Tripulação</h2></div></header>
-        {permissions.crew&&Array.isArray(details.crew)?<ul>{details.crew.map((person,index)=><li key={index}><b>{person.role||person.position||'Tripulante'}</b><span>{person.name||'Nome não informado'}</span></li>)}</ul>:<LockedSection title="Tripulação"/>}
+        {!permissions.crew?<LockedSection title="Tripulação"/>:Array.isArray(details.crew)&&details.crew.length?<ul>{details.crew.map((person,index)=><li key={index}><b>{person.role||person.position||'Tripulante'}</b><span>{person.name||'Nome não informado'}</span></li>)}</ul>:<UnavailableSection title="Tripulação autorizada" message="Nenhuma fonte canônica de tripulação foi recebida para esta programação."/>}
       </article>}
 
       {prefs.finance&&<article className="detail-module sensitive-module"><header><WalletCards/><div><small>DADO SENSÍVEL</small><h2>Financeiro</h2></div></header>
-        {permissions.finance&&details.finance?<dl><dt>Estimativa</dt><dd>{Number.isFinite(details.finance.estimated)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:details.finance.currency||'BRL'}).format(Number(details.finance.estimated)):'Não informada'}</dd><dt>Diárias</dt><dd>{Number.isFinite(details.finance.perDiem)?String(details.finance.perDiem):'—'}</dd><dt>Produção</dt><dd>{Number.isFinite(details.finance.production)?String(details.finance.production):'—'}</dd></dl>:<LockedSection title="Financeiro"/>}
+        {!permissions.finance?<LockedSection title="Financeiro"/>:details.finance?<dl><dt>Estimativa</dt><dd>{Number.isFinite(details.finance.estimated)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:details.finance.currency||'BRL'}).format(Number(details.finance.estimated)):'Não informada'}</dd><dt>Diárias</dt><dd>{Number.isFinite(details.finance.perDiem)?String(details.finance.perDiem):'—'}</dd><dt>Produção</dt><dd>{Number.isFinite(details.finance.production)?String(details.finance.production):'—'}</dd></dl>:<UnavailableSection title="Financeiro autorizado" message="A TV ainda não recebeu uma estimativa financeira canônica para esta programação."/>}
       </article>}
 
       {prefs.hotel&&program.kind==='stay'&&<article className="detail-module stay-detail-module"><header><Hotel/><div><small>PERNOITE</small><h2>Hospedagem</h2></div></header>
-        {permissions.hotel&&details.hotel?<dl><dt>Hotel</dt><dd>{details.hotel.name||'Não informado'}</dd><dt>Transporte</dt><dd>{details.hotel.transport||'Não confirmado'}</dd><dt>Quarto</dt><dd>{details.hotel.room||'Não informado'}</dd></dl>:<LockedSection title="Hotel / quarto"/>}
+        {!permissions.hotel?<LockedSection title="Hotel / quarto"/>:details.hotel?<dl><dt>Hotel</dt><dd>{details.hotel.name||'Não informado'}</dd><dt>Transporte</dt><dd>{details.hotel.transport||'Não confirmado'}</dd><dt>Quarto</dt><dd>{details.hotel.room||'Não compartilhado'}</dd></dl>:<UnavailableSection title="Hospedagem autorizada" message="Hotel ainda não confirmado para este pernoite."/>}
       </article>}
 
       {(visitor||prefs.visitorExplanations)&&<article className="detail-module visitor-module"><header><Languages/><div><small>MODO VISITANTE</small><h2>Em linguagem simples</h2></div></header>
