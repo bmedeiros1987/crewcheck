@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const read = (path) => fs.readFileSync(path, 'utf8');
+
+const manifest = read('android-wrapper/wear/src/main/AndroidManifest.xml');
+const activity = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java');
+const faceInfo = read('android-wrapper/watchface/src/main/res/xml/watch_face_info.xml');
+const face = read('android-wrapper/watchface/src/main/res/raw/watchface.xml');
+const gradle = read('android-wrapper/wear/build.gradle');
+
+assert.match(manifest, /android\.permission\.WAKE_LOCK/, 'ambient support requires WAKE_LOCK');
+assert.match(manifest, /android:screenOrientation="portrait"/, 'watch activity must not rotate with wrist sensors');
+assert.match(manifest, /configChanges="orientation\|screenSize\|smallestScreenSize"/, 'orientation changes must not recreate the activity');
+
+assert.match(activity, /AmbientModeSupport\.attach\(this\)/, 'activity must attach Wear ambient support');
+assert.match(activity, /SCREEN_ORIENTATION_PORTRAIT/, 'runtime orientation guard is required');
+assert.match(activity, /private Primary primaryFor\(/, 'v2 must derive a single primary action');
+assert.match(activity, /if \(added >= 2\) break;/, 'supporting facts must be capped for glance-first density');
+assert.doesNotMatch(activity, /text\(LocalTime\.now\(\)\.format\(clockFormatter\), 29/, 'large duplicate clock must not return');
+assert.match(activity, /"HORA DE SAIR"/, 'leave-by state must be first-class');
+assert.match(activity, /"APRESENTAÇÃO"/, 'reporting state must be first-class');
+assert.match(activity, /"PERNOITE"/, 'overnight state must be first-class');
+
+assert.match(gradle, /androidx\.wear:wear:1\.4\.0/, 'stable Wear AndroidX ambient dependency must be pinned');
+assert.match(faceInfo, /<MultipleInstancesAllowed value="false" \/>/, 'pilot face should use a single stable instance');
+assert.match(face, /<Variant mode="AMBIENT"/, 'watch face must explicitly handle ambient mode');
+assert.match(face, /<!\[CDATA\[AGORA\]\]>/, 'watch face should expose the next-action concept');
+
+console.log('PASS CrewWatch v2: portrait lock, ambient support, glance-first hierarchy and face contract');

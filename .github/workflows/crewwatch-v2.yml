@@ -1,0 +1,62 @@
+name: CrewCheck Watch v2 premium
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/wear/**'
+      - 'android-wrapper/watchface/**'
+      - 'android-wrapper/settings.gradle'
+      - 'android-wrapper/build.gradle'
+      - 'scripts/regression-crewwatch-v2-premium.mjs'
+      - 'docs/crewwatch-v2.md'
+      - '.github/workflows/crewwatch-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.13'
+
+      - name: Premium UX and lifecycle regression
+        run: node scripts/regression-crewwatch-v2-premium.mjs
+
+      - name: Snapshot contract
+        run: gradle -p android-wrapper :wear:testDebugUnitTest
+
+      - name: Build CrewWatch
+        run: gradle -p android-wrapper :wear:assembleDebug :wear:bundleRelease
+
+      - name: Build CrewCheck Face
+        run: gradle -p android-wrapper :watchface:assembleDebug :watchface:bundleRelease
+
+      - name: Android lint
+        run: gradle -p android-wrapper :wear:lintDebug
+
+      - name: Upload pilot artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: crewwatch-v2-premium
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            android-wrapper/wear/build/outputs/apk/debug/*.apk
+            android-wrapper/wear/build/outputs/bundle/release/*.aab
+            android-wrapper/watchface/build/outputs/apk/debug/*.apk
+            android-wrapper/watchface/build/outputs/bundle/release/*.aab
+            android-wrapper/wear/build/reports/tests/testDebugUnitTest/**

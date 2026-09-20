@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WatchFace width="450" height="450">
+    <Metadata key="CLOCK_TYPE" value="DIGITAL" />
+    <Metadata key="PREVIEW_TIME" value="12:42:00" />
+
+    <Scene backgroundColor="#FF050B14">
+        <!-- Interactive identity ring. Decorative only; it never represents operational progress. -->
+        <PartDraw x="25" y="25" width="400" height="400">
+            <Ellipse x="0" y="0" width="400" height="400">
+                <Stroke thickness="2" color="#4438BDF8" />
+            </Ellipse>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartText x="0" y="54" width="450" height="30">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="20" weight="BOLD" color="#FF22D3EE"><![CDATA[CREWCHECK]]></Font>
+            </Text>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+
+        <DigitalClock x="0" y="0" width="450" height="450">
+            <TimeText
+                x="0"
+                y="86"
+                width="450"
+                height="96"
+                alpha="255"
+                align="CENTER"
+                format="hh:mm"
+                hourFormat="SYNC_TO_DEVICE">
+                <Font family="SYNC_TO_DEVICE" size="96" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
+                <Variant mode="AMBIENT" target="alpha" value="0" />
+            </TimeText>
+
+            <TimeText
+                x="0"
+                y="96"
+                width="450"
+                height="86"
+                alpha="0"
+                align="CENTER"
+                format="hh:mm"
+                hourFormat="SYNC_TO_DEVICE">
+                <Font family="SYNC_TO_DEVICE" size="82" weight="THIN" slant="NORMAL" color="#FFFFFFFF" />
+                <Variant mode="AMBIENT" target="alpha" value="255" />
+            </TimeText>
+        </DigitalClock>
+
+        <PartText x="0" y="198" width="450" height="26">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FF7C3AED"><![CDATA[AGORA]]></Font>
+            </Text>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+
+        <PartDraw x="57" y="232" width="336" height="126">
+            <RoundRectangle
+                x="0"
+                y="0"
+                width="336"
+                height="126"
+                cornerRadiusX="42"
+                cornerRadiusY="42">
+                <Fill color="#FF0C1827" />
+                <Stroke thickness="2" color="#775B4CF4" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <ComplicationSlot
+            x="57"
+            y="232"
+            width="336"
+            height="126"
+            slotId="1"
+            displayName="next_step_label"
+            supportedTypes="LONG_TEXT SHORT_TEXT EMPTY">
+            <BoundingRoundBox
+                x="0"
+                y="0"
+                width="336"
+                height="126"
+                outlinePadding="2.0"
+                cornerRadius="42" />
+
+            <Complication type="LONG_TEXT">
+                <PartText x="18" y="18" width="300" height="30">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF22D3EE">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <PartText x="18" y="49" width="300" height="54">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="27" weight="BOLD" color="#FFFFFFFF">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+
+            <Complication type="SHORT_TEXT">
+                <PartText x="18" y="20" width="300" height="28">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="17" weight="BOLD" color="#FF22D3EE">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <PartText x="18" y="48" width="300" height="52">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="34" weight="BOLD" color="#FFFFFFFF">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+
+        <PartText x="0" y="384" width="450" height="28">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL" color="#FF9EABBE"><![CDATA[TOQUE PARA ABRIR]]></Font>
+            </Text>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+    </Scene>
+</WatchFace>
