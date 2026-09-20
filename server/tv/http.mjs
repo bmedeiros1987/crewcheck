@@ -6,6 +6,8 @@ import { createDeviceService } from './devices.mjs';
 import { createPilotStore } from './pilot-store.mjs';
 import { readPilotPolicy } from './pilot-policy.mjs';
 import { createTvHandler } from './routes.mjs';
+import { buildUberPhoneHandoff, tvAirportMobilityPoint } from './mobility.mjs';
+import { airlineVisualFor } from './airline-visual.mjs';
 const execFileAsync = promisify(execFile);
 const safeCodes = new Set(['ERR_MODULE_NOT_FOUND','ERR_PACKAGE_PATH_NOT_EXPORTED','ENOENT','EACCES','ECONNREFUSED','ETIMEDOUT','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR','ER_PARSE_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR']);
 async function prepareStep(stage, action) {
@@ -31,6 +33,115 @@ function tvNextStayAirport(snapshot, nowMs) {
   const stay = stays[0];
   return tvAirportCode(stay?.destination) || tvAirportCode(stay?.origin);
 }
+function tvNextFlightOrigin(snapshot, nowMs) {
+  if (!snapshot || snapshot.privacy !== 'private' || !Array.isArray(snapshot.days)) return null;
+  const flight = snapshot.days.flatMap(day => Array.isArray(day.activities) ? day.activities : [])
+    .filter(activity => activity?.kind === 'flight' && Number.isFinite(Date.parse(activity.endAt)) && Date.parse(activity.endAt) > nowMs)
+    .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0];
+  return tvAirportCode(flight?.origin);
+}
+function tvFlightDigits(value) {
+  const match=String(value||'').toUpperCase().match(/(\d{2,5})$/);
+  return match ? match[1] : '';
+}
+function tvNextFlight(snapshot, nowMs) {
+  if (!snapshot || snapshot.privacy !== 'private' || !Array.isArray(snapshot.days)) return null;
+  return snapshot.days.flatMap(day => Array.isArray(day.activities) ? day.activities : [])
+    .filter(activity => activity?.kind === 'flight' && activity.flight && Number.isFinite(Date.parse(activity.endAt)) && Date.parse(activity.endAt) > nowMs)
+    .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0] || null;
+}
+async function tvTrafficContext(origin, flight, routeOrigin, now) {
+  if (!flight?.origin || !routeOrigin) return null;
+  const airport=tvAirportMobilityPoint(flight.origin);
+  const latitude=Number(routeOrigin.latitude), longitude=Number(routeOrigin.longitude);
+  if (!airport || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  let timer;
+  try {
+    const endpoint=new URL(origin + '/api/maps/route-preview');
+    endpoint.searchParams.set('origin',`${latitude},${longitude}`);
+    endpoint.searchParams.set('destination',`${airport.lat},${airport.lon}`);
+    endpoint.searchParams.set('mode','driving');
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('traffic_timeout')),4500);});
+    const response=await Promise.race([fetch(endpoint,{headers:{Accept:'application/json'}}),timeout]);
+    if (!response?.ok) return null;
+    const payload=await response.json();
+    if (!payload?.ok) return null;
+    const durationText=String(payload.durationInTrafficText||payload.durationText||'').trim().slice(0,48)||null;
+    const delayText=String(payload.trafficDelayText||'').trim().slice(0,48)||null;
+    const incidents=Array.isArray(payload.incidents)?payload.incidents.length:null;
+    if (!durationText && !delayText) return null;
+    return {
+      value:{
+        durationText,
+        delayText,
+        status: payload.hasRoadClosure ? 'Via com bloqueio' : delayText ? 'Trânsito com impacto' : 'Rota atualizada',
+        incidents,
+      },
+      source:'crewcheck-route-preview',
+      observedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+3*60*1000).toISOString(),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function tvGateContext(origin, flight, now) {
+  if (!flight?.flight || !flight?.origin || !flight?.destination) return null;
+  let timer;
+  try {
+    const endpoint=new URL(origin + '/api/radar-flight');
+    endpoint.searchParams.set('flight',flight.flight);
+    endpoint.searchParams.set('origin',flight.origin);
+    endpoint.searchParams.set('destination',flight.destination);
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('radar_timeout')),3800);});
+    const response=await Promise.race([fetch(endpoint,{headers:{Accept:'application/json'}}),timeout]);
+    if (!response?.ok) return null;
+    const payload=await response.json();
+    const gate=String(payload?.gate||'').trim().slice(0,24);
+    if (!payload?.ok || !gate || Number(payload.quality||0)<35) return null;
+    const expectedDigits=tvFlightDigits(flight.flight), actualDigits=tvFlightDigits(payload.flight);
+    if (expectedDigits && actualDigits && expectedDigits!==actualDigits) return null;
+    const returnedOrigin=tvAirportCode(payload.origin), returnedDestination=tvAirportCode(payload.destination);
+    if (returnedOrigin && returnedOrigin!==tvAirportCode(flight.origin)) return null;
+    if (returnedDestination && returnedDestination!==tvAirportCode(flight.destination)) return null;
+    return {
+      value:{label:gate,remoteStand:null},
+      source:'crewcheck-radar',
+      observedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+5*60*1000).toISOString(),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function tvAttachStayDetails(snapshot, stays, allowed) {
+  if (!allowed || snapshot?.privacy !== 'private' || !Array.isArray(stays)) return {};
+  const details = {};
+  const activities = (snapshot.days || []).flatMap(day => Array.isArray(day.activities) ? day.activities : []);
+  for (const activity of activities) {
+    if (activity?.kind !== 'stay' || !activity.journeyId) continue;
+    const date=String(activity.date||'').slice(0,10);
+    const airport=tvAirportCode(activity.destination)||tvAirportCode(activity.origin);
+    const matches=stays.filter(stay=>String(stay?.stay_date||'').slice(0,10)===date);
+    const stay=matches.find(item=>!airport||tvAirportCode(item?.airport)===airport)||matches[0];
+    if (!stay?.hotel_name) continue;
+    details[activity.journeyId]={
+      hotel:{
+        name:String(stay.hotel_name).trim().slice(0,180),
+        room:null,
+        transport:null,
+      },
+    };
+  }
+  return details;
+}
+
 async function tvWeatherContext(origin, airport, role, now) {
   if (!airport) return null;
   const key = airport;
@@ -108,15 +219,41 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
         const data = await loadActiveRoster(auth.userId);
         if (!data?.roster || !policy().allows(auth.userId)) return null;
         const now = new Date();
+        const preferences = auth.preferences || { audience: 'owner', share: {} };
+        const audience = ['owner','family','visitor'].includes(preferences.audience) ? preferences.audience : 'owner';
+        // Family/visitor projection is redacted before any enrichment. Client
+        // visibility is never treated as a privacy boundary.
+        const effectivePrivacy = audience === 'owner' ? auth.privacy : 'family';
         const snapshot = projectRoster(data.roster, {
           deviceId: auth.deviceId, snapshotId: randomUUID(), sourceVersion: data.sourceVersion,
           month: `${data.roster.year}-${String(data.roster.month).padStart(2, '0')}`,
-          privacy: auth.privacy, generatedAt: now.toISOString(),
+          privacy: effectivePrivacy, generatedAt: now.toISOString(),
           expiresAt: new Date(now.getTime() + 60000).toISOString(), now,
         });
+        snapshot.audience = audience;
+        snapshot.sharePermissions = {
+          operational: preferences.share?.operational !== false,
+          weather: preferences.share?.weather !== false,
+          hotel: audience === 'owner' && preferences.share?.hotel === true,
+          crew: audience === 'owner' && preferences.share?.crew === true,
+          finance: audience === 'owner' && preferences.share?.finance === true,
+          mobility: audience === 'owner' && preferences.share?.mobility === true,
+        };
+        snapshot.journeyDetails = tvAttachStayDetails(
+          snapshot,
+          data.stays,
+          snapshot.sharePermissions.hotel === true,
+        );
+        snapshot.mobility = null;
+        if (snapshot.profile) {
+          snapshot.profile.airlineVisual = airlineVisualFor(
+            snapshot.profile.airline,
+            process.env.CREWCHECK_TV_AIRLINE_VISUALS_JSON || '',
+          );
+        }
         const settings = policy();
-        const base = auth.privacy === 'private' ? tvAirportCode(data.roster.base) : null;
-        const stay = tvNextStayAirport(snapshot, now.getTime());
+        const base = audience === 'owner' && effectivePrivacy === 'private' && snapshot.sharePermissions.weather ? tvAirportCode(data.roster.base) : null;
+        const stay = audience === 'owner' && snapshot.sharePermissions.weather ? tvNextStayAirport(snapshot, now.getTime()) : null;
         const targets = [{ role: 'base', airport: base }, ...(stay && stay !== base ? [{ role: 'stay', airport: stay }] : [])];
         const weatherContexts = (await Promise.all(targets.map(target => tvWeatherContext(settings.origin, target.airport, target.role, now)))).filter(Boolean);
         snapshot.weatherContexts = weatherContexts;
@@ -125,6 +262,19 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
           value: { airport: primary.airport, temperature: primary.temperature, label: primary.label },
           source: primary.source, observedAt: primary.observedAt, expiresAt: primary.expiresAt,
         } : null;
+        const mobilityAirport = audience === 'owner' && effectivePrivacy === 'private' ? tvNextFlightOrigin(snapshot, now.getTime()) : null;
+        snapshot.mobility = buildUberPhoneHandoff({
+          clientId: process.env.UBER_CLIENT_ID,
+          airport: mobilityAirport,
+          audience,
+          allowed: snapshot.sharePermissions.mobility === true,
+        });
+        const nextFlight = audience === 'owner' && effectivePrivacy === 'private' && snapshot.sharePermissions.operational ? tvNextFlight(snapshot, now.getTime()) : null;
+        snapshot.gate = nextFlight ? await tvGateContext(settings.origin, nextFlight, now) : null;
+        const routeOrigin = audience === 'owner' && effectivePrivacy === 'private' && preferences.share?.traffic === true
+          ? auth.context?.routeOrigin || null
+          : null;
+        snapshot.traffic = nextFlight && routeOrigin ? await tvTrafficContext(settings.origin, nextFlight, routeOrigin, now) : null;
         return snapshot;
       },
       news: async () => ({ generatedAt: new Date().toISOString(), stale: true, items: [] }),
@@ -140,7 +290,7 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
     const settings = policy();
     if (!settings.enabled) { send(404, { error: 'unavailable' }); return true; }
     const origin = String(req.headers.origin || '');
-    const accountRoute = ['/api/tv/approve', '/api/tv/revoke', '/api/tv/devices'].includes(url.pathname);
+    const accountRoute = ['/api/tv/approve', '/api/tv/revoke', '/api/tv/devices', '/api/tv/preferences', '/api/tv/context'].includes(url.pathname);
     if (!settings.allowsOrigin(origin, accountRoute)) { send(403, { error: 'origin_not_allowed' }); return true; }
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     if (req.method === 'OPTIONS') {

@@ -5,6 +5,34 @@ const secret = () => randomBytes(32).toString('base64url');
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const SESSION_LEASE_MS = 86400000;
 const TRUSTED_LEASE_MS = 365 * 86400000;
+const DEFAULT_PREFERENCES = Object.freeze({
+  audience: 'owner',
+  share: {
+    operational: true,
+    weather: true,
+    hotel: false,
+    crew: false,
+    finance: false,
+    mobility: false,
+    traffic: false,
+  },
+});
+function normalizePreferences(value = {}) {
+  const audience = ['owner','family','visitor'].includes(value?.audience) ? value.audience : 'owner';
+  const source = value?.share && typeof value.share === 'object' ? value.share : {};
+  return {
+    audience,
+    share: {
+      operational: source.operational !== false,
+      weather: source.weather !== false,
+      hotel: source.hotel === true,
+      crew: source.crew === true,
+      finance: source.finance === true,
+      mobility: source.mobility === true,
+      traffic: source.traffic === true,
+    },
+  };
+}
 
 export class TvError extends Error {
   constructor(status, code) { super(code); this.status = status; }
@@ -54,7 +82,7 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         for (const [id, d] of Object.entries(state.devices)) if (d.expiresAt <= now()) delete state.devices[id];
         if (Object.keys(state.devices).length >= 1000) throw new TvError(429, 'device_capacity');
         const token = secret(), deviceId = secret(), trusted = p.trusted === true, expiresAt = leaseFor(trusted);
-        state.devices[deviceId] = { deviceId, userId: p.userId, privacy: p.privacy, platform: p.platform, trusted, tokenHash: hash(token), expiresAt, lastSeenAt: now(), scopes: ['tv:read'], revoked: false };
+        state.devices[deviceId] = { deviceId, userId: p.userId, privacy: p.privacy, platform: p.platform, trusted, tokenHash: hash(token), expiresAt, lastSeenAt: now(), scopes: ['tv:read'], revoked: false, preferences: normalizePreferences(DEFAULT_PREFERENCES) };
         delete state.pairings[key];
         return { deviceId, token, trusted, expiresAt: new Date(expiresAt).toISOString(), privacy: p.privacy };
       });
@@ -65,7 +93,9 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         const d = Object.values(state.devices ?? {}).find(d => equal(d.tokenHash, hash(token)));
         if (!d || d.revoked || d.expiresAt <= now() || !d.scopes.includes('tv:read')) throw new TvError(401, 'invalid_device');
         requireAccount(d.userId);
-        return { deviceId: d.deviceId, userId: d.userId, privacy: d.privacy, platform: d.platform, trusted: d.trusted === true };
+        const context = d.context && Number(d.context.expiresAt || 0) > now() ? structuredClone(d.context) : null;
+        if (!context && d.context) delete d.context;
+        return { deviceId: d.deviceId, userId: d.userId, privacy: d.privacy, platform: d.platform, trusted: d.trusted === true, preferences: normalizePreferences(d.preferences), context };
       });
     },
     async heartbeat(token) {
@@ -77,6 +107,49 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         d.lastSeenAt = now();
         if (d.trusted === true) d.expiresAt = leaseFor(true);
         return { ok: true, trusted: d.trusted === true, expiresAt: new Date(d.expiresAt).toISOString() };
+      });
+    },
+    async updatePreferences(userId, deviceId, value) {
+      requireAccount(userId);
+      return store.transaction(state => {
+        const d = state.devices?.[deviceId];
+        if (!d || d.userId !== userId || d.revoked) throw new TvError(404, 'device_not_found');
+        d.preferences = normalizePreferences(value);
+        return { deviceId: d.deviceId, preferences: d.preferences };
+      });
+    },
+    async preferencesFor(userId, deviceId) {
+      requireAccount(userId);
+      return store.transaction(state => {
+        const d = state.devices?.[deviceId];
+        if (!d || d.userId !== userId || d.revoked) throw new TvError(404, 'device_not_found');
+        return { deviceId: d.deviceId, preferences: normalizePreferences(d.preferences) };
+      });
+    },
+    async updateContext(userId, deviceId, value = {}) {
+      requireAccount(userId);
+      return store.transaction(state => {
+        const d = state.devices?.[deviceId];
+        if (!d || d.userId !== userId || d.revoked) throw new TvError(404, 'device_not_found');
+        const preferences = normalizePreferences(d.preferences);
+        if (preferences.audience !== 'owner' || preferences.share.traffic !== true) {
+          delete d.context;
+          throw new TvError(403, 'traffic_context_not_authorized');
+        }
+        const latitude = Number(value?.routeOrigin?.latitude);
+        const longitude = Number(value?.routeOrigin?.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180)
+          throw new TvError(400, 'invalid_route_origin');
+        const requestedTtl = Math.max(60_000, Math.min(10 * 60_000, Number(value?.ttlMs || 5 * 60_000)));
+        d.context = {
+          routeOrigin: {
+            latitude,
+            longitude,
+            label: String(value?.routeOrigin?.label || 'Localização autorizada').trim().slice(0,80) || 'Localização autorizada',
+          },
+          expiresAt: now() + requestedTtl,
+        };
+        return { ok: true, deviceId: d.deviceId, expiresAt: new Date(d.context.expiresAt).toISOString() };
       });
     },
     async revoke(userId, deviceId) {
@@ -97,6 +170,8 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         expiresAt: new Date(d.expiresAt).toISOString(),
         lastSeenAt: d.lastSeenAt,
         revoked: d.revoked,
+        preferences: normalizePreferences(d.preferences),
+        contextActive: Boolean(d.context && Number(d.context.expiresAt || 0) > now()),
       })));
     },
   };
