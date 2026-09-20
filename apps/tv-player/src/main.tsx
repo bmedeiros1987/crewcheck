@@ -2,7 +2,11 @@ import React, {useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import QRCode from 'qrcode';
 import {currentFact,freshness,remoteAction,type TvSnapshot,type TvActivity} from '../../../packages/tv-core/src/index';
-import {TvSession} from '../../../packages/tv-core/src/session';
+import {TvSession, type TvStorage} from '../../../packages/tv-core/src/session';
+import {HubClient} from '../../../packages/tv-core/src/hub';
+import {createDiagnostics} from '../../../packages/tv-core/src/diagnostics';
+import {ErrorBoundary} from './ErrorBoundary';
+import {MinimalHome} from './MinimalHome';
 import {demoSnapshot} from './demo';
 import './tv.css';
 
@@ -10,7 +14,30 @@ const config = import.meta.env;
 const initialDemo = config.VITE_TV_DEMO === 'true';
 const enabled = initialDemo || config.VITE_CREWCHECK_TV_ENABLED === 'true';
 const platform = config.VITE_TV_PLATFORM || 'android-tv';
-const session = new TvSession(sessionStorage,fetch,config.VITE_TV_API_ORIGIN || 'https://crewcheck.online');
+// Armazenamento pode lancar em origem file:// com site data bloqueado. Um
+// throw aqui, em escopo de modulo, apagaria a tela antes do React montar.
+function safeStorage(): TvStorage {
+  try {
+    sessionStorage.getItem('crewcheck-tv-probe');
+    return sessionStorage;
+  } catch {
+    const memory: Record<string,string> = {};
+    return {
+      getItem:(key)=>Object.prototype.hasOwnProperty.call(memory,key)?memory[key]:null,
+      setItem:(key,value)=>{memory[key]=String(value);},
+      removeItem:(key)=>{delete memory[key];},
+    };
+  }
+}
+function safeLocalStorage(): Storage | undefined {
+  try { localStorage.getItem('crewcheck-tv-probe'); return localStorage; } catch { return undefined; }
+}
+const diagnostics = createDiagnostics(safeLocalStorage());
+const session = new TvSession(safeStorage(),fetch,config.VITE_TV_API_ORIGIN || 'https://crewcheck.online');
+// A TV fala com o Hub, nunca com o Home Assistant. Sem chave embutida no IPK:
+// leitura e aberta na LAN e os comandos de escrita ficam para o bloco de
+// pareamento do Hub.
+const hub = new HubClient(config.VITE_TV_HUB_ORIGIN || '', {request:fetch, timeoutMs:6000});
 type View = 'Agora'|'Semana'|'Mês'|'Dia'|'Mudanças'|'Configurações';
 const views:View[]=['Agora','Semana','Mês','Mudanças','Configurações'];
 const labels:Record<string,string>={flight:'Voo',duty:'Programação',stay:'Pernoite',rest:'Descanso','journey-rest':'Repouso'};
@@ -23,6 +50,7 @@ function App(){
   const [pairing,setPairing]=useState<any>(null),[qr,setQr]=useState('');
   const [clock,setClock]=useState(new Date()),[mode,setMode]=useState('live');
   const [news,setNews]=useState<any[]>([]);
+  const [hubStatus,setHubStatus]=useState<'unknown'|'online'|'offline'|'off'>(hub.configured?'unknown':'off');
   const lastInput=useRef(Date.now()),main=useRef<HTMLElement>(null),generation=useRef(0);
   const clear=()=>{generation.current++;session.clear();setDemo(false);setSnapshot(null);setNews([]);setPairing(null);setView('Agora');setStatus('Vincule sua TV');};
   async function begin(){
@@ -59,6 +87,20 @@ function App(){
     return()=>{clearInterval(timer);clearInterval(refresh);document.removeEventListener('visibilitychange',sync);window.removeEventListener('online',sync);window.removeEventListener('webOSRelaunch',sync);};
   },[]);
   useEffect(()=>{
+    if(!hub.configured){setHubStatus('off');return;}
+    let cancelled=false;
+    // A sonda do Hub e separada da sincronizacao da API: Hub fora do ar nao
+    // pode atrapalhar a escala, e API fora do ar nao pode esconder o Hub.
+    const probe=()=>{hub.health().then(result=>{
+      if(cancelled)return;
+      setHubStatus(result.ok?'online':'offline');
+      if(!result.ok)diagnostics.record(result.code);
+    });};
+    probe();
+    const timer=setInterval(probe,60000);
+    return()=>{cancelled=true;clearInterval(timer);};
+  },[]);
+  useEffect(()=>{
     const w=window as typeof window & {crewcheckTvBack?:()=>boolean};
     w.crewcheckTvBack=()=>{lastInput.current=Date.now();if(view==='Dia'){setView('Mês');return true;}if(view!=='Agora'){setView('Agora');return true;}return false;};
     return()=>{delete w.crewcheckTvBack;};
@@ -83,13 +125,14 @@ function App(){
     document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);
   },[view]);
   useEffect(()=>{(main.current?.querySelector<HTMLElement>(view==='Dia'?'.detail button':'nav button.active')||main.current?.querySelector<HTMLElement>('button'))?.focus();},[view,!!snapshot]);
+  if(session.configError)return <MinimalHome reason={`Configuração do servidor inválida: ${session.configError}`} diagnosticCode="CFG-ORIGIN" />;
   if(!enabled)return <main className="pair"><h1>CrewCheck TV</h1><p>Piloto ainda não disponível.</p></main>;
   const next=snapshot?.next,gate=currentFact(snapshot?.gate||null),weather=currentFact(snapshot?.weather||null),leave=currentFact(snapshot?.leaveAt||null);
   const activity=(a:TvActivity)=><article className="activity" key={a.id}><strong>{a.flight||labels[a.kind]}</strong><span>{a.origin&&`${a.origin} → ${a.destination}`}</span><span>Apresentação {a.presentation||'indisponível'}</span><span>{time(a.startAt)} — {time(a.endAt)}</span>{a.groundBeforeMinutes!==null&&<span>Em solo: {a.groundBeforeMinutes} min</span>}<small>Confiança: {a.confidence}</small></article>;
   const selected=snapshot?.days.find(d=>d.date===day);
   return <main ref={main} onPointerDown={()=>{lastInput.current=Date.now();}}>
-    <header><div className="brand">CREW<span>CHECK</span><small>TV / VOYAGE</small></div><div className="header-status"><i/>{demo?'DEMONSTRAÇÃO':snapshot?.privacy==='private'?'PRIVADO':'FAMÍLIA'} · {status}{snapshot&&` · ${freshness(snapshot,clock.getTime())==='current'?'Atualizado':'Dados antigos'}`}</div><div className="clock">{clock.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}<small>{clock.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</small></div></header>
-    {!snapshot?<section className="pair"><div><p className="eyebrow">BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1><p>Use o celular para autorizar esta tela.</p><button onClick={begin}>{pairing?'Gerar novo código':'Vincular TV'}</button><p>{status}</p><button onClick={()=>{clear();setDemo(true);setSnapshot(demoSnapshot());setStatus('Demonstração · dados fictícios');}}>Explorar demonstração</button></div>{pairing&&<aside><img src={qr} alt="QR para confirmar TV no celular"/><h2>{pairing.userCode}</h2><p>Código válido por 5 minutos</p></aside>}</section>:<>
+    <header><div className="brand">CREW<span>CHECK</span><small>TV / VOYAGE</small></div><div className="header-status"><i/>{demo?'DEMONSTRAÇÃO':snapshot?.privacy==='private'?'PRIVADO':'FAMÍLIA'} · {status}{snapshot&&` · ${freshness(snapshot,clock.getTime())==='current'?'Atualizado':'Dados antigos'}`}{hubStatus!=='off'&&` · Casa ${hubStatus==='online'?'conectada':hubStatus==='offline'?'indisponível':'…'}`}</div><div className="clock">{clock.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}<small>{clock.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</small></div></header>
+    {!snapshot?<section className="pair"><div><p className="eyebrow">BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1><p>Use o celular para autorizar esta tela.</p><button onClick={begin}>{pairing?'Gerar novo código':'Vincular TV'}</button><p>{status}</p><button onClick={()=>{clear();setDemo(true);setSnapshot(demoSnapshot());setStatus('Demonstração · dados fictícios');}}>Explorar demonstração</button></div>{pairing&&<aside>{qr?<img src={qr} alt="QR para confirmar TV no celular" onError={()=>{diagnostics.record('IMG-QR');setQr('');}}/>:<p className="boot-reason">Código abaixo, sem QR.</p>}<h2>{pairing.userCode}</h2><p>Código válido por 5 minutos</p></aside>}</section>:<>
     <nav>{views.map(v=><button key={v} className={view===v?'active':''} onClick={()=>setView(v)}>{v}</button>)}<span>ESCALA · {snapshot.summary.month}</span></nav>
     {view==='Agora'&&<section className={`live ${mode==='ambient'?'ambient':''}`}><article className="hero"><div className="eyebrow">{mode==='ambient'?'AMBIENT':'PRÓXIMA JORNADA'} <span>• {mode==='briefing'?'BRIEFING':mode==='ambient'?'AMBIENT':'LIVE'}</span></div><h1>{next?.origin?`${next.origin} → ${next.destination}`:next?'Sua próxima atividade':'Seu tempo, no seu ritmo.'}</h1><p className="flight">{next?.flight|| (next?labels[next.kind]:'Nenhuma próxima atividade publicada')}</p><div className="times"><div><label>APRESENTAÇÃO</label><strong>{next?.presentation||'—'}</strong></div><div><label>SAIR DE CASA</label><strong>{leave||'—'}</strong></div></div><div className="gate"><span>PORTÃO <b>{gate?.label||'—'}</b></span>{gate?.remoteStand===true&&<em>REMOTA</em>}<span>Escala oficial como referência</span></div><div className="hero-bottom"><span>Última atualização {time(snapshot.generatedAt)}</span><button onClick={()=>{setDay(next?.date||snapshot.days[0].date);setView('Dia');}}>Ver jornada →</button></div></article>
     <aside className="side"><div className="side-top"><article><p className="eyebrow">CLIMA · {weather?.airport||'—'}</p><h2>{weather?`${weather.temperature}°`:'—'}</h2><p>{weather?.label||'Aguardando dados confirmados'}</p></article><article><p className="eyebrow">NESTE MÊS</p><h2>{snapshot.summary.flights}<small>voos</small></h2><p>{snapshot.summary.journeys} jornadas · {snapshot.summary.stays} pernoites</p></article></div><article><p className="eyebrow">O QUE MUDOU</p><p>{snapshot.changes[0]||'Nenhuma atualização confirmada disponível.'}</p></article><article className="news"><p className="eyebrow">NOTÍCIAS DA AVIAÇÃO</p>{news.length?news.slice(0,2).map(n=><p key={n.id}>{n.title}<small>{n.source} · {n.freshness}</small></p>):<p>Manchetes indisponíveis no momento.</p>}<small>Informação editorial. Não substitui comunicações operacionais.</small></article></aside></section>}
@@ -100,6 +143,68 @@ function App(){
     <footer><strong>✧ CREWCIERGE</strong><div className="ticker">{snapshot.ticker.join('　 •　 ')||'Confira sempre a escala e a comunicação oficial.'}</div><span>← ↑ ↓ → navegar · OK selecionar · Voltar</span></footer></>}
   </main>;
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+// ---------------------------------------------------------------------------
+// Bootstrap enrijecido: nenhuma falha daqui pode terminar em tela preta.
+// ---------------------------------------------------------------------------
+
+// Erros que escapam do React (handler de evento, promessa solta) viram codigo
+// no diagnostico local. Nunca guardamos a mensagem: ela pode conter URL com
+// credencial.
+try {
+  window.addEventListener('error',()=>{diagnostics.record('JS-ERROR');});
+  window.addEventListener('unhandledrejection',(event)=>{
+    diagnostics.record('PROMISE-REJECT');
+    // Sem isto o webOS pode derrubar a pagina em rejeicao nao tratada.
+    if(event&&typeof event.preventDefault==='function')event.preventDefault();
+  });
+} catch { /* ambiente sem window: segue */ }
+
+function boot(){
+  const container=document.getElementById('root');
+  if(!container){
+    // Sem container nao ha React. O fallback estatico do index.html continua
+    // na tela, entao nao ha nada a fazer alem de registrar.
+    diagnostics.record('BOOT-NO-ROOT');
+    return;
+  }
+  try{
+    createRoot(container).render(
+      <ErrorBoundary onError={(code)=>diagnostics.record(code)}>
+        <App/>
+      </ErrorBoundary>,
+    );
+    diagnostics.record('BOOT-OK');
+  }catch{
+    diagnostics.record('BOOT-FAIL');
+    // React nao subiu. Monta a Home minima na unha, sem JSX e sem React, para
+    // que a TV mostre hora e marca em vez de preto.
+    try{
+      const now=new Date();
+      const two=(value:number)=>value<10?`0${value}`:String(value);
+      container.innerHTML='';
+      const main=document.createElement('main');
+      main.className='boot boot-home';
+      const inner=document.createElement('div');
+      inner.className='boot-inner';
+      const brand=document.createElement('div');
+      brand.className='boot-brand';
+      brand.appendChild(document.createTextNode('CREWCHECK'));
+      const clock=document.createElement('div');
+      clock.className='boot-clock';
+      clock.appendChild(document.createTextNode(`${two(now.getHours())}:${two(now.getMinutes())}`));
+      const reason=document.createElement('p');
+      reason.className='boot-reason';
+      reason.appendChild(document.createTextNode('Sua TV está pronta. Estou tentando carregar o restante.'));
+      const code=document.createElement('div');
+      code.className='boot-foot';
+      code.appendChild(document.createTextNode('BOOT-FAIL'));
+      inner.appendChild(brand);inner.appendChild(clock);inner.appendChild(reason);
+      main.appendChild(inner);main.appendChild(code);
+      container.appendChild(main);
+    }catch{ /* ultimo recurso: o fallback do index.html permanece */ }
+  }
+}
+
+boot();
 
 

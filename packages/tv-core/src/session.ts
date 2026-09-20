@@ -1,19 +1,33 @@
 import {freshness, type TvSnapshot} from './index';
+import {bindFetch, classifyOrigin} from './net';
 export type DeviceCredential = {deviceId:string; token:string; expiresAt:string; privacy:'family'|'private'};
 export type TvStorage = Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 const KEY = 'crewcheck-tv-v1';
 export class TvSession {
   credential: DeviceCredential | null = null;
+  private request: typeof fetch;
   snapshot: TvSnapshot | null = null;
-  constructor(private storage: TvStorage, private request: typeof fetch, private origin: string) {
-    const url = new URL(origin);
-    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') throw new Error('HTTPS required');
+  /**
+   * Motivo quando a origem configurada nao serve. Fica guardado em vez de
+   * virar excecao: este construtor roda em escopo de modulo, antes do React
+   * montar, e lancar aqui apaga a tela sem nenhuma mensagem. O app le isto e
+   * mostra a Home minima com o diagnostico.
+   */
+  readonly configError: string | null = null;
+  constructor(private storage: TvStorage, request: typeof fetch, private origin: string) {
+    // bindFetch: sem isto, `this.request(...)` lanca Illegal invocation no
+    // navegador e toda chamada de API falha silenciosamente.
+    this.request = bindFetch(request);
+    const verdict = classifyOrigin(origin);
+    if (verdict.kind === 'rejected') this.configError = verdict.reason;
+    else this.origin = verdict.origin;
   }
   // Credential intentionally stays in memory until platform secure storage is
   // verified. Cold launch requires pairing; snapshot alone never restores access.
   pair(credential: DeviceCredential) { this.clear(); this.credential = credential; }
   clear() { this.credential = null; this.snapshot = null; try {this.storage.removeItem(KEY);} catch {} }
   async call(path:string, body?:unknown) {
+    if (this.configError) throw new Error('config_error');
     const response = await this.request(`${this.origin}/api/tv/${path}`, {
       method:body === undefined ? 'GET':'POST', credentials:'omit', cache:'no-store',
       headers:{'Content-Type':'application/json', ...(this.credential ? {Authorization:`Bearer ${this.credential.token}`} : {})},
