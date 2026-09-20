@@ -26,7 +26,7 @@ assert.match(activity, /private void renderSchedule\(/, 'watch must expose a ros
 assert.match(activity, /MINHA ESCALA/, 'roster screen must be explicit');
 assert.match(activity, /snapshot\.schedule/, 'roster screen must consume the canonical compact schedule');
 assert.doesNotMatch(activity, /text\(LocalTime\.now\(\)\.format\(clockFormatter\), 29/, 'large duplicate clock must not return');
-assert.match(activity, /"HORA DE SAIR"/, 'leave-by state must be first-class');
+assert.match(activity, /case "LEAVE_SOON"/, 'leave-by state must be first-class');
 assert.match(activity, /"APRESENTAÇÃO"/, 'reporting state must be first-class');
 assert.match(activity, /"PERNOITE"/, 'overnight state must be first-class');
 assert.match(activity, /isRoundScreen\(\) \? dp\(36\) : dp\(20\)/, 'Galaxy Watch round screen needs hardware-validated horizontal safe inset');
