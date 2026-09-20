@@ -21,11 +21,11 @@ export function countdown(activity: TvActivity | null | undefined, now: number):
 export function isCiriumSource(source: string | undefined): boolean {
   return typeof source === 'string' && /^cirium(?:$|[:/\s-])/i.test(source.trim());
 }
-export function quickAvailability(snapshot: TvSnapshot | null, now=Date.now()) {
+export function quickAvailability(snapshot: TvSnapshot | null, now=Date.now(), display?: {weather?:boolean;gate?:boolean;hotel?:boolean}) {
   return {
     presentation: Boolean(snapshot?.next),
-    weather: Boolean(currentWeatherContexts(snapshot,now).length || currentFact(snapshot?.weather || null,now)),
-    radar: Boolean(currentFact(snapshot?.gate || null,now)),
-    stay: Boolean(upcomingStay(snapshot,now)),
+    weather: (display?.weather ?? true) && Boolean(currentWeatherContexts(snapshot,now).length || currentFact(snapshot?.weather || null,now)),
+    radar: (display?.gate ?? true) && Boolean(currentFact(snapshot?.gate || null,now)),
+    stay: (display?.hotel ?? true) && Boolean(upcomingStay(snapshot,now)),
   };
 }
