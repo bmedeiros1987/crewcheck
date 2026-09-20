@@ -35,6 +35,26 @@ assert.equal(auth.preferences.share.crew,true);
 
 const listed=await devices.list('owner@example.test');
 assert.equal(listed[0].preferences.audience,'visitor');
+assert.equal(listed[0].contextActive,false);
+await assert.rejects(
+  devices.updateContext('owner@example.test',credential.deviceId,{routeOrigin:{latitude:-15.8,longitude:-47.9}}),
+  e=>e.status===403,
+);
+await devices.updatePreferences('owner@example.test',credential.deviceId,{
+  audience:'owner',
+  share:{operational:true,weather:true,traffic:true,mobility:true},
+});
+const contextResult=await devices.updateContext('owner@example.test',credential.deviceId,{
+  routeOrigin:{latitude:-15.81,longitude:-47.90,label:'Origem autorizada'},
+  ttlMs:60*60*1000,
+});
+assert.ok(Date.parse(contextResult.expiresAt)-now<=10*60*1000,'route context TTL must cap at ten minutes');
+auth=await devices.authorize(credential.token);
+assert.equal(auth.context.routeOrigin.label,'Origem autorizada');
+assert.equal(auth.preferences.share.traffic,true);
+now+=10*60*1000+1;
+auth=await devices.authorize(credential.token);
+assert.equal(auth.context,null,'precise route origin must disappear after TTL');
 
 const uber=buildUberPhoneHandoff({clientId:'test-client',airport:'BSB',audience:'owner',allowed:true});
 assert.ok(uber);
@@ -71,12 +91,15 @@ assert.match(http,/audience === 'owner' && preferences\.share\?\.mobility === tr
 assert.match(http,/buildUberPhoneHandoff/);
 assert.match(http,/tvGateContext/);
 assert.match(http,/source:'crewcheck-radar'/);
-assert.match(http,/snapshot\.traffic = null/);
-assert.match(http,/TV never infers current\/home location/);
+assert.match(http,/tvTrafficContext/);
+assert.match(http,/auth\.context\?\.routeOrigin/);
+assert.match(http,/source:'crewcheck-route-preview'/);
+assert.match(http,/preferences\.share\?\.traffic === true/);
 assert.match(http,/airlineVisualFor/);
 assert.match(http,/CREWCHECK_TV_AIRLINE_VISUALS_JSON/);
 assert.match(http,/snapshot\.journeyDetails = \{\}/);
 assert.match(routes,/expectedPrivacy = auth\.preferences\?\.audience/);
 assert.match(routes,/updatePreferences/);
+assert.match(routes,/updateContext/);
 
 console.log('PASS: TV extension consent is per-device, sensitive fields fail closed, visitor projection redacts, Uber is owner-only phone handoff.');
