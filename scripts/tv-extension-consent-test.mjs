@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createDeviceService } from '../server/tv/devices.mjs';
 import { buildUberPhoneHandoff, tvAirportMobilityPoint } from '../server/tv/mobility.mjs';
+import { airlineVisualFor } from '../server/tv/airline-visual.mjs';
 
 let now=Date.parse('2026-09-19T21:30:00-03:00');
 let state={pairings:{},devices:{}};
@@ -49,6 +50,16 @@ assert.equal(buildUberPhoneHandoff({clientId:'',airport:'BSB',audience:'owner',a
 assert.equal(buildUberPhoneHandoff({clientId:'test-client',airport:'BSB',audience:'owner',allowed:false}),null);
 assert.equal(tvAirportMobilityPoint('BSB')?.label,'Aeroporto de Brasília');
 
+const visual=airlineVisualFor('LATAM',JSON.stringify({
+  LATAM:{imageUrl:'https://media.example.test/latam-hero.jpg',source:'owner-approved media kit',licensed:true,attribution:'LATAM media asset'},
+  GOL:{imageUrl:'http://insecure.example/gol.jpg',source:'bad',licensed:true},
+  AZUL:{imageUrl:'https://media.example.test/azul.jpg',source:'',licensed:true},
+}));
+assert.equal(visual?.licensed,true);
+assert.equal(visual?.imageUrl,'https://media.example.test/latam-hero.jpg');
+assert.equal(airlineVisualFor('GOL',JSON.stringify({GOL:{imageUrl:'http://insecure.example/gol.jpg',source:'bad',licensed:true}})),null);
+assert.equal(airlineVisualFor('AZUL',JSON.stringify({AZUL:{imageUrl:'https://media.example.test/azul.jpg',source:'',licensed:true}})),null);
+
 const http=await readFile('server/tv/http.mjs','utf8');
 const routes=await readFile('server/tv/routes.mjs','utf8');
 assert.match(http,/\/api\/tv\/preferences/);
@@ -58,6 +69,8 @@ assert.match(http,/audience === 'owner' && preferences\.share\?\.finance === tru
 assert.match(http,/audience === 'owner' && preferences\.share\?\.hotel === true/);
 assert.match(http,/audience === 'owner' && preferences\.share\?\.mobility === true/);
 assert.match(http,/buildUberPhoneHandoff/);
+assert.match(http,/airlineVisualFor/);
+assert.match(http,/CREWCHECK_TV_AIRLINE_VISUALS_JSON/);
 assert.match(http,/snapshot\.journeyDetails = \{\}/);
 assert.match(routes,/expectedPrivacy = auth\.preferences\?\.audience/);
 assert.match(routes,/updatePreferences/);
