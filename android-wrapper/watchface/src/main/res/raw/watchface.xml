@@ -19,15 +19,15 @@
 
     <Scene backgroundColor="#FF050B14">
         <!-- Anéis de identidade. Decorativos, somem em ambiente. -->
-        <PartDraw x="22" y="22" width="406" height="406">
-            <Ellipse x="0" y="0" width="406" height="406">
+        <PartDraw x="45" y="45" width="360" height="360">
+            <Ellipse x="0" y="0" width="360" height="360">
                 <Stroke thickness="3" color="#5538BDF8" />
             </Ellipse>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
 
-        <PartDraw x="31" y="31" width="388" height="388">
-            <Ellipse x="0" y="0" width="388" height="388">
+        <PartDraw x="53" y="53" width="344" height="344">
+            <Ellipse x="0" y="0" width="344" height="344">
                 <Stroke thickness="2" color="#444C1D95" />
             </Ellipse>
             <Variant mode="AMBIENT" target="alpha" value="0" />
@@ -35,7 +35,7 @@
 
         <PartText x="0" y="34" width="450" height="22">
             <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FF22D3EE"><![CDATA[✈  CrewCheck]]></Font>
+                <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FF22D3EE"><![CDATA[CrewCheck]]></Font>
             </Text>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartText>
