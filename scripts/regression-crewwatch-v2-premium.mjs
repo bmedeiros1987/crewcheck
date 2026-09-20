@@ -13,6 +13,7 @@ const phoneManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const phoneActivity = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const phonePublisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java');
 const home = read('client/src/pages/Home.tsx');
+const watchContext = read('client/src/lib/watchContext.ts');
 
 assert.match(manifest, /android\.permission\.WAKE_LOCK/, 'ambient support requires WAKE_LOCK');
 assert.match(manifest, /android:screenOrientation="portrait"/, 'watch activity must not rotate with wrist sensors');
@@ -40,8 +41,10 @@ assert.match(phoneManifest, /CrewCheckWatchSyncService/, 'phone must answer watc
 assert.match(phoneActivity, /syncWatchSnapshot/, 'native phone bridge must accept canonical watch snapshots');
 assert.match(phonePublisher, /\/crewcheck\/watch\/context\/v1/, 'phone and watch must use the same snapshot path');
 assert.match(phonePublisher, /rejectSensitiveFields/, 'phone publisher must reject sensitive fields before Data Layer transport');
-assert.match(home, /buildCrewCheckWatchSnapshot/, 'web runtime must project the active canonical roster for the watch');
+assert.match(home, /buildCrewCheckWatchSnapshot/, 'Home must consume the isolated watch projection');
 assert.match(home, /crewcheck:watch-snapshot/, 'web runtime must publish live watch snapshots');
-assert.match(home, /crewcheck_watch_route_minutes/, 'fresh route duration must feed leave-time projection without creating a second parser');
+assert.match(watchContext, /export function buildCrewCheckWatchSnapshot/, 'watch projection must survive Home preparation patches as an isolated module');
+assert.match(watchContext, /canonical\?\.startDateTime/, 'watch context must derive timing from canonical event timestamps');
+assert.match(watchContext, /route: WatchRouteContext \| null = null/, 'leave-time support must accept only an explicit fresh route context');
 
 console.log('PASS CrewWatch v2: hardware-safe round UI, live phone sync, portrait lock, ambient support, glance-first hierarchy and face contract');
