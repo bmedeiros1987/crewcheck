@@ -7,6 +7,7 @@ import { createPilotStore } from './pilot-store.mjs';
 import { readPilotPolicy } from './pilot-policy.mjs';
 import { createTvHandler } from './routes.mjs';
 import { buildUberPhoneHandoff } from './mobility.mjs';
+import { airlineVisualFor } from './airline-visual.mjs';
 const execFileAsync = promisify(execFile);
 const safeCodes = new Set(['ERR_MODULE_NOT_FOUND','ERR_PACKAGE_PATH_NOT_EXPORTED','ENOENT','EACCES','ECONNREFUSED','ETIMEDOUT','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR','ER_PARSE_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR']);
 async function prepareStep(stage, action) {
@@ -138,6 +139,12 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
         };
         snapshot.journeyDetails = {};
         snapshot.mobility = null;
+        if (snapshot.profile) {
+          snapshot.profile.airlineVisual = airlineVisualFor(
+            snapshot.profile.airline,
+            process.env.CREWCHECK_TV_AIRLINE_VISUALS_JSON || '',
+          );
+        }
         const settings = policy();
         const base = audience === 'owner' && effectivePrivacy === 'private' && snapshot.sharePermissions.weather ? tvAirportCode(data.roster.base) : null;
         const stay = audience === 'owner' && snapshot.sharePermissions.weather ? tvNextStayAirport(snapshot, now.getTime()) : null;
