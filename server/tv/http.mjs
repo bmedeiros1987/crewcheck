@@ -40,6 +40,48 @@ function tvNextFlightOrigin(snapshot, nowMs) {
     .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0];
   return tvAirportCode(flight?.origin);
 }
+function tvFlightDigits(value) {
+  const match=String(value||'').toUpperCase().match(/(\d{2,5})$/);
+  return match ? match[1] : '';
+}
+function tvNextFlight(snapshot, nowMs) {
+  if (!snapshot || snapshot.privacy !== 'private' || !Array.isArray(snapshot.days)) return null;
+  return snapshot.days.flatMap(day => Array.isArray(day.activities) ? day.activities : [])
+    .filter(activity => activity?.kind === 'flight' && activity.flight && Number.isFinite(Date.parse(activity.endAt)) && Date.parse(activity.endAt) > nowMs)
+    .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0] || null;
+}
+async function tvGateContext(origin, flight, now) {
+  if (!flight?.flight || !flight?.origin || !flight?.destination) return null;
+  let timer;
+  try {
+    const endpoint=new URL(origin + '/api/radar-flight');
+    endpoint.searchParams.set('flight',flight.flight);
+    endpoint.searchParams.set('origin',flight.origin);
+    endpoint.searchParams.set('destination',flight.destination);
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('radar_timeout')),3800);});
+    const response=await Promise.race([fetch(endpoint,{headers:{Accept:'application/json'}}),timeout]);
+    if (!response?.ok) return null;
+    const payload=await response.json();
+    const gate=String(payload?.gate||'').trim().slice(0,24);
+    if (!payload?.ok || !gate || Number(payload.quality||0)<35) return null;
+    const expectedDigits=tvFlightDigits(flight.flight), actualDigits=tvFlightDigits(payload.flight);
+    if (expectedDigits && actualDigits && expectedDigits!==actualDigits) return null;
+    const returnedOrigin=tvAirportCode(payload.origin), returnedDestination=tvAirportCode(payload.destination);
+    if (returnedOrigin && returnedOrigin!==tvAirportCode(flight.origin)) return null;
+    if (returnedDestination && returnedDestination!==tvAirportCode(flight.destination)) return null;
+    return {
+      value:{label:gate,remoteStand:null},
+      source:'crewcheck-radar',
+      observedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+5*60*1000).toISOString(),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function tvWeatherContext(origin, airport, role, now) {
   if (!airport) return null;
   const key = airport;
@@ -163,6 +205,11 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
           audience,
           allowed: snapshot.sharePermissions.mobility === true,
         });
+        const nextFlight = audience === 'owner' && effectivePrivacy === 'private' && snapshot.sharePermissions.operational ? tvNextFlight(snapshot, now.getTime()) : null;
+        snapshot.gate = nextFlight ? await tvGateContext(settings.origin, nextFlight, now) : null;
+        // Traffic stays fail-closed until the main CrewCheck supplies a fresh,
+        // user-authorized route origin. TV never infers current/home location.
+        snapshot.traffic = null;
         return snapshot;
       },
       news: async () => ({ generatedAt: new Date().toISOString(), stale: true, items: [] }),
