@@ -5,6 +5,12 @@ on:
     paths:
       - 'android-wrapper/wear/**'
       - 'android-wrapper/watchface/**'
+      - 'android-wrapper/app/build.gradle'
+      - 'android-wrapper/app/src/main/AndroidManifest.xml'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'client/src/pages/Home.tsx'
       - 'android-wrapper/settings.gradle'
       - 'android-wrapper/build.gradle'
       - 'scripts/regression-crewwatch-v2-premium.mjs'
@@ -39,6 +45,9 @@ jobs:
       - name: Snapshot contract
         run: gradle -p android-wrapper :wear:testDebugUnitTest
 
+      - name: Build paired phone shell
+        run: gradle -p android-wrapper :app:assembleDebug
+
       - name: Build CrewWatch
         run: gradle -p android-wrapper :wear:assembleDebug :wear:bundleRelease
 
@@ -55,6 +64,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
+            android-wrapper/app/build/outputs/apk/debug/*.apk
             android-wrapper/wear/build/outputs/apk/debug/*.apk
             android-wrapper/wear/build/outputs/bundle/release/*.aab
             android-wrapper/watchface/build/outputs/apk/debug/*.apk
