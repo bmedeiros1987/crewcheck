@@ -1,0 +1,24 @@
+name: TV extension consent and handoff
+on:
+  pull_request:
+    paths:
+      - 'server/tv/**'
+      - 'scripts/tv-extension-consent-test.mjs'
+      - '.github/workflows/tv-extension-consent.yml'
+permissions:
+  contents: read
+jobs:
+  consent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-extension-consent-test.mjs
+      - run: node scripts/tv-trusted-device-test.mjs
+      - run: node scripts/tv-pilot-policy-test.mjs
+      - run: node scripts/tv-test.mjs && node scripts/tv-server-build.mjs
