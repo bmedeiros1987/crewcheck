@@ -4,8 +4,9 @@ import { readFile } from 'node:fs/promises';
 const http=await readFile('server/tv/http.mjs','utf8');
 const core=await readFile('packages/tv-core/src/index.ts','utf8');
 
-assert.match(http,/auth\.privacy === 'private' \? tvAirportCode\(data\.roster\.base\) : null/);
+assert.match(http,/audience === 'owner' && effectivePrivacy === 'private' && snapshot\.sharePermissions\.weather \? tvAirportCode\(data\.roster\.base\) : null/);
 assert.match(http,/snapshot\.privacy !== 'private'/);
+assert.match(http,/const effectivePrivacy = audience === 'owner' \? auth\.privacy : 'family'/);
 assert.match(http,/role: 'stay'/);
 assert.match(http,/\/api\/weather\/airport\?airport=/);
 assert.match(http,/weather_timeout/);
