@@ -30,8 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compilar (MSVC x64, /W4)
+      - name: Compilar (MSVC x64, /W4 /WX)
         shell: cmd
+        env:
+          # Trava o gate: qualquer aviso do MSVC reprova o build no CI.
+          LAURINHA_STRICT: '1'
         run: build.cmd
 
       - name: Conferir o executavel

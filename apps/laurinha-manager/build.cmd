@@ -63,8 +63,15 @@ if errorlevel 1 goto :fail
 rem --- compilacao e link ------------------------------------------------
 rem  /MANIFEST:NO  - o manifesto vem do .rc, nao do linker
 rem  /SUBSYSTEM:WINDOWS - aplicacao grafica, sem console
-echo [2/2] cl  LaurinhaManager.c
-cl /nologo /W4 /O2 /MT /GS /Gy /utf-8 /DUNICODE /D_UNICODE /DNDEBUG ^
+rem
+rem  LAURINHA_STRICT=1 acrescenta /WX (aviso vira erro). O CI define essa
+rem  variavel para travar o gate; no build local ela fica de fora, para que
+rem  um aviso novo de uma versao futura do MSVC nao impeca voce de compilar.
+set "STRICT="
+if defined LAURINHA_STRICT set "STRICT=/WX"
+
+echo [2/2] cl  LaurinhaManager.c %STRICT%
+cl /nologo /W4 %STRICT% /O2 /MT /GS /Gy /utf-8 /DUNICODE /D_UNICODE /DNDEBUG ^
    /Fo"%OUT_DIR%\\" /Fd"%OUT_DIR%\LaurinhaManager.pdb" ^
    /Fe"%OUT_DIR%\LaurinhaManager.exe" ^
    LaurinhaManager.c "%OUT_DIR%\LaurinhaManager.res" ^

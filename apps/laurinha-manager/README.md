@@ -27,13 +27,18 @@ build.cmd clean      :: remove build\
 CRT estático (`/MT`) e `/SUBSYSTEM:WINDOWS`. O executável resultante não
 precisa do VC++ Redistributable e não abre console.
 
+Definir `LAURINHA_STRICT=1` acrescenta `/WX` (aviso vira erro). O CI usa esse
+modo; o build local fica sem ele de propósito, para que um aviso novo de uma
+versão futura do MSVC não impeça você de compilar.
+
 Bibliotecas de link: `comctl32` `shell32` `ole32` (mais `user32`, `gdi32` e
 `kernel32`, que são do próprio SDK). Nenhuma dependência externa — sem GDI+,
 sem WIC, sem bibliotecas de terceiros.
 
 O workflow `.github/workflows/laurinha-manager-windows.yml` roda esse mesmo
-`build.cmd` em `windows-latest` e confere no binário gerado o VERSIONINFO, o
-subsistema GUI e o manifesto DPI.
+`build.cmd` em `windows-latest` com `LAURINHA_STRICT=1` e confere no binário
+gerado o VERSIONINFO, o subsistema GUI e o manifesto DPI. O MSVC compila o
+arquivo sem nenhum aviso em `/W4`.
 
 ### Arquivos
 
@@ -225,5 +230,5 @@ nenhuma mídia vai dentro dele.
   arquivo sem a extensão.
 - As miniaturas dependem do provedor do shell do Windows para o formato em
   questão; onde não houver um, a foto aparece como "prévia indisponível".
-- O build é verificado com MSVC no CI; o desenvolvimento foi feito com
-  compilação cruzada mingw-w64 e execução sob Wine.
+- O build MSVC é verificado pelo CI (limpo em `/W4 /WX`); o desenvolvimento
+  foi feito com compilação cruzada mingw-w64 e execução sob Wine.
