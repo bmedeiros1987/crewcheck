@@ -6,6 +6,7 @@ import { createDeviceService } from './devices.mjs';
 import { createPilotStore } from './pilot-store.mjs';
 import { readPilotPolicy } from './pilot-policy.mjs';
 import { createTvHandler } from './routes.mjs';
+import { buildUberPhoneHandoff } from './mobility.mjs';
 const execFileAsync = promisify(execFile);
 const safeCodes = new Set(['ERR_MODULE_NOT_FOUND','ERR_PACKAGE_PATH_NOT_EXPORTED','ENOENT','EACCES','ECONNREFUSED','ETIMEDOUT','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR','ER_PARSE_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR']);
 async function prepareStep(stage, action) {
@@ -30,6 +31,13 @@ function tvNextStayAirport(snapshot, nowMs) {
     .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt));
   const stay = stays[0];
   return tvAirportCode(stay?.destination) || tvAirportCode(stay?.origin);
+}
+function tvNextFlightOrigin(snapshot, nowMs) {
+  if (!snapshot || snapshot.privacy !== 'private' || !Array.isArray(snapshot.days)) return null;
+  const flight = snapshot.days.flatMap(day => Array.isArray(day.activities) ? day.activities : [])
+    .filter(activity => activity?.kind === 'flight' && Number.isFinite(Date.parse(activity.endAt)) && Date.parse(activity.endAt) > nowMs)
+    .sort((a,b) => Date.parse(a.startAt) - Date.parse(b.startAt))[0];
+  return tvAirportCode(flight?.origin);
 }
 async function tvWeatherContext(origin, airport, role, now) {
   if (!airport) return null;
@@ -141,6 +149,13 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
           value: { airport: primary.airport, temperature: primary.temperature, label: primary.label },
           source: primary.source, observedAt: primary.observedAt, expiresAt: primary.expiresAt,
         } : null;
+        const mobilityAirport = audience === 'owner' && effectivePrivacy === 'private' ? tvNextFlightOrigin(snapshot, now.getTime()) : null;
+        snapshot.mobility = buildUberPhoneHandoff({
+          clientId: process.env.UBER_CLIENT_ID,
+          airport: mobilityAirport,
+          audience,
+          allowed: snapshot.sharePermissions.mobility === true,
+        });
         return snapshot;
       },
       news: async () => ({ generatedAt: new Date().toISOString(), stale: true, items: [] }),
