@@ -1,0 +1,57 @@
+name: webos-tv-p0
+
+# Portao da linhagem canonica do app da TV LG (Chromium 53).
+# Constroi o pacote, roda o gate de empacotamento e a suite de comportamento.
+
+on:
+  push:
+    paths: ['apps/webos/**', 'apps/tv-player/**', 'packages/tv-core/**', '.github/workflows/webos-p0.yml']
+  pull_request:
+    paths: ['apps/webos/**', 'apps/tv-player/**', 'packages/tv-core/**', '.github/workflows/webos-p0.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  webos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+
+      - name: Dependencias
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          npm install --prefix apps/webos --no-audit --no-fund
+
+      - name: Build do pacote webOS
+        run: npm run build --prefix apps/webos
+
+      - name: Empacotar IPK
+        run: npm run package --prefix apps/webos
+
+      - name: Gate de empacotamento (CSP, segredo, midia, tamanho)
+        run: npm run verify --prefix apps/webos
+
+      - name: Testes unitarios (tv-core)
+        run: npm test --prefix apps/webos
+
+      - name: Testes de comportamento no artefato
+        run: |
+          npm install --no-save --no-audit --no-fund playwright-core
+          npx playwright install --with-deps chromium
+          CHROMIUM_PATH="$(node -e "console.log(require('playwright-core').chromium.executablePath())")" \
+            npm run test:browser --prefix apps/webos
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webos-p0
+          path: |
+            dist/webos-package/*.ipk
+            dist/webos-shots/*.png
+          if-no-files-found: warn

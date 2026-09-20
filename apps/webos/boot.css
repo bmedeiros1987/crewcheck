@@ -1,0 +1,45 @@
+/* Home minima e fallback de boot.
+   Escrito para Chromium 53 de proposito: so flex e margem, sem grid, sem gap,
+   sem clamp, sem :focus-visible. Estas classes tambem sao usadas pelo HTML
+   estatico do index.html, que fica na tela enquanto o app.js nao roda - e
+   continua la se ele nunca rodar. */
+
+/* O fallback precisa bastar sozinho: ele aparece antes do app.js e continua
+   se o app.js nunca rodar, entao nao pode depender do reset do tv.css. Sem
+   isto, a margem padrao do body empurra o rodape para fora dos 1080 px. */
+html, body { margin: 0; padding: 0; }
+.boot, .boot * { box-sizing: border-box; }
+
+.boot {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100vh;
+  padding: 6vh 6vw;
+  background: #051121;
+  color: #edf7ff;
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+}
+.boot-inner { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.boot-brand { font-size: 30px; font-weight: 800; letter-spacing: 3px; }
+.boot-brand span { color: #6ee7fa; }
+.boot-brand small {
+  display: block; font-size: 11px; letter-spacing: 6px;
+  margin-top: 8px; color: #85a2b9; font-weight: 400;
+}
+.boot-clock { font-size: 120px; font-weight: 700; letter-spacing: -4px; margin-top: 24px; line-height: 1; }
+.boot-date { font-size: 24px; color: #afc3d3; margin-top: 10px; text-transform: capitalize; }
+.boot-reason { font-size: 20px; color: #b4c8d7; margin-top: 28px; max-width: 60%; line-height: 1.5; }
+.boot-retry {
+  margin-top: 32px; align-self: flex-start;
+  font: inherit; font-size: 20px; color: #edf7ff;
+  border: 1px solid #29445d; background: #10273c;
+  border-radius: 10px; padding: 14px 28px; cursor: pointer;
+}
+.boot-retry:focus { outline: 4px solid #6ce9ff; outline-offset: 3px; background: #1c425b; }
+.boot-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; color: #8aa5b9; border-top: 1px solid #23405a; padding-top: 16px;
+}
+.boot-code { color: #6f8ba2; letter-spacing: 2px; }
