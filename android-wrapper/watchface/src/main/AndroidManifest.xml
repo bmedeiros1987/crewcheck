@@ -6,6 +6,7 @@
 
     <application
         android:hasCode="false"
+        android:icon="@drawable/crewcheck_official"
         android:label="@string/watch_face_name">
         <meta-data
             android:name="com.google.android.wearable.standalone"
