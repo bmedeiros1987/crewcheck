@@ -102,10 +102,16 @@ function syntheticStay(date: Date, end: Date, start: Date, location: string, gap
 }
 
 export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): RosterDay[] {
-  const sorted = [...days].sort((a,b) => rosterCalendarDate(a, roster).getTime() - rosterCalendarDate(b, roster).getTime() || dayStart(a, roster).getTime() - dayStart(b, roster).getTime());
-  // A normalização é chamada por mais de uma camada (importação, projeção e UI).
-  // Se a escala já contém a rodada completa de continuidade, mantenha-a idempotente.
-  if (sorted.some((day) => Boolean((day as RosterDay & { continuityInferred?: boolean }).continuityInferred))) return sorted;
+  // Inferred markers are derived output, not proof that all source boundaries
+  // were completed. Scan published rows only, even after partial normalization.
+  type ContinuityDay = RosterDay & { continuityInferred?: boolean; continuityLocation?: string; continuityStart?: string; continuityEnd?: string };
+  const inferred = days.filter((day) => Boolean((day as ContinuityDay).continuityInferred));
+  const sorted = days.filter((day) => !Boolean((day as ContinuityDay).continuityInferred)).sort((a,b) => rosterCalendarDate(a, roster).getTime() - rosterCalendarDate(b, roster).getTime() || dayStart(a, roster).getTime() - dayStart(b, roster).getTime());
+  const markerKey = (day: RosterDay) => {
+    const marker = day as ContinuityDay;
+    return `${day.date}|${airport(marker.continuityLocation || day.base)}|${marker.continuityStart || ''}|${marker.continuityEnd || ''}`;
+  };
+  const priorMarkers = new Map(inferred.map((day) => [markerKey(day), day]));
   const explicit = new Set(sorted.map((day) => day.date));
   const synthetic: RosterDay[] = [];
   const syntheticKeys = new Set<string>();
@@ -145,7 +151,7 @@ export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): R
       const last = missingIndex === missing.length - 1;
       const segmentEnd = first ? end : new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 3, 0, 0, 0));
       const segmentStart = last ? start : new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 2, 59, 0, 0));
-      const key = `${dateKey(date)}|${location}|${missingIndex}`;
+      const key = `${dateKey(date)}|${location}|${segmentEnd.toISOString()}|${segmentStart.toISOString()}`;
       if (syntheticKeys.has(key)) return;
       synthetic.push(syntheticStay(date, segmentEnd, segmentStart, location, gapHours, roster, missing.length > 1 ? `${missingIndex + 1}/${missing.length}` : ''));
       syntheticKeys.add(key);
@@ -153,5 +159,24 @@ export function completeContinuityDays(days: RosterDay[], roster: CrewRoster): R
     });
   }
 
-  return [...sorted, ...synthetic].sort((a,b) => rosterCalendarDate(a, roster).getTime() - rosterCalendarDate(b, roster).getTime() || dayStart(a, roster).getTime() - dayStart(b, roster).getTime());
+  // Reuse identical markers, but do not keep an obsolete interval after source
+  // insertion/republication. Partial projections outside the observed source
+  // window remain intact unless a published activity directly contradicts them.
+  const sourceWindows = sorted.map((day) => [dayStart(day, roster).getTime(), dayEnd(day, roster).getTime()]);
+  const firstSource = Math.min(...sourceWindows.map(([start]) => start));
+  const lastSource = Math.max(...sourceWindows.map(([, end]) => end));
+  const preserved = inferred.filter((day) => {
+    if (syntheticKeys.has(markerKey(day))) return false;
+    const marker = day as ContinuityDay;
+    const start = Date.parse(marker.continuityStart || '');
+    const end = Date.parse(marker.continuityEnd || '');
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return true;
+    if (start >= firstSource && end <= lastSource) return false;
+    return !sourceWindows.some(([from, to]) => from < end && to > start);
+  });
+  const completed = synthetic.map((day) => {
+    const prior = priorMarkers.get(markerKey(day));
+    return prior && JSON.stringify(prior) === JSON.stringify(day) ? prior : day;
+  });
+  return [...sorted, ...completed, ...preserved].sort((a,b) => rosterCalendarDate(a, roster).getTime() - rosterCalendarDate(b, roster).getTime() || dayStart(a, roster).getTime() - dayStart(b, roster).getTime());
 }
