@@ -80,6 +80,7 @@ import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatfo
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
+import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
@@ -1709,189 +1710,6 @@ function smartDepartureEligible(event: ZeroLeg): boolean {
   return isSmartDepartureEligible(event);
 }
 
-type CrewCheckWatchSnapshot = {
-  schemaVersion: 1;
-  contextId: string;
-  generatedAtEpochMs: number;
-  validUntilEpochMs: number;
-  state: 'OFF_DUTY' | 'LEAVE_SOON' | 'REPORTING' | 'BOARDING' | 'IN_FLIGHT' | 'CONNECTION' | 'OVERNIGHT' | 'CHANGED' | 'UNKNOWN';
-  headline: string;
-  primaryTime: string;
-  detail: string;
-  presentationTime: string;
-  presentationPlace: string;
-  leaveTime: string;
-  trafficDetail: string;
-  currentFlight: string;
-  currentRoute: string;
-  gate: string;
-  remoteStand: boolean;
-  boardingTime: string;
-  eta: string;
-  connection: string;
-  nextFlight: string;
-  nextDetail: string;
-  overnight: string;
-  hotelPickup: string;
-  changed: boolean;
-  source: 'canonical-roster';
-};
-
-function watchClockBeforeOrAt(referenceMs: number, clock: string): number {
-  const match = String(clock || '').match(/^(\d{1,2}):(\d{2})$/);
-  if (!match || !Number.isFinite(referenceMs)) return referenceMs;
-  const target = new Date(referenceMs);
-  target.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  // A presentation can belong to the previous civil day for a post-midnight departure.
-  if (target.getTime() > referenceMs + 3 * 60 * 60 * 1000) target.setDate(target.getDate() - 1);
-  return target.getTime();
-}
-
-function watchClockLabel(epochMs: number): string {
-  if (!Number.isFinite(epochMs)) return '';
-  return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(epochMs));
-}
-
-function buildCrewCheckWatchSnapshot(events: ZeroLeg[], event: ZeroLeg): CrewCheckWatchSnapshot {
-  const now = Date.now();
-  if (!event || event.placeholder) {
-    return {
-      schemaVersion: 1,
-      contextId: 'off-duty',
-      generatedAtEpochMs: now,
-      validUntilEpochMs: now + 60 * 60 * 1000,
-      state: 'OFF_DUTY',
-      headline: 'SEM ATIVIDADE',
-      primaryTime: '',
-      detail: 'Nenhuma programação operacional futura detectada.',
-      presentationTime: '',
-      presentationPlace: '',
-      leaveTime: '',
-      trafficDetail: '',
-      currentFlight: '',
-      currentRoute: '',
-      gate: '',
-      remoteStand: false,
-      boardingTime: '',
-      eta: '',
-      connection: '',
-      nextFlight: '',
-      nextDetail: '',
-      overnight: '',
-      hotelPickup: '',
-      changed: false,
-      source: 'canonical-roster',
-    };
-  }
-
-  const canonical = event.canonical;
-  const startMs = canonical?.startDateTime ? new Date(canonical.startDateTime).getTime() : eventStartDateTime(event).getTime();
-  const endMs = canonical?.endDateTime ? new Date(canonical.endDateTime).getTime() : startMs + 2 * 60 * 60 * 1000;
-  const presentation = /^\d{1,2}:\d{2}$/.test(String(event.presentation || '')) ? event.presentation : '';
-  const presentationMs = presentation ? watchClockBeforeOrAt(startMs, presentation) : startMs;
-
-  const rawGate = safe(event.gate, '').trim();
-  const remoteStand = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
-  const gate = remoteStand || /A CONFIRMAR/i.test(rawGate) ? '' : rawGate;
-
-  const routeCacheEvent = storage.get('crewcheck_watch_route_event', '');
-  const routeUpdatedAt = Number(storage.get('crewcheck_watch_route_updated_at', '0')) || 0;
-  const routeMinutes = routeCacheEvent === event.id && now - routeUpdatedAt <= 30 * 60 * 1000
-    ? Math.max(0, Number(storage.get('crewcheck_watch_route_minutes', '0')) || 0)
-    : 0;
-  const margin = Math.max(0, Number(storage.get('crewcheck_departure_margin', '25')) || 25);
-  const leaveMs = routeMinutes && presentationMs
-    ? presentationMs - (routeMinutes + margin) * 60 * 1000
-    : 0;
-
-  let state: CrewCheckWatchSnapshot['state'] = 'UNKNOWN';
-  if (event.kind === 'stay') {
-    state = 'OVERNIGHT';
-  } else if (event.kind === 'flight') {
-    const groundBefore = Number(canonical?.groundBeforeMinutes ?? event.groundBeforeMinutes ?? 0);
-    const inConnectionWindow = groundBefore > 0
-      && now < startMs
-      && now >= startMs - groundBefore * 60 * 1000
-      && canonical?.journeyBoundary == null;
-    if (now >= startMs && now <= endMs) state = 'IN_FLIGHT';
-    else if (inConnectionWindow) state = 'CONNECTION';
-    else if (leaveMs && now < presentationMs && now >= leaveMs - 90 * 60 * 1000) state = 'LEAVE_SOON';
-    else if (now >= presentationMs && now < startMs) state = 'BOARDING';
-    else state = 'REPORTING';
-  } else {
-    state = now >= startMs ? 'REPORTING' : 'REPORTING';
-  }
-
-  const currentIndex = events.findIndex((candidate) => candidate.id === event.id);
-  const journeyId = canonical?.journeyId || '';
-  const laterEvents = currentIndex >= 0 ? events.slice(currentIndex + 1) : [];
-  const nextFlightEvent = laterEvents.find((candidate) =>
-    !candidate.placeholder
-      && candidate.kind === 'flight'
-      && (!journeyId || candidate.canonical?.journeyId === journeyId)
-  );
-  const nextStay = laterEvents.find((candidate) => !candidate.placeholder && candidate.kind === 'stay');
-
-  const remainingConnectionMinutes = state === 'CONNECTION'
-    ? Math.max(0, Math.round((startMs - now) / 60_000))
-    : 0;
-  const leaveTime = leaveMs ? watchClockLabel(leaveMs) : '';
-  const leaveMinutes = leaveMs ? Math.max(0, Math.round((leaveMs - now) / 60_000)) : 0;
-  const headline = state === 'LEAVE_SOON'
-    ? (leaveMinutes > 0 ? `SAIR EM ${leaveMinutes} MIN` : 'HORA DE SAIR')
-    : state === 'CONNECTION'
-      ? 'CONEXÃO'
-      : state === 'IN_FLIGHT'
-        ? 'VOO EM ANDAMENTO'
-        : state === 'BOARDING'
-          ? (remoteStand ? 'EMBARQUE REMOTO' : 'EMBARQUE')
-          : state === 'OVERNIGHT'
-            ? 'PERNOITE'
-            : 'APRESENTAÇÃO';
-
-  const maxFresh = now + 6 * 60 * 60 * 1000;
-  const eventFresh = Number.isFinite(endMs) ? endMs + 30 * 60 * 1000 : now + 2 * 60 * 60 * 1000;
-  const validUntil = Math.max(now + 15 * 60 * 1000, Math.min(maxFresh, eventFresh));
-
-  return {
-    schemaVersion: 1,
-    contextId: canonical?.id || event.id,
-    generatedAtEpochMs: now,
-    validUntilEpochMs: validUntil,
-    state,
-    headline,
-    primaryTime: state === 'LEAVE_SOON' ? leaveTime : presentation,
-    detail: state === 'IN_FLIGHT' ? event.subtitle : state === 'OVERNIGHT' ? safe(event.hotel, '') : '',
-    presentationTime: presentation,
-    presentationPlace: safe(event.origin, ''),
-    leaveTime,
-    trafficDetail: routeMinutes ? `${routeMinutes} min • deslocamento atual` : '',
-    currentFlight: event.kind === 'flight' ? safe(event.flightNumber, '') : '',
-    currentRoute: event.kind === 'flight' ? [event.origin, event.destination].filter(Boolean).join(' → ') : '',
-    gate,
-    remoteStand,
-    boardingTime: '',
-    eta: event.kind === 'flight' && /^\d{1,2}:\d{2}$/.test(String(event.arrival || '')) ? event.arrival : '',
-    connection: remainingConnectionMinutes ? `${remainingConnectionMinutes} MIN` : '',
-    nextFlight: nextFlightEvent ? safe(nextFlightEvent.flightNumber, '') : '',
-    nextDetail: nextFlightEvent
-      ? [nextFlightEvent.origin && nextFlightEvent.destination ? `${nextFlightEvent.origin} → ${nextFlightEvent.destination}` : '', safe(nextFlightEvent.gate, '')]
-          .filter(Boolean)
-          .join(' • ')
-      : '',
-    overnight: state === 'OVERNIGHT'
-      ? safe(event.hotel, safe(event.destination || event.origin, ''))
-      : nextStay
-        ? safe(nextStay.hotel, safe(nextStay.destination || nextStay.origin, ''))
-        : '',
-    hotelPickup: '',
-    changed: false,
-    source: 'canonical-roster',
-  };
-}
-
-
-
 function UpdateCenterView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [token, setToken] = useState(() => storage.get('crewcheck_update_token', ''));
@@ -2620,16 +2438,6 @@ function Departure({ event }: { event: ZeroLeg }) {
   const [stopAlerts, setStopAlerts] = useState(() => storage.get('crewcheck_transit_stop_alerts', '0') === '1');
   const [route, setRoute] = useState<RoutePreviewInfo | null>(null);
   const [originLabel, setOriginLabel] = useState(() => eventRouteOriginLabel(event));
-  function updateWatchRoute(nextRoute: RoutePreviewInfo | null) {
-    setRoute(nextRoute);
-    const minutes = routeDurationMinutes(nextRoute);
-    if (minutes > 0) {
-      storage.set('crewcheck_watch_route_event', event.id);
-      storage.set('crewcheck_watch_route_minutes', String(minutes));
-      storage.set('crewcheck_watch_route_updated_at', String(Date.now()));
-      window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot-request', { detail: { reason: 'route-updated' } }));
-    }
-  }
   if (event.placeholder) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Planejador de Saída aguardando a escala</h2><p>Importe o PDF para calcular quando sair usando sua origem, apresentação, margem e trânsito ao vivo.</p></article></>;
   if (!smartDepartureEligible(event)) return <><Brand back/><article className="cz-empty-real"><Car/><h2>Esta programação não exige planejamento de saída</h2><p>Este compromisso não possui apresentação ou deslocamento operacional publicável. A próxima atividade elegível aparecerá automaticamente.</p></article></>;
   const travelMinutes = routeDurationMinutes(route);
@@ -2639,7 +2447,7 @@ function Departure({ event }: { event: ZeroLeg }) {
   const modeLabel = departureModes.find((item) => item.id === mode)?.label || 'Automático';
   function chooseMode(next: string) { setMode(next); storage.set('crewcheck_departure_mode', next); }
   function chooseMargin(next: number) { setMargin(next); storage.set('crewcheck_departure_margin', String(next)); }
-  return <><Brand back/><section className="cz-departure"><section className="cc-departure-explainer"><Navigation/><div><h1>Planejador de Saída</h1><p>Combina a apresentação, o trânsito ao vivo e sua margem. Se o trânsito mudar, a hora recomendada muda também.</p></div></section><article className="cz-depart-hero"><span>HORA RECOMENDADA PARA SAIR</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{originLabel} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} margin={margin} onRoute={updateWatchRoute} onOriginLabel={setOriginLabel}/></section></>;
+  return <><Brand back/><section className="cz-departure"><section className="cc-departure-explainer"><Navigation/><div><h1>Planejador de Saída</h1><p>Combina a apresentação, o trânsito ao vivo e sua margem. Se o trânsito mudar, a hora recomendada muda também.</p></div></section><article className="cz-depart-hero"><span>HORA RECOMENDADA PARA SAIR</span><strong>{leaveLabel}</strong><em>{travelMinutes ? 'ATUALIZADA' : 'CALCULANDO ROTA'}</em><h2>{originLabel} → {event.origin}</h2><p>{modeLabel} · {travelMinutes ? `${travelMinutes} min de deslocamento` : 'aguardando trânsito'} · margem {margin} min</p></article><div className="cz-depart-kpis"><div><Navigation/>Sair às<strong>{leaveLabel}</strong></div><div><Clock/>Deslocamento<strong>{travelMinutes ? `${travelMinutes} min` : 'Calculando'}</strong></div><div><ShieldCheck/>Margem<strong>{margin} min</strong></div></div><section className="cz-toolbox"><h2>Como você vai sair</h2><p>Escolha o trajeto completo. Nos modos combinados, o trecho terrestre termina no aeroporto da programação real.</p><div className="cc-departure-mode-grid">{departureModes.map(({ id, label, detail, icon: Icon }) => <button key={id} className={mode === id ? 'active' : ''} onClick={() => chooseMode(id)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span></button>)}</div>{mode.includes('transit') && <label className="cc-stop-alert"><input type="checkbox" checked={stopAlerts} onChange={(event) => { setStopAlerts(event.target.checked); storage.set('crewcheck_transit_stop_alerts', event.target.checked ? '1' : '0'); }}/><span><strong>Avisar o ponto de descida</strong><small>Notificação local; Telegram será usado quando vinculado e o navegador permitir localização em segundo plano.</small></span></label>}<div className="cz-tool-actions cz-margin-actions"><span>Margem operacional:</span>{[15, 25, 35, 45].map((value) => <button className={margin === value ? 'active' : ''} key={value} onClick={() => chooseMargin(value)}>{value} min</button>)}</div></section><GoogleMapsRoutePreview event={event} mode={mode} margin={margin} onRoute={setRoute} onOriginLabel={setOriginLabel}/></section></>;
 }
 
 function MonthlyMapView({ events, actions }: { events: ZeroLeg[]; actions: QuickActions }) {
