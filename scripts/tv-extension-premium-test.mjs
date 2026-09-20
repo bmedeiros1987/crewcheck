@@ -60,6 +60,11 @@ assert.match(broadcast,/licensed/);
 assert.match(broadcast,/Foto oficial\/licenciada/);
 assert.doesNotMatch(broadcast,/backgroundImage:[^\n]*http:/);
 
+const compatibilityCss=(await readFile('apps/tv-player/src/broadcast.css','utf8'))+'\n'+(await readFile('apps/tv-player/src/programming-details.css','utf8'));
+assert.doesNotMatch(compatibilityCss,/display\s*:\s*grid\b/);
+assert.doesNotMatch(compatibilityCss,/grid-template/);
+assert.doesNotMatch(compatibilityCss,/(?:^|[;{])\s*gap\s*:/m);
+
 const main=await readFile('apps/tv-player/src/main.tsx','utf8');
 assert.match(main,/type View = [^\n]*'Agora'[^\n]*'Dia' \| 'Programação' \| 'Detalhes'/);
 assert.match(main,/DayProgrammingView/);
