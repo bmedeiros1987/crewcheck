@@ -16,8 +16,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 30
         targetSdk 36
-        versionCode 140378
-        versionName '14.3.78-watch-pulse'
+        versionCode 140383
+        versionName '14.3.83-watch-pulse'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
