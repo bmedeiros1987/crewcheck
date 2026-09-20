@@ -115,7 +115,7 @@ assert.match(http,/source:'crewcheck-route-preview'/);
 assert.match(http,/preferences\.share\?\.traffic === true/);
 assert.match(http,/airlineVisualFor/);
 assert.match(http,/CREWCHECK_TV_AIRLINE_VISUALS_JSON/);
-assert.match(http,/snapshot\.journeyDetails = \{\}/);
+assert.match(http,/snapshot\.journeyDetails = tvAttachStayDetails/);
 assert.match(routes,/expectedPrivacy = auth\.preferences\?\.audience/);
 assert.match(routes,/updatePreferences/);
 assert.match(routes,/updateContext/);
