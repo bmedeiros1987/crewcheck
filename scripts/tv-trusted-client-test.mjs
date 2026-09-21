@@ -19,7 +19,7 @@ const mapStorage=()=>{const map=new Map();return{
 
 const now=Date.parse('2026-09-18T21:40:00-03:00');
 const persistent=mapStorage(), sessionA=mapStorage();
-const credential={deviceId:'d'.repeat(43),token:'t'.repeat(43),expiresAt:new Date(now+365*86400000).toISOString(),privacy:'private',trusted:true};
+const credential={deviceId:'d'.repeat(43),token:'t'.repeat(43),expiresAt:null,privacy:'private',trusted:true};
 const snapshot={schemaVersion:1,snapshotId:'s',deviceId:credential.deviceId,sourceVersion:'v',generatedAt:new Date(now).toISOString(),expiresAt:new Date(now+60000).toISOString(),privacy:'private',mode:'ambient',next:null,days:[],summary:{month:'2026-09',flights:0,journeys:0,stays:0},leaveAt:null,gate:null,weather:null,changes:[],ticker:[]};
 
 const request=async()=>new Response(JSON.stringify(snapshot),{status:200,headers:{'Content-Type':'application/json','X-CrewCheck-Server-Time':String(now)}});
@@ -41,17 +41,16 @@ assert.equal(second.offline(now+900001),null,'offline snapshot exposure remains 
 assert.equal(second.credential?.deviceId,credential.deviceId,'offline snapshot expiry must not forget trusted TV');
 assert.equal(persistent.map.size,1);
 
-const renewed=new Date(now+500*86400000).toISOString();
-second.renew(renewed);
+second.renew(null);
 const third=new TvSession(mapStorage(),request,'https://pilot.example.test',persistent);
-assert.equal(third.credential?.expiresAt,renewed,'sliding server lease must persist locally');
+assert.equal(third.credential?.expiresAt,null,'trusted TV must remain paired without a functional expiry');
 
 third.clear();
 assert.equal(persistent.map.size,0,'explicit unlink must forget trusted credential');
 
 const temporaryStore=mapStorage();
 const temporary=new TvSession(mapStorage(),request,'https://pilot.example.test',temporaryStore);
-temporary.pair({...credential,trusted:false});
+temporary.pair({...credential,trusted:false,expiresAt:new Date(now+86400000).toISOString()});
 assert.equal(temporaryStore.map.size,0,'temporary pairing must never persist credential');
 
 const rejectedStore=mapStorage();
@@ -71,4 +70,4 @@ assert.match(prep,/session\.clear\(forgetTrusted\)/);
 const main=await readFile('apps/tv-player/src/main.tsx','utf8');
 assert.match(main,/Desvincular esta TV/);
 
-console.log('PASS: trusted personal TV survives restart, renews, keeps offline snapshot bounded and remains explicitly revocable.');
+console.log('PASS: trusted personal TV survives restart until revocation, keeps offline snapshot bounded and remains explicitly revocable.');
