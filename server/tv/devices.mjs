@@ -4,7 +4,6 @@ const hash = value => createHash('sha256').update(String(value)).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const SESSION_LEASE_MS = 86400000;
-const TRUSTED_LEASE_MS = 365 * 86400000;
 const DEFAULT_PREFERENCES = Object.freeze({
   audience: 'owner',
   share: {
@@ -45,7 +44,7 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
     if (!userId) throw new TvError(401, 'authentication_required');
     if (!accountAllowed(userId)) throw new TvError(403, 'pilot_not_authorized');
   };
-  const leaseFor = trusted => now() + (trusted ? TRUSTED_LEASE_MS : SESSION_LEASE_MS);
+  const leaseFor = trusted => trusted ? null : now() + SESSION_LEASE_MS;
   return {
     async begin(platform, trusted = false) {
       if (!['android-tv', 'samsung-tizen', 'lg-webos'].includes(platform)) throw new TvError(400, 'invalid_platform');
@@ -80,19 +79,19 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         p.lastPoll = now();
         if (!p.userId) return { pending: true };
         requireAccount(p.userId);
-        for (const [id, d] of Object.entries(state.devices)) if (d.expiresAt <= now()) delete state.devices[id];
+        for (const [id, d] of Object.entries(state.devices)) if (d.expiresAt != null && d.expiresAt <= now()) delete state.devices[id];
         if (Object.keys(state.devices).length >= 1000) throw new TvError(429, 'device_capacity');
         const token = secret(), deviceId = secret(), trusted = p.trusted === true, expiresAt = leaseFor(trusted);
         state.devices[deviceId] = { deviceId, userId: p.userId, privacy: p.privacy, platform: p.platform, trusted, tokenHash: hash(token), expiresAt, lastSeenAt: now(), scopes: ['tv:read'], revoked: false, preferences: normalizePreferences(DEFAULT_PREFERENCES) };
         delete state.pairings[key];
-        return { deviceId, token, trusted, expiresAt: new Date(expiresAt).toISOString(), privacy: p.privacy };
+        return { deviceId, token, trusted, expiresAt: expiresAt == null ? null : new Date(expiresAt).toISOString(), privacy: p.privacy };
       });
     },
     async authorize(token) {
       if (typeof token !== 'string' || token.length !== 43) throw new TvError(401, 'invalid_device');
       return store.transaction(state => {
         const d = Object.values(state.devices ?? {}).find(d => equal(d.tokenHash, hash(token)));
-        if (!d || d.revoked || d.expiresAt <= now() || !d.scopes.includes('tv:read')) throw new TvError(401, 'invalid_device');
+        if (!d || d.revoked || (d.expiresAt != null && d.expiresAt <= now()) || !d.scopes.includes('tv:read')) throw new TvError(401, 'invalid_device');
         requireAccount(d.userId);
         const context = d.context && Number(d.context.expiresAt || 0) > now() ? structuredClone(d.context) : null;
         if (!context && d.context) delete d.context;
@@ -104,10 +103,10 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
       return store.transaction(state => {
         const d = state.devices[auth.deviceId];
         requireAccount(auth.userId);
-        if (!d || d.revoked || d.expiresAt <= now()) throw new TvError(401, 'invalid_device');
+        if (!d || d.revoked || (d.expiresAt != null && d.expiresAt <= now())) throw new TvError(401, 'invalid_device');
         d.lastSeenAt = now();
-        if (d.trusted === true) d.expiresAt = leaseFor(true);
-        return { ok: true, trusted: d.trusted === true, expiresAt: new Date(d.expiresAt).toISOString() };
+        if (d.trusted === true) d.expiresAt = null;
+        return { ok: true, trusted: d.trusted === true, expiresAt: d.expiresAt == null ? null : new Date(d.expiresAt).toISOString() };
       });
     },
     async updatePreferences(userId, deviceId, value) {
@@ -168,7 +167,7 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         platform: d.platform,
         privacy: d.privacy,
         trusted: d.trusted === true,
-        expiresAt: new Date(d.expiresAt).toISOString(),
+        expiresAt: d.expiresAt == null ? null : new Date(d.expiresAt).toISOString(),
         lastSeenAt: d.lastSeenAt,
         revoked: d.revoked,
         preferences: normalizePreferences(d.preferences),
