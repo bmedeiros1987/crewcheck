@@ -46,6 +46,17 @@ public final class CrewLifeWatchPublisher {
     private static final Set<String> ROUTINE_PRIORITIES =
             Set.of("RECUPERACAO", "MANUTENCAO", "TREINO", "DESCANSO", "DESCONHECIDA");
 
+    /**
+     * title é código, não frase. Espelha RoutineSnapshot.TITLES no módulo do relógio.
+     *
+     * Texto livre no título atravessava com apenas consentimento de rotina e podia revelar
+     * sono ou batimento ("TREINO LEVE — FC ALTA / DORMIU 4H"). Nenhum consentimento libera
+     * frase aqui: ou é um destes códigos, ou vira SEM_SUGESTAO.
+     */
+    private static final Set<String> ROUTINE_TITLES = Set.of(
+            "TREINO_LEVE", "TREINO_MODERADO", "TREINO_FORTE", "CAMINHADA", "ALONGAMENTO",
+            "MOBILIDADE", "DESCANSO", "SONO_EXTRA", "HIDRATACAO", "SEM_SUGESTAO");
+
     /** Nunca atravessam para o pulso, mesmo com consentimento. */
     private static final String[] PROHIBITED = {
             "heartRateSeries", "heartRateSamples", "samples", "sleepStages",
@@ -217,7 +228,8 @@ public final class CrewLifeWatchPublisher {
         JSONObject source = parse(rawJson);
 
         JSONObject out = envelope(source, ROUTINE_SCHEMA_VERSION);
-        copyString(source, out, "title", 24);
+        String title = normalizeLabel(source.optString("title", ""), 24).replaceAll("[\\s-]+", "_");
+        out.put("title", ROUTINE_TITLES.contains(title) ? title : "SEM_SUGESTAO");
         putBounded(source, out, "durationMinutes", 0, 720);
 
         // reason e nextAction justificam a sugestão, e justificar quase sempre é citar saúde
