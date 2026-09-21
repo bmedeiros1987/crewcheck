@@ -139,6 +139,7 @@ jobs:
           test -x "$APKSIGNER"
 
           app_apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          app_aab='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
           wear_apk='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
           wear_aab='android-wrapper/wear/build/outputs/bundle/release/wear-release.aab'
           face_apk='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
