@@ -60,7 +60,10 @@ assert.match(workflow, /CrewCheck-CrewWatch-Official-signed-release\.apk/);
 assert.match(workflow, /CrewCheck-CrewWatchFace-Official-signed-release\.apk/);
 assert.match(workflow, /CrewCheck-CrewWatch-com\.crewcheck\.app-Play-Console\.aab/);
 assert.match(workflow, /CrewCheck-CrewWatchFace-com\.crewcheck\.watch\.app-Play-Console\.aab/);
-assert.match(workflow, /package="com\.crewcheck\.watch\.app"/);
+assert.match(workflow, /Verify Google Play package identities/);
+assert.match(workflow, /package: name='com\.crewcheck\.app'/);
+assert.match(workflow, /package: name='com\.crewcheck\.watch\.app'/);
+assert.match(workflow, /PACKAGE_MAP\.txt/);
 assert.match(workflow, /regression-crewwatch-official-ui\.mjs/);
 
 console.log('CrewWatch Official UI + notifications contract: PASS');
