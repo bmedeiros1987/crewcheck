@@ -16,7 +16,7 @@ const demo = config.VITE_TV_DEMO === 'true';
 const enabled = demo || config.VITE_CREWCHECK_TV_ENABLED === 'true';
 const platform = config.VITE_TV_PLATFORM || 'android-tv';
 const session = new TvSession(sessionStorage, fetch, config.VITE_TV_API_ORIGIN || 'https://crewcheck.online');
-type View = 'Agora' | 'Semana' | 'Mês' | 'Dia' | 'Mudanças' | 'Notícias' | 'Configurações';
+type View = 'Agora' | 'Semana' | 'Mês' | 'Dia' | 'Programação' | 'Mudanças' | 'Notícias' | 'Configurações';
 const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Notícias', 'Configurações'];
 const weekdays = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'];
 const themeStyle = { '--brand-violet': CREWCHECK_BRAND.palette.violet, '--brand-pink': CREWCHECK_BRAND.palette.magenta, '--brand-cyan': CREWCHECK_BRAND.palette.cyan } as React.CSSProperties;
@@ -25,6 +25,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<TvSnapshot | null>(() => demo ? demoSnapshot() : null);
   const [view, setView] = useState<View>('Agora');
   const [day, setDay] = useState(new Date().toISOString().slice(0, 10));
+  const [activityId, setActivityId] = useState<string | null>(null);
   const [status, setStatus] = useState(demo ? 'Dados fictícios · teste visual' : 'Vincule sua TV');
   const [pairing, setPairing] = useState<any>(null);
   const [qr, setQr] = useState('');
@@ -46,7 +47,7 @@ function App() {
     generation.current++;
     session.clear();
     setSnapshot(demo ? demoSnapshot() : null);
-    setNews([]); setPairing(null); setQr(''); setView('Agora');
+    setNews([]); setPairing(null); setQr(''); setActivityId(null); setView('Agora');
     setStatus(demo ? 'Dados fictícios · teste visual' : 'Vincule sua TV');
   };
   async function begin() {
