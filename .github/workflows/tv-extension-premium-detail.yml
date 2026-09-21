@@ -4,6 +4,7 @@ on:
     paths:
       - 'apps/tv-player/**'
       - 'packages/tv-core/**'
+      - 'server/tv/**'
       - 'scripts/tv-extension-detail-test.mjs'
       - 'scripts/tv-sharing-controls-test.mjs'
       - 'server/tv/**'
@@ -24,6 +25,8 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-extension-detail-test.mjs
+      - run: node scripts/tv-entitlements-test.mjs
+      - run: node scripts/tv-trusted-client-test.mjs
       - run: node scripts/tv-sharing-controls-test.mjs
       - run: node scripts/tv-test.mjs
       - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
