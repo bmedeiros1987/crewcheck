@@ -20,6 +20,10 @@ export type TvActivity = {
   groundBeforeMinutes: number | null;
   confidence: string;
   publishedCode?: string;
+  display?: {
+    role: "flight" | "stay" | "rest" | "reserve" | "standby" | "training" | "duty";
+    title: string;
+  };
 };
 export type TvCalendarDay = { date: string; activities: TvActivity[] };
 export type TvMonthSummary = {
@@ -115,6 +119,10 @@ function projectEvent(e: CanonicalRosterEvent, privacy: Privacy): TvActivity {
     destination: privacy === "private" ? e.destination || null : null,
     groundBeforeMinutes: privacy === "private" ? e.groundBeforeMinutes : null,
     publishedCode: e.publishedDay.type,
+    display: {
+      role: e.kind === "flight" ? "flight" : e.kind === "stay" ? "stay" : e.kind === "rest" || e.kind === "journey-rest" ? "rest" : /HSB|SOBREAVISO/i.test(String(e.publishedDay.type || "")) ? "standby" : /ASB|RES|RSV|RESERVA/i.test(String(e.publishedDay.type || "")) ? "reserve" : /CRM|TREIN|TRAIN|SIM|CHECK/i.test(String(e.publishedDay.type || "")) ? "training" : "duty",
+      title: e.kind === "flight" ? (privacy === "private" ? (e.flightNumber || "Voo") : "Voo") : e.kind === "stay" ? "Pernoite" : e.kind === "journey-rest" ? "Repouso entre jornadas" : e.kind === "rest" ? "Folga / descanso" : String(e.publishedDay.type || "Programação"),
+    },
     confidence: e.sourceConfidence,
   };
 }
