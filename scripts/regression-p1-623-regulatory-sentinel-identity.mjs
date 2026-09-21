@@ -11,7 +11,7 @@ const mod = await import(`data:text/javascript;base64,${Buffer.from(js).toString
 
 const { regulatoryCrewIdentity, selectRegulatoryCarryIn } = mod;
 
-for (const sentinel of ['UNKNOWN', 'unknown', 'UNKNOWN-1', 'UNKNOWN#1', 'UNKNOWN_1', 'UNKNOWN.1', 'UNKNOWN/1', 'INVALID', 'MISSING2', 'NA', 'NONE', 'NULL', 'UNDEFINED', 'TBD', 'TBA', 'PLACEHOLDER']) {
+for (const sentinel of ['0', '00', '00000000', 'UNKNOWN', 'unknown', 'UNKNOWN-1', 'UNKNOWN#1', 'UNKNOWN_1', 'UNKNOWN.1', 'UNKNOWN/1', 'INVALID', 'MISSING2', 'NA', 'NONE', 'NULL', 'UNDEFINED', 'TBD', 'TBA', 'PLACEHOLDER']) {
   assert.equal(
     regulatoryCrewIdentity({ crewId: sentinel, crewName: 'Tripulante' }),
     null,
