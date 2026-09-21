@@ -52,8 +52,8 @@ assert.match(wearGradle, /applicationId 'com\.crewcheck\.app'/,
   'CrewWatch deve manter o mesmo package do app móvel para o Data Layer');
 assert.match(faceGradle, /applicationId 'com\.crewcheck\.watch\.app'/,
   'CrewWatch Face deve usar o package já cadastrado na Play Console');
-assert.match(wearGradle, /versionCode 140384/);
-assert.match(wearGradle, /versionName '14\.3\.84-crewwatch-official'/);
+assert.match(wearGradle, /versionCode 140386/);
+assert.match(wearGradle, /versionName '14\.3\.86-crewwatch-official'/);
 assert.match(faceGradle, /versionCode 140385/);
 assert.match(faceGradle, /versionName '1\.3\.1-official'/);
 assert.match(workflow, /CrewCheck-CrewWatch-Official-signed-release\.apk/);
