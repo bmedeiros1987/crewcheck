@@ -87,11 +87,14 @@ home = patchBlock(home, 'function Departure(', 'function MonthlyMapView(', (bloc
   return next;
 }, 'Departure');
 
-const oldRoute = "{view === 'departure' && <Departure event={event}/>}";
-const newRoute = "{view === 'departure' && <Departure event={event} events={events} setView={setView}/>}"; 
-if (!home.includes(newRoute)) {
-  if (!home.includes(oldRoute)) throw new Error(TAG + ' missing Departure router anchor');
-  home = home.replace(oldRoute, newRoute);
+const routeVariants = [
+  ["{view === 'departure' && <Departure event={departureEvent}/>}","{view === 'departure' && <Departure event={departureEvent} events={events} setView={setView}/>}"],
+  ["{view === 'departure' && <Departure event={event}/>}","{view === 'departure' && <Departure event={event} events={events} setView={setView}/>}"],
+];
+if (!routeVariants.some(([, patched]) => home.includes(patched))) {
+  const found = routeVariants.find(([before]) => home.includes(before));
+  if (!found) throw new Error(TAG + ' missing Departure router anchor');
+  home = home.replace(found[0], found[1]);
 }
 
 write(homePath, home);
