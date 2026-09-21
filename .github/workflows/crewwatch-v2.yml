@@ -106,6 +106,7 @@ jobs:
           set -euo pipefail
           gradle --no-daemon --console=plain \
             :app:assembleRelease \
+            :app:bundleRelease \
             :wear:assembleRelease \
             :wear:bundleRelease \
             :watchface:assembleRelease \
@@ -121,9 +122,12 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
           test -x "$AAPT"
 
+          app_apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          app_aab='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
           wear_apk='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
           face_apk='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
 
+          "$AAPT" dump badging "$app_apk" | head -1 | grep -F "package: name='com.crewcheck.app'"
           "$AAPT" dump badging "$wear_apk" | head -1 | grep -F "package: name='com.crewcheck.app'"
           "$AAPT" dump badging "$face_apk" | head -1 | grep -F "package: name='com.crewcheck.watch.app'"
 
@@ -140,7 +144,7 @@ jobs:
           face_apk='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
           face_aab='android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab'
 
-          for file in "$app_apk" "$wear_apk" "$wear_aab" "$face_apk" "$face_aab"; do
+          for file in "$app_apk" "$app_aab" "$wear_apk" "$wear_aab" "$face_apk" "$face_aab"; do
             test -s "$file"
           done
 
@@ -148,7 +152,7 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$wear_apk"
           "$APKSIGNER" verify --verbose --print-certs "$face_apk"
 
-          for aab in "$wear_aab" "$face_aab"; do
+          for aab in "$app_aab" "$wear_aab" "$face_aab"; do
             verify_log="$RUNNER_TEMP/$(basename "$aab").verify.log"
             jarsigner -verify -verbose -certs "$aab" > "$verify_log" 2>&1
             cat "$verify_log"
@@ -194,10 +198,16 @@ jobs:
           set -euo pipefail
           out="$RUNNER_TEMP/crewcheck-mobile-watch-sync"
           mkdir -p "$out"
-          cp android-wrapper/app/build/outputs/apk/release/app-release.apk             "$out/CrewCheck-Mobile-WatchSync-140387-signed-release.apk"
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk \
+            "$out/CrewCheck-Mobile-WatchSync-140387-signed-release.apk"
+          cp android-wrapper/app/build/outputs/bundle/release/app-release.aab \
+            "$out/CrewCheck-Mobile-140387-Play-Console.aab"
           (
             cd "$out"
-            sha256sum CrewCheck-Mobile-WatchSync-140387-signed-release.apk > SHA256SUMS.txt
+            sha256sum \
+              CrewCheck-Mobile-WatchSync-140387-signed-release.apk \
+              CrewCheck-Mobile-140387-Play-Console.aab \
+              > SHA256SUMS.txt
           )
 
       - name: Upload signed CrewCheck mobile watch-sync pilot
@@ -208,6 +218,7 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/crewcheck-mobile-watch-sync/CrewCheck-Mobile-WatchSync-140387-signed-release.apk
+            ${{ runner.temp }}/crewcheck-mobile-watch-sync/CrewCheck-Mobile-140387-Play-Console.aab
             ${{ runner.temp }}/crewcheck-mobile-watch-sync/SHA256SUMS.txt
 
       - name: Upload signed wearable release
