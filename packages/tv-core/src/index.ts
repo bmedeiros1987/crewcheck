@@ -103,6 +103,17 @@ export type TvSnapshot = {
     pickupLabel?: string | null;
     destinationLabel?: string | null;
   } | null;
+  entitlements?: {
+    tier: "free" | "premium";
+    userGate: boolean;
+    automaticGate: boolean;
+    automaticTraffic: boolean;
+    automaticWeather: boolean;
+    hotel: boolean;
+    crew: boolean;
+    advancedFinance: boolean;
+    paidProviderAccess: boolean;
+  };
   changes: string[];
   ticker: string[];
 };
@@ -242,6 +253,17 @@ export function projectRoster(
     },
     journeyDetails: {},
     mobility: null,
+    entitlements: {
+      tier: "free",
+      userGate: true,
+      automaticGate: false,
+      automaticTraffic: false,
+      automaticWeather: false,
+      hotel: false,
+      crew: false,
+      advancedFinance: false,
+      paidProviderAccess: false,
+    },
     changes: [],
     ticker: [],
   };
