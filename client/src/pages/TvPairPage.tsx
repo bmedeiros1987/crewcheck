@@ -17,7 +17,7 @@ type TvDevice={
   platform:string;
   privacy:'family'|'private';
   trusted?:boolean;
-  expiresAt?:string;
+  expiresAt?:string|null;
   lastSeenAt:number|string;
   revoked:boolean;
   contextActive?:boolean;
@@ -158,7 +158,12 @@ export default function TvPairPage() {
         </select>
       </label>
       <button className="w-full rounded-xl bg-cyan-700 p-3 font-bold text-white disabled:opacity-40" onClick={approve} disabled={!/^[A-F0-9]{10}$/i.test(code)}>Autorizar esta TV</button>
-      <p className="mt-3 text-xs opacity-60">Se a TV estiver marcada como confiável, o vínculo pode permanecer após reiniciar. Você continua podendo revogar a qualquer momento.</p>
+      <p className="mt-3 text-xs opacity-60">TV confiável permanece vinculada neste aparelho até você desvincular ou revogar pelo celular. A senha e a sessão principal da conta não ficam salvas na TV.</p>
+      <div className="mt-4 rounded-2xl border border-violet-900/40 bg-violet-950/10 p-4 text-xs leading-5">
+        <b className="block text-sm">Acesso da CrewCheck TV</b>
+        <span className="mt-1 block opacity-75">Gratuito: escala, próxima programação, jornada completa, pernoites, apresentação publicada, calendário, personalização local e portão informado pelo próprio usuário. Nenhuma API paga é consultada para completar esses dados.</span>
+        <span className="mt-2 block opacity-75">Premium: pode acrescentar portão/radar automático, trânsito, meteorologia automática e outros contextos conectados, sempre conforme autorização e disponibilidade.</span>
+      </div>
     </section>
 
     <p role="status" className="my-4 min-h-6 text-sm">{message}</p>
