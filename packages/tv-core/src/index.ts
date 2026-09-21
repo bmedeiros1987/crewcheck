@@ -53,6 +53,12 @@ export type TvWeatherContext = {
 export type TvProfileContext = {
   base: string | null;
   airline: string | null;
+  airlineVisual?: {
+    imageUrl: string;
+    source: string;
+    licensed: boolean;
+    attribution?: string | null;
+  } | null;
 };
 export type TvSnapshot = {
   schemaVersion: 1;
@@ -75,6 +81,28 @@ export type TvSnapshot = {
   }> | null;
   profile?: TvProfileContext;
   weatherContexts?: TvWeatherContext[];
+  traffic?: TvFact<{
+    durationText: string | null;
+    delayText: string | null;
+    status: string | null;
+    incidents: number | null;
+  }> | null;
+  audience?: "owner" | "family" | "visitor";
+  sharePermissions?: {
+    crew?: boolean;
+    finance?: boolean;
+    weather?: boolean;
+    hotel?: boolean;
+    operational?: boolean;
+    mobility?: boolean;
+  };
+  journeyDetails?: Record<string, unknown>;
+  mobility?: {
+    provider: "uber";
+    deepLink: string;
+    pickupLabel?: string | null;
+    destinationLabel?: string | null;
+  } | null;
   changes: string[];
   ticker: string[];
 };
@@ -202,6 +230,18 @@ export function projectRoster(
       airline: tvAirlineName(roster, events),
     },
     weatherContexts: [],
+    traffic: null,
+    audience: privacy === "private" ? "owner" : "family",
+    sharePermissions: {
+      crew: false,
+      finance: false,
+      weather: true,
+      hotel: false,
+      operational: true,
+      mobility: false,
+    },
+    journeyDetails: {},
+    mobility: null,
     changes: [],
     ticker: [],
   };
