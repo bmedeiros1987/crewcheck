@@ -43,7 +43,8 @@ function normalizeCrewToken(value: unknown): string {
 
 function isRegulatoryCrewIdSentinel(value: string): boolean {
   const compact = value.replace(/[^A-Z0-9]+/g, '');
-  return /^(?:UNKNOWN|MISSING|INVALID|PLACEHOLDER)\d*$/.test(compact)
+  return /^0+$/.test(compact)
+    || /^(?:UNKNOWN|MISSING|INVALID|PLACEHOLDER)\d*$/.test(compact)
     || /^(?:NA|NONE|NULL|UNDEFINED|TBD|TBA)$/.test(compact);
 }
 
