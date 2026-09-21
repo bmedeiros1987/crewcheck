@@ -5,6 +5,9 @@ on:
       - 'apps/tv-player/**'
       - 'packages/tv-core/**'
       - 'scripts/tv-extension-detail-test.mjs'
+      - 'scripts/tv-sharing-controls-test.mjs'
+      - 'server/tv/**'
+      - 'client/src/pages/TvPairPage.tsx'
       - 'scripts/tv-broadcast-prepare.mjs'
       - '.github/workflows/tv-extension-premium-detail.yml'
 permissions:
@@ -21,6 +24,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-extension-detail-test.mjs
+      - run: node scripts/tv-sharing-controls-test.mjs
       - run: node scripts/tv-test.mjs
       - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
       - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
