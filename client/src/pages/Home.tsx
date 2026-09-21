@@ -75,6 +75,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { classifyAllowanceWindows, freeDayPostponementIndemnity, observedStatementCycle } from '@/lib/compensationPolicy';
+import { financialJourneyGroupKey, rowsForNominalFinancialCompetence } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
@@ -3276,7 +3277,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     });
   };
   const operational = events.filter(isOperationalEvent);
-  const processedFlightDays = new Set<RosterDay>();
+  const processedFlightJourneys = new Set<string>();
   for (const event of operational) {
     const code = financialEventCode(event);
     let activityKind: 'flight' | 'reserve' | 'standby' | 'training' | 'stay_external' | 'stay_base' | 'other' = 'other';
@@ -3287,10 +3288,12 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     let dutyFlights: ZeroLeg[] = [event];
 
     if (event.kind === 'flight') {
-      if (processedFlightDays.has(event.day)) continue;
-      processedFlightDays.add(event.day);
-      dutyFlights = operational.filter(candidate => candidate.kind === 'flight' && candidate.day === event.day)
-        .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
+      const journeyKey = financialJourneyGroupKey(event);
+      if (processedFlightJourneys.has(journeyKey)) continue;
+      processedFlightJourneys.add(journeyKey);
+      dutyFlights = operational.filter(candidate =>
+        candidate.kind === 'flight' && financialJourneyGroupKey(candidate) === journeyKey
+      ).sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime());
       representative = dutyFlights[0] || event;
       const last = dutyFlights[dutyFlights.length - 1] || event;
       start = eventStartDateTime(representative);
@@ -3342,13 +3345,14 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
       add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`);
     }
   }
-  const totalsByCurrency = rows.reduce((totals, row) => {
+  const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
+  const totalsByCurrency = monthlyRows.reduce((totals, row) => {
     totals[row.currency] = (totals[row.currency] || 0) + row.value;
     return totals;
   }, {} as Partial<Record<PerDiemCurrency, number>>);
   const pendingCurrencies = (Object.keys(totalsByCurrency) as PerDiemCurrency[])
     .filter((currency) => currency !== 'BRL' && totalsByCurrency[currency] && cfg.exchangeRates[currency] <= 0);
-  const convertedTotalBRL = rows.reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
+  const convertedTotalBRL = monthlyRows.reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
   const cycle = observedStatementCycle(new Date());
   const weekly = rows.filter((row) => {
     const date = new Date(row.iso + 'T12:00:00');
@@ -3360,6 +3364,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     .join(' · ');
   return {
     rows,
+    monthlyRows,
     monthly: convertedTotalBRL,
     weekly,
     totalsByCurrency,

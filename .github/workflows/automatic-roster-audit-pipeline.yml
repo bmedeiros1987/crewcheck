@@ -12,11 +12,22 @@ on:
       - '.github/workflows/automatic-roster-audit-pipeline.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR HEAD checkout
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -28,3 +39,142 @@ jobs:
         run: node scripts/regression-official-roster-corpus-privacy.mjs
       - name: Validate official corpus
         run: node scripts/regression-official-roster-corpus.mjs
+
+  p0-530-source-oracles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR HEAD checkout
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Real sanitized AIMS source oracle
+        run: node scripts/regression-p0-527-real-sanitized-corpus.mjs
+      - name: AIMS duty segmentation and APZ oracle
+        run: node scripts/regression-p1-server-510-aims-duty-segmentation.mjs
+      - name: Published presentation boundary oracle
+        run: node scripts/regression-p0-presentation-boundary-leak.mjs
+      - name: Source 168h boundary parity
+        run: node scripts/regression-p0-530-night-168h-boundary-alignment.mjs
+      - name: Source stay physical association
+        run: node scripts/regression-p0-525-stay-physical-association.mjs
+      - name: Source stay incremental and republication contract
+        run: node scripts/regression-p0-525-continuity-incremental.mjs
+      - name: Source journey/rest contract
+        run: node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+      - name: Source finance journey/competence contract
+        run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+  p0-530-prepared-sovereign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR HEAD checkout
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical runtime
+        run: node scripts/v139/apply.mjs
+      - name: Prepared 168h and timezone contracts
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-530-night-168h-boundary-alignment.mjs
+          node scripts/regression-v14-3-59-official-roster-compliance.mjs
+          node scripts/regression-p1-night-ops-journey-identity.mjs
+          node scripts/regression-p0-530-journey-instant-timezone-independence.mjs
+      - name: Prepared stay/journey contracts
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-525-stay-physical-association.mjs
+          node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+          for zone in UTC America/Sao_Paulo America/Los_Angeles; do
+            TZ="$zone" node scripts/regression-p0-525-continuity-incremental.mjs
+          done
+      - name: Sovereign #580 roster contracts
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-580-real-vc-legend-boundary.mjs
+          node scripts/regression-p0-580-transposed-vc-boundary.mjs
+          node scripts/regression-p0-580-overlap-reimport.mjs
+          node scripts/regression-p0-580-exact-competence-open.mjs
+          node scripts/regression-p0-580-adjacent-crew-identity.mjs
+          node scripts/regression-p0-580-active-body-fingerprint.mjs
+          node scripts/regression-p0-580-previous-source-order.mjs
+          node scripts/regression-p0-580-invalid-placeholders.mjs
+          node scripts/regression-p0-580-residual-source-order.mjs
+          node scripts/regression-p0-580-post-anchor-residual.mjs
+          node scripts/p0-580-transposed-vc-boundary/regression-airport-sentinel.mjs
+          node scripts/regression-p0-580-residual-object-identity.mjs
+          node scripts/regression-p0-580-boundary-clock-independence.mjs
+          node scripts/regression-p0-580-local-identity-collision.mjs
+          node scripts/regression-p0-580-local-period-identity.mjs
+      - name: Regulatory #623/#605 carry-in and 28d contracts
+        run: |
+          set -euo pipefail
+          node scripts/regression-p1-623-regulatory-history-evidence.mjs
+          node scripts/regression-p0-623-regulatory-history-carry-in.mjs
+          node scripts/regression-p1-623-runtime-carry-in-cleanroom.mjs
+          node scripts/regression-p0-623-review-blockers.mjs
+          node scripts/regression-p1-623-regulatory-snapshot-fingerprint.mjs
+          node scripts/regression-p1-526-rolling-boundaries.mjs
+          node scripts/regression-p1-526-rolling-28d.mjs
+          node scripts/regression-p1-526-rolling-plausibility.mjs
+      - name: Prepared finance journey/competence contract
+        run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build without replaying preparers
+        run: npx vite build
+
+  p0-530-reimport-republication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR HEAD checkout
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical runtime
+        run: node scripts/v139/apply.mjs
+      - name: Reimport and retained-history contract
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-530-adjacent-month-retention.mjs
+          node scripts/regression-p1-530-full-history-retention.mjs
+          node scripts/regression-p0-580-overlap-reimport.mjs
+      - name: Republication invalidates stale derived stays
+        run: node scripts/regression-p0-525-continuity-incremental.mjs
+      - name: Final compile guard
+        run: npx tsc --noEmit

@@ -89,5 +89,5 @@ const boundaryRoster = {
   ],
 };
 const complianceResult = compliance.analyzeCompliance(boundaryRoster);
-assert.equal(complianceResult.metrics.maxNightOps168hCount, 2, 'atividade não-voo + voo exatamente a 168h deve ser invariável por TZ');
+assert.equal(complianceResult.metrics.maxNightOps168hCount, 1, 'janela semiaberta: ocorrência exatamente +168h inicia a próxima janela e deve permanecer invariável por TZ');
 console.log(JSON.stringify({ tz: process.env.TZ, maxNightOps168hCount: complianceResult.metrics.maxNightOps168hCount }));
