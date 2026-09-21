@@ -4,7 +4,7 @@ import { invokeTvRequest } from "./nativeRequest";
 export type DeviceCredential = {
   deviceId: string;
   token: string;
-  expiresAt: string;
+  expiresAt: string | null;
   privacy: "family" | "private";
   trusted?: boolean;
 };
@@ -30,7 +30,7 @@ function validCredential(value: any): value is DeviceCredential {
     value.deviceId.length > 0 &&
     typeof value.token === "string" &&
     value.token.length > 0 &&
-    Number.isFinite(Date.parse(value.expiresAt)) &&
+    (value.trusted === true || Number.isFinite(Date.parse(value.expiresAt))) &&
     ["family", "private"].includes(value.privacy),
   );
 }
@@ -38,7 +38,8 @@ function validTrustedCredential(value: any): value is DeviceCredential {
   return validCredential(value) &&
     value.deviceId.length === 43 &&
     value.token.length === 43 &&
-    value.trusted === true;
+    value.trusted === true &&
+    (value.expiresAt == null || Number.isFinite(Date.parse(value.expiresAt)));
 }
 
 export function snapshotValidationCode(
@@ -117,8 +118,9 @@ export class TvSession {
     this.persistCredential();
   }
 
-  renew(expiresAt: string) {
-    if (!this.credential?.trusted || !Number.isFinite(Date.parse(expiresAt))) return;
+  renew(expiresAt: string | null) {
+    if (!this.credential?.trusted) return;
+    if (expiresAt != null && !Number.isFinite(Date.parse(expiresAt))) return;
     this.credential = { ...this.credential, expiresAt };
     this.persistCredential();
   }
