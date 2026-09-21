@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 const corpus = JSON.parse(fs.readFileSync('scripts/fixtures/p0-527/aims-real-sanitized-aug2026.json','utf8'));
 const parserSource = fs.readFileSync('server/rosterParser.mjs','utf8');
 assert.ok(parserSource.includes('function parseAimsTokensIntoEventsV3('), 'parser AIMS v3 ausente');
+assert.match(corpus.provenance?.base || '', /^[A-Z]{3}$/, 'base operacional sanitizada ausente do corpus');
 
 const tmp = path.join(os.tmpdir(), 'crewcheck-p0-527-' + process.pid + '.mjs');
 fs.writeFileSync(tmp, parserSource + '\nexport { parseAimsTokensIntoEventsV3 };\n', 'utf8');
@@ -23,10 +24,10 @@ const passCases = corpus.cases.filter((item) => item.status === 'PASS');
 assert.ok(passCases.length >= 3, 'corpus precisa manter pelo menos 3 casos reais sanitizados PASS');
 
 for (const item of passCases) {
-  const events = parseAimsTokensIntoEventsV3(item.tokens, item.month, item.year);
+  const day = sourceDay(item);
+  const events = parseAimsTokensIntoEventsV3(item.tokens, day, item.month, item.year, corpus.provenance.base);
   assert.equal(events.length, item.expected.events, item.id + ': quantidade de jornadas/eventos');
   const event = events[0];
-  const day = sourceDay(item);
   const expectedDate = `${String(day).padStart(2, '0')}/${String(item.month).padStart(2, '0')}/${item.year}`;
   assert.equal(event.date, expectedDate, item.id + ': data civil deve vir do marcador fonte');
   assert.equal(event.dutyReport, item.expected.dutyReport, item.id + ': APZ/dutyReport');
@@ -48,8 +49,12 @@ const la3246 = passCases.find((x) => x.id.includes('la3246'));
 assert.equal(la3246.expected.dutyReport, '23:03');
 assert.notEqual(la3246.expected.dutyReport, la3246.expected.firstDeparture, 'APZ nunca pode cair para STD');
 
+const reviewCases = corpus.cases.filter((x) => x.status === 'REVIEW');
+assert.ok(reviewCases.length >= 1, 'ambiguidade real precisa permanecer REVIEW');
+assert.ok(reviewCases.every((x) => typeof x.expected?.note === 'string' && !Object.hasOwn(x.expected, 'events')), 'REVIEW não pode ser promovido silenciosamente a oracle PASS');
 const crewtopia = corpus.matrix.find((x) => x.source === 'CrewTopia JSON');
 assert.equal(crewtopia.coverage, 'NOT_COVERED', 'ausência de adapter CrewTopia deve permanecer explícita, nunca PASS fabricado');
-assert.ok(corpus.cases.some((x) => x.status === 'REVIEW'), 'ambiguidade real precisa permanecer REVIEW');
+const ncf = corpus.matrix.find((x) => x.source === 'NCF sensitive day marker');
+assert.equal(ncf.coverage, 'REVIEW', 'NCF deve permanecer REVIEW até confirmação documentada');
 
-console.log('OK P0 #527 real sanitized AIMS corpus', { pass: passCases.length, review: corpus.cases.filter(x=>x.status==='REVIEW').length });
+console.log('OK P0 #527 real sanitized AIMS corpus', { pass: passCases.length, review: reviewCases.length });

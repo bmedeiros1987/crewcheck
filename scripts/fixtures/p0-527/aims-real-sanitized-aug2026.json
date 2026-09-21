@@ -3,7 +3,8 @@
   "provenance": {
     "source": "private real AIMS-converted roster supplied by user",
     "sanitization": "PII, BP, crew names, crew list and nonessential metadata removed; only operational tokens required to reproduce parser classes retained",
-    "oracle": "published source values, never current CrewCheck output"
+    "oracle": "published source values, never current CrewCheck output",
+    "base": "BSB"
   },
   "cases": [
     {
