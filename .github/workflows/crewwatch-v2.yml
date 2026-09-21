@@ -169,10 +169,10 @@ jobs:
           cp android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab \
             "$out/CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab"
 
-          cat > "$out/PACKAGE_MAP.txt" <<'EOF'
-CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab -> com.crewcheck.app
-CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab -> com.crewcheck.watch.app
-EOF
+          printf '%s\n' \
+            'CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab -> com.crewcheck.app' \
+            'CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab -> com.crewcheck.watch.app' \
+            > "$out/PACKAGE_MAP.txt"
 
           (
             cd "$out"
