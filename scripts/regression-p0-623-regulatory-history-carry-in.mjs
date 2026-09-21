@@ -39,7 +39,7 @@ function januaryRoster(hours = 50) {
   for (let day = 1; day <= 31; day += 1) days.push(off(civil(2032, 1, day)));
   if (hours > 0) days[4] = leg(civil(2032, 1, 5), hours);
   return {
-    crewName: 'TRIPULANTE TESTE', crewId: '00000000', base: 'BSB', rank: 'CCM',
+    crewName: 'TRIPULANTE TESTE', crewId: 'BP12345678', base: 'BSB', rank: 'CCM',
     airline: 'LATAM', year: 2032, month: 1, rawText: 'A320', days,
   };
 }
@@ -49,7 +49,7 @@ function februaryRoster(hours = 50) {
   for (let day = 1; day <= 29; day += 1) days.push(off(civil(2032, 2, day)));
   if (hours > 0) days[0] = leg(civil(2032, 2, 1), hours);
   return {
-    crewName: 'TRIPULANTE TESTE', crewId: '00000000', base: 'BSB', rank: 'CCM',
+    crewName: 'TRIPULANTE TESTE', crewId: 'BP12345678', base: 'BSB', rank: 'CCM',
     airline: 'LATAM', year: 2032, month: 2, rawText: 'A320', days,
   };
 }
