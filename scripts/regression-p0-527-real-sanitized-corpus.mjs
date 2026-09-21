@@ -13,6 +13,12 @@ fs.writeFileSync(tmp, parserSource + '\nexport { parseAimsTokensIntoEventsV3 };\
 const { parseAimsTokensIntoEventsV3 } = await import(pathToFileURL(tmp).href + '?v=' + Date.now());
 fs.unlinkSync(tmp);
 
+function sourceDay(item) {
+  const match = String(item.tokens?.[0] || '').match(/^(\d{1,2})[A-Za-z]{3}$/);
+  assert.ok(match, item.id + ': marcador de dia fonte ausente');
+  return Number(match[1]);
+}
+
 const passCases = corpus.cases.filter((item) => item.status === 'PASS');
 assert.ok(passCases.length >= 3, 'corpus precisa manter pelo menos 3 casos reais sanitizados PASS');
 
@@ -20,6 +26,9 @@ for (const item of passCases) {
   const events = parseAimsTokensIntoEventsV3(item.tokens, item.month, item.year);
   assert.equal(events.length, item.expected.events, item.id + ': quantidade de jornadas/eventos');
   const event = events[0];
+  const day = sourceDay(item);
+  const expectedDate = `${String(day).padStart(2, '0')}/${String(item.month).padStart(2, '0')}/${item.year}`;
+  assert.equal(event.date, expectedDate, item.id + ': data civil deve vir do marcador fonte');
   assert.equal(event.dutyReport, item.expected.dutyReport, item.id + ': APZ/dutyReport');
   assert.equal(event.legs.length, item.expected.legs, item.id + ': pernas');
   assert.equal(event.legs[0]?.flightNumber, item.expected.firstFlight, item.id + ': primeiro voo');
