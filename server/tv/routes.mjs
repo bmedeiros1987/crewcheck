@@ -15,11 +15,11 @@ export function createTvHandler({
     try {
       if (!(await rateLimit(ip, path))) throw new TvError(429, "rate_limited");
       if (method === "POST" && path === "/api/tv/pair")
-        return { status: 200, body: await devices.begin(body.platform) };
+        return { status: 200, body: await devices.begin(body.platform, body.trusted === true) };
       if (method === "POST" && path === "/api/tv/poll")
         return { status: 200, body: await devices.poll(body.deviceCode) };
       if (
-        ["/api/tv/approve", "/api/tv/revoke", "/api/tv/devices"].includes(path)
+        ["/api/tv/approve", "/api/tv/revoke", "/api/tv/devices", "/api/tv/preferences", "/api/tv/context"].includes(path)
       ) {
         const userId = await authenticateAccount(token);
         if (!userId) throw new TvError(401, "authentication_required");
@@ -35,6 +35,16 @@ export function createTvHandler({
             status: 200,
             body: await devices.revoke(userId, body.deviceId),
           };
+        if (path.endsWith("/preferences") && method === "POST")
+          return {
+            status: 200,
+            body: await devices.updatePreferences(userId, body.deviceId, body.preferences),
+          };
+        if (path.endsWith("/context") && method === "POST")
+          return {
+            status: 200,
+            body: await devices.updateContext(userId, body.deviceId, body.context),
+          };
         throw new TvError(405, "method_not_allowed");
       }
       const auth = await devices.authorize(token);
@@ -47,10 +57,11 @@ export function createTvHandler({
         return { status: 200, body: await devices.heartbeat(token) };
       if (path === "/api/tv/snapshot" && method === "GET") {
         const snapshot = await loadProjection(auth);
+        const expectedPrivacy = auth.preferences?.audience && auth.preferences.audience !== "owner" ? "family" : auth.privacy;
         if (
           !snapshot ||
           snapshot.deviceId !== auth.deviceId ||
-          snapshot.privacy !== auth.privacy
+          snapshot.privacy !== expectedPrivacy
         )
           throw new TvError(503, "projection_unavailable");
         return { status: 200, body: snapshot };
