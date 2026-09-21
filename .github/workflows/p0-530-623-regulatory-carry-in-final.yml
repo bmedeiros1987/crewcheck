@@ -13,10 +13,11 @@ on:
       - 'scripts/regression-p1-623-regulatory-history-evidence.mjs'
       - 'scripts/regression-p1-623-runtime-carry-in-cleanroom.mjs'
       - 'scripts/regression-p0-623-review-blockers.mjs'
+      - 'scripts/regression-p1-623-regulatory-snapshot-fingerprint.mjs'
       - 'scripts/regression-p1-526-rolling-boundaries.mjs'
       - 'scripts/regression-p1-526-rolling-28d.mjs'
       - 'scripts/regression-p1-526-rolling-plausibility.mjs'
-      - '.github/workflows/p0-623-regulatory-history-carry-in.yml'
+      - '.github/workflows/p0-530-623-regulatory-carry-in-final.yml'
   workflow_dispatch:
 
 jobs:
@@ -40,6 +41,8 @@ jobs:
         run: node scripts/regression-p1-623-runtime-carry-in-cleanroom.mjs
       - name: Review blockers regression
         run: node scripts/regression-p0-623-review-blockers.mjs
+      - name: Snapshot fingerprint invalidation regression
+        run: node scripts/regression-p1-623-regulatory-snapshot-fingerprint.mjs
       - name: Existing 28-day boundary regression
         run: node scripts/regression-p1-526-rolling-boundaries.mjs
       - name: Existing rolling 28-day regression
