@@ -5,16 +5,22 @@ on:
     paths:
       - '.github/workflows/manus-github-audit.yml'
       - '.github/workflows/manus-audit-scheduler.yml'
+      - '.github/workflows/manus-github-audit-validate.yml'
       - 'scripts/validate_manus_workflow.py'
       - 'scripts/validate_manus_scheduler.py'
+      - 'scripts/regression-manus-bridge-eventual-consistency.sh'
+      - 'scripts/regression-manus-dispatch-preflight.mjs'
   push:
     branches:
       - main
     paths:
       - '.github/workflows/manus-github-audit.yml'
       - '.github/workflows/manus-audit-scheduler.yml'
+      - '.github/workflows/manus-github-audit-validate.yml'
       - 'scripts/validate_manus_workflow.py'
       - 'scripts/validate_manus_scheduler.py'
+      - 'scripts/regression-manus-bridge-eventual-consistency.sh'
+      - 'scripts/regression-manus-dispatch-preflight.mjs'
 
 permissions:
   contents: read
@@ -28,5 +34,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate round-trip bridge
         run: python scripts/validate_manus_workflow.py .github/workflows/manus-github-audit.yml
+      - name: Reproduce eventual-consistency and cancellation guards
+        run: bash scripts/regression-manus-bridge-eventual-consistency.sh
+      - name: Exercise immutable dispatch preflight without network or model calls
+        run: node scripts/regression-manus-dispatch-preflight.mjs
       - name: Validate scheduled fallback
         run: python scripts/validate_manus_scheduler.py .github/workflows/manus-audit-scheduler.yml

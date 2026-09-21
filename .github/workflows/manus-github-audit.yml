@@ -14,6 +14,15 @@ on:
         required: true
         type: string
         default: '605'
+      expected_sha:
+        description: Immutable 40-character PR head SHA authorized by the caller
+        required: true
+        type: string
+      recovery_task_id:
+        description: Existing private Manus task ID to resume without creating a duplicate task
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -21,12 +30,12 @@ permissions:
   pull-requests: read
   checks: read
 
-# One bridge run per PR at a time. A new trigger cancels the old poller; the
-# external Manus task may finish later, but only the current exact-SHA run may
-# publish an approval.
+# One bridge run per PR at a time. Pre-merge candidate workflow_dispatch runs
+# are isolated from the default-branch bridge so old main issue-comment runs
+# cannot cancel candidate polling before this fix itself reaches main.
 concurrency:
-  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}-${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'candidate' || 'main' }}
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') && (github.event.comment.body == '@manus' || startsWith(github.event.comment.body, '@manus '))) }}
 
 jobs:
   request-audit:
@@ -71,11 +80,17 @@ jobs:
           MANUS_GITHUB_CONNECTOR_ID: ${{ vars.MANUS_GITHUB_CONNECTOR_ID }}
           MANUS_PROJECT_ID: ${{ vars.MANUS_AUDIT_PROJECT_ID }}
           EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RECOVERY_TASK_ID: ${{ inputs.recovery_task_id }}
+          ACTOR: ${{ github.actor }}
+          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          test -n "$MANUS_GITHUB_CONNECTOR_ID"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             SHA="${{ github.event.pull_request.head.sha }}"
@@ -93,7 +108,40 @@ jobs:
             HEAD_REPO="$(jq -r '.head.repo.full_name' <<<"$PR_JSON")"
           fi
 
-          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # The scheduler executes trusted main workflow code to audit a pinned
+            # PR SHA. Candidate bootstrap instead executes that very candidate.
+            # RUN_REF is GitHub context, never a caller-controlled workflow input.
+            if ! [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+               { [ "$RUN_REF" != "refs/heads/main" ] && [ "$RUN_SHA" != "$EXPECTED_SHA" ]; } ||
+               [ "$SHA" != "$EXPECTED_SHA" ] ||
+               [ "$PR_STATE" != "open" ] ||
+               [ "$HEAD_REPO" != "${{ github.repository }}" ]; then
+              echo '[MANUS-AUDIT] MANUS: STALE — immutable dispatch preflight rejected; no model task created.'
+              jq -n --arg body '[MANUS-AUDIT] MANUS: STALE — immutable dispatch preflight rejected (expected/run/current SHA or PR state/repository mismatch). No model task created.' '{body:$body}' > stale-comment.json
+              curl --fail-with-body --silent --show-error \
+                --request POST -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                --data-binary @stale-comment.json \
+                "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments"
+              exit 0
+            fi
+            if [ -n "$RECOVERY_TASK_ID" ]; then
+              if ! [[ "$RECOVERY_TASK_ID" =~ ^[A-Za-z0-9_-]+$ ]] || [ "$ACTOR" != "bmedeiros1987" ]; then
+                echo '[MANUS-AUDIT] MANUS: STALE — recovery request rejected; existing task was not polled and no new model task was created.'
+                jq -n --arg body '[MANUS-AUDIT] MANUS: STALE — recovery request rejected (invalid task identifier or untrusted actor). Existing task was not polled and no new model task was created.' '{body:$body}' > stale-comment.json
+                curl --fail-with-body --silent --show-error \
+                  --request POST -H "Authorization: Bearer $GH_TOKEN" \
+                  -H 'Accept: application/vnd.github+json' \
+                  --data-binary @stale-comment.json \
+                  "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments"
+                exit 0
+              fi
+            fi
+            SHA="$EXPECTED_SHA"
+          fi
+
+          test -n "$MANUS_GITHUB_CONNECTOR_ID"
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$PR_STATE" = "open"
           test "$HEAD_REPO" = "${{ github.repository }}"
@@ -181,10 +229,13 @@ jobs:
 
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "recovery_task_id=$RECOVERY_TASK_ID" >> "$GITHUB_OUTPUT"
           echo "request_json=$PWD/request.json" >> "$GITHUB_OUTPUT"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Create Manus audit task
         id: create
+        if: steps.request.outputs.ready == 'true' && steps.request.outputs.recovery_task_id == ''
         env:
           MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
           REQUEST_JSON: ${{ steps.request.outputs.request_json }}
@@ -206,10 +257,11 @@ jobs:
           echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
 
       - name: Poll Manus, validate exact SHA, and publish verdict
+        if: steps.request.outputs.ready == 'true' && (steps.request.outputs.recovery_task_id != '' || steps.create.outputs.task_id != '')
         env:
           GH_TOKEN: ${{ github.token }}
           MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
-          TASK_ID: ${{ steps.create.outputs.task_id }}
+          TASK_ID: ${{ steps.request.outputs.recovery_task_id || steps.create.outputs.task_id }}
           REQUESTED_SHA: ${{ steps.request.outputs.sha }}
           PR_NUMBER: ${{ steps.request.outputs.pr_number }}
         run: |
@@ -217,35 +269,123 @@ jobs:
 
           post_comment() {
             local body="$1"
-            local payload
+            local payload body_file headers_file http_code attempt delay retry_after reset_at now
             payload="$(jq -n --arg body "$body" '{body: $body}')"
-            curl --fail-with-body --silent --show-error \
-              --request POST \
-              --url "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              --header 'Accept: application/vnd.github+json' \
-              --header 'X-GitHub-Api-Version: 2022-11-28' \
-              --header 'Content-Type: application/json' \
-              --data-binary "$payload" >/dev/null
+            body_file="$(mktemp)"
+            headers_file="$(mktemp)"
+
+            for attempt in $(seq 1 8); do
+              : > "$body_file"
+              : > "$headers_file"
+              if ! http_code="$(curl --silent --show-error \
+                --request POST \
+                --url "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+                --header "Authorization: Bearer $GH_TOKEN" \
+                --header 'Accept: application/vnd.github+json' \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --header 'Content-Type: application/json' \
+                --data-binary "$payload" \
+                --dump-header "$headers_file" \
+                --output "$body_file" \
+                --write-out '%{http_code}')"; then
+                echo "GitHub comment transport error (attempt $attempt/8)" >&2
+                sleep $((attempt * 3))
+                continue
+              fi
+
+              if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+                rm -f "$body_file" "$headers_file"
+                return 0
+              fi
+
+              if [ "$http_code" = "403" ] || [ "$http_code" = "429" ] || [[ "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+                retry_after="$(awk 'BEGIN{IGNORECASE=1} /^retry-after:/ {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+                reset_at="$(awk 'BEGIN{IGNORECASE=1} /^x-ratelimit-reset:/ {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+                now="$(date +%s)"
+                delay=$((attempt * 5))
+                if [[ "$retry_after" =~ ^[0-9]+$ ]] && [ "$retry_after" -gt "$delay" ]; then
+                  delay="$retry_after"
+                elif [[ "$reset_at" =~ ^[0-9]+$ ]] && [ "$reset_at" -gt "$now" ]; then
+                  candidate=$((reset_at - now + 1))
+                  if [ "$candidate" -gt "$delay" ]; then delay="$candidate"; fi
+                fi
+                if [ "$delay" -gt 60 ]; then delay=60; fi
+                echo "GitHub comment transient HTTP $http_code (attempt $attempt/8); retrying in ${delay}s" >&2
+                sleep "$delay"
+                continue
+              fi
+
+              echo "GitHub comment failed with HTTP $http_code: $(cat "$body_file")" >&2
+              rm -f "$body_file" "$headers_file"
+              return 1
+            done
+
+            echo "GitHub comment publication exhausted retries: $(cat "$body_file")" >&2
+            rm -f "$body_file" "$headers_file"
+            return 1
           }
 
           bridge_error() {
             local reason="$1"
-            post_comment "$(printf '[MANUS-AUDIT] MANUS: BRIDGE_ERROR — SHA %s\n\nFail-closed: %s\nTask: %s' "$REQUESTED_SHA" "$reason" "$TASK_ID")"
+            local body
+            body="$(printf '[MANUS-AUDIT] MANUS: BRIDGE_ERROR — SHA %s\n\nFail-closed: %s\nTask: %s' "$REQUESTED_SHA" "$reason" "$TASK_ID")"
+            post_comment "$body" || echo "WARNING: could not publish Manus bridge error comment" >&2
             echo "Manus bridge error: $reason" >&2
             exit 1
           }
 
           RESULT_JSON=""
+          MANUS_BODY_FILE="$(mktemp)"
+          trap 'rm -f "$MANUS_BODY_FILE"' EXIT
+
           for attempt in $(seq 1 80); do
-            response="$(curl --fail-with-body --silent --show-error --get \
+            : > "$MANUS_BODY_FILE"
+            if ! http_code="$(curl --silent --show-error --get \
               --url 'https://api.manus.ai/v2/task.listMessages' \
               --header "x-manus-api-key: $MANUS_API_KEY" \
               --data-urlencode "task_id=$TASK_ID" \
               --data-urlencode 'order=desc' \
-              --data-urlencode 'limit=50')" || bridge_error "task.listMessages request failed"
+              --data-urlencode 'limit=50' \
+              --output "$MANUS_BODY_FILE" \
+              --write-out '%{http_code}')"; then
+              echo "Manus task.listMessages transport error (attempt $attempt/80); retrying" >&2
+              sleep 5
+              continue
+            fi
 
-            test "$(jq -r '.ok' <<<"$response")" = "true" || bridge_error "task.listMessages returned ok=false"
+            if [ "$http_code" = "404" ] && [ "$attempt" -le 12 ]; then
+              echo "Manus task not visible yet (404), attempt $attempt/12; allowing eventual consistency" >&2
+              sleep 5
+              continue
+            fi
+
+            if [ "$http_code" = "429" ] || [[ "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+              delay=$((attempt < 6 ? attempt * 5 : 30))
+              echo "Manus task.listMessages transient HTTP $http_code (attempt $attempt/80); retrying in ${delay}s" >&2
+              sleep "$delay"
+              continue
+            fi
+
+            [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || bridge_error "task.listMessages returned HTTP $http_code: $(cat "$MANUS_BODY_FILE")"
+            response="$(cat "$MANUS_BODY_FILE")"
+
+            if ! response_ok="$(jq -r '.ok // false' <<<"$response" 2>/dev/null)"; then
+              bridge_error "task.listMessages returned malformed JSON"
+            fi
+            test "$response_ok" = "true" || bridge_error "task.listMessages returned ok=false"
+
+            if ! messages_type="$(jq -r 'if .messages == null then "null" elif (.messages | type) == "array" then "array" else (.messages | type) end' <<<"$response" 2>/dev/null)"; then
+              bridge_error "task.listMessages returned malformed JSON"
+            fi
+            if [ "$messages_type" = "null" ]; then
+              if [ "$attempt" -le 12 ]; then
+                echo "Manus task messages not visible yet (null), attempt $attempt/12; allowing eventual consistency" >&2
+                sleep 5
+                continue
+              fi
+              bridge_error "task.listMessages messages remained null after 12 eventual-consistency attempts"
+            fi
+            test "$messages_type" = "array" || bridge_error "task.listMessages messages must be array or null, got $messages_type"
 
             status="$(jq -r '[.messages[] | select(.type == "status_update") | .status_update.agent_status][0] // "unknown"' <<<"$response")"
             if [ "$status" = "error" ]; then
@@ -262,7 +402,6 @@ jobs:
             fi
 
             if [ "$status" = "stopped" ]; then
-              # Structured extraction is emitted after stopped; allow a few polls for it.
               sleep 5
             else
               sleep 15
@@ -296,18 +435,43 @@ jobs:
             exit 0
           fi
 
+          # Preserve the validated verdict before best-effort GitHub publication.
+          # A comment-permission failure must never erase a valid audit or invite
+          # a duplicate external task retry.
           case "$verdict" in
             MERGE)
               test "$severity" = "NONE" || bridge_error "MERGE verdict must have severity NONE"
-              post_comment "$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s' "$REQUESTED_SHA" "$summary")"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s' "$REQUESTED_SHA" "$summary")"
               ;;
             BLOCKER)
               case "$severity" in P0|P1|P2) ;; *) bridge_error "BLOCKER verdict must have severity P0, P1, or P2" ;; esac
-              post_comment "$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s' "$REQUESTED_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause")"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s' "$REQUESTED_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause")"
               ;;
             *)
               bridge_error "unknown structured verdict: $verdict"
               ;;
           esac
 
-          echo "Published Manus verdict for PR #$PR_NUMBER at exact SHA $REQUESTED_SHA"
+          jq -n --arg verdict "$verdict" --arg sha "$REQUESTED_SHA" --arg severity "$severity" --arg summary "$summary" --arg reproducer "$reproducer" --arg expected "$expected" --arg actual "$actual" --arg root_cause "$root_cause" '{verdict:$verdict,sha:$sha,severity:$severity,summary:$summary,reproducer:$reproducer,expected:$expected,actual:$actual,root_cause:$root_cause,exact_sha_validated:true}' > manus-verdict.json
+          {
+            echo "## Manus exact-SHA audit"
+            echo
+            echo "$REQUESTED_SHA — $verdict ($severity)"
+            echo
+            echo "$summary"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if post_comment "$BODY"; then
+            echo "Published Manus verdict comment for PR #$PR_NUMBER at exact SHA $REQUESTED_SHA"
+          else
+            echo "WARNING: GitHub comment publication unavailable; validated verdict preserved as workflow artifact/step summary." >&2
+          fi
+
+      - name: Preserve validated Manus verdict
+        if: always() && steps.request.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: manus-verdict-pr-${{ steps.request.outputs.pr_number }}-${{ steps.request.outputs.sha }}
+          path: manus-verdict.json
+          if-no-files-found: ignore
+          retention-days: 30
