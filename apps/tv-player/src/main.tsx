@@ -46,7 +46,7 @@ function App() {
   const main = useRef<HTMLElement>(null);
   const effectiveMotion = reduced ? 'off' : motion;
   const care = useScreenCare(effectiveMotion !== 'off', () => { lastInput.current = Date.now(); });
-  const channel = useTvChannel({view, setView, hasSnapshot:!!snapshot, hasChanges:!!snapshot?.changes.length, hasNews:news.length>0, covered:care.covered, hidden:paused, exitRequested});
+  const channel = useTvChannel({view, setView, hasSnapshot:!!snapshot, hasChanges:displayPrefs.value.changes&&!!snapshot?.changes.length, hasNews:displayPrefs.value.news&&news.length>0, covered:care.covered, hidden:paused, exitRequested});
   const clear = () => {
     generation.current++;
     session.clear();
