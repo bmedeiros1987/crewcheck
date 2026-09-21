@@ -831,7 +831,10 @@ function countNightOpsInRolling168h(occurrences: NightOccurrence[]): number {
   for (let i = 0; i < instants.length; i++) {
     const start = instants[i];
     const end = start + 168 * NIGHT_HOUR_MS;
-    const count = instants.filter((value) => value >= start && value <= end).length;
+    // Half-open [start, start+168h): an event exactly at +168h starts the
+    // next window and must not be double-counted in the previous one. Keep
+    // this committed-source rule aligned with v14.3.59 prepared runtime.
+    const count = instants.filter((value) => value >= start && value < end).length;
     max = Math.max(max, count);
   }
   return max;

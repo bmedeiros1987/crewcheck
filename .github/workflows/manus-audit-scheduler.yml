@@ -81,7 +81,7 @@ jobs:
               continue
             fi
 
-            PAYLOAD="$(jq -n --arg pr "$PR_NUMBER" '{ref:"main", inputs:{pr_number:$pr}}')"
+            PAYLOAD="$(jq -n --arg pr "$PR_NUMBER" --arg sha "$SHA" '{ref:"main", inputs:{pr_number:$pr, expected_sha:$sha}}')"
             curl --fail-with-body --silent --show-error \
               --request POST \
               --url "https://api.github.com/repos/${{ github.repository }}/actions/workflows/manus-github-audit.yml/dispatches" \
