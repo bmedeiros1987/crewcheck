@@ -15,7 +15,7 @@ public final class RoutineSnapshotTest {
     @Test
     public void exposesDecidedSuggestionWithoutRecalculating() throws Exception {
         RoutineSnapshot snapshot = RoutineSnapshot.fromJson(base()
-                .put("title", "TREINO LEVE")
+                .put("title", "TREINO_LEVE")
                 .put("durationMinutes", 25)
                 .put("reason", "Apresentação em 8h")
                 .put("priority", "RECUPERACAO"));
@@ -53,7 +53,7 @@ public final class RoutineSnapshotTest {
     @Test
     public void yesterdaySuggestionIsNotShownToday() throws Exception {
         RoutineSnapshot snapshot = RoutineSnapshot.fromJson(base()
-                .put("title", "TREINO LEVE")
+                .put("title", "TREINO_LEVE")
                 .put("durationMinutes", 25));
         long tomorrow = NOW + 19 * 60 * 60 * 1000L;
         assertTrue(snapshot.isStale(tomorrow));
@@ -86,6 +86,44 @@ public final class RoutineSnapshotTest {
         for (String written : new String[]{"recuperação", "RECUPERAÇÃO", "Recuperacao"}) {
             JSONObject json = RoutineSnapshot.demo(NOW).toJson().put("priority", written);
             assertEquals(written, "RECUPERACAO", RoutineSnapshot.fromJson(json).priority);
+        }
+    }
+
+    // --- título é código, não frase ----------------------------------------------------
+
+    @Test
+    public void freeTextTitleNeverBecomesScreenText() throws Exception {
+        JSONObject json = RoutineSnapshot.demo(NOW).toJson()
+                .put("title", "TREINO LEVE — FC ALTA / DORMIU 4H");
+        RoutineSnapshot snapshot = RoutineSnapshot.fromJson(json);
+
+        assertEquals("SEM_SUGESTAO", snapshot.title);
+        assertEquals("SEM SUGESTÃO", snapshot.titleLabel());
+        assertFalse(snapshot.complicationLongText(NOW).contains("FC"));
+        assertFalse(snapshot.complicationLongText(NOW).contains("DORMIU"));
+        assertFalse(snapshot.accessibilityDescription(NOW).contains("FC"));
+    }
+
+    @Test
+    public void allowListedTitleCodesRenderTheirLabel() throws Exception {
+        JSONObject json = RoutineSnapshot.demo(NOW).toJson().put("title", "sono extra");
+        RoutineSnapshot snapshot = RoutineSnapshot.fromJson(json);
+        assertEquals("SONO_EXTRA", snapshot.title);
+        assertEquals("DORMIR MAIS", snapshot.titleLabel());
+    }
+
+    @Test
+    public void absentRoutineFieldsAreNotResurrectedOnRoundTrip() throws Exception {
+        JSONObject minimal = new JSONObject()
+                .put("schemaVersion", WatchContract.ROUTINE_SCHEMA_VERSION)
+                .put("generatedAtEpochMs", NOW)
+                .put("validUntilEpochMs", NOW + 3_600_000L)
+                .put("title", "CAMINHADA");
+
+        JSONObject cached = RoutineSnapshot.fromJson(minimal).toJson();
+        assertEquals("CAMINHADA", cached.getString("title"));
+        for (String absent : new String[]{"durationMinutes", "reason", "priority", "nextAction"}) {
+            assertFalse("ausência virou valor: " + absent, cached.has(absent));
         }
     }
 }

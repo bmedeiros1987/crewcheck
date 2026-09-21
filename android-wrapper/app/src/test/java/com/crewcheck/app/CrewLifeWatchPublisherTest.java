@@ -34,7 +34,7 @@ public final class CrewLifeWatchPublisherTest {
         return new JSONObject()
                 .put("generatedAtEpochMs", NOW)
                 .put("validUntilEpochMs", NOW + 18 * 60 * 60 * 1000L)
-                .put("title", "TREINO LEVE")
+                .put("title", "TREINO_LEVE")
                 .put("durationMinutes", 25)
                 .put("reason", "Apresentação em 8h")
                 .put("nextAction", "Caminhada 25 min")
@@ -96,7 +96,7 @@ public final class CrewLifeWatchPublisherTest {
                 routine().toString(),
                 Set.of(WatchHealthConsent.CATEGORY_ROUTINE)
         ));
-        assertEquals("TREINO LEVE", out.getString("title"));
+        assertEquals("TREINO_LEVE", out.getString("title"));
         assertEquals(25, out.getInt("durationMinutes"));
         assertFalse("reason justifica citando saúde", out.has("reason"));
         assertFalse("nextAction idem", out.has("nextAction"));
@@ -274,7 +274,7 @@ public final class CrewLifeWatchPublisherTest {
     public void routineNormalizesPriority() throws Exception {
         JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(routine().toString(), ALL));
         assertEquals("RECUPERACAO", out.getString("priority"));
-        assertEquals("TREINO LEVE", out.getString("title"));
+        assertEquals("TREINO_LEVE", out.getString("title"));
         assertEquals(25, out.getInt("durationMinutes"));
     }
 
@@ -303,5 +303,28 @@ public final class CrewLifeWatchPublisherTest {
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("crewId"));
         }
+    }
+
+    @Test
+    public void freeTextTitleIsRefusedEvenWithFullConsent() throws Exception {
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(
+                routine().put("title", "TREINO LEVE — FC ALTA / DORMIU 4H").toString(), ALL));
+        assertEquals("SEM_SUGESTAO", out.getString("title"));
+        assertFalse(out.getString("title").contains("FC"));
+    }
+
+    @Test
+    public void freeTextTitleIsRefusedWithRoutineOnlyConsent() throws Exception {
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(
+                routine().put("title", "Dormiu 4h, HRV 22").toString(),
+                Set.of(WatchHealthConsent.CATEGORY_ROUTINE)));
+        assertEquals("SEM_SUGESTAO", out.getString("title"));
+    }
+
+    @Test
+    public void allowListedTitleCodeTravels() throws Exception {
+        JSONObject out = new JSONObject(CrewLifeWatchPublisher.sanitizeRoutine(
+                routine().put("title", "caminhada").toString(), ALL));
+        assertEquals("CAMINHADA", out.getString("title"));
     }
 }

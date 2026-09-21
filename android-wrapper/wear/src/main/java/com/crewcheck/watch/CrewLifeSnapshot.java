@@ -5,6 +5,8 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
@@ -36,6 +38,16 @@ public final class CrewLifeSnapshot {
     public final String recommendation;
     public final String detail;
 
+    /**
+     * Quais campos vieram de fato no payload.
+     *
+     * Ausência não é zero. O celular omite a categoria não concedida, mas se o relógio
+     * reserializar o snapshot com todos os campos, "sem dado" vira "zero passos", "FC de
+     * repouso 0" — valores de saúde fabricados a partir de silêncio, gravados no cache. Esta
+     * marcação existe para que toJson() reemita só o que realmente chegou.
+     */
+    private final Set<String> present;
+
     private CrewLifeSnapshot(
             int schemaVersion,
             long generatedAtEpochMs,
@@ -49,7 +61,8 @@ public final class CrewLifeSnapshot {
             int restingHeartRate,
             int hrvMs,
             String recommendation,
-            String detail
+            String detail,
+            Set<String> present
     ) {
         this.schemaVersion = schemaVersion;
         this.generatedAtEpochMs = generatedAtEpochMs;
@@ -64,6 +77,7 @@ public final class CrewLifeSnapshot {
         this.hrvMs = hrvMs;
         this.recommendation = recommendation;
         this.detail = detail;
+        this.present = Collections.unmodifiableSet(new LinkedHashSet<>(present));
     }
 
     public static CrewLifeSnapshot fromJson(String raw) {
@@ -104,6 +118,8 @@ public final class CrewLifeSnapshot {
             throw new IllegalArgumentException("validUntilEpochMs anterior à geração.");
         }
 
+        Set<String> present = new LinkedHashSet<>();
+
         String label = normalizeLabel(json.optString("recoveryLabel", "DESCONHECIDA"), 12);
         if (!LABELS.contains(label)) label = "DESCONHECIDA";
 
@@ -111,34 +127,57 @@ public final class CrewLifeSnapshot {
                 schemaVersion,
                 generatedAt,
                 validUntil,
-                bounded(json, "recoveryScore", 0, 100),
+                bounded(json, "recoveryScore", 0, 100, present),
                 label,
-                bounded(json, "sleepMinutes", 0, 24 * 60),
-                clean(json.optString("sleepLabel", ""), 10),
-                bounded(json, "steps", 0, 200_000),
-                bounded(json, "activeMinutes", 0, 24 * 60),
-                bounded(json, "restingHeartRate", 0, 220),
-                bounded(json, "hrvMs", 0, 500),
-                clean(json.optString("recommendation", ""), 28),
-                clean(json.optString("detail", ""), 40)
+                bounded(json, "sleepMinutes", 0, 24 * 60, present),
+                text(json, "sleepLabel", 10, present),
+                bounded(json, "steps", 0, 200_000, present),
+                bounded(json, "activeMinutes", 0, 24 * 60, present),
+                bounded(json, "restingHeartRate", 0, 220, present),
+                bounded(json, "hrvMs", 0, 500, present),
+                text(json, "recommendation", 28, present),
+                text(json, "detail", 40, present),
+                markLabel(json, present)
         );
     }
 
+    private static Set<String> markLabel(JSONObject json, Set<String> present) {
+        if (json.has("recoveryLabel")) present.add("recoveryLabel");
+        return present;
+    }
+
+    private static String text(JSONObject json, String key, int maxLength, Set<String> present) {
+        if (!json.has(key)) return "";
+        present.add(key);
+        return clean(json.optString(key, ""), maxLength);
+    }
+
+    /** Um campo só é reemitido se realmente chegou. Silêncio continua silêncio. */
+    public boolean has(String field) {
+        return present.contains(field);
+    }
+
     public JSONObject toJson() throws JSONException {
-        return new JSONObject()
+        JSONObject json = new JSONObject()
                 .put("schemaVersion", schemaVersion)
                 .put("generatedAtEpochMs", generatedAtEpochMs)
-                .put("validUntilEpochMs", validUntilEpochMs)
-                .put("recoveryScore", recoveryScore)
-                .put("recoveryLabel", recoveryLabel)
-                .put("sleepMinutes", sleepMinutes)
-                .put("sleepLabel", sleepLabel)
-                .put("steps", steps)
-                .put("activeMinutes", activeMinutes)
-                .put("restingHeartRate", restingHeartRate)
-                .put("hrvMs", hrvMs)
-                .put("recommendation", recommendation)
-                .put("detail", detail);
+                .put("validUntilEpochMs", validUntilEpochMs);
+
+        putIfPresent(json, "recoveryScore", recoveryScore);
+        putIfPresent(json, "recoveryLabel", recoveryLabel);
+        putIfPresent(json, "sleepMinutes", sleepMinutes);
+        putIfPresent(json, "sleepLabel", sleepLabel);
+        putIfPresent(json, "steps", steps);
+        putIfPresent(json, "activeMinutes", activeMinutes);
+        putIfPresent(json, "restingHeartRate", restingHeartRate);
+        putIfPresent(json, "hrvMs", hrvMs);
+        putIfPresent(json, "recommendation", recommendation);
+        putIfPresent(json, "detail", detail);
+        return json;
+    }
+
+    private void putIfPresent(JSONObject json, String key, Object value) throws JSONException {
+        if (present.contains(key)) json.put(key, value);
     }
 
     public boolean isStale(long nowEpochMs) {
@@ -218,8 +257,9 @@ public final class CrewLifeSnapshot {
     }
 
     /** Valor implausível reprova em vez de virar glance errado. */
-    private static int bounded(JSONObject json, String key, int min, int max) {
+    private static int bounded(JSONObject json, String key, int min, int max, Set<String> present) {
         if (!json.has(key)) return 0;
+        present.add(key);
         int value = json.optInt(key, Integer.MIN_VALUE);
         if (value < min || value > max) {
             throw new IllegalArgumentException("Valor fora da faixa plausível em " + key + ": " + value);

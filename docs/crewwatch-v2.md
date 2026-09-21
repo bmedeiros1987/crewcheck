@@ -31,3 +31,22 @@ The separate CrewCheck Face remains the durable glance surface. Its complication
 - Real Data Layer sync signed with the companion phone app.
 
 No parser, APZ, journey, compliance or roster reconstruction is performed on the watch.
+
+
+## Product plans
+
+CrewWatch ships with two product levels for now:
+
+### Free
+- CrewWatch Face and basic Wear OS experience.
+- Canonical roster glance: next duty/flight, presentation/APZ, basic gate when available, connection and overnight context.
+- Essential operational notifications and safety/compliance alerts.
+- Routine.
+- Basic steps/battery/device context and standard personalization.
+
+### Premium
+- Everything in Free.
+- CrewLife and wellbeing insights (sleep/recovery/resting heart rate only after explicit opt-in).
+- Advanced CrewCheck Now context, predictive/priority alerts, richer radar/weather/briefing context, Concierge and advanced personalization/automation.
+
+Operational safety information must not be hidden behind Premium. Paid differentiation is intelligence, automation, history and higher-cost external services, not the user's essential roster or safety state.

@@ -31,8 +31,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 26
         targetSdk 36
-        versionCode 140374
-        versionName "14.3.74"
+        versionCode 140387
+        versionName "14.3.87-watch-sync-pilot"
     }
 
     sourceSets {

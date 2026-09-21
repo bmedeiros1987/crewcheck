@@ -5,7 +5,10 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -20,6 +23,28 @@ public final class RoutineSnapshot {
             "RECUPERACAO", "MANUTENCAO", "TREINO", "DESCANSO", "DESCONHECIDA"
     );
 
+    /**
+     * title é CÓDIGO, não texto livre.
+     *
+     * Texto livre no título deixava passar "TREINO LEVE — FC ALTA / DORMIU 4H" com apenas
+     * consentimento de rotina, revelando categorias que o usuário não autorizou. Como não há
+     * como classificar uma frase, o campo deixou de aceitar frases: só estes códigos entram,
+     * e o rótulo exibido é derivado aqui. Vocabulário inicial — estender exige mexer nas duas
+     * pontas de propósito, para que ninguém reabra a porta do texto livre sem perceber.
+     */
+    private static final Map<String, String> TITLES = Map.ofEntries(
+            Map.entry("TREINO_LEVE", "TREINO LEVE"),
+            Map.entry("TREINO_MODERADO", "TREINO MODERADO"),
+            Map.entry("TREINO_FORTE", "TREINO FORTE"),
+            Map.entry("CAMINHADA", "CAMINHADA"),
+            Map.entry("ALONGAMENTO", "ALONGAMENTO"),
+            Map.entry("MOBILIDADE", "MOBILIDADE"),
+            Map.entry("DESCANSO", "DESCANSO"),
+            Map.entry("SONO_EXTRA", "DORMIR MAIS"),
+            Map.entry("HIDRATACAO", "HIDRATAR"),
+            Map.entry("SEM_SUGESTAO", "SEM SUGESTÃO")
+    );
+
     public final int schemaVersion;
     public final long generatedAtEpochMs;
     public final long validUntilEpochMs;
@@ -29,6 +54,9 @@ public final class RoutineSnapshot {
     public final String priority;
     public final String nextAction;
 
+    /** Mesma razão do CrewLife: ausência não pode virar zero nem string vazia no cache. */
+    private final Set<String> present;
+
     private RoutineSnapshot(
             int schemaVersion,
             long generatedAtEpochMs,
@@ -37,7 +65,8 @@ public final class RoutineSnapshot {
             int durationMinutes,
             String reason,
             String priority,
-            String nextAction
+            String nextAction,
+            Set<String> present
     ) {
         this.schemaVersion = schemaVersion;
         this.generatedAtEpochMs = generatedAtEpochMs;
@@ -47,6 +76,7 @@ public final class RoutineSnapshot {
         this.reason = reason;
         this.priority = priority;
         this.nextAction = nextAction;
+        this.present = Collections.unmodifiableSet(new LinkedHashSet<>(present));
     }
 
     public static RoutineSnapshot fromJson(String raw) {
@@ -85,6 +115,11 @@ public final class RoutineSnapshot {
             throw new IllegalArgumentException("validUntilEpochMs anterior à geração.");
         }
 
+        Set<String> present = new LinkedHashSet<>();
+        for (String key : new String[]{"title", "durationMinutes", "reason", "priority", "nextAction"}) {
+            if (json.has(key)) present.add(key);
+        }
+
         String priority = normalizeLabel(json.optString("priority", "DESCONHECIDA"), 14);
         if (!PRIORITIES.contains(priority)) priority = "DESCONHECIDA";
 
@@ -97,24 +132,31 @@ public final class RoutineSnapshot {
                 schemaVersion,
                 generatedAt,
                 validUntil,
-                clean(json.optString("title", ""), 18),
+                normalizeTitle(json.optString("title", "")),
                 duration,
                 clean(json.optString("reason", ""), 40),
                 priority,
-                clean(json.optString("nextAction", ""), 32)
+                clean(json.optString("nextAction", ""), 32),
+                present
         );
     }
 
+    public boolean has(String field) {
+        return present.contains(field);
+    }
+
     public JSONObject toJson() throws JSONException {
-        return new JSONObject()
+        JSONObject json = new JSONObject()
                 .put("schemaVersion", schemaVersion)
                 .put("generatedAtEpochMs", generatedAtEpochMs)
-                .put("validUntilEpochMs", validUntilEpochMs)
-                .put("title", title)
-                .put("durationMinutes", durationMinutes)
-                .put("reason", reason)
-                .put("priority", priority)
-                .put("nextAction", nextAction);
+                .put("validUntilEpochMs", validUntilEpochMs);
+
+        if (present.contains("title")) json.put("title", title);
+        if (present.contains("durationMinutes")) json.put("durationMinutes", durationMinutes);
+        if (present.contains("reason")) json.put("reason", reason);
+        if (present.contains("priority")) json.put("priority", priority);
+        if (present.contains("nextAction")) json.put("nextAction", nextAction);
+        return json;
     }
 
     public boolean isStale(long nowEpochMs) {
@@ -125,22 +167,28 @@ public final class RoutineSnapshot {
         return "ROTINA";
     }
 
+    /** Rótulo humano do código. Código desconhecido nunca vira texto na tela. */
+    public String titleLabel() {
+        return TITLES.getOrDefault(title, "");
+    }
+
     /** Glance: "25 min" quando há duração, senão o título curto. */
     public String complicationText(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "--";
         if (durationMinutes > 0) return durationMinutes + " min";
-        return title.isEmpty() ? "--" : title;
+        return titleLabel().isEmpty() ? "--" : titleLabel();
     }
 
     public String complicationLongText(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "Rotina desatualizada";
-        if (title.isEmpty()) return "Sem sugestão para hoje";
-        return durationMinutes > 0 ? title + " · " + durationMinutes + " min" : title;
+        String label = titleLabel();
+        if (label.isEmpty()) return "Sem sugestão para hoje";
+        return durationMinutes > 0 ? label + " · " + durationMinutes + " min" : label;
     }
 
     public String accessibilityDescription(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "Sugestão de rotina desatualizada.";
-        StringBuilder text = new StringBuilder(title.isEmpty() ? "Sem sugestão" : title);
+        StringBuilder text = new StringBuilder(titleLabel().isEmpty() ? "Sem sugestão" : titleLabel());
         if (durationMinutes > 0) text.append(", ").append(durationMinutes).append(" minutos");
         if (!reason.isEmpty()) text.append(". ").append(reason);
         return text.toString();
@@ -152,7 +200,7 @@ public final class RoutineSnapshot {
                     .put("schemaVersion", WatchContract.ROUTINE_SCHEMA_VERSION)
                     .put("generatedAtEpochMs", nowEpochMs)
                     .put("validUntilEpochMs", nowEpochMs + 18 * 60 * 60 * 1000L)
-                    .put("title", "TREINO LEVE")
+                    .put("title", "TREINO_LEVE")
                     .put("durationMinutes", 25)
                     .put("reason", "Apresentação em 8h")
                     .put("priority", "RECUPERACAO")
@@ -187,6 +235,12 @@ public final class RoutineSnapshot {
      * porque só Ç e Ã estavam mapeados. NFD decompõe a letra do acento e a marca combinante é
      * descartada, então ótima/ÓTIMA/Otima chegam todos em OTIMA.
      */
+    /** Espaços e hífens viram sublinhado; acento some. "treino leve" -> TREINO_LEVE. */
+    private static String normalizeTitle(String value) {
+        String code = normalizeLabel(value, 24).replaceAll("[\\s-]+", "_");
+        return TITLES.containsKey(code) ? code : "SEM_SUGESTAO";
+    }
+
     private static String normalizeLabel(String value, int maxLength) {
         String cleaned = clean(value, maxLength).toUpperCase(Locale.ROOT);
         return Normalizer.normalize(cleaned, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
