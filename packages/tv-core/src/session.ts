@@ -183,7 +183,7 @@ export class TvSession {
     const credential = this.credential;
     if (
       !credential ||
-      (!credential.trusted && Date.parse(credential.expiresAt) <= requestedAt)
+      (!credential.trusted && Date.parse(credential.expiresAt || "") <= requestedAt)
     ) {
       this.clear(true);
       throw new Error("pair_again");
@@ -193,7 +193,7 @@ export class TvSession {
     if (this.credential !== credential) throw new Error("session_changed");
 
     const receivedAt = now ?? this.lastServerNow ?? Date.now();
-    if (!credential.trusted && Date.parse(credential.expiresAt) <= receivedAt) {
+    if (!credential.trusted && Date.parse(credential.expiresAt || "") <= receivedAt) {
       this.clear(true);
       throw new Error("pair_again");
     }
