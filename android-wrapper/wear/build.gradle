@@ -16,8 +16,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 30
         targetSdk 36
-        versionCode 140384
-        versionName '14.3.84-crewwatch-official'
+        versionCode 140386
+        versionName '14.3.86-crewwatch-official'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
