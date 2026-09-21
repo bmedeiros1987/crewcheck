@@ -27,6 +27,22 @@ assert.match(
   /remoteCandidate/,
   'when an authenticated account-active row conflicts with local cache, the error must carry that verified remote candidate for the account-sync consumer',
 );
+
+// Cross-period safety is a separate gate from same-period checksum conflict.
+// A September account-active row must never be silently adopted over an August
+// device publication merely because both have stable but different checksums.
+// The account-sync exception is intentionally limited to the same reference period.
+assert.match(
+  database,
+  /const remoteIdentity = reconciliation\.comparison\.left;[\s\S]*const localIdentity = reconciliation\.comparison\.right;[\s\S]*const sameReferencePeriod = remoteIdentity\.year !== null[\s\S]*remoteIdentity\.month === localIdentity\.month;/,
+  'prepared database client must explicitly prove remote/local reference-period equality before exposing a remoteCandidate',
+);
+assert.match(
+  database,
+  /if \(!sameReferencePeriod\) \{[\s\S]*ROSTER_PERIOD_MISMATCH[\s\S]*throw mismatch;/,
+  'cross-period active-roster conflicts must remain fail-closed as ROSTER_PERIOD_MISMATCH',
+);
+
 assert.match(
   home,
   /ACTIVE_ROSTER_CONFLICT/,
