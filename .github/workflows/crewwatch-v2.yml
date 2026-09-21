@@ -113,6 +113,19 @@ jobs:
       - name: Android lint
         run: gradle -p android-wrapper :wear:lintDebug
 
+      - name: Verify Google Play package identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          test -x "$AAPT"
+
+          wear_apk='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
+          face_apk='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
+
+          "$AAPT" dump badging "$wear_apk" | head -1 | grep -F "package: name='com.crewcheck.app'"
+          "$AAPT" dump badging "$face_apk" | head -1 | grep -F "package: name='com.crewcheck.watch.app'"
+
       - name: Verify APK and AAB signatures
         shell: bash
         run: |
@@ -150,19 +163,25 @@ jobs:
           cp android-wrapper/wear/build/outputs/apk/release/wear-release.apk \
             "$out/CrewCheck-CrewWatch-Official-signed-release.apk"
           cp android-wrapper/wear/build/outputs/bundle/release/wear-release.aab \
-            "$out/CrewCheck-CrewWatch-Official-Play-Console.aab"
+            "$out/CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab"
           cp android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk \
             "$out/CrewCheck-CrewWatchFace-Official-signed-release.apk"
           cp android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab \
-            "$out/CrewCheck-CrewWatchFace-Official-Play-Console.aab"
+            "$out/CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab"
+
+          cat > "$out/PACKAGE_MAP.txt" <<'EOF'
+CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab -> com.crewcheck.app
+CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab -> com.crewcheck.watch.app
+EOF
 
           (
             cd "$out"
             sha256sum \
               CrewCheck-CrewWatch-Official-signed-release.apk \
-              CrewCheck-CrewWatch-Official-Play-Console.aab \
+              CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab \
               CrewCheck-CrewWatchFace-Official-signed-release.apk \
-              CrewCheck-CrewWatchFace-Official-Play-Console.aab \
+              CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab \
+              PACKAGE_MAP.txt \
               > SHA256SUMS.txt
           )
 
@@ -174,9 +193,10 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatch-Official-signed-release.apk
-            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatch-Official-Play-Console.aab
+            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab
             ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatchFace-Official-signed-release.apk
-            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatchFace-Official-Play-Console.aab
+            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatchFace-com.crewcheck.watch.app-Play-Console.aab
+            ${{ runner.temp }}/crewcheck-wear-signed/PACKAGE_MAP.txt
             ${{ runner.temp }}/crewcheck-wear-signed/SHA256SUMS.txt
 
       - name: Upload pilot/debug artifacts
