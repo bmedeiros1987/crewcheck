@@ -105,6 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           gradle --no-daemon --console=plain \
+            :app:assembleRelease \
             :wear:assembleRelease \
             :wear:bundleRelease \
             :watchface:assembleRelease \
@@ -133,15 +134,17 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$APKSIGNER"
 
+          app_apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
           wear_apk='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
           wear_aab='android-wrapper/wear/build/outputs/bundle/release/wear-release.aab'
           face_apk='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
           face_aab='android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab'
 
-          for file in "$wear_apk" "$wear_aab" "$face_apk" "$face_aab"; do
+          for file in "$app_apk" "$wear_apk" "$wear_aab" "$face_apk" "$face_aab"; do
             test -s "$file"
           done
 
+          "$APKSIGNER" verify --verbose --print-certs "$app_apk"
           "$APKSIGNER" verify --verbose --print-certs "$wear_apk"
           "$APKSIGNER" verify --verbose --print-certs "$face_apk"
 
@@ -184,6 +187,28 @@ jobs:
               PACKAGE_MAP.txt \
               > SHA256SUMS.txt
           )
+
+      - name: Stage signed CrewCheck mobile watch-sync pilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/crewcheck-mobile-watch-sync"
+          mkdir -p "$out"
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk             "$out/CrewCheck-Mobile-WatchSync-140387-signed-release.apk"
+          (
+            cd "$out"
+            sha256sum CrewCheck-Mobile-WatchSync-140387-signed-release.apk > SHA256SUMS.txt
+          )
+
+      - name: Upload signed CrewCheck mobile watch-sync pilot
+        uses: actions/upload-artifact@v6
+        with:
+          name: crewcheck-mobile-watch-sync-140387-signed
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/crewcheck-mobile-watch-sync/CrewCheck-Mobile-WatchSync-140387-signed-release.apk
+            ${{ runner.temp }}/crewcheck-mobile-watch-sync/SHA256SUMS.txt
 
       - name: Upload signed wearable release
         uses: actions/upload-artifact@v6
