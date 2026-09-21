@@ -48,10 +48,19 @@ assert.match(face, /x="53" y="53" width="344" height="344"/,
 assert.doesNotMatch(face, /width="406" height="406"/,
   'anel antigo não pode continuar cortando a faixa inferior');
 
+assert.match(wearGradle, /applicationId 'com\.crewcheck\.app'/,
+  'CrewWatch deve manter o mesmo package do app móvel para o Data Layer');
+assert.match(faceGradle, /applicationId 'com\.crewcheck\.watch\.app'/,
+  'CrewWatch Face deve usar o package já cadastrado na Play Console');
+assert.match(wearGradle, /versionCode 140384/);
 assert.match(wearGradle, /versionName '14\.3\.84-crewwatch-official'/);
-assert.match(faceGradle, /versionName '1\.3\.0-official'/);
+assert.match(faceGradle, /versionCode 140385/);
+assert.match(faceGradle, /versionName '1\.3\.1-official'/);
 assert.match(workflow, /CrewCheck-CrewWatch-Official-signed-release\.apk/);
 assert.match(workflow, /CrewCheck-CrewWatchFace-Official-signed-release\.apk/);
+assert.match(workflow, /CrewCheck-CrewWatch-com\.crewcheck\.app-Play-Console\.aab/);
+assert.match(workflow, /CrewCheck-CrewWatchFace-com\.crewcheck\.watch\.app-Play-Console\.aab/);
+assert.match(workflow, /package="com\.crewcheck\.watch\.app"/);
 assert.match(workflow, /regression-crewwatch-official-ui\.mjs/);
 
 console.log('CrewWatch Official UI + notifications contract: PASS');
