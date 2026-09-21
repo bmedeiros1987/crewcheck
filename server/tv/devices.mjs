@@ -20,16 +20,17 @@ const DEFAULT_PREFERENCES = Object.freeze({
 function normalizePreferences(value = {}) {
   const audience = ['owner','family','visitor'].includes(value?.audience) ? value.audience : 'owner';
   const source = value?.share && typeof value.share === 'object' ? value.share : {};
+  const owner = audience === 'owner';
   return {
     audience,
     share: {
       operational: source.operational !== false,
       weather: source.weather !== false,
-      hotel: source.hotel === true,
-      crew: source.crew === true,
-      finance: source.finance === true,
-      mobility: source.mobility === true,
-      traffic: source.traffic === true,
+      hotel: owner && source.hotel === true,
+      crew: owner && source.crew === true,
+      finance: owner && source.finance === true,
+      mobility: owner && source.mobility === true,
+      traffic: owner && source.traffic === true,
     },
   };
 }
