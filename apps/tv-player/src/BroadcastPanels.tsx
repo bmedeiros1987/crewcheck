@@ -4,7 +4,7 @@ import { currentFact, freshness, type TvSnapshot, type TvActivity } from '../../
 import { WeatherArtwork } from './TvVisuals';
 import { formatTvTime as time, formatMonth, activityLabel } from './presentation';
 import { countdown, upcomingStay, isCiriumSource, type QuickView } from './broadcastPolicy';
-import { visitorAirportLabel, isVisitorPresentation } from './programming';
+import { visitorAirportLabel, isVisitorPresentation, programsForDay, programRouteCodes } from './programming';
 import { UberHandoff } from './UberHandoff';
 import { airlineTheme, weatherFor } from './premiumContext';
 import type { TvDisplayPreferences } from './displayPreferences';
@@ -39,7 +39,8 @@ function Timings({snapshot}:{snapshot:TvSnapshot}) {
   const leave=currentFact(snapshot.leaveAt), report=snapshot.next?.presentation;
   return <div className="broadcast-times"><article className="broadcast-time leave"><label><Car/> SAIR DE CASA</label><strong>{leave||'—'}</strong><small>{leave?'Recomendação recebida do CrewCheck':'Recomendação ainda indisponível'}</small></article><article className="broadcast-time report"><label><Clock3/> APRESENTAÇÃO</label><strong>{report||'—'}</strong><small>{report?'Horário publicado na escala':'Não informada na escala'}</small></article></div>;
 }
-function Route({activity,visitor=false}:{activity:TvActivity|null;visitor?:boolean}) {
+function Route({activity,visitor=false,codes=[]}:{activity:TvActivity|null;visitor?:boolean;codes?:string[]}) {
+  if(codes.length>1) return <h1 className="broadcast-route">{codes.map((code,index)=><React.Fragment key={code+'-'+index}><span>{visitorAirportLabel(code,visitor)}</span>{index<codes.length-1&&<ArrowRight/>}</React.Fragment>)}</h1>;
   return <h1 className="broadcast-route">{activity?.origin?<>{visitorAirportLabel(activity.origin,visitor)}<ArrowRight/>{visitorAirportLabel(activity.destination,visitor)}</>:activity?'Sua próxima atividade':'Seu tempo, no seu ritmo.'}</h1>;
 }
 function Title({title,kicker,icon}:{title:string;kicker:string;icon:React.ReactNode}) {
@@ -76,21 +77,39 @@ export function BroadcastPanel({view,snapshot,demo,clock,openDay,openView,prefs}
   const airlinePhoto=trustedAirlinePhoto(snapshot,prefs);
   const visitor=isVisitorPresentation(snapshot);
   const mobility=(snapshot as any).mobility||null;
+  // Brasília has no DST in the supported period. Keep "today" deterministic on TV
+  // instead of relying on locale-specific date formatting in Chromium 53.
+  const todayKey=new Date(now-3*60*60*1000).toISOString().slice(0,10);
+  const todayActivities=snapshot.days.find(day=>day.date===todayKey)?.activities||[];
+  const publishedRest=todayActivities.find(activity=>activity.kind==='rest'||activity.kind==='journey-rest'||/^(OFF|DO|DOF|DOP)$/i.test(String(activity.publishedCode||'')))||null;
+  const operationalToday=todayActivities.some(activity=>activity.kind==='flight'||activity.kind==='duty'||activity.kind==='stay');
+  const offDay=!operationalToday;
+  const nextDayActivities=next?snapshot.days.find(day=>day.date===next.date)?.activities||[]:[];
+  const nextProgram=next?programsForDay(nextDayActivities).find(program=>program.kind==='journey'&&program.journeyId===next.journeyId)||null:null;
+  const journeyCodes=nextProgram?programRouteCodes(nextProgram):[];
+  const heroPhoto=offDay?null:airlinePhoto;
   if(view==='Agora') return <section className="broadcast-panel broadcast-overview">
-    <article className={'broadcast-card broadcast-hero airline-'+airline+(airlinePhoto?' has-real-airline-photo':'')}><div className="flight-art" aria-hidden="true" style={airlinePhoto?{backgroundImage:`url("${airlinePhoto.url}")`}:undefined}/><div className="flight-art-shade"/>
-      <div className="hero-copy"><Eyebrow><Plane/> {visitor?'ACOMPANHANDO A ROTINA':next?'PRÓXIMA ATIVIDADE':'BEM-VINDO A BORDO'}</Eyebrow><div className="broadcast-flight">{next?activityLabel(next):'CrewCheck'}</div><Route activity={next} visitor={visitor}/><span className="image-notice">{airlinePhoto?`Foto oficial/licenciada · ${airlinePhoto.credit}`:snapshot.profile?.airline?'Visual adaptado à '+snapshot.profile.airline+' · imagem ilustrativa':'Arte CrewCheck · imagem ilustrativa'}</span></div>
-      <div className="hero-bottom-panel"><Timings snapshot={snapshot}/><div className="broadcast-hero-foot"><FactStatus snapshot={snapshot}/><button className="primary-button" disabled={!next} onClick={()=>next&&openDay(next.date)}>Ver jornada <ChevronRight/></button></div></div>
+    <article className={'broadcast-card broadcast-hero airline-'+airline+(heroPhoto?' has-real-airline-photo':'')+(offDay?' broadcast-offday':'')}><div className="flight-art" aria-hidden="true" style={heroPhoto?{backgroundImage:`url("${heroPhoto.url}")`}:undefined}/><div className="flight-art-shade"/>
+      <div className="hero-copy"><Eyebrow><Plane/> {visitor?'ACOMPANHANDO A ROTINA':offDay?'HOJE':nextProgram&&nextProgram.flights.length>1?`JORNADA · ${nextProgram.flights.length} ETAPAS`:next?'PRÓXIMA ATIVIDADE':'BEM-VINDO A BORDO'}</Eyebrow><div className="broadcast-flight">{offDay?(publishedRest?activityLabel(publishedRest):'Sem programação operacional hoje'):nextProgram&&nextProgram.flights.length>1?`${nextProgram.flights.length} etapas`:next?activityLabel(next):'CrewCheck'}</div><Route activity={offDay?null:next} visitor={visitor} codes={offDay?[]:journeyCodes}/><span className="image-notice">{heroPhoto?`Foto oficial/licenciada · ${heroPhoto.credit}`:offDay?'Arte CrewCheck · painel de hoje':snapshot.profile?.airline?'Visual adaptado à '+snapshot.profile.airline+' · imagem ilustrativa':'Arte CrewCheck · imagem ilustrativa'}</span></div>
+      <div className="hero-bottom-panel">{offDay?<div className="offday-hero-next"><small>PRÓXIMA PROGRAMAÇÃO PUBLICADA</small><strong>{next?next.date.split('-').reverse().join('/')+' · '+countdown(next,now):'Nenhuma atividade futura recebida'}</strong><span>{next&&journeyCodes.length>1?journeyCodes.map(code=>visitorAirportLabel(code,visitor)).join(' → '):next?activityLabel(next):'A escala oficial continua sendo a referência.'}</span></div>:<Timings snapshot={snapshot}/>}<div className="broadcast-hero-foot"><FactStatus snapshot={snapshot}/><button className="primary-button" disabled={!next} onClick={()=>next&&openDay(next.date)}>{offDay?'Ver próxima programação':'Ver jornada'} <ChevronRight/></button></div></div>
     </article>
     <aside className="broadcast-column">
-      <article className="broadcast-card presentation-essentials-card"><Eyebrow>{!next&&prefs.weather&&baseWeather?<><CloudSun/> AGORA NA SUA BASE</>:<><ShieldCheck/> O QUE IMPORTA PARA APRESENTAR</>}</Eyebrow>
-        {!next&&prefs.weather&&baseWeather&&<div className="offday-base-context"><strong>{Math.round(baseWeather.temperature)}°C</strong><span>{baseWeather.city||baseWeather.airport} · {baseWeather.label}</span></div>}
+      <article className="broadcast-card presentation-essentials-card"><Eyebrow>{offDay?<>{prefs.weather&&baseWeather?<CloudSun/>:<CalendarDays/>} {prefs.weather&&baseWeather?'AGORA NA SUA BASE':'PRÓXIMA PROGRAMAÇÃO'}</>:<><ShieldCheck/> O QUE IMPORTA PARA APRESENTAR</>}</Eyebrow>
+        {offDay&&prefs.weather&&baseWeather&&<div className="offday-base-context"><strong>{Math.round(baseWeather.temperature)}°C</strong><span>{baseWeather.city||baseWeather.airport} · {baseWeather.label}</span></div>}
         <div className="essential-grid">
-          <div><Clock3/><small>Apresentação</small><b>{next?.presentation||'Não informada'}</b></div>
-          {prefs.gate&&<div><MapPin/><small>Portão</small><b>{gate?.label||'Não confirmado'}</b>{gate?.remoteStand===true&&<em>REMOTA</em>}</div>}
-          {prefs.traffic&&<div><Gauge/><small>Trânsito</small><b>{traffic?.durationText||traffic?.delayText||'Sem leitura'}</b><span>{traffic?.delayText||traffic?.status||'Aguardando rota confirmada'}</span></div>}
-          <div><Clock3/><small>Próxima atividade</small><b>{next?countdown(next,now):'—'}</b><span>{next?'Até o início publicado':'Nenhuma atividade futura'}</span></div>
+          {offDay?<>
+            <div><CalendarDays/><small>Próxima programação</small><b>{next?next.date.split('-').reverse().join('/'):'Não informada'}</b><span>{next?countdown(next,now):'Nenhuma atividade futura'}</span></div>
+            {prefs.weather&&<div><CloudSun/><small>Clima da base</small><b>{baseWeather?Math.round(baseWeather.temperature)+'°C':'Sem leitura'}</b><span>{baseWeather?(baseWeather.city||baseWeather.airport)+' · '+baseWeather.label:'Aguardando condição confirmada'}</span></div>}
+            <div><Plane/><small>Próxima rota</small><b>{next&&journeyCodes.length>1?journeyCodes.join(' → '):next&&next.origin?`${next.origin} → ${next.destination||'—'}`:'Não informada'}</b><span>Somente dados publicados</span></div>
+            <div><BedDouble/><small>Próximo pernoite</small><b>{stay?(stay.destination||stay.origin||'Publicado'):'Não informado'}</b><span>{stay?stay.date.split('-').reverse().join('/'):'Nenhum pernoite futuro recebido'}</span></div>
+          </>:<>
+            <div><Clock3/><small>Apresentação</small><b>{next?.presentation||'Não informada'}</b></div>
+            {prefs.gate&&<div><MapPin/><small>Portão</small><b>{gate?.label||'Não confirmado'}</b>{gate?.remoteStand===true&&<em>REMOTA</em>}</div>}
+            {prefs.traffic&&<div><Gauge/><small>Trânsito</small><b>{traffic?.durationText||traffic?.delayText||'Sem leitura'}</b><span>{traffic?.delayText||traffic?.status||'Aguardando rota confirmada'}</span></div>}
+            <div><Clock3/><small>Próxima atividade</small><b>{next?countdown(next,now):'—'}</b><span>{next?'Até o início publicado':'Nenhuma atividade futura'}</span></div>
+          </>}
         </div>
-        {prefs.traffic&&mobility&&<UberHandoff mobility={mobility} compact/>}
+        {!offDay&&prefs.traffic&&mobility&&<UberHandoff mobility={mobility} compact/>}
       </article>
       {prefs.week&&<article className="broadcast-card overview-summary"><Eyebrow><CalendarDays/> {formatMonth(snapshot.summary.month)}</Eyebrow><div className="summary-pair"><div><b>{snapshot.summary.flights}</b><span>voos publicados</span></div><div><b>{snapshot.summary.stays}</b><span>pernoites</span></div></div>{prefs.weather&&baseWeather&&<div className="overview-weather"><CloudSun/><b>{Math.round(baseWeather.temperature)}°</b><span>{baseWeather.airport} · {baseWeather.label}</span></div>}<button onClick={()=>openView('Mês')}>Ver escala completa <ArrowRight/></button></article>}
       {(prefs.changes||prefs.weather)&&<article className="broadcast-card overview-note"><Eyebrow><Info/> {prefs.weather&&stayWeather?'PRÓXIMO PERNOITE':'O QUE IMPORTA AGORA'}</Eyebrow>{prefs.weather&&stayWeather?<p><b>{stayWeather.airport} · {Math.round(stayWeather.temperature)}°C</b><br/>{stayWeather.label}{Number.isFinite(stayWeather.rainChance)?' · chuva '+Math.round(Number(stayWeather.rainChance))+'%':''}</p>:<p>{prefs.changes?(snapshot.changes[0]||'Nenhuma mudança confirmada.'): 'Acompanhe os dados operacionais acima.'}</p>}{prefs.changes&&snapshot.changes.length>0&&<button onClick={()=>openView('Mudanças')}>Ver mudanças <ArrowRight/></button>}</article>}
