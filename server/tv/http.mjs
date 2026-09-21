@@ -4,6 +4,7 @@ import { createMysqlTvStore } from "./mysql-store.mjs";
 import { createTvHandler } from "./routes.mjs";
 import { buildUberPhoneHandoff, tvAirportMobilityPoint } from "./mobility.mjs";
 import { airlineVisualFor } from "./airline-visual.mjs";
+import { tvAccessPolicy, tvUserGateFact, publicTvEntitlements } from "./entitlements.mjs";
 
 const tvWeatherCache = new Map();
 function tvAirportCode(value) {
@@ -268,6 +269,7 @@ export function createTvHttpBridge({
             const data = await loadActiveRoster(auth.userId);
             if (!data?.roster) return null;
             const now = new Date();
+            const access = tvAccessPolicy(data);
             const preferences = auth.preferences || { audience: "owner", share: {} };
             const audience = ["owner", "family", "visitor"].includes(preferences.audience)
               ? preferences.audience
@@ -288,11 +290,12 @@ export function createTvHttpBridge({
             snapshot.sharePermissions = {
               operational: preferences.share?.operational !== false,
               weather: preferences.share?.weather !== false,
-              hotel: audience === "owner" && preferences.share?.hotel === true,
-              crew: audience === "owner" && preferences.share?.crew === true,
+              hotel: access.features.hotel && audience === "owner" && preferences.share?.hotel === true,
+              crew: access.features.crew && audience === "owner" && preferences.share?.crew === true,
               finance: audience === "owner" && preferences.share?.finance === true,
               mobility: audience === "owner" && preferences.share?.mobility === true,
             };
+            snapshot.entitlements = publicTvEntitlements(access);
             snapshot.journeyDetails = tvAttachStayDetails(
               snapshot,
               data.stays,
@@ -306,10 +309,10 @@ export function createTvHttpBridge({
             }
 
             const appOrigin = "https://crewcheck.online";
-            const base = audience === "owner" && effectivePrivacy === "private" && snapshot.sharePermissions.weather
+            const base = access.providers.weather && audience === "owner" && effectivePrivacy === "private" && snapshot.sharePermissions.weather
               ? tvAirportCode(data.roster.base)
               : null;
-            const stay = audience === "owner" && snapshot.sharePermissions.weather
+            const stay = access.providers.weather && audience === "owner" && snapshot.sharePermissions.weather
               ? tvNextStayAirport(snapshot, now.getTime())
               : null;
             const targets = [
@@ -347,9 +350,10 @@ export function createTvHttpBridge({
               snapshot.sharePermissions.operational
                 ? tvNextFlight(snapshot, now.getTime())
                 : null;
-            snapshot.gate = nextFlight
+            const userGate = tvUserGateFact(data, now.getTime());
+            snapshot.gate = userGate || (access.providers.radar && nextFlight
               ? await tvGateContext(appOrigin, nextFlight, now)
-              : null;
+              : null);
 
             const routeOrigin =
               audience === "owner" &&
@@ -358,7 +362,7 @@ export function createTvHttpBridge({
                 ? auth.context?.routeOrigin || null
                 : null;
             snapshot.traffic =
-              nextFlight && routeOrigin
+              access.providers.traffic && nextFlight && routeOrigin
                 ? await tvTrafficContext(appOrigin, nextFlight, routeOrigin, now)
                 : null;
 
