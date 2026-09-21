@@ -1,0 +1,62 @@
+name: P2 #738 vacation work-first
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v14738/**'
+      - 'scripts/p2-738-vacation-work-first/**'
+      - 'scripts/regression-p2-738-vacation-work-first.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p2-738-vacation-work-first.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  vacation-work-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout immutable PR HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Scope guard
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          changed="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(client/src/lib/(pdfParser|canonicalRoster|complianceEngine|regulatoryHistory)|server/.*finance|scripts/p0-530-|scripts/p0-580-|scripts/p0-623-)'; then
+            echo "::error::#738 is UI/work-first only and must not touch parser/APZ/journey/compliance/finance sovereign paths."
+            exit 1
+          fi
+
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+
+      - name: #738 regression
+        run: node scripts/regression-p2-738-vacation-work-first.mjs
+
+      - name: Care semantics compatibility
+        run: node scripts/regression-p0-691-care-context.mjs
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npx vite build
