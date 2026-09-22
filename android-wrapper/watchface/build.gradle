@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
+def storePasswordValue = project.findProperty('CREWCHECK_STORE_PASSWORD') ?: System.getenv('CREWCHECK_STORE_PASSWORD')
+def keyAliasValue = project.findProperty('CREWCHECK_KEY_ALIAS') ?: System.getenv('CREWCHECK_KEY_ALIAS')
+def keyPasswordValue = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.getenv('CREWCHECK_KEY_PASSWORD')
+def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
+
+android {
+    namespace 'com.crewcheck.face'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.crewcheck.face'
+        minSdk 33
+        targetSdk 36
+        versionCode 10005
+        versionName '1.3.0-official'
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    buildFeatures {
+        buildConfig false
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+            shrinkResources false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
