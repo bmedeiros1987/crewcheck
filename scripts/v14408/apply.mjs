@@ -187,7 +187,8 @@ update('package.json', (source) => {
   data.scripts['regression:v14.4.08:concierge-human-voice'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-4-08-concierge-human-voice.mjs';
   return `${JSON.stringify(data, null, 2)}\n`;
 });
-update('android-wrapper/app/build.gradle', (source) => source
+// Store version codes are independent of the web release and cannot be downgraded by replay.
+update('android-wrapper/app/build.gradle', (source) => source.includes('store-policy.gradle') ? source : source
   .replace(/versionCode\s+\d+/, 'versionCode 140408')
   .replace(/versionName\s+["'][^"']+["']/, `versionName "${VERSION}"`), { optional: true });
 
