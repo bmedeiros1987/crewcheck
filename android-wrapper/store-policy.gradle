@@ -11,6 +11,9 @@ if (project.name == 'app') {
     android.sourceSets.main.java.srcDir 'src/store/java'
     android.sourceSets.main.java.exclude '**/CrewCheckHealthBridge.kt'
     kotlin.sourceSets.main.kotlin.exclude '**/CrewCheckHealthBridge.kt'
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        exclude '**/CrewCheckHealthBridge.kt'
+    }
     configurations.configureEach {
         exclude group: 'androidx.health.connect', module: 'connect-client'
     }
