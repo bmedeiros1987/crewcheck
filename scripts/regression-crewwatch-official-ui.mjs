@@ -20,15 +20,28 @@ assert.ok(fs.statSync('android-wrapper/watchface/src/main/res/drawable-nodpi/cre
 
 for (const token of [
   'crewcheck_official',
-  'NOTIFICAÇÕES',
-  'CrewLife opcional',
+  'Notificações',
+  'CrewLife  opcional',
   'renderNotifications',
   'renderCrewLife',
-  'Hora de sair',
-  'Portão',
+  'Saia às',
+  'Voo atual',
+  'Próxima perna',
   'Pernoite',
+  'Escala no relógio',
+  'Aguardando dados do celular',
   'Sincronizar'
 ]) assert.ok(main.toLowerCase().includes(token.toLowerCase()), 'MainActivity deve conter: ' + token);
+
+assert.match(main, /MotionEvent\.ACTION_UP/, 'CrewWatch premium deve aceitar swipe horizontal');
+assert.match(main, /screenMode = \(screenMode \+ 1\) % 4/, 'swipe deve avançar entre as quatro superfícies');
+assert.match(main, /screenMode = \(screenMode \+ 3\) % 4/, 'swipe deve voltar entre as quatro superfícies');
+assert.match(main, /int\[\] modes = \{MODE_NOW, MODE_NOTIFICATIONS, MODE_CREWLIFE, MODE_SCHEDULE\}/,
+  'navegação deve ser compacta em page dots, sem grade de quatro botões');
+assert.doesNotMatch(main, /navChip\("Agora"/,
+  'grade antiga Agora/Alertas/CrewLife/Escala não deve voltar');
+assert.match(main, /life\.has\("sleepMinutes"\)/,
+  'CrewLife deve distinguir dado ausente de valor zero');
 
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /@drawable\/crewcheck_official/);
@@ -52,8 +65,8 @@ assert.match(wearGradle, /applicationId 'com\.crewcheck\.app'/,
   'CrewWatch deve manter o mesmo package do app móvel para o Data Layer');
 assert.match(faceGradle, /applicationId 'com\.crewcheck\.watch\.app'/,
   'CrewWatch Face deve usar o package já cadastrado na Play Console');
-assert.match(wearGradle, /versionCode 140386/);
-assert.match(wearGradle, /versionName '14\.3\.86-crewwatch-official'/);
+assert.match(wearGradle, /versionCode 140387/);
+assert.match(wearGradle, /versionName '14\\.3\\.87-crewwatch-premium-v3'/);
 assert.match(faceGradle, /versionCode 140385/);
 assert.match(faceGradle, /versionName '1\.3\.1-official'/);
 assert.match(workflow, /CrewCheck-CrewWatch-Official-signed-release\.apk/);
