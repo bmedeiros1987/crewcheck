@@ -10,6 +10,7 @@ const clarityCss = fs.existsSync('client/src/styles/v14357-ui-clarity.css')
   ? read('client/src/styles/v14357-ui-clarity.css')
   : read('scripts/v14357/ui-clarity.css');
 const indexCss = read('client/src/index.css');
+const navAuthority = read('scripts/v14337/apply.mjs');
 
 // P1 #744: no consumer-facing duty subtitle may inherit raw parser/legend text.
 assert.doesNotMatch(
@@ -85,7 +86,7 @@ for (const token of [
   "['alerts','Alertas',Bell]",
   "['settings','Menu',Menu]",
 ]) {
-  assert.ok(home.includes(token), 'prepared footer destination missing: ' + token);
+  assert.ok(navAuthority.includes(token), 'canonical footer destination missing from v14.3.37 authority: ' + token);
 }
 assert.match(home, /createPortal\(<nav className="cz-bottom-nav"/, 'prepared footer must stay portaled to document.body');
 
