@@ -13,6 +13,7 @@ public final class CrewCheckWatchSyncService extends WearableListenerService {
         if (!CrewCheckWatchPublisher.REQUEST_SYNC_PATH.equals(messageEvent.getPath())) return;
         // Fast path: resend the last validated snapshot if one already exists.
         CrewCheckWatchPublisher.republishLast(this);
+        CrewLifeWatchPublisher.republishLast(this);
 
         // First-sync path: if the CrewCheck Activity is open, ask its WebView to
         // generate a fresh canonical projection immediately. This removes the
