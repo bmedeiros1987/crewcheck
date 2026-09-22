@@ -1,0 +1,76 @@
+plugins {
+    id 'com.android.application'
+}
+
+def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
+def storePasswordValue = project.findProperty('CREWCHECK_STORE_PASSWORD') ?: System.getenv('CREWCHECK_STORE_PASSWORD')
+def keyAliasValue = project.findProperty('CREWCHECK_KEY_ALIAS') ?: System.getenv('CREWCHECK_KEY_ALIAS')
+def keyPasswordValue = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.getenv('CREWCHECK_KEY_PASSWORD')
+def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
+
+android {
+    namespace 'com.crewcheck.watch'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.crewcheck.app'
+        minSdk 30
+        targetSdk 36
+        versionCode 140384
+        versionName '14.3.84-crewwatch-official'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            debuggable false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            debuggable true
+            versionNameSuffix '-debug'
+        }
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-wearable:20.0.1'
+    implementation 'androidx.wear:wear:1.4.0'
+    implementation 'androidx.wear.watchface:watchface-complications-data-source:1.2.1'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
+}
