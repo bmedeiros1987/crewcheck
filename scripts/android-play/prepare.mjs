@@ -69,3 +69,31 @@ update('client/src/components/v14314/RoutineDailyConcierge.tsx', s => s
 console.log('[android-play] Separate version codes, API 36 and manual-only CrewLife applied.');
 
 update('client/public/manual.html', s => s.replace('O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.', 'O CrewLife usa registros manuais e opcionais neste aparelho. Não acessa Health Connect ou Samsung Health. O envio de resumos ao relógio exige uma escolha separada do usuário.'));
+
+update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', s => s.includes('retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult)') ? s : s
+  .replace('CrewLifeWatchPublisher.revoke(MainActivity.this, null);', 'CrewLifeWatchPublisher.revoke(MainActivity.this, MainActivity.this::dispatchCrewCheckWatchSyncResult);')
+  .replace('                java.util.Set<String> categories = java.util.Set.of(', `                if (WatchHealthConsent.isRevocationPending(MainActivity.this)) {
+                    CrewLifeWatchPublisher.retryPendingRevocation(MainActivity.this, MainActivity.this::dispatchCrewCheckWatchSyncResult);
+                    return false;
+                }
+                java.util.Set<String> categories = java.util.Set.of(`)
+  .replace('                        WatchHealthConsent.CATEGORY_HEART,\n', '')
+  .replace('        super.onResume();', `        super.onResume();
+        CrewLifeWatchPublisher.retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult);`));
+update('client/src/components/v1434/CrewCheckLifeView.tsx', s => s.includes('Play store: confirm deletion') ? s : s
+  .replace("      toast.success(enabled\n        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'\n        : 'CrewLife removido do relógio.');", `      if (enabled) toast.success('CrewLife no relógio ativado. Somente resumos manuais serão enviados.');
+      else toast.info('Envio interrompido. Aguardando confirmação da remoção no relógio.');`)
+  .replace('  function setWatchMirror(enabled: boolean) {', `  // Play store: confirm deletion only after both Wear data channels acknowledge it.
+  useEffect(() => {
+    const onRevocation = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.code === 'revoked' && detail?.ok === true) toast.success('Remoção dos dados do CrewLife confirmada.');
+      if (detail?.code === 'revocation_incomplete') toast.error('Envio desativado. A remoção no relógio ainda está pendente; reabra o app com os aparelhos conectados.');
+    };
+    window.addEventListener('crewcheck:watch-sync-result', onRevocation);
+    return () => window.removeEventListener('crewcheck:watch-sync-result', onRevocation);
+  }, []);
+
+  function setWatchMirror(enabled: boolean) {`));
+update('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java', s => s
+  .replace('TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);\n            sync.setOnClickListener(view -> requestSync());', 'TextView sync = text("Abra CrewLife no celular para atualizar os registros manuais.", 9, MUTED, false, Gravity.CENTER);'));

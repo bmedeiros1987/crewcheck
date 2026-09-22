@@ -28,3 +28,10 @@ console.log('[android-play] Canonical store source contracts passed.');
 const guide = read('client/src/components/v14314/RoutineDailyConcierge.tsx');
 assert.match(guide, /onClick=\{openManualLife\}/);
 assert.doesNotMatch(guide, /openHealthConnect|requestPermissions|connectHealth/);
+
+const phone = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
+assert.match(phone, /CrewLifeWatchPublisher.revoke\(MainActivity.this, MainActivity.this::dispatchCrewCheckWatchSyncResult\)/);
+assert.match(phone, /super.onResume\(\);\s*CrewLifeWatchPublisher.retryPendingRevocation/);
+assert.match(ui, /detail\?\.code === 'revoked' && detail\?\.ok === true/);
+assert.doesNotMatch(ui, /: 'CrewLife removido do relógio\.'/);
+assert.doesNotMatch(read('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java'), /heroAction\("Sincronizar CrewLife"/);
