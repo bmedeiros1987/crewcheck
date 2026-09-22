@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { requestToken } from './server/v139/common.mjs';
 
 const packageMetadata = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
 const expectedVersion = String(packageMetadata.version || '');
@@ -38,12 +39,11 @@ try {
       if (premium?.callLimit !== 20 || premium?.googlePlayProductId !== 'crewcheck_premium_monthly') throw new Error('Plano Premium incorreto');
     }
   }
-  const malformedCookieResponse = await fetch(`http://127.0.0.1:${port}/api/auth/me`, {
-    headers: { cookie: 'crewcheck_auth_token=%E0%A4%A' },
+  const malformedCookieToken = requestToken({
+    headers: { authorization: '', cookie: 'crewcheck_auth_token=%E0%A4%A' },
   });
-  const malformedCookiePayload = await malformedCookieResponse.json();
-  if (![200, 401].includes(malformedCookieResponse.status) || typeof malformedCookiePayload !== 'object') {
-    throw new Error(`Cookie de sessão malformado deve falhar fechado sem derrubar /api/auth/me (status ${malformedCookieResponse.status})`);
+  if (malformedCookieToken !== '') {
+    throw new Error('Cookie de sessão malformado deve ser tratado como sessão expirada.');
   }
 
   console.log('CrewCheck server routes smoke test OK');
