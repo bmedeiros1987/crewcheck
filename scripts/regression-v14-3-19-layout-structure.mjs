@@ -40,10 +40,11 @@ const gradle = read('android-wrapper/app/build.gradle');
 
 const versionName = gradle.match(/versionName\s+["']([^"']+)["']/)?.[1];
 const versionCode = Number(gradle.match(/versionCode\s+(\d+)/)?.[1] || 0);
-const expectedCode = androidVersionCode(pkg.version);
+const storePolicy = JSON.parse(read('scripts/android-play/release-policy.json'));
+const expectedCode = storePolicy.artifacts.app.versionCode;
 
 check(versionAtLeast(pkg.version, '14.3.19'), `package preparado em versão 14.3.19 ou posterior; encontrado ${pkg.version}`);
-check(versionName === pkg.version, `Android sincronizado com package.json (${pkg.version})`);
+check(versionName === storePolicy.versionName, `Android sincronizado com a política de publicação (${storePolicy.versionName})`);
 check(versionCode === expectedCode, `versionCode Android sincronizado (${expectedCode})`);
 check(main.includes('theme-v14-3-19.css'), 'tema estrutural carregado por último');
 check(css.includes('html[data-crewcheck-theme="dark"]') && css.includes('html[data-crewcheck-theme="light"]'), 'paletas clara e escura independentes');

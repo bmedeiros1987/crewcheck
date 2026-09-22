@@ -177,7 +177,7 @@ function patchServer(source) {
   let next = source;
   const importAnchor = "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';";
   next = insertAfterRequired(next, importAnchor, serverImport, 'import do motor Wellhub');
-  next = replaceBetween(next, 'async function conciergeGymsReply(', 'function conciergeRoutineReply(', conciergeGyms, 'Concierge academias');
+  next = next.replace(/async function conciergeGymsReply\([^]*?\n\}/, conciergeGyms.trim());
   next = replaceBetween(next, 'function conciergeRoutineReply(', 'function conciergePerDiemReply(', conciergeRoutine, 'Concierge rotina');
 
   const oldGymDispatch = "if (/^\\/academias?(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto)\\b/i.test(lower)) return conciergeGymsReply(snapshot);";

@@ -26,7 +26,7 @@ const v14343Index = chain.indexOf("await import('../v14343/apply.mjs');");
 const v14344Index = chain.indexOf("await import('../v14344/apply.mjs');");
 assert.ok(v14343Index >= 0, 'v14.3.43 deve participar da preparação canônica');
 assert.ok(v14344Index > v14343Index, 'v14.3.44 deve suceder a estabilidade v14.3.43 sem removê-la');
-assert.ok(before.home.includes("const DEFAULT_VERSION = '14.3.48';"), 'a preparação final deve anunciar v14.3.48');
+assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.08';"), 'a preparação final deve anunciar v14.4.08');
 assert.ok(before.home.includes('data-layout-v14343="premium-contained"'), 'shell deve preservar o layout contido v14.3.43');
 assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve registrar o refinamento final v14.3.44');
 
@@ -78,32 +78,23 @@ assert.ok(before.css.includes('CrewCheck v14.3.43 — premium layout hardening')
 assert.equal((before.css.match(/CrewCheck v14\.3\.43 — premium layout hardening/g) || []).length, 1, 'CSS-base v14.3.43 não pode ser duplicado');
 
 assert.ok(!before.app.includes('registrations.map((registration) => registration.unregister())'), 'App não pode desregistrar todo service worker a cada inicialização');
-assert.ok(before.app.includes("const cleanupKey = 'crewcheck-client-cleanup:14.3.48'"), 'limpeza segura deve acompanhar a versão final');
-assert.ok(before.app.includes('registration?.update()'), 'atualização deve preservar o service worker ativo');
-assert.ok(before.app.includes("!name.includes('v14.3.48')"), 'cache da versão final não pode ser apagado no boot');
-assert.ok(!before.index.includes('registration.unregister()'), 'HTML inicial não pode desregistrar o service worker');
-assert.ok(!before.index.includes('crewcheck-cache-reset-'), 'script legado de limpeza destrutiva deve ser removido do HTML');
-assert.ok(applySource.includes('legacyCleanupMarker'), 'aplicação deve remover explicitamente a limpeza destrutiva antiga');
-
-const watcherStart = before.index.indexOf('<script id="crewcheck-release-watch-v14343">');
-const watcherEnd = watcherStart >= 0 ? before.index.indexOf('</script>', watcherStart) : -1;
-assert.ok(watcherStart >= 0 && watcherEnd > watcherStart, 'watcher seguro de release não localizado');
-const watcher = before.index.slice(watcherStart, watcherEnd);
-assert.ok(watcher.includes("var currentRelease = '14.3.48';"), 'watcher preservado deve acompanhar a versão final');
-assert.ok(watcher.includes('cooldownMs = 30 * 60 * 1000'), 'watcher deve ter circuit breaker de 30 minutos');
-assert.ok(watcher.includes('window.localStorage.setItem(reloadKey'), 'reload deve ser marcado persistentemente antes de ocorrer');
-assert.ok(!watcher.includes('window.sessionStorage'), 'guard de atualização no iPad não pode depender apenas da sessão');
-assert.equal((watcher.match(/window\.location\.reload\(\)/g) || []).length, 1, 'watcher deve permitir no máximo um ponto de reload controlado');
-assert.ok(!before.index.includes('crewcheck-release-watch-v14329'), 'watcher antigo deve ser removido');
+const coordinator = read('client/src/lib/pwaUpdateCoordinator.ts');
+assert.ok(before.app.includes('installPwaUpdateCoordinator()'), 'App deve instalar o coordenador de atualizações');
+assert.ok(coordinator.includes('await current.update()'), 'service worker deve ser atualizado sem desregistro');
+assert.ok(coordinator.includes("document.visibilityState === 'hidden' || Date.now() - lastActivityAt >= idleMs"), 'ativação deve esperar inatividade');
+assert.ok(coordinator.includes('if (!registration?.waiting || !isSafeToActivate()) return;'), 'worker não pode ser ativado durante uso');
+assert.ok(!/window\.location\.reload\(\)/.test(coordinator.replace(/\/\*[^]*?\*\//g, '')), 'coordenador não pode forçar reload');
+assert.ok(!before.index.includes('crewcheck-release-watch-v14343') && !before.index.includes('crewcheck-release-watch-v14329'), 'watchers legados devem ser removidos');
+assert.ok(!before.app.includes('caches.delete('), 'inicialização não pode apagar caches ativos');
 
 for (const marker of [
-  "version: '14.3.48'",
+  "version: '14.4.08'",
   "localStorage.setItem('crewcheck_location_permission', 'granted')",
   "window.dispatchEvent(new CustomEvent('crewcheck:location-updated'",
   "location: locationState === 'granted' ? true",
 ]) assert.ok(before.runtime.includes(marker), `runtime de permissão ausente: ${marker}`);
 
-assert.ok(before.release.includes('14.3.48'), 'release final deve anunciar 14.3.48');
+assert.ok(before.release.includes('14.4.08'), 'release final deve anunciar 14.4.08');
 assert.ok(before.release.includes('automatic-safe'), 'política de atualização segura deve permanecer registrada');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
@@ -111,10 +102,10 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
 }
 
 assert.ok(applySource.includes("next = patchBlock(next, 'function MenuDrawer('") || applySource.includes("patchBlock(next, 'function MenuDrawer('"), 'v14.3.43 deve continuar contendo a base do controle de localização');
-const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.3.48 falhou');
+const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.4.08 falhou');
 for (const [key, relative] of Object.entries(paths)) {
-  assert.equal(read(relative), before[key], `estado final v14.3.48 deve preservar a estabilidade v14.3.43 em ${relative}`);
+  assert.equal(read(relative), before[key], `estado final v14.4.08 deve preservar a estabilidade v14.3.43 em ${relative}`);
 }
 
-console.log('v14.3.43 iPad premium stability preserved under final v14.3.48: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');
+console.log('v14.3.43 iPad premium stability preserved under final v14.4.08: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');

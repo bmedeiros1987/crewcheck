@@ -24,3 +24,7 @@ assert.match(ui, /Ignore legacy health events/);
 assert.match(ui, /if \(!consent.active \|\| !watchMirrorEnabled\) return/);
 assert.match(ui, /payload.sleepMinutes = Math.round\(manual.sleepHours \* 60\)/);
 console.log('[android-play] Canonical store source contracts passed.');
+
+const guide = read('client/src/components/v14314/RoutineDailyConcierge.tsx');
+assert.match(guide, /onClick=\{openManualLife\}/);
+assert.doesNotMatch(guide, /openHealthConnect|requestPermissions|connectHealth/);

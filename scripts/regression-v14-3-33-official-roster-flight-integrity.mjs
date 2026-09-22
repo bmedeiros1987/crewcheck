@@ -16,7 +16,7 @@ for (const marker of [
   'function assertCrewRosterReportIntegrity(',
   'const sourceHasFlights = crewRosterSourceHasFlights(fullText);',
   '&& (!sourceHasFlights || transposedFlightCount > 0);',
-  'const rescuedDays = rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);',
+  'const rescuedDays = rescueFlightsFromFullText(mergedDays, publishedText, header.month, header.year, header.base);',
   'function rescueFlightsFromVisualRows(',
   "replace(/\\bLA\\s+(\\d{3,4})\\b/gi, 'LA$1')",
 ]) assert.ok(clientSource.includes(marker), `proteção/resgate ausente no cliente: ${marker}`);

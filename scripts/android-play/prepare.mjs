@@ -26,6 +26,8 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   s = s.replace("const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;", "return; /* Ignore legacy health events, including cached hosted clients. */\n      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;");
   s = s.replace(/    <div className="cc-life-sync-strip"[^\n]+/, '    <div className="cc-life-sync-strip"><div><strong>CrewLife opcional · registros manuais</strong><small>Seus registros ficam neste aparelho. Nenhuma conexão com contas de saúde.</small></div></div>');
   s = s.replace(/        <article className=\{nativeStatus\.allGranted[^]*?        <\/article>/, '        <article><Smartphone/><div><h3>Registros sob seu controle</h3><p>Informe seus dados manualmente, somente se quiser. Esta versão não acessa Health Connect ou Samsung Health.</p></div></article>');
+  s = s.replace('Sono, passos, distância, atividade física, tendência resumida de frequência em repouso e sua próxima programação.', 'Sono, passos e atividade que você registrar manualmente, além da sua próxima programação.');
+  s = s.replace('Li e entendi que o recurso é opcional e que permissões de saúde serão pedidas separadamente.', 'Li e entendi que o recurso é opcional, usa registros manuais e não pede permissões de saúde.');
   s = s.replace('Envia somente sono, passos/atividade e FC em repouso agregados quando disponíveis.', 'Envia somente os registros manuais de sono, passos e atividade que você informar.');
   s = s.replace('if (!consent.active || !watchMirrorEnabled || !nativeSummary.ok) return;', 'if (!consent.active || !watchMirrorEnabled) return;');
   const start = s.indexOf('    if (Number.isFinite(Number(nativeSummary.sleepMinutes))) {');
@@ -59,4 +61,11 @@ update('client/src/lib/lifeConcierge.ts', s => s
   }
   return null;
 }`));
+update('client/src/components/v14314/RoutineDailyConcierge.tsx', s => s
+  .replace(/  async function connectHealth\(\) \{[^]*?\n  \}/, `  function openManualLife() {
+    window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'life' }));
+  }`)
+  .replace('<button onClick={connectHealth}><HeartPulse/><span><strong>Health Connect</strong><small>Samsung Health e Galaxy Watch</small></span><Check/></button>', '<button onClick={openManualLife}><HeartPulse/><span><strong>CrewLife opcional</strong><small>Registros manuais neste aparelho</small></span><Navigation/></button>'));
 console.log('[android-play] Separate version codes, API 36 and manual-only CrewLife applied.');
+
+update('client/public/manual.html', s => s.replace('O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.', 'O CrewLife usa registros manuais e opcionais neste aparelho. Não acessa Health Connect ou Samsung Health. O envio de resumos ao relógio exige uma escolha separada do usuário.'));
