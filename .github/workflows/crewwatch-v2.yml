@@ -1,4 +1,4 @@
-name: CrewCheck Watch Pulse signed release
+name: CrewCheck CrewWatch Official signed release
 
 on:
   pull_request:
@@ -15,6 +15,7 @@ on:
       - 'android-wrapper/settings.gradle'
       - 'android-wrapper/build.gradle'
       - 'scripts/regression-crewwatch-v2-premium.mjs'
+      - 'scripts/regression-crewwatch-official-ui.mjs'
       - 'docs/crewwatch-v2.md'
       - '.github/workflows/crewwatch-v2.yml'
   workflow_dispatch:
@@ -76,6 +77,9 @@ jobs:
 
       - name: Premium UX and lifecycle regression
         run: node scripts/regression-crewwatch-v2-premium.mjs
+
+      - name: Official CrewWatch UI and notifications regression
+        run: node scripts/regression-crewwatch-official-ui.mjs
 
       - name: Snapshot contract
         run: gradle -p android-wrapper :wear:testDebugUnitTest
@@ -144,41 +148,41 @@ jobs:
           mkdir -p "$out"
 
           cp android-wrapper/wear/build/outputs/apk/release/wear-release.apk \
-            "$out/CrewCheck-Watch-Pulse-signed-release.apk"
+            "$out/CrewCheck-CrewWatch-Official-signed-release.apk"
           cp android-wrapper/wear/build/outputs/bundle/release/wear-release.aab \
-            "$out/CrewCheck-Watch-Pulse-Play-Console.aab"
+            "$out/CrewCheck-CrewWatch-Official-Play-Console.aab"
           cp android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk \
-            "$out/CrewCheck-Pulse-WatchFace-signed-release.apk"
+            "$out/CrewCheck-CrewWatchFace-Official-signed-release.apk"
           cp android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab \
-            "$out/CrewCheck-Pulse-WatchFace-Play-Console.aab"
+            "$out/CrewCheck-CrewWatchFace-Official-Play-Console.aab"
 
           (
             cd "$out"
             sha256sum \
-              CrewCheck-Watch-Pulse-signed-release.apk \
-              CrewCheck-Watch-Pulse-Play-Console.aab \
-              CrewCheck-Pulse-WatchFace-signed-release.apk \
-              CrewCheck-Pulse-WatchFace-Play-Console.aab \
+              CrewCheck-CrewWatch-Official-signed-release.apk \
+              CrewCheck-CrewWatch-Official-Play-Console.aab \
+              CrewCheck-CrewWatchFace-Official-signed-release.apk \
+              CrewCheck-CrewWatchFace-Official-Play-Console.aab \
               > SHA256SUMS.txt
           )
 
       - name: Upload signed wearable release
         uses: actions/upload-artifact@v6
         with:
-          name: crewwatch-pulse-signed-release
+          name: crewwatch-official-signed-release
           if-no-files-found: error
           retention-days: 14
           path: |
-            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-Watch-Pulse-signed-release.apk
-            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-Watch-Pulse-Play-Console.aab
-            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-Pulse-WatchFace-signed-release.apk
-            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-Pulse-WatchFace-Play-Console.aab
+            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatch-Official-signed-release.apk
+            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatch-Official-Play-Console.aab
+            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatchFace-Official-signed-release.apk
+            ${{ runner.temp }}/crewcheck-wear-signed/CrewCheck-CrewWatchFace-Official-Play-Console.aab
             ${{ runner.temp }}/crewcheck-wear-signed/SHA256SUMS.txt
 
       - name: Upload pilot/debug artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: crewwatch-pulse-pilot
+          name: crewwatch-official-pilot
           if-no-files-found: error
           retention-days: 14
           path: |

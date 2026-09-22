@@ -43,7 +43,10 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
                 if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                    if (json != null) new SecureSnapshotStore(this).save(json);
+                    if (json != null) {
+                        WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
+                        WatchNotificationCenter.postForSnapshot(this, snapshot);
+                    }
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
                     if (json != null) new WellbeingStore(this).saveCrewLife(json);
@@ -66,7 +69,9 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
         try {
             if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_SNAPSHOT_BYTES) return;
-                new SecureSnapshotStore(this).save(new String(data, StandardCharsets.UTF_8));
+                WatchContextSnapshot snapshot = new SecureSnapshotStore(this)
+                        .save(new String(data, StandardCharsets.UTF_8));
+                WatchNotificationCenter.postForSnapshot(this, snapshot);
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));

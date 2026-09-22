@@ -29,16 +29,16 @@ assert.doesNotMatch(activity, /text\(LocalTime\.now\(\)\.format\(clockFormatter\
 assert.match(activity, /case "LEAVE_SOON"/, 'leave-by state must be first-class');
 assert.match(activity, /"APRESENTAÇÃO"/, 'reporting state must be first-class');
 assert.match(activity, /"PERNOITE"/, 'overnight state must be first-class');
-assert.match(activity, /isRoundScreen\(\) \? dp\(36\) : dp\(20\)/, 'Galaxy Watch round screen needs hardware-validated horizontal safe inset');
-assert.match(activity, /int topSafe = isRoundScreen\(\) \? dp\(20\) : dp\(10\)/, 'round screen needs top arc safe inset');
-assert.match(activity, /"Abra no celular"/, 'empty state must fit the round screen without awkward CrewCheck word wrapping');
-assert.match(activity, /"SAÍDA INTELIGENTE"/, 'Pulse UI must expose the smart-departure concept from the approved concept board');
-assert.match(activity, /"PRÓXIMA PERNA"/, 'Pulse UI must expose connection/next-leg context');
+assert.match(activity, /isRoundScreen\(\) \? dp\(30\) : dp\(18\)/, 'Galaxy Watch round screen needs hardware-validated horizontal safe inset');
+assert.match(activity, /int topSafe = isRoundScreen\(\) \? dp\(18\) : dp\(10\)/, 'round screen needs top arc safe inset');
+assert.match(activity, /"Conecte ao CrewCheck"/, 'empty state must fit the round screen without awkward CrewCheck word wrapping');
+assert.match(activity, /"HORA DE SAIR"/, 'Pulse UI must expose the smart-departure concept from the approved concept board');
+assert.match(activity, /"CONEXÃO"/, 'Pulse UI must expose connection/next-leg context');
 
 assert.match(gradle, /androidx\.wear:wear:1\.4\.0/, 'stable Wear AndroidX ambient dependency must be pinned');
 assert.match(faceInfo, /<MultipleInstancesAllowed value="false" \/>/, 'pilot face should use a single stable instance');
 assert.match(face, /<Variant mode="AMBIENT"/, 'watch face must explicitly handle ambient mode');
-assert.match(face, /<!\[CDATA\[✈  CrewCheck\]\]>/, 'Pulse face must carry CrewCheck identity');
+assert.match(face, /<!\[CDATA\[CrewCheck\]\]>/, 'Pulse face must carry CrewCheck identity');
 assert.match(face, /format="EEE dd MMM"/, 'Pulse face must show compact date context');
 assert.match(face, /TOQUE PARA ABRIR • ESCALA/, 'watch face must advertise roster re-entry');
 assert.match(face, /#FFEC4899/, 'Pulse face must preserve the magenta accent from the concept board');
@@ -56,4 +56,4 @@ assert.match(watchContext, /route: WatchRouteContext \| null = null/, 'leave-tim
 assert.match(watchContext, /schedule: CrewCheckWatchScheduleItem\[\]/, 'watch payload must include a compact roster projection');
 assert.match(phonePublisher, /copySchedule/, 'phone sanitizer must allow-list roster entries instead of forwarding raw roster data');
 
-console.log('PASS CrewWatch Pulse: concept-board UI, roster-on-watch, live phone sync, portrait lock, ambient support and WFF face contract');
+console.log('PASS CrewWatch Official: premium UI, roster-on-watch, live phone sync, portrait lock, ambient support and WFF face contract');
