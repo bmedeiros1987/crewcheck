@@ -49,6 +49,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentActivity;
+
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -58,8 +63,11 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Locale;
+import java.util.concurrent.Executor;
 
-public class MainActivity extends Activity {
+import javax.crypto.Cipher;
+
+public class MainActivity extends FragmentActivity {
     // CrewCheck v10.8.49 — Reliable Location, Web permissions, Routes/Directions fallback e iFlight compacto.
     private static final int FILE_CHOOSER_REQUEST_CODE = 4242;
     private static final int NATIVE_PDF_PICKER_REQUEST_CODE = 4343;
@@ -90,6 +98,8 @@ public class MainActivity extends Activity {
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
     private CrewCheckBillingBridge billingBridge;
+    private CrewCheckBiometricVault biometricVault;
+    private boolean biometricSessionUnlocked = false;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -129,6 +139,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        biometricVault = new CrewCheckBiometricVault(this);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setStatusBarColor(Color.parseColor("#071D33"));
         getWindow().setNavigationBarColor(Color.parseColor("#071D33"));
@@ -740,6 +751,186 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private String crewCheckBiometricStatusJson() {
+        try {
+            int canAuthenticate = BiometricManager.from(this).canAuthenticate(
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG
+            );
+            JSONObject status = new JSONObject();
+            status.put("available", canAuthenticate == BiometricManager.BIOMETRIC_SUCCESS);
+            status.put("enabled", biometricVault != null && biometricVault.isEnabled());
+            status.put("unlocked", biometricSessionUnlocked);
+            status.put("code", canAuthenticate);
+            return status.toString();
+        } catch (Exception error) {
+            return "{\"available\":false,\"enabled\":false,\"unlocked\":false,\"code\":-1}";
+        }
+    }
+
+    private BiometricPrompt.PromptInfo crewCheckBiometricPromptInfo(String title, String subtitle) {
+        return new BiometricPrompt.PromptInfo.Builder()
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .setNegativeButtonText("Usar senha")
+                .build();
+    }
+
+    private void dispatchCrewCheckBiometricResult(
+            String action,
+            boolean ok,
+            String code,
+            String message,
+            String token
+    ) {
+        try {
+            if (webView == null) return;
+            JSONObject payload = new JSONObject();
+            payload.put("action", action == null ? "" : action);
+            payload.put("ok", ok);
+            payload.put("code", code == null ? "" : code);
+            payload.put("message", message == null ? "" : message);
+            payload.put("enabled", biometricVault != null && biometricVault.isEnabled());
+            payload.put("unlocked", biometricSessionUnlocked);
+            if (token != null && !token.isBlank()) payload.put("token", token);
+            final String js = "(function(){try{var detail=" + payload.toString() + ";" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:biometric-result',{detail:detail}));" +
+                    "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void startCrewCheckBiometricEnrollment(final String token) {
+        try {
+            if (token == null || token.trim().isEmpty()) {
+                dispatchCrewCheckBiometricResult("enable", false, "empty_session", "Sessão ausente.", null);
+                return;
+            }
+            if (biometricVault == null) biometricVault = new CrewCheckBiometricVault(this);
+            int available = BiometricManager.from(this).canAuthenticate(
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG
+            );
+            if (available != BiometricManager.BIOMETRIC_SUCCESS) {
+                dispatchCrewCheckBiometricResult("enable", false, "biometric_unavailable", "Biometria forte indisponível neste aparelho.", null);
+                return;
+            }
+
+            final Cipher cipher = biometricVault.prepareEnrollmentCipher();
+            Executor executor = ContextCompat.getMainExecutor(this);
+            BiometricPrompt prompt = new BiometricPrompt(
+                    this,
+                    executor,
+                    new BiometricPrompt.AuthenticationCallback() {
+                        @Override
+                        public void onAuthenticationError(int errorCode, CharSequence errString) {
+                            super.onAuthenticationError(errorCode, errString);
+                            String code = errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                                    || errorCode == BiometricPrompt.ERROR_USER_CANCELED
+                                    || errorCode == BiometricPrompt.ERROR_CANCELED
+                                    ? "cancelled" : "auth_error";
+                            dispatchCrewCheckBiometricResult("enable", false, code, String.valueOf(errString), null);
+                        }
+
+                        @Override
+                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                            super.onAuthenticationSucceeded(result);
+                            try {
+                                Cipher authenticated = result.getCryptoObject() == null
+                                        ? null
+                                        : result.getCryptoObject().getCipher();
+                                biometricVault.storeToken(token, authenticated);
+                                biometricSessionUnlocked = true;
+                                dispatchCrewCheckBiometricResult("enable", true, "enabled", "Biometria ativada neste celular.", null);
+                            } catch (Exception error) {
+                                dispatchCrewCheckBiometricResult("enable", false, "vault_error", "Não foi possível proteger a sessão.", null);
+                            }
+                        }
+                    }
+            );
+            prompt.authenticate(
+                    crewCheckBiometricPromptInfo(
+                            "Ativar acesso biométrico",
+                            "Confirme sua biometria para proteger o acesso ao CrewCheck neste celular."
+                    ),
+                    new BiometricPrompt.CryptoObject(cipher)
+            );
+        } catch (Exception error) {
+            dispatchCrewCheckBiometricResult("enable", false, "setup_error", "Não foi possível preparar a biometria.", null);
+        }
+    }
+
+    private void startCrewCheckBiometricUnlock() {
+        try {
+            if (biometricVault == null) biometricVault = new CrewCheckBiometricVault(this);
+            if (!biometricVault.isEnabled()) {
+                dispatchCrewCheckBiometricResult("unlock", false, "not_enabled", "Biometria não ativada.", null);
+                return;
+            }
+            int available = BiometricManager.from(this).canAuthenticate(
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG
+            );
+            if (available != BiometricManager.BIOMETRIC_SUCCESS) {
+                dispatchCrewCheckBiometricResult("unlock", false, "biometric_unavailable", "Biometria forte indisponível neste aparelho.", null);
+                return;
+            }
+
+            final Cipher cipher = biometricVault.prepareUnlockCipher();
+            Executor executor = ContextCompat.getMainExecutor(this);
+            BiometricPrompt prompt = new BiometricPrompt(
+                    this,
+                    executor,
+                    new BiometricPrompt.AuthenticationCallback() {
+                        @Override
+                        public void onAuthenticationError(int errorCode, CharSequence errString) {
+                            super.onAuthenticationError(errorCode, errString);
+                            String code = errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                                    || errorCode == BiometricPrompt.ERROR_USER_CANCELED
+                                    || errorCode == BiometricPrompt.ERROR_CANCELED
+                                    ? "cancelled" : "auth_error";
+                            dispatchCrewCheckBiometricResult("unlock", false, code, String.valueOf(errString), null);
+                        }
+
+                        @Override
+                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                            super.onAuthenticationSucceeded(result);
+                            try {
+                                Cipher authenticated = result.getCryptoObject() == null
+                                        ? null
+                                        : result.getCryptoObject().getCipher();
+                                String token = biometricVault.readToken(authenticated);
+                                biometricSessionUnlocked = true;
+                                dispatchCrewCheckBiometricResult("unlock", true, "unlocked", "CrewCheck desbloqueado.", token);
+                            } catch (Exception error) {
+                                biometricVault.clear();
+                                biometricSessionUnlocked = false;
+                                dispatchCrewCheckBiometricResult("unlock", false, "credential_invalidated", "A credencial biométrica precisa ser configurada novamente.", null);
+                            }
+                        }
+                    }
+            );
+            prompt.authenticate(
+                    crewCheckBiometricPromptInfo(
+                            "Desbloquear CrewCheck",
+                            "Use a biometria cadastrada neste celular."
+                    ),
+                    new BiometricPrompt.CryptoObject(cipher)
+            );
+        } catch (Exception error) {
+            if (biometricVault != null) biometricVault.clear();
+            biometricSessionUnlocked = false;
+            dispatchCrewCheckBiometricResult("unlock", false, "credential_invalidated", "A credencial biométrica precisa ser configurada novamente.", null);
+        }
+    }
+
+    private void disableCrewCheckBiometric() {
+        if (biometricVault == null) biometricVault = new CrewCheckBiometricVault(this);
+        biometricVault.clear();
+        biometricSessionUnlocked = false;
+        dispatchCrewCheckBiometricResult("disable", true, "disabled", "Biometria desativada neste celular.", null);
+    }
+
     public class CrewCheckNativeBridge {
         @JavascriptInterface
         public boolean openExternal(final String url) {
@@ -792,6 +983,29 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String permissionStatus() {
             return crewCheckPermissionStatusJson();
+        }
+
+        @JavascriptInterface
+        public String biometricStatus() {
+            return crewCheckBiometricStatusJson();
+        }
+
+        @JavascriptInterface
+        public boolean enableBiometric(final String token) {
+            runOnUiThread(() -> startCrewCheckBiometricEnrollment(token));
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean unlockBiometric() {
+            runOnUiThread(() -> startCrewCheckBiometricUnlock());
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean disableBiometric() {
+            runOnUiThread(() -> disableCrewCheckBiometric());
+            return true;
         }
 
         @JavascriptInterface
