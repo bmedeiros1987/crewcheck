@@ -170,6 +170,7 @@ await import('../p0-530-adjacent-month-retention/apply.mjs');
 await import('../p0-691-care-context/apply.mjs');
 await import('../p0-623-regulatory-history-carry-in-final/apply.mjs');
 await import('../p0-623-regulatory-history-carry-in-final/review-hardening.mjs');
-await import('../p2-738-vacation-work-first/apply.mjs');\nawait import('../p1-744-web-roster-footer-parity/apply.mjs');
+await import('../p2-738-vacation-work-first/apply.mjs');
+await import('../p1-744-web-roster-footer-parity/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../ci/sync-canonical-manual.mjs');
