@@ -1,0 +1,126 @@
+name: CrewWatch premium consolidated
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/wear/**'
+      - 'android-wrapper/watchface/**'
+      - 'android-wrapper/app/**'
+      - 'client/src/components/v1434/CrewCheckLifeView.tsx'
+      - 'android-wrapper/settings.gradle'
+      - 'scripts/regression-crewwatch-premium-consolidated.mjs'
+      - '.github/workflows/crewwatch-premium-consolidated.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+
+      - name: Premium consolidated regression
+        run: node scripts/regression-crewwatch-premium-consolidated.mjs
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Build web
+        run: npx vite build
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+
+      - name: Decode signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KEYSTORE_BASE64:-}"
+          test -n "${STORE_PASSWORD:-}"
+          test -n "${KEY_ALIAS:-}"
+          test -n "${KEY_PASSWORD:-}"
+          encoded="${KEYSTORE_BASE64#base64:}"
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          chmod 600 "$CREWCHECK_STORE_FILE"
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+      - name: Unit tests
+        run: gradle -p android-wrapper :wear:testDebugUnitTest
+
+      - name: Build signed mobile + watch + face
+        working-directory: android-wrapper
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: |
+          gradle --no-daemon --console=plain             :app:assembleRelease             :wear:assembleRelease             :watchface:assembleRelease
+
+      - name: Lint Wear
+        run: gradle -p android-wrapper :wear:lintDebug
+
+      - name: Verify and stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          mobile='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          watch='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
+          face='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
+          for apk in "$mobile" "$watch" "$face"; do
+            test -s "$apk"
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+          done
+          out="$RUNNER_TEMP/crewwatch-premium"
+          mkdir -p "$out"
+          cp "$mobile" "$out/CrewCheck-Mobile-PremiumWatch-signed.apk"
+          cp "$watch" "$out/CrewCheck-CrewWatch-Premium-signed.apk"
+          cp "$face" "$out/CrewCheck-WatchFace-Premium-signed.apk"
+          (cd "$out" && sha256sum *.apk > SHA256SUMS.txt)
+
+      - name: Upload signed pilot
+        uses: actions/upload-artifact@v6
+        with:
+          name: crewwatch-premium-consolidated-signed
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/crewwatch-premium/*.apk
+            ${{ runner.temp }}/crewwatch-premium/SHA256SUMS.txt
