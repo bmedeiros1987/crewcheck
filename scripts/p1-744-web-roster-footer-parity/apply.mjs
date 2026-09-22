@@ -55,23 +55,23 @@ const helper = `function webNonFlightSubtitleV14744(
   } as Record<string, string>)[code] || code || 'Programação';
   const cleanClock = (value: unknown) => {
     const match = String(value || '').match(/(\\d{1,2}):(\\d{2})/);
-    return match ? \`${String(Number(match[1])).padStart(2, '0')}:${match[2]}\` : '';
+    return match ? String(Number(match[1])).padStart(2, '0') + ':' + match[2] : '';
   };
   const start = cleanClock((day as any)?.dutyReport || event.presentation || event.departure);
   const end = cleanClock((day as any)?.dutyDebrief || event.arrival);
-  const range = start && end ? \`${start} → ${end}\` : start ? \`Início ${start}\` : end ? \`Fim ${end}\` : '';
+  const range = start && end ? start + ' → ' + end : start ? 'Início ' + start : end ? 'Fim ' + end : '';
   const safeBase = String(base || '').trim().toUpperCase() || '—';
 
   if (['VC', 'FERIAS', 'DO', 'DOF', 'DOP', 'DOPR', 'DR', 'OFF', 'FOLGA'].includes(code)) {
-    return \`${label} · Sem programação operacional · Base ${safeBase}\`;
+    return label + ' · Sem programação operacional · Base ' + safeBase;
   }
   if (['REST', 'REPOUSO', 'DESCANSO'].includes(code)) {
-    return \`${label}${range ? \` · ${range}\` : ''} · Base ${safeBase}\`;
+    return label + (range ? ' · ' + range : '') + ' · Base ' + safeBase;
   }
   if (['HSB', 'SA', 'ASB', 'RES', 'RSV', 'EAD'].includes(code)) {
-    return \`${label}${range ? \` · ${range}\` : ''} · Base ${safeBase}\`;
+    return label + (range ? ' · ' + range : '') + ' · Base ' + safeBase;
   }
-  return \`${label}${range ? \` · ${range}\` : ''} · Base ${safeBase}\`;
+  return label + (range ? ' · ' + range : '') + ' · Base ' + safeBase;
 }`;
 
 home = insertBefore(home, 'function buildLegs(roster: CrewRoster): ZeroLeg[] {', helper, 'structured Web non-flight subtitle helper');
