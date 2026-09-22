@@ -56,8 +56,10 @@ const vacationText = helper({
 assert.equal(vacationText, 'Férias · Sem programação operacional · Base BSB');
 
 // Desktop Web must keep the same five-destination footer visible.
-const desktopBlock = desktopCss.match(/@media \(pointer: fine\) and \(min-width: 901px\)\s*\{[\s\S]*?\n\}/)?.[0] || '';
-assert.ok(desktopBlock, 'desktop pointer:fine media block missing');
+const desktopStart = desktopCss.indexOf('@media (pointer: fine) and (min-width: 901px)');
+assert.ok(desktopStart >= 0, 'desktop pointer:fine media block missing');
+const nextMedia = desktopCss.indexOf('\n@media ', desktopStart + 1);
+const desktopBlock = desktopCss.slice(desktopStart, nextMedia >= 0 ? nextMedia : desktopCss.length);
 assert.doesNotMatch(desktopBlock, /\.cz-bottom-nav\s*\{[\s\S]*?display:\s*none\s*!important/, 'desktop Web must not hide bottom navigation');
 assert.doesNotMatch(desktopBlock, /\.cz-bottom-nav\s*\{[\s\S]*?visibility:\s*hidden\s*!important/, 'desktop Web must not make bottom navigation invisible');
 assert.match(desktopBlock, /padding-bottom:\s*calc\([^;]*1(?:2[0-9]|[3-9][0-9]{2})px/, 'desktop Web must reserve footer space');
