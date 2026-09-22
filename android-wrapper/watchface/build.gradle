@@ -36,8 +36,8 @@ android {
         applicationId 'com.crewcheck.watch.app'
         minSdk 33
         targetSdk 36
-        versionCode 140385
-        versionName '1.3.1-official'
+        versionCode 144092
+        versionName '14.4.09-watchface'
     }
 
     signingConfigs {
@@ -70,3 +70,5 @@ android {
 }
 
 preBuild.dependsOn generateCrewWatchFaceBrandAssets
+
+apply from: rootProject.file('store-policy.gradle')

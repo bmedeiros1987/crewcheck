@@ -31,8 +31,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 26
         targetSdk 36
-        versionCode 140387
-        versionName "14.3.87"
+        versionCode 144090
+        versionName '14.4.09'
     }
 
     sourceSets {
@@ -91,3 +91,5 @@ dependencies {
     implementation "com.android.billingclient:billing:$billing_version"
     implementation 'com.google.android.gms:play-services-wearable:20.0.1'
 }
+
+apply from: rootProject.file('store-policy.gradle')

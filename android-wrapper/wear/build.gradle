@@ -36,8 +36,8 @@ android {
         applicationId 'com.crewcheck.app'
         minSdk 30
         targetSdk 36
-        versionCode 140388
-        versionName '14.3.88-crewwatch-official'
+        versionCode 144091
+        versionName '14.4.09-wear'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
@@ -96,3 +96,5 @@ dependencies {
 }
 
 preBuild.dependsOn generateCrewWatchBrandAssets
+
+apply from: rootProject.file('store-policy.gradle')
