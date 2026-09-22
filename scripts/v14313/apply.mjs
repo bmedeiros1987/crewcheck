@@ -21,9 +21,25 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   }
 
   if (!next.includes('ingestHealthSummary(detail);')) {
-    const anchor = '      if (detail.ok) writeStored(KEYS.nativeSummary, detail);';
-    if (!next.includes(anchor)) throw new Error('[v14313] Âncora do resumo nativo não encontrada.');
-    next = next.replace(anchor, `      if (detail.ok) {\n        writeStored(KEYS.nativeSummary, detail);\n        ingestHealthSummary(detail);\n      }`);
+    const compactAnchor = '      if (detail.ok) writeStored(KEYS.nativeSummary, detail);';
+    const watchAnchor = `      if (detail.ok) {
+        writeStored(KEYS.nativeSummary, detail);
+        window.setTimeout(() => publishCrewLifeWatchSnapshot(), 0);
+      }`;
+    if (next.includes(watchAnchor)) {
+      next = next.replace(watchAnchor, `      if (detail.ok) {
+        writeStored(KEYS.nativeSummary, detail);
+        ingestHealthSummary(detail);
+        window.setTimeout(() => publishCrewLifeWatchSnapshot(), 0);
+      }`);
+    } else if (next.includes(compactAnchor)) {
+      next = next.replace(compactAnchor, `      if (detail.ok) {
+        writeStored(KEYS.nativeSummary, detail);
+        ingestHealthSummary(detail);
+      }`);
+    } else {
+      throw new Error('[v14313] Âncora do resumo nativo não encontrada.');
+    }
   }
 
   if (!next.includes('saveLifeGoals(safe);')) {

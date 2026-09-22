@@ -60,6 +60,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Locale;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class MainActivity extends Activity {
     // CrewCheck v10.8.49 — Reliable Location, Web permissions, Routes/Directions fallback e iFlight compacto.
@@ -665,7 +667,7 @@ public class MainActivity extends Activity {
                 "try{AndroidCrewCheckIFlight.openPortalAndImport(String(url),JSON.stringify(options||{}),id);}catch(e){resolve({ok:false,error:String(e&&e.message||e)});}" +
                 "});" +
                 "}};" +
-                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},syncCrewLifeSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncCrewLifeSnapshot(String(raw));}catch(e){return false;}},revokeCrewLifeWatch:function(){try{return AndroidCrewCheckNative.revokeCrewLifeWatch();}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
                 "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener(\'crewcheck:watch-snapshot\',function(event){try{window.CrewCheckNative.syncWatchSnapshot(event&&event.detail?event.detail:{});}catch(e){}});}" +
                 "window.CrewCheckPremium=window.CrewCheckNative;" +
                 "try{window.dispatchEvent(new CustomEvent('crewcheck:native-ready',{detail:window.CrewCheckNative.permissionStatus()}));}catch(e){}" +
@@ -842,6 +844,63 @@ public class MainActivity extends Activity {
             CrewCheckWatchPublisher.publish(
                     MainActivity.this,
                     snapshotJson,
+                    MainActivity.this::dispatchCrewCheckWatchSyncResult
+            );
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean syncCrewLifeSnapshot(final String snapshotJson) {
+            try {
+                if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
+                    dispatchCrewCheckWatchSyncResult(false, "invalid_crewlife", "CrewLife vazio.");
+                    return false;
+                }
+                JSONObject source = new JSONObject(snapshotJson);
+                if (!"1.0".equals(source.optString("consentVersion", ""))
+                        || !source.optBoolean("consentAccepted", false)) {
+                    CrewLifeWatchPublisher.revoke(
+                            MainActivity.this,
+                            MainActivity.this::dispatchCrewCheckWatchSyncResult
+                    );
+                    return false;
+                }
+
+                Set<String> categories = new LinkedHashSet<>();
+                if (source.has("recoveryScore") || source.has("recoveryLabel")) {
+                    categories.add(WatchHealthConsent.CATEGORY_RECOVERY);
+                }
+                if (source.has("sleepMinutes") || source.has("sleepLabel")) {
+                    categories.add(WatchHealthConsent.CATEGORY_SLEEP);
+                }
+                if (source.has("steps") || source.has("activeMinutes")) {
+                    categories.add(WatchHealthConsent.CATEGORY_ACTIVITY);
+                }
+                if (source.has("restingHeartRate") || source.has("hrvMs")) {
+                    categories.add(WatchHealthConsent.CATEGORY_HEART);
+                }
+                if (categories.isEmpty()) {
+                    dispatchCrewCheckWatchSyncResult(false, "crewlife_no_metrics", "CrewLife ativo, mas sem resumo agregado para o relógio.");
+                    return false;
+                }
+
+                WatchHealthConsent.grant(MainActivity.this, "1.0", categories);
+                CrewLifeWatchPublisher.publishCrewLife(
+                        MainActivity.this,
+                        snapshotJson,
+                        MainActivity.this::dispatchCrewCheckWatchSyncResult
+                );
+                return true;
+            } catch (Exception error) {
+                dispatchCrewCheckWatchSyncResult(false, "invalid_crewlife", error.getMessage() == null ? "CrewLife inválido." : error.getMessage());
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean revokeCrewLifeWatch() {
+            CrewLifeWatchPublisher.revoke(
+                    MainActivity.this,
                     MainActivity.this::dispatchCrewCheckWatchSyncResult
             );
             return true;

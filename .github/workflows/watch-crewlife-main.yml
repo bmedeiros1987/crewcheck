@@ -1,0 +1,126 @@
+name: CrewCheck Watch CrewLife main bridge
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/app/**'
+      - 'client/src/lib/watchCrewLife.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1434/CrewCheckLifeView.tsx'
+      - 'scripts/regression-watch-crewlife-main.mjs'
+      - '.github/workflows/watch-crewlife-main.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crewlife-watch-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+
+      - name: Validate CrewLife watch contract
+        run: node scripts/regression-watch-crewlife-main.mjs
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Build web
+        run: npx vite build
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+
+      - name: CrewLife publisher JVM tests
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:testDebugUnitTest
+
+      - name: Compile Android companion
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+
+      - name: Validate signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KEYSTORE_BASE64:-}"
+          test -n "${STORE_PASSWORD:-}"
+          test -n "${KEY_ALIAS:-}"
+          test -n "${KEY_PASSWORD:-}"
+
+      - name: Decode upload keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded="${KEYSTORE_BASE64#base64:}"
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          test -s "$CREWCHECK_STORE_FILE"
+          chmod 600 "$CREWCHECK_STORE_FILE"
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+      - name: Build signed CrewLife Watch mobile APK
+        working-directory: android-wrapper
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: gradle --no-daemon --console=plain :app:assembleRelease
+
+      - name: Verify and stage signed mobile APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          test -s "$apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs "$apk"
+          mkdir -p "$RUNNER_TEMP/crewcheck-watch-crewlife"
+          cp "$apk" "$RUNNER_TEMP/crewcheck-watch-crewlife/CrewCheck-Mobile-CrewLifeWatch-signed.apk"
+          (cd "$RUNNER_TEMP/crewcheck-watch-crewlife" && sha256sum CrewCheck-Mobile-CrewLifeWatch-signed.apk > SHA256SUMS.txt)
+
+      - name: Upload signed mobile APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-Mobile-CrewLifeWatch-signed
+          path: |
+            ${{ runner.temp }}/crewcheck-watch-crewlife/CrewCheck-Mobile-CrewLifeWatch-signed.apk
+            ${{ runner.temp }}/crewcheck-watch-crewlife/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -82,6 +82,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { publishCrewLifeWatchSnapshot } from '@/lib/watchCrewLife';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
@@ -4646,16 +4647,20 @@ export default function Home() {
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
       }
+      try { publishCrewLifeWatchSnapshot(); } catch {}
     };
 
     publishWatchSnapshot();
     const onRequest = () => publishWatchSnapshot();
+    const onHealthSummary = () => publishCrewLifeWatchSnapshot();
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
+    window.addEventListener('crewcheck:health-summary', onHealthSummary);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
+      window.removeEventListener('crewcheck:health-summary', onHealthSummary);
       window.clearInterval(timer);
     };
   }, [events, event.id, event.presentation, event.gate, event.status]);
