@@ -166,6 +166,7 @@ public class MainActivity extends Activity {
                 if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
+                view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
             }
 
             @Override
@@ -659,7 +660,8 @@ public class MainActivity extends Activity {
                 "try{AndroidCrewCheckIFlight.openPortalAndImport(String(url),JSON.stringify(options||{}),id);}catch(e){resolve({ok:false,error:String(e&&e.message||e)});}" +
                 "});" +
                 "}};" +
-                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener(\'crewcheck:watch-snapshot\',function(event){try{window.CrewCheckNative.syncWatchSnapshot(event&&event.detail?event.detail:{});}catch(e){}});}" +
                 "window.CrewCheckPremium=window.CrewCheckNative;" +
                 "try{window.dispatchEvent(new CustomEvent('crewcheck:native-ready',{detail:window.CrewCheckNative.permissionStatus()}));}catch(e){}" +
                 "})();";
@@ -707,6 +709,35 @@ public class MainActivity extends Activity {
                 startActivity(intent);
             } catch (Exception ignored) {}
         }
+    }
+
+    private void requestCrewCheckWatchSnapshotFromWeb(String reason) {
+        try {
+            if (webView == null) return;
+            String safeReason = reason == null ? "native-request" : reason.replace("'", "");
+            final String js = "(function(){try{window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot-request',{detail:{reason:'" + safeReason + "'}}));}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchCrewCheckWatchSyncResult(boolean ok, String code, String message) {
+        try {
+            if (webView == null) return;
+            JSONObject payload = new JSONObject();
+            payload.put("ok", ok);
+            payload.put("code", code == null ? "" : code);
+            payload.put("message", message == null ? "" : message);
+            payload.put("at", System.currentTimeMillis());
+            final String js = "(function(){try{var detail=" + payload.toString() + ";" +
+                    "window.__crewcheckLastWatchSync=detail;" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:watch-sync-result',{detail:detail}));" +
+                    "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
     }
 
     public class CrewCheckNativeBridge {
@@ -761,6 +792,31 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String permissionStatus() {
             return crewCheckPermissionStatusJson();
+        }
+
+        @JavascriptInterface
+        public boolean watchSyncAvailable() {
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean syncWatchSnapshot(final String snapshotJson) {
+            if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
+                dispatchCrewCheckWatchSyncResult(false, "invalid_snapshot", "Snapshot vazio.");
+                return false;
+            }
+            CrewCheckWatchPublisher.publish(
+                    MainActivity.this,
+                    snapshotJson,
+                    MainActivity.this::dispatchCrewCheckWatchSyncResult
+            );
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean requestWatchSnapshot() {
+            requestCrewCheckWatchSnapshotFromWeb("watch-request");
+            return true;
         }
 
         @JavascriptInterface
