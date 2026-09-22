@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -80,6 +81,8 @@ public final class MainActivity extends FragmentActivity
     private TextView transientStatus;
     private boolean ambient;
     private int screenMode = MODE_NOW;
+    private float touchDownX;
+    private float touchDownY;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -164,6 +167,21 @@ public final class MainActivity extends FragmentActivity
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOnTouchListener((view, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                touchDownX = event.getX();
+                touchDownY = event.getY();
+            } else if (event.getAction() == MotionEvent.ACTION_UP) {
+                float dx = event.getX() - touchDownX;
+                float dy = event.getY() - touchDownY;
+                if (Math.abs(dx) > dp(52) && Math.abs(dx) > Math.abs(dy) * 1.25f) {
+                    if (dx < 0) screenMode = (screenMode + 1) % 4;
+                    else screenMode = (screenMode + 3) % 4;
+                    renderSnapshot();
+                }
+            }
+            return false;
+        });
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -242,36 +260,32 @@ public final class MainActivity extends FragmentActivity
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.crewcheck_official);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        row.addView(logo, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        row.addView(logo, new LinearLayout.LayoutParams(dp(24), dp(24)));
 
-        TextView brand = text("CrewCheck", 11, WHITE, true, Gravity.START);
-        brand.setPadding(dp(6), 0, 0, 0);
-        row.addView(brand, new LinearLayout.LayoutParams(0, dp(26), 1f));
+        TextView brand = text("CrewCheck", 14, WHITE, true, Gravity.START);
+        brand.setPadding(dp(7), 0, 0, 0);
+        row.addView(brand, new LinearLayout.LayoutParams(0, dp(28), 1f));
 
         int count = alertCount(snapshot);
-        if (count > 0) {
-            TextView badge = text(String.valueOf(count), 8, WHITE, true, Gravity.CENTER);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(MAGENTA);
-            bg.setShape(GradientDrawable.OVAL);
-            badge.setBackground(bg);
-            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20), dp(20));
-            bp.setMargins(0, 0, dp(4), 0);
-            row.addView(badge, bp);
-            badge.setOnClickListener(view -> {
-                screenMode = MODE_NOTIFICATIONS;
-                renderSnapshot();
-            });
-        }
-
-        clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
-        row.addView(clockView, new LinearLayout.LayoutParams(dp(52), dp(26)));
+        TextView bell = text(count > 0 ? "♢ " + count : "♢", 11,
+                count > 0 ? MAGENTA : MUTED, true, Gravity.CENTER);
+        GradientDrawable bellBg = new GradientDrawable();
+        bellBg.setColor(count > 0 ? withAlpha(MAGENTA, 28) : withAlpha(SURFACE_ALT, 220));
+        bellBg.setCornerRadius(dp(18));
+        bellBg.setStroke(dp(1), withAlpha(count > 0 ? MAGENTA : BLUE, 115));
+        bell.setBackground(bellBg);
+        bell.setPadding(dp(8), dp(4), dp(8), dp(4));
+        bell.setOnClickListener(view -> {
+            screenMode = MODE_NOTIFICATIONS;
+            renderSnapshot();
+        });
+        row.addView(bell);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(28)
+                dp(32)
         );
-        params.setMargins(dp(2), 0, dp(2), dp(6));
+        params.setMargins(dp(2), 0, dp(2), dp(5));
         content.addView(row, params);
     }
 
@@ -341,90 +355,181 @@ public final class MainActivity extends FragmentActivity
         Primary primary = primaryFor(snapshot);
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 
-        View glow = new View(this);
-        GradientDrawable glowBg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(CYAN, 20), withAlpha(VIOLET, 45), withAlpha(MAGENTA, 20)}
-        );
-        glowBg.setCornerRadius(dp(28));
-        glow.setBackground(glowBg);
-        content.addView(glow, new LinearLayout.LayoutParams(dp(118), dp(3)));
-
-        TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
-        icon.setPadding(0, dp(8), 0, dp(2));
-        content.addView(icon);
-
-        TextView eyebrow = text(
-                stale ? "DADOS ANTIGOS" : primary.eyebrow,
-                9, accent, true, Gravity.CENTER
-        );
-        eyebrow.setLetterSpacing(.08f);
-        content.addView(eyebrow);
-
-        TextView value = text(
-                stale ? "Confira no celular" : primary.value,
-                stale ? 19 : (primary.value.length() > 14 ? 23 : 32),
-                WHITE, true, Gravity.CENTER
-        );
-        value.setMaxLines(2);
-        value.setPadding(0, dp(3), 0, 0);
-        content.addView(value);
-
-        if (!primary.detail.isBlank()) {
-            TextView detail = text(primary.detail, 11, stale ? WARNING : WHITE,
-                    false, Gravity.CENTER);
-            detail.setMaxLines(2);
-            detail.setPadding(0, dp(4), 0, 0);
-            content.addView(detail);
-        }
-
-        if (!primary.secondary.isBlank()) {
-            TextView secondary = text(primary.secondary, 9, MUTED, false, Gravity.CENTER);
-            secondary.setPadding(0, dp(4), 0, dp(5));
-            secondary.setMaxLines(2);
-            content.addView(secondary);
-        }
-
-        List<Fact> facts = secondaryFacts(snapshot);
-        if (!facts.isEmpty()) {
-            LinearLayout stats = new LinearLayout(this);
-            stats.setOrientation(LinearLayout.HORIZONTAL);
-            stats.setGravity(Gravity.CENTER);
-            addMiniStat(stats, facts.get(0));
-            if (facts.size() > 1) addMiniStat(stats, facts.get(1));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            params.setMargins(0, dp(6), 0, dp(2));
-            content.addView(stats, params);
-        }
-
-        TextView cta = heroAction(actionLabel(snapshot), accent);
-        cta.setOnClickListener(view -> {
-            if ("LEAVE_SOON".equals(snapshot.state)) requestSync();
-            else {
-                screenMode = MODE_SCHEDULE;
+        CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
+        if (life != null && !life.isStale(now)) {
+            TextView lifeChip = actionChip("⌁ CrewLife  opcional", SUCCESS, false);
+            lifeChip.setOnClickListener(view -> {
+                screenMode = MODE_CREWLIFE;
                 renderSnapshot();
-            }
-        });
-        content.addView(cta);
+            });
+            content.addView(lifeChip);
+        }
 
-        TextView freshness = text(snapshot.statusLabel(now), 8,
+        LinearLayout hero = premiumCard(accent);
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        hero.setPadding(dp(12), dp(10), dp(12), dp(11));
+
+        TextView stateIcon = text(stateGlyph(snapshot.state), 18, accent, true, Gravity.CENTER);
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.OVAL);
+        iconBg.setColor(withAlpha(accent, 24));
+        iconBg.setStroke(dp(1), withAlpha(accent, 190));
+        stateIcon.setBackground(iconBg);
+        stateIcon.setGravity(Gravity.CENTER);
+        hero.addView(stateIcon, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        String heroLabel;
+        String heroValue;
+        String heroDetail;
+        switch (snapshot.state) {
+            case "LEAVE_SOON" -> {
+                heroLabel = "Saia às";
+                heroValue = firstNonBlank(snapshot.leaveTime, primary.value);
+                heroDetail = firstNonBlank(snapshot.trafficDetail, primary.detail);
+            }
+            case "IN_FLIGHT" -> {
+                heroLabel = "Voo atual";
+                heroValue = firstNonBlank(snapshot.currentFlight, primary.value);
+                heroDetail = firstNonBlank(snapshot.currentRoute, primary.detail);
+            }
+            case "CONNECTION" -> {
+                heroLabel = "Próxima perna";
+                heroValue = firstNonBlank(snapshot.nextFlight, primary.value);
+                heroDetail = firstNonBlank(snapshot.nextDetail, snapshot.connection, primary.detail);
+            }
+            case "OVERNIGHT" -> {
+                heroLabel = "Pernoite";
+                heroValue = firstNonBlank(snapshot.overnight, primary.value);
+                heroDetail = firstNonBlank(snapshot.hotelPickup, primary.detail);
+            }
+            case "BOARDING" -> {
+                heroLabel = "Embarque";
+                heroValue = firstNonBlank(snapshot.boardingTime, snapshot.primaryTime, primary.value);
+                heroDetail = firstNonBlank(flightLine(snapshot), primary.detail);
+            }
+            default -> {
+                heroLabel = stale ? "Dados antigos" : "Apresentação";
+                heroValue = stale ? "Confira no celular" : firstNonBlank(snapshot.presentationTime, primary.value);
+                heroDetail = firstNonBlank(snapshot.presentationPlace, flightLine(snapshot), primary.detail);
+            }
+        }
+
+        TextView label = text(heroLabel, 15, stale ? WARNING : WHITE, false, Gravity.CENTER);
+        label.setPadding(0, dp(6), 0, 0);
+        hero.addView(label);
+
+        TextView value = text(heroValue, heroValue.length() > 10 ? 31 : 42,
+                WHITE, true, Gravity.CENTER);
+        value.setMaxLines(2);
+        hero.addView(value);
+
+        if (!heroDetail.isBlank()) {
+            TextView detail = text(heroDetail, 11, accent, true, Gravity.CENTER);
+            detail.setMaxLines(2);
+            detail.setPadding(0, dp(2), 0, dp(5));
+            hero.addView(detail);
+        }
+
+        if ("LEAVE_SOON".equals(snapshot.state) || "REPORTING".equals(snapshot.state)) {
+            LinearLayout sub = premiumCard(BLUE);
+            sub.setOrientation(LinearLayout.HORIZONTAL);
+            sub.setGravity(Gravity.CENTER_VERTICAL);
+            sub.setPadding(dp(10), dp(7), dp(10), dp(7));
+
+            TextView cal = text("□", 18, BLUE, true, Gravity.CENTER);
+            sub.addView(cal, new LinearLayout.LayoutParams(dp(42), dp(42)));
+
+            LinearLayout copy = new LinearLayout(this);
+            copy.setOrientation(LinearLayout.VERTICAL);
+            TextView p1 = text("Apresentação", 9, MUTED, false, Gravity.START);
+            TextView p2 = text(firstNonBlank(snapshot.presentationTime, "--"), 18, WHITE, true, Gravity.START);
+            TextView p3 = text(firstNonBlank(snapshot.presentationPlace, snapshot.currentRoute), 9, MUTED, false, Gravity.START);
+            copy.addView(p1); copy.addView(p2); copy.addView(p3);
+            sub.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            hero.addView(sub, cardParams());
+        } else {
+            List<Fact> facts = secondaryFacts(snapshot);
+            if (!facts.isEmpty()) {
+                LinearLayout stats = new LinearLayout(this);
+                stats.setOrientation(LinearLayout.HORIZONTAL);
+                stats.setGravity(Gravity.CENTER);
+                addMiniStat(stats, facts.get(0));
+                if (facts.size() > 1) addMiniStat(stats, facts.get(1));
+                hero.addView(stats, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                ));
+            }
+        }
+
+        content.addView(hero, cardParams());
+
+        if (life != null && !life.isStale(now)) {
+            String wellbeing = life.recoveryScore > 0
+                    ? "CrewLife • " + life.recoveryScore + "%"
+                    : "CrewLife • bem-estar ativo";
+            TextView wellbeingChip = actionChip("♡ " + wellbeing, MAGENTA, false);
+            wellbeingChip.setOnClickListener(view -> {
+                screenMode = MODE_CREWLIFE;
+                renderSnapshot();
+            });
+            content.addView(wellbeingChip);
+        }
+
+        TextView freshness = text(snapshot.statusLabel(now), 7,
                 stale ? WARNING : MUTED, false, Gravity.CENTER);
-        freshness.setPadding(0, dp(5), 0, 0);
+        freshness.setPadding(0, dp(3), 0, 0);
         content.addView(freshness);
     }
 
     private void renderNotifications(WatchContextSnapshot snapshot, long now) {
-        TextView title = text("NOTIFICAÇÕES", 10, CYAN, true, Gravity.CENTER);
-        title.setLetterSpacing(.08f);
-        title.setPadding(0, dp(4), 0, dp(5));
+        TextView icon = text("♢", 22, BLUE, true, Gravity.CENTER);
+        icon.setPadding(0, dp(1), 0, 0);
+        content.addView(icon);
+
+        TextView title = text("Notificações", 18, WHITE, true, Gravity.CENTER);
+        title.setPadding(0, 0, 0, dp(7));
         content.addView(title);
 
+        if (!notificationPermissionGranted()) {
+            LinearLayout warning = premiumCard(WARNING);
+            TextView copy = text(
+                    "Permita notificações para receber hora de sair, mudança de portão, embarque e conexão.",
+                    9, WHITE, false, Gravity.CENTER
+            );
+            copy.setMaxLines(4);
+            warning.addView(copy);
+            TextView allow = actionChip("Permitir no relógio", WARNING, false);
+            allow.setOnClickListener(view -> requestNotificationPermissionIfNeeded());
+            warning.addView(allow);
+            content.addView(warning, cardParams());
+        }
+
+        List<NotificationItem> items = currentNotifications(snapshot, now);
+        if (items.isEmpty()) {
+            LinearLayout emptyCard = premiumCard(BLUE);
+            TextView empty = text("Nada urgente agora", 16, WHITE, true, Gravity.CENTER);
+            TextView detail = text(
+                    "O CrewCheck só chama sua atenção quando houver algo relevante para a operação.",
+                    9, MUTED, false, Gravity.CENTER
+            );
+            detail.setMaxLines(3);
+            detail.setPadding(0, dp(4), 0, 0);
+            emptyCard.addView(empty);
+            emptyCard.addView(detail);
+            content.addView(emptyCard, cardParams());
+        } else {
+            int shown = 0;
+            for (NotificationItem item : items) {
+                if (shown >= 4) break;
+                addNotificationCard(item);
+                shown++;
+            }
+        }
+
         boolean enabled = WatchNotificationCenter.isEnabled(this);
-        TextView state = heroAction(enabled ? "No relógio: ativadas" : "No relógio: pausadas",
-                enabled ? SUCCESS : MUTED);
+        TextView state = actionChip(enabled ? "Relógio • notificações ativas" : "Relógio • notificações pausadas",
+                enabled ? CYAN : MUTED, enabled);
         state.setOnClickListener(view -> {
             boolean next = !WatchNotificationCenter.isEnabled(this);
             WatchNotificationCenter.setEnabled(this, next);
@@ -432,147 +537,140 @@ public final class MainActivity extends FragmentActivity
             renderSnapshot();
         });
         content.addView(state);
-
-        if (!notificationPermissionGranted()) {
-            TextView permission = text(
-                    "Permita notificações do CrewCheck para receber hora de sair, mudanças, embarque e conexão.",
-                    9, WARNING, false, Gravity.CENTER
-            );
-            permission.setMaxLines(4);
-            permission.setPadding(dp(4), dp(7), dp(4), dp(6));
-            content.addView(permission);
-
-            TextView allow = actionChip("Permitir notificações", WARNING, false);
-            allow.setOnClickListener(view -> requestNotificationPermissionIfNeeded());
-            content.addView(allow);
-        }
-
-        List<NotificationItem> items = currentNotifications(snapshot, now);
-        if (items.isEmpty()) {
-            TextView empty = text("Nada urgente agora.", 16, WHITE, true, Gravity.CENTER);
-            empty.setPadding(0, dp(12), 0, dp(4));
-            content.addView(empty);
-            TextView detail = text("Quando algo realmente importar, o CrewCheck aparece no seu pulso.",
-                    9, MUTED, false, Gravity.CENTER);
-            detail.setMaxLines(3);
-            content.addView(detail);
-            return;
-        }
-
-        for (NotificationItem item : items) addNotificationCard(item);
     }
 
     private void renderCrewLife(long now) {
-        TextView overline = text("CrewLife opcional", 9, MAGENTA, true, Gravity.CENTER);
-        overline.setPadding(0, dp(3), 0, dp(4));
-        content.addView(overline);
-
         CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
         RoutineSnapshot routine = wellbeingStore.loadRoutine();
 
+        TextView overline = actionChip("⌁ CrewLife  opcional", CYAN, true);
+        content.addView(overline);
+
+        TextView leaf = text("⌁", 28, CYAN, true, Gravity.CENTER);
+        GradientDrawable leafBg = new GradientDrawable();
+        leafBg.setShape(GradientDrawable.OVAL);
+        leafBg.setColor(withAlpha(CYAN, 22));
+        leafBg.setStroke(dp(2), withAlpha(CYAN, 210));
+        leaf.setBackground(leafBg);
+        content.addView(leaf, new LinearLayout.LayoutParams(dp(58), dp(58)));
+
+        TextView title = text("CrewLife", 26, WHITE, true, Gravity.CENTER);
+        title.setPadding(0, dp(5), 0, 0);
+        content.addView(title);
+
         if (life == null || life.isStale(now)) {
-            TextView title = text("Seu bem-estar, se você quiser.", 19, WHITE, true, Gravity.CENTER);
-            title.setMaxLines(2);
-            content.addView(title);
+            TextView state = text("Aguardando dados do celular", 13, CYAN, true, Gravity.CENTER);
+            state.setPadding(0, dp(2), 0, dp(5));
+            content.addView(state);
+
+            LinearLayout empty = premiumCard(CYAN);
             TextView detail = text(
-                    "Ative o CrewLife no celular. Só chegam ao relógio valores agregados que você autorizou.",
+                    "Se o CrewLife já estiver ativo, abra-o no celular e toque em Sincronizar. O relógio recebe somente resumos agregados autorizados.",
                     9, MUTED, false, Gravity.CENTER
             );
-            detail.setMaxLines(4);
-            detail.setPadding(0, dp(6), 0, dp(8));
-            content.addView(detail);
-            TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);
+            detail.setMaxLines(5);
+            empty.addView(detail);
+            TextView sync = heroAction("Sincronizar CrewLife", CYAN);
             sync.setOnClickListener(view -> requestSync());
-            content.addView(sync);
+            empty.addView(sync);
+            content.addView(empty, cardParams());
             return;
         }
 
-        TextView score = text(
-                life.recoveryScore > 0 ? life.recoveryScore + "%" : life.recoveryLabel,
-                34, SUCCESS, true, Gravity.CENTER
-        );
-        content.addView(score);
-
-        TextView label = text("Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT),
-                10, WHITE, true, Gravity.CENTER);
-        label.setPadding(0, dp(1), 0, dp(6));
-        content.addView(label);
+        String stateText;
+        if (life.has("recoveryScore") && life.recoveryScore > 0) {
+            stateText = "Recuperação " + life.recoveryScore + "%";
+        } else if (life.has("recoveryLabel")
+                && !life.recoveryLabel.isBlank()
+                && !"DESCONHECIDA".equals(life.recoveryLabel)) {
+            stateText = "Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT);
+        } else {
+            stateText = "Resumo do CrewLife";
+        }
+        TextView state = text(stateText, 14, CYAN, true, Gravity.CENTER);
+        state.setPadding(0, dp(1), 0, dp(6));
+        content.addView(state);
 
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(LinearLayout.HORIZONTAL);
         stats.setGravity(Gravity.CENTER);
-        addCrewLifeStat(stats, "SONO", sleepLabel(life), VIOLET);
-        addCrewLifeStat(stats, "PASSOS", compactSteps(life.steps), CYAN);
-        addCrewLifeStat(stats, "FC REPOUSO",
-                life.restingHeartRate > 0 ? life.restingHeartRate + " bpm" : "--", SUCCESS);
+        addCrewLifeStat(stats, "Sono", life.has("sleepMinutes") || life.has("sleepLabel") ? sleepLabel(life) : "--", VIOLET);
+        addCrewLifeStat(stats, "Passos", life.has("steps") ? compactSteps(life.steps) : "--", CYAN);
+        boolean hasRestingHeartRate = life.has("restingHeartRate") && life.restingHeartRate > 0;
+        String third = hasRestingHeartRate
+                ? life.restingHeartRate + " bpm"
+                : life.has("activeMinutes") ? life.activeMinutes + " min" : "--";
+        addCrewLifeStat(stats, hasRestingHeartRate ? "FC repouso" : "Atividade", third, SUCCESS);
         content.addView(stats, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
-        if (!life.recommendation.isBlank()) {
-            TextView recommendation = text(life.recommendation, 10, MAGENTA, true, Gravity.CENTER);
-            recommendation.setPadding(0, dp(7), 0, dp(2));
-            content.addView(recommendation);
-        }
-
         if (routine != null && !routine.isStale(now)) {
             LinearLayout card = premiumCard(VIOLET);
-            TextView rTitle = text("ROTINA · " + firstNonBlank(routine.title, "HOJE"),
-                    9, VIOLET, true, Gravity.CENTER);
+            TextView rTitle = text("Rotina • " + firstNonBlank(routine.title, "Hoje"),
+                    10, VIOLET, true, Gravity.CENTER);
             card.addView(rTitle);
-            TextView rValue = text(
-                    routine.durationMinutes > 0 ? routine.durationMinutes + " min" : routine.nextAction,
-                    18, WHITE, true, Gravity.CENTER
-            );
+            String rMain = routine.durationMinutes > 0
+                    ? routine.durationMinutes + " min"
+                    : firstNonBlank(routine.nextAction, "Sugestão disponível");
+            TextView rValue = text(rMain, 16, WHITE, true, Gravity.CENTER);
+            rValue.setPadding(0, dp(2), 0, 0);
             card.addView(rValue);
-            TextView rDetail = text(firstNonBlank(routine.nextAction, routine.reason),
-                    8, MUTED, false, Gravity.CENTER);
-            rDetail.setMaxLines(2);
-            card.addView(rDetail);
+            String detail = firstNonBlank(routine.nextAction, routine.reason);
+            if (!detail.isBlank()) {
+                TextView rDetail = text(detail, 8, MUTED, false, Gravity.CENTER);
+                rDetail.setMaxLines(2);
+                card.addView(rDetail);
+            }
             content.addView(card, cardParams());
         }
 
         TextView privacy = text(
-                "CrewLife é opcional. Dados brutos de saúde não ficam no mostrador.",
+                "Somente valores agregados autorizados chegam ao pulso.",
                 8, MUTED, false, Gravity.CENTER
         );
-        privacy.setMaxLines(3);
-        privacy.setPadding(0, dp(6), 0, 0);
+        privacy.setMaxLines(2);
+        privacy.setPadding(0, dp(5), 0, 0);
         content.addView(privacy);
     }
 
     private void renderSchedule(WatchContextSnapshot snapshot, long now) {
-        TextView title = text("MINHA ESCALA", 10, CYAN, true, Gravity.CENTER);
-        title.setLetterSpacing(.09f);
-        title.setPadding(0, dp(3), 0, dp(2));
-        content.addView(title);
+        TextView overline = text("MINHA ESCALA", 8, VIOLET, true, Gravity.CENTER);
+        overline.setLetterSpacing(.10f);
+        content.addView(overline);
 
-        TextView subtitle = text("Próximos passos", 15, WHITE, true, Gravity.CENTER);
-        subtitle.setPadding(0, 0, 0, dp(7));
+        TextView glyph = text("▦", 20, VIOLET, true, Gravity.CENTER);
+        content.addView(glyph);
+
+        TextView title = text("Escala no relógio", 18, WHITE, true, Gravity.CENTER);
+        TextView subtitle = text("Sua jornada, no seu pulso.", 9, CYAN, false, Gravity.CENTER);
+        subtitle.setPadding(0, dp(1), 0, dp(7));
+        content.addView(title);
         content.addView(subtitle);
 
         if (snapshot == null || snapshot.schedule.isEmpty()) {
-            TextView empty = text(
+            LinearLayout empty = premiumCard(VIOLET);
+            TextView copy = text(
                     "Sincronize o CrewCheck no celular para abrir sua escala aqui.",
                     10, MUTED, false, Gravity.CENTER
             );
-            empty.setMaxLines(4);
-            empty.setPadding(0, dp(10), 0, dp(12));
-            content.addView(empty);
+            copy.setMaxLines(4);
+            empty.addView(copy);
+            content.addView(empty, cardParams());
             return;
         }
 
         int count = 0;
         for (WatchContextSnapshot.ScheduleItem item : snapshot.schedule) {
-            if (count >= 6) break;
+            if (count >= 5) break;
             addScheduleItem(item, count == 0);
             count++;
         }
 
         TextView freshness = text(snapshot.statusLabel(now), 8,
                 snapshot.isStale(now) ? WARNING : MUTED, false, Gravity.CENTER);
-        freshness.setPadding(0, dp(6), 0, 0);
+        freshness.setPadding(0, dp(5), 0, 0);
         content.addView(freshness);
     }
 
@@ -615,22 +713,32 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void addNavigation(WatchContextSnapshot snapshot) {
-        LinearLayout first = navRow();
-        first.addView(navChip("Agora", CYAN, MODE_NOW));
-        first.addView(navChip("Alertas" + (alertCount(snapshot) > 0 ? " " + alertCount(snapshot) : ""),
-                MAGENTA, MODE_NOTIFICATIONS));
-
-        LinearLayout second = navRow();
-        second.addView(navChip("CrewLife", SUCCESS, MODE_CREWLIFE));
-        second.addView(navChip(
-                snapshot != null && !snapshot.schedule.isEmpty()
-                        ? "Escala " + snapshot.schedule.size()
-                        : "Escala",
-                VIOLET, MODE_SCHEDULE
-        ));
-
-        content.addView(first);
-        content.addView(second);
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER);
+        int[] modes = {MODE_NOW, MODE_NOTIFICATIONS, MODE_CREWLIFE, MODE_SCHEDULE};
+        int[] colors = {CYAN, MAGENTA, SUCCESS, VIOLET};
+        for (int i = 0; i < modes.length; i++) {
+            final int mode = modes[i];
+            View dot = new View(this);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL);
+            boolean selected = screenMode == mode;
+            bg.setColor(selected ? colors[i] : withAlpha(MUTED, 75));
+            if (selected) bg.setStroke(dp(1), withAlpha(colors[i], 230));
+            dot.setBackground(bg);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                    dp(selected ? 10 : 7), dp(selected ? 10 : 7)
+            );
+            p.setMargins(dp(4), dp(6), dp(4), dp(2));
+            dot.setLayoutParams(p);
+            dot.setOnClickListener(view -> {
+                screenMode = mode;
+                renderSnapshot();
+            });
+            dots.addView(dot);
+        }
+        content.addView(dots);
     }
 
     private LinearLayout navRow() {
@@ -657,10 +765,11 @@ public final class MainActivity extends FragmentActivity
 
     private void renderFooter() {
         transientStatus = text("", 8, MUTED, false, Gravity.CENTER);
-        transientStatus.setPadding(dp(4), dp(3), dp(4), 0);
+        transientStatus.setPadding(dp(4), dp(2), dp(4), 0);
         content.addView(transientStatus);
 
-        TextView sync = actionChip("Sincronizar", BLUE, false);
+        TextView sync = text("↻  Sincronizar", 8, BLUE, true, Gravity.CENTER);
+        sync.setPadding(dp(10), dp(5), dp(10), dp(5));
         sync.setOnClickListener(view -> requestSync());
         content.addView(sync);
     }
@@ -805,24 +914,46 @@ public final class MainActivity extends FragmentActivity
 
     private void addNotificationCard(NotificationItem item) {
         LinearLayout card = premiumCard(item.accent);
-        card.setOrientation(LinearLayout.VERTICAL);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(9), dp(7), dp(9), dp(7));
+
+        String glyph = item.title.toLowerCase(Locale.ROOT).contains("portão") ? "✈"
+                : item.title.toLowerCase(Locale.ROOT).contains("sair") ? "●"
+                : item.title.toLowerCase(Locale.ROOT).contains("crewlife") ? "⌁"
+                : "!";
+        TextView icon = text(glyph, 16, item.accent, true, Gravity.CENTER);
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.OVAL);
+        iconBg.setColor(withAlpha(item.accent, 20));
+        iconBg.setStroke(dp(1), withAlpha(item.accent, 190));
+        icon.setBackground(iconBg);
+        card.addView(icon, new LinearLayout.LayoutParams(dp(46), dp(46)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(8), 0, 0, 0);
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView title = text(item.title, 11, WHITE, true, Gravity.START);
+        title.setMaxLines(2);
         top.addView(title, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView when = text(item.when, 8, item.accent, true, Gravity.END);
         top.addView(when);
-        card.addView(top);
+        copy.addView(top);
 
         TextView body = text(item.body, 9, MUTED, false, Gravity.START);
-        body.setMaxLines(3);
-        body.setPadding(0, dp(3), 0, 0);
-        card.addView(body);
+        body.setMaxLines(2);
+        body.setPadding(0, dp(2), 0, 0);
+        copy.addView(body);
 
+        card.addView(copy, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ));
         content.addView(card, cardParams());
     }
 
@@ -920,11 +1051,15 @@ public final class MainActivity extends FragmentActivity
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(10), dp(8), dp(10), dp(8));
         GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(accent, 24), SURFACE_ALT}
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{
+                        withAlpha(accent, 24),
+                        Color.rgb(7, 22, 46),
+                        Color.rgb(4, 13, 30)
+                }
         );
-        background.setCornerRadius(dp(22));
-        background.setStroke(dp(1), withAlpha(accent, 100));
+        background.setCornerRadius(dp(24));
+        background.setStroke(dp(1), withAlpha(accent, 135));
         card.setBackground(background);
         return card;
     }
