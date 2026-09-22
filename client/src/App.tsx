@@ -19,7 +19,8 @@ import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
 import GuardianPublicPage from './pages/GuardianPublicPage';
 import VoyagePublicPage from './pages/VoyagePublicPage';
-import { AuthClientError, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
+import { AuthClientError, expireSession, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
+import { getAndroidBiometricStatus } from "./lib/androidBiometric";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
@@ -79,6 +80,14 @@ function Protected({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
+    const biometric = getAndroidBiometricStatus();
+    if (biometric.enabled && !biometric.unlocked && !demoMode) {
+      // Native vault is the authority on Android launch. Remove only the web token
+      // so the login page can restore it after successful biometric authentication.
+      expireSession();
+      setLocation('/login?biometric=1');
+      return;
+    }
     if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
     if (!isAuthenticated() && demoMode) { setReady(true); return; }
     getMe().then(() => enablePartnerDemoRoster()).catch((error) => {
