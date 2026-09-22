@@ -628,6 +628,10 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void renderSchedule(WatchContextSnapshot snapshot, long now) {
+        TextView overline = text("MINHA ESCALA", 8, VIOLET, true, Gravity.CENTER);
+        overline.setLetterSpacing(.10f);
+        content.addView(overline);
+
         TextView glyph = text("▦", 20, VIOLET, true, Gravity.CENTER);
         content.addView(glyph);
 
