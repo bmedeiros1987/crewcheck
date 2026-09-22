@@ -40,7 +40,7 @@ jobs:
       STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
       KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
-      CREWCHECK_STORE_FILE: ${{ runner.temp }}/crewcheck-release.jks
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
