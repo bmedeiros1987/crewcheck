@@ -167,6 +167,7 @@ await import('../p0-580-post-anchor-continuity/apply.mjs');
 await import('../p0-580-local-period-identity/apply.mjs');
 await import('../p0-580-legend-terminal-rescues/apply.mjs');
 await import('../p0-530-adjacent-month-retention/apply.mjs');
+await import('../p0-673-order-independent-window/apply.mjs');
 await import('../p0-691-care-context/apply.mjs');
 await import('../p0-623-regulatory-history-carry-in-final/apply.mjs');
 await import('../p0-623-regulatory-history-carry-in-final/review-hardening.mjs');
