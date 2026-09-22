@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
-import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Monitor, Moon, Plane, ShieldCheck, Sparkles, Sun } from 'lucide-react';
-import { confirmPasswordReset, login, register, requestPasswordReset } from '@/lib/authClient';
+import { BriefcaseBusiness, Eye, EyeOff, Fingerprint, Lock, Mail, Monitor, Moon, Plane, ShieldCheck, Sparkles, Sun } from 'lucide-react';
+import { confirmPasswordReset, login, register, requestPasswordReset, restoreBiometricSession } from '@/lib/authClient';
 import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';
+import { disableAndroidBiometric, enableAndroidBiometric, getAndroidBiometricStatus, unlockAndroidBiometric, type AndroidBiometricStatus } from '@/lib/androidBiometric';
 
 type Mode = 'login' | 'register' | 'recover' | 'reset';
 type Delivery = 'email' | 'telegram' | 'both' | 'telegram-call';
@@ -67,8 +68,20 @@ export default function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [terms, setTerms] = useState<CrewCheckTerms | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [biometricStatus, setBiometricStatus] = useState<AndroidBiometricStatus>(() => getAndroidBiometricStatus());
+  const [enableBiometricAfterLogin, setEnableBiometricAfterLogin] = useState(false);
+  const biometricAutoPrompted = useRef(false);
 
   useEffect(() => { getCurrentTerms().then(setTerms).catch(() => undefined); }, []);
+  useEffect(() => {
+    const status = getAndroidBiometricStatus();
+    setBiometricStatus(status);
+    if (status.enabled && !status.unlocked && !biometricAutoPrompted.current) {
+      biometricAutoPrompted.current = true;
+      window.setTimeout(() => { void unlockWithBiometric(); }, 250);
+    }
+  }, []);
+
   useEffect(() => {
     const saved = localStorage.getItem('crewcheck_theme_mode');
     const themeMode = saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
@@ -88,6 +101,33 @@ export default function AuthPage() {
     window.setTimeout(() => headingRef.current?.focus(), 0);
   }
 
+  async function unlockWithBiometric() {
+    setBusy(true);
+    try {
+      const result = await unlockAndroidBiometric();
+      if (!result.token) throw new Error('A biometria foi confirmada, mas a sessão não pôde ser restaurada.');
+      const user = await restoreBiometricSession(result.token);
+      if (isCrewFunction(user.rank)) saveProfileRank(user.email, user.rank);
+      else activateStoredProfileRank(user.email);
+      setBiometricStatus(getAndroidBiometricStatus());
+      toast.success('CrewCheck desbloqueado com biometria.');
+      setLocation('/');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Biometria não confirmada.';
+      if (!/cancel/i.test(message)) toast.error(message);
+      setBiometricStatus(getAndroidBiometricStatus());
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function disableBiometricOnThisPhone() {
+    disableAndroidBiometric();
+    setEnableBiometricAfterLogin(false);
+    setBiometricStatus(getAndroidBiometricStatus());
+    toast.success('Acesso biométrico desativado neste celular.');
+  }
+
   async function submit() {
     if (!email) return toast.info('Informe seu e-mail.');
     setBusy(true);
@@ -97,6 +137,16 @@ export default function AuthPage() {
         const session = await login(email, password);
         if (isCrewFunction(session.user.rank)) saveProfileRank(email, session.user.rank);
         else activateStoredProfileRank(email);
+        if (biometricStatus.available && (enableBiometricAfterLogin || biometricStatus.enabled)) {
+          try {
+            await enableAndroidBiometric(session.token);
+            setBiometricStatus(getAndroidBiometricStatus());
+            toast.success('Biometria ativada neste celular.');
+          } catch (biometricError) {
+            const message = biometricError instanceof Error ? biometricError.message : 'Biometria não foi ativada.';
+            if (!/cancel/i.test(message)) toast.info(message);
+          }
+        }
         toast.success('Bem-vindo ao CrewCheck.');
         setLocation('/');
       } else if (mode === 'register') {
@@ -168,6 +218,9 @@ export default function AuthPage() {
         <small>Usamos a função para aplicar automaticamente os valores e regras correspondentes ao seu perfil. Você poderá alterar isso depois no Perfil.</small>
       </label>}
       <label><Mail/> E-mail cadastrado *<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.email@exemplo.com" autoComplete="email"/></label>
+      {mode === 'login' && biometricStatus.enabled && <button type="button" className="cz-secondary" onClick={() => void unlockWithBiometric()} disabled={busy}><Fingerprint/> Entrar com biometria</button>}
+      {mode === 'login' && biometricStatus.available && !biometricStatus.enabled && <label className="cz-auth-terms"><input type="checkbox" checked={enableBiometricAfterLogin} onChange={(event) => setEnableBiometricAfterLogin(event.target.checked)}/><span>Usar a biometria deste celular nos próximos acessos. Sua senha não será armazenada.</span></label>}
+      {mode === 'login' && biometricStatus.enabled && <button type="button" className="cz-auth-link" onClick={disableBiometricOnThisPhone}>Desativar biometria neste celular</button>}
       {mode === 'reset' && <label><ShieldCheck/> Código temporário *<input inputMode="numeric" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" autoComplete="one-time-code"/></label>}
       {(mode === 'login' || mode === 'register' || mode === 'reset') && <label><Lock/> {mode === 'reset' ? 'Nova senha' : 'Senha'} *<div className="cz-password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="mínimo 8 caracteres" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/><button type="button" className="cz-password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'} aria-pressed={showPassword}>{showPassword ? <EyeOff/> : <Eye/>}</button></div></label>}
       {mode === 'register' && <label className="cz-auth-terms"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)}/><span>Li, compreendi e aceito os <a href="/terms" target="_blank" rel="noreferrer">Termos de Uso</a> e a <a href="/privacy" target="_blank" rel="noreferrer">Política de Privacidade</a>{terms ? `, versão ${terms.version}` : ''}. As integrações opcionais, como Google Calendar e localização, serão solicitadas separadamente quando eu decidir utilizá-las.</span></label>}
