@@ -8,9 +8,29 @@ def keyAliasValue = project.findProperty('CREWCHECK_KEY_ALIAS') ?: System.getenv
 def keyPasswordValue = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.getenv('CREWCHECK_KEY_PASSWORD')
 def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
 
+def generatedCrewWatchRes = file("$buildDir/generated/res/crewcheckBrand")
+
+tasks.register('generateCrewWatchBrandAssets') {
+    inputs.file(file('../../client/public/icons/crewcheck-icon-v2.png'))
+    outputs.file(file("$generatedCrewWatchRes/drawable-nodpi/crewcheck_official.png"))
+    doLast {
+        def target = file("$generatedCrewWatchRes/drawable-nodpi")
+        target.mkdirs()
+        copy {
+            from file('../../client/public/icons/crewcheck-icon-v2.png')
+            into target
+            rename { 'crewcheck_official.png' }
+        }
+    }
+}
+
 android {
     namespace 'com.crewcheck.watch'
     compileSdk 36
+
+    sourceSets {
+        main.res.srcDir generatedCrewWatchRes
+    }
 
     defaultConfig {
         applicationId 'com.crewcheck.app'
@@ -74,3 +94,5 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'
 }
+
+preBuild.dependsOn generateCrewWatchBrandAssets
