@@ -2,7 +2,7 @@ name: CrewCheck Priority 0 Release Gate
 
 on:
   workflow_run:
-    workflows: ["Android APK and AAB"]
+    workflows: ["Android signed store bundles"]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   verify-signed-release:
-    name: Verify signed APK and AAB
+    name: Verify three signed AABs and manifest evidence
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -70,47 +70,20 @@ jobs:
             exit 1
           fi
 
-      - name: Verify signed artifact pair
-        id: artifacts
+      - name: Verify complete bundle set from the signed workflow
         shell: bash
         run: |
           set -euo pipefail
           run_id='${{ steps.resolve.outputs.run_id }}'
-          artifacts_json="$(gh api --paginate "/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")"
-
-          apk_id="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-release-apk")][0].id // empty' <<< "$artifacts_json")"
-          aab_id="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-play-console-aab")][0].id // empty' <<< "$artifacts_json")"
-          apk_size="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-release-apk")][0].size_in_bytes // 0' <<< "$artifacts_json")"
-          aab_size="$(jq -r '[.artifacts[] | select(.expired == false and .name == "CrewCheck-signed-play-console-aab")][0].size_in_bytes // 0' <<< "$artifacts_json")"
-
-          missing=()
-          [[ -n "$apk_id" && "$apk_size" -gt 0 ]] || missing+=("APK assinado")
-          [[ -n "$aab_id" && "$aab_size" -gt 0 ]] || missing+=("AAB assinado")
-
-          if (( ${#missing[@]} )); then
-            printf '::error title=Artefatos da Prioridade 0 ausentes::Faltando: %s. Confirme as etapas Verify and stage signed artifacts e Upload signed APK/AAB no workflow Android.\n' "$(IFS=', '; echo "${missing[*]}")"
-            exit 1
-          fi
-
-          echo "apk_id=$apk_id" >> "$GITHUB_OUTPUT"
-          echo "aab_id=$aab_id" >> "$GITHUB_OUTPUT"
-          echo "apk_size=$apk_size" >> "$GITHUB_OUTPUT"
-          echo "aab_size=$aab_size" >> "$GITHUB_OUTPUT"
-
-      - name: Publish Priority 0 proof
-        shell: bash
-        run: |
-          set -euo pipefail
+          gh api "/repos/${REPOSITORY}/actions/runs/${run_id}" --jq '.path' | grep -Fx '.github/workflows/android.yml'
+          artifacts_json="$(gh api "/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100")"
+          for artifact in CrewCheck-mobile-AAB CrewCheck-WearOS-AAB CrewCheck-WatchFace-AAB CrewCheck-verified-play-bundles; do
+            jq -e --arg name "$artifact" '[.artifacts[] | select(.name == $name and .expired == false and .size_in_bytes > 0)] | length == 1' <<< "$artifacts_json"
+          done
           {
-            echo '# ✅ CrewCheck — Prioridade 0 concluída'
-            echo
-            echo '| Prova | Estado |'
-            echo '|---|---|'
-            echo '| Workflow Android | Sucesso |'
-            echo '| APK assinado | Presente e não vazio |'
-            echo '| AAB Play Console assinado | Presente e não vazio |'
-            echo '| Commit validado | `${{ steps.run.outputs.head_sha }}` |'
-            echo '| Execução Android | ${{ steps.run.outputs.html_url }} |'
-            echo
-            echo 'O gate somente fica verde quando os dois artefatos assinados existem na mesma execução Android.'
+            echo '### Verified Android store bundles'
+            echo 'Mobile, Wear OS, watch face and manifest/signature evidence are present in the same successful build.'
+            echo 'Commit: `${{ steps.run.outputs.head_sha }}`'
+            echo 'Run: ${{ steps.run.outputs.html_url }}'
+            echo 'This gate does not publish any release.'
           } >> "$GITHUB_STEP_SUMMARY"

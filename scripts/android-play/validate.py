@@ -53,6 +53,7 @@ def main():
     policy = json.loads(Path('scripts/android-play/release-policy.json').read_text())
     expected_cert = os.environ.get('EXPECTED_UPLOAD_CERT_SHA256', '').replace(':', '').lower()
     assert re.fullmatch('[0-9a-f]{64}', expected_cert), 'Expected upload certificate is required'
+    assert expected_cert == policy['uploadCertificateSha256'], 'Signing key differs from the public upload certificate audited in Play Console'
     report = []
     seen = set()
     out = Path(args.output)

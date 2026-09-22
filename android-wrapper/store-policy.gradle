@@ -11,7 +11,7 @@ if (project.name == 'app') {
     android.sourceSets.main.java.srcDir 'src/store/java'
     android.sourceSets.main.java.exclude '**/CrewCheckHealthBridge.kt'
     kotlin.sourceSets.main.kotlin.exclude '**/CrewCheckHealthBridge.kt'
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    tasks.matching { it.name.startsWith('compile') && it.name.endsWith('Kotlin') }.configureEach {
         exclude '**/CrewCheckHealthBridge.kt'
     }
     configurations.configureEach {

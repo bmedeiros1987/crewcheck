@@ -1,5 +1,6 @@
 {
   "versionName": "14.4.09",
+  "uploadCertificateSha256": "4b5a06b5b77798ee1ff5681952a53da4f1bb03cdc7d07f69d7e868f62f61f454",
   "knownMaxVersionCode": {"com.crewcheck.app": 140388, "com.crewcheck.watch.app": 140385},
   "artifacts": {
     "app": {"package": "com.crewcheck.app", "versionCode": 144090, "minSdk": 26, "targetSdk": 36, "track": "internal", "watch": false},
