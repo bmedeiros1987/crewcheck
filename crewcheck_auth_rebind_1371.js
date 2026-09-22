@@ -66,7 +66,14 @@ function cc1371RequestToken(req) {
   if (bearer) return bearer[1].trim();
   const cookie = String(req.headers.cookie || '');
   const match = cookie.match(/(?:^|;\s*)crewcheck_auth_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    // Fail closed on malformed legacy WebView cookies. A bad cookie must never
+    // abort /api/auth/me or leave the Android shell on a blank screen.
+    return '';
+  }
 }
 function cc1371User(email = '', extra = {}) {
   const normalized = cc1371Email(email);
