@@ -90,4 +90,5 @@ dependencies {
     implementation platform("org.jetbrains.kotlin:kotlin-bom:1.8.22")
     implementation "com.android.billingclient:billing:$billing_version"
     implementation 'com.google.android.gms:play-services-wearable:20.0.1'
+    implementation 'androidx.biometric:biometric:1.1.0'
 }
