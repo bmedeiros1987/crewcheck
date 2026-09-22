@@ -577,9 +577,16 @@ public final class MainActivity extends FragmentActivity
             return;
         }
 
-        String stateText = life.recoveryScore > 0
-                ? "Recuperação " + life.recoveryScore + "%"
-                : "Tudo certo para hoje";
+        String stateText;
+        if (life.has("recoveryScore") && life.recoveryScore > 0) {
+            stateText = "Recuperação " + life.recoveryScore + "%";
+        } else if (life.has("recoveryLabel")
+                && !life.recoveryLabel.isBlank()
+                && !"DESCONHECIDA".equals(life.recoveryLabel)) {
+            stateText = "Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT);
+        } else {
+            stateText = "Resumo do CrewLife";
+        }
         TextView state = text(stateText, 14, CYAN, true, Gravity.CENTER);
         state.setPadding(0, dp(1), 0, dp(6));
         content.addView(state);
@@ -589,10 +596,11 @@ public final class MainActivity extends FragmentActivity
         stats.setGravity(Gravity.CENTER);
         addCrewLifeStat(stats, "Sono", life.has("sleepMinutes") || life.has("sleepLabel") ? sleepLabel(life) : "--", VIOLET);
         addCrewLifeStat(stats, "Passos", life.has("steps") ? compactSteps(life.steps) : "--", CYAN);
-        String third = life.has("restingHeartRate") && life.restingHeartRate > 0
+        boolean hasRestingHeartRate = life.has("restingHeartRate") && life.restingHeartRate > 0;
+        String third = hasRestingHeartRate
                 ? life.restingHeartRate + " bpm"
                 : life.has("activeMinutes") ? life.activeMinutes + " min" : "--";
-        addCrewLifeStat(stats, life.has("restingHeartRate") ? "FC repouso" : "Atividade", third, SUCCESS);
+        addCrewLifeStat(stats, hasRestingHeartRate ? "FC repouso" : "Atividade", third, SUCCESS);
         content.addView(stats, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
