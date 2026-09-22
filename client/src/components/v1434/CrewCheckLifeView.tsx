@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { publishCrewLifeWatchSnapshot, revokeCrewLifeWatchSnapshot } from '@/lib/watchCrewLife';
 
 type NextProgram = {
   title?: string;
@@ -177,7 +178,10 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     const onSummary = (event: Event) => {
       const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
       setNativeSummary(detail);
-      if (detail.ok) writeStored(KEYS.nativeSummary, detail);
+      if (detail.ok) {
+        writeStored(KEYS.nativeSummary, detail);
+        window.setTimeout(() => publishCrewLifeWatchSnapshot(), 0);
+      }
     };
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
@@ -286,6 +290,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
   function revokeNative() {
     postAndroid('revokePermissions');
+    revokeCrewLifeWatchSnapshot();
     try { appleBridge?.postMessage({ action: 'revokeOrOpenSettings' }); } catch {}
     setNativeSummary({});
     setNativeStatus({ availability: androidBridge?.postMessage ? 'permission_required' : 'unavailable' });
@@ -297,12 +302,14 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     const next = { ...consent, active: false };
     setConsent(next);
     writeStored(KEYS.consent, next);
+    revokeCrewLifeWatchSnapshot();
     toast.success('CrewCheck Life pausado. Seus objetivos foram mantidos.');
   }
 
   function deleteLife() {
     if (!window.confirm('Apagar consentimento, objetivos e todos os resumos locais do CrewCheck Life neste aparelho?')) return;
     postAndroid('revokePermissions');
+    revokeCrewLifeWatchSnapshot();
     Object.values(KEYS).forEach((key) => { try { localStorage.removeItem(key); } catch {} });
     setConsent({ active: false, acceptedAt: '', policyVersion: '1.0' });
     setProfile(DEFAULT_PROFILE);
