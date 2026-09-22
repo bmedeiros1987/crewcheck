@@ -118,7 +118,7 @@ jobs:
             verify_log="$RUNNER_TEMP/$(basename "$aab").verify.log"
             jarsigner -verify -verbose -certs "$aab" > "$verify_log" 2>&1
             cat "$verify_log"
-            grep -Eq '^jar verified\.|^jar verified, with signer errors\. "$verify_log"
+            grep -Fq 'jar verified.' "$log"
             ! grep -Fqi 'jar is unsigned' "$verify_log"
           done
 
