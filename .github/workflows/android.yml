@@ -129,6 +129,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action default still requests the legacy SDK package "tools",
+          # which is no longer published by Google's current repository.
+          packages: platform-tools
 
       - name: Install Android API 36
         shell: bash
