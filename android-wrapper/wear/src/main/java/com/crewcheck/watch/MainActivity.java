@@ -471,11 +471,11 @@ public final class MainActivity extends FragmentActivity
         RoutineSnapshot routine = wellbeingStore.loadRoutine();
 
         if (life == null || life.isStale(now)) {
-            TextView title = text("Seu bem-estar, se você quiser.", 19, WHITE, true, Gravity.CENTER);
+            TextView title = text("CrewLife no pulso", 19, WHITE, true, Gravity.CENTER);
             title.setMaxLines(2);
             content.addView(title);
             TextView detail = text(
-                    "Ative o CrewLife no celular. Só chegam ao relógio valores agregados que você autorizou.",
+                    "CrewLife no relógio ainda não autorizado. No celular, ative “Mostrar CrewLife no relógio”. Só chegam valores agregados que você escolher.",
                     9, MUTED, false, Gravity.CENTER
             );
             detail.setMaxLines(4);
