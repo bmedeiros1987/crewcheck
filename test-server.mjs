@@ -42,8 +42,8 @@ try {
     headers: { cookie: 'crewcheck_auth_token=%E0%A4%A' },
   });
   const malformedCookiePayload = await malformedCookieResponse.json();
-  if (!malformedCookieResponse.ok || typeof malformedCookiePayload !== 'object') {
-    throw new Error('Cookie de sessão malformado não pode derrubar /api/auth/me');
+  if (![200, 401].includes(malformedCookieResponse.status) || typeof malformedCookiePayload !== 'object') {
+    throw new Error(`Cookie de sessão malformado deve falhar fechado sem derrubar /api/auth/me (status ${malformedCookieResponse.status})`);
   }
 
   console.log('CrewCheck server routes smoke test OK');
