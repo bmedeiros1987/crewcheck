@@ -133,20 +133,19 @@ jobs:
           cp "$watch_aab" "$out/CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab"
           cp "$face_aab" "$out/CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab"
 
-          cat > "$out/PACKAGE_MAP.txt" <<'EOF'
-CrewCheck Mobile
-  package: com.crewcheck.app
-  file: CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab
-
-CrewWatch Wear OS
-  package: com.crewcheck.app
-  file: CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab
-
-CrewCheck Watch Face
-  package: com.crewcheck.watch.app
-  file: CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab
-EOF
-
+          printf '%s\\n' \\
+            'CrewCheck Mobile' \\
+            '  package: com.crewcheck.app' \\
+            '  file: CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab' \\
+            '' \\
+            'CrewWatch Wear OS' \\
+            '  package: com.crewcheck.app' \\
+            '  file: CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab' \\
+            '' \\
+            'CrewCheck Watch Face' \\
+            '  package: com.crewcheck.watch.app' \\
+            '  file: CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab' \\
+            > "$out/PACKAGE_MAP.txt"
           (cd "$out" && sha256sum *.apk *.aab > SHA256SUMS.txt)
 
       - name: Upload signed pilot
