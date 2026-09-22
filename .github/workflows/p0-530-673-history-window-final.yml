@@ -1,0 +1,37 @@
+name: P0 #530 #673 history window final
+
+on:
+  push:
+    branches:
+      - fix/p0-530-673-history-window-final
+  pull_request:
+    paths:
+      - 'scripts/regression-p0-530-673-history-window-final.mjs'
+      - 'scripts/p0-673-order-independent-window/**'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/databaseClient.ts'
+      - '.github/workflows/p0-530-673-history-window-final.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  history-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical runtime
+        run: node scripts/v139/apply.mjs
+      - name: Reproduce #673 history refresh lifecycle
+        run: node scripts/regression-p0-530-673-history-window-final.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build
