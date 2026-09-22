@@ -77,20 +77,43 @@ jobs:
           test -n "${KEY_ALIAS:-}"
           test -n "${KEY_PASSWORD:-}"
           encoded="${KEYSTORE_BASE64#base64:}"
-          {
-            echo "CrewCheck Mobile"
-            echo "  package: com.crewcheck.app"
-            echo "  file: CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab"
-            echo
-            echo "CrewWatch Wear OS"
-            echo "  package: com.crewcheck.app"
-            echo "  file: CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab"
-            echo
-            echo "CrewCheck Watch Face"
-            echo "  package: com.crewcheck.watch.app"
-            echo "  file: CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab"
-          } > "$out/PACKAGE_MAP.txt"
-          (cd "$out" && sha256sum *.apk *.aab > SHA256SUMS.txt)
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          chmod 600 "$CREWCHECK_STORE_FILE"
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+      - name: Unit tests
+        run: gradle -p android-wrapper :wear:testDebugUnitTest
+
+      - name: Build signed mobile + watch + face
+        working-directory: android-wrapper
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: |
+          gradle --no-daemon --console=plain             :app:assembleRelease             :wear:assembleRelease             :watchface:assembleRelease
+
+      - name: Lint Wear
+        run: gradle -p android-wrapper :wear:lintDebug
+
+      - name: Verify and stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          mobile='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          watch='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
+          face='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
+          for apk in "$mobile" "$watch" "$face"; do
+            test -s "$apk"
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+          done
+          out="$RUNNER_TEMP/crewwatch-premium"
+          mkdir -p "$out"
+          cp "$mobile" "$out/CrewCheck-Mobile-PremiumWatch-signed.apk"
+          cp "$watch" "$out/CrewCheck-CrewWatch-Premium-signed.apk"
+          cp "$face" "$out/CrewCheck-WatchFace-Premium-signed.apk"
+          (cd "$out" && sha256sum *.apk > SHA256SUMS.txt)
 
       - name: Upload signed pilot
         uses: actions/upload-artifact@v6
@@ -100,6 +123,4 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/crewwatch-premium/*.apk
-            ${{ runner.temp }}/crewwatch-premium/*.aab
-            ${{ runner.temp }}/crewwatch-premium/PACKAGE_MAP.txt
             ${{ runner.temp }}/crewwatch-premium/SHA256SUMS.txt
