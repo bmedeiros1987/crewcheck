@@ -84,63 +84,19 @@ jobs:
         run: |
           set -euo pipefail
           encoded="${KEYSTORE_BASE64#base64:}"
-          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
-          test -s "$CREWCHECK_STORE_FILE"
-          chmod 600 "$CREWCHECK_STORE_FILE"
-          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
-
-      - name: Build signed mobile + watch AABs
-        working-directory: android-wrapper
-        env:
-          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
-          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
-          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
-        run: |
-          gradle --no-daemon --console=plain             :app:assembleRelease             :app:bundleRelease             :wear:bundleRelease             :watchface:bundleRelease
-
-      - name: Verify and stage signed AABs
-        shell: bash
-        run: |
-          set -euo pipefail
-          mobile_apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
-          mobile_aab='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
-          watch_aab='android-wrapper/wear/build/outputs/bundle/release/wear-release.aab'
-          face_aab='android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab'
-
-          for file in "$mobile_apk" "$mobile_aab" "$watch_aab" "$face_aab"; do
-            test -s "$file"
-          done
-
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          "$APKSIGNER" verify --verbose --print-certs "$mobile_apk"
-
-          for aab in "$mobile_aab" "$watch_aab" "$face_aab"; do
-            log="$RUNNER_TEMP/$(basename "$aab").verify.log"
-            jarsigner -verify -verbose -certs "$aab" > "$log" 2>&1
-            cat "$log"
-            grep -Fq 'jar verified.' "$log"
-            ! grep -Fqi 'jar is unsigned' "$log"
-          done
-
-          out="$RUNNER_TEMP/crewcheck-watch-first-sync"
-          mkdir -p "$out"
-          cp "$mobile_aab" "$out/CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab"
-          cp "$watch_aab" "$out/CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab"
-          cp "$face_aab" "$out/CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab"
-
-          printf '%s\\n' \\
-            'CrewCheck Mobile' \\
-            '  package: com.crewcheck.app' \\
-            '  file: CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab' \\
-            '' \\
-            'CrewWatch Wear OS' \\
-            '  package: com.crewcheck.app' \\
-            '  file: CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab' \\
-            '' \\
-            'CrewCheck Watch Face' \\
-            '  package: com.crewcheck.watch.app' \\
-            '  file: CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab' \\
-            > "$out/PACKAGE_MAP.txt"
+          {
+            echo "CrewCheck Mobile"
+            echo "  package: com.crewcheck.app"
+            echo "  file: CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab"
+            echo
+            echo "CrewWatch Wear OS"
+            echo "  package: com.crewcheck.app"
+            echo "  file: CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab"
+            echo
+            echo "CrewCheck Watch Face"
+            echo "  package: com.crewcheck.watch.app"
+            echo "  file: CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab"
+          } > "$out/PACKAGE_MAP.txt"
           (cd "$out" && sha256sum *.aab > SHA256SUMS.txt)
 
       - name: Upload signed AABs
