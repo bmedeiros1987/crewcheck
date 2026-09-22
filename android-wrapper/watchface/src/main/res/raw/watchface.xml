@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WatchFace width="450" height="450">
+    <Metadata key="CLOCK_TYPE" value="DIGITAL" />
+    <Metadata key="PREVIEW_TIME" value="10:42:00" />
+
+    <Scene backgroundColor="#FF050B14">
+        <!-- CrewCheck Pulse identity rings. Decorative only. -->
+        <PartDraw x="22" y="22" width="406" height="406">
+            <Ellipse x="0" y="0" width="406" height="406">
+                <Stroke thickness="3" color="#5538BDF8" />
+            </Ellipse>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartDraw x="31" y="31" width="388" height="388">
+            <Ellipse x="0" y="0" width="388" height="388">
+                <Stroke thickness="2" color="#444C1D95" />
+            </Ellipse>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartText x="0" y="42" width="450" height="26">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF22D3EE"><![CDATA[✈  CrewCheck]]></Font>
+            </Text>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+
+        <DigitalClock x="0" y="0" width="450" height="450">
+            <TimeText
+                x="0"
+                y="82"
+                width="450"
+                height="108"
+                alpha="255"
+                align="CENTER"
+                format="hh:mm"
+                hourFormat="SYNC_TO_DEVICE">
+                <Font family="SYNC_TO_DEVICE" size="94" weight="NORMAL" slant="NORMAL" color="#FFFFFFFF" />
+                <Variant mode="AMBIENT" target="alpha" value="0" />
+            </TimeText>
+
+            <TimeText
+                x="0"
+                y="92"
+                width="450"
+                height="92"
+                alpha="0"
+                align="CENTER"
+                format="hh:mm"
+                hourFormat="SYNC_TO_DEVICE">
+                <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFFFFFFF" />
+                <Variant mode="AMBIENT" target="alpha" value="255" />
+            </TimeText>
+
+            <TimeText
+                x="0"
+                y="186"
+                width="450"
+                height="28"
+                alpha="255"
+                align="CENTER"
+                format="EEE dd MMM"
+                hourFormat="SYNC_TO_DEVICE">
+                <Font family="SYNC_TO_DEVICE" size="17" weight="BOLD" slant="NORMAL" color="#FF2DD4BF" />
+                <Variant mode="AMBIENT" target="alpha" value="0" />
+            </TimeText>
+        </DigitalClock>
+
+        <PartDraw x="92" y="224" width="266" height="2">
+            <RoundRectangle x="0" y="0" width="266" height="2" cornerRadiusX="1" cornerRadiusY="1">
+                <Fill color="#445B6B7E" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <ComplicationSlot
+            x="48"
+            y="238"
+            width="354"
+            height="116"
+            slotId="1"
+            displayName="next_step_label"
+            supportedTypes="LONG_TEXT SHORT_TEXT EMPTY">
+            <BoundingRoundBox
+                x="0"
+                y="0"
+                width="354"
+                height="116"
+                outlinePadding="2.0"
+                cornerRadius="36" />
+
+            <DefaultProviderPolicy
+                primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewCheckComplicationService"
+                primaryProviderType="LONG_TEXT"
+                defaultSystemProvider="EMPTY"
+                defaultSystemProviderType="EMPTY" />
+
+            <Complication type="LONG_TEXT">
+                <PartText x="12" y="8" width="330" height="28">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FFEC4899">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <PartText x="12" y="40" width="330" height="56">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+
+            <Complication type="SHORT_TEXT">
+                <PartText x="12" y="9" width="330" height="26">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="15" weight="BOLD" color="#FF22D3EE">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <PartText x="12" y="38" width="330" height="60">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="31" weight="BOLD" color="#FFFFFFFF">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+
+        <PartDraw x="126" y="368" width="198" height="2">
+            <RoundRectangle x="0" y="0" width="198" height="2" cornerRadiusX="1" cornerRadiusY="1">
+                <Fill color="#335B6B7E" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartText x="0" y="382" width="450" height="24">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="14" weight="NORMAL" color="#FF9EABBE"><![CDATA[TOQUE PARA ABRIR • ESCALA]]></Font>
+            </Text>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+    </Scene>
+</WatchFace>

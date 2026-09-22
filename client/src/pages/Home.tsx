@@ -81,6 +81,7 @@ import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatfo
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
+import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
@@ -1709,8 +1710,6 @@ function smartDepartureEligible(event: ZeroLeg): boolean {
   if (event.placeholder || publishedPresentationOf(event) === null) return false;
   return isSmartDepartureEligible(event);
 }
-
-
 
 function UpdateCenterView() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -4636,6 +4635,28 @@ export default function Home() {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
+
+  useEffect(() => {
+    const publishWatchSnapshot = () => {
+      try {
+        const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
+      } catch {
+        // Watch sync is auxiliary. Never interfere with roster rendering.
+      }
+    };
+
+    publishWatchSnapshot();
+    const onRequest = () => publishWatchSnapshot();
+    window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
+    window.addEventListener('crewcheck:native-ready', onRequest);
+    const timer = window.setInterval(publishWatchSnapshot, 60_000);
+    return () => {
+      window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
+      window.removeEventListener('crewcheck:native-ready', onRequest);
+      window.clearInterval(timer);
+    };
+  }, [events, event.id, event.presentation, event.gate, event.status]);
 
   useEffect(() => {
     // A escala ativa pertence à conta, não ao cache deste dispositivo.
