@@ -40,6 +40,9 @@ public final class CrewLifeWatchPublisher {
     private static final int CREWLIFE_SCHEMA_VERSION = 1;
     private static final int ROUTINE_SCHEMA_VERSION = 1;
     private static final int MAX_WELLBEING_BYTES = 4 * 1024;
+    private static final String CREWLIFE_CACHE_PREFS = "crewcheck_watch_wellbeing_sync";
+    private static final String LAST_CREWLIFE = "last_crewlife";
+    private static final String LAST_ROUTINE = "last_routine";
 
     private static final Set<String> RECOVERY_LABELS =
             Set.of("OTIMA", "BOA", "REGULAR", "BAIXA", "DESCONHECIDA");
@@ -93,6 +96,11 @@ public final class CrewLifeWatchPublisher {
             safeCallback.onResult(false, "invalid_crewlife", safeMessage(error));
             return;
         }
+        context.getApplicationContext()
+                .getSharedPreferences(CREWLIFE_CACHE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(LAST_CREWLIFE, payload)
+                .apply();
         put(context, CREWLIFE_PATH, DATA_KEY_CREWLIFE_JSON, payload, safeCallback);
     }
 
@@ -116,7 +124,26 @@ public final class CrewLifeWatchPublisher {
             safeCallback.onResult(false, "invalid_routine", safeMessage(error));
             return;
         }
+        context.getApplicationContext()
+                .getSharedPreferences(CREWLIFE_CACHE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(LAST_ROUTINE, payload)
+                .apply();
         put(context, ROUTINE_PATH, DATA_KEY_ROUTINE_JSON, payload, safeCallback);
+    }
+
+    public static void republishLast(Context context) {
+        Context app = context.getApplicationContext();
+        android.content.SharedPreferences prefs =
+                app.getSharedPreferences(CREWLIFE_CACHE_PREFS, Context.MODE_PRIVATE);
+        String crewLife = prefs.getString(LAST_CREWLIFE, "");
+        String routine = prefs.getString(LAST_ROUTINE, "");
+        if (crewLife != null && !crewLife.isBlank()) {
+            put(app, CREWLIFE_PATH, DATA_KEY_CREWLIFE_JSON, crewLife, (ok, code, message) -> {});
+        }
+        if (routine != null && !routine.isBlank()) {
+            put(app, ROUTINE_PATH, DATA_KEY_ROUTINE_JSON, routine, (ok, code, message) -> {});
+        }
     }
 
     /**
@@ -138,6 +165,11 @@ public final class CrewLifeWatchPublisher {
         // o celular para de publicar na hora.
         WatchHealthConsent.revoke(app);
         WatchHealthConsent.setRevocationPending(app, true);
+        app.getSharedPreferences(CREWLIFE_CACHE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .remove(LAST_CREWLIFE)
+                .remove(LAST_ROUTINE)
+                .apply();
 
         RevocationRetry.run(
                 new String[]{CREWLIFE_PATH, ROUTINE_PATH},
