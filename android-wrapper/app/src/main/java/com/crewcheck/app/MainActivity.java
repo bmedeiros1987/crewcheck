@@ -5,6 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
 import android.app.PendingIntent;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -66,6 +68,7 @@ public class MainActivity extends Activity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 4545;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
+    public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
@@ -90,6 +93,7 @@ public class MainActivity extends Activity {
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
     private CrewCheckBillingBridge billingBridge;
+    private BroadcastReceiver watchSyncRequestReceiver;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -147,6 +151,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");
         billingBridge = new CrewCheckBillingBridge(this, webView);
         webView.addJavascriptInterface(billingBridge, "AndroidCrewCheckBilling");
+        registerWatchSyncRequestReceiver();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -709,6 +714,35 @@ public class MainActivity extends Activity {
                 startActivity(intent);
             } catch (Exception ignored) {}
         }
+    }
+
+    private void registerWatchSyncRequestReceiver() {
+        if (watchSyncRequestReceiver != null) return;
+        watchSyncRequestReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent == null || !ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
+                requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request");
+                if (webView != null) {
+                    webView.postDelayed(
+                            () -> requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request-retry"),
+                            650L
+                    );
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter(ACTION_WATCH_SYNC_REQUEST);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(watchSyncRequestReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(watchSyncRequestReceiver, filter);
+        }
+    }
+
+    private void unregisterWatchSyncRequestReceiver() {
+        if (watchSyncRequestReceiver == null) return;
+        try { unregisterReceiver(watchSyncRequestReceiver); } catch (Exception ignored) {}
+        watchSyncRequestReceiver = null;
     }
 
     private void requestCrewCheckWatchSnapshotFromWeb(String reason) {
@@ -2354,6 +2388,7 @@ try{
             webView.destroy();
             webView = null;
         }
+        unregisterWatchSyncRequestReceiver();
         super.onDestroy();
     }
 }
