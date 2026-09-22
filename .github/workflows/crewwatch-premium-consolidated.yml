@@ -101,19 +101,53 @@ jobs:
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          mobile='android-wrapper/app/build/outputs/apk/release/app-release.apk'
-          watch='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
-          face='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
-          for apk in "$mobile" "$watch" "$face"; do
+          mobile_apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          watch_apk='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
+          face_apk='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
+          mobile_aab='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
+          watch_aab='android-wrapper/wear/build/outputs/bundle/release/wear-release.aab'
+          face_aab='android-wrapper/watchface/build/outputs/bundle/release/watchface-release.aab'
+
+          for apk in "$mobile_apk" "$watch_apk" "$face_apk"; do
             test -s "$apk"
             "$APKSIGNER" verify --verbose --print-certs "$apk"
           done
+
+          for aab in "$mobile_aab" "$watch_aab" "$face_aab"; do
+            test -s "$aab"
+            verify_log="$RUNNER_TEMP/$(basename "$aab").verify.log"
+            jarsigner -verify -verbose -certs "$aab" > "$verify_log" 2>&1
+            cat "$verify_log"
+            grep -Eq '^jar verified\.|^jar verified, with signer errors\. "$verify_log"
+            ! grep -Fqi 'jar is unsigned' "$verify_log"
+          done
+
           out="$RUNNER_TEMP/crewwatch-premium"
           mkdir -p "$out"
-          cp "$mobile" "$out/CrewCheck-Mobile-PremiumWatch-signed.apk"
-          cp "$watch" "$out/CrewCheck-CrewWatch-Premium-signed.apk"
-          cp "$face" "$out/CrewCheck-WatchFace-Premium-signed.apk"
-          (cd "$out" && sha256sum *.apk > SHA256SUMS.txt)
+
+          cp "$mobile_apk" "$out/CrewCheck-Mobile-PremiumWatch-signed.apk"
+          cp "$watch_apk" "$out/CrewCheck-CrewWatch-Premium-signed.apk"
+          cp "$face_apk" "$out/CrewCheck-WatchFace-Premium-signed.apk"
+
+          cp "$mobile_aab" "$out/CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab"
+          cp "$watch_aab" "$out/CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab"
+          cp "$face_aab" "$out/CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab"
+
+          cat > "$out/PACKAGE_MAP.txt" <<'EOF'
+CrewCheck Mobile
+  package: com.crewcheck.app
+  file: CrewCheck-Mobile-com.crewcheck.app-Play-Console.aab
+
+CrewWatch Wear OS
+  package: com.crewcheck.app
+  file: CrewCheck-CrewWatch-com.crewcheck.app-Play-Console.aab
+
+CrewCheck Watch Face
+  package: com.crewcheck.watch.app
+  file: CrewCheck-WatchFace-com.crewcheck.watch.app-Play-Console.aab
+EOF
+
+          (cd "$out" && sha256sum *.apk *.aab > SHA256SUMS.txt)
 
       - name: Upload signed pilot
         uses: actions/upload-artifact@v6
@@ -123,4 +157,6 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/crewwatch-premium/*.apk
+            ${{ runner.temp }}/crewwatch-premium/*.aab
+            ${{ runner.temp }}/crewwatch-premium/PACKAGE_MAP.txt
             ${{ runner.temp }}/crewwatch-premium/SHA256SUMS.txt
