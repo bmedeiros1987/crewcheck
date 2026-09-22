@@ -9,9 +9,9 @@ assert.ok(main.indexOf('import "./styles/web-desktop-shell.css";') > main.indexO
 assert.ok(css.includes('@media (pointer: fine) and (min-width: 901px)'), 'desktop Web deve ser distinguido por ponteiro fino');
 assert.ok(css.includes('width: min(calc(100vw - 48px), 1120px) !important;'), 'header desktop deve ter largura útil limitada');
 assert.ok(css.includes('height: calc(88px + env(safe-area-inset-top, 0px)) !important;'), 'reserva vertical desktop deve acompanhar o header compacto');
-assert.match(css, /\.cz-bottom-nav\s*\{[\s\S]*?display: none !important;[\s\S]*?visibility: hidden !important;/, 'navegação mobile não pode aparecer no desktop');
+assert.match(css, /\.cz-bottom-nav\s*\{[\s\S]*?display: grid !important;[\s\S]*?visibility: visible !important;[\s\S]*?pointer-events: auto !important;/, 'rodapé canônico deve permanecer visível no desktop Web');
 assert.ok(css.includes('width: 48px !important;') && css.includes('height: 48px !important;'), 'botão Menu deve manter alvo confortável no desktop');
-assert.ok(css.includes('padding-bottom: 34px !important;'), 'desktop não deve reservar espaço para a navegação mobile');
+assert.ok(css.includes('padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px)) !important;'), 'desktop deve reservar espaço para o rodapé canônico');
 assert.ok(css.includes('width: min(560px, calc(100vw - 24px)) !important;'), 'menu desktop deve usar drawer lateral de largura controlada');
 assert.ok(css.includes('height: calc(100dvh - 24px) !important;'), 'drawer deve caber integralmente na viewport');
 assert.match(css, /\.cz-menu-header\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 48px !important;/, 'perfil e fechamento devem ter colunas estáveis');
@@ -29,4 +29,4 @@ assert.match(css, /\[data-crew-theme='light'\] \.cc-flydeck-briefing \.cc-flydec
 assert.match(css, /\[data-crew-theme='light'\] \.cc-flydeck-briefing \.cc-flydeck-program small\s*\{[\s\S]*?color: var\(--briefing-muted\) !important;/, 'selo de data do briefing deve usar o tom secundário do tema');
 assert.ok(!css.includes('pointer: coarse'), 'override desktop não pode alterar tablets touch');
 
-console.log('Web desktop shell regression passed: compact header, controlled lateral drawer, legible briefing, mobile bottom navigation hidden and touch tablets preserved.');
+console.log('Web desktop shell regression passed: compact header, controlled lateral drawer, legible briefing, canonical bottom navigation visible and touch tablets preserved.');
