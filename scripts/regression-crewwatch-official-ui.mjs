@@ -66,7 +66,7 @@ assert.match(wearGradle, /applicationId 'com\.crewcheck\.app'/,
 assert.match(faceGradle, /applicationId 'com\.crewcheck\.watch\.app'/,
   'CrewWatch Face deve usar o package já cadastrado na Play Console');
 assert.match(wearGradle, /versionCode 140387/);
-assert.match(wearGradle, /versionName '14\\.3\\.87-crewwatch-premium-v3'/);
+assert.match(wearGradle, /versionName '14\.3\.87-crewwatch-premium-v3'/);
 assert.match(faceGradle, /versionCode 140385/);
 assert.match(faceGradle, /versionName '1\.3\.1-official'/);
 assert.match(workflow, /CrewCheck-CrewWatch-Official-signed-release\.apk/);
