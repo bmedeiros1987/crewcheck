@@ -62,7 +62,7 @@ const nextMedia = desktopCss.indexOf('\n@media ', desktopStart + 1);
 const desktopBlock = desktopCss.slice(desktopStart, nextMedia >= 0 ? nextMedia : desktopCss.length);
 assert.doesNotMatch(desktopBlock, /\.cz-bottom-nav\s*\{[\s\S]*?display:\s*none\s*!important/, 'desktop Web must not hide bottom navigation');
 assert.doesNotMatch(desktopBlock, /\.cz-bottom-nav\s*\{[\s\S]*?visibility:\s*hidden\s*!important/, 'desktop Web must not make bottom navigation invisible');
-assert.match(desktopBlock, /padding-bottom:\s*calc\([^;]*1(?:2[0-9]|[3-9][0-9]{2})px/, 'desktop Web must reserve footer space');
+assert.match(desktopBlock, /padding-bottom:\s*calc\(132px \+ env\(safe-area-inset-bottom, 0px\)\)/, 'desktop Web must reserve footer space');
 
 assert.doesNotMatch(
   clarityCss,
