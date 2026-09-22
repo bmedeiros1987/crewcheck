@@ -128,7 +128,9 @@ jobs:
         run: node scripts/regression-v14-3-19-layout-structure.mjs
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android API 36
         shell: bash
