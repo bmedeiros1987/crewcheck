@@ -35,11 +35,14 @@
 
 @media (min-width: 901px) {
   .cz-bottom-nav {
-    display: none !important;
+    display: grid !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
   }
 
   .cz-app {
-    padding-bottom: 34px !important;
+    padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px)) !important;
+    scroll-padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
