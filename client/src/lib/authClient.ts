@@ -28,6 +28,13 @@ export interface AuthSession {
 
 const TOKEN_KEY = 'crewcheck_auth_token';
 const USER_KEY = 'crewcheck_auth_user';
+function disableNativeBiometricCredential() {
+  try {
+    const bridge = (window as any)?.AndroidCrewCheckNative;
+    if (bridge && typeof bridge.disableBiometric === 'function') bridge.disableBiometric();
+  } catch {}
+}
+
 const PUBLIC_AUTH_ENDPOINTS = new Set([
   '/api/auth/config',
   '/api/auth/login',
@@ -265,6 +272,21 @@ export async function confirmPasswordReset(payload: { email: string; code: strin
 
 const GET_ME_TIMEOUT_MS = 10_000;
 
+export async function restoreBiometricSession(token: string): Promise<AuthUser> {
+  const normalized = String(token || '').trim();
+  if (!normalized) throw new AuthClientError('Sessão biométrica vazia.', 0, 'BIOMETRIC_SESSION_EMPTY', null, 'other');
+  localStorage.setItem(TOKEN_KEY, normalized);
+  try {
+    return await getMe();
+  } catch (error) {
+    localStorage.removeItem(TOKEN_KEY);
+    if (error instanceof AuthClientError && error.reason === 'session_expired') {
+      disableNativeBiometricCredential();
+    }
+    throw error;
+  }
+}
+
 export async function getMe(): Promise<AuthUser> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GET_ME_TIMEOUT_MS);
@@ -283,6 +305,7 @@ export async function getMe(): Promise<AuthUser> {
 export async function logout(): Promise<void> {
   // Local logout is the security boundary: do not keep an authenticated client
   // alive while waiting for a slow/offline network request.
+  disableNativeBiometricCredential();
   clearSession();
   void jsonFetch('/api/auth/logout', { method: 'POST', body: '{}' }).catch(() => {});
 }

@@ -26,11 +26,11 @@ update('client/src/pages/AuthPage.tsx', (source) => {
   let next = source;
 
   if (!next.includes("from '@/lib/buildIdentityRuntime'")) {
-    const importAnchor = "import { confirmPasswordReset, login, register, requestPasswordReset } from '@/lib/authClient';";
-    if (!next.includes(importAnchor)) throw new Error('[p0-build-identity] Import de authClient não localizado em AuthPage.tsx.');
+    const importMatch = next.match(/import \{[^\n}]*confirmPasswordReset[^\n}]*login[^\n}]*register[^\n}]*requestPasswordReset[^\n}]*\} from ['"]@\/lib\/authClient['"];?/);
+    if (!importMatch) throw new Error('[p0-build-identity] Import de authClient não localizado em AuthPage.tsx.');
     next = next.replace(
-      importAnchor,
-      `${importAnchor}\nimport { getCrewCheckBuildIdentity, shortCrewCheckCommit } from '@/lib/buildIdentityRuntime';`,
+      importMatch[0],
+      `${importMatch[0]}\nimport { getCrewCheckBuildIdentity, shortCrewCheckCommit } from '@/lib/buildIdentityRuntime';`,
     );
   }
 

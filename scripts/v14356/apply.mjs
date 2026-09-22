@@ -45,7 +45,9 @@ export function patchIFlightSemiAutomaticV14356(source) {
 
 export function patchIFlightAndroidAuthorizationLockV14356(source) {
   if (source.includes('IFLIGHT_AUTOPULL_AUTHORIZED')) return source;
-  const classNeedle = 'public class MainActivity extends Activity {';
+  const classNeedle = source.includes('public class MainActivity extends FragmentActivity {')
+    ? 'public class MainActivity extends FragmentActivity {'
+    : 'public class MainActivity extends Activity {';
   const bridgeNeedle = '  public class CrewCheckIFlightBridge {';
   if (!source.includes(classNeedle) || !source.includes(bridgeNeedle)) throw new Error('[v14356] Ponte Android do iFlight não localizada.');
   let patched = source.replace(classNeedle, `${classNeedle}\n  private static final boolean IFLIGHT_AUTOPULL_AUTHORIZED = false;`);
