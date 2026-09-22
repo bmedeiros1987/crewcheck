@@ -1,0 +1,21 @@
+package com.crewcheck.watch;
+
+/**
+ * Textos já resolvidos e truncados de uma complicação.
+ *
+ * Deliberadamente sem nenhuma dependência de Android: é o que permite testar a decisão de
+ * texto de cada provider em JVM pura, sem emulador e sem SDK.
+ */
+final class ComplicationRendering {
+    final String shortText;
+    final String longText;
+    final String title;
+    final String description;
+
+    ComplicationRendering(String shortText, String longText, String title, String description) {
+        this.shortText = shortText;
+        this.longText = longText;
+        this.title = title;
+        this.description = description;
+    }
+}
