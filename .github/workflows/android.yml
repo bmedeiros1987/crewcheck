@@ -1,259 +1,141 @@
-name: Android APK and AAB
+name: Android signed store bundles
 
 on:
-  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'android-wrapper/**'
+      - 'scripts/android-play/**'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/android.yml'
   push:
     branches: [main]
     paths:
       - 'android-wrapper/**'
       - 'client/**'
-      - 'server.mjs'
-      - 'server/**'
       - 'scripts/**'
-      - 'migrations/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.*'
+      - 'package*.json'
       - '.github/workflows/android.yml'
+  workflow_dispatch:
+    inputs:
+      publish_internal_drafts:
+        description: 'Save verified bundles as internal test drafts (main only; requires existing Play credential)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: crewcheck-android-${{ github.ref }}
-  cancel-in-progress: true
+  group: crewcheck-play-release
+  cancel-in-progress: false
 
 jobs:
-  build-android:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY }}
-      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
-      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
-      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
-      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
-
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ runner.temp }}/crewcheck-release.jks
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
           cache: npm
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
-
-      - name: Setup Gradle 8.13
-        uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.13'
-
-      - name: Install web dependencies
-        run: npm ci || npm install
-
-      - name: Prepare current CrewCheck sources
-        shell: bash
+      - run: npm ci
+      - name: Prepare canonical sources and final store policy
+        run: node scripts/v139/apply.mjs
+      - name: Test negative publication gates
+        run: python3 scripts/android-play/test_validate.py
+      - name: Web and privacy validation
         run: |
-          set -euo pipefail
-          node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
-
-          release_file='client/public/release.json'
-          if [[ ! -s "$release_file" ]]; then
-            echo '::error title=Release canônica ausente::A preparação não produziu client/public/release.json.'
-            exit 1
-          fi
-
-          version="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('client/public/release.json','utf8')); const v=String(r.version||'').trim(); if(!/^\\d+\\.\\d+\\.\\d+$/.test(v)) { console.error('Invalid canonical release version: '+v); process.exit(1); } process.stdout.write(v);")"
-          version_code="$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number); if (![a,b,c].every(Number.isInteger) || [a,b,c].some(n=>n<0||n>99)) process.exit(1); process.stdout.write(String(a*10000+b*100+c));" "$version")"
-          echo "CrewCheck canonical release: $version ($version_code)"
-          echo "CREWCHECK_VERSION=$version" >> "$GITHUB_ENV"
-          echo "CREWCHECK_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
-
-          # A versão canônica é derivada de client/public/release.json, que é escrito por
-          # scripts/v14382/apply.mjs (o último gravador de versão na cadeia de scripts/v139/apply.mjs).
-          # Se um script de preparação futuro esquecer de propagar esse gravador para o novo
-          # topo da cadeia, o release.json regride silenciosamente para uma versão antiga e o
-          # AAB assinado sai com um versionCode que o Play já rejeitou/consumiu (já aconteceu:
-          # ver commit "fix(android): bump Play version to 14.3.74" revertido em #441).
-          # Atualize LAST_ACCEPTED_PLAY_VERSION_CODE após cada novo release aceito no Play.
-          LAST_ACCEPTED_PLAY_VERSION_CODE=140382
-          if (( version_code < LAST_ACCEPTED_PLAY_VERSION_CODE )); then
-            echo "::error title=Regressão de versionCode Android::client/public/release.json produziu $version ($version_code), anterior ao último release aceito no Play ($LAST_ACCEPTED_PLAY_VERSION_CODE). Verifique se o gravador de versão terminal (hoje scripts/v14382/apply.mjs) ainda é o último item da cadeia em scripts/v139/apply.mjs."
-            exit 1
-          fi
-
-          sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"$version\"/" android-wrapper/app/build.gradle
-          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $version_code/" android-wrapper/app/build.gradle
-          sed -i "s/id 'com.android.application' version '[^']*'/id 'com.android.application' version '8.11.1'/" android-wrapper/build.gradle
-          sed -i -E 's/compileSdk[[:space:]]+[0-9]+/compileSdk 36/' android-wrapper/app/build.gradle
-
-          wrapper_properties='android-wrapper/gradle/wrapper/gradle-wrapper.properties'
-          if [[ ! -f "$wrapper_properties" || ! -f android-wrapper/gradlew || ! -f android-wrapper/gradle/wrapper/gradle-wrapper.jar ]]; then
-            echo 'Gradle wrapper ausente ou incompleto; gerando wrapper 8.13.'
-            (cd android-wrapper && gradle wrapper --gradle-version 8.13 --distribution-type bin)
-          fi
-          sed -i -E 's#distributionUrl=.*gradle-[0-9.]+-(bin|all)\.zip#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$wrapper_properties"
-          chmod +x android-wrapper/gradlew
-
-      - name: Run named Android preflight
-        run: node scripts/v14373/preflight.mjs
-
-      - name: TypeScript check
-        run: npx tsc --noEmit
-
-      - name: Build web client
-        run: npx vite build
-
-      - name: Run aviation and family regression
-        run: node scripts/regression-v14-3-14-aviation-family.mjs
-
-      - name: Run daily guide regression
-        run: node scripts/regression-v14-3-15-daily-guide.mjs
-
-      - name: Run Control Center regression
-        run: node scripts/regression-v14-3-16-control-center.mjs
-
-      - name: Run theme and layout regression
-        run: node scripts/regression-v14-3-17-theme-layout.mjs
-
-      - name: Run structural layout regression
-        run: node scripts/regression-v14-3-19-layout-structure.mjs
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+          npx tsc --noEmit
+          npx vite build
+          node scripts/regression-crewwatch-premium-consolidated.mjs
+          node scripts/regression-watch-first-sync.mjs
+      - uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools'
-
-      - name: Install Android API 36
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Restore existing signing key and derive expected certificate
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-
-      - name: Validate Play Console signing secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-          missing=()
-          [[ -n "${KEYSTORE_BASE64:-}" ]] || missing+=("keystore base64")
-          [[ -n "${STORE_PASSWORD:-}" ]] || missing+=("store password")
-          [[ -n "${KEY_ALIAS:-}" ]] || missing+=("key alias")
-          [[ -n "${KEY_PASSWORD:-}" ]] || missing+=("key password")
-          if (( ${#missing[@]} )); then
-            printf '::error::Assinatura obrigatória ausente: %s\n' "$(IFS=', '; echo "${missing[*]}")"
-            exit 1
-          fi
-
-      - name: Decode and validate upload keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          encoded="${KEYSTORE_BASE64#base64:}"
-          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
-          test -s "$CREWCHECK_STORE_FILE"
-          chmod 600 "$CREWCHECK_STORE_FILE"
-          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
-
-      - name: Build signed release APK and AAB
-        working-directory: android-wrapper
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          keytool -exportcert -keystore "$CREWCHECK_STORE_FILE" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" -file "$RUNNER_TEMP/upload-cert.der"
+          echo "EXPECTED_UPLOAD_CERT_SHA256=$(sha256sum "$RUNNER_TEMP/upload-cert.der" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
+      - name: Test and build separate signed bundles
         env:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
-        shell: bash
         run: |
-          set -uo pipefail
-          ./gradlew --version
-          set +e
-          ./gradlew --no-daemon --console=plain clean :app:assembleRelease :app:bundleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/android-build.log"
-          build_status=${PIPESTATUS[0]}
-          set -e
-          if [[ "$build_status" -ne 0 ]]; then
-            tail -n 300 "$RUNNER_TEMP/android-build.log" > "$RUNNER_TEMP/android-build-tail.log"
-            first_error="$(grep -m1 -E '^e: |^error:|FAILURE:|\* What went wrong:' "$RUNNER_TEMP/android-build.log" || true)"
-            echo "::error title=Android release build failed::${first_error:-Consulte CrewCheck-android-build-diagnostics.}"
-            exit "$build_status"
+          gradle -p android-wrapper --no-daemon --console=plain :wear:testDebugUnitTest :wear:lintDebug :app:bundleRelease :wear:bundleRelease :watchface:bundleRelease
+      - name: Download pinned official bundletool
+        run: curl --fail --location --retry 3 https://github.com/google/bundletool/releases/download/1.18.2/bundletool-all-1.18.2.jar -o "$RUNNER_TEMP/bundletool.jar"
+      - name: Verify actual bundle manifests, signing and destinations
+        run: python3 scripts/android-play/validate.py --bundletool "$RUNNER_TEMP/bundletool.jar" --output "$RUNNER_TEMP/play-bundles"
+      - name: Upload mobile AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-mobile-AAB
+          path: ${{ runner.temp }}/play-bundles/CrewCheck-app-*.aab
+          if-no-files-found: error
+      - name: Upload Wear OS AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-WearOS-AAB
+          path: ${{ runner.temp }}/play-bundles/CrewCheck-wear-*.aab
+          if-no-files-found: error
+      - name: Upload watch face AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-WatchFace-AAB
+          path: ${{ runner.temp }}/play-bundles/CrewCheck-watchface-*.aab
+          if-no-files-found: error
+      - name: Upload verified release and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-verified-play-bundles
+          path: ${{ runner.temp }}/play-bundles/
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$CREWCHECK_STORE_FILE" "$RUNNER_TEMP/upload-cert.der"
+
+  publish-internal-drafts:
+    needs: build
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts) || (github.event_name == 'push' && vars.PLAY_INTERNAL_AUTO_PUBLISH == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Require existing credential
+        run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo '::error::PLAY_SERVICE_ACCOUNT_JSON is not configured. Verified AAB downloads remain available; no Play changes were made.'
+            exit 1
           fi
-
-      - name: Upload Android build diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: CrewCheck-android-build-diagnostics
-          path: |
-            ${{ runner.temp }}/crewcheck-prepare.log
-            ${{ runner.temp }}/android-build.log
-            ${{ runner.temp }}/android-build-tail.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Inspect native bridge inside APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
-          test -s "$apk"
-          inspect_dir="$RUNNER_TEMP/crewcheck-apk-inspect"
-          rm -rf "$inspect_dir"
-          mkdir -p "$inspect_dir"
-          unzip -q "$apk" 'classes*.dex' -d "$inspect_dir"
-          find "$inspect_dir" -name 'classes*.dex' -type f -print0 | xargs -0 strings > "$inspect_dir/dex-strings.txt"
-          grep -Fq 'CrewCheckHealthBridge' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'crewcheck-health-v1' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'openHealthConnect' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'refreshFromHost' "$inspect_dir/dex-strings.txt"
-          grep -Fq 'getHealthConnectManageDataIntent' "$inspect_dir/dex-strings.txt"
-          ! grep -Fq 'MANAGE_HEALTH_PERMISSIONS' "$inspect_dir/dex-strings.txt"
-
-      - name: Verify and stage signed artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk='android-wrapper/app/build/outputs/apk/release/app-release.apk'
-          aab='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
-          test -s "$apk"
-          test -s "$aab"
-
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$apk"
-
-          aab_log="$RUNNER_TEMP/aab-jarsigner-verify.log"
-          jarsigner -verify -verbose -certs "$aab" > "$aab_log" 2>&1
-          cat "$aab_log"
-          grep -Eq '^jar verified\.|^jar verified, with signer errors\.$' "$aab_log"
-          ! grep -Fqi 'jar is unsigned' "$aab_log"
-
-          mkdir -p "$RUNNER_TEMP/crewcheck-play"
-          cp "$apk" "$RUNNER_TEMP/crewcheck-play/CrewCheck-signed-release.apk"
-          cp "$aab" "$RUNNER_TEMP/crewcheck-play/CrewCheck-Play-Console.aab"
-          (cd "$RUNNER_TEMP/crewcheck-play" && sha256sum CrewCheck-signed-release.apk CrewCheck-Play-Console.aab > SHA256SUMS.txt)
-
-      - name: Upload signed APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CrewCheck-signed-release-apk
-          path: |
-            ${{ runner.temp }}/crewcheck-play/CrewCheck-signed-release.apk
-            ${{ runner.temp }}/crewcheck-play/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload signed Play Console AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: CrewCheck-signed-play-console-aab
-          path: |
-            ${{ runner.temp }}/crewcheck-play/CrewCheck-Play-Console.aab
-            ${{ runner.temp }}/crewcheck-play/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 14
+          name: CrewCheck-verified-play-bundles
+          path: verified-bundles
+      - run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+      - name: Check live version codes and save internal drafts only
+        run: python3 scripts/android-play/publish.py verified-bundles

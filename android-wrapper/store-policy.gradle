@@ -1,0 +1,24 @@
+// Applied after canonical generation: the Play variant has no Health Connect integration.
+def policy = new groovy.json.JsonSlurper().parse(rootProject.file('../scripts/android-play/release-policy.json'))
+def artifact = policy.artifacts[project.name]
+android.defaultConfig {
+    versionCode artifact.versionCode as Integer
+    versionName policy.versionName + (project.name == 'app' ? '' : '-' + project.name)
+    minSdk artifact.minSdk as Integer
+    targetSdk artifact.targetSdk as Integer
+}
+if (project.name == 'app') {
+    android.sourceSets.main.java.srcDir 'src/store/java'
+    android.sourceSets.main.java.exclude '**/CrewCheckHealthBridge.kt'
+    kotlin.sourceSets.main.kotlin.exclude '**/CrewCheckHealthBridge.kt'
+    configurations.configureEach {
+        exclude group: 'androidx.health.connect', module: 'connect-client'
+    }
+}
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.project == project && it.name in ['bundleRelease', 'assembleRelease'] }) {
+        if (!android.signingConfigs.release.storeFile || !android.signingConfigs.release.storeFile.exists()) {
+            throw new GradleException('Release signing is required; unsigned store artifacts are forbidden.')
+        }
+    }
+}

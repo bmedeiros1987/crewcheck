@@ -1,0 +1,9 @@
+{
+  "versionName": "14.4.09",
+  "knownMaxVersionCode": {"com.crewcheck.app": 140388, "com.crewcheck.watch.app": 140385},
+  "artifacts": {
+    "app": {"package": "com.crewcheck.app", "versionCode": 144090, "minSdk": 26, "targetSdk": 36, "track": "internal", "watch": false},
+    "wear": {"package": "com.crewcheck.app", "versionCode": 144091, "minSdk": 30, "targetSdk": 36, "track": "wear:internal", "watch": true},
+    "watchface": {"package": "com.crewcheck.watch.app", "versionCode": 144092, "minSdk": 33, "targetSdk": 36, "track": "wear:internal", "watch": true}
+  }
+}
