@@ -36,7 +36,7 @@ def validate_manifest(xml, module, policy):
         assert app.get(ANDROID + 'hasCode') == 'false', 'Watch face must be resource-only'
         props = {p.get(ANDROID + 'name'): p.get(ANDROID + 'value') for p in app.findall('property')}
         assert props.get('com.google.wear.watchface.format.version') == '1', 'Unexpected Watch Face Format'
-    assert spec['track'] == ('wear:internal' if spec['watch'] else 'internal'), 'Wrong track'
+    assert spec['track'] == ('wear:qa' if spec['watch'] else 'qa'), 'Wrong track'
     return spec
 
 def run(args):

@@ -21,7 +21,7 @@ def main():
     assert {r['module'] for r in report} == set(policy['artifacts']), 'Incomplete release'
     for item in report:
         assert all(item[k] == v for k, v in policy['artifacts'][item['module']].items()), 'Report/policy mismatch'
-        assert item['track'] in ['internal', 'wear:internal'], 'Only internal testing is authorized'
+        assert item['track'] in ['qa', 'wear:qa'], 'Only internal testing is authorized'
         assert Path(item['file']).name == item['file'], 'Invalid artifact filename'
         assert hashlib.sha256((root / item['file']).read_bytes()).hexdigest() == item['sha256'], 'Bundle checksum mismatch'
 
@@ -68,14 +68,18 @@ def main():
             items = [r for r in report if r['package'] == package]
             assert all(i['versionCode'] > known for i in items), 'Version already used or lower than a Play release; increment policy and rebuild'
             for item in items:
-                track = next((t for t in tracks if t['track'] == item['track']), None)
-                assert track is not None, 'Dedicated internal track must already exist in Play Console'
+                # Current API documentation calls internal tracks qa; support the legacy
+                # internal identifier only when it is explicitly returned by this app.
+                aliases = {'qa': ['qa', 'internal'], 'wear:qa': ['wear:qa', 'wear:internal']}[item['track']]
+                matches = [t for t in tracks if t['track'] in aliases]
+                assert len(matches) == 1, 'Dedicated internal track missing or ambiguous in Play Console'
+                track = matches[0]
                 assert not any(r.get('status') in ['draft', 'inProgress', 'halted'] for r in track.get('releases', [])), 'Existing unfinished test release: resolve it explicitly in Console first'
                 upload = f'https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/{package}/edits/{edit}/bundles?uploadType=media'
                 with (root / item['file']).open('rb') as bundle:
                     result = api('POST', upload, data=bundle, headers={'Content-Type': 'application/octet-stream'})
                 assert int(result['versionCode']) == item['versionCode'], 'Uploaded wrong artifact'
-                api('PUT', url + '/tracks/' + quote(item['track'], safe=''), json={'track': item['track'], 'releases': [{'name': policy['versionName'], 'versionCodes': [str(item['versionCode'])], 'status': 'draft'}]})
+                api('PUT', url + '/tracks/' + quote(track['track'], safe=''), json={'track': track['track'], 'releases': [{'name': policy['versionName'], 'versionCodes': [str(item['versionCode'])], 'status': 'draft'}]})
             api('POST', url + ':validate')
             api('POST', url + ':commit', params={'changesNotSentForReview': 'true'})
             committed = True
