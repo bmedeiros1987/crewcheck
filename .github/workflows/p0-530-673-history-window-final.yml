@@ -19,7 +19,7 @@ permissions:
 jobs:
   history-lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,6 +31,16 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Reproduce #673 history refresh lifecycle
         run: node scripts/regression-p0-530-673-history-window-final.mjs
+      - name: Preserve August/September continuity regression
+        run: node scripts/regression-p0-530-adjacent-month-retention.mjs
+      - name: Preserve full June-September retention after reimport
+        run: node scripts/regression-p1-530-full-history-retention.mjs
+      - name: Preserve adjacent fallback and finance scope
+        run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
+      - name: Preserve exact-competence continuity
+        run: node scripts/regression-p0-580-exact-competence-open.mjs
+      - name: Preserve multichannel operational isolation
+        run: node scripts/regression-p0-multichannel-roster-gate.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Production build
