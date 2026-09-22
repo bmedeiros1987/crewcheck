@@ -38,6 +38,14 @@ try {
       if (premium?.callLimit !== 20 || premium?.googlePlayProductId !== 'crewcheck_premium_monthly') throw new Error('Plano Premium incorreto');
     }
   }
+  const malformedCookieResponse = await fetch(`http://127.0.0.1:${port}/api/auth/me`, {
+    headers: { cookie: 'crewcheck_auth_token=%E0%A4%A' },
+  });
+  const malformedCookiePayload = await malformedCookieResponse.json();
+  if (!malformedCookieResponse.ok || typeof malformedCookiePayload !== 'object') {
+    throw new Error('Cookie de sessão malformado não pode derrubar /api/auth/me');
+  }
+
   console.log('CrewCheck server routes smoke test OK');
 } finally {
   child.kill('SIGTERM');
