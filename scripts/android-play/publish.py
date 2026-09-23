@@ -127,10 +127,12 @@ def main():
                         }],
                     },
                 )
-            api('POST', url + ':validate')
+            # edits.commit performs final validation. This account requires the edit to
+            # be committed without automatic review submission; Play Console can submit
+            # it for review explicitly afterward.
             api('POST', url + ':commit', params={'changesNotSentForReview': 'true'})
             committed = True
-            print(f'{package}: verified bundles RELEASED TO INTERNAL TESTING. Production untouched.')
+            print(f'{package}: verified bundles COMMITTED TO INTERNAL TESTING, pending explicit Play review submission. Production untouched.')
         finally:
             if not committed:
                 session.delete(url, timeout=30)
