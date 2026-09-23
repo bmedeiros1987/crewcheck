@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +15,7 @@ const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14337/apply.mjs');"), 'v14.3.37 deve estar na preparação canônica');
 assert.ok(chain.includes("await import('../v14337/compatibility.mjs');"), 'compatibilidade v14.3.37 deve preservar módulos existentes');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente');
+assert.ok(homeBefore.includes(`const DEFAULT_VERSION = '${releaseVersion}';`), 'versão Web/PWA final 14.4.08 ausente');
 assert.ok(homeBefore.includes('function CrewCheckMark('), 'componente único da marca CrewCheck ausente');
 assert.equal((homeBefore.match(/data-crewcheck-brand="canonical"/g) || []).length, 1, 'a definição da marca canônica deve existir uma única vez');
 assert.ok(homeBefore.includes('<CrewCheckMark/>'), 'cabeçalho deve reutilizar a marca canônica');
@@ -93,7 +94,7 @@ assert.ok(fs.existsSync(playSourcePath), 'fonte vetorial para o ativo Play Store
 const mark = fs.readFileSync(markPath, 'utf8');
 assert.ok(mark.includes('viewBox="0 0 512 512"'), 'marca deve possuir matriz 512×512');
 assert.equal(fs.readFileSync(playSourcePath, 'utf8'), mark, 'ativo Play Store deve nascer da mesma marca interna');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.08'), 'release.json final não foi atualizado');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes(releaseVersion), 'release.json final não foi atualizado');
 
 const applySource = fs.readFileSync(applyPath, 'utf8');
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'server.mjs', 'financialRules', 'canonicalRoster']) {

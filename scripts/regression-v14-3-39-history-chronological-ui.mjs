@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,7 +16,7 @@ const databaseBefore = fs.readFileSync(databasePath, 'utf8');
 const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14339/apply.mjs');"), 'v14.3.39 deve encerrar a preparação canônica');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente');
+assert.ok(homeBefore.includes(`const DEFAULT_VERSION = '${releaseVersion}';`), 'versão Web/PWA final 14.4.08 ausente');
 
 const databaseViewStart = homeBefore.indexOf('function historyPeriodLabel(');
 const databaseViewEnd = homeBefore.indexOf('function CrewToolsView(', databaseViewStart);

@@ -26,6 +26,7 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
     try {
       const result = await samsungRequest(action, extra);
       if (!state.current.active || epoch !== state.current.epoch) return;
+      if (result.paused) return;
       if (!result.ok) throw new Error('Samsung indisponível');
       const keys = (Array.isArray(result.keys) ? result.keys : []).filter(key => METRIC_KEYS.includes(key));
       setAvailable(result.available === true); setSelected(keys); setAuthorized(keys.length > 0);

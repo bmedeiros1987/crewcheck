@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
-const VERSION = '14.4.08';
+const releasePolicy = JSON.parse(fs.readFileSync('scripts/android-play/release-policy.json', 'utf8'));
+const VERSION = releasePolicy.versionName;
 const VERSION_DIGITS = VERSION.replace(/\./g, '');
 const TAG = '[v14408]';
 const replyWrapper = fs.readFileSync('scripts/v14408/reply-wrapper.snippet', 'utf8').trim();
@@ -177,7 +178,7 @@ update('client/public/release.json', () => `${JSON.stringify({
   version: VERSION,
   channel: 'web',
   updatePolicy: 'automatic-safe',
-  notes: 'Concierge com contexto curto restaurado, respostas mais naturais, transcrição pt-BR limpa e voz ElevenLabs ajustada para estabilidade.',
+  notes: releasePolicy.webReleaseNotes,
 }, null, 2)}\n`, { optional: true });
 update('package.json', (source) => {
   const data = JSON.parse(source);

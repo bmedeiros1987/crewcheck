@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -29,8 +30,8 @@ for (const marker of [
 
 assert.ok(!before.includes('FLIGHTAWARE_AEROAPI_KEY'), 'cliente não pode conhecer credencial de provedor');
 assert.ok(!before.includes('AVIATIONSTACK_API_KEY'), 'cliente não pode conhecer credencial de provedor');
-assert.ok(before.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.08'), 'release.json final 14.4.08 ausente');
+assert.ok(before.includes(`const DEFAULT_VERSION = '${releaseVersion}';`), 'versão Web/PWA final 14.4.08 ausente');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes(releaseVersion), 'release.json final 14.4.08 ausente');
 
 const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 falhou');

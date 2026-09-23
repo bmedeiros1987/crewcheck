@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,7 +45,7 @@ for (const marker of [
 assert.ok(!/-16\.(?:6|7)|-49\.(?:2|3)/.test(freshSnippet), 'captura atual não pode conter fallback geográfico de Goiânia');
 
 for (const marker of [
-  "const DEFAULT_VERSION = '14.4.08';",
+  `const DEFAULT_VERSION = '${releaseVersion}';`,
   'function loadFreshCurrentGeo(',
   'const saved = loadFreshCurrentGeo();',
   "source: 'browser-watch'",
@@ -93,10 +94,10 @@ for (const fixture of [legacyDispatchFixture, preparedDispatchFixture, preparedD
 }
 
 assert.ok(applySource.includes("const VERSION = '14.3.46';"), 'patch de localização deve permanecer versionado como v14.3.46');
-assert.ok(before.runtime.includes("version: '14.4.08'"), 'runtime final deve anunciar v14.4.08');
+assert.ok(before.runtime.includes(`version: '${releaseVersion}'`), 'runtime final deve anunciar v14.4.08');
 assert.ok(before.runtime.includes("localStorage.setItem('crewcheck_last_geo_meta'"), 'runtime deve registrar horário e precisão da posição');
-assert.ok(before.release.includes('14.4.08'), 'release final deve anunciar v14.4.08');
-assert.equal(JSON.parse(before.pkg).version, '14.4.08', 'package final deve anunciar v14.4.08');
+assert.ok(before.release.includes(releaseVersion), 'release final deve anunciar v14.4.08');
+assert.equal(JSON.parse(before.pkg).version, releaseVersion, 'package final deve anunciar v14.4.08');
 
 for (const protectedPath of [
   'client/src/lib/pdfParser.ts',

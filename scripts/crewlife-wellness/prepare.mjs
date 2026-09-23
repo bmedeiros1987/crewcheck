@@ -55,6 +55,8 @@ patch('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', s
   source = replace(source, '    private boolean isCrewCheckWebUrl(', '    private SamsungWellnessBridge samsungWellnessBridge;\n\n    private boolean isCrewCheckWebUrl(');
   source = replace(source, '        configureWebView(webView, false);', '        configureWebView(webView, false);\n        samsungWellnessBridge = new SamsungWellnessBridge(this, webView);\n        samsungWellnessBridge.install();');
   source = replace(source, 'webView.setWebViewClient(new WebViewClient() {', 'webView.setWebViewClient(new WebViewClient() {\n            @Override\n            public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {\n                super.onPageStarted(view, url, icon);\n                if (samsungWellnessBridge != null) samsungWellnessBridge.navigationStarted();\n            }');
+  source = replace(source, '        super.onResume();', '        super.onResume();\n        if (samsungWellnessBridge != null) samsungWellnessBridge.setForeground(true);');
+  source = replace(source, '    protected void onDestroy() {', '    protected void onPause() {\n        if (samsungWellnessBridge != null) samsungWellnessBridge.setForeground(false);\n        super.onPause();\n    }\n\n    @Override\n    protected void onDestroy() {');
   return replace(source, '        closePortalOnly();\n        if (billingBridge', '        closePortalOnly();\n        if (samsungWellnessBridge != null) samsungWellnessBridge.destroy();\n        if (billingBridge');
 });
 patch('client/src/lib/authClient.ts', source => {
@@ -89,7 +91,7 @@ for (const packagePath of ['package.json', 'package-lock.json']) {
   if (packageData.packages?.['']) packageData.packages[''].version = releasePolicy.versionName;
   fs.writeFileSync(packagePath, JSON.stringify(packageData, null, 2) + '\n');
 }
-webRelease.notes = 'Novo painel CrewLife e leitura mais clara no relógio. Integração Samsung disponível apenas em validação, aguardando aprovação.';
+webRelease.notes = releasePolicy.webReleaseNotes;
 fs.writeFileSync('client/public/release.json', JSON.stringify(webRelease, null, 2) + '\n');
 const { syncServiceWorkerVersion } = await import('../ci/sync-service-worker-version.mjs');
 fs.writeFileSync('client/public/sw.js', syncServiceWorkerVersion(fs.readFileSync('client/public/sw.js', 'utf8'), webRelease.version));

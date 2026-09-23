@@ -13,6 +13,8 @@ import org.json.JSONObject
 /** Only exact first-party HTTPS main frames receive this message channel. No JavascriptInterface health access. */
 class SamsungWellnessBridge(private val activity: Activity, private val webView: WebView) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var foreground = false
+    fun setForeground(value: Boolean) { foreground = value }
     private var generation = 0L
     private var job: Job? = null
     fun install() {
@@ -27,6 +29,10 @@ class SamsungWellnessBridge(private val activity: Activity, private val webView:
             val id = request.optString("requestId")
             if (!id.matches(Regex("[a-zA-Z0-9-]{1,80}")) || request.optInt("version") != 1) return@addWebMessageListener
             val action = request.optString("action")
+            if (action != "disconnect" && !foreground) {
+                reply.postMessage(JSONObject().put("requestId", id).put("ok", true).put("paused", true).toString())
+                return@addWebMessageListener
+            }
             val epoch = ++generation
             job?.cancel()
             if (action == "disconnect") {

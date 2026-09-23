@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -108,14 +109,14 @@ for (const marker of [
 ]) assert.ok(serverBefore.includes(marker), `servidor preparado sem marcador: ${marker}`);
 assert.ok(!serverBefore.includes("if (!isConciergeContextFreshV14338(previous)) return previous;"), 'contexto vencido não pode alcançar busca por recordKey, voo ou data');
 for (const marker of [
-  "const DEFAULT_VERSION = '14.4.08';",
+  `const DEFAULT_VERSION = '${releaseVersion}';`,
   'data-concierge-semantic="v14.3.41"',
   'Converse de verdade',
   'O contexto expira em até 6 horas',
   'title="Compreensão" value="Natural"',
   '<h2>Teste a conversa</h2>',
 ]) assert.ok(homeBefore.includes(marker), `interface preparada sem marcador: ${marker}`);
-assert.ok(releaseBefore.includes('14.4.08'), 'release Web/PWA final deve ser 14.4.08');
+assert.ok(releaseBefore.includes(releaseVersion), 'release Web/PWA final deve ser 14.4.08');
 assert.ok(!engineSource.includes('fetch('), 'interpretador semântico deve ser determinístico e sem chamada externa');
 assert.ok(!/OPENAI|GEMINI|ANTHROPIC|LLM_API/i.test(engineSource), 'interpretador não pode depender de modelo generativo externo');
 for (const protectedPath of ['client/src/lib/pdfParser.ts','server/rosterParser.mjs','canonicalRoster','financialRules']) {

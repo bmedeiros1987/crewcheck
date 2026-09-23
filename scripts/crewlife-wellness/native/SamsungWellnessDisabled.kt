@@ -12,6 +12,7 @@ class SamsungWellnessBridge(private val activity: Activity, webView: WebView) {
         File(activity.noBackupFilesDir, "crewlife-samsung.enc").delete()
         try { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("crewlife_samsung_cache_v1") } catch (_: Exception) {}
     }
+    fun setForeground(value: Boolean) {}
     fun navigationStarted() {}
     fun destroy() {}
 }

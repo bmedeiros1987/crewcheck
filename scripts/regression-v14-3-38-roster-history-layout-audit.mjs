@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,8 +16,8 @@ const homeBefore = fs.readFileSync(homePath, 'utf8');
 const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14338/apply.mjs');"), 'v14.3.38 deve encerrar a preparação canônica');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente no cliente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.08'), 'release.json final não atualizado');
+assert.ok(homeBefore.includes(`const DEFAULT_VERSION = '${releaseVersion}';`), 'versão Web/PWA final 14.4.08 ausente no cliente');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes(releaseVersion), 'release.json final não atualizado');
 
 for (const marker of [
   'function localRosterPeriodIdentity(',

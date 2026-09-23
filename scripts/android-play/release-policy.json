@@ -30,5 +30,6 @@
       "track": "wear:qa",
       "watch": true
     }
-  }
+  },
+  "webReleaseNotes": "Novo painel CrewLife e leitura mais clara no relógio. Integração Samsung disponível apenas em validação, aguardando aprovação."
 }

@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,7 +97,7 @@ for (const marker of [
   'safeHumor: true',
 ]) assert.ok(serverBefore.includes(marker), `marcador de segurança ausente: ${marker}`);
 for (const marker of [
-  "const DEFAULT_VERSION = '14.4.08';",
+  `const DEFAULT_VERSION = '${releaseVersion}';`,
   'Estilo e voz do Concierge',
   'Formal (profissional)',
   'Cômico leve (impessoal)',
@@ -113,6 +114,6 @@ const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/appl
 assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 falhou');
 assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'preparação final deve preservar a personalidade no servidor');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar a personalidade no cliente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.08'));
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes(releaseVersion));
 
 console.log('v14.3.36 Concierge personality/voice: formal mode, safe comic cooldown, protected voice catalog and UI preferences validated.');

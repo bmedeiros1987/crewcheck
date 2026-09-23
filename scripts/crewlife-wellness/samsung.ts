@@ -1,7 +1,7 @@
 import { getStoredUser, isAuthenticated } from '../../lib/authClient';
 import type { MetricKey } from './wellness';
 type Port = { postMessage: (message: string) => void; onmessage: ((event: { data: string }) => void) | null };
-export type SamsungReply = { ok: boolean; available?: boolean; keys?: MetricKey[]; background?: boolean; metrics?: unknown; syncedAt?: number };
+export type SamsungReply = { ok: boolean; paused?: boolean; available?: boolean; keys?: MetricKey[]; background?: boolean; metrics?: unknown; syncedAt?: number };
 const pending = new Map<string, { resolve: (reply: SamsungReply) => void; reject: (error: Error) => void; timeout: ReturnType<typeof setTimeout> }>();
 function port(): Port | undefined { return (window as unknown as { CrewCheckSamsung?: Port }).CrewCheckSamsung; }
 async function owner(): Promise<string> {

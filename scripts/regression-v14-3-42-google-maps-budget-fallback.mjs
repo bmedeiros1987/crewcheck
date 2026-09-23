@@ -1,3 +1,4 @@
+import { releaseVersion } from './ci/release-identity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -192,9 +193,9 @@ assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve ac
 assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
 assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
 assert.ok(!viteConfig.includes('GOOGLE_CLIENT_SECRET'), 'segredo OAuth nunca pode ser incorporado no bundle');
-assert.ok(home.includes("const DEFAULT_VERSION = '14.4.08';"), 'a preparação final deve terminar na versão Web/PWA 14.4.08');
+assert.ok(home.includes(`const DEFAULT_VERSION = '${releaseVersion}';`), 'a preparação final deve terminar na versão Web/PWA 14.4.08');
 assert.ok(home.includes('mapsBudget?: {'), 'cliente deve aceitar o diagnóstico de cota');
-assert.ok(release.includes('14.4.08'), 'release final deve anunciar 14.4.08');
+assert.ok(release.includes(releaseVersion), 'release final deve anunciar 14.4.08');
 assert.ok(applySource.includes("next.indexOf('type RoutePreviewInfo = {')"), 'patch do tipo deve usar a forma produzida pela preparação, sem depender dos últimos campos');
 assert.ok(applySource.includes('if (source.includes(replacement.trim())) return source;'), 'substituições de servidor devem ser idempotentes');
 assert.ok(applySource.includes("if (!next.includes('mapsBudget?: {'))"), 'tipo de rota deve ter proteção contra duplicidade');

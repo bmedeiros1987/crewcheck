@@ -93,7 +93,7 @@ export function patchLegacyVoiceRegressionV14357(source) {
     )
     .replace(
       "const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], {",
-      "const currentApplyPath = path.join(root, 'scripts', `v${currentVersion.replace(/\\./g, '')}`, 'apply.mjs');\nconst second = spawnSync(process.execPath, [currentApplyPath], {",
+      "const currentApplyPath = path.join(root, 'scripts/v14408/apply.mjs');\nconst second = spawnSync(process.execPath, [currentApplyPath], {",
     )
     .replace(
       "assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');",
