@@ -226,6 +226,21 @@ public class MainActivity extends Activity {
 
 
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.postDelayed(
+                    () -> requestCrewCheckWatchSnapshotFromWeb("phone-resume"),
+                    350L
+            );
+            webView.postDelayed(
+                    () -> requestCrewCheckWatchSnapshotFromWeb("phone-resume-retry"),
+                    1400L
+            );
+        }
+    }
+
     private void requestInitialCrewCheckPermissions() {
         try {
             if (!hasCrewCheckLocationPermission()) {
