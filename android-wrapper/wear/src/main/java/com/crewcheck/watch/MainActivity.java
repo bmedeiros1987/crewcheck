@@ -333,6 +333,10 @@ public final class MainActivity extends FragmentActivity
         }
 
         renderHeader(snapshot);
+        if (snapshot != null && !snapshot.premiumAccess) {
+            renderPremiumGate();
+            return;
+        }
         addNavigation(snapshot);
 
         switch (screenMode) {
@@ -421,7 +425,7 @@ public final class MainActivity extends FragmentActivity
                 WHITE, false, Gravity.CENTER);
         content.addView(time);
 
-        if (snapshot == null || snapshot.isStale(now)) {
+        if (snapshot == null || !snapshot.premiumAccess || snapshot.isStale(now)) {
             TextView hint = text("CrewCheck", 10, MUTED_AMBIENT, true, Gravity.CENTER);
             hint.setPadding(0, dp(8), 0, 0);
             content.addView(hint);
@@ -444,6 +448,57 @@ public final class MainActivity extends FragmentActivity
             gate.setPadding(0, dp(8), 0, 0);
             content.addView(gate);
         }
+    }
+
+    private void renderPremiumGate() {
+        TextView overline = text("CREWWATCH PREMIUM", 9, CYAN, true, Gravity.CENTER);
+        overline.setLetterSpacing(.12f);
+        overline.setPadding(0, dp(8), 0, dp(5));
+        content.addView(overline);
+
+        LinearLayout hero = premiumCard(VIOLET);
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        hero.setPadding(dp(14), dp(13), dp(14), dp(13));
+
+        TextView icon = text("✦", 24, CYAN, true, Gravity.CENTER);
+        hero.addView(icon);
+
+        TextView title = text("Sua operação no pulso", 20, WHITE, true, Gravity.CENTER);
+        title.setMaxLines(2);
+        title.setPadding(0, dp(3), 0, dp(3));
+        hero.addView(title);
+
+        TextView detail = text(
+                "Agora, Jornada, Alertas, CrewLife e Concierge com sincronização automática do CrewCheck.",
+                9, MUTED, false, Gravity.CENTER
+        );
+        detail.setMaxLines(4);
+        detail.setPadding(dp(2), dp(3), dp(2), dp(3));
+        hero.addView(detail);
+
+        TextView access = text(
+                "O Watch Face continua grátis. O aplicativo completo do relógio faz parte do Premium.",
+                9, SUCCESS, true, Gravity.CENTER
+        );
+        access.setMaxLines(4);
+        access.setPadding(dp(2), dp(5), dp(2), 0);
+        hero.addView(access);
+        content.addView(hero, cardParams());
+
+        TextView refresh = heroAction("Validar assinatura", CYAN);
+        refresh.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            requestSync();
+        });
+        content.addView(refresh);
+
+        TextView hint = text(
+                "Assine ou gerencie o Premium no CrewCheck do celular.",
+                8, MUTED, false, Gravity.CENTER
+        );
+        hint.setMaxLines(2);
+        hint.setPadding(0, dp(6), 0, dp(4));
+        content.addView(hint);
     }
 
     private void renderEmptyState() {
