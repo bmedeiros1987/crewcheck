@@ -58,9 +58,13 @@ expectAll('abrir escala ativa deve continuar substituindo somente o bundle opera
   'setBundle({ roster: active.roster',
 ]);
 
-// Android ACTION_SEND must enter the exact same handleFile pipeline as PWA.
+// Android ACTION_SEND and PWA share_target must enter the exact same canonical
+// processRosterFile(File) pipeline. ACK is allowed only after that pipeline returns success.
 assert.match(home, /window\.addEventListener\('crewcheck:native-pdf'/);
-assert.match(home, /await handleFile\(\{ target: \{ files: \[file\] \} \}/);
+assert.match(home, /claimPendingPwaSharedPdf\(\)/);
+assert.match(home, /const imported = await processRosterFile\(file\);/);
+assert.match(home, /await processRosterFile\(claim\.file\)/);
+assert.match(android, /SharedPdfInbox\.capture/);
 assert.match(android, /acknowledgeSharedPdf/);
 
 // Telegram must parse, then persist only a linked account through the same
@@ -76,6 +80,7 @@ assert.match(platform, /ACTIVE_ROSTER_INVARIANT/);
 // 01/08 FOR-PHB -> PHB-FOR -> FOR-CGH sequence and identity/persistence rules.
 for (const script of [
   'scripts/regression-v14-3-68-android-share-import.mjs',
+  'scripts/regression-p0-pwa-share-target-pdf.mjs',
   'scripts/regression-v14-3-74-for-cgh.mjs',
   'scripts/regression-v14-3-75-telegram-roster-parity.mjs',
   'scripts/regression-v14-3-76-telegram-platform-roster-sync.mjs',
