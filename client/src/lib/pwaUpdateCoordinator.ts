@@ -24,25 +24,22 @@ export function installPwaUpdateCoordinator(options: CoordinatorOptions = {}): (
   let registration: ServiceWorkerRegistration | null = null;
   let reloadPending = false;
   let reloadStarted = false;
-  const hadControllerAtStart = Boolean(navigator.serviceWorker.controller);
+  let controllerSeen = Boolean(navigator.serviceWorker.controller);
+  const RELOAD_GUARD_KEY = 'crewcheck-sw-safe-reload-at';
+  const RELOAD_GUARD_MS = 30_000;
 
   const markActivity = () => { lastActivityAt = Date.now(); };
   const isSafeToActivate = () => document.visibilityState === 'hidden' || Date.now() - lastActivityAt >= idleMs;
 
-  const controllerReloadKey = () => {
-    const script = navigator.serviceWorker.controller?.scriptURL || 'unknown-controller';
-    return `crewcheck-sw-reloaded:${script}`;
-  };
-
   const reloadForActivatedUpdate = () => {
     if (!reloadPending || reloadStarted || !isSafeToActivate()) return;
     try {
-      const key = controllerReloadKey();
-      if (window.sessionStorage.getItem(key) === '1') {
+      const lastReloadAt = Number(window.sessionStorage.getItem(RELOAD_GUARD_KEY) || 0);
+      if (Number.isFinite(lastReloadAt) && Date.now() - lastReloadAt < RELOAD_GUARD_MS) {
         reloadPending = false;
         return;
       }
-      window.sessionStorage.setItem(key, '1');
+      window.sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
     } catch {
       // sessionStorage failure must not block a safe update.
     }
@@ -83,9 +80,12 @@ export function installPwaUpdateCoordinator(options: CoordinatorOptions = {}): (
     reloadForActivatedUpdate();
   };
   const onControllerChange = () => {
-    // Ignore the very first controller acquired by a fresh install. A controller
-    // replacement means a newer CrewCheck shell actually became active.
-    if (!hadControllerAtStart) return;
+    // Ignore only the first controller acquired by a fresh install. Any later
+    // replacement in the same session is a real update and must reach the UI.
+    if (!controllerSeen) {
+      controllerSeen = true;
+      return;
+    }
     reloadPending = true;
     reloadForActivatedUpdate();
   };
