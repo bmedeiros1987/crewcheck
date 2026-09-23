@@ -87,6 +87,7 @@ assert.match(notificationCenter, /postConciergeResponse/);
 assert.match(notificationCenter, /crewcheck_screen", "concierge"/);
 assert.match(home, /crewcheck:watch-concierge-action/);
 assert.match(home, /watchConciergePrompt/);
+assert.match(home, /processedWatchConciergeRequests/);
 assert.match(home, /replyWatchConcierge/);
 assert.match(phoneMain, /requestCrewCheckWatchSnapshotFromWeb\("phone-resume"\)/);
 assert.match(home, /document\.addEventListener\('visibilitychange', onVisible\)/);
