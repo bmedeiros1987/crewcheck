@@ -30,7 +30,7 @@ export function findUnsafeTeeRuns(text, file = '<fixture>') {
   const violations = [];
 
   for (let i = 0; i < lines.length; i += 1) {
-    const match = lines[i].match(/^(\s*)run:\s*(.*)$/);
+    const match = lines[i].match(/^(\s*)(?:-\s*)?run:\s*(.*)$/);
     if (!match) continue;
 
     const runIndent = match[1].length;
