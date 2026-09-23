@@ -18,6 +18,7 @@ const dataLayer = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/C
 const phoneMain = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const home = read('client/src/pages/Home.tsx');
 const watchContract = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchContract.java');
+const watchEntitlements = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchEntitlements.java');
 const watchConciergeClient = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchConciergeClient.java');
 const watchConciergeStore = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchConciergeStore.java');
 const conciergeProvider = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/ConciergeComplicationService.java');
@@ -29,7 +30,6 @@ const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewchec
 const watchSnapshot = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchContextSnapshot.java');
 const phonePublisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java');
 const watchContext = read('client/src/lib/watchContext.ts');
-const platform = read('server/platform.mjs');
 
 assert.match(main, /MODE_JOURNEY = 1/);
 assert.match(main, /MODE_CONCIERGE = 5/);
@@ -92,7 +92,6 @@ assert.match(notificationCenter, /crewcheck_screen", "concierge"/);
 assert.match(home, /crewcheck:watch-concierge-action/);
 assert.match(home, /watchConciergePrompt/);
 assert.match(home, /processedWatchConciergeRequests/);
-assert.match(home, /replyWatchConcierge/);
 assert.match(phoneMain, /requestCrewCheckWatchSnapshotFromWeb\("phone-resume"\)/);
 assert.match(home, /document\.addEventListener\('visibilitychange', onVisible\)/);
 
@@ -104,7 +103,6 @@ assert.doesNotMatch(face, /ConciergeComplicationService/, 'face grátis não pod
 const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
 assert.ok(slots >= 3, 'watch face grátis deve manter passos, bateria e próximo evento');
 
-
 assert.match(main, /addGlanceRail\(snapshot, now\)/, 'Agora deve mostrar rail de glances essenciais');
 assert.match(main, /"BATERIA"/, 'Agora deve expor bateria em glance legível');
 assert.match(main, /"HOJE"/, 'Agora deve expor quantidade de etapas de hoje');
@@ -114,15 +112,29 @@ assert.match(main, /"DEPOIS"/, 'programação deve mostrar também a etapa segui
 assert.doesNotMatch(main, /actionChip\("↻ Atualizar"/, 'refresh manual não deve dominar a experiência premium');
 assert.match(main, /Sincronização automática\. Toque para atualizar agora\./, 'refresh manual deve ser fallback da sincronização automática');
 
-assert.match(main, /!snapshot\.premiumAccess/, 'APK Wear deve bloquear superfícies Premium para plano grátis');
-assert.match(main, /renderPremiumGate\(/);
-assert.match(main, /O Watch Face continua grátis/);
+// Commercial contract: Free keeps the useful canonical roster. Premium is feature-scoped.
+assert.doesNotMatch(main, /renderPremiumGate\(/, 'não pode existir gate global bloqueando o APK Free');
+assert.doesNotMatch(main, /!snapshot\.premiumAccess/, 'Agora/Jornada/Escala não podem depender de Premium');
 assert.match(watchSnapshot, /public final boolean premiumAccess/);
-assert.match(watchSnapshot, /Ative o Premium no CrewCheck/);
-assert.match(phonePublisher, /source\.optBoolean\("premiumAccess", false\)/);
-assert.match(phonePublisher, /"free-tier"/, 'celular não deve enviar escala operacional para plano grátis');
+assert.doesNotMatch(watchSnapshot, /Ative o Premium no CrewCheck/, 'complicações básicas não podem virar paywall');
+assert.match(phonePublisher, /copySchedule\(source, out, premiumAccess\)/);
+assert.doesNotMatch(phonePublisher, /free-tier/, 'Free deve receber projeção operacional canônica');
+assert.match(phonePublisher, /if \(premiumAccess\)/, 'campos custosos devem ser enviados apenas para Premium');
+assert.match(phonePublisher, /copyString\(source, out, "currentFlight"/);
+assert.match(phonePublisher, /copyString\(source, out, "presentationTime"/);
+assert.match(phonePublisher, /copyString\(source, out, "overnight"/);
 assert.match(watchContext, /premiumAccess: boolean/);
 assert.match(home, /watchPremiumAccess/);
-assert.match(platform, /watchFace: true, watchApp: plan !== 'free'/);
+assert.match(watchEntitlements, /static boolean basicRoster\(Context context\)/);
+assert.match(watchEntitlements, /return true;/);
+assert.match(watchEntitlements, /static boolean crewLife\(Context context\)/);
+assert.match(watchEntitlements, /static boolean concierge\(Context context\)/);
+assert.match(watchEntitlements, /static boolean smartDeparture\(Context context\)/);
+assert.match(watchEntitlements, /static boolean liveOps\(Context context\)/);
+assert.match(dataLayer, /if \(!snapshot\.premiumAccess\)/, 'downgrade deve limpar caches Premium sem apagar escala');
+assert.match(dataLayer, /WatchEntitlements\.crewLife/);
+assert.match(dataLayer, /WatchEntitlements\.concierge/);
+assert.match(watchConciergeClient, /WatchEntitlements\.concierge/);
+assert.match(watchConciergeStore, /void clear\(\)/);
 
-console.log('[crewwatch-premium-experience-v2] premium navigation + humane fallbacks OK');
+console.log('[crewwatch-premium-experience-v2] free roster + premium feature boundaries OK');
