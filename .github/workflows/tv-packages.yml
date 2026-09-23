@@ -89,6 +89,77 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+
+  android-tv-official-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      VITE_TV_DEMO: 'false'
+      VITE_CREWCHECK_TV_ENABLED: 'true'
+      VITE_TV_API_ORIGIN: 'https://crewcheck.online'
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY }}
+      TV_STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
+      TV_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
+      TV_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - run: npm ci --ignore-scripts
+      - name: Prepare Android TV signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${KEYSTORE_BASE64:-}" ]] || missing+=("keystore")
+          [[ -n "${TV_STORE_PASSWORD:-}" ]] || missing+=("store password")
+          [[ -n "${TV_KEY_ALIAS:-}" ]] || missing+=("key alias")
+          [[ -n "${TV_KEY_PASSWORD:-}" ]] || missing+=("key password")
+          if (("${#missing[@]}")); then
+            printf 'Missing Android TV signing material: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+          TV_KEYSTORE="$RUNNER_TEMP/crewcheck-tv-release.jks"
+          encoded="${KEYSTORE_BASE64#base64:}"
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > "$TV_KEYSTORE"
+          keytool -list -keystore "$TV_KEYSTORE" -storepass "$TV_STORE_PASSWORD" -alias "$TV_KEY_ALIAS" >/dev/null
+          echo "TV_KEYSTORE=$TV_KEYSTORE" >> "$GITHUB_ENV"
+      - name: Validate persistent TV contract
+        run: |
+          node scripts/tv-trusted-client-test.mjs
+          node scripts/tv-lifetime-test.mjs
+      - name: Build operational Android TV assets
+        run: node scripts/tv-build.mjs android-tv
+      - name: Build signed Android TV APK and AAB
+        working-directory: apps/android-tv
+        run: gradle --no-daemon :app:assembleRelease :app:bundleRelease
+      - name: Verify signed package and record provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/tv-packages/android-official
+          cp apps/android-tv/app/build/outputs/apk/release/app-release.apk dist/tv-packages/android-official/CrewCheck-TV-Android-OFFICIAL.apk
+          cp apps/android-tv/app/build/outputs/bundle/release/app-release.aab dist/tv-packages/android-official/CrewCheck-TV-Android-OFFICIAL.aab
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$signer" verify --verbose --print-certs dist/tv-packages/android-official/CrewCheck-TV-Android-OFFICIAL.apk
+          printf 'Commit: %s\nID: online.crewcheck.tv\nAPI: https://crewcheck.online\nPersistent trusted pairing: enabled; remains until explicit unlink/revocation.\nOperational candidate only; no automatic store publication.\n' "$GITHUB_SHA" > dist/tv-packages/android-official/BUILD.txt
+          (cd dist/tv-packages/android-official && sha256sum *.apk *.aab > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-TV-Android-OFFICIAL-CANDIDATE
+          path: dist/tv-packages/android-official
+          if-no-files-found: error
+          retention-days: 14
+
   webos-tizen:
     runs-on: ubuntu-latest
     timeout-minutes: 15
