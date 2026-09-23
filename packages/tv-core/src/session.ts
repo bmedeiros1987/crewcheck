@@ -167,9 +167,17 @@ export class TvSession {
     } finally {
       if (timer) clearTimeout(timer);
     }
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
+      // A 401 means the device credential is no longer valid (for example,
+      // explicit revocation). Only this condition is allowed to forget a
+      // trusted TV automatically.
       this.clear(true);
       throw new Error("pair_again");
+    }
+    if (response.status === 403) {
+      // Feature/account gates can be temporary. Keep a trusted device paired
+      // so service recovery never forces the owner through pairing again.
+      throw new Error("access_forbidden");
     }
     if (!response.ok) throw new Error(`request_${response.status}`);
     const serverNow = Number(response.headers.get("X-CrewCheck-Server-Time"));
@@ -200,7 +208,11 @@ export class TvSession {
 
     const invalid = snapshotValidationCode(raw, credential, receivedAt);
     if (invalid) {
-      this.clear(true);
+      this.snapshot = null;
+      try { this.storage.removeItem(KEY); } catch {}
+      // A malformed/stale projection must not unlink a trusted television.
+      // Temporary sessions keep their previous fail-closed behaviour.
+      if (!credential.trusted) this.clear(true);
       throw new Error(`invalid_snapshot_${invalid}`);
     }
 
