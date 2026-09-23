@@ -33,6 +33,10 @@ on:
       - '.github/workflows/atlas-v14357-ui-clarity.yml'
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+
 permissions:
   contents: read
 
