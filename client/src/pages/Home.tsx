@@ -4646,6 +4646,7 @@ export default function Home() {
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
   const [presentationRevision, setPresentationRevision] = useState(0);
+  const [watchPremiumAccess, setWatchPremiumAccess] = useState(() => Boolean(getStoredUser()?.premiumAccess));
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
   const event = nextFlight(events);
   const flightEvent = nextRealFlight(events);
@@ -4654,9 +4655,32 @@ export default function Home() {
   useWeatherLandingMonitor(flightEvent);
 
   useEffect(() => {
+    let alive = true;
+    const refreshWatchEntitlement = () => {
+      void getPlatformBilling()
+        .then((billing) => {
+          if (alive) setWatchPremiumAccess(Boolean(billing?.premiumAccess));
+        })
+        .catch(() => {
+          if (!alive) return;
+          const cached = getStoredUser();
+          setWatchPremiumAccess(Boolean(cached?.premiumAccess));
+        });
+    };
+    refreshWatchEntitlement();
+    window.addEventListener('focus', refreshWatchEntitlement);
+    window.addEventListener('crewcheck:billing-updated', refreshWatchEntitlement as EventListener);
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', refreshWatchEntitlement);
+      window.removeEventListener('crewcheck:billing-updated', refreshWatchEntitlement as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
     const publishWatchSnapshot = () => {
       try {
-        const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        const snapshot = buildCrewCheckWatchSnapshot(events, event, null, Date.now(), watchPremiumAccess);
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
@@ -4680,7 +4704,7 @@ export default function Home() {
       document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(timer);
     };
-  }, [events, event.id, event.presentation, event.gate, event.status]);
+  }, [events, event.id, event.presentation, event.gate, event.status, watchPremiumAccess]);
 
   useEffect(() => {
     const onWatchConciergeAction = async (event: Event) => {
