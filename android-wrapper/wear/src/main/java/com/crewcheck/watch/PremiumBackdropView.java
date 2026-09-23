@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.view.View;
 
@@ -17,6 +18,7 @@ import android.view.View;
 public final class PremiumBackdropView extends View {
     private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint softArc = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public PremiumBackdropView(Context context) {
         super(context);
@@ -35,6 +37,20 @@ public final class PremiumBackdropView extends View {
         if (w <= 0 || h <= 0) return;
 
         canvas.drawColor(Color.rgb(3, 9, 20));
+
+        halo.setShader(new RadialGradient(
+                w * 0.5f,
+                h * 0.22f,
+                Math.max(w, h) * 0.58f,
+                new int[]{
+                        Color.argb(58, 34, 211, 238),
+                        Color.argb(34, 99, 102, 241),
+                        Color.argb(0, 3, 9, 20)
+                },
+                new float[]{0f, 0.42f, 1f},
+                Shader.TileMode.CLAMP
+        ));
+        canvas.drawCircle(w * 0.5f, h * 0.22f, Math.max(w, h) * 0.58f, halo);
 
         float stroke = Math.max(2f, w * 0.008f);
         float softStroke = Math.max(1f, w * 0.004f);
