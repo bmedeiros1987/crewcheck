@@ -11,6 +11,12 @@ def keyPasswordValue = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.
 def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
 def samsungHealthAars = fileTree(dir: 'libs', include: ['samsung-health-data-api*.aar'])
 def samsungHealthAarPresent = !samsungHealthAars.files.isEmpty()
+def crewLifeVersionCode = Integer.parseInt(
+        String.valueOf(project.findProperty('CREWLIFE_VERSION_CODE') ?: System.getenv('CREWLIFE_VERSION_CODE') ?: '101')
+)
+def crewLifeVersionName = String.valueOf(
+        project.findProperty('CREWLIFE_VERSION_NAME') ?: System.getenv('CREWLIFE_VERSION_NAME') ?: '1.0.1'
+)
 def generatedRes = file("$buildDir/generated/res/crewcheckBrand")
 
 tasks.register('generateCrewLifeBrandAssets') {
@@ -35,8 +41,8 @@ android {
         applicationId 'com.crewcheck.life'
         minSdk 29
         targetSdk 36
-        versionCode 101
-        versionName '1.0.1'
+        versionCode crewLifeVersionCode
+        versionName crewLifeVersionName
         buildConfigField 'boolean', 'SAMSUNG_HEALTH_SDK_INCLUDED',
                 samsungHealthAarPresent ? 'true' : 'false'
     }
