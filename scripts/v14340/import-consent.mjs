@@ -4,12 +4,13 @@ const homePath = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(homePath)) throw new Error('[v14340-consent] Home.tsx ausente.');
 
 const source = fs.readFileSync(homePath, 'utf8');
+const importCancelReturn = source.includes('async function processRosterFile(file: File): Promise<boolean>') ? 'return false;' : 'return;';
 const protectedBlock = `      const decision = confirmRosterImport(roster, file.name);
       let auditImport = false;
       const detectedDays = Array.isArray(roster.days) ? roster.days.length : 0;
       if (!detectedDays) {
         toast.error('Nenhuma data de escala foi reconhecida. A importação não substituirá sua escala ativa; tente novamente para acionar a leitura visual alternativa.');
-        return;
+        ${importCancelReturn}
       }
       if (!decision.ok) {
         const overrideImport = window.confirm(
@@ -17,7 +18,7 @@ const protectedBlock = `      const decision = confirmRosterImport(roster, file.
         );
         if (!overrideImport) {
           toast.message('Importação cancelada. Sua escala ativa foi preservada.');
-          return;
+          ${importCancelReturn}
         }
         toast.warning('Importação liberada por confirmação explícita. Confira o período e os voos após abrir.');
       }
