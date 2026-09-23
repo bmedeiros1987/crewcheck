@@ -58,7 +58,9 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CONCIERGE_RESPONSE_JSON);
                     if (json != null) {
-                        new WatchConciergeStore(this).save(json);
+                        WatchConciergeStore.Snapshot response =
+                                new WatchConciergeStore(this).save(json);
+                        WatchNotificationCenter.postConciergeResponse(this, response);
                         sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
                                 .setPackage(getPackageName()));
                     }
@@ -91,7 +93,9 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 new WellbeingStore(this).saveRoutine(new String(data, StandardCharsets.UTF_8));
             } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_CONCIERGE_BYTES) return;
-                new WatchConciergeStore(this).save(new String(data, StandardCharsets.UTF_8));
+                WatchConciergeStore.Snapshot response = new WatchConciergeStore(this)
+                        .save(new String(data, StandardCharsets.UTF_8));
+                WatchNotificationCenter.postConciergeResponse(this, response);
                 sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
                         .setPackage(getPackageName()));
             }
