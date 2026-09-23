@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 source = Path('scripts/android-play/publish.py').read_text(encoding='utf-8')
+workflow = Path('.github/workflows/android.yml').read_text(encoding='utf-8')
 
 assert "assert item['track'] in ['qa', 'wear:qa']" in source
 assert "'status': 'completed'" in source
@@ -17,3 +18,8 @@ payload_tracks = re.findall(r"\['([^']+)'\]", source)
 assert "production" not in payload_tracks
 
 print('[android-play] internal auto-release policy OK')
+
+
+assert "github.event_name == 'push'" in workflow
+assert "vars.PLAY_INTERNAL_AUTO_PUBLISH" not in workflow
+assert "PLAY_SERVICE_ACCOUNT_JSON" in workflow
