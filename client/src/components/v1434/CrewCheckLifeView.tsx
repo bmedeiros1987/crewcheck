@@ -175,6 +175,11 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   });
   const [whyOpen, setWhyOpen] = useState(false);
   const androidBridge = (window as any).AndroidCrewCheckHealth;
+  const nativeHealthBridgeMode = (() => {
+    try { return String(androidBridge?.ping?.() || ''); } catch { return ''; }
+  })();
+  const nativeHealthEnabled = Boolean(androidBridge?.postMessage)
+    && nativeHealthBridgeMode !== 'crewcheck-life-manual-only';
   const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;
 
   function postAndroid(action: string, payload: Record<string, unknown> = {}): boolean {
@@ -196,12 +201,12 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     };
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
-    if (consent.active && androidBridge?.postMessage) postAndroid('status');
+    if (consent.active && nativeHealthEnabled) postAndroid('status');
     return () => {
       window.removeEventListener('crewcheck:health-status', onStatus);
       window.removeEventListener('crewcheck:health-summary', onSummary);
     };
-  }, [consent.active, androidBridge]);
+  }, [consent.active, androidBridge, nativeHealthEnabled]);
 
   useEffect(() => {
     const native = (window as any).AndroidCrewCheckNative;
@@ -468,10 +473,10 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
             if (!ok) toast.info('Instale o CrewLife Companion Samsung para ativar a sincronização automática.');
           }}>{automaticSamsung ? 'Abrir Companion' : companionStatus.installed ? 'Conectar' : 'Como instalar'}</button>
         </article>
-        <article className={nativeStatus.allGranted ? 'connected' : ''}>
-          <Smartphone/><div><h3>Health Connect + Samsung Health</h3><p>Android, Galaxy Watch e outros apps que sincronizam com o Health Connect.</p><small>{integrationLabel(nativeStatus)}</small></div>
+        {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
+          <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>
           <div><button className="primary" onClick={connectAndroid}>{nativeStatus.allGranted ? 'Rever permissões' : 'Conectar'}</button>{nativeStatus.allGranted && <button onClick={refreshAndroid}><RefreshCw/> Atualizar</button>}</div>
-        </article>
+        </article>}
         {(!(window as any).AndroidCrewCheckNative || appleBridge) && <article className={appleBridge ? 'ready' : ''}>
           <Apple/><div><h3>Apple Health</h3><p>Interface preparada. A leitura depende do aplicativo nativo iOS e da autorização do HealthKit.</p><small>{appleBridge ? 'App iOS pronto para autorizar' : 'Modo manual disponível no iPhone/iPad'}</small></div>
           <button onClick={connectApple}>{appleBridge ? 'Conectar' : 'Ver disponibilidade'}</button>
