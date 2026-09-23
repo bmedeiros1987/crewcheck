@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict';import{readFile}from'node:fs/promises';
+const main=await readFile('apps/tv-player/src/main.tsx','utf8');const css=await readFile('apps/tv-player/src/tv.css','utf8');const doc=await readFile('docs/tv/FLIGHT-EXECUTION-UX.md','utf8');
+assert.match(main,/groupedPrograms/);assert.match(main,/journeyId/);assert.match(main,/program-legs/);assert.match(main,/ETAPAS · JORNADA COMPLETA/);assert.match(main,/program-stay/);assert.match(main,/PERNOITE \/ ESTADIA/);assert.match(main,/DETALHES DA PROGRAMAÇÃO/);assert.match(main,/Tripulação e financeiro exigem autorização explícita/);
+assert.match(css,/\.program-card\.program-stay/);assert.match(css,/\.stay-signature/);assert.match(css,/\.program-detail-tabs/);
+assert.match(doc,/Scale -> Day -> Program -> Details/);assert.match(doc,/never collapse a multi-leg journey into the first leg/);assert.match(doc,/TV does not silently order transportation/);assert.match(doc,/Visitor mode/);
+console.log('PASS: TV complete journey, stay identity, detail drill-down and extension boundaries are explicit.');
