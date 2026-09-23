@@ -7,52 +7,38 @@ function read(path) {
 function expect(condition, message) {
   if (!condition) throw new Error(`[v14.3.68] ${message}`);
 }
-function javaMethodBody(source, signature) {
-  const start = source.indexOf(signature);
-  if (start < 0) return '';
-  const open = source.indexOf('{', start);
-  if (open < 0) return '';
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === '{') depth += 1;
-    else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(open + 1, index);
-    }
-  }
-  return '';
-}
 
 const home = read('client/src/pages/Home.tsx');
 const android = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
+const inbox = read('android-wrapper/app/src/main/java/com/crewcheck/app/SharedPdfInbox.java');
 const manifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const chain = read('scripts/v14365/apply.mjs');
 
 expect(home.includes("window.addEventListener('crewcheck:native-pdf'"), 'Home não escuta o PDF compartilhado pelo Android.');
-expect(home.includes('await handleFile({ target: { files: [file] } }'), 'PDF compartilhado não reutiliza o fluxo canônico handleFile.');
+expect(home.includes('processRosterFile(file)'), 'PDF compartilhado não reutiliza o importador canônico.');
+expect(home.includes('const imported = await processRosterFile(file);'), 'ACK precisa depender do resultado real da importação.');
 expect(home.includes('AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId)'), 'Cliente não confirma o consumo do PDF nativo.');
 expect(home.includes('syncRosterWithTelegramConcierge(roster, file.name)'), 'Fluxo canônico deixou de sincronizar a escala com o Concierge/Telegram.');
 expect(home.includes('syncPlatformRoster(roster, newCompliance, file.name)'), 'Fluxo canônico deixou de sincronizar a escala com a plataforma.');
 
 expect(android.includes('private String pendingSharedPdfId;'), 'Android não mantém identidade do PDF compartilhado.');
+expect(android.includes('SharedPdfInbox.capture(this, uri, MAX_PDF_BYTES)'), 'Android não copia o share para inbox privado persistente.');
+expect(android.includes('restorePendingSharedPdfFromInbox()'), 'Cold start não restaura PDF pendente.');
 expect(android.includes('intent.getClipData().getItemAt(0).getUri()'), 'Android não aceita URI recebida via ClipData.');
-expect(android.includes('payload.put("shareId", pendingSharedPdfId'), 'Payload nativo não envia shareId.');
+expect(android.includes('payload.put("shareId", pending.id)'), 'Payload nativo não envia shareId persistente.');
+expect(android.includes('SharedPdfInbox.readBytes(this, pending.id, MAX_PDF_BYTES)'), 'Dispatch deve ler o arquivo persistido, não depender apenas de RAM.');
 expect(android.includes('public boolean acknowledgeSharedPdf(final String shareId)'), 'Bridge Android não expõe ACK do PDF.');
+expect(android.includes('SharedPdfInbox.acknowledge(MainActivity.this, shareId)'), 'ACK deve remover o item do inbox persistente.');
 
-const dispatchBody = javaMethodBody(android, 'private void dispatchPendingSharedPdf()');
-expect(dispatchBody, 'Não foi possível isolar dispatchPendingSharedPdf.');
-expect(!dispatchBody.includes('pendingSharedPdfBase64 = null;'), 'Android ainda apaga o PDF imediatamente após disparar o evento.');
-expect(!dispatchBody.includes('pendingSharedPdfName = null;'), 'Android ainda apaga o nome do PDF antes do ACK.');
-
-const ackBody = javaMethodBody(android, 'public boolean acknowledgeSharedPdf(final String shareId)');
-expect(ackBody, 'Não foi possível isolar acknowledgeSharedPdf.');
-expect(ackBody.includes('pendingSharedPdfBase64 = null;'), 'ACK não libera o buffer do PDF compartilhado.');
-expect(ackBody.includes('pendingSharedPdfName = null;'), 'ACK não libera o nome do PDF compartilhado.');
-expect(ackBody.includes('pendingSharedPdfId = null;'), 'ACK não libera a identidade do PDF compartilhado.');
+expect(inbox.includes('context.getFilesDir()'), 'Inbox precisa usar armazenamento privado do app.');
+expect(inbox.includes('KEY_CREATED_AT'), 'Inbox deve registrar idade do item pendente.');
+expect(inbox.includes('MAX_PENDING_AGE_MS'), 'Inbox deve expirar handoffs abandonados.');
+expect(inbox.includes("header[0] != '%'"), 'Inbox deve validar assinatura PDF antes de persistir.');
+expect(inbox.includes('public static synchronized boolean acknowledge'), 'Inbox precisa de ACK explícito.');
+expect(!inbox.includes('getExternalStorage'), 'Inbox não pode depender de armazenamento externo compartilhado.');
 
 expect(manifest.includes('android:mimeType="application/pdf"'), 'Manifest perdeu suporte a application/pdf.');
 expect(manifest.includes('android:mimeType="application/octet-stream"'), 'Manifest não aceita compartilhadores que enviam PDF como octet-stream.');
-expect(chain.includes("await import('../v14368/apply.mjs');"), 'Hotfix v14.3.68 não está na preparação canônica.');
+expect(chain.includes("await import('../v14368/apply.mjs');"), 'Hotfix legado deve continuar na preparação por compatibilidade.');
 
-console.log('[v14.3.68] OK — PDF compartilhado permanece pendente até ACK, usa handleFile e sincroniza Telegram/plataforma.');
+console.log('[v14.3.68] OK — Android persiste PDF compartilhado até ACK real e usa o importador canônico.');
