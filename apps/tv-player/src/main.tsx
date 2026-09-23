@@ -6,7 +6,7 @@ import { TvSession } from '../../../packages/tv-core/src/session';
 import { CREWCHECK_BRAND } from '../../../client/src/lib/brand';
 import { demoSnapshot } from './demo';
 import { formatTvTime as time, formatMonth, activityLabel, readVisualSetting, writeVisualSetting } from './presentation';
-import { TvBrand, NavIcon, WeatherArtwork, Car, Clock3, Plane, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles } from './TvVisuals';
+import { TvBrand, NavIcon, WeatherArtwork, Car, Clock3, Plane, MapPin, Headphones, ShieldCheck, ArrowRight, BedDouble, BriefcaseBusiness, ChevronLeft, ChevronRight, Sun, Moon, Sparkles, Hotel } from './TvVisuals';
 import './tv.css';
 import { useScreenCare, ScreenCareCover, ScreenCareSettings } from './ScreenCare';
 import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';
