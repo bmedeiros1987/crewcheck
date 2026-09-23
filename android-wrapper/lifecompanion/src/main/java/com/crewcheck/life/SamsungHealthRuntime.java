@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Runtime adapter for Samsung Health Data SDK.
@@ -27,6 +29,7 @@ import java.util.concurrent.ExecutionException;
  * therefore keeps CI buildable without shipping a third-party binary.
  */
 final class SamsungHealthRuntime {
+    private static final long SDK_WAIT_TIMEOUT_SECONDS = 10L;
     private static final String CLS_SERVICE =
             "com.samsung.android.sdk.health.data.HealthDataService";
     private static final String CLS_DATA_TYPES =
@@ -102,7 +105,7 @@ final class SamsungHealthRuntime {
         missing.removeAll(granted);
 
         Object future = invoke(store, "requestPermissionsAsync", missing, activity);
-        Object result = invoke(future, "get");
+        Object result = awaitFuture(future);
 
         Set<Object> combined = new HashSet<>(granted);
         if (result instanceof Set<?>) {
@@ -192,6 +195,9 @@ final class SamsungHealthRuntime {
 
     static String friendlyError(Throwable error) {
         Throwable root = rootHealthError(error);
+        if (root instanceof TimeoutException) {
+            return "Samsung Health demorou para responder; abra o Samsung Health e tente novamente";
+        }
         int code = healthErrorCode(root);
         return switch (code) {
             case 3000 -> "Samsung Health não está instalado";
@@ -211,7 +217,9 @@ final class SamsungHealthRuntime {
     }
 
     private static String stateForError(Throwable error) {
-        int code = healthErrorCode(error);
+        Throwable root = rootHealthError(error);
+        if (root instanceof TimeoutException) return "samsung_health_timeout";
+        int code = healthErrorCode(root);
         return switch (code) {
             case 3000 -> "samsung_health_missing";
             case 3001 -> "samsung_health_update_required";
@@ -280,7 +288,7 @@ final class SamsungHealthRuntime {
     private static Set<Object> grantedPermissions(Object store, Set<Object> required)
             throws Exception {
         Object future = invoke(store, "getGrantedPermissionsAsync", required);
-        Object result = invoke(future, "get");
+        Object result = awaitFuture(future);
         Set<Object> granted = new HashSet<>();
         if (result instanceof Set<?>) {
             granted.addAll((Set<?>) result);
@@ -309,7 +317,7 @@ final class SamsungHealthRuntime {
         invoke(builder, "setLocalTimeFilter", filter);
         Object request = invoke(builder, "build");
         Object future = invoke(store, "aggregateDataAsync", request);
-        Object response = invoke(future, "get");
+        Object response = awaitFuture(future);
         List<?> data = listValue(invoke(response, "getDataList"));
         if (data.isEmpty()) return null;
         return invoke(data.get(data.size() - 1), "getValue");
@@ -321,7 +329,7 @@ final class SamsungHealthRuntime {
         invoke(builder, "setLocalTimeFilter", localTimeFilter(now.minusHours(40), now));
         Object request = invoke(builder, "build");
         Object future = invoke(store, "readDataAsync", request);
-        Object response = invoke(future, "get");
+        Object response = awaitFuture(future);
         List<?> points = listValue(invoke(response, "getDataList"));
 
         Object durationField = staticField(
@@ -373,7 +381,7 @@ final class SamsungHealthRuntime {
         );
         Object request = invoke(builder, "build");
         Object future = invoke(store, "readDataAsync", request);
-        Object response = invoke(future, "get");
+        Object response = awaitFuture(future);
         List<?> points = listValue(invoke(response, "getDataList"));
 
         Object scoreField = staticField(
@@ -429,6 +437,10 @@ final class SamsungHealthRuntime {
             Object companion = companionField.get(null);
             return companion.getClass().getMethod("get" + name).invoke(companion);
         }
+    }
+
+    private static Object awaitFuture(Object future) throws Exception {
+        return invoke(future, "get", SDK_WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private static Object invokeStatic(Class<?> type, String name, Object... args)
