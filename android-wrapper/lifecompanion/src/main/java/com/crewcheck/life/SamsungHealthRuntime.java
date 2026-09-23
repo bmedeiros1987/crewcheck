@@ -97,7 +97,8 @@ final class SamsungHealthRuntime {
         Object store = getStore(activity);
         Set<Object> required = requiredPermissions();
         if (hasAllPermissions(store, required)) return true;
-        Object result = invoke(store, "requestPermissions", required, activity);
+        Object future = invoke(store, "requestPermissionsAsync", required, activity);
+        Object result = invoke(future, "get");
         if (result instanceof Set<?>) {
             return ((Set<?>) result).containsAll(required);
         }
