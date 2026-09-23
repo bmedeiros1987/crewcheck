@@ -69,7 +69,7 @@ contains('Nearby location restriction', 'scripts/v14365/health-nearby.snippet', 
 contains('Nearby 35 km guard', 'scripts/v14365/health-nearby.snippet', 'filterConciergePlacesByLocationV14335(places, current, 35)');
 contains('Telegram location mirror handoff', 'server/v14316/telegramLocation.mjs', 'await saveLegacyLocationMirror(message, Boolean(edited))');
 contains('Telegram canonical continuation', 'server/v14316/telegramLocation.mjs', 'return false;');
-contains('Life manual mode', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'CrewLife opcional · registros manuais');
+contains('Life companion/manual mode', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'CrewLife opcional · Samsung automático via Companion ou manual');
 contains('Life ignores legacy health events', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'Ignore legacy health events');
 contains('Smart Departure live location refresh', 'client/src/pages/Home.tsx', 'refreshSmartDepartureLocation');
 contains('Visitor real-day filter', 'client/src/pages/VisitorAccessPage.tsx', '.filter(visitorRealDay)');
