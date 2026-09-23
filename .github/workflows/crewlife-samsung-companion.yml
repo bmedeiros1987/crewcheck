@@ -68,29 +68,37 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
 
-      - name: Restore Samsung SDK when configured
+      - name: Restore Samsung SDK for signed Companion build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p android-wrapper/lifecompanion/libs
           target='android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar'
-          if [ -z "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
-            echo "SAMSUNG_SDK_READY=false" >> "$GITHUB_ENV"
-            echo "::notice::Private Samsung SDK artifact URL not configured; validating architecture/UI without vendor AAR."
-            exit 0
+
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
+            args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
+            if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
+              args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
+            fi
+            curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
+            echo "::notice::Samsung SDK restored from configured private artifact source."
+          else
+            # Temporary reproducible fallback for #794. The exact SDK 1.1.0 AAR was
+            # already validated in the frozen #757 candidate. We read that immutable
+            # historical blob at build time without adding the vendor binary to this branch.
+            pinned_sha='46bfb582a91d6b4b4fa5d41a5cb8444ca7e55637'
+            pinned_path='scripts/crewlife-wellness/native/libs/samsung-health-data-api-1.1.0.aar'
+            git fetch --no-tags --depth=1 origin "$pinned_sha"
+            git show "$pinned_sha:$pinned_path" > "$target"
+            echo "::notice::Samsung SDK restored from pinned validated repository history for #794."
           fi
 
-          args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
-          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
-            args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
-          fi
-          curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
           test -s "$target"
+          unzip -tq "$target" >/dev/null
+          sha256sum "$target"
 
           if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ]; then
             printf '%s  %s\n' "${SAMSUNG_HEALTH_DATA_AAR_SHA256}" "$target" | sha256sum -c -
-          else
-            echo "::warning::SAMSUNG_HEALTH_DATA_AAR_SHA256 is not configured; SDK integrity is not pinned."
           fi
 
           echo "SAMSUNG_SDK_READY=true" >> "$GITHUB_ENV"
