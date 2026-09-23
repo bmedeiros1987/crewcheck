@@ -42,6 +42,8 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Assert non-destructive Android self-healing
         run: node scripts/p0-android-self-heal/regression.mjs
+      - name: Build offline web shell consumed by Android
+        run: npx vite build
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
