@@ -2,10 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <permission
-        android:name="com.crewcheck.permission.LIFE_SUMMARY"
-        android:protectionLevel="signature" />
-
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -28,22 +24,14 @@
             android:name=".LifeSummaryProvider"
             android:authorities="com.crewcheck.life.summary"
             android:exported="true"
-            android:grantUriPermissions="false"
-            android:readPermission="com.crewcheck.permission.LIFE_SUMMARY" />
+            android:grantUriPermissions="false" />
 
         <service
             android:name=".CrewLifeRefreshJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
-        <receiver
-            android:name=".RefreshReceiver"
-            android:exported="true"
-            android:permission="com.crewcheck.permission.LIFE_SUMMARY">
-            <intent-filter>
-                <action android:name="com.crewcheck.life.REFRESH_SUMMARY" />
-            </intent-filter>
-        </receiver>
+        <receiver android:name=".RefreshReceiver" android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"

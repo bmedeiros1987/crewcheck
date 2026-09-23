@@ -11,6 +11,7 @@ from google.oauth2 import service_account
 import requests
 from credential import load_service_account_secret
 from play_error import safe_play_error
+from review_policy import commit_internal_edit
 
 def main():
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
@@ -57,6 +58,8 @@ def main():
         latest = {}
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
+                continue
+            if run.get('event') != 'push':
                 continue
             if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
                 continue
@@ -127,10 +130,12 @@ def main():
                         }],
                     },
                 )
-            api('POST', url + ':validate')
-            api('POST', url + ':commit')
+            _, review_mode = commit_internal_edit(api, url)
             committed = True
-            print(f'{package}: verified bundles RELEASED TO INTERNAL TESTING. Production untouched.')
+            print(
+                f'{package}: verified bundles COMMITTED TO INTERNAL TESTING '
+                f'({review_mode}). Production untouched.'
+            )
         finally:
             if not committed:
                 session.delete(url, timeout=30)
