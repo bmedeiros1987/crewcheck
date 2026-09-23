@@ -67,7 +67,7 @@ final class ComplicationText {
     static ComplicationRendering crewLife(CrewLifeSnapshot snapshot, long nowEpochMs) {
         if (snapshot == null) {
             return new ComplicationRendering(
-                    "LOCAL",
+                    "--",
                     "CrewLife opcional · abra no celular",
                     "CREWLIFE",
                     "CrewLife opcional. Abra o CrewCheck no celular para escolher o que mostrar no relógio."
@@ -99,7 +99,7 @@ final class ComplicationText {
     }
 
     private static String crewLifeLongText(CrewLifeSnapshot snapshot, long nowEpochMs) {
-        if (snapshot.isStale(nowEpochMs)) return "Abra CrewLife no celular";
+        if (snapshot.isStale(nowEpochMs)) return "Bem-estar desatualizado";
 
         StringBuilder text = new StringBuilder();
         if (snapshot.recoveryScore > 0) {
