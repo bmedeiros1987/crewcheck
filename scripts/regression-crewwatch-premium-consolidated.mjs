@@ -19,7 +19,8 @@ assert.match(faceGradle, /applicationId 'com\.crewcheck\.watch\.app'/);
 assert.match(wearGradle, /generateCrewWatchBrandAssets/);
 assert.match(faceGradle, /generateCrewWatchFaceBrandAssets/);
 
-assert.match(wearMain, /CrewLife no relógio ainda não autorizado/);
+assert.match(wearMain, /Sem registros no relógio ainda/);
+assert.doesNotMatch(wearMain, /DESCONHECIDA/);
 assert.match(wearMain, /renderNotifications/);
 assert.match(wearMain, /renderCrewLife/);
 assert.match(wearMain, /renderSchedule/);
