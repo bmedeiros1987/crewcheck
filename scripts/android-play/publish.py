@@ -28,17 +28,16 @@ def main():
         assert Path(item['file']).name == item['file'], 'Invalid artifact filename'
         assert hashlib.sha256((root / item['file']).read_bytes()).hexdigest() == item['sha256'], 'Bundle checksum mismatch'
 
-    # Require all current-commit CI except this publishing workflow to finish green.
-    # Push workflows start concurrently, so wait instead of racing them and failing spuriously.
+    # Require all current-commit *push* CI except this publishing workflow to finish green.
+    # The same SHA can also acquire issue_comment / audit / ad-hoc runs after merge; those
+    # are not evidence for the main push and must not make a verified Play release race an
+    # unrelated automation. Push workflows start concurrently, so wait instead of racing
+    # them and failing spuriously.
     gh = requests.Session()
     gh.headers.update({'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
     repo = os.environ['GITHUB_REPOSITORY']
     sha = os.environ['GITHUB_SHA']
     wait_deadline = time.time() + 12 * 60
-    # This gate is triggered by completion of Android signed store bundles itself.
-    # It is downstream evidence, not independent CI, so waiting on it here would
-    # deadlock publication. Keep the exclusion explicit and narrow.
-    dependent_ci_workflow_names = {'CrewCheck Priority 0 Release Gate'}
     while True:
         runs = []
         page = 1
@@ -57,15 +56,20 @@ def main():
 
         latest = {}
         for run in runs:
-            if str(run['id']) == os.environ['GITHUB_RUN_ID']:
+            # Only the CI set created by the main branch push is release evidence.
+            # In particular, issue_comment audits on the same SHA are intentionally
+            # outside this gate; production remains impossible because track policy,
+            # artifact checksums, package/version checks and internal-only payloads are
+            # independently enforced below.
+            if run.get('event') != 'push':
                 continue
-            if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
+            if str(run['id']) == os.environ['GITHUB_RUN_ID']:
                 continue
             key = run['workflow_id']
             if key not in latest or run['id'] > latest[key]['id']:
                 latest[key] = run
 
-        assert latest, 'No independent CI evidence for this commit'
+        assert latest, 'No independent main-push CI evidence for this commit'
         failed = [
             r for r in latest.values()
             if r['status'] == 'completed' and r['conclusion'] not in ['success', 'skipped']
