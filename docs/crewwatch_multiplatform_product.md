@@ -2,12 +2,13 @@
 
 ## Objetivo
 
-Transformar o CrewWatch em uma linha de produto, e não em uma tela reduzida do CrewCheck.
+Transformar o CrewWatch em uma linha de produto útil por si só, sem transformar a escala básica em paywall e sem duplicar regra operacional fora do CrewCheck canônico.
 
 A regra de produto é simples:
 
 - **Watch Face grátis:** aquisição, marca e utilidade diária sem assinatura.
-- **Aplicativo CrewWatch Premium:** operação contextual, escala, alertas, CrewLife e Concierge.
+- **CrewWatch grátis:** acesso útil à projeção canônica da escala no APK.
+- **CrewWatch Premium:** recursos de saúde, Concierge, Saída Inteligente, Live Ops e integrações avançadas/custosas.
 - **Mesmo contrato de dados, renderizadores nativos por plataforma:** Wear OS agora; watchOS, Garmin Connect IQ e outros depois.
 
 ## 1. Camadas do produto
@@ -16,7 +17,7 @@ A regra de produto é simples:
 
 Pacote Wear OS separado: `com.crewcheck.watch.app`.
 
-O mostrador precisa funcionar sozinho. Ele não depende do APK Premium para renderizar:
+O mostrador precisa funcionar sozinho. Ele não depende de assinatura Premium para renderizar:
 
 - hora e data;
 - passos;
@@ -24,24 +25,40 @@ O mostrador precisa funcionar sozinho. Ele não depende do APK Premium para rend
 - próximo evento do sistema;
 - identidade visual CrewCheck discreta.
 
-Quando o CrewWatch Premium estiver instalado, o usuário pode escolher as complicações CrewCheck manualmente no editor do mostrador.
+Quando o CrewWatch estiver instalado, o usuário pode escolher complicações CrewCheck compatíveis manualmente no editor do mostrador.
 
 O mostrador não recebe escala bruta, credenciais, CPF, e-mail, quarto de hotel ou dados brutos de saúde.
 
-### CrewWatch Premium
+### CrewWatch Free
 
 Aplicativo Wear OS associado ao CrewCheck mobile, mantendo o pacote `com.crewcheck.app`.
 
-Superfícies atuais:
+O usuário gratuito deve conseguir usar o relógio de verdade. O APK recebe uma projeção canônica compacta e presentation-ready, incluindo:
 
-1. **Agora** — próxima ação operacional.
-2. **Jornada** — timeline do dia.
-3. **Alertas** — somente exceções relevantes.
-4. **Escala** — programação detalhada.
-5. **CrewLife** — resumos autorizados de bem-estar.
-6. **Concierge** — ações e voz.
+- **Agora** — próximo passo útil;
+- **Jornada** — timeline básica do dia;
+- **Escala** — programação, voos, apresentação e pernoite;
+- cache local/offline;
+- estado de frescor/stale;
+- sincronização básica relógio ↔ celular;
+- complicações básicas derivadas somente dessa projeção.
 
-O acesso ao APK é um entitlement Premium. O snapshot enviado ao relógio leva `premiumAccess`. Para plano grátis, o celular envia apenas um envelope mínimo de acesso; a escala operacional não é transmitida.
+Free não consulta API paga por conta própria e não recebe campos derivados de integrações custosas. Quando um dado tiver custo externo ou depender de um produto Premium, ele simplesmente não entra na projeção Free.
+
+### CrewWatch Premium
+
+Premium complementa a escala básica; não substitui nem bloqueia o APK Free.
+
+Recursos Premium:
+
+- **CrewLife / saúde** — somente resumos autorizados e agregados;
+- **Concierge / voz** — ações rápidas, ditado e resposta no relógio;
+- **Saída Inteligente / trânsito** — horário de saída e contexto de deslocamento;
+- **Alertas inteligentes / Live Ops** — alterações e exceções contextuais;
+- integrações avançadas ou de custo variável;
+- campos operacionais derivados de provedores pagos quando aplicável.
+
+O snapshot sempre leva `premiumAccess`, mas esse sinal é usado como entitlement por recurso. Não existe gate global impedindo o usuário Free de abrir Agora, Jornada ou Escala.
 
 ## 2. Contrato canônico
 
@@ -57,9 +74,7 @@ Nenhuma plataforma de relógio deve:
 
 Cada relógio apenas recebe e apresenta uma projeção canônica compacta.
 
-Isso permite trocar o renderer sem duplicar regra de negócio:
-
-```
+```text
 CrewCheck canonical roster
         |
         v
@@ -70,6 +85,13 @@ watchContext snapshot
         +--> Garmin renderer
         +--> future adapters
 ```
+
+O contrato deve separar duas classes de dados:
+
+1. **core/basic** — roster canônico necessário para Agora/Jornada/Escala, disponível no Free;
+2. **premium capabilities** — saúde, Concierge, smart departure, Live Ops e integrações de custo variável.
+
+O renderer nunca decide regra comercial olhando para conteúdo textual. Ele consome capabilities/entitlements explícitos e deve continuar funcional quando um capability Premium estiver ausente.
 
 ## 3. Design system
 
@@ -106,7 +128,7 @@ O conteúdo deve respeitar uma área segura central e não assumir cantos utiliz
 
 ### Wear OS
 
-Implementação atual. Watch Face Format para o mostrador e app nativo para Premium.
+Implementação atual. Watch Face Format para o mostrador e app nativo para a experiência CrewWatch.
 
 ### watchOS
 
@@ -125,25 +147,34 @@ Renderer futuro focado em baixo consumo e dados essenciais. A primeira versão d
 
 - próximo passo;
 - jornada;
-- portão/status;
+- programação/voos;
+- apresentação;
 - pernoite;
-- notificações.
+- estado de sincronização.
 
-CrewLife avançado e Concierge entram somente quando a plataforma permitir uma experiência boa.
+CrewLife avançado, Concierge e integrações custosas entram somente quando a plataforma permitir uma experiência boa e o entitlement correspondente estiver ativo.
 
 ## 5. Entitlements
 
-Servidor:
+Contrato comercial portátil:
 
 - `watchFace = true`
-- `watchApp = premium`
+- `watchBasicRoster = true`
+- `watchCrewLife = premium`
+- `watchConcierge = premium`
+- `watchSmartDeparture = premium`
+- `watchLiveOps = premium`
+- `watchAdvancedIntegrations = premium`
 
 Regra de privacidade/monetização:
 
-- plano grátis nunca recebe roster operacional no APK Watch;
-- downgrade sobrescreve o snapshot Premium por envelope mínimo;
-- preview de Play/complications pode usar apenas dados de demonstração;
-- dados de saúde continuam em canal separado e opt-in.
+- plano grátis recebe roster operacional básico e cache offline;
+- plano grátis não dispara API paga no relógio;
+- campos Premium não entram na projeção Free;
+- upgrade Free → Premium habilita capabilities sem recriar a escala;
+- downgrade Premium → Free mantém Agora/Jornada/Escala e limpa caches Premium locais;
+- dados de saúde continuam em canal separado, agregado e opt-in;
+- preview de Play/complications pode usar somente dados de demonstração quando não houver projeção autorizada.
 
 ## 6. Matriz de homologação
 
@@ -159,9 +190,10 @@ Antes de declarar compatibilidade, testar fisicamente:
 - app mobile em background;
 - app mobile encerrado;
 - sem internet;
-- snapshot antigo;
-- upgrade Free -> Premium;
-- downgrade Premium -> Free.
+- snapshot antigo/stale;
+- upgrade Free → Premium sem perder escala;
+- downgrade Premium → Free mantendo escala e limpando CrewLife/Concierge/Live Ops;
+- reinstalação/upgrade do APK mantendo cache seguro quando compatível.
 
 ## 7. Critério de qualidade
 
