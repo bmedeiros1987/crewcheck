@@ -1,4 +1,4 @@
-name: CrewCheck v14.3.68 Android share import
+name: CrewCheck shared PDF import
 
 on:
   workflow_dispatch:
@@ -9,7 +9,10 @@ on:
       - 'client/**'
       - 'scripts/v14365/**'
       - 'scripts/v14368/**'
+      - 'scripts/p0-shared-pdf-durable/**'
+      - 'scripts/p0-build-identity/**'
       - 'scripts/regression-v14-3-68-android-share-import.mjs'
+      - 'scripts/regression-p0-pwa-share-target-pdf.mjs'
       - '.github/workflows/v14368-android-share-import.yml'
 
 permissions:
@@ -18,17 +21,26 @@ permissions:
 jobs:
   validate-shared-pdf-import:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
           cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
       - run: npm ci || npm install
       - name: Prepare canonical CrewCheck source
         run: node scripts/v139/apply.mjs
-      - name: Validate Android share bridge and canonical import
+      - name: Validate Android durable inbox and canonical import
         run: node scripts/regression-v14-3-68-android-share-import.mjs
+      - name: Validate PWA durable share target and ACK
+        run: node scripts/regression-p0-pwa-share-target-pdf.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
+      - name: Compile Android mobile shell
+        working-directory: android-wrapper
+        run: ./gradlew :app:assembleDebug --stacktrace
