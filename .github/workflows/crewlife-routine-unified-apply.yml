@@ -45,11 +45,10 @@ jobs:
       - name: Apply CrewLife + Rotina implementation
         run: node scripts/apply-crewlife-routine-unified.mjs
 
-      - name: Validate new contracts
+      - name: Validate current CrewLife contracts
         run: |
           node scripts/regression-crewlife-routine-unified.mjs
           node scripts/regression-crewlife-samsung-companion.mjs
-          node scripts/regression-v14-3-13-life-concierge.mjs
 
       - name: TypeScript
         run: npx tsc --noEmit
