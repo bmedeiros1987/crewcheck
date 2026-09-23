@@ -46,6 +46,8 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                     if (json != null) {
                         WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
                         WatchNotificationCenter.postForSnapshot(this, snapshot);
+                        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                                .setPackage(getPackageName()));
                     }
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
@@ -72,6 +74,8 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 WatchContextSnapshot snapshot = new SecureSnapshotStore(this)
                         .save(new String(data, StandardCharsets.UTF_8));
                 WatchNotificationCenter.postForSnapshot(this, snapshot);
+                sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                        .setPackage(getPackageName()));
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));
