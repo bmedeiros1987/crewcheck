@@ -3,20 +3,9 @@ import { Activity, ArrowUpRight, BatteryMedium, Footprints, MoonStar, ShieldChec
 import { METRICS, METRIC_KEYS, manualWellness, metricText, normalizeWellness, suggestWellness, type Feeling, type ManualRecord, type MetricKey, type WellnessData } from './wellness';
 import './wellness.css';
 
-type SamsungBridge = {
-  getSamsungWellnessStatus: () => string;
-  requestSamsungWellnessPermissions: (requestId: string, categories: string) => boolean;
-  readSamsungWellness: (requestId: string, categories: string) => boolean;
-  clearSamsungWellness: () => void;
-};
+import { disconnectSamsung, hasSamsungBridge, samsungRequest } from './samsung';
 const icons = { sleepMinutes: MoonStar, sleepScore: MoonStar, skinTemperature: Thermometer, steps: Footprints, exerciseMinutes: Activity, energyScore: BatteryMedium };
 const choices: { id: Feeling; label: string }[] = [{ id: 'tired', label: 'Cansado' }, { id: 'okay', label: 'Disposição regular' }, { id: 'well', label: 'Bem disposto' }, { id: 'unwell', label: 'Não me sinto bem' }];
-function getBridge(): SamsungBridge | undefined {
-  const native = (window as unknown as { AndroidCrewCheckNative?: Partial<SamsungBridge> }).AndroidCrewCheckNative;
-  if (!native || typeof native.getSamsungWellnessStatus !== 'function' || typeof native.requestSamsungWellnessPermissions !== 'function' || typeof native.readSamsungWellness !== 'function' || typeof native.clearSamsungWellness !== 'function') return undefined;
-  return native as SamsungBridge;
-}
-
 export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: ManualRecord; sleepGoalHours: number }) {
   const [feeling, setFeeling] = useState<Feeling>('unknown');
   const [now, setNow] = useState(Date.now());
@@ -24,70 +13,55 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
   const [available, setAvailable] = useState(false);
   const [authorized, setAuthorized] = useState(false);
   const [selected, setSelected] = useState<MetricKey[]>([]);
+  const [background, setBackground] = useState(false);
+  const [lastSync, setLastSync] = useState<number>();
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState('A conexão Samsung Health ainda não está disponível nesta versão. Seus registros manuais continuam funcionando.');
-  const pending = useRef<{ id: string; mode: 'permissions' | 'read'; keys: MetricKey[] } | null>(null);
-  const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const finish = () => { pending.current = null; clearTimeout(timeout.current); setBusy(false); };
-
-  useEffect(() => {
+  const [notice, setNotice] = useState('Conexão Samsung em preparação para liberação. Seus registros manuais continuam funcionando.');
+  const state = useRef({ epoch: 0, active: true, busy: false, authorized: false });
+  async function sync(action: 'status' | 'permissions' | 'read' | 'background', extra: Record<string, unknown> = {}) {
+    if (state.current.busy) return;
+    const epoch = state.current.epoch;
+    state.current.busy = true; setBusy(true);
     try {
-      const bridge = getBridge();
-      const status = bridge ? JSON.parse(bridge.getSamsungWellnessStatus()) : null;
-      if (status?.available === true) { setAvailable(true); setNotice('Escolha quais dados deseja consultar. A autorização será confirmada no Samsung Health.'); }
-    } catch { /* Unavailable stays explicitly unavailable. */ }
-    const timer = window.setInterval(() => setNow(Date.now()), 60000);
-    const receive = (event: Event) => {
-      const payload = (event as CustomEvent).detail;
-      const request = pending.current;
-      if (!request || !payload || payload.requestId !== request.id) return;
-      if (payload.ok !== true) {
-        setSamsung({}); setAuthorized(false); finish();
-        setNotice('Não foi possível consultar os dados. Confira o acesso no Samsung Health e tente novamente.');
-        return;
-      }
-      if (request.mode === 'permissions') {
-        setAuthorized(true); setNotice('Autorização concluída. Toque em atualizar para consultar os dados disponíveis.');
-      } else {
-        const normalized = normalizeWellness(payload.metrics, 'samsung-health');
-        const allowed = Object.fromEntries(Object.entries(normalized).filter(([key]) => request.keys.includes(key as MetricKey)));
-        setSamsung(allowed); setNow(Date.now());
-        setNotice(Object.keys(allowed).length ? 'Dados consultados. Valores ausentes podem depender do modelo do relógio, das medições ou das permissões.' : 'Nenhum dado recente disponível para as categorias escolhidas.');
-      }
-      finish();
-    };
-    window.addEventListener('crewcheck:samsung-wellness', receive);
-    return () => {
-      window.clearInterval(timer); clearTimeout(timeout.current); pending.current = null;
-      window.removeEventListener('crewcheck:samsung-wellness', receive);
-      try { getBridge()?.clearSamsungWellness(); } catch { /* Session data is memory-only. */ }
-    };
+      const result = await samsungRequest(action, extra);
+      if (!state.current.active || epoch !== state.current.epoch) return;
+      if (!result.ok) throw new Error('Samsung indisponível');
+      const keys = (Array.isArray(result.keys) ? result.keys : []).filter(key => METRIC_KEYS.includes(key));
+      setAvailable(result.available === true); setSelected(keys); setAuthorized(keys.length > 0);
+      state.current.authorized = keys.length > 0;
+      setBackground(result.background === true);
+      if (result.metrics) setSamsung(Object.fromEntries(Object.entries(normalizeWellness(result.metrics, 'samsung-health')).filter(([key]) => keys.includes(key as MetricKey))));
+      else if (!keys.length) setSamsung({});
+      setNow(Date.now());
+      if (result.syncedAt) setLastSync(result.syncedAt);
+      if (result.available) setNotice(keys.length ? 'Conectado. Atualização automática ao abrir esta tela e enquanto ela estiver visível.' : 'Escolha os dados e autorize o acesso no Samsung Health.');
+      state.current.busy = false; setBusy(false);
+      if (keys.length && ['status', 'permissions', 'background'].includes(action)) void sync('read');
+    } catch {
+      if (!state.current.active || epoch !== state.current.epoch) return;
+      disconnectSamsung();
+      setNotice('Não foi possível acessar o Samsung Health. Confira a instalação, as permissões e a disponibilidade da integração para este app.');
+    } finally { if (state.current.active && epoch === state.current.epoch) { state.current.busy = false; setBusy(false); } }
+  }
+  useEffect(() => {
+    state.current.active = true;
+    const disconnected = () => { state.current.epoch++; state.current.busy = false; state.current.authorized = false; setBusy(false); setAuthorized(false); setSelected([]); setBackground(false); setSamsung({}); setLastSync(undefined); };
+    const visible = () => { setNow(Date.now()); if (!document.hidden && state.current.authorized) void sync('read'); };
+    window.addEventListener('crewcheck:samsung-disconnected', disconnected);
+    document.addEventListener('visibilitychange', visible);
+    const refresh = window.setInterval(visible, 5 * 60000);
+    const age = window.setInterval(() => setNow(Date.now()), 60000);
+    if (hasSamsungBridge()) void sync('status');
+    return () => { state.current.active = false; state.current.epoch++; window.clearInterval(refresh); window.clearInterval(age); window.removeEventListener('crewcheck:samsung-disconnected', disconnected); document.removeEventListener('visibilitychange', visible); };
   }, []);
-
   const data = useMemo(() => ({ ...manualWellness(manual, Date.now()), ...normalizeWellness(samsung, 'samsung-health', Date.now()) }), [manual, samsung, now]);
   const suggestion = useMemo(() => suggestWellness(data, feeling, sleepGoalHours, Date.now()), [data, feeling, sleepGoalHours, now]);
   const count = Object.keys(data).length;
-
-  function request(mode: 'permissions' | 'read') {
-    const bridge = getBridge();
-    if (!available || !bridge || busy || !selected.length || (mode === 'read' && !authorized)) return;
-    const id = crypto.randomUUID();
-    pending.current = { id, mode, keys: [...selected] }; setBusy(true);
-    timeout.current = setTimeout(() => { finish(); setSamsung({}); setNotice('A consulta demorou mais que o esperado. Você pode tentar novamente.'); }, 45000);
-    try {
-      const accepted = mode === 'permissions' ? bridge.requestSamsungWellnessPermissions(id, JSON.stringify(selected)) : bridge.readSamsungWellness(id, JSON.stringify(selected));
-      if (!accepted) { finish(); setNotice('Não foi possível abrir a conexão Samsung Health neste aparelho.'); }
-    } catch { finish(); setNotice('Conexão indisponível. Tente novamente mais tarde.'); }
-  }
-  function disconnect() {
-    finish(); setSamsung({}); setAuthorized(false); setSelected([]);
-    try { getBridge()?.clearSamsungWellness(); } catch { /* Local clear remains effective. */ }
-    setNotice('Consulta interrompida e resumo Samsung removido desta tela. Para retirar a permissão do sistema, use o gerenciamento de acesso do Samsung Health.');
-  }
+  function request(mode: 'permissions' | 'read') { void sync(mode, mode === 'permissions' ? { keys: selected } : {}); }
+  function disconnect() { disconnectSamsung(); setNotice('Sincronização interrompida e cópia local apagada. As permissões do sistema podem ser removidas nas configurações do Samsung Health.'); }
   function toggle(key: MetricKey) {
-    finish(); setSamsung({}); setAuthorized(false);
-    try { getBridge()?.clearSamsungWellness(); } catch {}
-    setSelected(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key]);
+    const next = selected.includes(key) ? selected.filter(item => item !== key) : [...selected, key];
+    disconnectSamsung(); setSelected(next);
   }
 
   return <section className="cw-wellness" aria-label="Seu bem-estar hoje">
@@ -109,9 +83,9 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
       </article>;
     })}</div>
     <section className="cw-connection" aria-labelledby="cw-samsung-title"><div className="cw-connection-title"><Watch aria-hidden="true"/><div><p className="cw-eyebrow">GALAXY WATCH → SAMSUNG HEALTH</p><h3 id="cw-samsung-title">Seus dados, com sua autorização</h3></div><span>{available ? 'Disponível neste aparelho' : 'Em preparação'}</span></div>
-      <p role="status">{notice}</p>
-      {available && <><fieldset><legend>Quais dados você quer consultar?</legend><div className="cw-consent-grid">{METRIC_KEYS.map(key => <label key={key}><input type="checkbox" checked={selected.includes(key)} onChange={() => toggle(key)} disabled={busy}/>{METRICS[key].label}</label>)}</div></fieldset><div className="cw-connection-actions"><button type="button" disabled={busy || !selected.length} onClick={() => request(authorized ? 'read' : 'permissions')}>{busy ? 'Aguardando Samsung Health…' : authorized ? 'Atualizar dados' : 'Autorizar no Samsung Health'}<ArrowUpRight aria-hidden="true"/></button><button type="button" onClick={disconnect}>Desconectar e limpar</button></div></>}
-      <p className="cw-privacy"><ShieldCheck aria-hidden="true"/>Resumos Samsung ficam apenas na memória desta sessão. Nenhum envio automático para servidor, IA, TV ou relógio.</p>
+      <p role="status">{notice}</p>{lastSync && <p>Última consulta: {new Date(lastSync).toLocaleString('pt-BR')}</p>}
+      {available && <><fieldset><legend>Quais dados você quer consultar?</legend><div className="cw-consent-grid">{METRIC_KEYS.map(key => <label key={key}><input type="checkbox" checked={selected.includes(key)} onChange={() => toggle(key)} disabled={busy}/>{METRICS[key].label}</label>)}</div></fieldset><label className="cw-background"><input type="checkbox" checked={background} disabled={busy || !authorized} onChange={event => void sync('background', { enabled: event.target.checked })}/>Atualizar também com o app fechado</label><p className="cw-background-note">Opcional: guarda um resumo criptografado neste celular por até 24 horas. O Android define quando a atualização pode ocorrer; ela não é instantânea.</p><div className="cw-connection-actions"><button type="button" disabled={busy || !selected.length} onClick={() => request(authorized ? 'read' : 'permissions')}>{busy ? 'Aguardando Samsung Health…' : authorized ? 'Atualizar dados' : 'Autorizar no Samsung Health'}<ArrowUpRight aria-hidden="true"/></button><button type="button" onClick={disconnect}>Desconectar e limpar</button></div></>}
+      <p className="cw-privacy"><ShieldCheck aria-hidden="true"/>Sem envio automático para servidor, IA, TV ou relógio. Sem atualização em segundo plano, os valores ficam apenas na memória desta tela. Você pode desconectar e apagar a cópia local a qualquer momento.</p>
     </section>
   </section>;
 }

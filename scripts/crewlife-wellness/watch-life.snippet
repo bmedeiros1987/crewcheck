@@ -1,0 +1,45 @@
+    private void renderCrewLife(long now) {
+        TextView overline = text("CREWLIFE", 12, SUCCESS, true, Gravity.CENTER);
+        overline.setPadding(0, dp(8), 0, dp(6));
+        content.addView(overline);
+        CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
+        if (life == null || life.isStale(now)) {
+            content.addView(text("Seu bem-estar", 22, WHITE, true, Gravity.CENTER));
+            TextView detail = text(life == null
+                    ? "CrewLife no relógio ainda não autorizado. Ative o compartilhamento no celular."
+                    : "Resumo expirado. Abra CrewLife no celular para atualizar.", 12, MUTED, false, Gravity.CENTER);
+            detail.setMaxLines(6);
+            detail.setPadding(0, dp(12), 0, dp(12));
+            content.addView(detail);
+            content.addView(text("Você escolhe o que aparece aqui.", 12, SUCCESS, false, Gravity.CENTER));
+            return;
+        }
+        content.addView(text("Seu resumo", 22, WHITE, true, Gravity.CENTER));
+        TextView provenance = text("Registros compartilhados pelo celular", 12, MUTED, false, Gravity.CENTER);
+        provenance.setPadding(0, dp(6), 0, dp(10));
+        content.addView(provenance);
+        addWellnessRow("Sono", life.sleepMinutes > 0 ? sleepLabel(life) : "Sem dado", VIOLET);
+        addWellnessRow("Passos", life.steps > 0 ? compactSteps(life.steps) : "Sem dado", CYAN);
+        addWellnessRow("Atividade", life.activeMinutes > 0 ? life.activeMinutes + " min" : "Sem dado", SUCCESS);
+        // Do not display legacy synthetic recovery scores as measured Samsung Energy Score.
+        long ageMinutes = Math.max(0, (now - life.generatedAtEpochMs) / 60000);
+        String age = ageMinutes < 1 ? "Atualizado agora" : "Atualizado há " + ageMinutes + " min";
+        TextView updated = text(age, 12, MUTED, false, Gravity.CENTER);
+        updated.setPadding(0, dp(12), 0, dp(8));
+        content.addView(updated);
+        TextView privacy = text("Compartilhamento opcional. Gerencie no celular.", 12, MUTED, false, Gravity.CENTER);
+        content.addView(privacy);
+    }
+
+    private void addWellnessRow(String label, String value, int accent) {
+        LinearLayout card = premiumCard(accent);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        card.addView(text(label, 12, MUTED, true, Gravity.CENTER));
+        TextView metric = text(value, 22, WHITE, true, Gravity.CENTER);
+        metric.setPadding(0, dp(4), 0, 0);
+        card.addView(metric);
+        content.addView(card, cardParams());
+    }
+

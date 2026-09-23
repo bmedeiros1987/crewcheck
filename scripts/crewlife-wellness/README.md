@@ -1,31 +1,32 @@
-# CrewLife Galaxy Watch — draft integration
+# CrewLife Samsung / mobile / Wear
 
-This draft adds a responsive wellness panel, source-labelled observations and conservative personal activity suggestions. It does not read Samsung Health yet. The UI stays explicitly unavailable unless the complete native bridge is present. No Health Connect permissions or old caches are re-enabled.
+Read-only native adapter for Samsung Health Data SDK 1.1.0: latest completed sleep and sleep score, skin temperature, daily steps/exercise totals and Energy Score. Null stays absent. No derived clinical score, fever measurement, fitness-for-duty assessment or Samsung export to servers, AI, TV or Wear.
 
-Samsung summaries must remain in memory for the visible CrewLife session. Only explicitly selected categories may be returned. Scope changes, disconnection and unmount clear native memory and invalidate pending request IDs. Read-only access; no background reads, account linking, server/AI/TV/watch export, or operational fitness/fatigue decisions. Existing manual watch sharing retains its separate consent.
+The mobile panel reads automatically on opening, on returning to the foreground and every five minutes while visible. User-selected categories persist per account until disconnect/revocation/account change. Background updates are separately opt-in: WorkManager requests a battery-conscious update every 30 minutes, subject to Android scheduling. Only that mode retains an AES-GCM summary in noBackupFilesDir using an Android Keystore key, with a 24-hour expiry. Failed permissions clear the cache. Generation checks block stale callbacks/writes after disconnect or scope changes. Logout, expired authentication and account changes revoke app consent and cancel work.
 
-## Before implementing or enabling the native adapter
+The native channel uses WebViewCompat with exact HTTPS first-party origins and main-frame validation; there is no health JavascriptInterface. Permission prompts occur only after an explicit user action. No Health Connect permissions or write permissions.
 
-- SDK 1.1.0 was obtained from Samsung Developer and is available locally for API inspection. No SDK archive is committed here. Partnership approval and physical-device validation remain outstanding.
-- Use the actual SDK APIs, not assumed bridge methods. The TypeScript bridge in this draft is a proposed app-owned contract only.
-- Register `com.crewcheck.app` and the **Play app signing certificate** SHA-256 in the Samsung partnership application (not automatically the upload key).
-- Receive Samsung partnership approval before public distribution. Developer mode is for development devices only.
-- Guard Android below API 29; retain manual mode for existing API 26–28 users. Samsung Health 6.30.2+ and Java 17 are required by current SDK documentation.
-- Validate on a physical compatible Galaxy Watch + Android phone: denied/partial/revoked permissions, unavailable device metrics, sleep sessions, same-day totals, SDK errors, origin restrictions and lifecycle cleanup.
-- Confirm whether the supported watch supplies sleep score, Energy Score and skin temperature. Never synthesize them or label skin temperature as core temperature.
-- Review the Play health declaration and privacy policy against the implemented collection before another release. Increment already-used Android version codes before uploading a new bundle.
+Wear uses readable vertically stacked wellness cards with source/age, no synthetic recovery score, explicit empty/expired states and existing separate manual sharing consent. Samsung values are not automatically mirrored by the old manual consent.
 
-The initial recommendation engine uses fresh sleep and the user's own disposition and goal. Scores and skin temperature are context only; no clinical score thresholds, intense-training clearance or fitness-for-duty decisions.
+## Release gate
+
+`SAMSUNG_WELLNESS_ENABLED` defaults to false. An explicit `-PcrewcheckSamsung=true :app:assembleDebug` compiles a device-validation build. Any requested Samsung-enabled release task is rejected until partnership approval and physical validation have been reviewed and the gate deliberately revised. Default signed store builds retain manual-only behavior. No production publication is performed by this feature.
+
+The official AAR (downloaded from Samsung Developer) is vendored only as an app dependency under native/libs, alongside the supplied open-source notice. The SDK's official usage requirements continue to apply. Java 17, Android API 29+ and Samsung Health 6.30.2+ are needed for this integration; manual app support remains API 26+.
+
+Before public activation: register com.crewcheck.app and the actual Play app-signing SHA-256 with Samsung, receive partnership approval, validate on physical Galaxy Watch + phone, review privacy/Play declarations, then allocate unused release version codes. Never direct public users to enable developer mode.
 
 ## Validation
 
-`node scripts/v139/apply.mjs`
-`node scripts/crewlife-wellness/test.mjs`
-`node scripts/android-play/check-sources.mjs`
-`npx tsc --noEmit`
+- Fresh checkout: node scripts/v139/apply.mjs
+- node scripts/crewlife-wellness/test.mjs
+- node scripts/android-play/check-sources.mjs
+- npx tsc --noEmit and npx vite build
+- Android CI compiles explicit Samsung debug mode plus disabled signed release bundles.
+- Physical test required: partial/denied/revoked permissions, unsupported metrics, watch sync delays, process restart, background scheduling, logout, account switch, offline/error recovery, expired data and accessible round-screen layout.
 
 Official references:
-- https://developer.samsung.com/health/data/overview.html
-- https://developer.samsung.com/health/data/process.html
-- https://developer.samsung.com/codelab/health/sleep-data.html
-- https://support.google.com/googleplay/android-developer/answer/12991134
+https://developer.samsung.com/health/data/overview.html
+https://developer.samsung.com/health/data/process.html
+https://developer.samsung.com/health/data/guide/hello-sdk/permission-request.html
+https://developer.samsung.com/health/data/guide/features/data-access.html

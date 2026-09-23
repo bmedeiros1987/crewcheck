@@ -23,7 +23,14 @@ assert.equal(suggestWellness(slept, 'well', 8, now + 86400000).kind, 'check-in')
 assert.equal(metricText('steps'), 'Sem dado');
 assert.equal(metricText('sleepMinutes', observation(480)), '8h 00min');
 const ui = fs.readFileSync('scripts/crewlife-wellness/WellnessDashboard.tsx', 'utf8');
-assert(!/localStorage|sessionStorage|fetch\(|sendBeacon/.test(ui), 'Samsung observations must remain session memory only');
+assert(!/localStorage|sessionStorage|fetch\(|sendBeacon/.test(ui), 'Web health summaries must not be persisted or transmitted');
 const native = fs.readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 'utf8');
-assert(!native.includes('getSamsungWellnessStatus'), 'This draft must not expose an unapproved Samsung integration');
+assert(!native.includes('getSamsungWellnessStatus'), 'Do not expose a JavascriptInterface for health data');
+const bridge = fs.readFileSync('scripts/crewlife-wellness/native/SamsungWellnessBridge.kt', 'utf8');
+assert(bridge.includes('!mainFrame') && bridge.includes('WEB_MESSAGE_LISTENER'));
+const gradle = fs.readFileSync('scripts/crewlife-wellness/native/samsung.gradle', 'utf8');
+assert(gradle.includes("orElse('false')") && gradle.includes('pending partner approval'));
+const reader = fs.readFileSync('scripts/crewlife-wellness/native/SamsungWellnessReader.kt', 'utf8');
+assert(!/AccessType.WRITE|insertData|updateData|deleteData/.test(reader));
+assert(!ui.includes('getSamsungWellnessStatus'));
 console.log('CrewLife wellness: malformed data, freshness, provenance, zero semantics, conservative suggestions and isolation passed.');

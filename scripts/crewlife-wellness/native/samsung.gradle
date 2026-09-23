@@ -1,0 +1,17 @@
+// Samsung partner distribution stays disabled until reviewed approval is recorded.
+def requested = providers.gradleProperty('crewcheckSamsung').orElse('false').get().toBoolean()
+android.buildFeatures.buildConfig = true
+android.defaultConfig.buildConfigField 'boolean', 'SAMSUNG_WELLNESS_ENABLED', requested.toString()
+android.sourceSets.main.java.srcDir 'src/samsung/java'
+apply plugin: 'kotlin-parcelize'
+dependencies {
+    implementation files('src/samsung/libs/samsung-health-data-api-1.1.0.aar')
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'androidx.work:work-runtime-ktx:2.10.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+gradle.taskGraph.whenReady { graph ->
+    if (requested && graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }) {
+        throw new GradleException('Samsung production integration is pending partner approval and physical-device validation. Use an explicitly enabled debug build for validation only.')
+    }
+}

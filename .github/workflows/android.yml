@@ -5,6 +5,7 @@ on:
     paths:
       - 'android-wrapper/**'
       - 'scripts/android-play/**'
+      - 'scripts/crewlife-wellness/**'
       - 'scripts/v139/apply.mjs'
       - '.github/workflows/android.yml'
   push:
@@ -77,6 +78,8 @@ jobs:
           printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
           keytool -exportcert -keystore "$CREWCHECK_STORE_FILE" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" -file "$RUNNER_TEMP/upload-cert.der"
           echo "EXPECTED_UPLOAD_CERT_SHA256=$(sha256sum "$RUNNER_TEMP/upload-cert.der" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
+      - name: Compile Samsung debug adapter against official SDK
+        run: gradle -p android-wrapper --no-daemon --console=plain -PcrewcheckSamsung=true :app:assembleDebug
       - name: Test and build separate signed bundles
         env:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
