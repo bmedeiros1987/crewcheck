@@ -56,7 +56,7 @@ assert.match(broadcast,/TRÂNSITO/);
 assert.match(broadcast,/UberHandoff mobility=\{mobility\} compact/);
 assert.match(broadcast,/visitorAirportLabel/);
 assert.match(broadcast,/trustedAirlinePhoto/);
-assert.match(broadcast,/visual\.licensed/);
+assert.match(broadcast,/if\(!visual\?\.licensed \|\| !visual\.imageUrl \|\| !visual\.source\)return null/);
 
 const uber=await readFile('apps/tv-player/src/UberHandoff.tsx','utf8');
 assert.match(uber,/hostname==='m\.uber\.com'/);

@@ -161,8 +161,8 @@ export default function TvPairPage() {
       <p className="mt-3 text-xs opacity-60">TV confiável permanece vinculada neste aparelho até você desvincular ou revogar pelo celular. A senha e a sessão principal da conta não ficam salvas na TV.</p>
       <div className="mt-4 rounded-2xl border border-violet-900/40 bg-violet-950/10 p-4 text-xs leading-5">
         <b className="block text-sm">Acesso da CrewCheck TV</b>
-        <span className="mt-1 block opacity-75">Gratuito: escala, próxima programação, jornada completa, pernoites, apresentação publicada, calendário, personalização local e portão informado pelo próprio usuário. Nenhuma API paga é consultada para completar esses dados.</span>
-        <span className="mt-2 block opacity-75">Premium: pode acrescentar portão/radar automático, trânsito, meteorologia automática e outros contextos conectados, sempre conforme autorização e disponibilidade.</span>
+        <span className="mt-1 block opacity-75">Gratuito para todos, sem assinatura e sem prazo de validade. Use sua escala, calendário e os dados que escolher compartilhar, independentemente do plano da conta.</span>
+        <span className="mt-2 block opacity-75">Dados automáticos de serviços externos dependem das integrações disponíveis na sua conta. A TV não contrata serviços nem inicia cobranças.</span>
       </div>
     </section>
 

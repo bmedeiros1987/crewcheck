@@ -7,6 +7,8 @@ on:
       - 'server/tv/**'
       - 'scripts/tv-extension-detail-test.mjs'
       - 'scripts/tv-sharing-controls-test.mjs'
+      - 'scripts/tv-lifetime-test.mjs'
+      - 'scripts/tv-entitlements-test.mjs'
       - 'server/tv/**'
       - 'client/src/pages/TvPairPage.tsx'
       - 'scripts/tv-broadcast-prepare.mjs'
@@ -27,6 +29,7 @@ jobs:
       - run: node scripts/tv-extension-detail-test.mjs
       - run: node scripts/tv-entitlements-test.mjs
       - run: node scripts/tv-trusted-client-test.mjs
+      - run: node scripts/tv-lifetime-test.mjs
       - run: node scripts/tv-sharing-controls-test.mjs
       - run: node scripts/tv-test.mjs
       - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs

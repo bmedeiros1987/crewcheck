@@ -10,6 +10,15 @@ assert.equal(free.providers.weather,false);
 assert.equal(free.features.roster,true);
 assert.equal(free.features.userGate,true);
 assert.equal(free.features.basicFinance,true);
+for (const plan of ['free','expired','premium_monthly','premium_lifetime']) {
+  const access=tvAccessPolicy({plan});
+  assert.equal(access.tier,'free');
+  assert.equal(access.lifetime,true);
+  assert.equal(access.features.hotel,true);
+  assert.equal(access.features.crew,true);
+  assert.equal(access.features.advancedFinance,true);
+  assert.equal(publicTvEntitlements(access).tier,'free');
+}
 
 const freePublicWeather=tvAccessPolicy({plan:'free',tvNoCostProviders:{weather:true}});
 assert.equal(freePublicWeather.providers.weather,true,'explicitly no-cost weather may be enabled');

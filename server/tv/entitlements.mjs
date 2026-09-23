@@ -20,7 +20,9 @@ export function tvAccessPolicy(data = {}) {
     ? data.tvNoCostProviders
     : {};
   return {
-    tier: premium ? 'premium' : 'free',
+    // TV access has no purchase, subscription or expiry for any account.
+    tier: 'free',
+    lifetime: true,
     plan,
     premium,
     features: {
@@ -34,9 +36,9 @@ export function tvAccessPolicy(data = {}) {
       basicFinance: true,
       mobilityHandoff: true,
       airlineVisual: true,
-      hotel: premium,
-      crew: premium,
-      advancedFinance: premium,
+      hotel: true,
+      crew: true,
+      advancedFinance: true,
     },
     providers: {
       radar: premium,
@@ -75,7 +77,7 @@ export function tvUserGateFact(data = {}, now = Date.now()) {
 
 export function publicTvEntitlements(policy) {
   return {
-    tier: policy?.premium ? 'premium' : 'free',
+    tier: 'free',
     userGate: true,
     automaticGate: policy?.providers?.radar === true,
     automaticTraffic: policy?.providers?.traffic === true,
