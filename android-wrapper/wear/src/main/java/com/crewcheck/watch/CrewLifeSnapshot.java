@@ -152,7 +152,7 @@ public final class CrewLifeSnapshot {
 
     /** Valor curto e humano. Nunca expõe "DESCONHECIDA" como estado de produto. */
     public String complicationText(long nowEpochMs) {
-        if (isStale(nowEpochMs)) return "ABRIR";
+        if (isStale(nowEpochMs)) return "--";
         if (recoveryScore > 0) return recoveryScore + "%";
         if (!recoveryLabel.isBlank() && !"DESCONHECIDA".equals(recoveryLabel)) return recoveryLabel;
         if (!sleepLabel.isBlank()) return sleepLabel;
