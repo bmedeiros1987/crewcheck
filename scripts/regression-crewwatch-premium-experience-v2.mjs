@@ -11,6 +11,12 @@ const complicationBase = read('android-wrapper/wear/src/main/java/com/crewcheck/
 const nextStep = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/NextStepComplicationService.java');
 const gate = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/GateComplicationService.java');
 const crewLifeProvider = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewLifeComplicationService.java');
+const batteryProvider = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/BatteryComplicationService.java');
+const autoSyncScheduler = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchAutoSyncScheduler.java');
+const autoSyncJob = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchAutoSyncJobService.java');
+const dataLayer = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewCheckDataLayerService.java');
+const phoneMain = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
+const home = read('client/src/pages/Home.tsx');
 
 assert.match(main, /MODE_JOURNEY = 1/);
 assert.match(main, /PAGE_COUNT = 5/);
@@ -22,6 +28,10 @@ assert.match(main, /Sua jornada/);
 assert.match(main, /PRÓXIMOS PASSOS/);
 assert.match(main, /PremiumBackdropView/);
 assert.match(main, /CrewLife é opcional/);
+assert.match(main, /batteryLabel\(\)/);
+assert.match(main, /AUTO_SYNC_INTERVAL_MS/);
+assert.match(main, /addProgramStrip\(snapshot\)/);
+assert.match(main, /WatchAutoSyncScheduler\.schedule\(this\)/);
 assert.doesNotMatch(main, /life\.recoveryScore > 0 \? life\.recoveryScore \+ "%" : life\.recoveryLabel/);
 
 assert.match(backdrop, /drawArc/);
@@ -36,7 +46,14 @@ assert.match(complicationBase, /putExtra\("crewcheck_screen", tapScreen\(\)\)/);
 assert.match(nextStep, /return "journey"/);
 assert.match(gate, /return "journey"/);
 assert.match(crewLifeProvider, /return "crewlife"/);
+assert.match(batteryProvider, /BatteryManager\.EXTRA_LEVEL/);
+assert.match(autoSyncScheduler, /15 \* 60_000L/);
+assert.match(autoSyncJob, /WatchSyncClient\.refresh/);
+assert.match(dataLayer, /ACTION_SNAPSHOT_UPDATED/);
+assert.match(phoneMain, /requestCrewCheckWatchSnapshotFromWeb\("phone-resume"\)/);
+assert.match(home, /document\.addEventListener\('visibilitychange', onVisible\)/);
 
+assert.match(face, /BatteryComplicationService/);
 const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
 assert.ok(slots >= 5, 'watch face deve manter pelo menos cinco glances/complicações');
 
