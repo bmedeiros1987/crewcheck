@@ -83,7 +83,21 @@ patch('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java'
 const releasePolicy = JSON.parse(fs.readFileSync('scripts/android-play/release-policy.json', 'utf8'));
 const webRelease = JSON.parse(fs.readFileSync('client/public/release.json', 'utf8'));
 webRelease.version = releasePolicy.versionName;
+for (const packagePath of ['package.json', 'package-lock.json']) {
+  const packageData = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  packageData.version = releasePolicy.versionName;
+  if (packageData.packages?.['']) packageData.packages[''].version = releasePolicy.versionName;
+  fs.writeFileSync(packagePath, JSON.stringify(packageData, null, 2) + '\n');
+}
 webRelease.notes = 'Novo painel CrewLife e leitura mais clara no relógio. Integração Samsung disponível apenas em validação, aguardando aprovação.';
 fs.writeFileSync('client/public/release.json', JSON.stringify(webRelease, null, 2) + '\n');
 const { syncServiceWorkerVersion } = await import('../ci/sync-service-worker-version.mjs');
 fs.writeFileSync('client/public/sw.js', syncServiceWorkerVersion(fs.readFileSync('client/public/sw.js', 'utf8'), webRelease.version));
+const serverPath = 'server.mjs';
+let runtimeServer = fs.readFileSync(serverPath, 'utf8');
+for (const endpoint of ['release', 'health']) {
+  const pattern = new RegExp("(url\\.pathname === '/api/" + endpoint + "'[^\\r\\n]*version\\s*:\\s*')[0-9.]+(')");
+  if (!pattern.test(runtimeServer)) throw new Error('Server release identity anchor missing');
+  runtimeServer = runtimeServer.replace(pattern, `$1${webRelease.version}$2`);
+}
+fs.writeFileSync(serverPath, runtimeServer);
