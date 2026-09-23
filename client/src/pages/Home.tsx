@@ -1551,6 +1551,26 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
+function watchConciergePrompt(action: string, dictatedText = '') {
+  const spoken = String(dictatedText || '').trim();
+  if (spoken) return spoken;
+
+  switch (String(action || '').trim().toUpperCase()) {
+    case 'WAKEUP':
+      return 'Com base na minha próxima programação, qual horário você recomenda para eu despertar?';
+    case 'TRANSFER':
+      return 'Qual é a orientação ou o status do meu pickup ou transfer para a próxima programação?';
+    case 'ROOM':
+      return 'Preciso de ajuda com meu quarto ou hotel do pernoite. O que posso fazer agora?';
+    case 'AIRPORT':
+      return '/proximo';
+    case 'FOOD':
+      return 'Onde posso comer perto do meu pernoite ou hotel agora?';
+    default:
+      return '/hoje';
+  }
+}
+
 function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
   return <header className="cz-brand-row">
@@ -1715,6 +1735,7 @@ function smartDepartureEligible(event: ZeroLeg): boolean {
 
 function UpdateCenterView() {
   const fileRef = useRef<HTMLInputElement>(null);
+  const processedWatchConcierge = useRef<Set<string>>(new Set());
   const [token, setToken] = useState(() => storage.get('crewcheck_update_token', ''));
   const [title, setTitle] = useState('Hotfix visual CrewCheck');
   const [version, setVersion] = useState('runtime');
@@ -4666,6 +4687,37 @@ export default function Home() {
       window.clearInterval(timer);
     };
   }, [events, event.id, event.presentation, event.gate, event.status]);
+
+  useEffect(() => {
+    const onWatchConciergeAction = async (event: Event) => {
+      const detail = (event as CustomEvent<any>)?.detail || {};
+      const requestId = String(detail.requestId || '').trim();
+      if (!requestId || processedWatchConcierge.current.has(requestId)) return;
+
+      processedWatchConcierge.current.add(requestId);
+      const native = (window as any).AndroidCrewCheckNative;
+
+      try {
+        const prompt = watchConciergePrompt(String(detail.action || ''), String(detail.text || ''));
+        const payload = await askTelegramConcierge(prompt);
+        const reply = String(payload?.reply || 'Concierge respondeu, mas sem texto disponível.').trim();
+        const accepted = native?.replyWatchConcierge?.(requestId, true, reply);
+        if (accepted === false) processedWatchConcierge.current.delete(requestId);
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : 'O Concierge não conseguiu responder agora.';
+        const accepted = native?.replyWatchConcierge?.(requestId, false, message);
+        if (accepted === false) processedWatchConcierge.current.delete(requestId);
+      }
+    };
+
+    window.addEventListener('crewcheck:watch-concierge-action', onWatchConciergeAction as EventListener);
+    return () => window.removeEventListener(
+      'crewcheck:watch-concierge-action',
+      onWatchConciergeAction as EventListener,
+    );
+  }, []);
 
   useEffect(() => {
     // A escala ativa pertence à conta, não ao cache deste dispositivo.
