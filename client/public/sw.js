@@ -2,7 +2,7 @@ const CACHE_NAME = 'crewcheck-v14.3-offline-shell';
 const RUNTIME_CACHE = 'crewcheck-v14.3-offline-runtime';
 const SHARED_PDF_CACHE = 'crewcheck-pwa-shared-pdf-v1';
 const SHARED_PDF_ROUTE = '/__crewcheck_shared_pdf/';
-const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
+const SHARED_PDF_TTL_MS = 24 * 60 * 60 * 1000;
 const SHARED_PDF_MAX_BYTES = 20 * 1024 * 1024;
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/crewcheck-icon-v2.png'];
 
@@ -135,6 +135,19 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   const type = typeof event.data === 'string' ? event.data : event.data?.type;
   if (type === 'SKIP_WAITING') event.waitUntil(self.skipWaiting());
+  if (type === 'ACK_SHARED_PDF') {
+    const shareId = String(event.data?.shareId || '').trim();
+    if (shareId && shareId.length <= 200) {
+      event.waitUntil(
+        caches.open(SHARED_PDF_CACHE)
+          .then((cache) => {
+            const storageUrl = new URL(`${SHARED_PDF_ROUTE}${encodeURIComponent(shareId)}`, self.location.origin).toString();
+            return cache.delete(new Request(storageUrl));
+          })
+          .catch(() => undefined),
+      );
+    }
+  }
   if (type === 'CLEAR_CREWCHECK_CACHE') {
     event.waitUntil(
       caches.keys()
@@ -166,7 +179,8 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(SHARED_PDF_CACHE);
       const response = await cache.match(request);
       if (!response) return new Response('', { status: 404 });
-      await cache.delete(request);
+      // Durable handoff: keep the private blob until the roster importer sends
+      // ACK_SHARED_PDF after a successful canonical import.
       return response;
     })());
     return;
