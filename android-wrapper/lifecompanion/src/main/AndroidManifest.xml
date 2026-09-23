@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <permission
+        android:name="com.crewcheck.permission.LIFE_SUMMARY"
+        android:protectionLevel="signature" />
+
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:label="CrewLife Companion"
+        android:icon="@drawable/crewcheck_life_icon"
+        android:roundIcon="@drawable/crewcheck_life_icon"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name=".LifeSummaryProvider"
+            android:authorities="com.crewcheck.life.summary"
+            android:exported="true"
+            android:grantUriPermissions="false"
+            android:readPermission="com.crewcheck.permission.LIFE_SUMMARY" />
+
+        <service
+            android:name=".CrewLifeRefreshJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
