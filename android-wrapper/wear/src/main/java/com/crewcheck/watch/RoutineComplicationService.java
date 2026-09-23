@@ -13,6 +13,11 @@ public final class RoutineComplicationService extends BaseComplicationService {
     }
 
     @Override
+    protected String tapScreen() {
+        return "crewlife";
+    }
+
+    @Override
     protected ComplicationRendering render(long nowEpochMs, boolean preview) {
         RoutineSnapshot snapshot = preview
                 ? RoutineSnapshot.demo(nowEpochMs)
