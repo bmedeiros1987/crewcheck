@@ -7,9 +7,9 @@ Known floors are a conservative snapshot, not a substitute for live Play validat
 
 | Artifact | Package | Code | Track |
 | --- | --- | --- | --- |
-| Mobile | com.crewcheck.app | 144090 | qa (internal testing) |
-| CrewWatch | com.crewcheck.app | 144091 | wear:qa |
-| Watch face (WFF 1) | com.crewcheck.watch.app | 144092 | wear:qa |
+| Mobile | com.crewcheck.app | 144100 | qa (internal testing) |
+| CrewWatch | com.crewcheck.app | 144101 | wear:qa |
+| Watch face (WFF 1) | com.crewcheck.watch.app | 144102 | wear:qa |
 
 All target API 36. Minimum APIs remain 26/30/33. The resource-only WFF 1 face requires
 Wear OS 4; the companion remains compatible with Wear OS 3. The phone and companion

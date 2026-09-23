@@ -1,10 +1,10 @@
 {
-  "versionName": "14.4.09",
+  "versionName": "14.4.10",
   "uploadCertificateSha256": "4b5a06b5b77798ee1ff5681952a53da4f1bb03cdc7d07f69d7e868f62f61f454",
-  "knownMaxVersionCode": {"com.crewcheck.app": 140388, "com.crewcheck.watch.app": 140385},
+  "knownMaxVersionCode": {"com.crewcheck.app": 144091, "com.crewcheck.watch.app": 144092},
   "artifacts": {
-    "app": {"package": "com.crewcheck.app", "versionCode": 144090, "minSdk": 26, "targetSdk": 36, "track": "qa", "watch": false},
-    "wear": {"package": "com.crewcheck.app", "versionCode": 144091, "minSdk": 30, "targetSdk": 36, "track": "wear:qa", "watch": true},
-    "watchface": {"package": "com.crewcheck.watch.app", "versionCode": 144092, "minSdk": 33, "targetSdk": 36, "track": "wear:qa", "watch": true}
+    "app": {"package": "com.crewcheck.app", "versionCode": 144100, "minSdk": 26, "targetSdk": 36, "track": "qa", "watch": false},
+    "wear": {"package": "com.crewcheck.app", "versionCode": 144101, "minSdk": 30, "targetSdk": 36, "track": "wear:qa", "watch": true},
+    "watchface": {"package": "com.crewcheck.watch.app", "versionCode": 144102, "minSdk": 33, "targetSdk": 36, "track": "wear:qa", "watch": true}
   }
 }

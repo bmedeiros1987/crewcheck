@@ -1,0 +1,29 @@
+/* Store layout: keep consent and manual records readable at narrow widths. */
+.cc-life-shell { padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
+.cc-life-shell .cc-life-sync-strip {
+  margin: 16px 0; padding: 16px 18px; background: var(--life-card);
+  border: 1px solid var(--life-line); border-left: 3px solid var(--life-cyan); border-radius: 16px;
+}
+.cc-life-shell .cc-life-sync-strip :is(strong, small) { display: block; line-height: 1.5; }
+.cc-life-shell .cc-life-sync-strip small { margin-top: 5px; color: var(--life-muted); font-size: .9rem; }
+.cc-life-shell .cc-life-block { box-shadow: 0 8px 24px rgba(2, 12, 27, .12); }
+.cc-life-shell .cc-life-consent-card p { color: var(--life-muted); line-height: 1.6; }
+.cc-life-shell .cc-life-metrics article { min-width: 0; padding: 18px; }
+.cc-life-shell .cc-life-metrics strong { font-variant-numeric: tabular-nums; }
+.cc-life-shell .cc-life-metrics span,
+.cc-life-shell .cc-life-form-grid label { font-size: .9rem; line-height: 1.5; }
+.cc-life-shell :is(button, input:not([type=checkbox]), select) { min-height: 48px; }
+.cc-life-shell :is(button, a, input, select):focus-visible {
+  outline: 3px solid var(--life-cyan);
+  outline-offset: 3px;
+}
+.cc-life-shell :is(p, small, h2, h3) { overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .cc-life-shell .cc-life-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .cc-life-shell .cc-life-metrics article { padding: 14px; }
+  .cc-life-shell .cc-life-block { padding: 18px; }
+  .cc-life-shell .cc-life-hero { gap: 12px; }
+}
+@media (max-width: 340px) {
+  .cc-life-shell .cc-life-metrics { grid-template-columns: 1fr; }
+}
