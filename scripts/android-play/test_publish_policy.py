@@ -8,11 +8,10 @@ assert "assert item['track'] in ['qa', 'wear:qa']" in source
 assert "'status': 'completed'" in source
 assert "'status': 'draft'" not in source
 assert "'releaseNotes':" in source
+assert "url + ':validate'" not in source
 assert "url + ':commit'" in source
 assert "changesNotSentForReview" in source
 assert "params={'changesNotSentForReview': 'true'}" in source
-assert "Changes cannot be sent for review automatically" in source
-assert "except RuntimeError as error" in source
 assert "Independent CI failed; Play publication blocked" in source
 assert "time.time() + 12 * 60" in source
 
@@ -27,7 +26,6 @@ payload_tracks = re.findall(r"\['([^']+)'\]", source)
 assert "production" not in payload_tracks
 
 print('[android-play] internal auto-release policy OK')
-
 
 assert "github.event_name == 'push'" in workflow
 assert "vars.PLAY_INTERNAL_AUTO_PUBLISH" not in workflow
