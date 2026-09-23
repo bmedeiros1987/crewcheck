@@ -4,3 +4,14 @@
 .trusted-tv-choice[aria-pressed=true]{background:linear-gradient(110deg,rgba(154,77,255,.20),rgba(39,195,232,.12));border-color:#7b62bd}
 .trusted-tv-choice span{width:1.4vw;height:1.4vw;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;margin-right:.6vw;color:#bdeeff}
 .trusted-tv-choice b{font-size:.82vw;letter-spacing:.01vw}.trusted-tv-note{max-width:34vw;color:#89a1bd!important;font-size:.66vw!important;line-height:1.35!important;margin-top:0!important}
+
+/* Readable from the sofa at 720p as well as 1080p. */
+.pair-diagnostics button { min-height: 48px; font-size: max(16px, 1.1vw); }
+.pair-diagnostics button:focus-visible { outline: 3px solid #bdeeff; outline-offset: 4px; }
+.pair-diagnostics .trusted-tv-choice { max-width: 46vw; }
+.pair-diagnostics .trusted-tv-choice b { font-size: max(16px, 1.1vw); }
+.pair-diagnostics .trusted-tv-note { max-width: 46vw; font-size: max(14px, .95vw)!important; line-height: 1.5!important; color: #c5d5e8!important; }
+.pair-diagnostics .tv-free-access { color: #b9f4d4; font-weight: 600; font-size: max(16px, 1.1vw); }
+.theme-mobile .pair-diagnostics .tv-free-access { color: #166534; }
+.theme-mobile .pair-diagnostics .trusted-tv-note { color: #334b65!important; }
+.pair-diagnostics aside h2 { font-variant-numeric: tabular-nums; }

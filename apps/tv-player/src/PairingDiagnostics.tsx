@@ -47,6 +47,7 @@ export function PairingDiagnostics({status,code,busy,pairing,qr,origin,trusted,o
   const appOrigin=location.origin==='null'?'arquivo local':location.origin;
   return <section className="pair pair-diagnostics view-enter"><div>
     <p className="eyebrow"><ShieldCheck/> BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1>
+    <p className="tv-free-access">Gratuito para todos. Sem assinatura e sem prazo de validade.</p>
     <p>Autorize esta tela pelo CrewCheck no celular.</p><div className="pair-buttons"><button className="primary-button" disabled={busy} onClick={onBegin}>{busy?'Conectando…':pairing?'Gerar novo código':'Vincular TV'} <ArrowRight/></button><button disabled={busy} onClick={onCheck}>Testar conexão</button></div>
     <button className="trusted-tv-choice" disabled={busy||Boolean(pairing)} aria-pressed={trusted} onClick={()=>onTrustedChange(!trusted)}><span>{trusted?'✓':'○'}</span><b>{trusted?'Manter esta TV vinculada':'Vincular só nesta sessão'}</b></button>
     <small className="trusted-tv-note">{trusted?'TV pessoal: o CrewCheck lembrará este aparelho até você desvincular ou revogar pelo celular.':'Ao fechar ou reiniciar a TV, será necessário vincular novamente.'}</small>

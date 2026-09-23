@@ -10,7 +10,10 @@ if(!main.includes("from './BroadcastPanels'")){
  main=replace(main,"import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';","import { useTvChannel, ChannelDock, ChannelSettings } from './TvChannel';\nimport { BroadcastPanel, OfficialTvBrand, ProviderCredit, CreatorCredit } from './BroadcastPanels';\nimport { quickAvailability } from './broadcastPolicy';");
  main=replace(main,"type View = 'Agora' |","type View = 'Meteorologia' | 'Radar' | 'Apresentação' | 'Pernoite' | 'Agora' |");
  main=replace(main,"const views: View[] = ['Agora', 'Semana', 'Mês', 'Mudanças', 'Notícias', 'Configurações'];","const views: View[] = ['Agora', 'Mês', 'Meteorologia', 'Radar', 'Apresentação', 'Pernoite', 'Configurações'];");
- main=replace(main,'hasNews:news.length>0, covered:','hasNews:displayPrefs.value.news&&news.length>0, quick:quickAvailability(snapshot,clock.getTime(),displayPrefs.value), covered:');
+ const newsAnchor=main.includes('hasNews:displayPrefs.value.news&&news.length>0, covered:')
+   ? 'hasNews:displayPrefs.value.news&&news.length>0, covered:'
+   : 'hasNews:news.length>0, covered:';
+ main=replace(main,newsAnchor,'hasNews:displayPrefs.value.news&&news.length>0, quick:quickAvailability(snapshot,clock.getTime(),displayPrefs.value), covered:');
  main=replace(main,"className={'tv-app theme-' + theme}","className={'tv-app tv-broadcast theme-' + theme}");
  main=replace(main,'<header><TvBrand/>','<header><OfficialTvBrand/>');
  main=main.replace('Prévia visual 0.1.6','Prévia visual 0.1.7');

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plane, ArrowRight, CalendarDays, Clock3, Car, BedDouble, MapPin, ShieldCheck, CloudSun, Radar, Hotel, Info, ChevronRight, Gauge } from 'lucide-react';
 import { currentFact, freshness, type TvSnapshot, type TvActivity } from '../../../packages/tv-core/src/index';
-import { WeatherArtwork } from './TvVisuals';
+import { WeatherArtwork, TvBrand } from './TvVisuals';
 import { formatTvTime as time, formatMonth, activityLabel } from './presentation';
 import { countdown, upcomingStay, isCiriumSource, type QuickView } from './broadcastPolicy';
 import { visitorAirportLabel, isVisitorPresentation, programsForDay, programRouteCodes } from './programming';
@@ -12,9 +12,11 @@ import './broadcast.css';
 
 const asset=(name:string)=>'./brand/'+name;
 export function OfficialTvBrand() {
+  const [fallback, setFallback] = React.useState(false);
+  if (fallback) return <TvBrand/>;
   return <div className="official-brand" aria-label="CrewCheck TV · We Do Care About US">
-    <img className="official-brand-night" src={asset('crewcheck-horizontal-night.png')} alt="CrewCheck · We Do Care About US"/>
-    <img className="official-brand-light" src={asset('crewcheck-horizontal-light.png')} alt="CrewCheck · We Do Care About US"/>
+    <img className="official-brand-night" src={asset('crewcheck-horizontal-night.png')} alt="CrewCheck · We Do Care About US" onError={()=>setFallback(true)}/>
+    <img className="official-brand-light" src={asset('crewcheck-horizontal-light.png')} alt="CrewCheck · We Do Care About US" onError={()=>setFallback(true)}/>
     <span className="official-tv-tag">TV</span>
   </div>;
 }

@@ -217,7 +217,8 @@ export class TvSession {
 
   offline(now = Date.now()) {
     if (!this.credential) return null;
-    if (!this.credential.trusted && Date.parse(this.credential.expiresAt) <= now) {
+    const expiry = Date.parse(this.credential.expiresAt || "");
+    if (!this.credential.trusted && (!Number.isFinite(expiry) || expiry <= now)) {
       this.clear(true);
       return null;
     }
