@@ -54,7 +54,7 @@ export function findUnsafeTeeRuns(text, file = '<fixture>') {
       continue;
     }
 
-    const explicitSafe = /(?:^|[;\n])\s*set\s+-o\s+pipefail\b/.test(runText)
+    const explicitSafe = /(?:^|[;\n])\s*set\s+-[^;\n]*\bpipefail\b/.test(runText)
       || /PIPESTATUS\s*\[/.test(runText)
       || /bash\s+-o\s+pipefail\b/.test(runText);
 
@@ -71,6 +71,7 @@ function runSelfTests() {
   assert.equal(findUnsafeTeeRuns(`jobs:\n  x:\n    steps:\n      - run: node test.mjs | tee out.log\n`).length, 1);
   assert.equal(findUnsafeTeeRuns(`defaults:\n  run:\n    shell: bash -o pipefail {0}\njobs:\n  x:\n    steps:\n      - run: node test.mjs | tee out.log\n`).length, 0);
   assert.equal(findUnsafeTeeRuns(`jobs:\n  x:\n    steps:\n      - run: |\n          set -o pipefail\n          node test.mjs | tee out.log\n`).length, 0);
+  assert.equal(findUnsafeTeeRuns(`jobs:\n  x:\n    steps:\n      - run: |\n          set -euo pipefail\n          node test.mjs | tee out.log\n`).length, 0);
   assert.equal(findUnsafeTeeRuns(`jobs:\n  x:\n    steps:\n      - run: |\n          node test.mjs | tee out.log\n          status=\${PIPESTATUS[0]}\n          exit "$status"\n`).length, 0);
   assert.equal(findUnsafeTeeRuns(`jobs:\n  x:\n    steps:\n      - run: node test.mjs\n`).length, 0);
 }
