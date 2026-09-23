@@ -38,7 +38,8 @@ assert(runtime.includes("new File([blob], filename"), 'PWA deve entregar File re
 assert(!runtime.includes('bytesToBase64'), 'PWA não deve converter PDF inteiro para Base64 sem necessidade');
 
 assert(home.includes('claimPendingPwaSharedPdf()'), 'Home deve reclamar share PWA persistido.');
-assert(home.includes('await processRosterFile(claim.file)'), 'share PWA deve usar o mesmo importador canônico.');
+assert(home.includes('await importSharedPdfFile(claim.file'), 'claim PWA deve entrar no wrapper comum de compartilhamento.');
+assert(home.includes('const imported = await processRosterFile(file);'), 'wrapper comum deve chamar o importador canônico e observar sucesso real.');
 assert(home.includes('await acknowledgePwaSharedPdf(claim.shareId)'), 'PWA só pode apagar share após importação bem-sucedida.');
 
 console.log('[p0-pwa-share-target] contrato PWA durável protegido: share sobrevive a login/reload e só some após ACK.');
