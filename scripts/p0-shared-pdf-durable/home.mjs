@@ -178,6 +178,7 @@ if (!source.includes('async function processRosterFile(file: File): Promise<bool
         : null;
       const opensComparison = Boolean(importComparison && !importComparison.summary.unchanged);
       const newCompliance = saveRoster(roster, file.name);
+      const newGym = (() => { try { return getGymRecommendations(roster); } catch { return []; } })();
       storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
       storage.set('crewcheck_last_pdf_import_source', parsed.source);
@@ -185,7 +186,18 @@ if (!source.includes('async function processRosterFile(file: File): Promise<bool
       bundleRef.current = nextBundle;
       setBundle(nextBundle);
       syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
-      syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
+      Promise.allSettled([
+        saveRosterAnalysis({ roster, compliance: newCompliance, gym: newGym, sourceFileName: file.name } as any).finally(() => {
+          // P0 #673: persistence can emit before React settles the new active bundle.
+          // Rebuild the historical display window once more on the next task.
+          window.setTimeout(() => {
+            try { window.dispatchEvent(new CustomEvent('crewcheck:roster-history-updated')); } catch {}
+          }, 0);
+        }),
+        syncPlatformRoster(roster, newCompliance, file.name),
+      ]).then((results) => {
+        if (results.every((result) => result.status === 'rejected')) toast.message('Escala preservada neste dispositivo; a sincronização com o banco será tentada novamente.');
+      });
       sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');
       setView(opensComparison ? 'compare' : 'roster');
       toast.success(decision.toastText || 'Escala real importada e detalhes liberados.');
@@ -216,4 +228,4 @@ if (!source.includes('async function processRosterFile(file: File): Promise<bool
 }
 
 fs.writeFileSync(path, source, 'utf8');
-console.log('[p0-shared-pdf:home] native/PWA handoff converges on canonical importer and ACKs only after success.');
+console.log('[p0-shared-pdf:home] native/PWA handoff converges on canonical importer, preserves history refresh, and ACKs only after success.');
