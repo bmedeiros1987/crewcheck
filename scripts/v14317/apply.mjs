@@ -206,15 +206,23 @@ ${anchor}`);
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', (source) => {
   let next = source;
   if (!next.includes('healthBridge.refreshFromHost()')) {
-    const anchor = '    @Override\n    protected void onDestroy() {';
-    if (!next.includes(anchor)) throw new Error('[v14316] onDestroy não encontrado no Android.');
-    next = next.replace(anchor, `    @Override
+    const resumeAnchor = '    @Override\n    protected void onResume() {\n        super.onResume();';
+    if (next.includes(resumeAnchor)) {
+      next = next.replace(
+        resumeAnchor,
+        resumeAnchor + '\n        if (healthBridge != null && webView != null) webView.postDelayed(() -> healthBridge.refreshFromHost(), 450);',
+      );
+    } else {
+      const anchor = '    @Override\n    protected void onDestroy() {';
+      if (!next.includes(anchor)) throw new Error('[v14316] lifecycle Android não encontrado.');
+      next = next.replace(anchor, `    @Override
     protected void onResume() {
         super.onResume();
         if (healthBridge != null && webView != null) webView.postDelayed(() -> healthBridge.refreshFromHost(), 450);
     }
 
 ${anchor}`);
+    }
   }
   return next;
 }, { optional: true });
