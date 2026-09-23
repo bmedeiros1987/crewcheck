@@ -120,6 +120,46 @@ async function tvGateContext(origin, flight, now) {
   }
 }
 
+function tvAttachCrewDetails(snapshot, roster, allowed) {
+  if (!allowed || snapshot?.privacy !== 'private' || !Array.isArray(roster?.days)) return {};
+  const details = {};
+  const activities = (snapshot.days || []).flatMap(day => Array.isArray(day.activities) ? day.activities : []);
+  for (const activity of activities) {
+    if (activity?.kind !== 'flight' || !activity.journeyId || !activity.flight) continue;
+    const day = roster.days.find(item => {
+      const [dd,mm,yyyy] = String(item?.date || '').split('/');
+      return dd && mm && yyyy && `${yyyy}-${mm}-${dd}` === activity.date;
+    });
+    if (!day || !Array.isArray(day.legs)) continue;
+    const leg = day.legs.find(item => String(item?.flightNumber || '').trim().toUpperCase() === String(activity.flight).trim().toUpperCase());
+    if (!leg || !Array.isArray(leg.crew)) continue;
+    const current = details[activity.journeyId] ||= { crew: [] };
+    const seen = new Set(current.crew.map(item => `${item.role}|${item.name}`));
+    for (const member of leg.crew.slice(0, 16)) {
+      const name = String(member?.name || '').trim().slice(0, 100);
+      const role = String(member?.role || '').trim().slice(0, 24);
+      if (!name) continue;
+      const key = `${role}|${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      current.crew.push({ role: role || 'Tripulante', name });
+    }
+  }
+  return details;
+}
+
+function mergeJourneyDetails(...sources) {
+  const merged = {};
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') continue;
+    for (const [key, value] of Object.entries(source)) {
+      if (!value || typeof value !== 'object') continue;
+      merged[key] = { ...(merged[key] || {}), ...value };
+    }
+  }
+  return merged;
+}
+
 function tvAttachStayDetails(snapshot, stays, allowed) {
   if (!allowed || snapshot?.privacy !== 'private' || !Array.isArray(stays)) return {};
   const details = {};
@@ -248,10 +288,17 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
           finance: audience === 'owner' && preferences.share?.finance === true,
           mobility: audience === 'owner' && preferences.share?.mobility === true,
         };
-        snapshot.journeyDetails = tvAttachStayDetails(
-          snapshot,
-          data.stays,
-          snapshot.sharePermissions.hotel === true,
+        snapshot.journeyDetails = mergeJourneyDetails(
+          tvAttachStayDetails(
+            snapshot,
+            data.stays,
+            snapshot.sharePermissions.hotel === true,
+          ),
+          tvAttachCrewDetails(
+            snapshot,
+            data.roster,
+            snapshot.sharePermissions.crew === true,
+          ),
         );
         snapshot.mobility = null;
         if (snapshot.profile) {
