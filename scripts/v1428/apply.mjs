@@ -108,6 +108,50 @@ export default function Home() {`,
       const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);`,
   );
 
+  // Canonical boolean importer compatibility: shared/manual PDF paths need an
+  // explicit success result before Android/PWA may ACK the handoff.
+  next = next.replace(
+`      const decision = confirmRosterImport(roster, file.name);
+      if (!decision.ok) {
+        toast.message(decision.toastText || 'Importação cancelada.');
+        return false;
+      }`,
+`      const decision = confirmRosterImport(roster, file.name);
+      let auditImport = false;
+      if (!decision.ok) {
+        const adminAudit = crewcheckAdminAuditAllowed() && window.confirm(
+          (decision.toastText || 'A escala não corresponde ao perfil ativo.') + '\\n\\nImportar somente em Modo Auditoria? Nenhum alerta, Telegram, calendário, despertador ou sincronização será disparado.',
+        );
+        if (!adminAudit) {
+          toast.message(decision.toastText || 'Importação cancelada.');
+          return false;
+        }
+        auditImport = true;
+      }`,
+  );
+
+  next = next.replace(
+`      const plannedSnapshot = preservePlannedRosterBeforeImport(bundleRef.current, roster);`,
+`      if (auditImport) {
+        const auditCompliance = analyzeSafe(roster);
+        const auditBundle = { roster, compliance: auditCompliance, source: 'AUDITORIA · ' + file.name };
+        try {
+          sessionStorage.setItem('crewcheck_admin_audit_backup', JSON.stringify(bundleRef.current));
+          sessionStorage.setItem('crewcheck_admin_audit_mode', '1');
+          sessionStorage.setItem('crewcheck_admin_audit_name', crewcheckAuditRosterName(roster));
+          sessionStorage.setItem('crewcheck_admin_audit_source', file.name);
+        } catch {}
+        bundleRef.current = auditBundle;
+        setBundle(auditBundle);
+        setAuditMode(true);
+        setAuditName(crewcheckAuditRosterName(roster));
+        setView('roster');
+        toast.success('Escala de ' + crewcheckAuditRosterName(roster) + ' aberta em modo auditoria.');
+        return true;
+      }
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundleRef.current, roster);`,
+  );
+
   if (!next.includes('cc-audit-mode-banner')) {
     next = next.replace(
       '    <div className="cz-wallpaper"/>',
