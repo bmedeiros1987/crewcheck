@@ -36,6 +36,12 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
 
 update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   let next = source;
+  // CrewLife Companion builds already distinguish the Play compatibility facade
+  // from real native health access. Preserve that newer contract instead of
+  // rewriting the screen back to the legacy Health Connect fallback UI.
+  if (next.includes('const nativeHealthBridgeMode') && next.includes('const nativeHealthEnabled')) {
+    return next;
+  }
   next = next.replace(
     `  function getAndroidBridge() {\n    return (window as any).AndroidCrewCheckHealth;\n  }`,
     `  function getAndroidBridge() {\n    const direct = (window as any).AndroidCrewCheckHealth;\n    if (direct && typeof direct.postMessage === 'function') return direct;\n    const native = (window as any).AndroidCrewCheckNative;\n    if (native && typeof native.healthBridgePostMessage === 'function') {\n      return {\n        ping: () => { try { return native.healthBridgePing?.() || 'crewcheck-health-fallback-v1'; } catch { return 'crewcheck-health-fallback-v1'; } },\n        postMessage: (raw: string) => {\n          const accepted = native.healthBridgePostMessage(String(raw || ''));\n          if (accepted === false) throw new Error('Ponte Health Connect indisponível.');\n        },\n      };\n    }\n    return undefined;\n  }`,
