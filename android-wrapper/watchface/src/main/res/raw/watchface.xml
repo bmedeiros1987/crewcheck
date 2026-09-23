@@ -269,11 +269,39 @@
             </Complication>
         </ComplicationSlot>
 
-        <PartText x="0" y="396" width="450" height="22">
-            <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#FF9EABBE"><![CDATA[TOQUE PARA ABRIR • ESCALA]]></Font>
-            </Text>
-            <Variant mode="AMBIENT" target="alpha" value="0" />
-        </PartText>
+        <!-- Concierge: acesso direto, pequeno e discreto no rodapé. -->
+        <ComplicationSlot
+            x="145"
+            y="396"
+            width="160"
+            height="40"
+            slotId="6"
+            displayName="concierge_label"
+            supportedTypes="SHORT_TEXT EMPTY">
+            <BoundingRoundBox x="0" y="0" width="160" height="40" outlinePadding="2.0" cornerRadius="20" />
+            <DefaultProviderPolicy
+                primaryProvider="com.crewcheck.app/com.crewcheck.watch.ConciergeComplicationService"
+                primaryProviderType="SHORT_TEXT"
+                defaultSystemProvider="EMPTY"
+                defaultSystemProviderType="EMPTY" />
+            <Complication type="SHORT_TEXT">
+                <PartText x="0" y="2" width="160" height="15">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="11" weight="NORMAL" color="#FF9EABBE">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
+                        </Font>
+                    </Text>
+                    <Variant mode="AMBIENT" target="alpha" value="0" />
+                </PartText>
+                <PartText x="0" y="16" width="160" height="22">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FFEC4899">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
+                        </Font>
+                    </Text>
+                    <Variant mode="AMBIENT" target="alpha" value="0" />
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
     </Scene>
 </WatchFace>
