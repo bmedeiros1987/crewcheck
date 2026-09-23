@@ -19,6 +19,7 @@ export function pairingFailure(error:unknown): {code:string;message:string} {
   if(/Illegal invocation|incompatible receiver/i.test(message)) return {code:'TV-NET-01',message:'Falha de compatibilidade na chamada de rede.'};
   if(message==='request_timeout') return {code:'TV-NET-02',message:'O servidor não respondeu a tempo. Tente novamente.'};
   if(message==='pair_again') return {code:'TV-AUTH-01',message:'Solicitação recusada. Confira a autorização do piloto.'};
+  if(message==='access_forbidden') return {code:'TV-AUTH-02',message:'Acesso temporariamente indisponível. O vínculo desta TV foi preservado.'};
   if(message==='invalid_pairing_response') return {code:'TV-PAIR-01',message:'O servidor retornou um código de vínculo inválido.'};
   const snapshot=message.match(/^invalid_snapshot_(schema|device|privacy|time|days_type|days_count|summary|changes|ticker)$/);
   if(snapshot){
