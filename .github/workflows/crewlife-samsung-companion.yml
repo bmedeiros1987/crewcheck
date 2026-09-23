@@ -28,7 +28,9 @@ jobs:
       KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
       KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
       CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
-      SAMSUNG_HEALTH_DATA_AAR_BASE64: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_BASE64 }}
+      SAMSUNG_HEALTH_DATA_AAR_URL: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_URL }}
+      SAMSUNG_HEALTH_DATA_AAR_TOKEN: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_TOKEN }}
+      SAMSUNG_HEALTH_DATA_AAR_SHA256: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_SHA256 }}
     steps:
       - uses: actions/checkout@v6
 
@@ -71,14 +73,26 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-wrapper/lifecompanion/libs
-          if [ -z "${SAMSUNG_HEALTH_DATA_AAR_BASE64:-}" ]; then
+          target='android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar'
+          if [ -z "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
             echo "SAMSUNG_SDK_READY=false" >> "$GITHUB_ENV"
-            echo "::notice::Samsung SDK secret not configured; validating architecture/UI without vendor AAR."
+            echo "::notice::Private Samsung SDK artifact URL not configured; validating architecture/UI without vendor AAR."
             exit 0
           fi
-          encoded="${SAMSUNG_HEALTH_DATA_AAR_BASE64#base64:}"
-          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar
-          test -s android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar
+
+          args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
+            args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
+          fi
+          curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
+          test -s "$target"
+
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ]; then
+            printf '%s  %s\n' "${SAMSUNG_HEALTH_DATA_AAR_SHA256}" "$target" | sha256sum -c -
+          else
+            echo "::warning::SAMSUNG_HEALTH_DATA_AAR_SHA256 is not configured; SDK integrity is not pinned."
+          fi
+
           echo "SAMSUNG_SDK_READY=true" >> "$GITHUB_ENV"
 
       - name: Build scaffold companion and mobile bridge
