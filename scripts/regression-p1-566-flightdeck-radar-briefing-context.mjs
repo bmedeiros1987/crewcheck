@@ -44,9 +44,10 @@ assert.match(home, /const inheritedContext = peekPendingNavigationContext\('rada
 assert.match(home, /setPendingNavigationContext\(\{ \.\.\.inheritedContext, targetView: 'weather' \}\)/, 'Radar deve repassar o mesmo contexto para Meteorologia');
 assert.match(home, /<button onClick=\{openWeatherFromRadar\}><CloudSun\/> Meteorologia<\/button>/, 'handoff Radar → Meteorologia deve usar a ponte contextual');
 
-// Privacy/architecture: context surface is display/navigation only.
+// Privacy/architecture: context surface is display/navigation only. Word-boundary ACT
+// avoids treating the package name "react" as the aviation acronym.
 assert.doesNotMatch(bridge, /localStorage|sessionStorage|indexedDB|fetch\(|authFetch|Health|Samsung/i, 'ponte não pode persistir, buscar ou acessar saúde');
-assert.doesNotMatch(bridge, /pdfParser|canonicalRoster|complianceEngine|RBAC|ACT|dutyLimit|journeyLimit/i, 'ponte não pode duplicar parser/compliance');
+assert.doesNotMatch(bridge, /pdfParser|canonicalRoster|complianceEngine|RBAC|\bACT\b|dutyLimit|journeyLimit/i, 'ponte não pode duplicar parser/compliance');
 assert.doesNotMatch(navigation.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''), /localStorage|sessionStorage/, 'Navigation Context deve continuar somente em memória');
 
 // UX parity.
