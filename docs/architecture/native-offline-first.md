@@ -1,7 +1,7 @@
 # ADR — CrewCheck Android native/offline-first e retirada da WebView
 
-Status: **APROVADO COMO DIREÇÃO ARQUITETURAL**  
-Escopo inicial: compartilhamento de PDF + fundação de persistência nativa  
+Status: **APROVADO COMO DIREÇÃO ARQUITETURAL**
+Escopo inicial: compartilhamento de PDF + fundação de persistência nativa
 Objetivo final: o aplicativo Android não depender de WebView nem do site público para operar.
 
 ## Contexto
