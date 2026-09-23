@@ -26,3 +26,7 @@ update('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java
 update('android-wrapper/watchface/src/main/res/raw/watchface.xml', source => source
   .replaceAll('color="#FF6E7C8F"', 'color="#FFA8B6C9"')
   .replaceAll('size="13" weight="NORMAL"', 'size="14" weight="NORMAL"'));
+
+// Android store preparation is the last step that may rewrite native wrapper surfaces.
+// Reassert the non-destructive blank-screen recovery hook after those store transforms.
+await import('../p0-android-self-heal/finalize.mjs');
