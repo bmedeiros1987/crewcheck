@@ -1,5 +1,5 @@
 /**
- * #548/#549 → #560 — contrato atualizado conscientemente.
+ * #548/#549 → #560 → #566 — contrato atualizado conscientemente.
  *
  * Este gate nasceu para impedir que o calendário dinâmico sumisse do estado
  * preparado, depois de ele ter desaparecido em silêncio na cadeia. A decisão de
@@ -7,11 +7,9 @@
  * na Linha do Dia e no FlightDeck, e o que permanece vivo é o COMPORTAMENTO —
  * abrir a escala já no dia da programação exibida.
  *
- * Então o gate deixa de afirmar a presença literal do calendário e passa a
- * afirmar a navegação contextual por data. A parte que continua valendo sem
- * mudança é a que impediu o bug original: cliente e fonte fixada da Linha do Dia
- * precisam seguir byte-idênticos, senão a cadeia descarta a integração inteira
- * sem acusar erro.
+ * #566 funda um Navigation Context único. O adapter rosterFocus preserva a API do
+ * #560, mas deixa de manter um segundo barramento próprio: deposita/consome um
+ * contexto `once` endereçado somente a `roster`.
  *
  * Roda em estado preparado: o FlightDeck só existe em Home.tsx depois que
  * scripts/v14353 injeta o snippet.
@@ -25,18 +23,33 @@ const pinnedTimeline = fs.readFileSync('scripts/v14357/OperationalDayTimeline.ts
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const snippet = fs.readFileSync('scripts/v14353/flydeck-premium.snippet', 'utf8');
 const relay = fs.readFileSync('client/src/lib/rosterFocus.ts', 'utf8');
+const navigationContext = fs.readFileSync('client/src/lib/navigationContext.ts', 'utf8');
 
 // ---------------------------------------------------------------------------
-// 1. O repasse de foco é de uma leitura só. É isso que impede o rodapé e o menu
-//    de herdarem o foco de uma navegação anterior — sem precisar tocar em
-//    nenhum dos dois, que são materializados por scripts/v1432 e v14337.
+// 1. O repasse do #560 continua de uma leitura só, agora sobre o barramento único
+//    do #566. Isso impede menu/rodapé de herdarem um foco antigo sem criar um
+//    segundo estado paralelo só para a Escala.
 // ---------------------------------------------------------------------------
-assert.match(relay, /export function setPendingRosterFocus/, 'o repasse precisa expor o depósito da data');
-assert.match(relay, /export function consumePendingRosterFocus/, 'o repasse precisa expor a leitura');
+assert.match(relay, /export function setPendingRosterFocus/, 'o adapter precisa preservar o depósito público da data');
+assert.match(relay, /export function consumePendingRosterFocus/, 'o adapter precisa preservar a leitura pública');
 assert.match(
   relay,
-  /const value = pending;\s*\n\s*pending = null;\s*\n\s*return value;/,
-  'consumir precisa esvaziar o repasse: sem isso o rodapé e o menu herdam foco antigo',
+  /setPendingNavigationContext\(\{[\s\S]*?targetView: 'roster'[\s\S]*?policy: 'once'/,
+  'o foco da Escala precisa depositar contexto once endereçado somente a roster',
+);
+assert.match(
+  relay,
+  /consumePendingNavigationContext\('roster'\)/,
+  'o foco da Escala precisa consumir somente contexto endereçado a roster',
+);
+assert.ok(
+  !/let\s+pending\s*:/.test(relay),
+  'rosterFocus não pode recriar um segundo barramento pending fora do Navigation Context',
+);
+assert.match(
+  navigationContext,
+  /if \(pending\.policy === 'once'\) pending = null;/,
+  'o barramento compartilhado precisa apagar contextos once no primeiro consumo correto',
 );
 
 // ---------------------------------------------------------------------------
@@ -131,10 +144,11 @@ assert.equal(
 );
 
 // ---------------------------------------------------------------------------
-// 6. Slice visual não encosta em parser, canônico ou regra financeira.
+// 6. O relay de navegação não encosta em parser, canônico ou regra financeira.
 // ---------------------------------------------------------------------------
 for (const forbidden of ['pdfParser', 'rosterParser', 'financialRules', 'canonicalRoster']) {
-  assert.ok(!relay.includes(forbidden), `o repasse de foco não pode tocar ${forbidden}`);
+  assert.ok(!relay.includes(forbidden), `o adapter de foco não pode tocar ${forbidden}`);
+  assert.ok(!navigationContext.includes(forbidden), `o Navigation Context não pode tocar ${forbidden}`);
 }
 
-console.log('P1 #548→#560: navegação contextual por data protegida — repasse de leitura única, Linha do Dia e FlightDeck sem calendário, Roster focando o dia, cópia fixada idêntica.');
+console.log('P1 #548→#560→#566: navegação contextual por data protegida — adapter da Escala sobre barramento único consume-once, Linha do Dia e FlightDeck preservados.');

@@ -1,0 +1,57 @@
+name: CrewCheck navigation context
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/lib/rosterFocus.ts'
+      - 'client/src/components/v14349/OperationalDayTimeline.tsx'
+      - 'scripts/v14353/flydeck-premium.snippet'
+      - 'scripts/v14357/**'
+      - 'scripts/regression-p1-548-dynamic-calendar.mjs'
+      - 'scripts/regression-p1-566-navigation-context.mjs'
+      - '.github/workflows/navigation-context.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/lib/rosterFocus.ts'
+      - 'client/src/components/v14349/OperationalDayTimeline.tsx'
+      - 'scripts/v14353/flydeck-premium.snippet'
+      - 'scripts/v14357/**'
+      - 'scripts/regression-p1-548-dynamic-calendar.mjs'
+      - 'scripts/regression-p1-566-navigation-context.mjs'
+      - '.github/workflows/navigation-context.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+
+concurrency:
+  group: crewcheck-navigation-context-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  navigation-context:
+    name: Navigation Context and roster-focus compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical client sources
+        run: node scripts/v139/apply.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Validate shared Navigation Context behavior
+        run: node scripts/regression-p1-566-navigation-context.mjs
+      - name: "Preserve #560 roster focus through the prepare chain"
+        run: node scripts/regression-p1-548-dynamic-calendar.mjs
