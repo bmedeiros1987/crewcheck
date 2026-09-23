@@ -1,0 +1,59 @@
+name: CrewLife Samsung companion
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/lifecompanion/**'
+      - 'android-wrapper/app/**'
+      - 'client/src/components/v1434/**'
+      - 'android-wrapper/settings.gradle'
+      - 'scripts/regression-crewlife-samsung-companion.mjs'
+      - '.github/workflows/crewlife-samsung-companion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+
+      - name: Companion contracts
+        run: node scripts/regression-crewlife-samsung-companion.mjs
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+
+      - name: Build scaffold companion and mobile bridge
+        run: gradle -p android-wrapper --no-daemon --console=plain :lifecompanion:assembleDebug :app:assembleDebug
+
+      - name: Lint companion
+        run: gradle -p android-wrapper --no-daemon --console=plain :lifecompanion:lintDebug
