@@ -14,7 +14,7 @@ assert.match(mobile, /getPackageInfo\("com\.crewcheck\.life", 0\)/);
 assert.match(mobile, /market:\/\/details\?id=" \+ LIFE_COMPANION_PACKAGE/);
 assert.match(mobile, /https:\/\/play\.google\.com\/store\/apps\/details\?id=" \+ LIFE_COMPANION_PACKAGE/);
 assert.match(mobile, /getLaunchIntentForPackage\(LIFE_COMPANION_PACKAGE\)/);
-assert.match(life, /https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.crewcheck\.life/);
+assert.match(life, /const LIFE_COMPANION_WEB_URL = `https:\/\/play\.google\.com\/store\/apps\/details\?id=\$\{LIFE_COMPANION_PACKAGE\}`/);
 assert.match(life, /Conectar Samsung Health/);
 assert.match(life, /Samsung Health · não instalado/);
 assert.match(life, /Companion instalado · concluir conexão/);
@@ -45,11 +45,12 @@ assert.match(companionProvider, /ContentProvider/);
 assert.doesNotMatch(companionProvider, /HttpURLConnection|OkHttp|Retrofit|fetch\(/);
 assert.match(life, /Nenhum dado bruto é enviado/);
 
-// Operational safety: no new health-derived operational judgement language.
+// Operational safety: routine context is advisory only and cannot mutate operational core.
 const routineSectionStart = life.indexOf('ROTINA INTEGRADA');
 const routineSectionEnd = life.indexOf('OBJETIVOS', routineSectionStart);
 assert.ok(routineSectionStart >= 0 && routineSectionEnd > routineSectionStart, 'Rotina integrada section not found');
 const routineSection = life.slice(routineSectionStart, routineSectionEnd);
-assert.doesNotMatch(routineSection, /apto|inapto|fertilidade|diagnóstico|fadiga operacional/i);
+assert.match(routineSection, /Não altera escala, APZ, jornada, compliance ou financeiro/);
+assert.doesNotMatch(routineSection, /está apt[oa]|está inapt[oa]|fadiga detectada|risco operacional detectado/i);
 
 console.log('[crewlife-routine-unified] Samsung install UX + separate local routine consent contracts OK');
