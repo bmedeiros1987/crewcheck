@@ -376,11 +376,11 @@ public final class MainActivity extends FragmentActivity
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.crewcheck_official);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        row.addView(logo, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        row.addView(logo, new LinearLayout.LayoutParams(dp(21), dp(21)));
 
-        TextView brand = text("CrewCheck", 11, WHITE, true, Gravity.START);
+        TextView brand = text("CrewWatch", 10, MUTED, true, Gravity.START);
         brand.setPadding(dp(6), 0, 0, 0);
-        row.addView(brand, new LinearLayout.LayoutParams(0, dp(26), 1f));
+        row.addView(brand, new LinearLayout.LayoutParams(0, dp(24), 1f));
 
         int count = alertCount(snapshot);
         if (count > 0) {
@@ -400,16 +400,16 @@ public final class MainActivity extends FragmentActivity
 
         TextView battery = text(batteryLabel(), 8, batteryAccent(), true, Gravity.END);
         battery.setContentDescription("Bateria do relógio " + batteryLabel());
-        row.addView(battery, new LinearLayout.LayoutParams(dp(46), dp(26)));
+        row.addView(battery, new LinearLayout.LayoutParams(dp(44), dp(24)));
 
         clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
-        row.addView(clockView, new LinearLayout.LayoutParams(dp(46), dp(26)));
+        row.addView(clockView, new LinearLayout.LayoutParams(dp(42), dp(24)));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(28)
+                dp(26)
         );
-        params.setMargins(dp(2), 0, dp(2), dp(6));
+        params.setMargins(dp(4), 0, dp(4), dp(7));
         content.addView(row, params);
     }
 
@@ -450,23 +450,23 @@ public final class MainActivity extends FragmentActivity
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.crewcheck_official);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        content.addView(logo, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        content.addView(logo, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        TextView title = text("SINCRONIZAR", 10, CYAN, true, Gravity.CENTER);
-        title.setLetterSpacing(.08f);
-        title.setPadding(0, dp(8), 0, dp(5));
+        TextView title = text("CREWWATCH", 8, CYAN, true, Gravity.CENTER);
+        title.setLetterSpacing(.12f);
+        title.setPadding(0, dp(7), 0, dp(4));
         content.addView(title);
 
-        TextView value = text("Conecte ao CrewCheck", 23, WHITE, true, Gravity.CENTER);
+        TextView value = text("Pronto para sincronizar", 21, WHITE, true, Gravity.CENTER);
         value.setMaxLines(2);
         content.addView(value);
 
         TextView detail = text(
-                "Abra o app no celular. Sua escala, próximos passos e alertas chegam automaticamente.",
-                10, MUTED, false, Gravity.CENTER
+                "Abra o CrewCheck no celular uma vez. Depois, escala, próximos passos e alertas chegam automaticamente.",
+                9, MUTED, false, Gravity.CENTER
         );
         detail.setMaxLines(4);
-        detail.setPadding(0, dp(6), 0, dp(8));
+        detail.setPadding(dp(3), dp(6), dp(3), dp(8));
         content.addView(detail);
 
         TextView sync = heroAction("Sincronizar agora", CYAN);
@@ -710,13 +710,24 @@ public final class MainActivity extends FragmentActivity
 
         List<NotificationItem> items = currentNotifications(snapshot, now);
         if (items.isEmpty()) {
-            TextView empty = text("Nada urgente agora.", 16, WHITE, true, Gravity.CENTER);
-            empty.setPadding(0, dp(12), 0, dp(4));
-            content.addView(empty);
-            TextView detail = text("Quando algo realmente importar, o CrewCheck aparece no seu pulso.",
-                    9, MUTED, false, Gravity.CENTER);
+            LinearLayout empty = premiumCard(SUCCESS);
+            empty.setGravity(Gravity.CENTER_HORIZONTAL);
+            empty.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+            TextView check = text("✓", 22, SUCCESS, true, Gravity.CENTER);
+            empty.addView(check);
+
+            TextView emptyTitle = text("Tudo certo por aqui", 16, WHITE, true, Gravity.CENTER);
+            emptyTitle.setPadding(0, dp(2), 0, dp(3));
+            empty.addView(emptyTitle);
+
+            TextView detail = text(
+                    "Sem alertas importantes agora. Se algo mudar, o CrewCheck avisa no seu pulso.",
+                    9, MUTED, false, Gravity.CENTER
+            );
             detail.setMaxLines(3);
-            content.addView(detail);
+            empty.addView(detail);
+            content.addView(empty, cardParams());
             return;
         }
 
@@ -1026,13 +1037,22 @@ public final class MainActivity extends FragmentActivity
         }
 
         if (snapshot == null || snapshot.schedule.isEmpty()) {
-            TextView empty = text(
-                    "Sincronize o CrewCheck no celular para abrir sua escala aqui.",
-                    10, MUTED, false, Gravity.CENTER
+            LinearLayout empty = premiumCard(CYAN);
+            empty.setGravity(Gravity.CENTER_HORIZONTAL);
+            empty.setPadding(dp(12), dp(11), dp(12), dp(11));
+
+            TextView emptyTitle = text("Sem programação agora", 16, WHITE, true, Gravity.CENTER);
+            empty.addView(emptyTitle);
+
+            TextView emptyDetail = text(
+                    "Quando a escala chegar ao CrewCheck, ela aparece aqui automaticamente.",
+                    9, MUTED, false, Gravity.CENTER
             );
-            empty.setMaxLines(4);
-            empty.setPadding(0, dp(10), 0, dp(12));
-            content.addView(empty);
+            emptyDetail.setMaxLines(3);
+            emptyDetail.setPadding(0, dp(4), 0, 0);
+            empty.addView(emptyDetail);
+
+            content.addView(empty, cardParams());
             return;
         }
 
@@ -1091,39 +1111,75 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void addNavigation(WatchContextSnapshot snapshot) {
-        TextView section = text(pageTitle(), 8, pageAccent(), true, Gravity.CENTER);
-        section.setLetterSpacing(.11f);
-        section.setPadding(0, 0, 0, dp(3));
-        content.addView(section);
+        LinearLayout rail = new LinearLayout(this);
+        rail.setOrientation(LinearLayout.HORIZONTAL);
+        rail.setGravity(Gravity.CENTER_VERTICAL);
+        rail.setPadding(dp(4), dp(3), dp(4), dp(3));
 
-        LinearLayout dots = new LinearLayout(this);
-        dots.setOrientation(LinearLayout.HORIZONTAL);
-        dots.setGravity(Gravity.CENTER);
-        for (int mode = 0; mode < PAGE_COUNT; mode++) {
-            final int target = mode;
-            View dot = new View(this);
-            boolean selected = mode == screenMode;
-            GradientDrawable bg = new GradientDrawable(
-                    GradientDrawable.Orientation.LEFT_RIGHT,
-                    selected
-                            ? new int[]{withAlpha(CYAN, 240), withAlpha(pageAccent(), 235)}
-                            : new int[]{withAlpha(MUTED, 55), withAlpha(MUTED, 55)}
-            );
-            bg.setCornerRadius(dp(5));
-            dot.setBackground(bg);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                    dp(selected ? 18 : 5),
-                    dp(4)
-            );
-            p.setMargins(dp(2), 0, dp(2), dp(5));
-            dot.setLayoutParams(p);
-            dot.setContentDescription(pageTitle(mode));
-            dot.setOnClickListener(view -> {
-                if (target != screenMode) transitionToPage(target, target > screenMode ? 1 : -1);
-            });
-            dots.addView(dot);
+        GradientDrawable railBg = new GradientDrawable();
+        railBg.setColor(withAlpha(SURFACE, 228));
+        railBg.setCornerRadius(dp(22));
+        railBg.setStroke(dp(1), withAlpha(pageAccent(), 105));
+        rail.setBackground(railBg);
+
+        final int previous = screenMode - 1;
+        final int next = screenMode + 1;
+
+        TextView left = navigationButton("‹", previous >= 0);
+        if (previous >= 0) {
+            left.setContentDescription("Ir para " + pageTitle(previous));
+            left.setOnClickListener(view -> transitionToPage(previous, -1));
         }
-        content.addView(dots);
+        rail.addView(left, new LinearLayout.LayoutParams(dp(38), dp(36)));
+
+        TextView selected = text(
+                pageTitle() + "  " + (screenMode + 1) + "/" + PAGE_COUNT,
+                9, WHITE, true, Gravity.CENTER
+        );
+        selected.setLetterSpacing(.05f);
+        selected.setMinHeight(dp(36));
+        GradientDrawable selectedBg = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{withAlpha(BLUE, 170), withAlpha(pageAccent(), 135)}
+        );
+        selectedBg.setCornerRadius(dp(19));
+        selectedBg.setStroke(dp(1), withAlpha(CYAN, 105));
+        selected.setBackground(selectedBg);
+        selected.setContentDescription(
+                "Tela " + (screenMode + 1) + " de " + PAGE_COUNT + ", " + pageTitle()
+        );
+        rail.addView(selected, new LinearLayout.LayoutParams(
+                0, dp(36), 1f
+        ));
+
+        TextView right = navigationButton("›", next < PAGE_COUNT);
+        if (next < PAGE_COUNT) {
+            right.setContentDescription("Ir para " + pageTitle(next));
+            right.setOnClickListener(view -> transitionToPage(next, 1));
+        }
+        rail.addView(right, new LinearLayout.LayoutParams(dp(38), dp(36)));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(42)
+        );
+        params.setMargins(0, 0, 0, dp(6));
+        content.addView(rail, params);
+    }
+
+    private TextView navigationButton(String label, boolean enabled) {
+        TextView button = text(label, 22, enabled ? WHITE : withAlpha(MUTED, 90),
+                true, Gravity.CENTER);
+        button.setEnabled(enabled);
+        button.setMinWidth(dp(38));
+        button.setMinHeight(dp(36));
+        if (enabled) {
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(withAlpha(SURFACE_ALT, 170));
+            bg.setCornerRadius(dp(18));
+            button.setBackground(bg);
+        }
+        return button;
     }
 
     private String pageTitle() {
@@ -1695,10 +1751,10 @@ public final class MainActivity extends FragmentActivity
         card.setPadding(dp(10), dp(8), dp(10), dp(8));
         GradientDrawable background = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{withAlpha(accent, 34), withAlpha(SURFACE_ALT, 242), withAlpha(BLUE, 16)}
+                new int[]{withAlpha(accent, 24), withAlpha(SURFACE_ALT, 238), withAlpha(BLUE, 10)}
         );
         background.setCornerRadius(dp(23));
-        background.setStroke(dp(1), withAlpha(accent, 118));
+        background.setStroke(dp(1), withAlpha(accent, 92));
         card.setBackground(background);
         return card;
     }
@@ -1715,6 +1771,7 @@ public final class MainActivity extends FragmentActivity
     private TextView heroAction(String label, int accent) {
         TextView chip = text(label, 10, WHITE, true, Gravity.CENTER);
         chip.setPadding(dp(16), dp(9), dp(16), dp(9));
+        chip.setMinHeight(dp(40));
         GradientDrawable background = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{withAlpha(BLUE, 180), withAlpha(accent, 145)}
@@ -1735,6 +1792,7 @@ public final class MainActivity extends FragmentActivity
     private TextView actionChip(String label, int accent, boolean selected) {
         TextView chip = text(label, 9, selected ? WHITE : accent, true, Gravity.CENTER);
         chip.setPadding(dp(12), dp(7), dp(12), dp(7));
+        chip.setMinHeight(dp(36));
 
         GradientDrawable background = new GradientDrawable();
         background.setColor(selected ? withAlpha(accent, 48) : SURFACE_ALT);
