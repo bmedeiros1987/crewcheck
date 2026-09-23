@@ -29,6 +29,11 @@ assert.match(wearMain, /APRESENTAÇÃO/);
 assert.match(wearMain, /VOO ATUAL/);
 assert.match(wearMain, /CONEXÃO/);
 assert.match(wearMain, /PERNOITE/);
+assert.match(wearMain, /CrewWatch/);
+assert.match(wearMain, /navigationButton/);
+assert.match(wearMain, /Tudo certo por aqui/);
+assert.match(wearMain, /Pronto para sincronizar/);
+assert.match(wearMain, /setMinHeight\(dp\(40\)\)/);
 
 assert.match(dataService, /CREWLIFE_PATH/);
 assert.match(dataService, /ROUTINE_PATH/);
