@@ -69,9 +69,9 @@ public final class WatchContextSnapshotTest {
                 .put("currentFlight", "LA3721"));
 
         assertFalse(snapshot.premiumAccess);
-        assertEquals("AP13:30", snapshot.complicationShortText(NOW));
+        assertEquals("LA3721", snapshot.complicationShortText(NOW));
         assertEquals("APRESENTAÇÃO", snapshot.complicationTitle(NOW));
-        assertEquals("Apresentação 13:30", snapshot.complicationLongText(NOW));
+        assertEquals("APZ 13:30", snapshot.complicationLongText(NOW));
         assertEquals("LA3721", snapshot.currentFlight);
     }
 
