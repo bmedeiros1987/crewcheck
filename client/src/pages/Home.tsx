@@ -4627,6 +4627,7 @@ export default function Home() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
+  const bundleRef = useRef(bundle);
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
@@ -4637,6 +4638,10 @@ export default function Home() {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
+
+  useEffect(() => {
+    bundleRef.current = bundle;
+  }, [bundle]);
 
   useEffect(() => {
     const publishWatchSnapshot = () => {
@@ -4682,19 +4687,18 @@ export default function Home() {
         if (!alive || !active?.roster?.days?.length) return;
 
         const serverRevision = rosterFingerprint(active.roster);
-        let changed = false;
-        let localRevision: string | null = null;
+        const current = bundleRef.current;
+        const hasLocalRoster = Array.isArray(current.roster.days) && current.roster.days.length > 0;
+        const localRevision = hasLocalRoster ? rosterFingerprint(current.roster) : null;
+        const changed = localRevision !== serverRevision;
 
-        setBundle((current) => {
-          const hasLocalRoster = Array.isArray(current.roster.days) && current.roster.days.length > 0;
-          localRevision = hasLocalRoster ? rosterFingerprint(current.roster) : null;
-          if (localRevision === serverRevision) return current;
-
+        if (changed) {
           const compliance = active.compliance || analyzeSafe(active.roster);
           saveRoster(active.roster, 'Escala ativa sincronizada');
-          changed = true;
-          return { roster: active.roster, compliance, source: 'Escala ativa sincronizada' };
-        });
+          const nextBundle = { roster: active.roster, compliance, source: 'Escala ativa sincronizada' };
+          bundleRef.current = nextBundle;
+          setBundle(nextBundle);
+        }
 
         console.info('[crewcheck:active-roster-sync]', {
           reason,
