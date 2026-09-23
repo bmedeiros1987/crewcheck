@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_internal_drafts:
-        description: 'Save verified bundles as internal test drafts (main only; requires existing Play credential)'
+        description: 'Release verified bundles to internal testing (main only; never production)'
         type: boolean
         default: false
 
@@ -58,7 +58,9 @@ jobs:
       - name: Prepare canonical sources and final store policy
         run: node scripts/v139/apply.mjs
       - name: Test negative publication gates
-        run: python3 scripts/android-play/test_validate.py
+        run: |
+          python3 scripts/android-play/test_validate.py
+          python3 scripts/android-play/test_publish_policy.py
       - name: Web and privacy validation
         run: |
           npx tsc --noEmit
@@ -120,7 +122,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts) || (github.event_name == 'push' && vars.PLAY_INTERNAL_AUTO_PUBLISH == 'true'))
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
       GH_TOKEN: ${{ github.token }}
@@ -137,5 +139,5 @@ jobs:
           name: CrewCheck-verified-play-bundles
           path: verified-bundles
       - run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
-      - name: Check live version codes and save internal drafts only
+      - name: Check live version codes and release to internal testing only
         run: python3 scripts/android-play/publish.py verified-bundles

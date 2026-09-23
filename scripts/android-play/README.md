@@ -34,16 +34,17 @@ actual manifests with bundletool, verifies JAR signatures and the certificate ag
 the existing upload keystore, and exports manifests/checksums in the verified artifact.
 PRs never publish. No workflow can publish production.
 
-The optional `publish_internal_drafts` dispatch input on main saves internal drafts only.
-It requires existing `PLAY_SERVICE_ACCOUNT_JSON` with Android Publisher API access to
-both packages. This secret was **not configured** when audited on 2026-09-22; no
-credential was created or modified. Existing `CREWCHECK_*` signing secrets are reused.
-Optional repository variable `PLAY_INTERNAL_AUTO_PUBLISH=true` enables the same guarded
-internal-draft operation after pushes to main. It is not enabled by this change.
-The publisher fails closed if independent current-commit CI is pending/failed, a code is
-already used, a dedicated track is missing, or an unfinished test release would be replaced.
-Re-run manually after CI finishes when needed. Bundles are saved as drafts and changes
-are not sent for review; a deliberate Console action is still needed to release to testers.
+The optional `publish_internal_drafts` workflow-dispatch switch is retained for compatibility,
+but now releases verified bundles directly to the INTERNAL TESTING tracks only. It requires
+the existing `PLAY_SERVICE_ACCOUNT_JSON` with Android Publisher API access to both packages.
+Existing `CREWCHECK_*` signing secrets are reused.
+
+Repository variable `PLAY_INTERNAL_AUTO_PUBLISH=true` enables the same guarded internal
+release after eligible pushes to `main`. The publisher waits for independent CI on the exact
+commit to finish, fails closed if any workflow fails, validates live Play version codes, requires
+the dedicated `qa` / `wear:qa` tracks, rejects unfinished test releases, uploads only verified
+bundles, sets the internal release status to `completed`, validates the Play edit, and commits it.
+There is no production-track code path in the publisher.
 
 ## Console follow-up
 

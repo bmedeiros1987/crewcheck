@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.parse import quote
 import google.auth.transport.requests
@@ -25,27 +26,51 @@ def main():
         assert Path(item['file']).name == item['file'], 'Invalid artifact filename'
         assert hashlib.sha256((root / item['file']).read_bytes()).hexdigest() == item['sha256'], 'Bundle checksum mismatch'
 
-    # Require all current-commit CI runs/checks except this publishing workflow to be green.
+    # Require all current-commit CI except this publishing workflow to finish green.
+    # Push workflows start concurrently, so wait instead of racing them and failing spuriously.
     gh = requests.Session()
     gh.headers.update({'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
     repo = os.environ['GITHUB_REPOSITORY']
     sha = os.environ['GITHUB_SHA']
-    runs = []
-    page = 1
+    wait_deadline = time.time() + 12 * 60
     while True:
-        response = gh.get(f'https://api.github.com/repos/{repo}/actions/runs', params={'head_sha': sha, 'per_page': 100, 'page': page}, timeout=30)
-        response.raise_for_status()
-        batch = response.json()['workflow_runs']
-        runs.extend(batch)
-        if len(batch) < 100: break
-        page += 1
-    latest = {}
-    for run in runs:
-        if str(run['id']) == os.environ['GITHUB_RUN_ID']: continue
-        key = run['workflow_id']
-        if key not in latest or run['id'] > latest[key]['id']: latest[key] = run
-    assert latest, 'No independent CI evidence for this commit'
-    assert all(r['status'] == 'completed' and r['conclusion'] in ['success', 'skipped'] for r in latest.values()), 'CI is pending or failed; retry publishing after it is green'
+        runs = []
+        page = 1
+        while True:
+            response = gh.get(
+                f'https://api.github.com/repos/{repo}/actions/runs',
+                params={'head_sha': sha, 'per_page': 100, 'page': page},
+                timeout=30,
+            )
+            response.raise_for_status()
+            batch = response.json()['workflow_runs']
+            runs.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+
+        latest = {}
+        for run in runs:
+            if str(run['id']) == os.environ['GITHUB_RUN_ID']:
+                continue
+            key = run['workflow_id']
+            if key not in latest or run['id'] > latest[key]['id']:
+                latest[key] = run
+
+        assert latest, 'No independent CI evidence for this commit'
+        failed = [
+            r for r in latest.values()
+            if r['status'] == 'completed' and r['conclusion'] not in ['success', 'skipped']
+        ]
+        assert not failed, 'Independent CI failed; Play publication blocked'
+
+        pending = [r for r in latest.values() if r['status'] != 'completed']
+        if not pending:
+            break
+        if time.time() >= wait_deadline:
+            raise AssertionError('Independent CI still pending after 12 minutes; Play publication blocked')
+        print(f'Waiting for {len(pending)} independent CI workflow(s) before Play upload...')
+        time.sleep(20)
 
     def api(method, url, **kwargs):
         response = session.request(method, url, timeout=300, **kwargs)
@@ -79,11 +104,26 @@ def main():
                 with (root / item['file']).open('rb') as bundle:
                     result = api('POST', upload, data=bundle, headers={'Content-Type': 'application/octet-stream'})
                 assert int(result['versionCode']) == item['versionCode'], 'Uploaded wrong artifact'
-                api('PUT', url + '/tracks/' + quote(track['track'], safe=''), json={'track': track['track'], 'releases': [{'name': policy['versionName'], 'versionCodes': [str(item['versionCode'])], 'status': 'draft'}]})
+                api(
+                    'PUT',
+                    url + '/tracks/' + quote(track['track'], safe=''),
+                    json={
+                        'track': track['track'],
+                        'releases': [{
+                            'name': policy['versionName'],
+                            'versionCodes': [str(item['versionCode'])],
+                            'status': 'completed',
+                            'releaseNotes': [{
+                                'language': 'pt-BR',
+                                'text': 'Build piloto CrewCheck para teste interno automático.',
+                            }],
+                        }],
+                    },
+                )
             api('POST', url + ':validate')
-            api('POST', url + ':commit', params={'changesNotSentForReview': 'true'})
+            api('POST', url + ':commit')
             committed = True
-            print(f'{package}: verified bundles saved as INTERNAL DRAFTS. No production or review submission.')
+            print(f'{package}: verified bundles RELEASED TO INTERNAL TESTING. Production untouched.')
         finally:
             if not committed:
                 session.delete(url, timeout=30)
