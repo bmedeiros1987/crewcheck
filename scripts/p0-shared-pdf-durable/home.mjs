@@ -167,7 +167,7 @@ if (!source.includes('async function processRosterFile(file: File): Promise<bool
     try {
       const parsed = await parsePDFResilient(file);
       const roster = parsed.roster;
-      const decision = confirmRosterImport(roster, file.name);
+      const decision = await confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
         return false;
