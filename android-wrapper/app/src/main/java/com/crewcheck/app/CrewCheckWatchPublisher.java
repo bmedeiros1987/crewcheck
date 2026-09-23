@@ -17,6 +17,9 @@ import java.util.Set;
 /**
  * Sends only an allow-listed, presentation-ready roster projection to the paired watch.
  * The watch never receives login tokens, CPF, e-mail, crew name or hotel room numbers.
+ *
+ * Basic roster projection is available to every CrewCheck user. Premium access only unlocks
+ * premium-derived fields (traffic/smart departure, live change signal and hotel pickup).
  */
 public final class CrewCheckWatchPublisher {
     public static final String SNAPSHOT_PATH = "/crewcheck/watch/context/v1";
@@ -109,48 +112,40 @@ public final class CrewCheckWatchPublisher {
         JSONObject out = new JSONObject();
         out.put("schemaVersion", SCHEMA_VERSION);
         out.put("premiumAccess", premiumAccess);
+        copyString(source, out, "contextId", 80);
         out.put("generatedAtEpochMs", generatedAt);
         out.put("validUntilEpochMs", validUntil);
-
-        if (!premiumAccess) {
-            out.put("contextId", "free-tier");
-            out.put("state", "OFF_DUTY");
-            out.put("headline", "CREWWATCH PREMIUM");
-            out.put("detail", "Abra o CrewCheck no celular para ativar o app do relógio.");
-            out.put("changed", false);
-            out.put("source", "free-tier");
-            rejectSensitiveFields(source);
-            String normalizedFree = out.toString();
-            if (normalizedFree.getBytes(StandardCharsets.UTF_8).length > MAX_SNAPSHOT_BYTES) {
-                throw new IllegalArgumentException("Snapshot gratuito excede 16 KiB.");
-            }
-            return normalizedFree;
-        }
-
-        copyString(source, out, "contextId", 80);
         out.put("state", state);
+
+        // Free/basic watch contract: canonical roster only, no paid API dependency.
         copyString(source, out, "headline", 42);
         copyString(source, out, "primaryTime", 12);
         copyString(source, out, "detail", 96);
         copyString(source, out, "presentationTime", 12);
         copyString(source, out, "presentationPlace", 42);
-        copyString(source, out, "leaveTime", 12);
-        copyString(source, out, "trafficDetail", 64);
         copyString(source, out, "currentFlight", 16);
         copyString(source, out, "currentRoute", 32);
-        copyString(source, out, "gate", 18);
-        out.put("remoteStand", source.optBoolean("remoteStand", false));
         copyString(source, out, "boardingTime", 12);
         copyString(source, out, "eta", 12);
         copyString(source, out, "connection", 16);
         copyString(source, out, "nextFlight", 16);
         copyString(source, out, "nextDetail", 64);
         copyString(source, out, "overnight", 24);
-        copyString(source, out, "hotelPickup", 64);
-        out.put("changed", source.optBoolean("changed", false));
-        out.put("source", "canonical-roster");
-        copySchedule(source, out);
+        copySchedule(source, out, premiumAccess);
 
+        // Premium-only projection. These fields may depend on paid/costly integrations.
+        if (premiumAccess) {
+            copyString(source, out, "leaveTime", 12);
+            copyString(source, out, "trafficDetail", 64);
+            copyString(source, out, "gate", 18);
+            out.put("remoteStand", source.optBoolean("remoteStand", false));
+            copyString(source, out, "hotelPickup", 64);
+            out.put("changed", source.optBoolean("changed", false));
+        } else {
+            out.put("changed", false);
+        }
+
+        out.put("source", "canonical-roster");
         rejectSensitiveFields(source);
 
         String normalized = out.toString();
@@ -160,7 +155,7 @@ public final class CrewCheckWatchPublisher {
         return normalized;
     }
 
-    private static void copySchedule(JSONObject source, JSONObject target) throws Exception {
+    private static void copySchedule(JSONObject source, JSONObject target, boolean premiumAccess) throws Exception {
         JSONArray input = source.optJSONArray("schedule");
         if (input == null) return;
 
@@ -177,7 +172,7 @@ public final class CrewCheckWatchPublisher {
             copyString(item, cleanItem, "title", 24);
             copyString(item, cleanItem, "route", 32);
             copyString(item, cleanItem, "presentation", 12);
-            copyString(item, cleanItem, "gate", 18);
+            if (premiumAccess) copyString(item, cleanItem, "gate", 18);
             copyString(item, cleanItem, "detail", 64);
             if (cleanItem.length() > 0) output.put(cleanItem);
         }
