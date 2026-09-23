@@ -26,12 +26,10 @@ update('client/src/pages/Home.tsx', (source) => {
   );
 
   if (!next.includes("from '@/components/navigation/FlightDeckNavigationContext'")) {
-    const candidates = [
-      "import ManualRegulationView from '@/components/v1432/ManualRegulationView';",
-      "import ManualRegulationView from '@/components/v1392/ManualRegulationView';",
-    ];
-    const anchor = candidates.find((value) => next.includes(value));
-    if (!anchor) throw new Error(`[${MARKER}] Import de ManualRegulationView não localizado.`);
+    const regulationImport = next.match(/^import ManualRegulationView[^\n]*from '@\/components\/v(?:1392|1432)\/ManualRegulationView';$/m)?.[0];
+    const fallbackImport = "import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';";
+    const anchor = regulationImport || (next.includes(fallbackImport) ? fallbackImport : '');
+    if (!anchor) throw new Error(`[${MARKER}] Âncora de import estável não localizada.`);
     next = next.replace(
       anchor,
       `${anchor}\nimport FlightDeckNavigationContext, { FlightDeckContextUnavailable } from '@/components/navigation/FlightDeckNavigationContext';`,
