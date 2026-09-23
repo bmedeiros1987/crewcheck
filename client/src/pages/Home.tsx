@@ -84,6 +84,7 @@ import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFo
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
+import TvDeviceControl from '@/components/tv/TvDeviceControl';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
@@ -2861,6 +2862,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <article className="cz-profile"><label className="cc-profile-photo" title="Alterar foto"><span>{profileAvatar ? <img src={profileAvatar} alt="Foto do perfil"/> : <UserRound/>}</span><input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={updateProfileAvatar}/></label><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article>
     {admin && <DatabaseConnectionCard admin/>}
     <PlatformPreferences/>
+    <TvDeviceControl/>
     <section className="cz-settings-actions"><button onClick={() => setView('plans')}><ShieldCheck/> Assinaturas e limites</button><button onClick={() => setView('community')}><UserRound/> Pessoas, visitantes e chat</button></section>
 
     <h3>Operacional</h3>
