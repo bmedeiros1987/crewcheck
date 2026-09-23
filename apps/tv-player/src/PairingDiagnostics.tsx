@@ -1,8 +1,8 @@
 import React from 'react';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
 import './pairing-diagnostics.css';
-export const PAIRING_BUILD = '0.1.9';
-export type PairingCode = {deviceCode:string;userCode:string;verificationUri:string;expiresIn:number;interval:number;deadline:number};
+export const PAIRING_BUILD = '0.2.2';
+export type PairingCode = {deviceCode:string;userCode:string;verificationUri:string;expiresIn:number;interval:number;deadline:number;trusted?:boolean};
 export function validatePairing(raw:any, origin:string, now=Date.now()): PairingCode {
   if (!raw || typeof raw.deviceCode!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(raw.deviceCode) ||
     typeof raw.userCode!=='string' || !/^[A-F0-9]{10}$/.test(raw.userCode) ||
@@ -11,7 +11,7 @@ export function validatePairing(raw:any, origin:string, now=Date.now()): Pairing
   const address=new URL(raw.verificationUri),expected=new URL(origin);
   if(address.protocol!=='https:' || address.origin!==expected.origin || address.username || address.password || address.pathname!=='/tv-pair' ||
     address.searchParams.get('code')!==raw.userCode || address.hash || Array.from(address.searchParams.keys()).some(key=>key!=='code')) throw Error('invalid_pairing_response');
-  return {...raw,deadline:now+raw.expiresIn*1000};
+  return {...raw,trusted:raw.trusted===true,deadline:now+raw.expiresIn*1000};
 }
 export function pairingFailure(error:unknown): {code:string;message:string} {
   // Never put raw network/server strings, credentials or user identifiers on screen.
@@ -42,12 +42,14 @@ export function pairingFailure(error:unknown): {code:string;message:string} {
   if(error instanceof SyntaxError) return {code:'TV-DATA-02',message:'A resposta recebida não é um documento válido.'};
   return {code:'TV-NET-03',message:'A TV não concluiu a conexão. Pode ser rede, certificado ou permissão de origem.'};
 }
-export function PairingDiagnostics({status,code,busy,pairing,qr,origin,onBegin,onCheck}:{status:string;code:string;busy:boolean;pairing:PairingCode|null;qr:string;origin:string;onBegin:()=>void;onCheck:()=>void}) {
+export function PairingDiagnostics({status,code,busy,pairing,qr,origin,trusted,onTrustedChange,onBegin,onCheck}:{status:string;code:string;busy:boolean;pairing:PairingCode|null;qr:string;origin:string;trusted:boolean;onTrustedChange:(value:boolean)=>void;onBegin:()=>void;onCheck:()=>void}) {
   let host='servidor configurado';try{host=new URL(origin).host;}catch{}
   const appOrigin=location.origin==='null'?'arquivo local':location.origin;
   return <section className="pair pair-diagnostics view-enter"><div>
     <p className="eyebrow"><ShieldCheck/> BEM-VINDO A BORDO</p><h1>Sua próxima jornada.<br/>Na sua TV.</h1>
     <p>Autorize esta tela pelo CrewCheck no celular.</p><div className="pair-buttons"><button className="primary-button" disabled={busy} onClick={onBegin}>{busy?'Conectando…':pairing?'Gerar novo código':'Vincular TV'} <ArrowRight/></button><button disabled={busy} onClick={onCheck}>Testar conexão</button></div>
+    <button className="trusted-tv-choice" disabled={busy||Boolean(pairing)} aria-pressed={trusted} onClick={()=>onTrustedChange(!trusted)}><span>{trusted?'✓':'○'}</span><b>{trusted?'Manter esta TV vinculada':'Vincular só nesta sessão'}</b></button>
+    <small className="trusted-tv-note">{trusted?'TV pessoal: o CrewCheck lembrará este aparelho até você desvincular ou revogar pelo celular.':'Ao fechar ou reiniciar a TV, será necessário vincular novamente.'}</small>
     <p role="status">{status}</p><small>Nenhuma senha da conta é solicitada nesta televisão.</small>
     <div className="pair-diagnostic-info"><b>CrewCheck TV Piloto · {PAIRING_BUILD}</b><span>{host}</span><span>Origem: {appOrigin}</span>{code&&<strong>Diagnóstico: {code}</strong>}</div>
   </div>{pairing&&<aside>{qr?<img src={qr} alt="QR Code de autorização da TV"/>:<div className="qr-fallback">Use o endereço e o código abaixo no celular.</div>}<h2>{pairing.userCode}</h2><p>{host}/tv-pair</p><small>Válido por {Math.ceil(pairing.expiresIn/60)} minutos. Confira o código no celular antes de autorizar.</small></aside>}</section>;

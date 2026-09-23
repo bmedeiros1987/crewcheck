@@ -34,6 +34,28 @@ export type TvFact<T> = {
   observedAt: string;
   expiresAt: string;
 };
+export type TvWeatherContext = {
+  role: "base" | "stay";
+  airport: string;
+  city: string | null;
+  temperature: number;
+  label: string;
+  wind: number | null;
+  rainChance: number | null;
+  source: string;
+  observedAt: string;
+  expiresAt: string;
+};
+export type TvProfileContext = {
+  base: string | null;
+  airline: string | null;
+  airlineVisual?: {
+    imageUrl: string;
+    source: string;
+    licensed: boolean;
+    attribution?: string | null;
+  } | null;
+};
 export type TvSnapshot = {
   schemaVersion: 1;
   snapshotId: string;
@@ -53,10 +75,43 @@ export type TvSnapshot = {
     temperature: number;
     label: string;
   }> | null;
+  profile?: TvProfileContext;
+  weatherContexts?: TvWeatherContext[];
+  traffic?: TvFact<{
+    durationText: string | null;
+    delayText: string | null;
+    status: string | null;
+    incidents: number | null;
+  }> | null;
+  audience?: "owner" | "family" | "visitor";
+  sharePermissions?: {
+    crew?: boolean;
+    finance?: boolean;
+    weather?: boolean;
+    hotel?: boolean;
+    operational?: boolean;
+    mobility?: boolean;
+  };
+  journeyDetails?: Record<string, unknown>;
+  mobility?: {
+    provider: "uber";
+    deepLink: string;
+    pickupLabel?: string | null;
+    destinationLabel?: string | null;
+  } | null;
   changes: string[];
   ticker: string[];
 };
 
+function tvAirlineName(roster: CrewRoster, events: CanonicalRosterEvent[]): string | null {
+  const declared = String(roster.airline || "").trim();
+  if (declared) return declared.slice(0, 60);
+  const numbers = events.map(event => String(event.flightNumber || "").trim().toUpperCase()).filter(Boolean);
+  if (numbers.some(value => /^LA\s*\d/.test(value))) return "LATAM";
+  if (numbers.some(value => /^G3\s*\d/.test(value))) return "GOL";
+  if (numbers.some(value => /^AD\s*\d/.test(value))) return "AZUL";
+  return null;
+}
 function twoDigits(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
@@ -162,6 +217,23 @@ export function projectRoster(
     leaveAt: null,
     gate: null,
     weather: null,
+    profile: {
+      base: privacy === "private" && /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
+      airline: tvAirlineName(roster, events),
+    },
+    weatherContexts: [],
+    traffic: null,
+    audience: privacy === "private" ? "owner" : "family",
+    sharePermissions: {
+      crew: false,
+      finance: false,
+      weather: true,
+      hotel: false,
+      operational: true,
+      mobility: false,
+    },
+    journeyDetails: {},
+    mobility: null,
     changes: [],
     ticker: [],
   };
