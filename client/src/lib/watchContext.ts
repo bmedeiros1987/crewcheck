@@ -46,6 +46,7 @@ export type CrewCheckWatchSnapshot = {
   hotelPickup: string;
   changed: boolean;
   source: 'canonical-roster';
+  premiumAccess: boolean;
   schedule: CrewCheckWatchScheduleItem[];
 };
 
@@ -114,6 +115,7 @@ export function buildCrewCheckWatchSnapshot(
   event: WatchEventLike,
   route: WatchRouteContext | null = null,
   now = Date.now(),
+  premiumAccess = false,
 ): CrewCheckWatchSnapshot {
   if (!event || event.placeholder) {
     return {
@@ -142,6 +144,7 @@ export function buildCrewCheckWatchSnapshot(
       hotelPickup: '',
       changed: false,
       source: 'canonical-roster',
+      premiumAccess,
       schedule: [],
     };
   }
@@ -305,6 +308,7 @@ export function buildCrewCheckWatchSnapshot(
     hotelPickup: '',
     changed: false,
     source: 'canonical-roster',
+    premiumAccess,
     schedule,
   };
 }
