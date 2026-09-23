@@ -27,6 +27,10 @@ on:
       - '.github/workflows/atlas-1d-web-roster-theme.yml'
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+
 permissions:
   contents: read
 
