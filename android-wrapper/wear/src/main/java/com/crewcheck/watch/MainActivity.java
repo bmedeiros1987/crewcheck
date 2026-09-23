@@ -545,6 +545,7 @@ public final class MainActivity extends FragmentActivity
             content.addView(stats, params);
         }
 
+        addGlanceRail(snapshot, now);
         addProgramStrip(snapshot);
 
         TextView concierge = actionChip("✦ Concierge", MAGENTA, false);
@@ -1238,61 +1239,92 @@ public final class MainActivity extends FragmentActivity
 
     private void addProgramStrip(WatchContextSnapshot snapshot) {
         if (snapshot == null || snapshot.schedule.isEmpty()) return;
-        WatchContextSnapshot.ScheduleItem item = snapshot.schedule.get(0);
-        int accent = "stay".equals(item.kind) ? MAGENTA
-                : "flight".equals(item.kind) ? CYAN : VIOLET;
+
+        WatchContextSnapshot.ScheduleItem first = snapshot.schedule.get(0);
+        WatchContextSnapshot.ScheduleItem next =
+                snapshot.schedule.size() > 1 ? snapshot.schedule.get(1) : null;
+        int accent = "stay".equals(first.kind) ? MAGENTA
+                : "flight".equals(first.kind) ? CYAN : VIOLET;
 
         LinearLayout card = premiumCard(accent);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(9), dp(7), dp(9), dp(7));
+        card.setPadding(dp(9), dp(8), dp(8), dp(8));
 
-        TextView count = text(String.valueOf(snapshot.schedule.size()), 16, accent, true, Gravity.CENTER);
-        card.addView(count, new LinearLayout.LayoutParams(dp(34), dp(38)));
+        TextView count = text(String.valueOf(snapshot.schedule.size()), 17, accent, true, Gravity.CENTER);
+        card.addView(count, new LinearLayout.LayoutParams(dp(34), dp(48)));
 
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
+
         TextView title = text(
-                "HOJE · " + snapshot.schedule.size()
+                "PROGRAMAÇÃO · " + snapshot.schedule.size()
                         + (snapshot.schedule.size() == 1 ? " ETAPA" : " ETAPAS"),
                 7, MUTED, true, Gravity.START
         );
         title.setLetterSpacing(.07f);
         copy.addView(title);
-        TextView detail = text(
+
+        TextView firstLine = text(
                 join(" · ",
-                        item.title,
-                        item.route,
-                        item.presentation.isBlank() ? "" : "APZ " + item.presentation,
-                        item.gate),
+                        first.time,
+                        first.title,
+                        first.route,
+                        first.presentation.isBlank() ? "" : "APZ " + first.presentation,
+                        first.gate),
                 9, WHITE, true, Gravity.START
         );
-        detail.setMaxLines(2);
-        copy.addView(detail);
+        firstLine.setMaxLines(2);
+        firstLine.setPadding(0, dp(2), 0, 0);
+        copy.addView(firstLine);
+
+        if (next != null) {
+            TextView nextLine = text(
+                    join(" · ", "DEPOIS", next.time, next.title, next.route),
+                    7, MUTED, false, Gravity.START
+            );
+            nextLine.setMaxLines(1);
+            nextLine.setPadding(0, dp(3), 0, 0);
+            copy.addView(nextLine);
+        }
+
         card.addView(copy, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
         ));
 
         TextView arrow = text("›", 20, accent, true, Gravity.CENTER);
-        card.addView(arrow, new LinearLayout.LayoutParams(dp(22), dp(38)));
+        card.addView(arrow, new LinearLayout.LayoutParams(dp(22), dp(48)));
 
+        card.setContentDescription(
+                "Programação de hoje, " + snapshot.schedule.size()
+                        + (snapshot.schedule.size() == 1 ? " etapa" : " etapas")
+        );
         card.setOnClickListener(view -> transitionToPage(MODE_SCHEDULE, 1));
         content.addView(card, cardParams());
     }
 
     private void renderFooter() {
-        transientStatus = text(lastSyncStatus, 8,
-                lastSyncStatus.toLowerCase(Locale.ROOT).contains("offline") ? WARNING : MUTED,
-                false, Gravity.CENTER);
-        transientStatus.setPadding(dp(4), dp(3), dp(4), 0);
-        content.addView(transientStatus);
+        String normalized = lastSyncStatus == null ? "" : lastSyncStatus.toLowerCase(Locale.ROOT);
+        boolean attention = normalized.contains("offline")
+                || normalized.contains("não respondeu")
+                || normalized.contains("não conectado")
+                || normalized.contains("precisa atualizar")
+                || normalized.contains("antig");
+        int accent = attention ? WARNING : SUCCESS;
 
-        TextView sync = actionChip("↻ Atualizar", BLUE, false);
-        sync.setOnClickListener(view -> {
+        String label = lastSyncStatus == null || lastSyncStatus.isBlank()
+                ? "● Sincronização automática"
+                : "● " + lastSyncStatus;
+        transientStatus = actionChip(label, accent, false);
+        transientStatus.setTextSize(7);
+        transientStatus.setContentDescription(
+                "Sincronização automática. Toque para atualizar agora."
+        );
+        transientStatus.setOnClickListener(view -> {
             view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
             requestSync();
         });
-        content.addView(sync);
+        content.addView(transientStatus);
     }
 
     private Primary primaryFor(WatchContextSnapshot s) {
@@ -1409,6 +1441,87 @@ public final class MainActivity extends FragmentActivity
             detail.setMaxLines(1);
             box.addView(detail);
         }
+
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        );
+        p.setMargins(dp(2), 0, dp(2), 0);
+        row.addView(box, p);
+    }
+
+    private void addGlanceRail(WatchContextSnapshot snapshot, long now) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+
+        BatteryInfo battery = batteryInfo();
+        String batteryValue = battery.percent < 0
+                ? "--"
+                : (battery.charging ? "⚡" : "") + battery.percent + "%";
+        String batteryDetail = battery.charging
+                ? "carregando"
+                : battery.percent >= 0 && battery.percent <= 15
+                ? "recarregar"
+                : "relógio";
+
+        int scheduleCount = snapshot == null ? 0 : snapshot.schedule.size();
+        String scheduleValue = scheduleCount == 0 ? "—" : String.valueOf(scheduleCount);
+        String scheduleDetail = scheduleCount == 1 ? "etapa hoje" : "etapas hoje";
+
+        String syncValue = "SEM DADOS";
+        String syncDetail = "automático";
+        int syncAccent = WARNING;
+        if (snapshot != null) {
+            if (snapshot.isStale(now)) {
+                syncValue = "ANTIGO";
+                syncDetail = "tentando atualizar";
+            } else {
+                long minutes = Math.max(0L, (now - snapshot.generatedAtEpochMs) / 60_000L);
+                syncValue = minutes < 1L
+                        ? "AGORA"
+                        : minutes < 60L
+                        ? minutes + " MIN"
+                        : (minutes / 60L) + " H";
+                syncAccent = SUCCESS;
+            }
+        }
+
+        addGlanceMetric(row, "BATERIA", batteryValue, batteryDetail, batteryAccent());
+        addGlanceMetric(row, "HOJE", scheduleValue, scheduleDetail, CYAN);
+        addGlanceMetric(row, "SYNC", syncValue, syncDetail, syncAccent);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(5), 0, dp(2));
+        content.addView(row, params);
+    }
+
+    private void addGlanceMetric(
+            LinearLayout row,
+            String label,
+            String value,
+            String detail,
+            int accent
+    ) {
+        LinearLayout box = premiumCard(accent);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(4), dp(6), dp(4), dp(6));
+
+        TextView title = text(label, 6, MUTED, true, Gravity.CENTER);
+        title.setLetterSpacing(.06f);
+        box.addView(title);
+
+        TextView metric = text(value, value.length() > 8 ? 9 : 12, accent, true, Gravity.CENTER);
+        metric.setMaxLines(1);
+        metric.setPadding(0, dp(2), 0, 0);
+        box.addView(metric);
+
+        TextView hint = text(detail, 6, MUTED, false, Gravity.CENTER);
+        hint.setMaxLines(1);
+        hint.setPadding(0, dp(1), 0, 0);
+        box.addView(hint);
 
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
