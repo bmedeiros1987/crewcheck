@@ -47,6 +47,9 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      - name: Build web shell
+        run: npx vite build
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
