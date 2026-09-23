@@ -32,7 +32,13 @@ try {
     assert.ok(assets.files.some(a=>a.file==='crewcheck-horizontal-night.png'&&a.sha256==='d23c0dcc78311445ac0452b8de239a5e795868a02e4b548ee04dfe7b02df428e'));
   }else{
     assert.ok(icons.includes("client/public/icons/crewcheck-icon-v2.png"));
-    assert.ok(main.includes('next?.presentation'));assert.ok(main.includes('currentFact(snapshot?.weather'));
+    if(home){
+      assert.ok(home.includes('programPresentation(program)'));
+      assert.ok(home.includes('currentFact(snapshot.weather'));
+    }else{
+      assert.ok(main.includes('next?.presentation'));
+      assert.ok(main.includes('currentFact(snapshot?.weather'));
+    }
   }
   assert.ok(main.includes("client/src/lib/brand"));
   assert.ok(css.includes('[data-motion=off]')); assert.ok(css.includes('prefers-reduced-motion')); assert.ok(css.includes('[data-paused=true]'));
