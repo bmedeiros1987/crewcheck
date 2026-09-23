@@ -7,18 +7,23 @@ const settings = read('android-wrapper/settings.gradle');
 const companionGradle = read('android-wrapper/lifecompanion/build.gradle');
 const companionManifest = read('android-wrapper/lifecompanion/src/main/AndroidManifest.xml');
 const runtime = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/SamsungHealthRuntime.java');
+const activity = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/MainActivity.java');
 const provider = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/LifeSummaryProvider.java');
 const store = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/LifeSummaryStore.java');
 const mobileManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const mobile = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const life = read('client/src/components/v1434/CrewCheckLifeView.tsx');
+const vendorIgnore = read('android-wrapper/lifecompanion/libs/.gitignore');
 
 assert.match(settings, /include ':lifecompanion'/);
 assert.match(companionGradle, /applicationId 'com\.crewcheck\.life'/);
-assert.match(companionGradle, /samsung-health-data-api\.aar/);
+assert.match(companionGradle, /samsung-health-data-api\*\.aar/);
 assert.match(companionGradle, /SAMSUNG_HEALTH_SDK_INCLUDED/);
-assert.match(companionGradle, /release requires android-wrapper\/lifecompanion\/libs\/samsung-health-data-api\.aar/);
+assert.match(companionGradle, /release requires android-wrapper\/lifecompanion\/libs\/samsung-health-data-api\*\.aar/);
 assert.match(companionGradle, /com\.google\.code\.gson:gson:2\.9\.0/);
+assert.match(companionGradle, /kotlin-stdlib/);
+assert.match(companionGradle, /kotlinx-coroutines-android/);
+assert.match(vendorIgnore, /samsung-health-data-api\*\.aar/);
 
 assert.match(companionManifest, /com\.crewcheck\.permission\.LIFE_SUMMARY/);
 assert.match(companionManifest, /android:protectionLevel="signature"/);
@@ -31,8 +36,17 @@ assert.match(runtime, /AccessType/);
 assert.match(runtime, /requestPermissionsAsync/);
 assert.match(runtime, /aggregateDataAsync/);
 assert.match(runtime, /readDataAsync/);
+assert.match(runtime, /TOTAL_ACTIVE_CALORIES_BURNED/);
+assert.match(runtime, /resolveIfPossible/);
+assert.match(runtime, /ResolvablePlatformException/);
 assert.match(runtime, /"automatic", true/);
 assert.doesNotMatch(runtime, /BLOOD_GLUCOSE|BLOOD_PRESSURE|SLEEP_APNEA|IRREGULAR/);
+
+assert.match(activity, /crewlife-samsung-status/);
+assert.match(activity, /new Thread\(\(\) =>/);
+assert.match(activity, /runOnUiThread/);
+assert.match(activity, /resolveIfPossible/);
+assert.match(activity, /Pontuação do sono/);
 
 assert.match(provider, /read-only/);
 assert.match(store, /AndroidKeyStore/);
