@@ -6,4 +6,5 @@
     <string name="complication_gate">CrewCheck · Portão</string>
     <string name="complication_crewlife">CrewCheck · CrewLife</string>
     <string name="complication_routine">CrewCheck · Rotina</string>
+    <string name="complication_battery">CrewCheck · Bateria</string>
 </resources>
