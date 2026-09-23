@@ -175,9 +175,12 @@ export class TvSession {
       throw new Error("pair_again");
     }
     if (response.status === 403) {
-      // Feature/account gates can be temporary. Keep a trusted device paired
-      // so service recovery never forces the owner through pairing again.
-      throw new Error("access_forbidden");
+      // Feature/account gates can be temporary. A trusted TV must remain
+      // paired so service recovery never forces the owner through pairing
+      // again. Temporary sessions keep the legacy fail-closed behaviour.
+      if (this.credential?.trusted) throw new Error("access_forbidden");
+      this.clear(true);
+      throw new Error("pair_again");
     }
     if (!response.ok) throw new Error(`request_${response.status}`);
     const serverNow = Number(response.headers.get("X-CrewCheck-Server-Time"));
