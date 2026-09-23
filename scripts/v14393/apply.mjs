@@ -9,8 +9,9 @@ for (const file of [homeFile, rosterFile]) {
 }
 
 let home = fs.readFileSync(homeFile, 'utf8');
-const syncMarker = "const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'interval') =>";
-if (!home.includes(syncMarker)) {
+const syncMarker = "const reconcileActiveRoster = async";
+const continuityMarker = 'P0 roster continuity';
+if (!home.includes(syncMarker) && !home.includes(continuityMarker)) {
   const legacyEffect = /\n\s*useEffect\(\(\) => \{\n\s*\/\/ A escala ativa pertence à conta, não ao cache deste dispositivo\.[\s\S]*?\n\s*\}, \[\]\);/;
   if (!legacyEffect.test(home)) throw new Error('[v14393] efeito legado de escala ativa não encontrado.');
   legacyEffect.lastIndex = 0;
@@ -62,7 +63,7 @@ if (!home.includes(syncMarker)) {
   home = home.replace(legacyEffect, replacement);
 }
 
-for (const required of [syncMarker, 'rosterFingerprint(active.roster)', "window.addEventListener('focus'", "document.addEventListener('visibilitychange'", '60000']) {
+for (const required of [syncMarker, 'rosterFingerprint(active.roster)', "window.addEventListener('focus'", "document.addEventListener('visibilitychange'", '60_000']) {
   if (!home.includes(required)) throw new Error(`[v14393] contrato de sincronização ausente: ${required}`);
 }
 fs.writeFileSync(homeFile, home, 'utf8');
