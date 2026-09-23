@@ -25,6 +25,19 @@ public final class CrewLifeSnapshotTest {
     }
 
     @Test
+    public void preservesSamsungEnergyScoreSemantics() throws Exception {
+        CrewLifeSnapshot snapshot = CrewLifeSnapshot.fromJson(base()
+                .put("recoveryScore", 89)
+                .put("scoreKind", "ENERGY")
+                .put("sleepLabel", "7h40"));
+
+        assertTrue(snapshot.isEnergyScore());
+        assertEquals("ENERGIA", snapshot.complicationTitle());
+        assertEquals("89/100", snapshot.complicationText(NOW));
+        assertTrue(snapshot.accessibilityDescription(NOW).contains("Energia Samsung 89 de 100"));
+    }
+
+    @Test
     public void rejectsRawHeartRateSeries() throws Exception {
         JSONObject withSeries = base().put("heartRateSeries", "[58,60,62]");
         assertThrows(IllegalArgumentException.class, () -> CrewLifeSnapshot.fromJson(withSeries));
