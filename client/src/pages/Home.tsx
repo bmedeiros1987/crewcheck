@@ -4650,12 +4650,19 @@ export default function Home() {
 
     publishWatchSnapshot();
     const onRequest = () => publishWatchSnapshot();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') publishWatchSnapshot();
+    };
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
+    window.addEventListener('focus', onRequest);
+    document.addEventListener('visibilitychange', onVisible);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
+      window.removeEventListener('focus', onRequest);
+      document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(timer);
     };
   }, [events, event.id, event.presentation, event.gate, event.status]);
