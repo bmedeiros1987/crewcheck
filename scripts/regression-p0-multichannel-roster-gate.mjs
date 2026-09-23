@@ -63,7 +63,8 @@ expectAll('abrir escala ativa deve continuar substituindo somente o bundle opera
 assert.match(home, /window\.addEventListener\('crewcheck:native-pdf'/);
 assert.match(home, /claimPendingPwaSharedPdf\(\)/);
 assert.match(home, /const imported = await processRosterFile\(file\);/);
-assert.match(home, /await processRosterFile\(claim\.file\)/);
+assert.match(home, /await importSharedPdfFile\(claim\.file/);
+assert.match(home, /const imported = await processRosterFile\(file\);/);
 assert.match(android, /SharedPdfInbox\.capture/);
 assert.match(android, /acknowledgeSharedPdf/);
 
