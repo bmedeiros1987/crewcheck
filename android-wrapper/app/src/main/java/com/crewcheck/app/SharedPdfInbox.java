@@ -175,6 +175,50 @@ public final class SharedPdfInbox {
         }
     }
 
+    public static synchronized long size(Context context, String expectedId) {
+        PendingPdf pending = peek(context);
+        if (pending == null) return 0L;
+        if (expectedId != null && !expectedId.trim().isEmpty() && !pending.id.equals(expectedId.trim())) return 0L;
+        return pending.file.length();
+    }
+
+    public static synchronized byte[] readChunk(Context context, String expectedId, long offset, int requestedLength, int maxBytes) throws Exception {
+        PendingPdf pending = peek(context);
+        if (pending == null) throw new IllegalStateException("Nenhum PDF compartilhado pendente.");
+        if (expectedId == null || expectedId.trim().isEmpty() || !pending.id.equals(expectedId.trim())) {
+            throw new IllegalStateException("O PDF compartilhado pendente mudou.");
+        }
+        long length = pending.file.length();
+        if (length <= 0L || length > maxBytes) throw new IllegalStateException("PDF compartilhado com tamanho inválido.");
+        if (offset < 0L || offset > length) throw new IllegalArgumentException("Offset inválido.");
+        int safeLength = Math.max(0, Math.min(requestedLength, 256 * 1024));
+        safeLength = (int) Math.min((long) safeLength, length - offset);
+        if (safeLength == 0) return new byte[0];
+
+        byte[] buffer = new byte[safeLength];
+        try (FileInputStream input = new FileInputStream(pending.file)) {
+            long skipped = 0L;
+            while (skipped < offset) {
+                long step = input.skip(offset - skipped);
+                if (step <= 0L) {
+                    if (input.read() == -1) throw new IllegalStateException("Fim inesperado do PDF compartilhado.");
+                    step = 1L;
+                }
+                skipped += step;
+            }
+            int readTotal = 0;
+            while (readTotal < safeLength) {
+                int read = input.read(buffer, readTotal, safeLength - readTotal);
+                if (read < 0) break;
+                readTotal += read;
+            }
+            if (readTotal == safeLength) return buffer;
+            byte[] trimmed = new byte[readTotal];
+            System.arraycopy(buffer, 0, trimmed, 0, readTotal);
+            return trimmed;
+        }
+    }
+
     public static synchronized boolean acknowledge(Context context, String shareId) {
         PendingPdf pending = peek(context);
         if (pending == null) return true;
