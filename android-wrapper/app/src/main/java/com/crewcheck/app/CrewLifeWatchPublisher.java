@@ -200,6 +200,8 @@ public final class CrewLifeWatchPublisher {
             putBounded(source, out, "recoveryScore", 0, 100);
             String label = normalizeLabel(source.optString("recoveryLabel", ""), 16);
             out.put("recoveryLabel", RECOVERY_LABELS.contains(label) ? label : "DESCONHECIDA");
+            String scoreKind = normalizeLabel(source.optString("scoreKind", "RECOVERY"), 12);
+            out.put("scoreKind", "ENERGY".equals(scoreKind) ? "ENERGY" : "RECOVERY");
 
             // "dormiu 4h, FC alta, pegue leve" entrega sono e batimento mesmo com só
             // recuperação concedida. Não dá para saber de qual categoria cada frase veio,
