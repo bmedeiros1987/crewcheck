@@ -11,6 +11,10 @@ const runtime = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/
 const activity = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/MainActivity.java');
 const provider = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/LifeSummaryProvider.java');
 const store = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/LifeSummaryStore.java');
+const refreshReceiver = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/RefreshReceiver.java');
+const refreshRoutine = read('android-wrapper/lifecompanion/src/main/java/com/crewcheck/life/CrewLifeRefresh.java');
+const wearSnapshot = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewLifeSnapshot.java');
+const wearMain = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java');
 const mobileManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const mobile = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const life = read('client/src/components/v1434/CrewCheckLifeView.tsx');
@@ -42,6 +46,9 @@ assert.match(companionManifest, /android:protectionLevel="signature"/);
 assert.match(companionManifest, /com\.crewcheck\.life\.summary/);
 assert.doesNotMatch(companionManifest, /android\.permission\.health\./);
 assert.doesNotMatch(companionManifest, /BODY_SENSORS/);
+assert.match(companionManifest, /com\.crewcheck\.life\.REFRESH_SUMMARY/);
+assert.match(companionManifest, /RefreshReceiver/);
+assert.match(companionManifest, /android:permission="com\.crewcheck\.permission\.LIFE_SUMMARY"/);
 
 assert.match(runtime, /"STEPS", "SLEEP", "ACTIVITY_SUMMARY", "ENERGY_SCORE"/);
 assert.match(runtime, /AccessType/);
@@ -53,6 +60,9 @@ assert.match(runtime, /resolveIfPossible/);
 assert.match(runtime, /ResolvablePlatformException/);
 assert.match(runtime, /"automatic", true/);
 assert.doesNotMatch(runtime, /BLOOD_GLUCOSE|BLOOD_PRESSURE|SLEEP_APNEA|IRREGULAR/);
+assert.match(refreshReceiver, /crewlife-refresh-request/);
+assert.match(refreshReceiver, /CrewLifeRefresh\.refreshNow/);
+assert.match(refreshRoutine, /SamsungHealthRuntime\.readSummary/);
 
 assert.match(activity, /crewlife-samsung-status/);
 assert.match(activity, /new Thread\(\(\) ->/);
@@ -70,6 +80,10 @@ assert.match(mobile, /lifeCompanionStatus\(\)/);
 assert.match(mobile, /readLifeCompanionSummary\(\)/);
 assert.match(mobile, /openLifeCompanion\(\)/);
 assert.match(mobile, /crewcheck:life-companion-summary/);
+assert.match(mobile, /syncLifeCompanionToCrewCheckAndWatch/);
+assert.match(mobile, /ACTION_LIFE_COMPANION_REFRESH/);
+assert.match(mobile, /CrewLifeWatchPublisher\.publishCrewLife/);
+assert.match(mobile, /scoreKind", "ENERGY"/);
 
 assert.match(life, /CrewLife Companion Samsung/);
 assert.match(life, /Samsung Health · automático/);
@@ -77,5 +91,9 @@ assert.match(life, /energyScore/);
 assert.match(life, /companionSummary\.automatic/);
 assert.match(life, /nativeHealthEnabled/);
 assert.match(life, /Energy Score/);
+assert.match(life, /scoreKind = 'ENERGY'/);
+assert.match(wearSnapshot, /isEnergyScore/);
+assert.match(wearSnapshot, /Energia Samsung/);
+assert.match(wearMain, /Energy Score · Samsung Health/);
 
 console.log('[crewlife-samsung-companion] automatic local Samsung integration contracts OK');
