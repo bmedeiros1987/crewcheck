@@ -15,7 +15,7 @@ update('android-wrapper/app/src/main/AndroidManifest.xml', s => s
   .replace(/\s*<activity\s+android:name="\.HealthPermissionsRationaleActivity"[\s\S]*?<\/activity>/g, '')
   .replace(/\s*<activity-alias\s+android:name="\.ViewHealthPermissionUsageActivity"[\s\S]*?<\/activity-alias>/g, ''));
 
-// Keep the canonical source patch chain intact while making its terminal output manual-only.
+// Keep the main Play app Health-Connect-free while preserving optional Samsung Companion summaries.
 update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   s = s.replace(/\n    return undefined; \/\* Play: Health Connect integration removed\. \*\//g, '')
     .replace(/\n    return false; \/\* No health permission requests or reads\. \*\//g, '')
@@ -68,7 +68,7 @@ update('client/src/components/v14314/RoutineDailyConcierge.tsx', s => s
   .replace('<button onClick={connectHealth}><HeartPulse/><span><strong>Health Connect</strong><small>Samsung Health e Galaxy Watch</small></span><Check/></button>', '<button onClick={openManualLife}><HeartPulse/><span><strong>CrewLife opcional</strong><small>Registros manuais neste aparelho</small></span><Navigation/></button>'));
 console.log('[android-play] Separate version codes, API 36 and Health-Connect-free CrewLife applied.');
 
-update('client/public/manual.html', s => s.replace('O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.', 'O CrewLife usa registros manuais e opcionais neste aparelho. Não acessa Health Connect ou Samsung Health. O envio de resumos ao relógio exige uma escolha separada do usuário.'));
+update('client/public/manual.html', s => s.replace('O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.', 'O CrewCheck principal não acessa Health Connect. Quando o usuário instala e autoriza o CrewLife Companion Samsung, o Companion lê no Samsung Health apenas os resumos escolhidos e os entrega localmente ao CrewCheck. A entrada manual continua disponível.'));
 
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', s => s.includes('retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult)') ? s : s
   .replace('CrewLifeWatchPublisher.revoke(MainActivity.this, null);', 'CrewLifeWatchPublisher.revoke(MainActivity.this, MainActivity.this::dispatchCrewCheckWatchSyncResult);')
