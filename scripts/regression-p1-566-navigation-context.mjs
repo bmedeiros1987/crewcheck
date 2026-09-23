@@ -69,8 +69,17 @@ mutable.stayId = 'mutated-after-deposit';
 assert.equal(peekPendingNavigationContext('hotels')?.stayId, 'stay-7', 'pending context must be a sanitized copy');
 clearPendingNavigationContext();
 
-// Privacy and ownership guardrails: no browser persistence, raw operational payload, parser or rule engine.
-for (const forbidden of ['localStorage', 'sessionStorage', 'rawText', 'originalText', 'transcript', 'pdfParser', 'rosterParser', 'financialRules', 'canonicalRoster']) {
+// Privacy and ownership guardrails. Comments may document forbidden persistence,
+// so inspect executable/property-shaped usage instead of failing on documentation text.
+assert.ok(
+  !/\b(?:window\.)?(?:localStorage|sessionStorage)\s*\./.test(contextSource),
+  'Navigation Context must remain in memory and never call browser storage',
+);
+assert.ok(
+  !/\b(?:rawText|originalText|transcript|message)\??\s*:/.test(contextSource),
+  'Navigation Context type/runtime must not expose raw text or conversation fields',
+);
+for (const forbidden of ['pdfParser', 'rosterParser', 'financialRules', 'canonicalRoster']) {
   assert.ok(!contextSource.includes(forbidden), `Navigation Context must not depend on ${forbidden}`);
 }
 
