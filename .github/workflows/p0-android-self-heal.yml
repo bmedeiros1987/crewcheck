@@ -1,0 +1,51 @@
+name: CrewCheck Android blank-screen self-heal
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'scripts/p0-android-self-heal/**'
+      - 'scripts/p0-build-identity/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p0-android-self-heal.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'android-wrapper/**'
+      - 'scripts/p0-android-self-heal/**'
+      - 'scripts/p0-build-identity/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p0-android-self-heal.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - run: npm ci
+      - name: Materialize canonical runtime
+        run: node scripts/v139/apply.mjs
+      - name: Assert non-destructive Android self-healing
+        run: node scripts/p0-android-self-heal/regression.mjs
+      - name: Build offline web shell consumed by Android
+        run: npx vite build
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Compile mobile wrapper
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug

@@ -55,13 +55,24 @@ jobs:
         with:
           gradle-version: '8.13'
       - run: npm ci
+      - name: Install Play API client for version allocation
+        if: github.ref == 'refs/heads/main'
+        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+      - name: Allocate live Play version codes
+        if: github.ref == 'refs/heads/main'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/android-play/allocate_versions.py
       - name: Prepare canonical sources and final store policy
         run: node scripts/v139/apply.mjs
       - name: Test negative publication gates
         run: |
           python3 scripts/android-play/test_validate.py
           python3 scripts/android-play/test_publish_policy.py
+          python3 scripts/android-play/test_review_policy.py
           python3 scripts/android-play/test_credential.py
+          python3 scripts/android-play/test_allocate_versions.py
+          python3 scripts/android-play/test_play_error.py
       - name: Web and privacy validation
         run: |
           npx tsc --noEmit

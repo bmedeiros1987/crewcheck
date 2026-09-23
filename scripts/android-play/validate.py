@@ -79,6 +79,7 @@ def main():
         (out / (module + '-manifest.xml')).write_text(xml)
         report.append(dict(module=module, file=name, sha256=hashlib.sha256(data).hexdigest(), certificateSha256=expected_cert, **spec))
     (out / 'release-report.json').write_text(json.dumps(report, indent=2) + '\n')
+    (out / 'resolved-release-policy.json').write_text(json.dumps(policy, indent=2) + '\n')
     (out / 'SHA256SUMS.txt').write_text(''.join(f'{r["sha256"]}  {r["file"]}\n' for r in report))
     print('PASS: all three signed bundles match package, SDK, version, permissions and form-factor policy.')
 

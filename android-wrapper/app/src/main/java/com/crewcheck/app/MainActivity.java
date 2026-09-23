@@ -73,7 +73,6 @@ public class MainActivity extends Activity {
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
     private static final String LIFE_COMPANION_PACKAGE = "com.crewcheck.life";
-    private static final String ACTION_LIFE_COMPANION_REFRESH = "com.crewcheck.life.REFRESH_SUMMARY";
     private static final long LIFE_COMPANION_REFRESH_SETTLE_MS = 1800L;
 
     private FrameLayout rootLayout;
@@ -817,9 +816,9 @@ public class MainActivity extends Activity {
 
     private void requestLifeCompanionRefresh() {
         try {
-            Intent refresh = new Intent(ACTION_LIFE_COMPANION_REFRESH);
-            refresh.setPackage(LIFE_COMPANION_PACKAGE);
-            sendBroadcast(refresh);
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            getContentResolver().call(uri, "refresh", null, null);
+        } catch (SecurityException denied) {
         } catch (Exception ignored) {}
     }
 

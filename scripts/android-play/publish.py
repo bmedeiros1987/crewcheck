@@ -10,6 +10,8 @@ import google.auth.transport.requests
 from google.oauth2 import service_account
 import requests
 from credential import load_service_account_secret
+from play_error import safe_play_error
+from review_policy import commit_internal_edit
 
 def main():
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
@@ -18,7 +20,7 @@ def main():
     session = google.auth.transport.requests.AuthorizedSession(credentials)
     root = Path(sys.argv[1])
     report = json.loads((root / 'release-report.json').read_text())
-    policy = json.loads(Path('scripts/android-play/release-policy.json').read_text())
+    policy = json.loads((root / 'resolved-release-policy.json').read_text())
     assert {r['module'] for r in report} == set(policy['artifacts']), 'Incomplete release'
     for item in report:
         assert all(item[k] == v for k, v in policy['artifacts'][item['module']].items()), 'Report/policy mismatch'
@@ -33,6 +35,10 @@ def main():
     repo = os.environ['GITHUB_REPOSITORY']
     sha = os.environ['GITHUB_SHA']
     wait_deadline = time.time() + 12 * 60
+    # This gate is triggered by completion of Android signed store bundles itself.
+    # It is downstream evidence, not independent CI, so waiting on it here would
+    # deadlock publication. Keep the exclusion explicit and narrow.
+    dependent_ci_workflow_names = {'CrewCheck Priority 0 Release Gate'}
     while True:
         runs = []
         page = 1
@@ -52,6 +58,10 @@ def main():
         latest = {}
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
+                continue
+            if run.get('event') != 'push':
+                continue
+            if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
                 continue
             key = run['workflow_id']
             if key not in latest or run['id'] > latest[key]['id']:
@@ -75,8 +85,8 @@ def main():
     def api(method, url, **kwargs):
         response = session.request(method, url, timeout=300, **kwargs)
         if not response.ok:
-            # Avoid dumping credential/session or arbitrary API payloads to public logs.
-            raise RuntimeError(f'Play API returned HTTP {response.status_code}; inspect Console/access and retry')
+            # Emit only bounded structured diagnostics; never headers, URLs or raw payloads.
+            raise RuntimeError(safe_play_error(response))
         return response.json() if response.content else {}
 
     for package in sorted({r['package'] for r in report}):
@@ -120,10 +130,12 @@ def main():
                         }],
                     },
                 )
-            api('POST', url + ':validate')
-            api('POST', url + ':commit')
+            _, review_mode = commit_internal_edit(api, url)
             committed = True
-            print(f'{package}: verified bundles RELEASED TO INTERNAL TESTING. Production untouched.')
+            print(
+                f'{package}: verified bundles COMMITTED TO INTERNAL TESTING '
+                f'({review_mode}). Production untouched.'
+            )
         finally:
             if not committed:
                 session.delete(url, timeout=30)
