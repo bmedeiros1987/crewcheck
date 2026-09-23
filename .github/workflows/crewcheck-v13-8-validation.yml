@@ -83,6 +83,8 @@ jobs:
         run: node scripts/regression-v14-3-41-concierge-semantic-context.mjs 2>&1 | tee "$RUNNER_TEMP/concierge-semantic-regression.log"
       - name: Audit every existing functional surface
         run: node scripts/audit-functional-surface.mjs --strict --write 2>&1 | tee "$RUNNER_TEMP/functional-surface-audit.log"
+      - name: Validate #568 navigation ownership and 5S inventory
+        run: node scripts/regression-p1-568-navigation-inventory.mjs
       - name: Validate Google Maps monthly budget and TomTom fallback
         run: node scripts/regression-v14-3-42-google-maps-budget-fallback.mjs 2>&1 | tee "$RUNNER_TEMP/google-maps-budget-regression.log"
       - name: Validate iPad premium layout, location and reload stability
