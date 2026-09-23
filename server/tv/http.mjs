@@ -208,6 +208,7 @@ export function createTvHttpBridge({
       "/api/tv/devices",
       "/api/tv/preferences",
       "/api/tv/context",
+      "/api/tv/trust",
     ].includes(url.pathname);
     const allowed = accountRoute
       ? ["https://crewcheck.online"]
