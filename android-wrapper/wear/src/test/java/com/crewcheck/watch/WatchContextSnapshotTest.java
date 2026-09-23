@@ -61,6 +61,17 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
+    public void freeTierUsesAccessEnvelopeInsteadOfOperationalComplications() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("premiumAccess", false));
+
+        assertFalse(snapshot.premiumAccess);
+        assertEquals("PREMIUM", snapshot.complicationShortText(NOW));
+        assertEquals("CREWWATCH", snapshot.complicationTitle(NOW));
+        assertEquals("Ative o Premium no CrewCheck", snapshot.complicationLongText(NOW));
+    }
+
+    @Test
     public void rejectsUnknownSchemaAndSensitiveFields() throws Exception {
         assertThrows(IllegalArgumentException.class, () ->
                 WatchContextSnapshot.fromJson(base().put("schemaVersion", 2)));
@@ -90,6 +101,7 @@ public final class WatchContextSnapshotTest {
                 .put("validUntilEpochMs", NOW + 60_000L)
                 .put("state", "UNKNOWN")
                 .put("headline", "PRÓXIMO PASSO")
-                .put("source", "canonical-roster");
+                .put("source", "canonical-roster")
+                .put("premiumAccess", true);
     }
 }
