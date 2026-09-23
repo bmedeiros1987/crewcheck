@@ -1,13 +1,19 @@
-// webOS packaged apps can serialize the app ID as a file-scheme origin.
-// This list enables transport, NOT authorization. Account approval/revocation
-// stays browser-origin-only; device routes retain token/single-account checks.
-const PACKAGED_ORIGINS = new Set([
+// TV package origins may call device-token routes, never account-control routes.
+// The authenticated CrewCheck web/mobile control plane is explicitly allowed to
+// manage TV permissions. Origin is defense-in-depth; bearer/account checks remain mandatory.
+const TV_DEVICE_ORIGINS = new Set([
   'null',
-  'https://appassets.androidplatform.net',
   'file://online.crewcheck.tv.pilot',
   'file://online.crewcheck.tv',
 ]);
+const ACCOUNT_CONTROL_ORIGINS = new Set([
+  'https://crewcheck.online',
+  'https://appassets.androidplatform.net',
+]);
+
 export function allowsTvBrowserOrigin(value, trustedWebOrigin, accountRoute = false) {
   if (typeof value !== 'string' || typeof trustedWebOrigin !== 'string' || !trustedWebOrigin) return false;
-  return !value || value === trustedWebOrigin || (!accountRoute && PACKAGED_ORIGINS.has(value));
+  if (!value || value === trustedWebOrigin) return true;
+  if (accountRoute) return ACCOUNT_CONTROL_ORIGINS.has(value);
+  return ACCOUNT_CONTROL_ORIGINS.has(value) || TV_DEVICE_ORIGINS.has(value);
 }
