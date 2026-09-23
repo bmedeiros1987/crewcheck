@@ -8,7 +8,6 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.Binder;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Process;
 
@@ -17,7 +16,6 @@ public final class LifeSummaryProvider extends ContentProvider {
             Uri.parse("content://com.crewcheck.life.summary/v1/current");
 
     private static final String TRUSTED_CREWCHECK_PACKAGE = "com.crewcheck.app";
-    private static final String PLAY_STORE_PACKAGE = "com.android.vending";
 
     @Override
     public boolean onCreate() {
@@ -50,29 +48,6 @@ public final class LifeSummaryProvider extends ContentProvider {
             throw new SecurityException("Caller is not CrewCheck");
         }
 
-        if (packageManager.checkSignatures(
-                TRUSTED_CREWCHECK_PACKAGE,
-                context.getPackageName()
-        ) == PackageManager.SIGNATURE_MATCH) {
-            return;
-        }
-
-        String installer = null;
-        try {
-            if (Build.VERSION.SDK_INT >= 30) {
-                installer = packageManager
-                        .getInstallSourceInfo(TRUSTED_CREWCHECK_PACKAGE)
-                        .getInstallingPackageName();
-            } else {
-                installer = packageManager.getInstallerPackageName(TRUSTED_CREWCHECK_PACKAGE);
-            }
-        } catch (Exception ignored) {}
-
-        if (PLAY_STORE_PACKAGE.equals(installer)) {
-            return;
-        }
-
-        throw new SecurityException("CrewCheck caller is not a trusted installed build");
     }
 
     @Override
