@@ -14,6 +14,14 @@ function replaceRequired(source, before, after, label) {
 }
 
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', (source) => {
+  // Durable shared-PDF inbox is now canonical in MainActivity/SharedPdfInbox.
+  // Keep this preparer as a legacy compatibility shim for older branches only.
+  if (source.includes('SharedPdfInbox.capture(this, uri, MAX_PDF_BYTES)')
+      && source.includes('SharedPdfInbox.acknowledge(MainActivity.this, shareId)')
+      && source.includes('payload.put("shareId", pending.id)')) {
+    return source;
+  }
+
   let next = source;
 
   next = replaceRequired(
