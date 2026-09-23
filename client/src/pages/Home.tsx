@@ -4690,10 +4690,10 @@ export default function Home() {
           localRevision = hasLocalRoster ? rosterFingerprint(current.roster) : null;
           if (localRevision === serverRevision) return current;
 
-          const nextCompliance = active.compliance || analyzeSafe(active.roster);
+          const compliance = active.compliance || analyzeSafe(active.roster);
           saveRoster(active.roster, 'Escala ativa sincronizada');
           changed = true;
-          return { roster: active.roster, compliance: nextCompliance, source: 'Escala ativa sincronizada' };
+          return { roster: active.roster, compliance, source: 'Escala ativa sincronizada' };
         });
 
         console.info('[crewcheck:active-roster-sync]', {
