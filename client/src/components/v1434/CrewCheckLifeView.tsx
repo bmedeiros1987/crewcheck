@@ -68,6 +68,7 @@ type NativeHealthSummary = {
   ok?: boolean;
   automatic?: boolean;
   source?: string;
+  generatedAtEpochMs?: number;
   energyScore?: number | null;
   sleepScore?: number | null;
   caloriesBurned?: number | null;
@@ -238,8 +239,17 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     };
   }, []);
 
-  const effectiveSummary = companionSummary.automatic ? companionSummary : nativeSummary;
-  const automaticSamsung = Boolean(companionSummary.automatic && companionStatus.state === 'connected');
+  const companionAgeMs = companionSummary.generatedAtEpochMs
+    ? Date.now() - Number(companionSummary.generatedAtEpochMs)
+    : Number.POSITIVE_INFINITY;
+  const companionFresh = Boolean(
+    companionSummary.automatic
+      && companionStatus.state === 'connected'
+      && companionAgeMs >= 0
+      && companionAgeMs <= 6 * 60 * 60 * 1000
+  );
+  const effectiveSummary = companionFresh ? companionSummary : nativeSummary;
+  const automaticSamsung = companionFresh;
 
   const metrics = useMemo(() => {
     const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
@@ -276,6 +286,10 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     }
     if (Number.isFinite(Number(effectiveSummary.restingHeartRateAverage))) {
       payload.restingHeartRate = Math.max(0, Math.round(Number(effectiveSummary.restingHeartRateAverage)));
+    }
+    if (effectiveSummary.source === 'samsung_health' && Number(effectiveSummary.energyScore) > 0) {
+      payload.recoveryScore = Math.max(0, Math.min(100, Math.round(Number(effectiveSummary.energyScore))));
+      payload.detail = 'Samsung Health · Energy Score';
     }
 
     try { bridge.publishWatchCrewLife(JSON.stringify(payload)); } catch {}
