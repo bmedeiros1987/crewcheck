@@ -6,7 +6,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -28,7 +27,6 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(5, 16, 31));
         render();
         RefreshScheduler.schedule(this);
-        refreshStatus();
     }
 
     @Override
@@ -83,11 +81,13 @@ public final class MainActivity extends Activity {
 
         connectButton = new Button(this);
         connectButton.setText("Conectar Samsung Health");
+        connectButton.setEnabled(false);
         connectButton.setOnClickListener(v -> requestPermissionsAndRefresh());
         content.addView(connectButton, buttonParams());
 
         refreshButton = new Button(this);
         refreshButton.setText("Atualizar agora");
+        refreshButton.setEnabled(false);
         refreshButton.setOnClickListener(v -> refreshSummary());
         content.addView(refreshButton, buttonParams());
 
@@ -110,48 +110,86 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshStatus() {
-        JSONObject status = SamsungHealthRuntime.status(this);
+        statusView.setText("Verificando Samsung Health…");
+        connectButton.setEnabled(false);
+        refreshButton.setEnabled(false);
+
+        new Thread(() -> {
+            JSONObject status = SamsungHealthRuntime.status(this);
+            String cached = LifeSummaryStore.read(this);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                applyStatus(status);
+                if (cached != null && !cached.isBlank()) {
+                    try {
+                        renderSummary(new JSONObject(cached));
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
+        }, "crewlife-samsung-status").start();
+    }
+
+    private void applyStatus(JSONObject status) {
         String state = status.optString("state", "unavailable");
         statusView.setText(switch (state) {
             case "connected" -> "Samsung Health conectado";
             case "permission_required" -> "Permissão necessária";
-            case "samsung_health_missing" -> "Samsung Health não encontrado";
+            case "samsung_health_missing" -> "Samsung Health não está instalado";
+            case "samsung_health_update_required" -> "Samsung Health precisa ser atualizado";
+            case "samsung_health_disabled" -> "Samsung Health está desativado";
+            case "samsung_health_setup_required" -> "Conclua a configuração do Samsung Health";
+            case "authorization_required" -> "Esta build ainda não está autorizada pela Samsung";
             case "sdk_missing" -> "SDK Samsung ainda não incluído nesta build";
             default -> "Samsung Health indisponível";
         });
 
-        connectButton.setEnabled(SamsungHealthRuntime.sdkBundled()
-                && SamsungHealthRuntime.samsungHealthInstalled(this));
-        refreshButton.setEnabled("connected".equals(state));
+        boolean bundled = status.optBoolean("sdkBundled", false);
+        boolean connected = "connected".equals(state);
+        connectButton.setEnabled(bundled && !connected);
+        refreshButton.setEnabled(connected);
 
-        String cached = LifeSummaryStore.read(this);
-        if (cached != null && !cached.isBlank()) {
-            try {
-                renderSummary(new JSONObject(cached));
-            } catch (Exception ignored) {}
-        }
+        connectButton.setText(switch (state) {
+            case "samsung_health_missing" -> "Instalar Samsung Health";
+            case "samsung_health_update_required" -> "Atualizar Samsung Health";
+            case "samsung_health_disabled" -> "Ativar Samsung Health";
+            case "samsung_health_setup_required" -> "Concluir configuração";
+            case "authorization_required" -> "Tentar novamente";
+            case "connected" -> "Samsung Health conectado";
+            default -> "Conectar Samsung Health";
+        });
     }
 
     private void requestPermissionsAndRefresh() {
         connectButton.setEnabled(false);
         statusView.setText("Abrindo permissões do Samsung Health…");
+
         new Thread(() -> {
             try {
                 boolean granted = SamsungHealthRuntime.requestPermissions(this);
                 runOnUiThread(() -> {
-                    connectButton.setEnabled(true);
+                    if (isFinishing() || isDestroyed()) return;
                     if (granted) {
                         statusView.setText("Samsung Health conectado");
                         refreshButton.setEnabled(true);
                         refreshSummary();
                     } else {
                         statusView.setText("Permissões não concedidas");
+                        connectButton.setEnabled(true);
                     }
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    if (SamsungHealthRuntime.resolveIfPossible(error, this)) {
+                        statusView.setText("Abrindo Samsung Health para corrigir a conexão…");
+                    } else {
+                        statusView.setText(
+                                "Não foi possível conectar: "
+                                        + SamsungHealthRuntime.friendlyError(error)
+                        );
+                    }
                     connectButton.setEnabled(true);
-                    statusView.setText("Não foi possível conectar: " + friendlyError(error));
                 });
             }
         }, "crewlife-samsung-permission").start();
@@ -160,18 +198,28 @@ public final class MainActivity extends Activity {
     private void refreshSummary() {
         refreshButton.setEnabled(false);
         statusView.setText("Atualizando resumo…");
+
         new Thread(() -> {
             try {
                 JSONObject summary = SamsungHealthRuntime.readSummary(this);
                 LifeSummaryStore.save(this, summary);
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     renderSummary(summary);
                     statusView.setText("Samsung Health conectado · atualizado agora");
                     refreshButton.setEnabled(true);
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
-                    statusView.setText("Atualização indisponível: " + friendlyError(error));
+                    if (isFinishing() || isDestroyed()) return;
+                    if (SamsungHealthRuntime.resolveIfPossible(error, this)) {
+                        statusView.setText("Abrindo Samsung Health para corrigir a conexão…");
+                    } else {
+                        statusView.setText(
+                                "Atualização indisponível: "
+                                        + SamsungHealthRuntime.friendlyError(error)
+                        );
+                    }
                     refreshButton.setEnabled(true);
                 });
             }
@@ -179,45 +227,82 @@ public final class MainActivity extends Activity {
     }
 
     private void renderSummary(JSONObject json) {
-        StringBuilder text = new StringBuilder();
-        int energy = json.optInt("energyScore", 0);
-        if (energy > 0) text.append("Energia ").append(energy).append("/100\n");
-        int sleep = json.optInt("sleepMinutes", 0);
-        if (sleep > 0) text.append("Sono ").append(sleep / 60).append("h")
-                .append(String.format("%02d", sleep % 60)).append("\n");
-        int sleepScore = json.optInt("sleepScore", 0);
-        if (sleepScore > 0) text.append("Sleep score ").append(sleepScore).append("\n");
-        long steps = json.optLong("steps", 0);
-        if (steps > 0) text.append("Passos ").append(String.format("%,d", steps)).append("\n");
-        long activity = json.optLong("activeMinutes", 0);
-        if (activity > 0) text.append("Atividade ").append(activity).append(" min\n");
-        long calories = json.optLong("caloriesBurned", 0);
-        if (calories > 0) text.append("Calorias ").append(calories).append(" kcal\n");
-        double distance = json.optDouble("distanceMeters", 0);
-        if (distance > 0) text.append("Distância ").append(String.format("%.2f km", distance / 1000d));
-        summaryView.setText(text.length() == 0 ? "Sem dados disponíveis para hoje." : text.toString().trim());
-    }
+        StringBuilder value = new StringBuilder();
 
-    private static String friendlyError(Throwable error) {
-        Throwable cursor = error;
-        while (cursor.getCause() != null) cursor = cursor.getCause();
-        String name = cursor.getClass().getSimpleName();
-        if (name.contains("Authorization")) return "app ainda não autorizado pela Samsung";
-        if (name.contains("ResolvablePlatform")) return "Samsung Health precisa de atenção";
-        return name == null || name.isBlank() ? "erro desconhecido" : name;
+        int energy = json.optInt("energyScore", 0);
+        if (energy > 0) {
+            value.append("Energia ").append(energy).append("/100\n");
+        }
+
+        int sleep = json.optInt("sleepMinutes", 0);
+        if (sleep > 0) {
+            value.append("Sono ")
+                    .append(sleep / 60)
+                    .append("h")
+                    .append(String.format("%02d", sleep % 60))
+                    .append("\n");
+        }
+
+        int sleepScore = json.optInt("sleepScore", 0);
+        if (sleepScore > 0) {
+            value.append("Pontuação do sono ").append(sleepScore).append("\n");
+        }
+
+        long steps = json.optLong("steps", 0);
+        if (steps > 0) {
+            value.append("Passos ").append(String.format("%,d", steps)).append("\n");
+        }
+
+        long activity = json.optLong("activeMinutes", 0);
+        if (activity > 0) {
+            value.append("Atividade ").append(activity).append(" min\n");
+        }
+
+        long calories = json.optLong("caloriesBurned", 0);
+        if (calories > 0) {
+            value.append("Calorias ativas ").append(calories).append(" kcal\n");
+        }
+
+        double distance = json.optDouble("distanceMeters", 0);
+        if (distance > 0) {
+            value.append("Distância ")
+                    .append(String.format("%.2f km", distance / 1000d));
+        }
+
+        summaryView.setText(
+                value.length() == 0
+                        ? "Sem dados disponíveis para hoje."
+                        : value.toString().trim()
+        );
     }
 
     private LinearLayout card(int accent) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(16), dp(18), dp(16));
+
         GradientDrawable background = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.argb(60, Color.red(accent), Color.green(accent), Color.blue(accent)),
-                        Color.rgb(13, 34, 55)}
+                new int[]{
+                        Color.argb(
+                                60,
+                                Color.red(accent),
+                                Color.green(accent),
+                                Color.blue(accent)
+                        ),
+                        Color.rgb(13, 34, 55)
+                }
         );
         background.setCornerRadius(dp(24));
-        background.setStroke(dp(1), Color.argb(110, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        background.setStroke(
+                dp(1),
+                Color.argb(
+                        110,
+                        Color.red(accent),
+                        Color.green(accent),
+                        Color.blue(accent)
+                )
+        );
         card.setBackground(background);
         return card;
     }
