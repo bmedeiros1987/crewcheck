@@ -4661,19 +4661,98 @@ export default function Home() {
   }, [events, event.id, event.presentation, event.gate, event.status]);
 
   useEffect(() => {
-    // A escala ativa pertence à conta, não ao cache deste dispositivo.
-    if (Array.isArray(bundle.roster.days) && bundle.roster.days.length) return;
+    // P0 roster continuity: a escala ativa pertence à conta, não ao cache do aparelho.
+    // Uma reinstalação limpa o cache local, mas após o login a escala ativa do servidor
+    // deve repovoar o dispositivo sem pedir o PDF outra vez.
     let alive = true;
-    openActiveRoster().then((active) => {
-      if (!alive || !active?.roster?.days?.length) return;
-      const compliance = active.compliance || analyzeSafe(active.roster);
-      saveRoster(active.roster, 'Escala ativa sincronizada');
-      setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
-    }).catch((error: any) => {
+    let syncing = false;
+    let queued = false;
+
+    type ActiveRosterSyncReason = 'mount' | 'focus' | 'visible' | 'interval' | 'online' | 'native-ready' | 'retry';
+
+    const reconcileActiveRoster = async (reason: ActiveRosterSyncReason) => {
       if (!alive) return;
-      if (Number(error?.status) === 409) toast.error('Há um conflito de escala ativa. Atualize a sessão antes de importar novamente.');
-    });
-    return () => { alive = false; };
+      if (syncing) {
+        queued = true;
+        return;
+      }
+      syncing = true;
+      try {
+        const active = await openActiveRoster();
+        if (!alive || !active?.roster?.days?.length) return;
+
+        const serverRevision = rosterFingerprint(active.roster);
+        let changed = false;
+        let localRevision: string | null = null;
+
+        setBundle((current) => {
+          const hasLocalRoster = Array.isArray(current.roster.days) && current.roster.days.length > 0;
+          localRevision = hasLocalRoster ? rosterFingerprint(current.roster) : null;
+          if (localRevision === serverRevision) return current;
+
+          const nextCompliance = active.compliance || analyzeSafe(active.roster);
+          saveRoster(active.roster, 'Escala ativa sincronizada');
+          changed = true;
+          return { roster: active.roster, compliance: nextCompliance, source: 'Escala ativa sincronizada' };
+        });
+
+        console.info('[crewcheck:active-roster-sync]', {
+          reason,
+          changed,
+          localRevision,
+          serverRevision,
+          source: 'database-primary',
+        });
+        window.dispatchEvent(new CustomEvent('crewcheck:active-roster-synced', {
+          detail: { reason, changed, serverRevision },
+        }));
+      } catch (error: any) {
+        if (!alive) return;
+        if (Number(error?.status) === 409) {
+          console.error('[crewcheck:active-roster-sync]', { reason, status: 'conflict' });
+        } else {
+          // Fail-safe: indisponibilidade do servidor nunca apaga nem rebaixa a cópia local.
+          console.warn('[crewcheck:active-roster-sync]', { reason, status: 'retryable-unavailable' });
+        }
+      } finally {
+        syncing = false;
+        if (alive && queued) {
+          queued = false;
+          window.setTimeout(() => { void reconcileActiveRoster('retry'); }, 250);
+        }
+      }
+    };
+
+    // Reinstalação/login recente e cold start podem chegar à Home enquanto sessão,
+    // cookies ou backend ainda estão estabilizando. Repetições curtas fecham essa janela
+    // sem exigir qualquer ação do usuário.
+    void reconcileActiveRoster('mount');
+    const retryTimers = [1500, 5000, 15000].map((delay) =>
+      window.setTimeout(() => { void reconcileActiveRoster('retry'); }, delay)
+    );
+
+    const onFocus = () => { void reconcileActiveRoster('focus'); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void reconcileActiveRoster('visible');
+    };
+    const onOnline = () => { void reconcileActiveRoster('online'); };
+    const onNativeReady = () => { void reconcileActiveRoster('native-ready'); };
+    const intervalId = window.setInterval(() => { void reconcileActiveRoster('interval'); }, 60_000);
+
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('crewcheck:native-ready', onNativeReady);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      alive = false;
+      retryTimers.forEach((timer) => window.clearTimeout(timer));
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('crewcheck:native-ready', onNativeReady);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   useEffect(() => {
