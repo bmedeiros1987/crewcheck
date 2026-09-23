@@ -117,3 +117,23 @@
 .theme-mobile .program-card-copy h2,.theme-mobile .program-overview-head h1,.theme-mobile .program-detail-title h1,.theme-mobile .program-route-heading strong,.theme-mobile .flight-leg-main h3,.theme-mobile .program-key-facts strong,.theme-mobile .detail-module dd{color:#0b2034}
 .theme-mobile .stay-exclusive-card{background:linear-gradient(145deg,#f7f2ff,#eef6ff);color:#17213c}.theme-mobile .stay-exclusive-card h2{color:#17213c}
 .theme-mobile .display-pref-grid>button{background:#fff!important;color:#0b2034!important;border-color:#d2e0e9!important}
+
+.uber-handoff-compact{min-height:9.5vh;margin-top:.8vh;padding:.65vw .8vw;border-radius:.7vw}
+.uber-handoff-compact .uber-handoff-copy>p{margin:0;font-size:.52vw}
+.uber-handoff-compact .uber-handoff-copy h3{font-size:.92vw;margin:.2vh 0}
+.uber-handoff-compact .uber-handoff-copy>span{font-size:.58vw}
+.uber-handoff-compact .uber-handoff-copy>small{font-size:.5vw;margin-top:.35vh}
+.uber-handoff-compact .uber-handoff-qr{flex-basis:6.8vw;margin-left:.6vw}
+.uber-handoff-compact .uber-handoff-qr img{width:5.2vw;height:5.2vw}
+.uber-handoff-compact .uber-handoff-qr b{font-size:.48vw}
+
+.display-preset-row{display:flex!important;flex-wrap:wrap!important;margin:.65vh -.25vw .45vh!important}
+.display-preset-row button{margin:.25vw!important;padding:.5vw .75vw!important;border:1px solid #3a5069!important;border-radius:.6vw!important;background:rgba(9,29,49,.72)!important;color:#dceaf6!important;font-size:.62vw!important;font-weight:850!important}
+.display-preset-row button:focus{outline:3px solid #fff!important;outline-offset:2px!important}
+.theme-mobile .display-preset-row button{background:#fff!important;color:#0b2034!important;border-color:#d4e0e8!important}
+
+.program-leg-strip{display:flex;flex-wrap:wrap;margin:.45vh -.2vw .15vh}
+.program-leg-strip>span{display:flex;flex-direction:column;min-width:8.5vw;margin:.2vw;padding:.38vw .48vw;border:1px solid #2e435c;border-radius:.48vw;background:rgba(5,20,38,.48)}
+.program-leg-strip small{font-size:.5vw;color:#7590a9}.program-leg-strip b{font-size:.64vw;color:#eaf5ff;margin:.12vh 0}.program-leg-strip em{font-size:.52vw;color:#8ea5bb;font-style:normal}
+.program-leg-more{align-items:center;justify-content:center;min-width:4vw!important}.program-leg-more b{font-size:1vw!important;color:#9cdff0!important}.program-leg-more small{font-size:.45vw!important;text-transform:uppercase}
+.theme-mobile .program-leg-strip>span{background:#f5f9fc;border-color:#d5e2eb}.theme-mobile .program-leg-strip b{color:#0b2034}

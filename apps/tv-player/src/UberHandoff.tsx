@@ -16,7 +16,7 @@ function safeUberLink(value:unknown):string{
   }catch{return '';}
 }
 
-export function UberHandoff({mobility}:{mobility:TvMobilityHandoff|null|undefined}){
+export function UberHandoff({mobility,compact=false}:{mobility:TvMobilityHandoff|null|undefined;compact?:boolean}){
   const link=useMemo(()=>mobility?.provider==='uber'?safeUberLink(mobility.deepLink):'',[mobility]);
   const [qr,setQr]=useState('');
   useEffect(()=>{
@@ -26,8 +26,8 @@ export function UberHandoff({mobility}:{mobility:TvMobilityHandoff|null|undefine
     return()=>{active=false;};
   },[link]);
   if(!link)return null;
-  return <article className="uber-handoff">
-    <div className="uber-handoff-copy"><p><Car/> UBER NO CELULAR</p><h3>Seu transporte continua no telefone.</h3>
+  return <article className={'uber-handoff'+(compact?' uber-handoff-compact':'')}>
+    <div className="uber-handoff-copy"><p><Car/> UBER NO CELULAR</p><h3>{compact?'Continuar no telefone':'Seu transporte continua no telefone.'}</h3>
       <span>{mobility?.pickupLabel||'Local de embarque no Uber'} → {mobility?.destinationLabel||'destino sugerido'}</span>
       <small><ShieldCheck/>A TV não confirma nem compra a corrida. Escaneie e finalize no aplicativo/site da Uber.</small>
     </div>
