@@ -214,15 +214,24 @@ ${anchor}`);
 
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', (source) => {
   if (source.includes('healthBridge.refreshFromHost()')) return source;
-  const anchor = '    @Override\n    protected void onDestroy() {';
-  if (!source.includes(anchor)) throw new Error('[v14318] onDestroy Android não encontrado.');
-  return source.replace(anchor, `    @Override
+
+  const resumeAnchor = '    @Override\n    protected void onResume() {\n        super.onResume();';
+  if (source.includes(resumeAnchor)) {
+    return source.replace(
+      resumeAnchor,
+      resumeAnchor + '\n        if (healthBridge != null && webView != null) webView.postDelayed(() -> healthBridge.refreshFromHost(), 450);'
+    );
+  }
+
+  const destroyAnchor = '    @Override\n    protected void onDestroy() {';
+  if (!source.includes(destroyAnchor)) throw new Error('[v14318] onDestroy Android não encontrado.');
+  return source.replace(destroyAnchor, `    @Override
     protected void onResume() {
         super.onResume();
         if (healthBridge != null && webView != null) webView.postDelayed(() -> healthBridge.refreshFromHost(), 450);
     }
 
-${anchor}`);
+${destroyAnchor}`);
 }, { optional: true });
 
 update('client/src/pages/VisitorAccessPage.tsx', (source) => {

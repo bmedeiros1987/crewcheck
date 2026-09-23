@@ -487,14 +487,16 @@ public final class MainActivity extends FragmentActivity
             return;
         }
 
-        TextView score = text(
-                life.recoveryScore > 0 ? life.recoveryScore + "%" : life.recoveryLabel,
-                34, SUCCESS, true, Gravity.CENTER
-        );
+        String primaryScore = life.recoveryScore > 0
+                ? (life.isEnergyScore() ? life.recoveryScore + "/100" : life.recoveryScore + "%")
+                : life.recoveryLabel;
+        TextView score = text(primaryScore, 34, SUCCESS, true, Gravity.CENTER);
         content.addView(score);
 
-        TextView label = text("Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT),
-                10, WHITE, true, Gravity.CENTER);
+        String scoreCaption = life.isEnergyScore()
+                ? "Energy Score · Samsung Health"
+                : "Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT);
+        TextView label = text(scoreCaption, 10, WHITE, true, Gravity.CENTER);
         label.setPadding(0, dp(1), 0, dp(6));
         content.addView(label);
 

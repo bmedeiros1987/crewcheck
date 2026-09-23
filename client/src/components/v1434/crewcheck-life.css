@@ -344,3 +344,39 @@ html[data-crew-theme="light"] .cc-manual-center {
   .cc-life-shell *,
   .cc-manual-center * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+
+.cc-life-auto-source {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--life-green) 55%, transparent);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--life-green) 22%, transparent), transparent 42%),
+    linear-gradient(135deg, var(--life-card-strong), var(--life-card));
+  box-shadow: 0 16px 38px rgba(2, 12, 27, .18);
+}
+.cc-life-auto-source div { display: grid; gap: 3px; }
+.cc-life-auto-source small {
+  color: var(--life-green);
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .11em;
+}
+.cc-life-auto-source strong { color: var(--life-ink); font-size: 1.25rem; }
+.cc-life-auto-source span { color: var(--life-muted); font-size: .84rem; }
+.cc-life-auto-source > b {
+  padding: 9px 12px;
+  border-radius: 999px;
+  color: var(--life-green);
+  background: color-mix(in srgb, var(--life-green) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--life-green) 40%, transparent);
+}
+@media (max-width: 680px) {
+  .cc-life-auto-source { grid-template-columns: 1fr auto; }
+  .cc-life-auto-source button { grid-column: 1 / -1; width: 100%; }
+}

@@ -15,7 +15,7 @@ update('android-wrapper/app/src/main/AndroidManifest.xml', s => s
   .replace(/\s*<activity\s+android:name="\.HealthPermissionsRationaleActivity"[\s\S]*?<\/activity>/g, '')
   .replace(/\s*<activity-alias\s+android:name="\.ViewHealthPermissionUsageActivity"[\s\S]*?<\/activity-alias>/g, ''));
 
-// Keep the canonical source patch chain intact while making its terminal output manual-only.
+// Keep the main Play app Health-Connect-free while preserving optional Samsung Companion summaries.
 update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   s = s.replace(/\n    return undefined; \/\* Play: Health Connect integration removed\. \*\//g, '')
     .replace(/\n    return false; \/\* No health permission requests or reads\. \*\//g, '')
@@ -24,11 +24,11 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   s = s.replace('() => readStored(KEYS.nativeSummary, {})', '() => ({})');
   s = s.replace('function postAndroid(action: string, payload: Record<string, unknown> = {}): boolean {', 'function postAndroid(action: string, payload: Record<string, unknown> = {}): boolean {\n    return false; /* No health permission requests or reads. */');
   s = s.replace("const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;", "return; /* Ignore legacy health events, including cached hosted clients. */\n      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;");
-  s = s.replace(/    <div className="cc-life-sync-strip"[^\n]+/, '    <div className="cc-life-sync-strip"><div><strong>CrewLife opcional · registros manuais</strong><small>Seus registros ficam neste aparelho. Nenhuma conexão com contas de saúde.</small></div></div>');
-  s = s.replace(/        <article className=\{nativeStatus\.allGranted[^]*?        <\/article>/, '        <article><Smartphone/><div><h3>Registros sob seu controle</h3><p>Informe seus dados manualmente, somente se quiser. Esta versão não acessa Health Connect ou Samsung Health.</p></div></article>');
-  s = s.replace('Sono, passos, distância, atividade física, tendência resumida de frequência em repouso e sua próxima programação.', 'Sono, passos e atividade que você registrar manualmente, além da sua próxima programação.');
-  s = s.replace('Li e entendi que o recurso é opcional e que permissões de saúde serão pedidas separadamente.', 'Li e entendi que o recurso é opcional, usa registros manuais e não pede permissões de saúde.');
-  s = s.replace('Envia somente sono, passos/atividade e FC em repouso agregados quando disponíveis.', 'Envia somente os registros manuais de sono, passos e atividade que você informar.');
+  s = s.replace(/    <div className="cc-life-sync-strip"[^\n]+/, '    <div className="cc-life-sync-strip"><div><strong>CrewLife opcional · Samsung automático via Companion ou manual</strong><small>Seus registros ficam neste aparelho. Nenhuma conexão com contas de saúde.</small></div></div>');
+  s = s.replace(/        <article className=\{nativeStatus\.allGranted[^]*?        <\/article>/, '        <article><Smartphone/><div><h3>Registros sob seu controle</h3><p>O CrewCheck principal não acessa Health Connect. Samsung Health automático é lido somente pelo CrewLife Companion separado; a entrada manual continua disponível.</p></div></article>');
+  s = s.replace('Sono, passos, distância, atividade física, tendência resumida de frequência em repouso e sua próxima programação.', 'Sono, passos e atividade do Companion Samsung quando autorizado, ou registros manuais, além da sua próxima programação.');
+  s = s.replace('Li e entendi que o recurso é opcional e que permissões de saúde serão pedidas separadamente.', 'Li e entendi que o recurso é opcional; o CrewCheck principal não pede permissões de saúde e a sincronização Samsung, quando usada, ocorre pelo Companion separado.');
+  s = s.replace('Envia somente sono, passos/atividade e FC em repouso agregados quando disponíveis.', 'Envia somente o resumo automático do Companion Samsung ou os registros manuais que você informar.');
   s = s.replace('if (!consent.active || !watchMirrorEnabled || !nativeSummary.ok) return;', 'if (!consent.active || !watchMirrorEnabled) return;');
   const start = s.indexOf('    if (Number.isFinite(Number(nativeSummary.sleepMinutes))) {');
   const end = s.indexOf('    try { bridge.publishWatchCrewLife', start);
@@ -46,29 +46,42 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   s = s.replace('[consent.active, nativeSummary, watchMirrorEnabled]', '[consent.active, manual, watchMirrorEnabled]');
   return s;
 });
-update('client/src/lib/lifeConcierge.ts', s => s
-  .replace('shareGymCheckins: true,', 'shareGymCheckins: false,')
-  .replace(/export function ingestHealthSummary\(value: unknown\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
+update('client/src/lib/lifeConcierge.ts', source => {
+  // Samsung Companion source union + local snapshot survive the terminal Play policy.
+  let s = source
+    .replace("source: 'health-connect' | 'manual';", "source: 'health-connect' | 'samsung-companion' | 'manual';")
+    .replace('shareGymCheckins: true,', 'shareGymCheckins: false,')
+    .replace(/export function ingestHealthSummary\(value: unknown\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
   return null; // Health Connect imports are disabled; manual records remain available.
 }`)
-  .replace(/function currentSnapshot\(\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `function currentSnapshot(): LifeHealthSnapshot | null {
+    .replace(/function currentSnapshot\(\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `function currentSnapshot(): LifeHealthSnapshot | null {
+  const companion = parseHealthSnapshot(readJson<any>(KEYS.companionSummary, null), 'samsung-companion');
+  if (companion) return companion;
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
   if (!Array.isArray(history)) return null;
   for (const item of history) {
-    if (item.source !== 'manual') continue;
-    const parsed = parseHealthSnapshot(item, 'manual');
+    if (item.source !== 'manual' && item.source !== 'samsung-companion') continue;
+    const parsed = parseHealthSnapshot(item, item.source);
     if (parsed) return parsed;
   }
   return null;
-}`));
+}`);
+  if (!s.includes("companionSummary: 'crewcheck:life:companion-summary:v1'")) {
+    s = s.replace(
+      "  nativeSummary: 'crewcheck:life:health-summary:v1',",
+      "  nativeSummary: 'crewcheck:life:health-summary:v1',\n  companionSummary: 'crewcheck:life:companion-summary:v1',"
+    );
+  }
+  return s;
+});
 update('client/src/components/v14314/RoutineDailyConcierge.tsx', s => s
   .replace(/  async function connectHealth\(\) \{[^]*?\n  \}/, `  function openManualLife() {
     window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'life' }));
   }`)
   .replace('<button onClick={connectHealth}><HeartPulse/><span><strong>Health Connect</strong><small>Samsung Health e Galaxy Watch</small></span><Check/></button>', '<button onClick={openManualLife}><HeartPulse/><span><strong>CrewLife opcional</strong><small>Registros manuais neste aparelho</small></span><Navigation/></button>'));
-console.log('[android-play] Separate version codes, API 36 and manual-only CrewLife applied.');
+console.log('[android-play] Separate version codes, API 36 and Health-Connect-free CrewLife applied.');
 
-update('client/public/manual.html', s => s.replace('O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.', 'O CrewLife usa registros manuais e opcionais neste aparelho. Não acessa Health Connect ou Samsung Health. O envio de resumos ao relógio exige uma escolha separada do usuário.'));
+update('client/public/manual.html', s => s.replace('O Health Connect pode trazer resumos autorizados. Samsung Health e Galaxy Watch chegam ao CrewCheck por essa sincronização oficial.', 'O CrewCheck principal não acessa Health Connect. Quando o usuário instala e autoriza o CrewLife Companion Samsung, o Companion lê no Samsung Health apenas os resumos escolhidos e os entrega localmente ao CrewCheck. A entrada manual continua disponível.'));
 
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', s => s.includes('retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult)') ? s : s
   .replace('CrewLifeWatchPublisher.revoke(MainActivity.this, null);', 'CrewLifeWatchPublisher.revoke(MainActivity.this, MainActivity.this::dispatchCrewCheckWatchSyncResult);')
@@ -81,7 +94,7 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
   .replace('        super.onResume();', `        super.onResume();
         CrewLifeWatchPublisher.retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult);`));
 update('client/src/components/v1434/CrewCheckLifeView.tsx', s => s.includes('Play store: confirm deletion') ? s : s
-  .replace("      toast.success(enabled\n        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'\n        : 'CrewLife removido do relógio.');", `      if (enabled) toast.success('CrewLife no relógio ativado. Somente resumos manuais serão enviados.');
+  .replace("      toast.success(enabled\n        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'\n        : 'CrewLife removido do relógio.');", `      if (enabled) toast.success('CrewLife no relógio ativado. Resumos do Companion Samsung ou registros manuais poderão ser enviados.');
       else toast.info('Envio interrompido. Aguardando confirmação da remoção no relógio.');`)
   .replace('  function setWatchMirror(enabled: boolean) {', `  // Play store: confirm deletion only after both Wear data channels acknowledge it.
   useEffect(() => {
@@ -96,4 +109,4 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => s.includes('Pla
 
   function setWatchMirror(enabled: boolean) {`));
 update('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java', s => s
-  .replace('TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);\n            sync.setOnClickListener(view -> requestSync());', 'TextView sync = text("Abra CrewLife no celular para atualizar os registros manuais.", 9, MUTED, false, Gravity.CENTER);'));
+  .replace('TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);\n            sync.setOnClickListener(view -> requestSync());', 'TextView sync = text("Abra CrewLife no celular para atualizar o resumo do Companion ou seus registros manuais.", 9, MUTED, false, Gravity.CENTER);'));

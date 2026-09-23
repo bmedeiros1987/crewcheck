@@ -72,6 +72,9 @@ public class MainActivity extends Activity {
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
+    private static final String LIFE_COMPANION_PACKAGE = "com.crewcheck.life";
+    private static final String ACTION_LIFE_COMPANION_REFRESH = "com.crewcheck.life.REFRESH_SUMMARY";
+    private static final long LIFE_COMPANION_REFRESH_SETTLE_MS = 1800L;
 
     private FrameLayout rootLayout;
     private WebView webView;
@@ -171,6 +174,7 @@ public class MainActivity extends Activity {
                 if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
+                syncLifeCompanionToCrewCheckAndWatch("page-finished");
                 view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
             }
 
@@ -225,6 +229,19 @@ public class MainActivity extends Activity {
     }
 
 
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        syncLifeCompanionToCrewCheckAndWatch("resume-cached");
+        requestLifeCompanionRefresh();
+        if (webView != null) {
+            webView.postDelayed(
+                    () -> syncLifeCompanionToCrewCheckAndWatch("resume-refreshed"),
+                    LIFE_COMPANION_REFRESH_SETTLE_MS
+            );
+        }
+    }
 
     private void requestInitialCrewCheckPermissions() {
         try {
@@ -722,11 +739,16 @@ public class MainActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (intent == null || !ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
+                syncLifeCompanionToCrewCheckAndWatch("watch-data-layer-request");
+                requestLifeCompanionRefresh();
                 requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request");
                 if (webView != null) {
                     webView.postDelayed(
-                            () -> requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request-retry"),
-                            650L
+                            () -> {
+                                syncLifeCompanionToCrewCheckAndWatch("watch-data-layer-request-refreshed");
+                                requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request-retry");
+                            },
+                            LIFE_COMPANION_REFRESH_SETTLE_MS
                     );
                 }
             }
@@ -772,6 +794,109 @@ public class MainActivity extends Activity {
                 try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
             });
         } catch (Exception ignored) {}
+    }
+
+    private String readLifeCompanionSummaryInternal() {
+        android.database.Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
+            if (cursor == null || !cursor.moveToFirst()) return "";
+            int column = cursor.getColumnIndex("json");
+            return column >= 0 ? String.valueOf(cursor.getString(column)) : "";
+        } catch (SecurityException denied) {
+            return "";
+        } catch (Exception error) {
+            return "";
+        } finally {
+            try { if (cursor != null) cursor.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void requestLifeCompanionRefresh() {
+        try {
+            Intent refresh = new Intent(ACTION_LIFE_COMPANION_REFRESH);
+            refresh.setPackage(LIFE_COMPANION_PACKAGE);
+            sendBroadcast(refresh);
+        } catch (Exception ignored) {}
+    }
+
+    private void syncLifeCompanionToCrewCheckAndWatch(String reason) {
+        final String threadName = "crewlife-companion-sync";
+        new Thread(() -> {
+            try {
+                String raw = readLifeCompanionSummaryInternal();
+                dispatchLifeCompanionSummaryRaw(raw);
+                publishLifeCompanionSummaryToWatch(raw);
+            } catch (Exception ignored) {}
+        }, threadName).start();
+    }
+
+    private void publishLifeCompanionSummaryToWatch(String raw) {
+        try {
+            if (raw == null || raw.isBlank()) return;
+            WatchHealthConsent consent = WatchHealthConsent.read(this);
+            if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) return;
+
+            JSONObject source = new JSONObject(raw);
+            if (!source.optBoolean("automatic", false)) return;
+
+            long generatedAt = source.optLong("generatedAtEpochMs", 0L);
+            if (generatedAt <= 0L) return;
+
+            JSONObject payload = new JSONObject();
+            payload.put("schemaVersion", 1);
+            payload.put("generatedAtEpochMs", generatedAt);
+            payload.put("validUntilEpochMs", generatedAt + 6L * 60L * 60L * 1000L);
+            payload.put("recoveryLabel", "DESCONHECIDA");
+
+            int energyScore = source.optInt("energyScore", 0);
+            if (energyScore > 0 && energyScore <= 100) {
+                payload.put("recoveryScore", energyScore);
+                payload.put("scoreKind", "ENERGY");
+            }
+
+            int sleepMinutes = source.optInt("sleepMinutes", 0);
+            if (sleepMinutes > 0 && sleepMinutes <= 24 * 60) {
+                payload.put("sleepMinutes", sleepMinutes);
+                payload.put(
+                        "sleepLabel",
+                        (sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", sleepMinutes % 60)
+                );
+            }
+
+            int steps = source.optInt("steps", 0);
+            if (steps >= 0 && steps <= 200_000) payload.put("steps", steps);
+
+            int activeMinutes = source.optInt("activeMinutes", 0);
+            if (activeMinutes >= 0 && activeMinutes <= 24 * 60) {
+                payload.put("activeMinutes", activeMinutes);
+            }
+
+            CrewLifeWatchPublisher.publishCrewLife(
+                    this,
+                    payload.toString(),
+                    this::dispatchCrewCheckWatchSyncResult
+            );
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchLifeCompanionSummaryRaw(String raw) {
+        try {
+            if (webView == null) return;
+            String safe = raw == null || raw.isBlank() ? "{}" : raw;
+            final String js = "(function(){try{var detail=" + safe + ";" +
+                    "window.__crewcheckLifeCompanionSummary=detail;" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:life-companion-summary',{detail:detail}));" +
+                    "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchLifeCompanionSummary() {
+        dispatchLifeCompanionSummaryRaw(readLifeCompanionSummaryInternal());
     }
 
     public class CrewCheckNativeBridge {
@@ -834,6 +959,55 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String lifeCompanionStatus() {
+            JSONObject status = new JSONObject();
+            try {
+                boolean installed;
+                try {
+                    getPackageManager().getPackageInfo("com.crewcheck.life", 0);
+                    installed = true;
+                } catch (PackageManager.NameNotFoundException missing) {
+                    installed = false;
+                }
+                status.put("installed", installed);
+                status.put("source", "samsung_health_companion");
+                if (!installed) {
+                    status.put("state", "not_installed");
+                    return status.toString();
+                }
+                String summary = readLifeCompanionSummaryInternal();
+                status.put("state", summary == null || summary.isBlank() ? "needs_setup" : "connected");
+                if (summary != null && !summary.isBlank()) {
+                    JSONObject parsed = new JSONObject(summary);
+                    status.put("generatedAtEpochMs", parsed.optLong("generatedAtEpochMs", 0L));
+                    status.put("automatic", parsed.optBoolean("automatic", false));
+                }
+            } catch (Exception error) {
+                try { status.put("state", "unavailable"); } catch (Exception ignored) {}
+            }
+            return status.toString();
+        }
+
+        @JavascriptInterface
+        public String readLifeCompanionSummary() {
+            String summary = readLifeCompanionSummaryInternal();
+            return summary == null || summary.isBlank() ? "{}" : summary;
+        }
+
+        @JavascriptInterface
+        public boolean openLifeCompanion() {
+            try {
+                Intent launch = getPackageManager().getLaunchIntentForPackage("com.crewcheck.life");
+                if (launch == null) return false;
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(launch);
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
         public String watchLifeStatus() {
             try {
                 WatchHealthConsent consent = WatchHealthConsent.read(MainActivity.this);
@@ -866,6 +1040,7 @@ public class MainActivity extends Activity {
                         WatchHealthConsent.CONSENT_VERSION,
                         categories
                 );
+                syncLifeCompanionToCrewCheckAndWatch("watch-consent-granted");
                 return true;
             } catch (Exception error) {
                 return false;
