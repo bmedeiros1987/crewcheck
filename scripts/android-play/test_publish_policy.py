@@ -11,6 +11,8 @@ assert "'releaseNotes':" in source
 assert "url + ':commit'" in source
 assert "changesNotSentForReview" in source
 assert "params={'changesNotSentForReview': 'true'}" in source
+assert "Changes cannot be sent for review automatically" in source
+assert "except RuntimeError as error" in source
 assert "Independent CI failed; Play publication blocked" in source
 assert "time.time() + 12 * 60" in source
 
