@@ -9,8 +9,9 @@ const DEFAULT_CHECK_INTERVAL_MS = 15 * 60_000;
 /**
  * Coordinates PWA updates without forcing reloads or interrupting active use.
  * A waiting worker is activated only when the document is hidden or the user
- * has been idle for the configured period. The browser controls when the new
- * worker takes over; this module never calls window.location.reload().
+ * has been idle for the configured period. After the new worker takes control,
+ * the page reloads once at a safe boundary so an open CrewCheck does not remain
+ * pinned to the previous shell indefinitely.
  */
 export function installPwaUpdateCoordinator(options: CoordinatorOptions = {}): () => void {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return () => undefined;
@@ -21,9 +22,33 @@ export function installPwaUpdateCoordinator(options: CoordinatorOptions = {}): (
   let stopped = false;
   let intervalId: number | undefined;
   let registration: ServiceWorkerRegistration | null = null;
+  let reloadPending = false;
+  let reloadStarted = false;
+  const hadControllerAtStart = Boolean(navigator.serviceWorker.controller);
 
   const markActivity = () => { lastActivityAt = Date.now(); };
   const isSafeToActivate = () => document.visibilityState === 'hidden' || Date.now() - lastActivityAt >= idleMs;
+
+  const controllerReloadKey = () => {
+    const script = navigator.serviceWorker.controller?.scriptURL || 'unknown-controller';
+    return `crewcheck-sw-reloaded:${script}`;
+  };
+
+  const reloadForActivatedUpdate = () => {
+    if (!reloadPending || reloadStarted || !isSafeToActivate()) return;
+    try {
+      const key = controllerReloadKey();
+      if (window.sessionStorage.getItem(key) === '1') {
+        reloadPending = false;
+        return;
+      }
+      window.sessionStorage.setItem(key, '1');
+    } catch {
+      // sessionStorage failure must not block a safe update.
+    }
+    reloadStarted = true;
+    window.location.reload();
+  };
 
   const activateWaitingWorker = () => {
     if (!registration?.waiting || !isSafeToActivate()) return;
@@ -53,18 +78,33 @@ export function installPwaUpdateCoordinator(options: CoordinatorOptions = {}): (
     }
   };
 
-  const onVisibilityChange = () => activateWaitingWorker();
+  const onVisibilityChange = () => {
+    activateWaitingWorker();
+    reloadForActivatedUpdate();
+  };
+  const onControllerChange = () => {
+    // Ignore the very first controller acquired by a fresh install. A controller
+    // replacement means a newer CrewCheck shell actually became active.
+    if (!hadControllerAtStart) return;
+    reloadPending = true;
+    reloadForActivatedUpdate();
+  };
   const activityEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
   activityEvents.forEach((event) => window.addEventListener(event, markActivity, { passive: true }));
   document.addEventListener('visibilitychange', onVisibilityChange);
+  navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
 
   navigator.serviceWorker.ready.then(inspectRegistration).catch(() => undefined);
-  intervalId = window.setInterval(checkForUpdate, checkIntervalMs);
+  intervalId = window.setInterval(() => {
+    void checkForUpdate();
+    reloadForActivatedUpdate();
+  }, checkIntervalMs);
 
   return () => {
     stopped = true;
     if (intervalId !== undefined) window.clearInterval(intervalId);
     activityEvents.forEach((event) => window.removeEventListener(event, markActivity));
     document.removeEventListener('visibilitychange', onVisibilityChange);
+    navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
   };
 }
