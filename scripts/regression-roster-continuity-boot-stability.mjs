@@ -36,6 +36,7 @@ assert.match(pwa, /controllerchange/, 'cliente deve detectar worker novo já ati
 assert.match(pwa, /reloadForActivatedUpdate/, 'atualização ativada deve chegar à página aberta');
 assert.match(pwa, /isSafeToActivate\(\)/, 'reload deve respeitar fronteira segura');
 assert.match(pwa, /window\.location\.reload\(\)/, 'cliente seguro deve aplicar a nova UI automaticamente');
-assert.match(pwa, /sessionStorage\.setItem/, 'reload automático deve ter proteção contra loop');
+assert.match(pwa, /RELOAD_GUARD_MS = 30_000/, 'reload automático deve ter trava temporal curta contra loop');
+assert.match(pwa, /controllerSeen = true/, 'fresh install deve ignorar só a primeira aquisição do controller');
 
 console.log('[roster-continuity-boot-stability] PASS — banco canônico, autosync, autocura Android e update seguro protegidos.');
