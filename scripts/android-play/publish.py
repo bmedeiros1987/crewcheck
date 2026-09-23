@@ -11,6 +11,7 @@ from google.oauth2 import service_account
 import requests
 from credential import load_service_account_secret
 from play_error import safe_play_error
+from review_policy import commit_without_sending_for_review
 
 def main():
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
@@ -127,10 +128,9 @@ def main():
                         }],
                     },
                 )
-            api('POST', url + ':validate')
-            api('POST', url + ':commit', params={'changesNotSentForReview': 'true'})
+            commit_without_sending_for_review(api, url)
             committed = True
-            print(f'{package}: verified bundles RELEASED TO INTERNAL TESTING. Production untouched.')
+            print(f'{package}: verified bundles COMMITTED TO INTERNAL TESTING, pending explicit Play review submission. Production untouched.')
         finally:
             if not committed:
                 session.delete(url, timeout=30)
