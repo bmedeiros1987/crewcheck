@@ -4628,6 +4628,9 @@ export default function Home() {
   const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const bundleRef = useRef(bundle);
+  const [rosterRestorePending, setRosterRestorePending] = useState(
+    () => !(Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0),
+  );
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
@@ -4685,6 +4688,7 @@ export default function Home() {
       try {
         const active = await openActiveRoster();
         if (!alive || !active?.roster?.days?.length) return;
+        setRosterRestorePending(false);
 
         const serverRevision = rosterFingerprint(active.roster);
         const current = bundleRef.current;
@@ -4734,6 +4738,9 @@ export default function Home() {
     const retryTimers = [1500, 5000, 15000].map((delay) =>
       window.setTimeout(() => { void reconcileActiveRoster('retry'); }, delay)
     );
+    const restoreDeadlineTimer = window.setTimeout(() => {
+      if (alive) setRosterRestorePending(false);
+    }, 18_000);
 
     const onFocus = () => { void reconcileActiveRoster('focus'); };
     const onVisibility = () => {
@@ -4751,6 +4758,7 @@ export default function Home() {
     return () => {
       alive = false;
       retryTimers.forEach((timer) => window.clearTimeout(timer));
+      window.clearTimeout(restoreDeadlineTimer);
       window.clearInterval(intervalId);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
@@ -4863,7 +4871,7 @@ export default function Home() {
     </div>
     <div className="cz-global-header-spacer" aria-hidden="true"/>
     <CrewCheckPulse/>
-    {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
+    {(busy || rosterRestorePending) && <div className="cz-busy"><Plane/><strong>{busy ? 'Interpretando escala...' : 'Restaurando sua escala...'}</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
     {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
