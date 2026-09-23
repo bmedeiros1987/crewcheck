@@ -32,9 +32,13 @@ final class WatchConciergeStore {
         try {
             return Snapshot.fromJson(raw);
         } catch (Exception error) {
-            prefs.edit().remove(KEY_RESPONSE).apply();
+            clear();
             return null;
         }
+    }
+
+    void clear() {
+        prefs.edit().remove(KEY_RESPONSE).apply();
     }
 
     static final class Snapshot {
