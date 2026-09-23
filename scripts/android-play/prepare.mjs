@@ -47,16 +47,21 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   return s;
 });
 update('client/src/lib/lifeConcierge.ts', s => s
+  // Samsung Companion source union + local snapshot survive the terminal Play policy.
+  .replace("source: 'health-connect' | 'manual';", "source: 'health-connect' | 'samsung-companion' | 'manual';")
+  .replace("  nativeSummary: 'crewcheck:life:health-summary:v1',", "  nativeSummary: 'crewcheck:life:health-summary:v1',\n  companionSummary: 'crewcheck:life:companion-summary:v1',")
   .replace('shareGymCheckins: true,', 'shareGymCheckins: false,')
   .replace(/export function ingestHealthSummary\(value: unknown\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
   return null; // Health Connect imports are disabled; manual records remain available.
 }`)
   .replace(/function currentSnapshot\(\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `function currentSnapshot(): LifeHealthSnapshot | null {
+  const companion = parseHealthSnapshot(readJson<any>(KEYS.companionSummary, null), 'samsung-companion');
+  if (companion) return companion;
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
   if (!Array.isArray(history)) return null;
   for (const item of history) {
-    if (item.source !== 'manual') continue;
-    const parsed = parseHealthSnapshot(item, 'manual');
+    if (item.source !== 'manual' && item.source !== 'samsung-companion') continue;
+    const parsed = parseHealthSnapshot(item, item.source);
     if (parsed) return parsed;
   }
   return null;
@@ -81,7 +86,7 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
   .replace('        super.onResume();', `        super.onResume();
         CrewLifeWatchPublisher.retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult);`));
 update('client/src/components/v1434/CrewCheckLifeView.tsx', s => s.includes('Play store: confirm deletion') ? s : s
-  .replace("      toast.success(enabled\n        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'\n        : 'CrewLife removido do relógio.');", `      if (enabled) toast.success('CrewLife no relógio ativado. Somente resumos manuais serão enviados.');
+  .replace("      toast.success(enabled\n        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'\n        : 'CrewLife removido do relógio.');", `      if (enabled) toast.success('CrewLife no relógio ativado. Resumos do Companion Samsung ou registros manuais poderão ser enviados.');
       else toast.info('Envio interrompido. Aguardando confirmação da remoção no relógio.');`)
   .replace('  function setWatchMirror(enabled: boolean) {', `  // Play store: confirm deletion only after both Wear data channels acknowledge it.
   useEffect(() => {
@@ -96,4 +101,4 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => s.includes('Pla
 
   function setWatchMirror(enabled: boolean) {`));
 update('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java', s => s
-  .replace('TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);\n            sync.setOnClickListener(view -> requestSync());', 'TextView sync = text("Abra CrewLife no celular para atualizar os registros manuais.", 9, MUTED, false, Gravity.CENTER);'));
+  .replace('TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);\n            sync.setOnClickListener(view -> requestSync());', 'TextView sync = text("Abra CrewLife no celular para atualizar o resumo do Companion ou seus registros manuais.", 9, MUTED, false, Gravity.CENTER);'));
