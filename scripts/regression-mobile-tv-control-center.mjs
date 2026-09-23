@@ -8,7 +8,7 @@ for(const route of ['/api/tv/devices','/api/tv/preferences','/api/tv/context','/
   assert.ok(component.includes(route),route);
 
 assert.match(component,/audience:'owner'/);
-assert.match(component,/value==='visitor'/);
+assert.match(component,/\['owner','family','visitor'\]/);
 assert.match(component,/Visitante: linguagem simples/);
 assert.match(component,/current\.audience!=='owner'/);
 assert.match(component,/\['hotel','crew','finance','mobility','traffic'\]/);
