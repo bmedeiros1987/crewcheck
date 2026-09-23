@@ -16,6 +16,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
@@ -51,8 +53,10 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_NOTIFICATIONS = 2;
     private static final int MODE_SCHEDULE = 3;
     private static final int MODE_CREWLIFE = 4;
-    private static final int PAGE_COUNT = 5;
+    private static final int MODE_CONCIERGE = 5;
+    private static final int PAGE_COUNT = 6;
     private static final int REQUEST_NOTIFICATIONS = 4102;
+    private static final int REQUEST_CONCIERGE_SPEECH = 4103;
     public static final String ACTION_SNAPSHOT_UPDATED = "com.crewcheck.watch.SNAPSHOT_UPDATED";
     private static final long AUTO_SYNC_INTERVAL_MS = 2 * 60_000L;
 
@@ -96,6 +100,10 @@ public final class MainActivity extends FragmentActivity
 
     private SecureSnapshotStore store;
     private WellbeingStore wellbeingStore;
+    private WatchConciergeStore conciergeStore;
+    private TextToSpeech conciergeTts;
+    private boolean conciergeTtsReady;
+    private String lastConciergeStatus = "Pronto para ajudar";
     private LinearLayout content;
     private TextView clockView;
     private TextView transientStatus;
@@ -114,6 +122,13 @@ public final class MainActivity extends FragmentActivity
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         store = new SecureSnapshotStore(this);
         wellbeingStore = new WellbeingStore(this);
+        conciergeStore = new WatchConciergeStore(this);
+        conciergeTts = new TextToSpeech(this, status -> {
+            conciergeTtsReady = status == TextToSpeech.SUCCESS;
+            if (conciergeTtsReady && conciergeTts != null) {
+                conciergeTts.setLanguage(new Locale("pt", "BR"));
+            }
+        });
         AmbientModeSupport.attach(this);
         applyIntentScreen(getIntent());
         renderRoot();
@@ -150,6 +165,13 @@ public final class MainActivity extends FragmentActivity
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
         unregisterSnapshotUpdateReceiver();
+        if (conciergeTts != null) {
+            try {
+                conciergeTts.stop();
+                conciergeTts.shutdown();
+            } catch (Exception ignored) {}
+            conciergeTts = null;
+        }
         super.onDestroy();
     }
 
@@ -185,6 +207,7 @@ public final class MainActivity extends FragmentActivity
         else if ("notifications".equals(requested)) screenMode = MODE_NOTIFICATIONS;
         else if ("schedule".equals(requested)) screenMode = MODE_SCHEDULE;
         else if ("crewlife".equals(requested)) screenMode = MODE_CREWLIFE;
+        else if ("concierge".equals(requested)) screenMode = MODE_CONCIERGE;
     }
 
     private void restartClock() {
@@ -317,6 +340,7 @@ public final class MainActivity extends FragmentActivity
             case MODE_NOTIFICATIONS -> renderNotifications(snapshot, now);
             case MODE_SCHEDULE -> renderSchedule(snapshot, now);
             case MODE_CREWLIFE -> renderCrewLife(now);
+            case MODE_CONCIERGE -> renderConcierge(now);
             default -> {
                 if (snapshot == null) renderEmptyState();
                 else renderLiveState(snapshot, now);
@@ -522,6 +546,10 @@ public final class MainActivity extends FragmentActivity
         }
 
         addProgramStrip(snapshot);
+
+        TextView concierge = actionChip("✦ Concierge", MAGENTA, false);
+        concierge.setOnClickListener(view -> transitionToPage(MODE_CONCIERGE, 1));
+        content.addView(concierge);
 
         TextView cta = heroAction(actionLabel(snapshot), accent);
         cta.setOnClickListener(view -> {
@@ -787,6 +815,174 @@ public final class MainActivity extends FragmentActivity
         content.addView(privacy);
     }
 
+    private void renderConcierge(long now) {
+        TextView overline = text("CONCIERGE · NO PULSO", 8, MAGENTA, true, Gravity.CENTER);
+        overline.setLetterSpacing(.10f);
+        overline.setPadding(0, dp(2), 0, dp(4));
+        content.addView(overline);
+
+        LinearLayout hero = premiumCard(MAGENTA);
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        hero.setPadding(dp(12), dp(11), dp(12), dp(11));
+        hero.addView(text("Como posso ajudar?", 20, WHITE, true, Gravity.CENTER));
+
+        TextView detail = text(
+                "Atalhos rápidos ou fale naturalmente. O celular encaminha ao mesmo Concierge do CrewCheck.",
+                9, MUTED, false, Gravity.CENTER
+        );
+        detail.setMaxLines(4);
+        detail.setPadding(0, dp(4), 0, 0);
+        hero.addView(detail);
+        content.addView(hero, cardParams());
+
+        LinearLayout rowOne = navRow();
+        addConciergeQuickAction(rowOne, "⏰ Despertar", "WAKEUP");
+        addConciergeQuickAction(rowOne, "🚐 Transfer", "TRANSFER");
+        content.addView(rowOne);
+
+        LinearLayout rowTwo = navRow();
+        addConciergeQuickAction(rowTwo, "⌂ Quarto", "ROOM");
+        addConciergeQuickAction(rowTwo, "✈ Aeroporto", "AIRPORT");
+        content.addView(rowTwo);
+
+        LinearLayout rowThree = navRow();
+        addConciergeQuickAction(rowThree, "☕ Alimentação", "FOOD");
+        content.addView(rowThree);
+
+        TextView voice = heroAction("🎙 Falar com Concierge", VIOLET);
+        voice.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            startVoiceConcierge();
+        });
+        content.addView(voice);
+
+        WatchConciergeStore.Snapshot latest = conciergeStore == null ? null : conciergeStore.load();
+        if (latest != null && latest.isFresh(now)) {
+            LinearLayout response = premiumCard(latest.ok ? CYAN : WARNING);
+            response.setGravity(Gravity.CENTER_HORIZONTAL);
+
+            TextView label = text(
+                    latest.ok ? "RESPOSTA DO CONCIERGE" : "CONCIERGE",
+                    8,
+                    latest.ok ? CYAN : WARNING,
+                    true,
+                    Gravity.CENTER
+            );
+            label.setLetterSpacing(.08f);
+            response.addView(label);
+
+            TextView reply = text(
+                    latest.reply.isBlank() ? latest.status : latest.reply,
+                    11,
+                    WHITE,
+                    true,
+                    Gravity.CENTER
+            );
+            reply.setMaxLines(6);
+            reply.setPadding(0, dp(4), 0, 0);
+            response.addView(reply);
+            content.addView(response, cardParams());
+
+            if (latest.ok && !latest.reply.isBlank()) {
+                TextView listen = actionChip("🔊 Ouvir resposta", VIOLET, false);
+                listen.setOnClickListener(view -> speakLatestConcierge());
+                content.addView(listen);
+            }
+        } else {
+            TextView empty = text(
+                    "As respostas recentes aparecem aqui automaticamente.",
+                    9, MUTED, false, Gravity.CENTER
+            );
+            empty.setPadding(dp(5), dp(7), dp(5), 0);
+            content.addView(empty);
+        }
+
+        TextView status = text(lastConciergeStatus, 8,
+                lastConciergeStatus.toLowerCase(Locale.ROOT).contains("não") ? WARNING : MUTED,
+                false, Gravity.CENTER);
+        status.setPadding(0, dp(6), 0, 0);
+        content.addView(status);
+
+        TextView privacy = text(
+                "Privacidade: o relógio envia apenas sua ação ou fala transcrita. Credenciais e dados brutos de saúde não entram no pedido.",
+                7, MUTED, false, Gravity.CENTER
+        );
+        privacy.setMaxLines(4);
+        privacy.setPadding(dp(3), dp(5), dp(3), 0);
+        content.addView(privacy);
+    }
+
+    private void addConciergeQuickAction(LinearLayout row, String label, String action) {
+        TextView chip = actionChip(label, MAGENTA, false);
+        chip.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            sendConciergeAction(action, "");
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        params.setMargins(dp(2), dp(2), dp(2), 0);
+        row.addView(chip, params);
+    }
+
+    private void sendConciergeAction(String action, String text) {
+        lastConciergeStatus = "Enviando ao celular…";
+        renderSnapshot();
+        WatchConciergeClient.send(this, action, text, (sent, requestId, status) ->
+                runOnUiThread(() -> {
+                    lastConciergeStatus = status == null || status.isBlank()
+                            ? (sent ? "Enviado · aguardando Concierge" : "Não foi possível enviar")
+                            : status;
+                    renderSnapshot();
+                })
+        );
+    }
+
+    private void startVoiceConcierge() {
+        try {
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            );
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR");
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Fale com o Concierge");
+            if (intent.resolveActivity(getPackageManager()) == null) {
+                lastConciergeStatus = "Reconhecimento de voz não disponível";
+                renderSnapshot();
+                return;
+            }
+            startActivityForResult(intent, REQUEST_CONCIERGE_SPEECH);
+        } catch (Exception error) {
+            lastConciergeStatus = "Não foi possível abrir o microfone";
+            renderSnapshot();
+        }
+    }
+
+    private void speakLatestConcierge() {
+        WatchConciergeStore.Snapshot latest = conciergeStore == null ? null : conciergeStore.load();
+        if (latest == null || latest.reply.isBlank()) {
+            lastConciergeStatus = "Nenhuma resposta para ouvir";
+            renderSnapshot();
+            return;
+        }
+        if (!conciergeTtsReady || conciergeTts == null) {
+            lastConciergeStatus = "Voz de resposta ainda não está pronta";
+            renderSnapshot();
+            return;
+        }
+        conciergeTts.speak(
+                latest.reply,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "crewcheck-concierge-reply"
+        );
+        lastConciergeStatus = "Reproduzindo resposta";
+        renderSnapshot();
+    }
+
     private void renderSchedule(WatchContextSnapshot snapshot, long now) {
         TextView title = text("MINHA ESCALA", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.09f);
@@ -937,6 +1133,7 @@ public final class MainActivity extends FragmentActivity
             case MODE_NOTIFICATIONS -> "ALERTAS";
             case MODE_SCHEDULE -> "ESCALA";
             case MODE_CREWLIFE -> "CREWLIFE";
+            case MODE_CONCIERGE -> "CONCIERGE";
             default -> "AGORA";
         };
     }
@@ -947,6 +1144,7 @@ public final class MainActivity extends FragmentActivity
             case MODE_NOTIFICATIONS -> MAGENTA;
             case MODE_SCHEDULE -> CYAN;
             case MODE_CREWLIFE -> SUCCESS;
+            case MODE_CONCIERGE -> MAGENTA;
             default -> BLUE;
         };
     }
@@ -1326,6 +1524,32 @@ public final class MainActivity extends FragmentActivity
         if ("LEAVE_SOON".equals(snapshot.state)) count++;
         if ("BOARDING".equals(snapshot.state) || !snapshot.gateLabel().isBlank()) count++;
         return Math.min(count, 9);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_CONCIERGE_SPEECH
+                || resultCode != android.app.Activity.RESULT_OK
+                || data == null) {
+            return;
+        }
+
+        ArrayList<String> results =
+                data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+        if (results == null || results.isEmpty()) {
+            lastConciergeStatus = "Não consegui entender a fala";
+            renderSnapshot();
+            return;
+        }
+
+        String spoken = results.get(0) == null ? "" : results.get(0).trim();
+        if (spoken.isBlank()) {
+            lastConciergeStatus = "Fala vazia";
+            renderSnapshot();
+            return;
+        }
+        sendConciergeAction("VOICE", spoken);
     }
 
     private void requestSync() {
