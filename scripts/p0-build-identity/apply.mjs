@@ -83,7 +83,4 @@ await import('../p0-android-self-heal/apply.mjs');
 await import('../p1-565-roster-regulation-context/apply.mjs');
 await import('../p1-566-flightdeck-radar-briefing-context/apply.mjs');
 await import('../p1-566-stay-wakeup-concierge-context/apply.mjs');
-// This runs after legacy v14.3.68 and after the native self-heal transform so a
-// store build cannot regress the durable share inbox back to volatile Base64.
-await import('../p0-shared-pdf-durable/apply.mjs');
-console.log('[p0-build-identity] rodapé dinâmico, fast logout, self-heal, navegação contextual e inbox durável de PDF reafirmados no estado materializado final.');
+console.log('[p0-build-identity] rodapé dinâmico, fast logout, self-heal e navegação contextual reafirmados; transforms finais de transporte ficam sob o orquestrador canônico.');
