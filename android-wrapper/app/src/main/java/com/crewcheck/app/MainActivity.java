@@ -92,6 +92,7 @@ public class MainActivity extends Activity {
     private String lastIFlightUrl = IFLIGHT_CREW_MAIN_URL;
     private String pendingSharedPdfBase64;
     private String pendingSharedPdfName;
+    private String pendingSharedPdfId;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
@@ -155,6 +156,7 @@ public class MainActivity extends Activity {
         billingBridge = new CrewCheckBillingBridge(this, webView);
         webView.addJavascriptInterface(billingBridge, "AndroidCrewCheckBilling");
         registerWatchSyncRequestReceiver();
+        restorePendingSharedPdfFromInbox();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -919,6 +921,18 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean acknowledgeSharedPdf(final String shareId) {
+            synchronized (MainActivity.this) {
+                boolean acknowledged = SharedPdfInbox.acknowledge(MainActivity.this, shareId);
+                if (!acknowledged) return false;
+                pendingSharedPdfBase64 = null;
+                pendingSharedPdfName = null;
+                pendingSharedPdfId = null;
+                return true;
+            }
+        }
+
+        @JavascriptInterface
         public boolean requestLocation() {
             runOnUiThread(() -> requestCrewCheckLocationPermission());
             return true;
@@ -1668,6 +1682,9 @@ public class MainActivity extends Activity {
             if (Intent.ACTION_SEND.equals(action)) {
                 Object stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
                 if (stream instanceof Uri) uri = (Uri) stream;
+                if (uri == null && intent.getClipData() != null && intent.getClipData().getItemCount() > 0) {
+                    uri = intent.getClipData().getItemAt(0).getUri();
+                }
             } else if (Intent.ACTION_VIEW.equals(action)) {
                 uri = intent.getData();
             }
@@ -1679,28 +1696,27 @@ public class MainActivity extends Activity {
     }
 
     private void readIncomingPdfUri(Uri uri) throws Exception {
-        String filename = "iFlight_RosterReport.pdf";
-        String last = uri.getLastPathSegment();
-        if (last != null && last.toLowerCase(Locale.US).contains("pdf")) filename = last.substring(Math.max(0, last.lastIndexOf('/') + 1));
-        InputStream input = getContentResolver().openInputStream(uri);
-        if (input == null) throw new Exception("PDF sem conteúdo.");
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int total = 0;
-        int read;
-        while ((read = input.read(buffer)) != -1) {
-            total += read;
-            if (total > MAX_PDF_BYTES) throw new Exception("PDF maior que 35 MB.");
-            output.write(buffer, 0, read);
-        }
-        input.close();
-        byte[] bytes = output.toByteArray();
-        if (bytes.length < 4 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F') {
-            throw new Exception("Arquivo recebido não parece ser PDF.");
-        }
-        pendingSharedPdfName = filename;
-        pendingSharedPdfBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+        SharedPdfInbox.PendingPdf pending = SharedPdfInbox.capture(this, uri, MAX_PDF_BYTES);
+        pendingSharedPdfId = pending.id;
+        pendingSharedPdfName = pending.fileName;
+        pendingSharedPdfBase64 = null;
+        Toast.makeText(this, "PDF recebido. Processando a escala automaticamente...", Toast.LENGTH_LONG).show();
         dispatchPendingSharedPdf();
+    }
+
+    private void restorePendingSharedPdfFromInbox() {
+        try {
+            SharedPdfInbox.PendingPdf pending = SharedPdfInbox.peek(this);
+            if (pending == null) {
+                pendingSharedPdfId = null;
+                pendingSharedPdfName = null;
+                pendingSharedPdfBase64 = null;
+                return;
+            }
+            pendingSharedPdfId = pending.id;
+            pendingSharedPdfName = pending.fileName;
+            pendingSharedPdfBase64 = null;
+        } catch (Exception ignored) {}
     }
 
     private void returnPdfBase64FromPortal(final String filename, final String dataBase64) {
@@ -1762,19 +1778,26 @@ public class MainActivity extends Activity {
     }
 
     private void dispatchPendingSharedPdf() {
-        if (webView == null || pendingSharedPdfBase64 == null) return;
+        if (webView == null) return;
         try {
+            SharedPdfInbox.PendingPdf pending = SharedPdfInbox.peek(this);
+            if (pending == null) return;
+            pendingSharedPdfId = pending.id;
+            pendingSharedPdfName = pending.fileName;
+            byte[] bytes = SharedPdfInbox.readBytes(this, pending.id, MAX_PDF_BYTES);
+            pendingSharedPdfBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+
             JSONObject payload = new JSONObject();
             payload.put("ok", true);
-            payload.put("filename", pendingSharedPdfName == null ? "iFlight_RosterReport.pdf" : pendingSharedPdfName);
-            payload.put("sourceFileName", pendingSharedPdfName == null ? "iFlight_RosterReport.pdf" : pendingSharedPdfName);
+            payload.put("filename", pending.fileName);
+            payload.put("sourceFileName", pending.fileName);
+            payload.put("shareId", pending.id);
             payload.put("dataBase64", pendingSharedPdfBase64);
             String js = "(function(){var payload=" + payload.toString() + ";window.__crewcheckPendingNativePdf=payload;window.dispatchEvent(new CustomEvent('crewcheck:native-pdf',{detail:payload}));})();";
             webView.evaluateJavascript(js, null);
-            pendingSharedPdfBase64 = null;
-            pendingSharedPdfName = null;
-            Toast.makeText(this, "Dados recebidos pelo CrewCheck. Importando escala...", Toast.LENGTH_LONG).show();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+            // Keep the private inbox untouched. A later page load/resume can retry.
+        }
     }
 
     private void injectIFlightAutomation(WebView view) {
