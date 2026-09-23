@@ -155,6 +155,11 @@ export default function App() {
   const [bootSplashDone, setBootSplashDone] = useState(true);
 
   useEffect(() => {
+    try {
+      (window as any).__crewcheckBootReady = true;
+      document.documentElement.dataset.crewcheckBoot = 'ready';
+      window.dispatchEvent(new CustomEvent('crewcheck:boot-ready'));
+    } catch {}
     const splashTimer = window.setTimeout(() => setBootSplashDone(true), 80);
     const stopPwaCoordinator = installPwaUpdateCoordinator();
     const applySavedTheme = () => applyCrewThemeMode(loadCrewThemeMode());
