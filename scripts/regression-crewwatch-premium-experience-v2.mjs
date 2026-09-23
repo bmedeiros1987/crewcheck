@@ -7,6 +7,10 @@ const life = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewLi
 const text = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/ComplicationText.java');
 const backdrop = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/PremiumBackdropView.java');
 const face = read('android-wrapper/watchface/src/main/res/raw/watchface.xml');
+const complicationBase = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/BaseComplicationService.java');
+const nextStep = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/NextStepComplicationService.java');
+const gate = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/GateComplicationService.java');
+const crewLifeProvider = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewLifeComplicationService.java');
 
 assert.match(main, /MODE_JOURNEY = 1/);
 assert.match(main, /PAGE_COUNT = 5/);
@@ -27,6 +31,11 @@ assert.match(life, /return "LOCAL"/);
 assert.match(life, /!"DESCONHECIDA"\.equals\(recoveryLabel\)/);
 assert.match(text, /CrewLife opcional · abra no celular/);
 assert.doesNotMatch(text, /Ative a sincronização de saúde no celular/);
+
+assert.match(complicationBase, /putExtra\("crewcheck_screen", tapScreen\(\)\)/);
+assert.match(nextStep, /return "journey"/);
+assert.match(gate, /return "journey"/);
+assert.match(crewLifeProvider, /return "crewlife"/);
 
 const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
 assert.ok(slots >= 5, 'watch face deve manter pelo menos cinco glances/complicações');
