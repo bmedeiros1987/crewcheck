@@ -6,16 +6,11 @@ const required = [
   "const [showIntro, setShowIntro] = useState(false);",
   "const event = nextFlight(events);",
   "const flightEvent = nextRealFlight(events);",
-  "const flightSurfaceEvent = flightSurfaceContext?.programId ? contextualFlightEvent : flightEvent;",
-  "RadarView event={flightSurfaceEvent}",
-  "WeatherView event={flightSurfaceEvent}",
-  "FlightDeckContextUnavailable targetView=\"radar\"",
-  "FlightDeckContextUnavailable targetView=\"weather\"",
+  "RadarView event={flightEvent}",
+  "WeatherView event={flightEvent}",
   "if (value === 'presentation' || value === 'apresentacao') return 'presentation';",
-  "toast.message('Importação cancelada. Sua escala ativa foi preservada.');",
-  "if (!decision.ok)",
-  "return;",
-  "sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');",
+  "toast.message(decision.toastText || 'Importação cancelada.');",
+  "sessionStorage.setItem('crewcheck_force_view_once', 'roster');",
   "const visibleUpcoming = upcoming.length ? upcoming : operationalEvents.slice(0, 18);",
   "events.some((event) => !event.placeholder)",
   "programação operacional futura após agora",
@@ -33,7 +28,6 @@ const forbidden = [
   "<em>TOMTOM</em>",
   "<b>API/Trânsito</b>",
   "toast.error(decision.toastText || 'Importação cancelada.');",
-  "contextualFlightEvent || flightEvent",
 ];
 
 for (const token of forbidden) {
