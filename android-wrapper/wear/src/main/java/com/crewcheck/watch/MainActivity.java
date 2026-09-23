@@ -763,7 +763,9 @@ public final class MainActivity extends FragmentActivity
         hero.addView(headline);
 
         TextView label = text(
-                hasRecovery ? "Resumo de recuperação" : "Seu resumo no pulso",
+                life.isEnergyScore()
+                        ? "Energy Score · Samsung Health"
+                        : hasRecovery ? "Resumo de recuperação" : "Seu resumo no pulso",
                 10, WHITE, true, Gravity.CENTER
         );
         label.setPadding(0, dp(2), 0, 0);
@@ -1621,7 +1623,10 @@ public final class MainActivity extends FragmentActivity
             items.add(new NotificationItem(
                     "CrewLife opcional",
                     life.recoveryScore > 0
-                            ? "Recuperação " + life.recoveryScore + "% · " + firstNonBlank(life.recommendation, life.recoveryLabel)
+                            ? (life.isEnergyScore()
+                                ? "Energia " + life.recoveryScore + "/100 · "
+                                : "Recuperação " + life.recoveryScore + "% · ")
+                                + firstNonBlank(life.recommendation, life.recoveryLabel)
                             : life.recoveryLabel,
                     "bem-estar", SUCCESS
             ));
@@ -1813,7 +1818,11 @@ public final class MainActivity extends FragmentActivity
     }
 
     private static String crewLifeHero(CrewLifeSnapshot life) {
-        if (life.recoveryScore > 0) return life.recoveryScore + "%";
+        if (life.recoveryScore > 0) {
+            return life.isEnergyScore()
+                    ? life.recoveryScore + "/100"
+                    : life.recoveryScore + "%";
+        }
         if (!life.recoveryLabel.isBlank() && !"DESCONHECIDA".equals(life.recoveryLabel)) {
             String label = life.recoveryLabel.toLowerCase(Locale.ROOT);
             return label.substring(0, 1).toUpperCase(Locale.ROOT) + label.substring(1);
