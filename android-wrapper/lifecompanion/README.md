@@ -43,6 +43,29 @@ Sem o AAR, a build de desenvolvimento continua funcionando em modo scaffold e in
 
 ## Teste no Galaxy
 
+
+### Helper local
+
+Para evitar copiar o AAR manualmente, use o helper:
+
+```bash
+bash scripts/crewlife-samsung-local-test.sh "/caminho/para/samsung-health-data-sdk-1.1.0.zip"
+```
+
+Ele:
+- localiza `libs/samsung-health-data-api-*.aar` dentro do ZIP oficial;
+- extrai o AAR temporariamente para `android-wrapper/lifecompanion/libs/`;
+- executa `:lifecompanion:assembleDebug`;
+- mostra o caminho final do APK;
+- remove o AAR ao terminar, salvo se `CREWLIFE_KEEP_AAR=1`.
+
+Depois instale o APK mostrado pelo helper com:
+
+```bash
+adb install -r "/caminho/mostrado/para/lifecompanion-debug.apk"
+```
+
+
 O Samsung Health Data SDK v1.1.0 exige Android 10+ e Samsung Health 6.30.2 ou posterior.
 O SDK não suporta emulador; o teste da integração deve ser feito em aparelho físico compatível.
 
