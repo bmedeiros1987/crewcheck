@@ -214,8 +214,15 @@ ${anchor}`);
 
 update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', (source) => {
   if (source.includes('healthBridge.refreshFromHost()')) return source;
+  const resumeAnchor = '    @Override\n    protected void onResume() {\n        super.onResume();';
+  if (source.includes(resumeAnchor)) {
+    return source.replace(
+      resumeAnchor,
+      resumeAnchor + '\n        if (healthBridge != null && webView != null) webView.postDelayed(() -> healthBridge.refreshFromHost(), 450);',
+    );
+  }
   const anchor = '    @Override\n    protected void onDestroy() {';
-  if (!source.includes(anchor)) throw new Error('[v14318] onDestroy Android não encontrado.');
+  if (!source.includes(anchor)) throw new Error('[v14318] lifecycle Android não encontrado.');
   return source.replace(anchor, `    @Override
     protected void onResume() {
         super.onResume();
