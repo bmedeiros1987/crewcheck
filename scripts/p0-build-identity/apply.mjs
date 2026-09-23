@@ -81,4 +81,5 @@ await import('../p0-fast-logout/apply.mjs');
 await import('../p0-maps-route-tristate/apply-active-incident-first-alert.mjs');
 await import('../p0-android-self-heal/apply.mjs');
 await import('../p1-565-roster-regulation-context/apply.mjs');
-console.log('[p0-build-identity] rodapé de versão dinâmico, buildTimestamp, fast logout, alerta de rota, self-heal Android e navegação contextual #565 reafirmados no estado materializado final.');
+await import('../p1-566-flightdeck-radar-briefing-context/apply.mjs');
+console.log('[p0-build-identity] rodapé de versão dinâmico, buildTimestamp, fast logout, alerta de rota, self-heal Android e navegação contextual #565/#566 reafirmados no estado materializado final.');
