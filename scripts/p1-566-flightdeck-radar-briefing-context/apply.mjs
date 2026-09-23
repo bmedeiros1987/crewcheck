@@ -15,6 +15,15 @@ function required(source, before, after, label) {
   return source.replace(before, after);
 }
 
+function updateRegion(source, startMarker, endMarker, transform, label) {
+  const start = source.indexOf(startMarker);
+  const end = start >= 0 ? source.indexOf(endMarker, start + startMarker.length) : -1;
+  if (start < 0 || end < 0) throw new Error(`[${MARKER}] Região ausente: ${label}`);
+  const before = source.slice(start, end);
+  const after = transform(before);
+  return source.slice(0, start) + after + source.slice(end);
+}
+
 update('client/src/pages/Home.tsx', (source) => {
   let next = source;
 
@@ -36,18 +45,20 @@ update('client/src/pages/Home.tsx', (source) => {
     );
   }
 
-  if (!next.includes("function openFlightSurface(targetView: 'radar' | 'weather')")) {
-    const anchor = "  const isFlight = event.kind === 'flight';";
-    if (!next.includes(anchor)) throw new Error(`[${MARKER}] isFlight do FlightDeck não localizado.`);
-    next = next.replace(anchor, `${anchor}\n  function openFlightSurface(targetView: 'radar' | 'weather') {\n    setPendingNavigationContext({\n      sourceView: 'cockpit',\n      targetView,\n      dateEpochMs: eventStartDateTime(event).getTime(),\n      programId: event.id,\n      flightKey: String(event.flightNumber || '').trim() || undefined,\n      airportCode: String(event.origin || '').trim() || undefined,\n      returnView: 'cockpit',\n      returnLabel: 'Voltar ao FlightDeck',\n      policy: 'persistent-until-return',\n    });\n    setView(targetView);\n  }`);
-  }
-
-  next = required(
-    next,
-    "{isFlight ? <button onClick={() => setView('radar')}><Radar/> Radar</button> : null}",
-    "{isFlight ? <button onClick={() => openFlightSurface('radar')}><Radar/> Radar</button> : null}\n        {isFlight ? <button onClick={() => openFlightSurface('weather')}><CloudSun/> Meteorologia</button> : null}",
-    'ações contextuais do FlightDeck',
-  );
+  next = updateRegion(next, 'function Cockpit(', '\nfunction rosterCode', (cockpitSource) => {
+    let cockpit = cockpitSource;
+    if (!cockpit.includes("function openFlightSurface(targetView: 'radar' | 'weather')")) {
+      const anchor = "  const isFlight = event.kind === 'flight';";
+      if (!cockpit.includes(anchor)) throw new Error(`[${MARKER}] isFlight do FlightDeck não localizado.`);
+      cockpit = cockpit.replace(anchor, `${anchor}\n  function openFlightSurface(targetView: 'radar' | 'weather') {\n    setPendingNavigationContext({\n      sourceView: 'cockpit',\n      targetView,\n      dateEpochMs: eventStartDateTime(event).getTime(),\n      programId: event.id,\n      flightKey: String(event.flightNumber || '').trim() || undefined,\n      airportCode: String(event.origin || '').trim() || undefined,\n      returnView: 'cockpit',\n      returnLabel: 'Voltar ao FlightDeck',\n      policy: 'persistent-until-return',\n    });\n    setView(targetView);\n  }`);
+    }
+    return required(
+      cockpit,
+      "{isFlight ? <button onClick={() => setView('radar')}><Radar/> Radar</button> : null}",
+      "{isFlight ? <button onClick={() => openFlightSurface('radar')}><Radar/> Radar</button> : null}\n        {isFlight ? <button onClick={() => openFlightSurface('weather')}><CloudSun/> Meteorologia</button> : null}",
+      'ações contextuais do FlightDeck',
+    );
+  }, 'Cockpit/FlightDeck');
 
   if (!next.includes("const flightSurfaceContext = (view === 'radar' || view === 'weather')")) {
     const anchor = '  const flightEvent = nextRealFlight(events);';
@@ -76,32 +87,33 @@ update('client/src/pages/Home.tsx', (source) => {
     next = next.replace(weatherAnchor, weatherReplacement);
   }
 
-  next = required(
-    next,
-    'return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1>',
-    'return <><Brand back/><FlightDeckNavigationContext targetView="radar"/><section className="cz-panel-head"><h1>Radar de voos</h1>',
-    'faixa contextual do Radar',
-  );
+  next = updateRegion(next, 'function RadarView(', '\ntype WeatherDisplayMode', (radarSource) => {
+    let radar = radarSource;
+    if (!radar.includes('function openWeatherFromRadar()')) {
+      const anchor = "  const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';";
+      if (!radar.includes(anchor)) throw new Error(`[${MARKER}] latência do Radar não localizada.`);
+      radar = radar.replace(anchor, `${anchor}\n  function openWeatherFromRadar() {\n    const inheritedContext = peekPendingNavigationContext('radar');\n    if (inheritedContext?.sourceView === 'cockpit' && inheritedContext.returnView === 'cockpit' && inheritedContext.programId) {\n      setPendingNavigationContext({ ...inheritedContext, targetView: 'weather' });\n    } else {\n      clearPendingNavigationContext();\n    }\n    window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }));\n  }`);
+    }
+    radar = required(
+      radar,
+      "<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button>",
+      "<button onClick={openWeatherFromRadar}><CloudSun/> Meteorologia</button>",
+      'handoff Radar → Meteorologia',
+    );
+    return required(
+      radar,
+      'return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1>',
+      'return <><Brand back/><FlightDeckNavigationContext targetView="radar"/><section className="cz-panel-head"><h1>Radar de voos</h1>',
+      'faixa contextual do Radar',
+    );
+  }, 'RadarView');
 
-  next = required(
-    next,
+  next = updateRegion(next, 'function WeatherView(', '\nfunction moneyBRL', (weatherSource) => required(
+    weatherSource,
     'return <><Brand back/>\n    <section className="cz-panel-head cc-weather-heading">',
     'return <><Brand back/><FlightDeckNavigationContext targetView="weather"/>\n    <section className="cz-panel-head cc-weather-heading">',
     'faixa contextual da Meteorologia',
-  );
-
-  if (!next.includes('function openWeatherFromRadar()')) {
-    const anchor = "  const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';";
-    if (!next.includes(anchor)) throw new Error(`[${MARKER}] latência do Radar não localizada.`);
-    next = next.replace(anchor, `${anchor}\n  function openWeatherFromRadar() {\n    const inheritedContext = peekPendingNavigationContext('radar');\n    if (inheritedContext?.sourceView === 'cockpit' && inheritedContext.returnView === 'cockpit' && inheritedContext.programId) {\n      setPendingNavigationContext({ ...inheritedContext, targetView: 'weather' });\n    } else {\n      clearPendingNavigationContext();\n    }\n    window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }));\n  }`);
-  }
-
-  next = required(
-    next,
-    "<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button>",
-    "<button onClick={openWeatherFromRadar}><CloudSun/> Meteorologia</button>",
-    'handoff Radar → Meteorologia',
-  );
+  ), 'WeatherView');
 
   return next;
 });
