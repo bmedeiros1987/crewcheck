@@ -17,13 +17,26 @@ const autoSyncJob = read('android-wrapper/wear/src/main/java/com/crewcheck/watch
 const dataLayer = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewCheckDataLayerService.java');
 const phoneMain = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const home = read('client/src/pages/Home.tsx');
+const watchContract = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchContract.java');
+const watchConciergeClient = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchConciergeClient.java');
+const watchConciergeStore = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchConciergeStore.java');
+const conciergeProvider = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/ConciergeComplicationService.java');
+const phoneConcierge = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchConciergeBridge.java');
+const phoneSync = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java');
+const phoneManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
+const wearManifest = read('android-wrapper/wear/src/main/AndroidManifest.xml');
 
 assert.match(main, /MODE_JOURNEY = 1/);
-assert.match(main, /PAGE_COUNT = 5/);
+assert.match(main, /MODE_CONCIERGE = 5/);
+assert.match(main, /PAGE_COUNT = 6/);
 assert.match(main, /handleSwipeGesture/);
 assert.match(main, /SOURCE_ROTARY_ENCODER/);
 assert.match(main, /HapticFeedbackConstants\.CLOCK_TICK/);
 assert.match(main, /renderJourney\(/);
+assert.match(main, /renderConcierge\(/);
+assert.match(main, /Falar com Concierge/);
+assert.match(main, /RecognizerIntent\.ACTION_RECOGNIZE_SPEECH/);
+assert.match(main, /TextToSpeech\.QUEUE_FLUSH/);
 assert.match(main, /Sua jornada/);
 assert.match(main, /PRÓXIMOS PASSOS/);
 assert.match(main, /PremiumBackdropView/);
@@ -36,6 +49,7 @@ assert.doesNotMatch(main, /life\.recoveryScore > 0 \? life\.recoveryScore \+ "%"
 
 assert.match(backdrop, /drawArc/);
 assert.match(backdrop, /LinearGradient/);
+assert.match(backdrop, /RadialGradient/);
 
 assert.match(life, /return "LOCAL"/);
 assert.match(life, /!"DESCONHECIDA"\.equals\(recoveryLabel\)/);
@@ -50,11 +64,29 @@ assert.match(batteryProvider, /BatteryManager\.EXTRA_LEVEL/);
 assert.match(autoSyncScheduler, /15 \* 60_000L/);
 assert.match(autoSyncJob, /WatchSyncClient\.refresh/);
 assert.match(dataLayer, /ACTION_SNAPSHOT_UPDATED/);
+assert.match(watchContract, /CONCIERGE_REQUEST_PATH/);
+assert.match(watchContract, /CONCIERGE_RESPONSE_PATH/);
+assert.match(watchConciergeClient, /Wearable\.getMessageClient/);
+assert.match(watchConciergeClient, /CONCIERGE_REQUEST_PATH/);
+assert.match(watchConciergeStore, /response_json/);
+assert.match(dataLayer, /CONCIERGE_RESPONSE_PATH/);
+assert.match(conciergeProvider, /return "concierge"/);
+assert.match(phoneConcierge, /\/crewcheck\/watch\/concierge\/request\/v1/);
+assert.match(phoneConcierge, /publishResponse/);
+assert.match(phoneSync, /CrewCheckWatchConciergeBridge\.REQUEST_PATH/);
+assert.match(phoneMain, /ACTION_WATCH_CONCIERGE_REQUEST/);
+assert.match(phoneMain, /replyWatchConcierge/);
+assert.match(phoneManifest, /\/crewcheck\/watch\/concierge\/request\//);
+assert.match(wearManifest, /ConciergeComplicationService/);
+assert.match(home, /crewcheck:watch-concierge-action/);
+assert.match(home, /watchConciergePrompt/);
+assert.match(home, /replyWatchConcierge/);
 assert.match(phoneMain, /requestCrewCheckWatchSnapshotFromWeb\("phone-resume"\)/);
 assert.match(home, /document\.addEventListener\('visibilitychange', onVisible\)/);
 
 assert.match(face, /BatteryComplicationService/);
+assert.match(face, /ConciergeComplicationService/);
 const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
-assert.ok(slots >= 5, 'watch face deve manter pelo menos cinco glances/complicações');
+assert.ok(slots >= 6, 'watch face deve manter pelo menos seis glances/complicações');
 
 console.log('[crewwatch-premium-experience-v2] premium navigation + humane fallbacks OK');
