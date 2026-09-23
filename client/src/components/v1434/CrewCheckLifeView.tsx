@@ -289,6 +289,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     }
     if (effectiveSummary.source === 'samsung_health' && Number(effectiveSummary.energyScore) > 0) {
       payload.recoveryScore = Math.max(0, Math.min(100, Math.round(Number(effectiveSummary.energyScore))));
+      payload.scoreKind = 'ENERGY';
       payload.detail = 'Samsung Health · Energy Score';
     }
 
