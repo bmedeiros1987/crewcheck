@@ -27,6 +27,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.wear.ambient.AmbientModeSupport;
 
@@ -993,11 +994,12 @@ public final class MainActivity extends FragmentActivity
             }
         };
         IntentFilter filter = new IntentFilter(ACTION_SNAPSHOT_UPDATED);
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(snapshotUpdatedReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(snapshotUpdatedReceiver, filter);
-        }
+        ContextCompat.registerReceiver(
+                this,
+                snapshotUpdatedReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+        );
     }
 
     private void unregisterSnapshotUpdateReceiver() {
