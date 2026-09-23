@@ -232,7 +232,8 @@ public class MainActivity extends Activity {
         });
 
         handleIncomingPdfIntent(getIntent());
-        webView.loadUrl(CREWCHECK_APP_URL);
+        // Mantém a âncora canônica para o patch do shell empacotado substituir por loadCrewCheckEntryPoint().
+        webView.loadUrl("https://crewcheck.online?app=1");
         ensureCrewCheckNotificationChannel();
         dispatchCrewCheckPermissionStatus();
         webView.postDelayed(() -> dispatchCrewCheckPermissionStatus(), 900);
