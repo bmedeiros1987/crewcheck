@@ -1,13 +1,17 @@
 package com.crewcheck.watch;
 
 import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -48,6 +52,8 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_CREWLIFE = 4;
     private static final int PAGE_COUNT = 5;
     private static final int REQUEST_NOTIFICATIONS = 4102;
+    public static final String ACTION_SNAPSHOT_UPDATED = "com.crewcheck.watch.SNAPSHOT_UPDATED";
+    private static final long AUTO_SYNC_INTERVAL_MS = 2 * 60_000L;
 
     private static final int NAVY = Color.rgb(3, 10, 22);
     private static final int BLACK = Color.BLACK;
@@ -79,6 +85,14 @@ public final class MainActivity extends FragmentActivity
         }
     };
 
+    private final Runnable autoSyncTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!ambient) requestAutomaticSync();
+            handler.postDelayed(this, AUTO_SYNC_INTERVAL_MS);
+        }
+    };
+
     private SecureSnapshotStore store;
     private WellbeingStore wellbeingStore;
     private LinearLayout content;
@@ -89,6 +103,9 @@ public final class MainActivity extends FragmentActivity
     private float touchDownX;
     private float touchDownY;
     private long lastRotaryNavigationAt;
+    private boolean autoSyncInFlight;
+    private String lastSyncStatus = "Sincronização automática ativa";
+    private BroadcastReceiver snapshotUpdatedReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -99,6 +116,8 @@ public final class MainActivity extends FragmentActivity
         AmbientModeSupport.attach(this);
         applyIntentScreen(getIntent());
         renderRoot();
+        registerSnapshotUpdateReceiver();
+        WatchAutoSyncScheduler.schedule(this);
         handler.postDelayed(this::requestNotificationPermissionIfNeeded, 850L);
     }
 
@@ -114,18 +133,22 @@ public final class MainActivity extends FragmentActivity
     protected void onResume() {
         super.onResume();
         restartClock();
+        handler.removeCallbacks(autoSyncTick);
+        handler.postDelayed(autoSyncTick, 350L);
         renderSnapshot();
     }
 
     @Override
     protected void onPause() {
         handler.removeCallbacks(clockTick);
+        handler.removeCallbacks(autoSyncTick);
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        unregisterSnapshotUpdateReceiver();
         super.onDestroy();
     }
 
@@ -350,8 +373,12 @@ public final class MainActivity extends FragmentActivity
             });
         }
 
+        TextView battery = text(batteryLabel(), 8, batteryAccent(), true, Gravity.END);
+        battery.setContentDescription("Bateria do relógio " + batteryLabel());
+        row.addView(battery, new LinearLayout.LayoutParams(dp(46), dp(26)));
+
         clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
-        row.addView(clockView, new LinearLayout.LayoutParams(dp(52), dp(26)));
+        row.addView(clockView, new LinearLayout.LayoutParams(dp(46), dp(26)));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -492,6 +519,8 @@ public final class MainActivity extends FragmentActivity
             params.setMargins(0, dp(4), 0, dp(1));
             content.addView(stats, params);
         }
+
+        addProgramStrip(snapshot);
 
         TextView cta = heroAction(actionLabel(snapshot), accent);
         cta.setOnClickListener(view -> {
@@ -763,7 +792,10 @@ public final class MainActivity extends FragmentActivity
         title.setPadding(0, dp(3), 0, dp(2));
         content.addView(title);
 
-        TextView subtitle = text("Próximos passos", 15, WHITE, true, Gravity.CENTER);
+        String scheduleSummary = snapshot == null || snapshot.schedule.isEmpty()
+                ? "Próximos passos"
+                : "Hoje · " + snapshot.schedule.size() + (snapshot.schedule.size() == 1 ? " etapa" : " etapas");
+        TextView subtitle = text(scheduleSummary, 15, WHITE, true, Gravity.CENTER);
         subtitle.setPadding(0, 0, 0, dp(7));
         content.addView(subtitle);
 
@@ -910,8 +942,119 @@ public final class MainActivity extends FragmentActivity
         return chip;
     }
 
+    private void requestAutomaticSync() {
+        if (autoSyncInFlight) return;
+        autoSyncInFlight = true;
+        WatchSyncClient.refresh(this, (received, status) -> runOnUiThread(() -> {
+            autoSyncInFlight = false;
+            lastSyncStatus = status == null || status.isBlank()
+                    ? "Sincronização automática ativa"
+                    : status;
+            renderSnapshot();
+        }));
+    }
+
+    private void registerSnapshotUpdateReceiver() {
+        if (snapshotUpdatedReceiver != null) return;
+        snapshotUpdatedReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                lastSyncStatus = "Atualizado automaticamente";
+                renderSnapshot();
+            }
+        };
+        IntentFilter filter = new IntentFilter(ACTION_SNAPSHOT_UPDATED);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(snapshotUpdatedReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(snapshotUpdatedReceiver, filter);
+        }
+    }
+
+    private void unregisterSnapshotUpdateReceiver() {
+        if (snapshotUpdatedReceiver == null) return;
+        try { unregisterReceiver(snapshotUpdatedReceiver); } catch (Exception ignored) {}
+        snapshotUpdatedReceiver = null;
+    }
+
+    private String batteryLabel() {
+        BatteryInfo info = batteryInfo();
+        if (info.percent < 0) return "--";
+        return (info.charging ? "⚡" : "") + info.percent + "%";
+    }
+
+    private int batteryAccent() {
+        BatteryInfo info = batteryInfo();
+        if (info.charging) return SUCCESS;
+        if (info.percent >= 0 && info.percent <= 15) return MAGENTA;
+        if (info.percent >= 0 && info.percent <= 30) return WARNING;
+        return WHITE;
+    }
+
+    private BatteryInfo batteryInfo() {
+        try {
+            Intent status = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (status == null) return new BatteryInfo(-1, false);
+            int level = status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = status.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+            int state = status.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            int percent = level >= 0 && scale > 0 ? Math.round(level * 100f / scale) : -1;
+            boolean charging = state == BatteryManager.BATTERY_STATUS_CHARGING
+                    || state == BatteryManager.BATTERY_STATUS_FULL;
+            return new BatteryInfo(percent, charging);
+        } catch (Exception ignored) {
+            return new BatteryInfo(-1, false);
+        }
+    }
+
+    private void addProgramStrip(WatchContextSnapshot snapshot) {
+        if (snapshot == null || snapshot.schedule.isEmpty()) return;
+        WatchContextSnapshot.ScheduleItem item = snapshot.schedule.get(0);
+        int accent = "stay".equals(item.kind) ? MAGENTA
+                : "flight".equals(item.kind) ? CYAN : VIOLET;
+
+        LinearLayout card = premiumCard(accent);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(9), dp(7), dp(9), dp(7));
+
+        TextView count = text(String.valueOf(snapshot.schedule.size()), 16, accent, true, Gravity.CENTER);
+        card.addView(count, new LinearLayout.LayoutParams(dp(34), dp(38)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text(
+                "HOJE · " + snapshot.schedule.size()
+                        + (snapshot.schedule.size() == 1 ? " ETAPA" : " ETAPAS"),
+                7, MUTED, true, Gravity.START
+        );
+        title.setLetterSpacing(.07f);
+        copy.addView(title);
+        TextView detail = text(
+                join(" · ",
+                        item.title,
+                        item.route,
+                        item.presentation.isBlank() ? "" : "APZ " + item.presentation,
+                        item.gate),
+                9, WHITE, true, Gravity.START
+        );
+        detail.setMaxLines(2);
+        copy.addView(detail);
+        card.addView(copy, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ));
+
+        TextView arrow = text("›", 20, accent, true, Gravity.CENTER);
+        card.addView(arrow, new LinearLayout.LayoutParams(dp(22), dp(38)));
+
+        card.setOnClickListener(view -> transitionToPage(MODE_SCHEDULE, 1));
+        content.addView(card, cardParams());
+    }
+
     private void renderFooter() {
-        transientStatus = text("", 8, MUTED, false, Gravity.CENTER);
+        transientStatus = text(lastSyncStatus, 8,
+                lastSyncStatus.toLowerCase(Locale.ROOT).contains("offline") ? WARNING : MUTED,
+                false, Gravity.CENTER);
         transientStatus.setPadding(dp(4), dp(3), dp(4), 0);
         content.addView(transientStatus);
 
@@ -1335,6 +1478,16 @@ public final class MainActivity extends FragmentActivity
             result.append(value);
         }
         return result.toString();
+    }
+
+    private static final class BatteryInfo {
+        final int percent;
+        final boolean charging;
+
+        BatteryInfo(int percent, boolean charging) {
+            this.percent = percent;
+            this.charging = charging;
+        }
     }
 
     private static final class Primary {
