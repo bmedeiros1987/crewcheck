@@ -4673,14 +4673,39 @@ export default function Home() {
       }
     };
 
-    const fileFromNativePayload = (payload: any): File | null => {
-      const dataBase64 = String(payload?.dataBase64 || '').trim();
-      if (!dataBase64) return null;
+    const fileFromNativePayload = async (payload: any): Promise<File | null> => {
       const filenameRaw = String(payload?.filename || payload?.sourceFileName || 'CrewCheck-escala.pdf').trim() || 'CrewCheck-escala.pdf';
       const filename = filenameRaw.toLowerCase().endsWith('.pdf') ? filenameRaw : `${filenameRaw}.pdf`;
-      const binary = window.atob(dataBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const shareId = String(payload?.shareId || '').trim();
+      const dataBase64 = String(payload?.dataBase64 || '').trim();
+      let bytes: Uint8Array;
+
+      if (dataBase64) {
+        const binary = window.atob(dataBase64);
+        bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      } else {
+        const expectedLength = Number(payload?.byteLength || 0);
+        const nativeBridge = (window as any).AndroidCrewCheckNative;
+        if (!shareId || !Number.isFinite(expectedLength) || expectedLength <= 0 || expectedLength > 35 * 1024 * 1024
+          || typeof nativeBridge?.readSharedPdfChunk !== 'function') {
+          return null;
+        }
+        bytes = new Uint8Array(expectedLength);
+        const chunkSize = 192 * 1024;
+        let offset = 0;
+        while (offset < expectedLength) {
+          const requested = Math.min(chunkSize, expectedLength - offset);
+          const encoded = String(nativeBridge.readSharedPdfChunk(shareId, String(offset), String(requested)) || '');
+          if (!encoded) throw new Error('Não consegui ler o PDF compartilhado do armazenamento local.');
+          const binary = window.atob(encoded);
+          if (!binary.length || binary.length > requested) throw new Error('O PDF compartilhado retornou um bloco inválido.');
+          for (let index = 0; index < binary.length; index += 1) bytes[offset + index] = binary.charCodeAt(index);
+          offset += binary.length;
+        }
+        if (offset !== expectedLength) throw new Error('O PDF compartilhado foi recebido de forma incompleta.');
+      }
+
       if (bytes.length < 5 || bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46 || bytes[4] !== 0x2d) {
         throw new Error('O arquivo compartilhado não parece ser um PDF válido.');
       }
@@ -4688,7 +4713,7 @@ export default function Home() {
     };
 
     const consumeNativePdf = async (payload: any) => {
-      const file = fileFromNativePayload(payload);
+      const file = await fileFromNativePayload(payload);
       if (!file) return;
       const shareId = String(payload?.shareId || `android:${file.name}:${file.size}`);
       await importSharedPdfFile(file, shareId, async () => {
