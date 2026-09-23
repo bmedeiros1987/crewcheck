@@ -103,7 +103,11 @@ final class ComplicationText {
 
         StringBuilder text = new StringBuilder();
         if (snapshot.recoveryScore > 0) {
-            text.append(snapshot.recoveryScore).append("%");
+            if (snapshot.isEnergyScore()) {
+                text.append("Energia ").append(snapshot.recoveryScore);
+            } else {
+                text.append(snapshot.recoveryScore).append("%");
+            }
         } else {
             text.append(snapshot.recoveryLabel);
         }
