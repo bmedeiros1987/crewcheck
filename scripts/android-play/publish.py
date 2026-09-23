@@ -10,6 +10,7 @@ import google.auth.transport.requests
 from google.oauth2 import service_account
 import requests
 from credential import load_service_account_secret
+from play_error import safe_play_error
 
 def main():
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
@@ -81,8 +82,8 @@ def main():
     def api(method, url, **kwargs):
         response = session.request(method, url, timeout=300, **kwargs)
         if not response.ok:
-            # Avoid dumping credential/session or arbitrary API payloads to public logs.
-            raise RuntimeError(f'Play API returned HTTP {response.status_code}; inspect Console/access and retry')
+            # Emit only bounded structured diagnostics; never headers, URLs or raw payloads.
+            raise RuntimeError(safe_play_error(response))
         return response.json() if response.content else {}
 
     for package in sorted({r['package'] for r in report}):
