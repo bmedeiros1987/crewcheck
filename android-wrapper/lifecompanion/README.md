@@ -46,7 +46,13 @@ Sem o AAR, a build de desenvolvimento continua funcionando em modo scaffold e in
 
 ### Helper local
 
-Para evitar copiar o AAR manualmente, use o helper:
+Para evitar copiar o AAR manualmente, use o helper. Se o ZIP estiver em Downloads ou Desktop, basta:
+
+```bash
+bash scripts/crewlife-samsung-local-test.sh
+```
+
+Se preferir, informe o ZIP explicitamente:
 
 ```bash
 bash scripts/crewlife-samsung-local-test.sh "/caminho/para/samsung-health-data-sdk-1.1.0.zip"
