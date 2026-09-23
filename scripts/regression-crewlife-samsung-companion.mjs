@@ -43,7 +43,7 @@ assert.match(runtime, /"automatic", true/);
 assert.doesNotMatch(runtime, /BLOOD_GLUCOSE|BLOOD_PRESSURE|SLEEP_APNEA|IRREGULAR/);
 
 assert.match(activity, /crewlife-samsung-status/);
-assert.match(activity, /new Thread\(\(\) =>/);
+assert.match(activity, /new Thread\\(\\(\\) ->/);
 assert.match(activity, /runOnUiThread/);
 assert.match(activity, /resolveIfPossible/);
 assert.match(activity, /Pontuação do sono/);
