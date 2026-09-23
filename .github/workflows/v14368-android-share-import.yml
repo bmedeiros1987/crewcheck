@@ -1,4 +1,4 @@
-name: CrewCheck v14.3.68 Android share import
+name: CrewCheck shared PDF import
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ on:
       - 'scripts/v14365/**'
       - 'scripts/v14368/**'
       - 'scripts/regression-v14-3-68-android-share-import.mjs'
+      - 'scripts/regression-p0-pwa-share-target-pdf.mjs'
       - '.github/workflows/v14368-android-share-import.yml'
 
 permissions:
@@ -28,7 +29,9 @@ jobs:
       - run: npm ci || npm install
       - name: Prepare canonical CrewCheck source
         run: node scripts/v139/apply.mjs
-      - name: Validate Android share bridge and canonical import
+      - name: Validate Android durable inbox and canonical import
         run: node scripts/regression-v14-3-68-android-share-import.mjs
+      - name: Validate PWA durable share target and ACK
+        run: node scripts/regression-p0-pwa-share-target-pdf.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
