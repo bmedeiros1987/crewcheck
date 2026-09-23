@@ -26,6 +26,10 @@ const phoneSync = read('android-wrapper/app/src/main/java/com/crewcheck/app/Crew
 const phoneManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const wearManifest = read('android-wrapper/wear/src/main/AndroidManifest.xml');
 const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
+const watchSnapshot = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchContextSnapshot.java');
+const phonePublisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java');
+const watchContext = read('client/src/lib/watchContext.ts');
+const platform = read('server/platform.mjs');
 
 assert.match(main, /MODE_JOURNEY = 1/);
 assert.match(main, /MODE_CONCIERGE = 5/);
@@ -92,10 +96,13 @@ assert.match(home, /replyWatchConcierge/);
 assert.match(phoneMain, /requestCrewCheckWatchSnapshotFromWeb\("phone-resume"\)/);
 assert.match(home, /document\.addEventListener\('visibilitychange', onVisible\)/);
 
-assert.match(face, /BatteryComplicationService/);
-assert.match(face, /ConciergeComplicationService/);
+assert.match(face, /defaultSystemProvider="STEP_COUNT"/);
+assert.match(face, /defaultSystemProvider="WATCH_BATTERY"/);
+assert.match(face, /defaultSystemProvider="NEXT_EVENT"/);
+assert.doesNotMatch(face, /BatteryComplicationService/, 'face grátis não pode depender do APK Premium');
+assert.doesNotMatch(face, /ConciergeComplicationService/, 'face grátis não pode depender do Concierge Premium');
 const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
-assert.ok(slots >= 6, 'watch face deve manter pelo menos seis glances/complicações');
+assert.ok(slots >= 3, 'watch face grátis deve manter passos, bateria e próximo evento');
 
 
 assert.match(main, /addGlanceRail\(snapshot, now\)/, 'Agora deve mostrar rail de glances essenciais');
@@ -106,5 +113,16 @@ assert.match(main, /"PROGRAMAÇÃO · "/, 'Agora deve antecipar a programação 
 assert.match(main, /"DEPOIS"/, 'programação deve mostrar também a etapa seguinte');
 assert.doesNotMatch(main, /actionChip\("↻ Atualizar"/, 'refresh manual não deve dominar a experiência premium');
 assert.match(main, /Sincronização automática\. Toque para atualizar agora\./, 'refresh manual deve ser fallback da sincronização automática');
+
+assert.match(main, /!snapshot\.premiumAccess/, 'APK Wear deve bloquear superfícies Premium para plano grátis');
+assert.match(main, /renderPremiumGate\(/);
+assert.match(main, /O Watch Face continua grátis/);
+assert.match(watchSnapshot, /public final boolean premiumAccess/);
+assert.match(watchSnapshot, /Ative o Premium no CrewCheck/);
+assert.match(phonePublisher, /source\.optBoolean\("premiumAccess", false\)/);
+assert.match(phonePublisher, /"free-tier"/, 'celular não deve enviar escala operacional para plano grátis');
+assert.match(watchContext, /premiumAccess: boolean/);
+assert.match(home, /watchPremiumAccess/);
+assert.match(platform, /watchFace: true, watchApp: plan !== 'free'/);
 
 console.log('[crewwatch-premium-experience-v2] premium navigation + humane fallbacks OK');
