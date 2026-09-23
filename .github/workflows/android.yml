@@ -120,7 +120,7 @@ jobs:
 
   publish-internal-drafts:
     needs: build
-    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts) || (github.event_name == 'push' && vars.PLAY_INTERNAL_AUTO_PUBLISH == 'true'))
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts) || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
