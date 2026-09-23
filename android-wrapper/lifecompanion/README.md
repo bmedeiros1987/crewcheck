@@ -28,16 +28,22 @@ Não é necessário renomear o arquivo. O Gradle aceita `samsung-health-data-api
 detecta automaticamente a presença do SDK e define
 `BuildConfig.SAMSUNG_HEALTH_SDK_INCLUDED=true`.
 
-O módulo declara explicitamente os runtimes Kotlin e coroutines exigidos pelo AAR local,
-porque um AAR copiado manualmente não traz um POM Maven com dependências transitivas.
+O módulo segue o setup oficial do SDK v1.1.0 com Gson e Parcelize. Como o AAR é copiado
+localmente e não vem acompanhado de um POM Maven, os runtimes Kotlin e coroutines usados
+pelo próprio binário da Samsung também são declarados explicitamente.
+
+Versões atualmente fixadas no wrapper:
+- Kotlin / Parcelize: 2.3.20;
+- kotlinx-coroutines-android: 1.11.0;
+- Gson: 2.13.2.
 
 Sem o AAR, a build de desenvolvimento continua funcionando em modo scaffold e informa
 `sdk_missing`. A build de release do Companion falha de propósito sem o SDK.
 
 ## Teste no Galaxy
 
-O Samsung Health Data SDK v1.1.0 exige Android 10+ e uma versão compatível do Samsung Health.
-O teste da integração deve ser feito em aparelho físico compatível.
+O Samsung Health Data SDK v1.1.0 exige Android 10+ e Samsung Health 6.30.2 ou posterior.
+O SDK não suporta emulador; o teste da integração deve ser feito em aparelho físico compatível.
 
 Para desenvolvimento, a Samsung disponibiliza **Developer Mode (Data Read)**. Esse modo é
 exclusivamente para desenvolvimento/teste e permite validar leitura antes do registro público
@@ -88,3 +94,4 @@ Documentação oficial:
 - https://developer.samsung.com/health/data/guide/developer-mode.html
 - https://developer.samsung.com/health/data/guide/features/data-permission.html
 - https://developer.samsung.com/health/data/guide/features/data-types.html
+- https://developer.samsung.com/health/data/guide/hello-sdk/app-module.html
