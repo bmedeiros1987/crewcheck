@@ -2,9 +2,11 @@
 
 ## Estratégia vigente
 
-A execução segue **Web/Render e PWA primeiro**. APK/AAB assinados, compartilhamento nativo, notificações em segundo plano, deep links e publicação Android permanecem adiados até a estabilidade funcional da Web/PWA.
+A estabilidade da escala e a paridade multicanal continuam soberanas. Para Android, porém, a dependência de WebView passa a ser **transitória**: a direção arquitetural aprovada é um aplicativo nativo/offline-first, conforme docs/architecture/native-offline-first.md.
 
-Durante a auditoria, não entram funcionalidades novas: cada superfície existente deve ser validada, corrigida ou temporariamente ocultada.
+O compartilhamento de PDF em APK/PWA é gate prioritário porque é também a primeira peça da fundação nativa: o arquivo recebido deve permanecer em inbox privado até o importador canônico confirmar sucesso.
+
+Durante a auditoria, não entram funcionalidades laterais que concorram com estabilidade: cada superfície existente deve ser validada, corrigida, portada de forma incremental ou temporariamente ocultada.
 
 ## Estado atual
 
