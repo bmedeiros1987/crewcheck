@@ -24,6 +24,7 @@ assert(sw.includes("'cache-control': 'no-store'"), 'PDF temporário não deve se
 assert(sw.includes("url.pathname.startsWith(SHARED_PDF_ROUTE)"), 'service worker deve servir somente a rota temporária dedicada');
 assert(sw.includes('ACK_SHARED_PDF'), 'service worker deve apagar o PDF apenas após ACK do importador');
 assert(sw.includes('cache.delete(new Request(storageUrl))'), 'ACK deve remover exatamente o share persistido');
+assert(sw.includes('name !== SHARED_PDF_CACHE'), 'limpeza genérica de cache deve preservar o PDF pendente até ACK/TTL');
 assert(!sw.includes('await cache.delete(request);\n      return response;'), 'GET do handoff não pode apagar o PDF antes do parser terminar');
 assert(!sw.includes('mimeType="*/*"'), 'não ampliar aceite para wildcard');
 
