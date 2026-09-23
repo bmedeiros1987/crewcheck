@@ -91,6 +91,21 @@ As chamadas que aguardam o retorno das Futures do SDK são executadas fora da ma
 Erros resolvíveis da plataforma Samsung Health (instalação, atualização, ativação ou
 configuração) são encaminhados ao fluxo oficial de resolução do SDK.
 
+
+## Uso normal depois da primeira autorização
+
+Depois que o usuário autoriza o Samsung Health uma vez no CrewLife Companion, o Companion deixa de fazer parte do fluxo diário:
+
+1. o Companion continua atualizando o resumo local pelo JobScheduler;
+2. ao abrir ou retomar o CrewCheck, o app principal solicita um refresh ao Companion por broadcast protegido pela permissão `signature`;
+3. o CrewCheck relê o provider local e atualiza a UI do CrewLife;
+4. se o usuário já ativou **Mostrar CrewLife no relógio**, o Android publica o resumo diretamente no Data Layer, sem exigir que a tela CrewLife esteja aberta;
+5. quando o relógio pede sincronização, o mesmo fluxo é repetido.
+
+O refresh sob demanda usa `com.crewcheck.life.REFRESH_SUMMARY` e só pode ser enviado por app assinado com a mesma chave, porque o receiver exige `com.crewcheck.permission.LIFE_SUMMARY`.
+
+O Samsung **Energy Score** permanece identificado como Energy Score no relógio; ele não é renomeado para um score de recuperação criado pelo CrewCheck.
+
 ## Distribuição
 
 Antes de distribuir, solicite parceria Samsung Health Data SDK e registre:
