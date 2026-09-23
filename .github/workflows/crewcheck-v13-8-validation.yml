@@ -17,7 +17,7 @@ on:
 
 defaults:
   run:
-    shell: bash
+    shell: bash -o pipefail {0}
 
 permissions:
   contents: read
@@ -38,6 +38,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Validate CI pipeline exit propagation
+        run: node scripts/ci/check-workflow-pipefail.mjs
       - run: npm audit --omit=dev --audit-level=high
       - name: Prepare current CrewCheck sources
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
