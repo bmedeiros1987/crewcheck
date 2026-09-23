@@ -24,6 +24,7 @@ assert "time.time() + 12 * 60" in source
 # the gate waits for the Android workflow (including the publisher) to succeed.
 assert "CrewCheck Priority 0 Release Gate" in source
 assert "dependent_ci_workflow_names" in source
+assert "run.get('event') != 'push'" in source
 
 # Guard against accidentally introducing a production track in any release payload.
 payload_tracks = re.findall(r"\['([^']+)'\]", source)
