@@ -73,9 +73,9 @@ jobs:
           arch: x86
           profile: tv_1080p
           disable-animations: true
-          # Software GLES avoids the obsolete indirect renderer and Vulkan
-          # ColorBuffer stalls seen on the headless API 31 TV image.
-          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # ANGLE translates GLES through the supported SwiftShader backend.
+          # Direct SwiftShader stalls HardwareRenderer on the API 31 TV image.
+          emulator-options: -no-window -gpu swangle -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: bash scripts/tv-android-smoke.sh
       - name: Upload emulator evidence and test reports
         if: always()
