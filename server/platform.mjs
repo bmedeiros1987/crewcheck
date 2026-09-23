@@ -579,6 +579,7 @@ async function subscriptionStatus(db, profile) {
     premiumAccess: plan !== 'free',
     entitlements: {
       roster: true, compliance: true, workload: true, finance: true, export: true,
+      watchFace: true, watchApp: plan !== 'free',
       radar: plan !== 'free', smartDeparture: plan !== 'free', hotelLearning: plan !== 'free',
       gyms: plan !== 'free', visitors: plan !== 'free', rosterComparison: plan !== 'free', chat: plan !== 'free',
     },
