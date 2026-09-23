@@ -19,7 +19,7 @@ export function createTvHandler({
       if (method === "POST" && path === "/api/tv/poll")
         return { status: 200, body: await devices.poll(body.deviceCode) };
       if (
-        ["/api/tv/approve", "/api/tv/revoke", "/api/tv/devices", "/api/tv/preferences", "/api/tv/context"].includes(path)
+        ["/api/tv/approve", "/api/tv/revoke", "/api/tv/devices", "/api/tv/preferences", "/api/tv/context", "/api/tv/trust"].includes(path)
       ) {
         const userId = await authenticateAccount(token);
         if (!userId) throw new TvError(401, "authentication_required");
@@ -44,6 +44,11 @@ export function createTvHandler({
           return {
             status: 200,
             body: await devices.updateContext(userId, body.deviceId, body.context),
+          };
+        if (path.endsWith("/trust") && method === "POST")
+          return {
+            status: 200,
+            body: await devices.updateTrust(userId, body.deviceId, body.trusted),
           };
         throw new TvError(405, "method_not_allowed");
       }
