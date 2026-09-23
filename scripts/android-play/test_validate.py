@@ -28,7 +28,7 @@ class GateTests(unittest.TestCase):
                 validate_manifest(manifest().replace('<application', f'<uses-permission android:name="android.permission.health.{permission}"/><application'), 'app', POLICY)
 
     def test_package_sdk_version_and_watch_required(self):
-        for old, new in [('com.crewcheck.app', 'com.wrong.app'), ('144090', '140387'), ('Version="36"', 'Version="35"')]:
+        for old, new in [('com.crewcheck.app', 'com.wrong.app'), (str(POLICY['artifacts']['app']['versionCode']), '140387'), ('Version="36"', 'Version="35"')]:
             with self.assertRaises(AssertionError):
                 validate_manifest(manifest().replace(old, new), 'app', POLICY)
         with self.assertRaises(AssertionError):
@@ -38,7 +38,7 @@ class GateTests(unittest.TestCase):
         for change in ['track', 'floor']:
             p = copy.deepcopy(POLICY)
             if change == 'track': p['artifacts']['wear']['track'] = 'production'
-            else: p['knownMaxVersionCode']['com.crewcheck.app'] = 144091
+            else: p['knownMaxVersionCode']['com.crewcheck.app'] = POLICY['artifacts']['wear']['versionCode']
             with self.assertRaises(AssertionError): validate_manifest(manifest('wear'), 'wear', p)
 
 if __name__ == '__main__': unittest.main()
