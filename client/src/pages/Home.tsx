@@ -84,6 +84,7 @@ import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFo
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
+import { acknowledgePwaSharedPdf, claimPendingPwaSharedPdf, consumePendingPwaShareError } from '@/lib/pwaSharedPdfRuntime';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
@@ -4627,6 +4628,8 @@ export default function Home() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
+  const bundleRef = useRef(bundle);
+  const sharedPdfClaimsRef = useRef<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
@@ -4637,6 +4640,102 @@ export default function Home() {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
+
+  useEffect(() => {
+    bundleRef.current = bundle;
+  }, [bundle]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const importSharedPdfFile = async (
+      file: File,
+      shareId: string,
+      acknowledge: () => Promise<void>,
+    ) => {
+      const id = String(shareId || '').trim();
+      if (!mounted || !id || sharedPdfClaimsRef.current.has(id)) return;
+      sharedPdfClaimsRef.current.add(id);
+      try {
+        toast.message('PDF compartilhado recebido. Processando escala automaticamente...');
+        const imported = await processRosterFile(file);
+        if (!imported) {
+          sharedPdfClaimsRef.current.delete(id);
+          setView('import');
+          return;
+        }
+        await acknowledge();
+        toast.success('PDF compartilhado processado e escala atualizada.');
+      } catch (error) {
+        sharedPdfClaimsRef.current.delete(id);
+        toast.error(error instanceof Error ? error.message : 'Não consegui processar o PDF compartilhado.');
+        setView('import');
+      }
+    };
+
+    const fileFromNativePayload = (payload: any): File | null => {
+      const dataBase64 = String(payload?.dataBase64 || '').trim();
+      if (!dataBase64) return null;
+      const filenameRaw = String(payload?.filename || payload?.sourceFileName || 'CrewCheck-escala.pdf').trim() || 'CrewCheck-escala.pdf';
+      const filename = filenameRaw.toLowerCase().endsWith('.pdf') ? filenameRaw : `${filenameRaw}.pdf`;
+      const binary = window.atob(dataBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      if (bytes.length < 5 || bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46 || bytes[4] !== 0x2d) {
+        throw new Error('O arquivo compartilhado não parece ser um PDF válido.');
+      }
+      return new File([bytes], filename, { type: 'application/pdf', lastModified: Date.now() });
+    };
+
+    const consumeNativePdf = async (payload: any) => {
+      const file = fileFromNativePayload(payload);
+      if (!file) return;
+      const shareId = String(payload?.shareId || `android:${file.name}:${file.size}`);
+      await importSharedPdfFile(file, shareId, async () => {
+        try {
+          (window as any).AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId);
+        } catch {}
+        try { delete (window as any).__crewcheckPendingNativePdf; } catch {}
+      });
+    };
+
+    const consumePwaPdf = async () => {
+      try {
+        const claim = await claimPendingPwaSharedPdf();
+        if (!claim) return;
+        await importSharedPdfFile(claim.file, `pwa:${claim.shareId}`, async () => {
+          await acknowledgePwaSharedPdf(claim.shareId);
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Não consegui abrir o PDF compartilhado pelo PWA.');
+        setView('import');
+      }
+    };
+
+    const onNativePdf = (event: Event) => { void consumeNativePdf((event as CustomEvent).detail); };
+    const onPwaPdfReady = () => { void consumePwaPdf(); };
+    const onPwaShareError = (event: Event) => {
+      const message = String((event as CustomEvent)?.detail?.message || '').trim();
+      if (message) toast.error(message);
+    };
+
+    window.addEventListener('crewcheck:native-pdf', onNativePdf as EventListener);
+    window.addEventListener('crewcheck:pwa-pdf-ready', onPwaPdfReady as EventListener);
+    window.addEventListener('crewcheck:pwa-share-error', onPwaShareError as EventListener);
+
+    const pendingNative = (window as any).__crewcheckPendingNativePdf;
+    if (pendingNative) window.setTimeout(() => { void consumeNativePdf(pendingNative); }, 0);
+    const pendingError = consumePendingPwaShareError();
+    if (pendingError) toast.error(pendingError);
+    void consumePwaPdf();
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('crewcheck:native-pdf', onNativePdf as EventListener);
+      window.removeEventListener('crewcheck:pwa-pdf-ready', onPwaPdfReady as EventListener);
+      window.removeEventListener('crewcheck:pwa-share-error', onPwaShareError as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     const publishWatchSnapshot = () => {
@@ -4717,9 +4816,7 @@ export default function Home() {
 
   useEffect(() => { loadCrewCheckRuntimePatch(); }, []);
 
-  async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
-    const file = inputEvent.target.files?.[0];
-    if (!file) return;
+  async function processRosterFile(file: File): Promise<boolean> {
     setBusy(true);
     try {
       const parsed = await parsePDFResilient(file);
@@ -4727,9 +4824,9 @@ export default function Home() {
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
-        return;
+        return false;
       }
-      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundleRef.current, roster);
       const importComparison = plannedSnapshot && sameRosterPeriod(plannedSnapshot.roster, roster)
         ? compareRosters(plannedSnapshot.roster, roster)
         : null;
@@ -4738,7 +4835,9 @@ export default function Home() {
       storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
       storage.set('crewcheck_last_pdf_import_source', parsed.source);
-      setBundle({ roster, compliance: newCompliance, source: file.name });
+      const nextBundle = { roster, compliance: newCompliance, source: file.name };
+      bundleRef.current = nextBundle;
+      setBundle(nextBundle);
       syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
       syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
       sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');
@@ -4747,9 +4846,23 @@ export default function Home() {
       if (opensComparison) toast.info(`${importComparison?.summary.changedDays || 0} dia(s) com mudanças em relação à escala planejada.`);
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
+      return true;
     } catch (error) {
       toast.error(sanitizePdfImportError(error));
-    } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
+    const file = inputEvent.target.files?.[0];
+    if (!file) return;
+    try {
+      await processRosterFile(file);
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
   }
 
   async function copyCurrentSummarySilently() {
