@@ -102,6 +102,22 @@ export default function TvPairPage() {
     }finally{setSavingDevice('');}
   }
 
+  async function makeTrusted(device:TvDevice){
+    setSavingDevice(device.deviceId);
+    try{
+      const result=await authFetch<{deviceId:string;trusted:boolean;expiresAt:string|null}>('/api/tv/trust',{
+        method:'POST',
+        body:JSON.stringify({deviceId:device.deviceId,trusted:true}),
+      });
+      setDevices(current=>current.map(item=>item.deviceId===device.deviceId?{...item,trusted:result.trusted,expiresAt:result.expiresAt}:item));
+      setMessage('Esta TV agora permanecerá vinculada até você desvincular ou revogar.');
+    }catch{
+      setMessage('Não foi possível tornar esta TV permanente agora.');
+    }finally{
+      setSavingDevice('');
+    }
+  }
+
   async function shareTrafficOrigin(device:TvDevice){
     const preferences=normalizedPreferences(device.preferences);
     if(preferences.audience!=='owner'||!preferences.share.traffic){
@@ -180,6 +196,12 @@ export default function TvPairPage() {
         </div>
 
         {!device.revoked&&<div className="mt-5">
+          {!device.trusted&&<div className="mb-4 rounded-2xl border border-cyan-900/50 bg-cyan-950/10 p-4">
+            <b className="block text-sm">Manter esta TV vinculada</b>
+            <p className="mt-1 text-xs opacity-70">Transforma este vínculo temporário em permanente neste aparelho. Fechar o app, desligar a TV ou perder a internet não exigirá novo QR.</p>
+            <button className="mt-3 w-full rounded-xl border border-cyan-700/60 p-3 text-sm font-bold disabled:opacity-40" disabled={savingDevice===device.deviceId} onClick={()=>void makeTrusted(device)}>Manter vinculada até eu revogar</button>
+          </div>}
+          {device.trusted&&<p className="mb-4 rounded-xl border border-emerald-900/40 bg-emerald-950/10 p-3 text-xs text-emerald-200">Vínculo permanente ativo. Esta TV só será desvinculada por sua ação, revogação da conta, desinstalação ou limpeza dos dados do aplicativo.</p>}
           <label className="block text-sm font-bold">Quem está vendo esta TV?
             <select className="mt-2 block w-full rounded-xl p-3 text-black" value={preferences.audience} disabled={savingDevice===device.deviceId} onChange={event=>{
               const audience=event.target.value as TvAudience;
