@@ -61,14 +61,18 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
-    public void freeTierUsesAccessEnvelopeInsteadOfOperationalComplications() throws Exception {
+    public void freeTierKeepsCanonicalRosterAndComplicationsUseful() throws Exception {
         WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
-                .put("premiumAccess", false));
+                .put("premiumAccess", false)
+                .put("state", "REPORTING")
+                .put("presentationTime", "13:30")
+                .put("currentFlight", "LA3721"));
 
         assertFalse(snapshot.premiumAccess);
-        assertEquals("PREMIUM", snapshot.complicationShortText(NOW));
-        assertEquals("CREWWATCH", snapshot.complicationTitle(NOW));
-        assertEquals("Ative o Premium no CrewCheck", snapshot.complicationLongText(NOW));
+        assertEquals("AP13:30", snapshot.complicationShortText(NOW));
+        assertEquals("APRESENTAÇÃO", snapshot.complicationTitle(NOW));
+        assertEquals("Apresentação 13:30", snapshot.complicationLongText(NOW));
+        assertEquals("LA3721", snapshot.currentFlight);
     }
 
     @Test
