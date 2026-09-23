@@ -9,7 +9,8 @@ assert "'status': 'completed'" in source
 assert "'status': 'draft'" not in source
 assert "'releaseNotes':" in source
 assert "url + ':commit'" in source
-assert "changesNotSentForReview" not in source
+assert "changesNotSentForReview" in source
+assert "params={'changesNotSentForReview': 'true'}" in source
 assert "Independent CI failed; Play publication blocked" in source
 assert "time.time() + 12 * 60" in source
 
