@@ -299,6 +299,9 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
             data.roster,
             snapshot.sharePermissions.crew === true,
           ),
+          audience === 'owner' && snapshot.sharePermissions.finance === true
+            ? auth.context?.journeyDetails || {}
+            : {},
         );
         snapshot.mobility = null;
         if (snapshot.profile) {
