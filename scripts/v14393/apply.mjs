@@ -36,8 +36,31 @@ if (!home.includes(syncMarker)) {
         saveRoster(active.roster, 'Escala ativa sincronizada');
         setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
         console.info('[crewcheck:active-roster-sync]', { reason, changed: true, localRevision: localRevision || null, serverRevision });
-      } catch {
-        console.warn('[crewcheck:active-roster-sync]', { reason, changed: false, status: 'unavailable' });
+      } catch (error: any) {
+        const code = String(error?.code || '').toUpperCase();
+        const remote = code === 'ACTIVE_ROSTER_CONFLICT' ? error?.remoteCandidate : null;
+        if (alive && remote?.roster?.days?.length) {
+          const remoteRevision = rosterFingerprint(remote.roster);
+          const hasLocalRoster = Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0;
+          const localRevision = hasLocalRoster ? rosterFingerprint(bundle.roster) : '';
+          if (remoteRevision !== localRevision) {
+            // Keep the displaced same-period publication available to the
+            // existing planned-vs-current comparison before account truth wins.
+            preservePlannedRosterBeforeImport(bundle, remote.roster);
+            const compliance = remote.compliance || analyzeSafe(remote.roster);
+            saveRoster(remote.roster, 'Escala ativa sincronizada');
+            setBundle({ roster: remote.roster, compliance, source: 'Escala ativa sincronizada' });
+            console.info('[crewcheck:active-roster-sync]', {
+              reason,
+              changed: true,
+              status: 'account-conflict-reconciled',
+              localRevision: localRevision || null,
+              serverRevision: remoteRevision,
+            });
+          }
+          return;
+        }
+        console.warn('[crewcheck:active-roster-sync]', { reason, changed: false, status: 'unavailable', code: code || null });
       } finally {
         syncing = false;
       }
