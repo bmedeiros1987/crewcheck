@@ -70,6 +70,9 @@ public class MainActivity extends Activity {
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
     public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
+    private static final String CREWCHECK_APP_URL = "https://crewcheck.online?app=1";
+    private static final long CREWCHECK_SHELL_WATCHDOG_DELAY_MS = 3200L;
+    private static final int CREWCHECK_MAX_FAST_RECOVERY_ATTEMPTS = 3;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
 
@@ -94,6 +97,9 @@ public class MainActivity extends Activity {
     private String pendingNativeLocationCallbackId;
     private CrewCheckBillingBridge billingBridge;
     private BroadcastReceiver watchSyncRequestReceiver;
+    private TextView crewCheckBootStatusText;
+    private int crewCheckShellRecoveryAttempts = 0;
+    private int crewCheckPageGeneration = 0;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -142,9 +148,10 @@ public class MainActivity extends Activity {
         setContentView(rootLayout);
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.WHITE);
+        webView.setBackgroundColor(Color.parseColor("#071D33"));
         webView.setLayoutParams(new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         rootLayout.addView(webView);
+        showCrewCheckBootStatus("Abrindo CrewCheck…");
 
         configureWebView(webView, false);
         webView.addJavascriptInterface(new CrewCheckIFlightBridge(), "AndroidCrewCheckIFlight");
@@ -171,6 +178,8 @@ public class MainActivity extends Activity {
                 if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
+                final int generation = ++crewCheckPageGeneration;
+                scheduleCrewCheckShellWatchdog(view, generation);
                 view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
             }
 
@@ -178,10 +187,16 @@ public class MainActivity extends Activity {
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (request != null && request.isForMainFrame()) {
-                    try {
-                        view.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
-                        view.loadUrl("https://crewcheck.online?app=1");
-                    } catch (Exception ignored) {}
+                    recoverCrewCheckShell(view, "main-frame-error");
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                super.onReceivedHttpError(view, request, errorResponse);
+                if (request != null && request.isForMainFrame() && errorResponse != null
+                        && errorResponse.getStatusCode() >= 500) {
+                    recoverCrewCheckShell(view, "http-" + errorResponse.getStatusCode());
                 }
             }
         });
@@ -217,11 +232,109 @@ public class MainActivity extends Activity {
         });
 
         handleIncomingPdfIntent(getIntent());
-        webView.loadUrl("https://crewcheck.online?app=1");
+        webView.loadUrl(CREWCHECK_APP_URL);
         ensureCrewCheckNotificationChannel();
         dispatchCrewCheckPermissionStatus();
         webView.postDelayed(() -> dispatchCrewCheckPermissionStatus(), 900);
         webView.postDelayed(() -> requestInitialCrewCheckPermissions(), 1600);
+    }
+
+
+    private void showCrewCheckBootStatus(final String message) {
+        runOnUiThread(() -> {
+            try {
+                if (rootLayout == null) return;
+                if (crewCheckBootStatusText == null) {
+                    TextView status = new TextView(MainActivity.this);
+                    status.setTextColor(Color.WHITE);
+                    status.setTextSize(15f);
+                    status.setGravity(Gravity.CENTER);
+                    status.setPadding(dp(28), dp(28), dp(28), dp(28));
+                    status.setBackgroundColor(Color.parseColor("#071D33"));
+                    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.MATCH_PARENT
+                    );
+                    rootLayout.addView(status, params);
+                    crewCheckBootStatusText = status;
+                }
+                crewCheckBootStatusText.setText(message == null ? "Abrindo CrewCheck…" : message);
+                crewCheckBootStatusText.setVisibility(View.VISIBLE);
+                crewCheckBootStatusText.bringToFront();
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void hideCrewCheckBootStatus() {
+        runOnUiThread(() -> {
+            try {
+                if (crewCheckBootStatusText != null) crewCheckBootStatusText.setVisibility(View.GONE);
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void scheduleCrewCheckShellWatchdog(final WebView target, final int generation) {
+        if (target == null) return;
+        target.postDelayed(
+                () -> verifyCrewCheckShellMounted(target, generation),
+                CREWCHECK_SHELL_WATCHDOG_DELAY_MS
+        );
+    }
+
+    private void verifyCrewCheckShellMounted(final WebView target, final int generation) {
+        if (target == null || target != webView || generation != crewCheckPageGeneration) return;
+        final String probe = "(function(){try{" +
+                "var root=document.getElementById('root');" +
+                "var text=((document.body&&document.body.innerText)||'').trim();" +
+                "return !!(root&&root.children&&root.children.length>0&&text.length>8);" +
+                "}catch(e){return false;}})();";
+        try {
+            target.evaluateJavascript(probe, value -> {
+                if (target != webView || generation != crewCheckPageGeneration) return;
+                boolean mounted = "true".equalsIgnoreCase(String.valueOf(value));
+                if (mounted) {
+                    crewCheckShellRecoveryAttempts = 0;
+                    try { target.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT); } catch (Exception ignored) {}
+                    hideCrewCheckBootStatus();
+                    return;
+                }
+                recoverCrewCheckShell(target, "shell-not-mounted");
+            });
+        } catch (Exception error) {
+            recoverCrewCheckShell(target, "shell-probe-failed");
+        }
+    }
+
+    private void recoverCrewCheckShell(final WebView target, final String reason) {
+        if (target == null || target != webView) return;
+        runOnUiThread(() -> {
+            try {
+                crewCheckShellRecoveryAttempts += 1;
+                showCrewCheckBootStatus(
+                        crewCheckShellRecoveryAttempts <= CREWCHECK_MAX_FAST_RECOVERY_ATTEMPTS
+                                ? "Recuperando o CrewCheck…"
+                                : "Reconectando ao CrewCheck…"
+                );
+
+                // Limpa somente cache de navegação/WebView. Cookies, localStorage,
+                // sessão e escala persistida NÃO são apagados.
+                try { target.stopLoading(); } catch (Exception ignored) {}
+                try { target.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE); } catch (Exception ignored) {}
+                try { target.clearCache(true); } catch (Exception ignored) {}
+
+                long delay = crewCheckShellRecoveryAttempts <= CREWCHECK_MAX_FAST_RECOVERY_ATTEMPTS
+                        ? 500L
+                        : 10_000L;
+                target.postDelayed(() -> {
+                    try {
+                        String suffix = "&recovery=" + crewCheckShellRecoveryAttempts
+                                + "&reason=" + Uri.encode(reason == null ? "unknown" : reason)
+                                + "&t=" + System.currentTimeMillis();
+                        target.loadUrl(CREWCHECK_APP_URL + suffix);
+                    } catch (Exception ignored) {}
+                }, delay);
+            } catch (Exception ignored) {}
+        });
     }
 
 
