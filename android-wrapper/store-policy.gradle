@@ -10,7 +10,9 @@ android.defaultConfig {
 if (project.name == 'app') {
     android.sourceSets.main.java.srcDir 'src/store/java'
     android.sourceSets.main.java.exclude '**/CrewCheckHealthBridge.kt'
-    kotlin.sourceSets.main.kotlin.exclude '**/CrewCheckHealthBridge.kt'
+    plugins.withId('org.jetbrains.kotlin.android') {
+        kotlin.sourceSets.main.kotlin.exclude '**/CrewCheckHealthBridge.kt'
+    }
     tasks.matching { it.name.startsWith('compile') && it.name.endsWith('Kotlin') }.configureEach {
         exclude '**/CrewCheckHealthBridge.kt'
     }
