@@ -17,15 +17,17 @@ try {
   const main=await readFile('apps/tv-player/src/main.tsx','utf8'), css=await readFile('apps/tv-player/src/tv.css','utf8'), icons=await readFile('apps/tv-player/src/TvVisuals.tsx','utf8');
   const broadcast=main.includes("from './BroadcastPanels'");
   const panels=broadcast?await readFile('apps/tv-player/src/BroadcastPanels.tsx','utf8'):main;
-  // The timing render moved to the focused component; keep the semantic guard
-  // on the actual active rendering source rather than its old file location.
-  assert.ok(panels.indexOf('SAIR DE CASA')>=0 && panels.indexOf('SAIR DE CASA') < panels.indexOf('APRESENTAÇÃO'));
+  const home=main.includes("from './HomeEssentials'")?await readFile('apps/tv-player/src/HomeEssentials.tsx','utf8'):null;
+  // Agora may be owned by HomeEssentials. Guard the active operational surface:
+  // leave-at must remain visually before published presentation.
+  const timingSource=home||panels;
+  assert.ok(timingSource.indexOf('SAIR DE CASA')>=0 && timingSource.indexOf('SAIR DE CASA') < timingSource.indexOf('APRESENTAÇÃO'));
   if(broadcast){
     assert.ok(main.includes('<OfficialTvBrand/>'));
     assert.ok(panels.includes("asset('crewcheck-horizontal-night.png')"));
     assert.ok(panels.includes("asset('crewcheck-horizontal-light.png')"));
-    assert.ok(panels.includes('snapshot.next?.presentation'));
-    assert.ok(panels.includes('currentFact(snapshot.weather)'));
+    assert.ok(home ? home.includes('programPresentation(program)') : panels.includes('snapshot.next?.presentation'));
+    assert.ok(home ? home.includes('currentFact(snapshot.weather') : panels.includes('currentFact(snapshot.weather)'));
     const assets=JSON.parse(await readFile('apps/tv-player/brand-assets.json','utf8'));
     assert.ok(assets.files.some(a=>a.file==='crewcheck-horizontal-night.png'&&a.sha256==='d23c0dcc78311445ac0452b8de239a5e795868a02e4b548ee04dfe7b02df428e'));
   }else{
@@ -36,6 +38,6 @@ try {
   assert.ok(css.includes('[data-motion=off]')); assert.ok(css.includes('prefers-reduced-motion')); assert.ok(css.includes('[data-paused=true]'));
   assert.doesNotMatch(css,/display:\s*grid\b/); assert.doesNotMatch(css,/(?:^|[;{])\s*gap\s*:/);
   assert.ok(main.includes("if (demo) { clear(); return; }"));
-  assert.doesNotMatch(main+panels,/departureTime|dutyReport|parsePDF/);
+  assert.doesNotMatch(main+panels+(home||''),/departureTime|dutyReport|parsePDF/);
   console.log('TV brand: 18 weather cases + time/month/labels + active rendering source/brand/motion/scope guards passed');
 } finally { await unlink(out).catch(()=>{}); }
