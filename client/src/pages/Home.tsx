@@ -4838,7 +4838,7 @@ export default function Home() {
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
-    {view === 'settings' && <SettingsView setView={setView} actions={actions} journeyFinance={tvJourneyFinanceContext(events, bundle.roster)}/>
+    {view === 'settings' && <SettingsView setView={setView} actions={actions} journeyFinance={tvJourneyFinanceContext(events, bundle.roster)}/>} 
     {view === 'admin' && <AdminControlView/>}
     {view === 'updates' && <UpdateCenterView/>}
     {view === 'maintenance' && <MaintenancePreview/>}
