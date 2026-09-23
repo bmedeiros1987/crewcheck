@@ -25,6 +25,7 @@ const phoneConcierge = read('android-wrapper/app/src/main/java/com/crewcheck/app
 const phoneSync = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java');
 const phoneManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const wearManifest = read('android-wrapper/wear/src/main/AndroidManifest.xml');
+const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
 
 assert.match(main, /MODE_JOURNEY = 1/);
 assert.match(main, /MODE_CONCIERGE = 5/);
@@ -78,6 +79,8 @@ assert.match(phoneMain, /ACTION_WATCH_CONCIERGE_REQUEST/);
 assert.match(phoneMain, /replyWatchConcierge/);
 assert.match(phoneManifest, /\/crewcheck\/watch\/concierge\/request\//);
 assert.match(wearManifest, /ConciergeComplicationService/);
+assert.match(notificationCenter, /postConciergeResponse/);
+assert.match(notificationCenter, /crewcheck_screen", "concierge"/);
 assert.match(home, /crewcheck:watch-concierge-action/);
 assert.match(home, /watchConciergePrompt/);
 assert.match(home, /replyWatchConcierge/);
