@@ -190,7 +190,8 @@ final class SamsungHealthRuntime {
     }
 
     private static boolean hasAllPermissions(Object store, Set<Object> required) throws Exception {
-        Object result = invoke(store, "getGrantedPermissions", required);
+        Object future = invoke(store, "getGrantedPermissionsAsync", required);
+        Object result = invoke(future, "get");
         return result instanceof Set<?> && ((Set<?>) result).containsAll(required);
     }
 
@@ -325,8 +326,15 @@ final class SamsungHealthRuntime {
     }
 
     private static Object invokeStatic(Class<?> type, String name, Object... args) throws Exception {
-        Method method = findMethod(type, name, args);
-        return method.invoke(null, args);
+        try {
+            Method method = findMethod(type, name, args);
+            return method.invoke(null, args);
+        } catch (NoSuchMethodException directMissing) {
+            Field companionField = type.getField("Companion");
+            Object companion = companionField.get(null);
+            Method method = findMethod(companion.getClass(), name, args);
+            return method.invoke(companion, args);
+        }
     }
 
     private static Object invoke(Object target, String name, Object... args) throws Exception {
