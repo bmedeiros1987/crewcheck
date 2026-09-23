@@ -996,8 +996,24 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean openLifeCompanion() {
             try {
-                Intent launch = getPackageManager().getLaunchIntentForPackage("com.crewcheck.life");
-                if (launch == null) return false;
+                Intent launch = getPackageManager().getLaunchIntentForPackage(LIFE_COMPANION_PACKAGE);
+                if (launch == null) {
+                    try {
+                        Intent market = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + LIFE_COMPANION_PACKAGE));
+                        market.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(market);
+                        return true;
+                    } catch (Exception marketError) {
+                        try {
+                            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + LIFE_COMPANION_PACKAGE));
+                            web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(web);
+                            return true;
+                        } catch (Exception webError) {
+                            return false;
+                        }
+                    }
+                }
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(launch);
                 return true;

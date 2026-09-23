@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getLifeRoutineContext, type LifeRoutineContext } from '@/lib/lifeConcierge';
 
 type NextProgram = {
   title?: string;
@@ -26,6 +27,12 @@ type NextProgram = {
 };
 
 type LifeConsent = {
+  active: boolean;
+  acceptedAt: string;
+  policyVersion: '1.0';
+};
+
+type RoutineIntegrationConsent = {
   active: boolean;
   acceptedAt: string;
   policyVersion: '1.0';
@@ -89,7 +96,11 @@ const KEYS = {
   profile: 'crewcheck:life:profile:v1',
   manual: 'crewcheck:life:manual:v1',
   nativeSummary: 'crewcheck:life:health-summary:v1',
+  routineIntegration: 'crewcheck:life:routine-integration:v1',
 };
+
+const LIFE_COMPANION_PACKAGE = 'com.crewcheck.life';
+const LIFE_COMPANION_WEB_URL = `https://play.google.com/store/apps/details?id=${LIFE_COMPANION_PACKAGE}`;
 
 const DEFAULT_PROFILE: LifeProfile = {
   sleepTarget: 7.5,
@@ -166,6 +177,8 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const [nativeSummary, setNativeSummary] = useState<NativeHealthSummary>(() => readStored(KEYS.nativeSummary, {}));
   const [companionSummary, setCompanionSummary] = useState<NativeHealthSummary>({});
   const [companionStatus, setCompanionStatus] = useState<{ installed?: boolean; state?: string; automatic?: boolean }>({});
+  const [routineIntegration, setRoutineIntegration] = useState<RoutineIntegrationConsent>(() => readStored(KEYS.routineIntegration, { active: false, acceptedAt: '', policyVersion: '1.0' }));
+  const [routineContext, setRoutineContext] = useState<LifeRoutineContext | null>(null);
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(() => {
     try {
       const bridge = (window as any).AndroidCrewCheckNative;
@@ -261,6 +274,17 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     };
   }, []);
 
+  useEffect(() => {
+    const refreshRoutineContext = () => setRoutineContext(routineIntegration.active ? getLifeRoutineContext() : null);
+    refreshRoutineContext();
+    window.addEventListener('crewcheck:life-adaptive-update', refreshRoutineContext);
+    window.addEventListener('storage', refreshRoutineContext);
+    return () => {
+      window.removeEventListener('crewcheck:life-adaptive-update', refreshRoutineContext);
+      window.removeEventListener('storage', refreshRoutineContext);
+    };
+  }, [routineIntegration.active]);
+
   const companionAgeMs = companionSummary.generatedAtEpochMs
     ? Date.now() - Number(companionSummary.generatedAtEpochMs)
     : Number.POSITIVE_INFINITY;
@@ -274,15 +298,19 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const automaticSamsung = companionFresh;
 
   const metrics = useMemo(() => {
-    const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
+    const routineSleepHours = routineIntegration.active ? numberOrZero(routineContext?.sleep.latestMinutes) / 60 : 0;
+    const routineActivityMinutes = routineIntegration.active ? numberOrZero(routineContext?.exercise.minutesPeriod) : 0;
+    const routineStudyMinutes = routineIntegration.active ? numberOrZero(routineContext?.study.minutes7Days) : 0;
+    const routineLeisureMinutes = routineIntegration.active ? numberOrZero(routineContext?.leisure.minutes7Days) : 0;
+    const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || routineSleepHours || numberOrZero(manual.sleepHours);
     return {
       sleepHours,
       steps: numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
-      activityMinutes: numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
-      studyMinutes: numberOrZero(manual.studyMinutes),
-      leisureMinutes: numberOrZero(manual.leisureMinutes),
+      activityMinutes: numberOrZero(effectiveSummary.activityMinutes) || routineActivityMinutes || numberOrZero(manual.activityMinutes),
+      studyMinutes: routineStudyMinutes || numberOrZero(manual.studyMinutes),
+      leisureMinutes: routineLeisureMinutes || numberOrZero(manual.leisureMinutes),
     };
-  }, [manual, effectiveSummary]);
+  }, [manual, effectiveSummary, routineIntegration.active, routineContext]);
 
   useEffect(() => {
     if (!consent.active || !watchMirrorEnabled || (!effectiveSummary.ok && !effectiveSummary.automatic)) return;
@@ -395,6 +423,43 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     }
   }
 
+  function setRoutineIntegrationEnabled(enabled: boolean) {
+    const nextConsent: RoutineIntegrationConsent = {
+      active: enabled,
+      acceptedAt: enabled ? new Date().toISOString() : '',
+      policyVersion: '1.0',
+    };
+    setRoutineIntegration(nextConsent);
+    writeStored(KEYS.routineIntegration, nextConsent);
+    setRoutineContext(enabled ? getLifeRoutineContext() : null);
+    toast.success(enabled
+      ? 'Minha Rotina agora pode contextualizar o CrewLife neste aparelho.'
+      : 'Integração com Minha Rotina desativada.');
+  }
+
+  function clearRoutineIntegration() {
+    try { localStorage.removeItem(KEYS.routineIntegration); } catch {}
+    setRoutineIntegration({ active: false, acceptedAt: '', policyVersion: '1.0' });
+    setRoutineContext(null);
+    toast.success('Integração com Minha Rotina limpa. Isso não apaga seus registros de Rotina.');
+  }
+
+  function openSamsungConnection() {
+    const native = (window as any).AndroidCrewCheckNative;
+    if (native?.openLifeCompanion) {
+      try {
+        const opened = native.openLifeCompanion();
+        if (opened !== false) return;
+      } catch {}
+    }
+    try {
+      window.open(LIFE_COMPANION_WEB_URL, '_blank', 'noopener,noreferrer');
+    } catch {
+      window.location.assign(LIFE_COMPANION_WEB_URL);
+    }
+    toast.info('A sincronização automática com Samsung Health exige Android. O CrewLife continua disponível no modo manual.');
+  }
+
   function setWatchMirror(enabled: boolean) {
     const bridge = (window as any).AndroidCrewCheckNative;
     if (!bridge?.setWatchLifeConsent) {
@@ -446,6 +511,8 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     setManual(DEFAULT_MANUAL);
     setNativeSummary({});
     setNativeStatus({});
+    setRoutineIntegration({ active: false, acceptedAt: '', policyVersion: '1.0' });
+    setRoutineContext(null);
     setConsentChecked(false);
     toast.success('Dados locais do CrewCheck Life apagados.');
   }
@@ -504,11 +571,8 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
       <div className="cc-life-integration-grid">
         <article className={automaticSamsung ? 'connected' : companionStatus.installed ? 'ready' : ''}>
-          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{automaticSamsung ? 'Samsung Health conectado · automático' : companionStatus.installed ? 'Instalado · concluir conexão' : 'Companion não instalado'}</small></div>
-          <button className={automaticSamsung ? '' : 'primary'} onClick={() => {
-            const ok = (window as any).AndroidCrewCheckNative?.openLifeCompanion?.();
-            if (!ok) toast.info('Instale o CrewLife Companion Samsung para ativar a sincronização automática.');
-          }}>{automaticSamsung ? 'Abrir Companion' : companionStatus.installed ? 'Conectar' : 'Como instalar'}</button>
+          <Smartphone/><div><h3>Samsung Health</h3><p>O CrewLife Companion é um componente opcional para sincronização automática de passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{automaticSamsung ? 'Samsung Health · conectado automaticamente' : companionStatus.installed ? 'Companion instalado · concluir conexão' : 'Samsung Health · não instalado'}</small></div>
+          <button className={automaticSamsung ? '' : 'primary'} onClick={openSamsungConnection}>{automaticSamsung ? 'Abrir Companion' : 'Conectar Samsung Health'}</button>
         </article>
         {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
           <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>
@@ -527,6 +591,13 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         </article>
       </div>
       {nativeSummary.ok && <p className="cc-life-sync-note">Último resumo nativo: {dateTimeLabel(nativeSummary.capturedAt) || 'agora'} · sono {hoursLabel(effectiveSummary.sleepMinutes)} · período {nativeSummary.periodDays || 7} dias. Dados brutos não são copiados para o CrewCheck.</p>}
+    </section>
+
+    <section className="cc-life-block cc-life-routine-integration">
+      <header><div><small>ROTINA INTEGRADA</small><h2>CrewLife + Minha Rotina</h2><p>Você escolhe se o CrewLife pode usar seus registros locais de estudo, treino, lazer, descanso e hábitos salvos para personalizar o painel.</p></div><ShieldCheck/></header>
+      <label className="cc-life-check"><input type="checkbox" checked={routineIntegration.active} onChange={(event) => setRoutineIntegrationEnabled(event.target.checked)}/><span><strong>Integrar minha Rotina ao CrewLife</strong><br/>Desativado por padrão. Este consentimento é separado do CrewLife e da conexão com Samsung Health.</span></label>
+      <p>Quando ativado, o CrewLife usa somente contexto local e suas próximas programações para sugestões pessoais. Não altera escala, APZ, jornada, compliance ou financeiro; não determina diagnóstico, aptidão ou fadiga operacional.</p>
+      {routineIntegration.active && <div className="cc-life-actions"><button onClick={clearRoutineIntegration}>Desativar e limpar integração</button><small>Limpar a integração não apaga seus registros de Rotina nem afeta o Companion Samsung.</small></div>}
     </section>
 
     <section className="cc-life-block">

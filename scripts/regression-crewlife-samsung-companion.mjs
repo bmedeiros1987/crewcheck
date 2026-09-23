@@ -106,8 +106,8 @@ assert.match(mobile, /"refresh"/);
 assert.match(mobile, /CrewLifeWatchPublisher\.publishCrewLife/);
 assert.match(mobile, /scoreKind", "ENERGY"/);
 
-assert.match(life, /CrewLife Companion Samsung/);
-assert.match(life, /Samsung Health · automático/);
+assert.match(life, /<h3>Samsung Health<\/h3>/);
+assert.match(life, /Samsung Health · conectado automaticamente/);
 assert.match(life, /energyScore/);
 assert.match(life, /companionSummary\.automatic/);
 assert.match(life, /nativeHealthEnabled/);
