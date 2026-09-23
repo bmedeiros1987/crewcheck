@@ -245,7 +245,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       studyMinutes: numberOrZero(manual.studyMinutes),
       leisureMinutes: numberOrZero(manual.leisureMinutes),
     };
-  }, [manual, nativeSummary]);
+  }, [manual, effectiveSummary]);
 
   useEffect(() => {
     if (!consent.active || !watchMirrorEnabled || (!effectiveSummary.ok && !effectiveSummary.automatic)) return;
