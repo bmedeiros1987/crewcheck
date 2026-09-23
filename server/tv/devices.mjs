@@ -34,6 +34,38 @@ function normalizePreferences(value = {}) {
   };
 }
 
+function sanitizeFinite(value, min = -1_000_000, max = 1_000_000) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : null;
+}
+function sanitizeJourneyContext(value, preferences) {
+  if (preferences.audience !== 'owner' || !value || Array.isArray(value) || typeof value !== 'object') return {};
+  const result = {};
+  for (const [rawKey, raw] of Object.entries(value).slice(0, 12)) {
+    const key = String(rawKey || '').trim();
+    if (!key || key.length > 160 || !raw || Array.isArray(raw) || typeof raw !== 'object') continue;
+    const entry = {};
+    if (preferences.share.finance === true && raw.finance && typeof raw.finance === 'object' && !Array.isArray(raw.finance)) {
+      const estimated = sanitizeFinite(raw.finance.estimated);
+      const perDiem = sanitizeFinite(raw.finance.perDiem);
+      const production = sanitizeFinite(raw.finance.production);
+      if (estimated !== null || perDiem !== null || production !== null) {
+        entry.finance = {
+          currency: /^[A-Z]{3}$/.test(String(raw.finance.currency || '').trim().toUpperCase())
+            ? String(raw.finance.currency).trim().toUpperCase()
+            : 'BRL',
+          estimated,
+          perDiem,
+          production,
+          note: String(raw.finance.note || '').trim().slice(0, 180) || null,
+        };
+      }
+    }
+    if (Object.keys(entry).length) result[key] = entry;
+  }
+  return result;
+}
+
 export class TvError extends Error {
   constructor(status, code) { super(code); this.status = status; }
 }
@@ -132,24 +164,47 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         const d = state.devices?.[deviceId];
         if (!d || d.userId !== userId || d.revoked) throw new TvError(404, 'device_not_found');
         const preferences = normalizePreferences(d.preferences);
-        if (preferences.audience !== 'owner' || preferences.share.traffic !== true) {
+        if (preferences.audience !== 'owner') {
           delete d.context;
-          throw new TvError(403, 'traffic_context_not_authorized');
+          throw new TvError(403, 'tv_context_not_authorized');
         }
-        const latitude = Number(value?.routeOrigin?.latitude);
-        const longitude = Number(value?.routeOrigin?.longitude);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180)
-          throw new TvError(400, 'invalid_route_origin');
+
         const requestedTtl = Math.max(60_000, Math.min(10 * 60_000, Number(value?.ttlMs || 5 * 60_000)));
-        d.context = {
-          routeOrigin: {
+        const context = { expiresAt: now() + requestedTtl };
+        let accepted = false;
+
+        if (preferences.share.traffic === true && value?.routeOrigin) {
+          const latitude = Number(value.routeOrigin.latitude);
+          const longitude = Number(value.routeOrigin.longitude);
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180)
+            throw new TvError(400, 'invalid_route_origin');
+          context.routeOrigin = {
             latitude,
             longitude,
-            label: String(value?.routeOrigin?.label || 'Localização autorizada').trim().slice(0,80) || 'Localização autorizada',
-          },
-          expiresAt: now() + requestedTtl,
+            label: String(value.routeOrigin.label || 'Localização autorizada').trim().slice(0,80) || 'Localização autorizada',
+          };
+          accepted = true;
+        }
+
+        const journeyDetails = sanitizeJourneyContext(value?.journeyDetails, preferences);
+        if (Object.keys(journeyDetails).length) {
+          context.journeyDetails = journeyDetails;
+          accepted = true;
+        }
+
+        if (!accepted) {
+          delete d.context;
+          throw new TvError(403, 'tv_context_not_authorized');
+        }
+
+        d.context = context;
+        return {
+          ok: true,
+          deviceId: d.deviceId,
+          expiresAt: new Date(context.expiresAt).toISOString(),
+          routeOrigin: Boolean(context.routeOrigin),
+          journeyDetails: Object.keys(context.journeyDetails || {}).length,
         };
-        return { ok: true, deviceId: d.deviceId, expiresAt: new Date(d.context.expiresAt).toISOString() };
       });
     },
     async revoke(userId, deviceId) {
