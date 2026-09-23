@@ -15,14 +15,32 @@ command -v java >/dev/null 2>&1 || fail "Java não encontrado."
 command -v gradle >/dev/null 2>&1 || fail "Gradle não encontrado."
 
 if [[ -z "$ZIP_PATH" ]]; then
-  cat >&2 <<'USAGE'
+  shopt -s nullglob
+  CANDIDATES=(
+    "$HOME"/Downloads/samsung-health-data-sdk*.zip
+    "$HOME"/Desktop/samsung-health-data-sdk*.zip
+  )
+  shopt -u nullglob
+
+  if [[ "${#CANDIDATES[@]}" -eq 1 ]]; then
+    ZIP_PATH="${CANDIDATES[0]}"
+    printf '[crewlife-samsung-test] ZIP encontrado automaticamente: %s\n' "$ZIP_PATH"
+  elif [[ "${#CANDIDATES[@]}" -gt 1 ]]; then
+    printf 'Encontrei mais de um ZIP Samsung Health:\n' >&2
+    printf '  %s\n' "${CANDIDATES[@]}" >&2
+    fail "Informe qual ZIP usar como primeiro argumento."
+  else
+    cat >&2 <<'USAGE'
+Não encontrei automaticamente o ZIP em Downloads ou Desktop.
+
 Uso:
   bash scripts/crewlife-samsung-local-test.sh "/caminho/para/samsung-health-data-sdk-1.1.0.zip"
 
 Opcional:
   CREWLIFE_KEEP_AAR=1 mantém o AAR extraído após o build.
 USAGE
-  exit 2
+    exit 2
+  fi
 fi
 
 [[ -f "$ZIP_PATH" ]] || fail "ZIP não encontrado: $ZIP_PATH"
