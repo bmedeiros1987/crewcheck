@@ -6,8 +6,11 @@ const required = [
   "const [showIntro, setShowIntro] = useState(false);",
   "const event = nextFlight(events);",
   "const flightEvent = nextRealFlight(events);",
-  "RadarView event={flightEvent}",
-  "WeatherView event={flightEvent}",
+  "const flightSurfaceEvent = flightSurfaceContext?.programId ? contextualFlightEvent : flightEvent;",
+  "RadarView event={flightSurfaceEvent}",
+  "WeatherView event={flightSurfaceEvent}",
+  "FlightDeckContextUnavailable targetView=\"radar\"",
+  "FlightDeckContextUnavailable targetView=\"weather\"",
   "if (value === 'presentation' || value === 'apresentacao') return 'presentation';",
   "toast.message(decision.toastText || 'Importação cancelada.');",
   "sessionStorage.setItem('crewcheck_force_view_once', 'roster');",
@@ -28,6 +31,7 @@ const forbidden = [
   "<em>TOMTOM</em>",
   "<b>API/Trânsito</b>",
   "toast.error(decision.toastText || 'Importação cancelada.');",
+  "contextualFlightEvent || flightEvent",
 ];
 
 for (const token of forbidden) {
