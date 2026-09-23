@@ -15,6 +15,7 @@ const mobileManifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const mobile = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const life = read('client/src/components/v1434/CrewCheckLifeView.tsx');
 const vendorIgnore = read('android-wrapper/lifecompanion/libs/.gitignore');
+const storePolicy = read('android-wrapper/store-policy.gradle');
 const localHelper = read('scripts/crewlife-samsung-local-test.sh');
 
 assert.ok(rootGradle.includes("id 'org.jetbrains.kotlin.android' version '2.0.21' apply false"));
@@ -30,6 +31,7 @@ assert.ok(companionGradle.includes("com.google.code.gson:gson:2.13.2"));
 assert.ok(companionGradle.includes("org.jetbrains.kotlin:kotlin-stdlib:2.0.21"));
 assert.ok(companionGradle.includes("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"));
 assert.match(vendorIgnore, /samsung-health-data-api\*\.aar/);
+assert.match(storePolicy, /plugins\.withId\('org\.jetbrains\.kotlin\.android'\)/);
 assert.match(localHelper, /samsung-health-data-api/);
 assert.match(localHelper, /:lifecompanion:assembleDebug/);
 assert.match(localHelper, /lifecompanion-debug\.apk/);
