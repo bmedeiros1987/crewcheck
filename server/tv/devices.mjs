@@ -152,6 +152,21 @@ export function createDeviceService({ store, now = Date.now, pairingOrigin, acco
         return { ok: true, deviceId: d.deviceId, expiresAt: new Date(d.context.expiresAt).toISOString() };
       });
     },
+    async updateTrust(userId, deviceId, trusted) {
+      requireAccount(userId);
+      if (typeof trusted !== 'boolean') throw new TvError(400, 'invalid_trust');
+      return store.transaction(state => {
+        const d = state.devices?.[deviceId];
+        if (!d || d.userId !== userId || d.revoked) throw new TvError(404, 'device_not_found');
+        d.trusted = trusted;
+        d.expiresAt = leaseFor(trusted);
+        return {
+          deviceId: d.deviceId,
+          trusted: d.trusted === true,
+          expiresAt: d.expiresAt == null ? null : new Date(d.expiresAt).toISOString(),
+        };
+      });
+    },
     async revoke(userId, deviceId) {
       requireAccount(userId);
       return store.transaction(state => {
