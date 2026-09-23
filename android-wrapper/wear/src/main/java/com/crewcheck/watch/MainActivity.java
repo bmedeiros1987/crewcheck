@@ -13,7 +13,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -38,9 +42,11 @@ public final class MainActivity extends FragmentActivity
         implements AmbientModeSupport.AmbientCallbackProvider {
 
     private static final int MODE_NOW = 0;
-    private static final int MODE_NOTIFICATIONS = 1;
-    private static final int MODE_CREWLIFE = 2;
+    private static final int MODE_JOURNEY = 1;
+    private static final int MODE_NOTIFICATIONS = 2;
     private static final int MODE_SCHEDULE = 3;
+    private static final int MODE_CREWLIFE = 4;
+    private static final int PAGE_COUNT = 5;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
     private static final int NAVY = Color.rgb(3, 10, 22);
@@ -80,6 +86,9 @@ public final class MainActivity extends FragmentActivity
     private TextView transientStatus;
     private boolean ambient;
     private int screenMode = MODE_NOW;
+    private float touchDownX;
+    private float touchDownY;
+    private long lastRotaryNavigationAt;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -148,9 +157,10 @@ public final class MainActivity extends FragmentActivity
     private void applyIntentScreen(Intent intent) {
         if (intent == null) return;
         String requested = intent.getStringExtra("crewcheck_screen");
-        if ("notifications".equals(requested)) screenMode = MODE_NOTIFICATIONS;
-        else if ("crewlife".equals(requested)) screenMode = MODE_CREWLIFE;
+        if ("journey".equals(requested)) screenMode = MODE_JOURNEY;
+        else if ("notifications".equals(requested)) screenMode = MODE_NOTIFICATIONS;
         else if ("schedule".equals(requested)) screenMode = MODE_SCHEDULE;
+        else if ("crewlife".equals(requested)) screenMode = MODE_CREWLIFE;
     }
 
     private void restartClock() {
@@ -159,11 +169,21 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void renderRoot() {
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(ambient ? BLACK : NAVY);
+
+        PremiumBackdropView backdrop = new PremiumBackdropView(this);
+        root.addView(backdrop, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(ambient ? BLACK : NAVY);
+        scroll.setBackgroundColor(Color.TRANSPARENT);
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOnTouchListener((view, event) -> handleSwipeGesture(event));
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -174,8 +194,73 @@ public final class MainActivity extends FragmentActivity
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
-        setContentView(scroll);
+        root.addView(scroll, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        setContentView(root);
         renderSnapshot();
+    }
+
+    private boolean handleSwipeGesture(MotionEvent event) {
+        if (ambient) return false;
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            touchDownX = event.getX();
+            touchDownY = event.getY();
+            return false;
+        }
+        if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            float dx = event.getX() - touchDownX;
+            float dy = event.getY() - touchDownY;
+            if (Math.abs(dx) >= dp(44) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                navigatePage(dx < 0 ? 1 : -1);
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        if (!ambient
+                && event.getAction() == MotionEvent.ACTION_SCROLL
+                && (event.getSource() & InputDevice.SOURCE_ROTARY_ENCODER)
+                == InputDevice.SOURCE_ROTARY_ENCODER) {
+            long now = System.currentTimeMillis();
+            if (now - lastRotaryNavigationAt > 180L) {
+                float delta = event.getAxisValue(MotionEvent.AXIS_SCROLL);
+                if (Math.abs(delta) > 0.01f) {
+                    navigatePage(delta < 0 ? 1 : -1);
+                    lastRotaryNavigationAt = now;
+                    return true;
+                }
+            }
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
+    private void navigatePage(int delta) {
+        int next = Math.max(0, Math.min(PAGE_COUNT - 1, screenMode + delta));
+        if (next == screenMode) {
+            if (content != null) content.performHapticFeedback(HapticFeedbackConstants.REJECT);
+            return;
+        }
+        transitionToPage(next, delta);
+    }
+
+    private void transitionToPage(int nextMode, int direction) {
+        screenMode = nextMode;
+        if (content != null) content.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        renderSnapshot();
+        if (content != null) {
+            content.setAlpha(0.35f);
+            content.setTranslationX(dp(16) * (direction >= 0 ? 1 : -1));
+            content.animate()
+                    .alpha(1f)
+                    .translationX(0f)
+                    .setDuration(180L)
+                    .start();
+        }
     }
 
     private void applySafePadding() {
@@ -201,18 +286,19 @@ public final class MainActivity extends FragmentActivity
         }
 
         renderHeader(snapshot);
+        addNavigation(snapshot);
 
         switch (screenMode) {
+            case MODE_JOURNEY -> renderJourney(snapshot, now);
             case MODE_NOTIFICATIONS -> renderNotifications(snapshot, now);
-            case MODE_CREWLIFE -> renderCrewLife(now);
             case MODE_SCHEDULE -> renderSchedule(snapshot, now);
+            case MODE_CREWLIFE -> renderCrewLife(now);
             default -> {
                 if (snapshot == null) renderEmptyState();
                 else renderLiveState(snapshot, now);
             }
         }
 
-        addNavigation(snapshot);
         renderFooter();
 
         if (BuildConfig.DEBUG) {
@@ -615,22 +701,63 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void addNavigation(WatchContextSnapshot snapshot) {
-        LinearLayout first = navRow();
-        first.addView(navChip("Agora", CYAN, MODE_NOW));
-        first.addView(navChip("Alertas" + (alertCount(snapshot) > 0 ? " " + alertCount(snapshot) : ""),
-                MAGENTA, MODE_NOTIFICATIONS));
+        TextView section = text(pageTitle(), 8, pageAccent(), true, Gravity.CENTER);
+        section.setLetterSpacing(.11f);
+        section.setPadding(0, 0, 0, dp(3));
+        content.addView(section);
 
-        LinearLayout second = navRow();
-        second.addView(navChip("CrewLife", SUCCESS, MODE_CREWLIFE));
-        second.addView(navChip(
-                snapshot != null && !snapshot.schedule.isEmpty()
-                        ? "Escala " + snapshot.schedule.size()
-                        : "Escala",
-                VIOLET, MODE_SCHEDULE
-        ));
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER);
+        for (int mode = 0; mode < PAGE_COUNT; mode++) {
+            final int target = mode;
+            View dot = new View(this);
+            boolean selected = mode == screenMode;
+            GradientDrawable bg = new GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    selected
+                            ? new int[]{withAlpha(CYAN, 240), withAlpha(pageAccent(), 235)}
+                            : new int[]{withAlpha(MUTED, 55), withAlpha(MUTED, 55)}
+            );
+            bg.setCornerRadius(dp(5));
+            dot.setBackground(bg);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                    dp(selected ? 18 : 5),
+                    dp(4)
+            );
+            p.setMargins(dp(2), 0, dp(2), dp(5));
+            dot.setLayoutParams(p);
+            dot.setContentDescription(pageTitle(mode));
+            dot.setOnClickListener(view -> {
+                if (target != screenMode) transitionToPage(target, target > screenMode ? 1 : -1);
+            });
+            dots.addView(dot);
+        }
+        content.addView(dots);
+    }
 
-        content.addView(first);
-        content.addView(second);
+    private String pageTitle() {
+        return pageTitle(screenMode);
+    }
+
+    private static String pageTitle(int mode) {
+        return switch (mode) {
+            case MODE_JOURNEY -> "JORNADA";
+            case MODE_NOTIFICATIONS -> "ALERTAS";
+            case MODE_SCHEDULE -> "ESCALA";
+            case MODE_CREWLIFE -> "CREWLIFE";
+            default -> "AGORA";
+        };
+    }
+
+    private int pageAccent() {
+        return switch (screenMode) {
+            case MODE_JOURNEY -> VIOLET;
+            case MODE_NOTIFICATIONS -> MAGENTA;
+            case MODE_SCHEDULE -> CYAN;
+            case MODE_CREWLIFE -> SUCCESS;
+            default -> BLUE;
+        };
     }
 
     private LinearLayout navRow() {
@@ -649,8 +776,7 @@ public final class MainActivity extends FragmentActivity
     private TextView navChip(String label, int accent, int mode) {
         TextView chip = actionChip(label, accent, screenMode == mode);
         chip.setOnClickListener(view -> {
-            screenMode = mode;
-            renderSnapshot();
+            if (screenMode != mode) transitionToPage(mode, mode > screenMode ? 1 : -1);
         });
         return chip;
     }
@@ -660,8 +786,11 @@ public final class MainActivity extends FragmentActivity
         transientStatus.setPadding(dp(4), dp(3), dp(4), 0);
         content.addView(transientStatus);
 
-        TextView sync = actionChip("Sincronizar", BLUE, false);
-        sync.setOnClickListener(view -> requestSync());
+        TextView sync = actionChip("↻ Atualizar", BLUE, false);
+        sync.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            requestSync();
+        });
         content.addView(sync);
     }
 
