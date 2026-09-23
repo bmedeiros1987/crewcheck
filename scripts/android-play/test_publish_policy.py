@@ -13,6 +13,12 @@ assert "changesNotSentForReview" not in source
 assert "Independent CI failed; Play publication blocked" in source
 assert "time.time() + 12 * 60" in source
 
+# The Priority 0 release gate is downstream of this Android workflow. Treating it as
+# independent CI creates a publication deadlock: publisher waits for the gate while
+# the gate waits for the Android workflow (including the publisher) to succeed.
+assert "CrewCheck Priority 0 Release Gate" in source
+assert "dependent_ci_workflow_names" in source
+
 # Guard against accidentally introducing a production track in any release payload.
 payload_tracks = re.findall(r"\['([^']+)'\]", source)
 assert "production" not in payload_tracks
