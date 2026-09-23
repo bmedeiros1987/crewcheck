@@ -16,7 +16,6 @@ public final class LifeSummaryProvider extends ContentProvider {
             Uri.parse("content://com.crewcheck.life.summary/v1/current");
 
     private static final String TRUSTED_CREWCHECK_PACKAGE = "com.crewcheck.app";
-    private static final String PLAY_STORE_PACKAGE = "com.android.vending";
 
     @Override
     public boolean onCreate() {
