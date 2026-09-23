@@ -7,6 +7,10 @@ on:
       - 'android-wrapper/app/**'
       - 'client/src/components/v1434/**'
       - 'android-wrapper/settings.gradle'
+      - 'android-wrapper/build.gradle'
+      - 'client/src/lib/lifeConcierge.ts'
+      - 'scripts/android-play/**'
+      - 'scripts/crewlife-samsung-local-test.sh'
       - 'scripts/regression-crewlife-samsung-companion.mjs'
       - '.github/workflows/crewlife-samsung-companion.yml'
   workflow_dispatch:
@@ -17,7 +21,14 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
+    env:
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+      SAMSUNG_HEALTH_DATA_AAR_BASE64: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_BASE64 }}
     steps:
       - uses: actions/checkout@v6
 
@@ -55,8 +66,82 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
 
+      - name: Restore Samsung SDK when configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-wrapper/lifecompanion/libs
+          if [ -z "${SAMSUNG_HEALTH_DATA_AAR_BASE64:-}" ]; then
+            echo "SAMSUNG_SDK_READY=false" >> "$GITHUB_ENV"
+            echo "::notice::Samsung SDK secret not configured; validating architecture/UI without vendor AAR."
+            exit 0
+          fi
+          encoded="${SAMSUNG_HEALTH_DATA_AAR_BASE64#base64:}"
+          printf '%s' "$encoded" | tr -d '\r\n ' | base64 --decode > android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar
+          test -s android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar
+          echo "SAMSUNG_SDK_READY=true" >> "$GITHUB_ENV"
+
       - name: Build scaffold companion and mobile bridge
         run: gradle -p android-wrapper --no-daemon --console=plain :lifecompanion:assembleDebug :app:assembleDebug
 
       - name: Lint companion
         run: gradle -p android-wrapper --no-daemon --console=plain :lifecompanion:lintDebug
+
+      - name: Upload Companion architecture pilot
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewLife-Companion-architecture-pilot
+          path: android-wrapper/lifecompanion/build/outputs/apk/debug/lifecompanion-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Restore CrewCheck signing key
+        if: env.SAMSUNG_SDK_READY == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+      - name: Build signed Samsung-enabled Companion
+        if: env.SAMSUNG_SDK_READY == 'true'
+        working-directory: android-wrapper
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: gradle --no-daemon --console=plain :lifecompanion:assembleRelease :lifecompanion:bundleRelease
+
+      - name: Verify and stage Samsung-enabled Companion
+        if: env.SAMSUNG_SDK_READY == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='android-wrapper/lifecompanion/build/outputs/apk/release/lifecompanion-release.apk'
+          aab='android-wrapper/lifecompanion/build/outputs/bundle/release/lifecompanion-release.aab'
+          test -s "$apk" && test -s "$aab"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs "$apk"
+          jarsigner -verify -verbose -certs "$aab" | grep -F 'jar verified.'
+          out="$RUNNER_TEMP/crewlife-samsung"
+          mkdir -p "$out"
+          cp "$apk" "$out/CrewLife-Companion-Samsung-signed.apk"
+          cp "$aab" "$out/CrewLife-Companion-Samsung-signed.aab"
+          (cd "$out" && sha256sum * > SHA256SUMS.txt)
+
+      - name: Upload Samsung-enabled Companion
+        if: env.SAMSUNG_SDK_READY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewLife-Companion-Samsung-signed
+          path: ${{ runner.temp }}/crewlife-samsung/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary SDK and signing material
+        if: always()
+        run: |
+          rm -f android-wrapper/lifecompanion/libs/samsung-health-data-api-*.aar
+          rm -f "$CREWCHECK_STORE_FILE"
