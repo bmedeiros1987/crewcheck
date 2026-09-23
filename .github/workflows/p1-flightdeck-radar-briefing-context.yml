@@ -57,6 +57,7 @@ jobs:
           path: |
             ${{ runner.temp }}/android-build.log
             ${{ runner.temp }}/android-build-tail.log
+            client/src/pages/Home.tsx
           if-no-files-found: warn
           retention-days: 1
       - name: TypeScript
