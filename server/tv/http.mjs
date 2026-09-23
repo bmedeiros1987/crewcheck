@@ -227,7 +227,16 @@ export function createTvHttpBridge({ getDatabase, authenticateAccount, loadActiv
         const snapshot = projectRoster(data.roster, {
           deviceId: auth.deviceId, snapshotId: randomUUID(), sourceVersion: data.sourceVersion,
           month: `${data.roster.year}-${String(data.roster.month).padStart(2, '0')}`,
-          privacy: effectivePrivacy, generatedAt: now.toISOString(),
+          privacy: effectivePrivacy,
+          // Family/visitor may receive the scheduled route only when explicitly
+          // allowed. Flight number and ground metadata remain redacted.
+          routeVisibility:
+            audience === 'owner'
+              ? 'flight'
+              : preferences.share?.operational !== false
+                ? 'route'
+                : 'none',
+          generatedAt: now.toISOString(),
           expiresAt: new Date(now.getTime() + 60000).toISOString(), now,
         });
         snapshot.audience = audience;
