@@ -8,46 +8,57 @@ Samsung Health -> CrewLife Companion (`com.crewcheck.life`) -> provider local pr
 
 Nenhuma série bruta é exposta ao CrewCheck. O provider entrega somente um resumo local com:
 - passos do dia;
-- sono recente e sleep score quando disponível;
-- minutos de atividade, calorias e distância;
+- sono recente e pontuação do sono quando disponível;
+- minutos de atividade, calorias ativas e distância;
 - Samsung Energy Score quando disponível.
 
-O Companion não envia estes dados ao servidor.
+O código do CrewLife Companion não envia esse resumo aos servidores do CrewCheck.
 
 ## SDK Samsung
 
 O repositório público não redistribui o binário da Samsung.
 
-1. Baixe **Samsung Health Data SDK v1.1.0** no portal oficial:
-   https://developer.samsung.com/health/data/overview.html
-2. Extraia `samsung-health-data-api.aar`.
-3. Coloque o arquivo em:
+1. Baixe **Samsung Health Data SDK v1.1.0** no portal oficial.
+2. No ZIP oficial, localize:
+   `libs/samsung-health-data-api-1.1.0.aar`
+3. Copie esse AAR diretamente para:
+   `android-wrapper/lifecompanion/libs/`
 
-`android-wrapper/lifecompanion/libs/samsung-health-data-api.aar`
-
-O Gradle detecta automaticamente a presença do AAR e define
+Não é necessário renomear o arquivo. O Gradle aceita `samsung-health-data-api*.aar`,
+detecta automaticamente a presença do SDK e define
 `BuildConfig.SAMSUNG_HEALTH_SDK_INCLUDED=true`.
 
-Sem o arquivo, a build continua funcionando em modo scaffold e informa `sdk_missing`.
+O módulo declara explicitamente os runtimes Kotlin e coroutines exigidos pelo AAR local,
+porque um AAR copiado manualmente não traz um POM Maven com dependências transitivas.
+
+Sem o AAR, a build de desenvolvimento continua funcionando em modo scaffold e informa
+`sdk_missing`. A build de release do Companion falha de propósito sem o SDK.
 
 ## Teste no Galaxy
 
-Samsung Health Data SDK requer Samsung Health 6.30.2+ e Android 10+.
-Para desenvolvimento, a Samsung permite **Developer Mode (Samsung Health Data SDK)**.
-Esse modo é exclusivamente para desenvolvimento/teste.
+O Samsung Health Data SDK v1.1.0 exige Android 10+ e uma versão compatível do Samsung Health.
+O teste da integração deve ser feito em aparelho físico compatível.
+
+Para desenvolvimento, a Samsung disponibiliza **Developer Mode (Data Read)**. Esse modo é
+exclusivamente para desenvolvimento/teste e permite validar leitura antes do registro público
+do package/certificado.
 
 A leitura inicial pede somente:
-- Steps
-- Sleep
-- Activity Summary
-- Energy Score
+- Steps;
+- Sleep;
+- Activity Summary;
+- Energy Score.
 
-Todos com acesso de leitura.
+Todos em modo de leitura.
+
+As chamadas que aguardam o retorno das Futures do SDK são executadas fora da main thread.
+Erros resolvíveis da plataforma Samsung Health (instalação, atualização, ativação ou
+configuração) são encaminhados ao fluxo oficial de resolução do SDK.
 
 ## Distribuição
 
 Antes de distribuir, solicite parceria Samsung Health Data SDK e registre:
-- package: `com.crewcheck.life`
+- package: `com.crewcheck.life`;
 - SHA-256 do certificado que assina a versão entregue aos usuários.
 
 Se distribuir pelo Google Play com Play App Signing, use o **App signing certificate SHA-256**
@@ -56,20 +67,23 @@ do Play Console, não o upload certificate.
 Se distribuir diretamente/Galaxy Store com a chave CrewCheck, extraia o SHA-256 do APK/AAB
 assinado que será efetivamente entregue.
 
-Samsung exige o registro package + assinatura para uso público; sem isso o SDK funciona
-apenas em Developer Mode.
+Sem o registro exigido pela Samsung, mantenha o Companion restrito ao fluxo de
+desenvolvimento/teste.
 
 ## Privacidade e produto
 
 - recurso opcional;
 - consentimento específico do Samsung Health;
-- somente resumos locais;
+- somente resumos locais expostos ao CrewCheck;
+- provider protegido por permissão `signature`;
+- armazenamento local cifrado via Android Keystore;
 - sem diagnóstico;
 - sem avaliação de aptidão para voo;
 - sem decisão operacional baseada em saúde;
 - sem publicidade, scoring de crédito ou compartilhamento com corretores de dados.
 
 Documentação oficial:
+- https://developer.samsung.com/health/data/overview.html
 - https://developer.samsung.com/health/data/process.html
 - https://developer.samsung.com/health/data/guide/developer-mode.html
 - https://developer.samsung.com/health/data/guide/features/data-permission.html
