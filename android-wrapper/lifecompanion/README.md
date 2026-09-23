@@ -32,9 +32,10 @@ O módulo segue o setup oficial do SDK v1.1.0 com Gson e Parcelize. Como o AAR �
 localmente e não vem acompanhado de um POM Maven, os runtimes Kotlin e coroutines usados
 pelo próprio binário da Samsung também são declarados explicitamente.
 
-Versões atualmente fixadas no wrapper:
-- Kotlin / Parcelize: 2.3.20;
-- kotlinx-coroutines-android: 1.11.0;
+Para não criar uma segunda toolchain Android dentro do CrewCheck, o Companion usa os pins
+canônicos já adotados pelo projeto:
+- Kotlin / Parcelize: 2.0.21;
+- kotlinx-coroutines-android: 1.9.0;
 - Gson: 2.13.2.
 
 Sem o AAR, a build de desenvolvimento continua funcionando em modo scaffold e informa
