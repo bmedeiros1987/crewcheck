@@ -57,10 +57,24 @@ update('client/src/pages/Home.tsx', (source) => {
 
   next = required(
     next,
-    "    {view === 'radar' && <RadarView event={flightEvent}/>}\n    {view === 'weather' && <WeatherView event={flightEvent}/>}",
-    "    {view === 'radar' && (flightSurfaceEvent ? <RadarView event={flightSurfaceEvent}/> : <><Brand back/><FlightDeckContextUnavailable targetView=\"radar\"/></>)}\n    {view === 'weather' && (flightSurfaceEvent ? <WeatherView event={flightSurfaceEvent}/> : <><Brand back/><FlightDeckContextUnavailable targetView=\"weather\"/></>)}",
-    'render contextual de Radar/Meteorologia',
+    "    {view === 'radar' && <RadarView event={flightEvent}/>}",
+    "    {view === 'radar' && (flightSurfaceEvent ? <RadarView event={flightSurfaceEvent}/> : <><Brand back/><FlightDeckContextUnavailable targetView=\"radar\"/></>)}",
+    'render contextual do Radar',
   );
+
+  const weatherContextual = "    {view === 'weather' && (flightSurfaceEvent ? <><MeteoFollowPanel event={flightSurfaceEvent}/><WeatherView event={flightSurfaceEvent}/></> : <><Brand back/><FlightDeckContextUnavailable targetView=\"weather\"/></>)}";
+  if (!next.includes(weatherContextual)) {
+    const weatherCandidates = [
+      "    {view === 'weather' && <><MeteoFollowPanel event={flightEvent}/><WeatherView event={flightEvent}/></>}",
+      "    {view === 'weather' && <WeatherView event={flightEvent}/>}",
+    ];
+    const weatherAnchor = weatherCandidates.find((value) => next.includes(value));
+    if (!weatherAnchor) throw new Error(`[${MARKER}] Âncora ausente: render contextual da Meteorologia`);
+    const weatherReplacement = weatherAnchor.includes('MeteoFollowPanel')
+      ? weatherContextual
+      : "    {view === 'weather' && (flightSurfaceEvent ? <WeatherView event={flightSurfaceEvent}/> : <><Brand back/><FlightDeckContextUnavailable targetView=\"weather\"/></>)}";
+    next = next.replace(weatherAnchor, weatherReplacement);
+  }
 
   next = required(
     next,
