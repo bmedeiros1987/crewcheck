@@ -49,6 +49,16 @@ jobs:
       - run: npm ci
       - name: Prepare canonical client sources
         run: node scripts/v139/apply.mjs
+      - name: Preserve canonical-prepare diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-566-prepare-failure-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/android-build.log
+            ${{ runner.temp }}/android-build-tail.log
+          if-no-files-found: warn
+          retention-days: 1
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Shared Navigation Context regression
