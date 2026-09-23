@@ -16,10 +16,18 @@ public final class CrewCheckWatchSyncService extends WearableListenerService {
             try {
                 String payload = CrewCheckWatchConciergeBridge.sanitizeRequest(messageEvent.getData());
                 CrewCheckWatchConciergeBridge.queue(this, payload);
-                android.content.Intent request =
-                        new android.content.Intent(MainActivity.ACTION_WATCH_CONCIERGE_REQUEST)
-                                .setPackage(getPackageName());
-                sendBroadcast(request);
+                CrewCheckWatchConciergeBridge.processInBackground(
+                        this,
+                        payload,
+                        (ok, message) -> {
+                            if (ok) return;
+                            android.content.Intent request =
+                                    new android.content.Intent(
+                                            MainActivity.ACTION_WATCH_CONCIERGE_REQUEST
+                                    ).setPackage(getPackageName());
+                            sendBroadcast(request);
+                        }
+                );
             } catch (Exception ignored) {
                 // Invalid requests never reach the WebView/Concierge.
             }
