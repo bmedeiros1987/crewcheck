@@ -38,7 +38,7 @@ public final class TvNavigationTest {
 
     private void awaitText(String text) throws Exception {
         for (int attempt = 0; attempt < 60; attempt++) {
-            if (evaluate("document.body.innerText").contains(text)) return;
+            if (evaluate("document.body ? document.body.innerText : ''").contains(text)) return;
             Thread.sleep(250);
         }
         fail("Missing visible text: " + text + "; body=" + evaluate("document.body.innerText"));

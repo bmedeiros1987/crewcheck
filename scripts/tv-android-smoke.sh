@@ -5,6 +5,7 @@ adb logcat -c
 capture_diagnostics() {
   adb exec-out screencap -p > dist/tv-emulator/android-tv-live.png || true
   adb logcat -d > dist/tv-emulator/logcat.txt || true
+  adb shell dumpsys activity lastanr > dist/tv-emulator/last-anr.txt || true
   adb shell getprop ro.build.fingerprint > dist/tv-emulator/device.txt || true
 }
 trap capture_diagnostics EXIT
