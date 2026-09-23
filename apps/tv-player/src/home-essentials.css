@@ -1,0 +1,69 @@
+/* CrewCheck TV operational home.
+   webOS 4 / Chromium 53: flexbox + explicit margins, no CSS Grid/gap dependency. */
+
+.home-essentials{display:flex;min-height:0;flex:1}
+.home-flight-hero{position:relative;display:flex;flex-direction:column;width:67%;margin-right:1.2vw;overflow:hidden;border:1px solid #2a4563;border-radius:1.05vw;background:#06142c;box-shadow:0 1.2vw 3vw rgba(0,0,0,.24)}
+.home-context-column{display:flex;flex-direction:column;width:calc(33% - 1.2vw);min-height:0}
+.home-context-column>*+*{margin-top:.8vw}
+
+.airline-photo{position:absolute;left:30%;right:0;top:0;height:47%;background-position:center;background-size:cover;background-repeat:no-repeat;animation:flight-breathe 34s ease-in-out infinite}
+.airline-photo-shade{position:absolute;left:0;right:0;top:0;height:53%;background:linear-gradient(90deg,#07152c 0,rgba(7,21,44,.88) 32%,rgba(7,21,44,.16) 72%),linear-gradient(0deg,#06142c 3%,transparent 40%)}
+.home-flight-copy{position:relative;z-index:1;min-height:33vh;padding:1.8vw 1.9vw 1vw}
+.home-flight-copy .eyebrow{margin:0 0 1.2vh}
+.home-airline-line{display:flex;align-items:center;min-height:2vh;margin-bottom:.55vh}
+.home-airline-line>span{font-size:.7vw;font-weight:850;color:#82dff0;text-transform:uppercase;letter-spacing:.08em}
+.home-airline-line>small{margin-left:auto;font-size:.5vw;color:#6d839d;max-width:48%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-flight-copy h1{max-width:95%;margin:.5vh 0;font-size:3.45vw;line-height:1.05;letter-spacing:-.08vw;color:#f4f9ff}
+.home-flight-label{margin:.7vh 0;font-size:1.1vw;color:#b7c9dc}
+
+.home-leg-ribbon{display:flex;align-items:center;min-height:7.5vh;margin-top:1.7vh;padding:.55vw .7vw;border:1px solid rgba(73,195,225,.18);border-radius:.65vw;background:rgba(4,20,39,.55);overflow:hidden}
+.home-leg-ribbon>span{display:flex;flex-direction:column;min-width:0}
+.home-leg-ribbon>span>b{font-size:.88vw;color:#e7f6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-leg-ribbon>span>small{font-size:.5vw;color:#7590a7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-leg-ribbon>i{display:flex;align-items:center;justify-content:center;flex:0 0 2.3vw;width:2.3vw;margin:0 .45vw;color:#46d1ec}
+.home-leg-ribbon>i svg{width:.9vw;height:.9vw}
+
+.home-essential-grid{display:flex;flex-wrap:wrap;position:relative;z-index:1;margin:-.35vw 1.45vw .1vw}
+.home-essential{display:flex;align-items:center;width:calc(50% - .7vw);min-height:8.4vh;margin:.35vw;padding:.8vw;border:1px solid #2b4665;border-radius:.72vw;background:linear-gradient(135deg,rgba(9,35,59,.92),rgba(7,23,43,.92))}
+.home-essential.is-accent{border-color:#76529b;background:linear-gradient(125deg,rgba(80,39,107,.52),rgba(14,43,67,.88))}
+.home-essential-icon{display:flex;align-items:center;justify-content:center;flex:0 0 2.35vw;width:2.35vw;height:2.35vw;margin-right:.7vw;border-radius:.65vw;background:rgba(60,208,231,.08);color:#46d2e9}
+.home-essential.is-accent .home-essential-icon{background:rgba(182,104,242,.12);color:#c6a4ff}
+.home-essential-icon svg{width:1.35vw;height:1.35vw}
+.home-essential>div{min-width:0;flex:1}
+.home-essential small,.home-essential strong,.home-essential p{display:block;margin:0}
+.home-essential small{font-size:.52vw;color:#7e95ad;font-weight:850;letter-spacing:.07em}
+.home-essential strong{margin:.22vh 0;font-size:1.28vw;color:#f1f7ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-essential p{font-size:.52vw;color:#8299b1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.home-flight-footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding:1vw 1.7vw 1.2vw;border-top:1px solid rgba(92,148,187,.15);position:relative;z-index:1}
+.home-flight-footer>span{display:flex;align-items:center;font-size:.59vw;color:#7f96ad}
+.home-flight-footer>span svg{width:.9vw;height:.9vw;margin-right:.4vw;color:#4bd2e8}
+.home-flight-footer>button{display:flex;align-items:center;padding:.58vw .8vw;border:1px solid #7653a4;border-radius:.58vw;background:linear-gradient(90deg,#68449e,#2b5079);color:#fff;font-size:.66vw;font-weight:850}
+.home-flight-footer>button svg{width:.9vw;height:.9vw;margin-left:.4vw}
+
+.home-context-card{position:relative;overflow:hidden;padding:1vw;border:1px solid #2b435e;border-radius:.85vw;background:linear-gradient(145deg,#0a1c33,#071527);box-shadow:0 .75vw 1.7vw rgba(0,0,0,.15)}
+.home-context-card .eyebrow{margin:0 0 .65vh;font-size:.58vw}
+.home-context-card h2{margin:.2vh 0 .45vh;font-size:1.2vw;line-height:1.12;color:#f0f7ff}
+.home-context-card p{margin:.25vh 0;font-size:.67vw;color:#9db0c3;line-height:1.42}
+.home-context-card>small{display:block;margin-top:.45vh;font-size:.53vw;color:#7188a0;line-height:1.35}
+.weather-context-card{display:flex;align-items:center;min-height:12.3vh;background:radial-gradient(circle at 85% 15%,rgba(44,187,233,.18),transparent 34%),linear-gradient(145deg,#0b2139,#07162a)}
+.weather-context-card>div{flex:1;min-width:0}
+.weather-context-card>div>strong{display:block;font-size:2.6vw;line-height:1;color:#f0f8ff}
+.weather-context-card>div>span{display:block;margin-top:.4vh;font-size:.64vw;color:#9fb5c9}
+.weather-context-card .weather-art{flex:0 0 8vw;width:8vw;height:7vw;margin-left:.7vw}
+.next-context-card{min-height:11.4vh}
+.stay-context-card{min-height:10.8vh;border-color:#584681;background:radial-gradient(circle at 92% 12%,rgba(155,91,239,.18),transparent 36%),linear-gradient(145deg,#181633,#0c172e)}
+.stay-context-card .eyebrow{color:#c9a8ff}
+.visitor-home-card{border-color:#355f79;background:radial-gradient(circle at 92% 14%,rgba(50,210,232,.10),transparent 35%),linear-gradient(145deg,#0a2238,#08172a)}
+.home-context-column .uber-handoff{margin-top:.8vw!important;padding:.8vw!important}
+.home-context-column .uber-handoff-copy h3{font-size:.95vw}
+.home-context-column .uber-handoff-copy>span{font-size:.56vw}
+.home-context-column .uber-handoff-qr{flex-basis:8vw}
+.home-context-column .uber-handoff-qr img{width:5.5vw;height:5.5vw}
+
+.theme-mobile .home-flight-hero,.theme-mobile .home-context-card,.theme-mobile .home-essential{background:#fff;border-color:#d4e1ea;color:#0b2034}
+.theme-mobile .airline-photo-shade{background:linear-gradient(90deg,#f8fbff 0,rgba(248,251,255,.90) 33%,rgba(248,251,255,.25) 72%),linear-gradient(0deg,#f8fbff 3%,transparent 40%)}
+.theme-mobile .home-flight-copy h1,.theme-mobile .home-flight-label,.theme-mobile .home-essential strong,.theme-mobile .home-context-card h2,.theme-mobile .weather-context-card>div>strong{color:#0b2034}
+.theme-mobile .home-leg-ribbon{background:rgba(242,248,252,.72);border-color:#d5e3eb}
+.theme-mobile .home-leg-ribbon>span>b{color:#10243a}
+.theme-mobile .home-flight-footer{border-color:#d6e2ea}
