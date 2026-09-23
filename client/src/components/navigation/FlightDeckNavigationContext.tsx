@@ -4,6 +4,7 @@ import {
   peekPendingNavigationContext,
   type CrewCheckNavigationContext,
 } from '@/lib/navigationContext';
+import './flight-context.css';
 
 type FlightContextTarget = 'radar' | 'weather';
 
@@ -63,17 +64,15 @@ export function FlightDeckContextUnavailable({ targetView }: { targetView: Fligh
   const [context] = useState(() => peekPendingNavigationContext(targetView));
   if (!flightDeckContext(context, targetView)) return null;
 
-  return <>
-    <section className="cc-flight-context-return cc-readable-surface" aria-label="Contexto do voo indisponível">
-      <button type="button" onClick={returnToFlightDeck}>
-        <span aria-hidden="true">←</span>
-        {context.returnLabel || 'Voltar ao FlightDeck'}
-      </button>
-      <div>
-        <small>CONTEXTO NÃO ENCONTRADO</small>
-        <strong>O voo selecionado não está mais na escala ativa</strong>
-        <span>O CrewCheck não substituiu essa programação por outro voo. Volte ao FlightDeck e escolha novamente.</span>
-      </div>
-    </section>
-  </>;
+  return <section className="cc-flight-context-return cc-readable-surface" aria-label="Contexto do voo indisponível">
+    <button type="button" onClick={returnToFlightDeck}>
+      <span aria-hidden="true">←</span>
+      {context.returnLabel || 'Voltar ao FlightDeck'}
+    </button>
+    <div>
+      <small>CONTEXTO NÃO ENCONTRADO</small>
+      <strong>O voo selecionado não está mais na escala ativa</strong>
+      <span>O CrewCheck não substituiu essa programação por outro voo. Volte ao FlightDeck e escolha novamente.</span>
+    </div>
+  </section>;
 }
