@@ -1,0 +1,83 @@
+.cc-flight-context-return {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 auto 14px;
+  width: min(1180px, calc(100% - 24px));
+  padding: 14px 16px;
+  border: 1px solid rgba(103, 232, 249, 0.24);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(7, 38, 68, 0.94), rgba(38, 28, 84, 0.78));
+  box-shadow: 0 12px 30px rgba(2, 12, 27, 0.16);
+}
+
+.cc-flight-context-return > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 13px;
+  background: rgba(15, 72, 108, 0.55);
+  color: #f5fbff;
+  font: inherit;
+  font-weight: 850;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cc-flight-context-return > button span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.cc-flight-context-return > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cc-flight-context-return small {
+  color: #67e8f9;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+}
+
+.cc-flight-context-return strong {
+  color: #f8fbff;
+  font-size: 14px;
+}
+
+.cc-flight-context-return div > span {
+  color: #b4c8da;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+html[data-crew-theme="light"] .cc-flight-context-return {
+  border-color: rgba(8, 127, 172, 0.22);
+  background: linear-gradient(135deg, rgba(235, 248, 255, 0.99), rgba(245, 240, 255, 0.99));
+  box-shadow: 0 10px 26px rgba(31, 78, 111, 0.1);
+}
+
+html[data-crew-theme="light"] .cc-flight-context-return > button {
+  border-color: rgba(8, 127, 172, 0.25);
+  background: #fff;
+  color: #0b3855;
+}
+
+html[data-crew-theme="light"] .cc-flight-context-return small { color: #087fac; }
+html[data-crew-theme="light"] .cc-flight-context-return strong { color: #08243e; }
+html[data-crew-theme="light"] .cc-flight-context-return div > span { color: #4e687d; }
+
+@media (max-width: 620px) {
+  .cc-flight-context-return {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cc-flight-context-return > button { width: 100%; }
+}
