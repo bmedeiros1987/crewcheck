@@ -16,8 +16,8 @@ const mobile = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainAct
 const life = read('client/src/components/v1434/CrewCheckLifeView.tsx');
 const vendorIgnore = read('android-wrapper/lifecompanion/libs/.gitignore');
 
-assert.ok(rootGradle.includes("id 'org.jetbrains.kotlin.android' version '2.3.20' apply false"));
-assert.ok(rootGradle.includes("id 'org.jetbrains.kotlin.plugin.parcelize' version '2.3.20' apply false"));
+assert.ok(rootGradle.includes("id 'org.jetbrains.kotlin.android' version '2.0.21' apply false"));
+assert.ok(rootGradle.includes("id 'org.jetbrains.kotlin.plugin.parcelize' version '2.0.21' apply false"));
 assert.match(settings, /include ':lifecompanion'/);
 assert.ok(companionGradle.includes("id 'org.jetbrains.kotlin.android'"));
 assert.ok(companionGradle.includes("id 'org.jetbrains.kotlin.plugin.parcelize'"));
@@ -26,8 +26,8 @@ assert.match(companionGradle, /samsung-health-data-api\*\.aar/);
 assert.match(companionGradle, /SAMSUNG_HEALTH_SDK_INCLUDED/);
 assert.match(companionGradle, /release requires android-wrapper\/lifecompanion\/libs\/samsung-health-data-api\*\.aar/);
 assert.ok(companionGradle.includes("com.google.code.gson:gson:2.13.2"));
-assert.ok(companionGradle.includes("org.jetbrains.kotlin:kotlin-stdlib:2.3.20"));
-assert.ok(companionGradle.includes("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"));
+assert.ok(companionGradle.includes("org.jetbrains.kotlin:kotlin-stdlib:2.0.21"));
+assert.ok(companionGradle.includes("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"));
 assert.match(vendorIgnore, /samsung-health-data-api\*\.aar/);
 
 assert.match(companionManifest, /com\.crewcheck\.permission\.LIFE_SUMMARY/);
