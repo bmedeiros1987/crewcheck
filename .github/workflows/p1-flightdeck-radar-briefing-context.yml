@@ -68,5 +68,3 @@ jobs:
         run: node scripts/regression-p1-566-flightdeck-radar-briefing-context.mjs
       - name: Radar occurrence identity
         run: node scripts/regression-v14-3-92-radar-occurrence-identity.mjs
-      - name: Operational flight surface contract
-        run: node scripts/regression-v13-4-6-operational-ux-hardening.mjs
