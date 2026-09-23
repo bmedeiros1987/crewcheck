@@ -23,6 +23,7 @@ public final class WatchNotificationCenter {
     private static final String PREFS = "crewcheck_watch_notifications";
     private static final String ENABLED = "enabled";
     private static final String LAST_FINGERPRINT = "last_fingerprint";
+    private static final String LAST_CONCIERGE_FINGERPRINT = "last_concierge_fingerprint";
     private static final String OPS_CHANNEL = "crewcheck_watch_ops";
     private static final String CONCIERGE_CHANNEL = "crewcheck_watch_concierge";
     private static final int OPS_NOTIFICATION_ID = 4101;
@@ -97,7 +98,7 @@ public final class WatchNotificationCenter {
 
         SharedPreferences prefs = preferences(context);
         String fingerprint = "concierge|" + snapshot.requestId + "|" + snapshot.updatedAtEpochMs;
-        if (fingerprint.equals(prefs.getString(LAST_FINGERPRINT, ""))) return;
+        if (fingerprint.equals(prefs.getString(LAST_CONCIERGE_FINGERPRINT, ""))) return;
 
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
@@ -126,7 +127,7 @@ public final class WatchNotificationCenter {
                 .build();
 
         manager.notify(CONCIERGE_NOTIFICATION_ID, notification);
-        prefs.edit().putString(LAST_FINGERPRINT, fingerprint).apply();
+        prefs.edit().putString(LAST_CONCIERGE_FINGERPRINT, fingerprint).apply();
     }
 
     private static void ensureConciergeChannel(NotificationManager manager) {
