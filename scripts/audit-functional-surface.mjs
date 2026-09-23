@@ -38,7 +38,7 @@ const typeBlock = home.match(/type\s+ZeroView\s*=([\s\S]*?);/)?.[1] || '';
 const typedViews = unique([...typeBlock.matchAll(/'([a-z][a-z0-9-]*)'/g)].map((match) => match[1]));
 const renderedViews = unique([...home.matchAll(/view\s*===\s*'([a-z][a-z0-9-]*)'/g)].map((match) => match[1]));
 const menuStart = home.indexOf('function MenuDrawer(');
-const menuEnd = menuStart >= 0 ? home.indexOf('function Cockpit(', menuStart) : -1;
+const menuEnd = menuStart >= 0 ? home.indexOf('\nfunction ', menuStart + 1) : -1;
 const menuNavigationSource = menuStart >= 0 && menuEnd > menuStart ? home.slice(menuStart, menuEnd) : '';
 const bottomStart = home.indexOf('function BottomNav(');
 const bottomEnd = bottomStart >= 0 ? home.indexOf('function KpiCard(', bottomStart) : -1;

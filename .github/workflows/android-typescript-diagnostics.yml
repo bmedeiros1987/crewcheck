@@ -56,22 +56,10 @@ jobs:
           set -euo pipefail
           node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
 
-      - name: Validate canonical Android release version source
-        shell: bash
+      - name: Validate canonical Android store release policy
         run: |
-          set -euo pipefail
-          test -s client/public/release.json
-          version="$(node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('client/public/release.json','utf8')); const v=String(r.version||'').trim(); if(!/^\\d+\\.\\d+\\.\\d+$/.test(v)) process.exit(1); process.stdout.write(v);")"
-          package_version="$(node -p "require('./package.json').version")"
-          version_code="$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number); if (![a,b,c].every(Number.isInteger) || [a,b,c].some(n=>n<0||n>99)) process.exit(1); process.stdout.write(String(a*10000+b*100+c));" "$version")"
-          test -n "$version_code"
-          grep -Fq "release_file='client/public/release.json'" .github/workflows/android.yml
-          grep -Fq 'CREWCHECK_VERSION=$version' .github/workflows/android.yml
-          if [[ "$version" == "$package_version" ]]; then
-            echo "Canonical release and package metadata currently match: $version"
-          else
-            echo "Canonical release $version intentionally overrides legacy package metadata $package_version for Android versionName/versionCode."
-          fi
+          python3 scripts/android-play/test_validate.py
+          node scripts/android-play/check-sources.mjs
 
       - name: Run TypeScript check with complete diagnostics
         id: typecheck

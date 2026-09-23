@@ -2,3 +2,6 @@ node_modules/
 dist/
 .tsbuildinfo
 *.tsbuildinfo
+
+# Samsung Health Data SDK is downloaded under Samsung's terms; do not commit the AAR.
+android-wrapper/lifecompanion/libs/*.aar

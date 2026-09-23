@@ -134,6 +134,12 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
 
 update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   let next = source;
+  // New CrewLife builds already distinguish the real native Health Connect bridge
+  // from the Play-store compatibility facade and the separate Samsung Companion.
+  // Do not rewrite that newer contract back into the legacy polling shape.
+  if (next.includes('const nativeHealthBridgeMode') && next.includes('const nativeHealthEnabled')) {
+    return next;
+  }
   next = next.replace(
     "  const androidBridge = (window as any).AndroidCrewCheckHealth;\n  const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;",
     "  const [androidBridgeReady, setAndroidBridgeReady] = useState(false);\n  const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;\n\n  function getAndroidBridge() {\n    return (window as any).AndroidCrewCheckHealth;\n  }",

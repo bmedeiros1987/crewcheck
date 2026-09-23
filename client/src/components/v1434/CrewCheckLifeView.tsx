@@ -66,6 +66,12 @@ type NativeHealthStatus = {
 
 type NativeHealthSummary = {
   ok?: boolean;
+  automatic?: boolean;
+  source?: string;
+  generatedAtEpochMs?: number;
+  energyScore?: number | null;
+  sleepScore?: number | null;
+  caloriesBurned?: number | null;
   periodDays?: number;
   sleepMinutes?: number | null;
   sleepStart?: string | null;
@@ -158,8 +164,23 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const [manual, setManual] = useState<ManualSummary>(() => readStored(KEYS.manual, DEFAULT_MANUAL));
   const [nativeStatus, setNativeStatus] = useState<NativeHealthStatus>({});
   const [nativeSummary, setNativeSummary] = useState<NativeHealthSummary>(() => readStored(KEYS.nativeSummary, {}));
+  const [companionSummary, setCompanionSummary] = useState<NativeHealthSummary>({});
+  const [companionStatus, setCompanionStatus] = useState<{ installed?: boolean; state?: string; automatic?: boolean }>({});
+  const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(() => {
+    try {
+      const bridge = (window as any).AndroidCrewCheckNative;
+      const raw = bridge?.watchLifeStatus?.();
+      const status = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Boolean(status?.enabled);
+    } catch { return false; }
+  });
   const [whyOpen, setWhyOpen] = useState(false);
   const androidBridge = (window as any).AndroidCrewCheckHealth;
+  const nativeHealthBridgeMode = (() => {
+    try { return String(androidBridge?.ping?.() || ''); } catch { return ''; }
+  })();
+  const nativeHealthEnabled = Boolean(androidBridge?.postMessage)
+    && nativeHealthBridgeMode !== 'crewcheck-life-manual-only';
   const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;
 
   function postAndroid(action: string, payload: Record<string, unknown> = {}): boolean {
@@ -181,23 +202,121 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     };
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
-    if (consent.active && androidBridge?.postMessage) postAndroid('status');
+    if (consent.active && nativeHealthEnabled) postAndroid('status');
     return () => {
       window.removeEventListener('crewcheck:health-status', onStatus);
       window.removeEventListener('crewcheck:health-summary', onSummary);
     };
-  }, [consent.active, androidBridge]);
+  }, [consent.active, androidBridge, nativeHealthEnabled]);
+
+  useEffect(() => {
+    const native = (window as any).AndroidCrewCheckNative;
+    const readCompanion = () => {
+      try {
+        const statusRaw = native?.lifeCompanionStatus?.();
+        const status = typeof statusRaw === 'string' ? JSON.parse(statusRaw) : (statusRaw || {});
+        setCompanionStatus(status);
+        const summaryRaw = native?.readLifeCompanionSummary?.();
+        const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : (summaryRaw || {});
+        if (summary && typeof summary === 'object' && summary.automatic) {
+          const normalized = { ...summary, ok: true, source: 'samsung_health' };
+          setCompanionSummary(normalized);
+          try {
+            localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
+              ...normalized,
+              capturedAt: Number(normalized.generatedAtEpochMs) > 0
+                ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
+                : new Date().toISOString(),
+              source: 'samsung-companion',
+            }));
+            window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
+          } catch {}
+        }
+      } catch {}
+    };
+    const onCompanion = (event: Event) => {
+      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
+      if (detail && detail.automatic) {
+        const normalized = { ...detail, ok: true, source: 'samsung_health' };
+        setCompanionSummary(normalized);
+        setCompanionStatus((current) => ({ ...current, installed: true, state: 'connected', automatic: true }));
+        try {
+          localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
+            ...normalized,
+            capturedAt: Number(normalized.generatedAtEpochMs) > 0
+              ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
+              : new Date().toISOString(),
+            source: 'samsung-companion',
+          }));
+          window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
+        } catch {}
+      }
+    };
+    readCompanion();
+    window.addEventListener('crewcheck:life-companion-summary', onCompanion);
+    window.addEventListener('focus', readCompanion);
+    return () => {
+      window.removeEventListener('crewcheck:life-companion-summary', onCompanion);
+      window.removeEventListener('focus', readCompanion);
+    };
+  }, []);
+
+  const companionAgeMs = companionSummary.generatedAtEpochMs
+    ? Date.now() - Number(companionSummary.generatedAtEpochMs)
+    : Number.POSITIVE_INFINITY;
+  const companionFresh = Boolean(
+    companionSummary.automatic
+      && companionStatus.state === 'connected'
+      && companionAgeMs >= 0
+      && companionAgeMs <= 6 * 60 * 60 * 1000
+  );
+  const effectiveSummary = companionFresh ? companionSummary : nativeSummary;
+  const automaticSamsung = companionFresh;
 
   const metrics = useMemo(() => {
-    const sleepHours = numberOrZero(nativeSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
+    const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
     return {
       sleepHours,
-      steps: numberOrZero(nativeSummary.steps) || numberOrZero(manual.steps),
-      activityMinutes: numberOrZero(nativeSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
+      steps: numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
+      activityMinutes: numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
       studyMinutes: numberOrZero(manual.studyMinutes),
       leisureMinutes: numberOrZero(manual.leisureMinutes),
     };
-  }, [manual, nativeSummary]);
+  }, [manual, effectiveSummary]);
+
+  useEffect(() => {
+    if (!consent.active || !watchMirrorEnabled || (!effectiveSummary.ok && !effectiveSummary.automatic)) return;
+    const bridge = (window as any).AndroidCrewCheckNative;
+    if (!bridge?.publishWatchCrewLife) return;
+
+    const now = Date.now();
+    const payload: Record<string, unknown> = {
+      schemaVersion: 1,
+      generatedAtEpochMs: now,
+      validUntilEpochMs: now + 6 * 60 * 60 * 1000,
+      recoveryLabel: 'DESCONHECIDA',
+    };
+    if (Number.isFinite(Number(effectiveSummary.sleepMinutes))) {
+      payload.sleepMinutes = Math.max(0, Math.round(Number(effectiveSummary.sleepMinutes)));
+      payload.sleepLabel = hoursLabel(effectiveSummary.sleepMinutes);
+    }
+    if (Number.isFinite(Number(effectiveSummary.steps))) {
+      payload.steps = Math.max(0, Math.round(Number(effectiveSummary.steps)));
+    }
+    if (Number.isFinite(Number(effectiveSummary.activityMinutes))) {
+      payload.activeMinutes = Math.max(0, Math.round(Number(effectiveSummary.activityMinutes)));
+    }
+    if (Number.isFinite(Number(effectiveSummary.restingHeartRateAverage))) {
+      payload.restingHeartRate = Math.max(0, Math.round(Number(effectiveSummary.restingHeartRateAverage)));
+    }
+    if (effectiveSummary.source === 'samsung_health' && Number(effectiveSummary.energyScore) > 0) {
+      payload.recoveryScore = Math.max(0, Math.min(100, Math.round(Number(effectiveSummary.energyScore))));
+      payload.scoreKind = 'ENERGY';
+      payload.detail = 'Samsung Health · Energy Score';
+    }
+
+    try { bridge.publishWatchCrewLife(JSON.stringify(payload)); } catch {}
+  }, [consent.active, effectiveSummary, watchMirrorEnabled]);
 
   const recommendation = useMemo(() => {
     const program = nextProgram?.title || (nextProgram?.kind === 'flight' ? 'próxima programação' : 'próximo compromisso operacional');
@@ -276,6 +395,24 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     }
   }
 
+  function setWatchMirror(enabled: boolean) {
+    const bridge = (window as any).AndroidCrewCheckNative;
+    if (!bridge?.setWatchLifeConsent) {
+      toast.info('O espelhamento do CrewLife está disponível no aplicativo Android CrewCheck.');
+      return;
+    }
+    try {
+      const ok = bridge.setWatchLifeConsent(Boolean(enabled));
+      if (ok === false) throw new Error('O celular não conseguiu atualizar o consentimento do relógio.');
+      setWatchMirrorEnabled(enabled);
+      toast.success(enabled
+        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'
+        : 'CrewLife removido do relógio.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui atualizar o CrewLife no relógio.');
+    }
+  }
+
   function connectApple() {
     if (!appleBridge) {
       toast.info('Apple Health será liberado junto com o aplicativo nativo iOS. O modo manual já funciona no iPhone e iPad.');
@@ -350,29 +487,46 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       </ul>}
     </section>
 
+    {automaticSamsung && <section className="cc-life-auto-source">
+      <div><small>FONTE AUTOMÁTICA</small><strong>Samsung Health</strong><span>Sincronizado pelo CrewLife Companion</span></div>
+      {Number(companionSummary.energyScore || 0) > 0 && <b>Energia {Math.round(Number(companionSummary.energyScore))}</b>}
+      <button onClick={() => (window as any).AndroidCrewCheckNative?.openLifeCompanion?.()}>Abrir Companion</button>
+    </section>}
+
     <section className="cc-life-metrics" aria-label="Resumo do CrewCheck Life">
-      <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepHours ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>meta {profile.sleepTarget.toFixed(1).replace('.', ',')} h</span></article>
-      <article><Footprints/><small>Passos</small><strong>{metrics.steps ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>resumo do período</span></article>
-      <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>sem avaliação clínica</span></article>
+      <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepHours ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : `meta ${profile.sleepTarget.toFixed(1).replace('.', ',')} h`}</span></article>
+      <article><Footprints/><small>Passos</small><strong>{metrics.steps ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'entrada manual'}</span></article>
+      <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
       <article><BookOpen/><small>Estudo</small><strong>{metrics.studyMinutes ? `${metrics.studyMinutes} min` : 'Sem dado'}</strong><span>meta {profile.studyTargetMinutes} min</span></article>
     </section>
 
     <section className="cc-life-block cc-life-integrations">
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
       <div className="cc-life-integration-grid">
-        <article className={nativeStatus.allGranted ? 'connected' : ''}>
-          <Smartphone/><div><h3>Health Connect + Samsung Health</h3><p>Android, Galaxy Watch e outros apps que sincronizam com o Health Connect.</p><small>{integrationLabel(nativeStatus)}</small></div>
-          <div><button className="primary" onClick={connectAndroid}>{nativeStatus.allGranted ? 'Rever permissões' : 'Conectar'}</button>{nativeStatus.allGranted && <button onClick={refreshAndroid}><RefreshCw/> Atualizar</button>}</div>
+        <article className={automaticSamsung ? 'connected' : companionStatus.installed ? 'ready' : ''}>
+          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{automaticSamsung ? 'Samsung Health conectado · automático' : companionStatus.installed ? 'Instalado · concluir conexão' : 'Companion não instalado'}</small></div>
+          <button className={automaticSamsung ? '' : 'primary'} onClick={() => {
+            const ok = (window as any).AndroidCrewCheckNative?.openLifeCompanion?.();
+            if (!ok) toast.info('Instale o CrewLife Companion Samsung para ativar a sincronização automática.');
+          }}>{automaticSamsung ? 'Abrir Companion' : companionStatus.installed ? 'Conectar' : 'Como instalar'}</button>
         </article>
-        <article className={appleBridge ? 'ready' : ''}>
+        {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
+          <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>
+          <div><button className="primary" onClick={connectAndroid}>{nativeStatus.allGranted ? 'Rever permissões' : 'Conectar'}</button>{nativeStatus.allGranted && <button onClick={refreshAndroid}><RefreshCw/> Atualizar</button>}</div>
+        </article>}
+        {(!(window as any).AndroidCrewCheckNative || appleBridge) && <article className={appleBridge ? 'ready' : ''}>
           <Apple/><div><h3>Apple Health</h3><p>Interface preparada. A leitura depende do aplicativo nativo iOS e da autorização do HealthKit.</p><small>{appleBridge ? 'App iOS pronto para autorizar' : 'Modo manual disponível no iPhone/iPad'}</small></div>
           <button onClick={connectApple}>{appleBridge ? 'Conectar' : 'Ver disponibilidade'}</button>
-        </article>
+        </article>}
         <article className="connected">
           <Check/><div><h3>Entrada manual</h3><p>Funciona no navegador e nos aplicativos, sem vincular nenhuma conta de saúde.</p><small>Disponível agora</small></div>
         </article>
+        <article className={watchMirrorEnabled ? 'connected' : ''}>
+          <Smartphone/><div><h3>Mostrar CrewLife no relógio</h3><p>Envia somente sono, passos/atividade e FC em repouso agregados quando disponíveis. Nenhum dado bruto é enviado.</p><small>{watchMirrorEnabled ? 'Espelhamento autorizado' : 'Desativado por padrão'}</small></div>
+          <button className={watchMirrorEnabled ? '' : 'primary'} onClick={() => setWatchMirror(!watchMirrorEnabled)}>{watchMirrorEnabled ? 'Desativar no relógio' : 'Ativar no relógio'}</button>
+        </article>
       </div>
-      {nativeSummary.ok && <p className="cc-life-sync-note">Último resumo nativo: {dateTimeLabel(nativeSummary.capturedAt) || 'agora'} · sono {hoursLabel(nativeSummary.sleepMinutes)} · período {nativeSummary.periodDays || 7} dias. Dados brutos não são copiados para o CrewCheck.</p>}
+      {nativeSummary.ok && <p className="cc-life-sync-note">Último resumo nativo: {dateTimeLabel(nativeSummary.capturedAt) || 'agora'} · sono {hoursLabel(effectiveSummary.sleepMinutes)} · período {nativeSummary.periodDays || 7} dias. Dados brutos não são copiados para o CrewCheck.</p>}
     </section>
 
     <section className="cc-life-block">

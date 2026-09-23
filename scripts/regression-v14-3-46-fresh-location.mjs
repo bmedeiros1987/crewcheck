@@ -30,8 +30,8 @@ const v14348Index = chain.indexOf("await import('../v14348/apply.mjs');");
 assert.ok(v14345Index >= 0, 'correção da escala v14.3.45 deve permanecer na cadeia');
 assert.ok(v14346Index > v14345Index, 'localização v14.3.46 deve suceder a escala sem alterá-la');
 assert.ok(v14347Index > v14346Index, 'v14.3.47 deve suceder a localização sem sobrescrever o patch');
-assert.ok(v14348Index > v14347Index, 'v14.3.48 deve suceder o aeroporto operacional sem sobrescrever o patch');
-assert.ok(chain.trimEnd().endsWith("await import('../v14348/apply.mjs');"), 'v14.3.48 deve encerrar a preparação canônica');
+assert.ok(v14348Index > v14347Index, 'v14.4.08 deve suceder o aeroporto operacional sem sobrescrever o patch');
+assert.ok(chain.trimEnd().endsWith("await import('../ci/sync-canonical-manual.mjs');"), 'v14.4.08 deve encerrar a preparação canônica');
 
 for (const marker of [
   'CURRENT_GEO_MAX_AGE_MS = 30 * 60_000',
@@ -44,7 +44,7 @@ for (const marker of [
 assert.ok(!/-16\.(?:6|7)|-49\.(?:2|3)/.test(freshSnippet), 'captura atual não pode conter fallback geográfico de Goiânia');
 
 for (const marker of [
-  "const DEFAULT_VERSION = '14.3.48';",
+  "const DEFAULT_VERSION = '14.4.08';",
   'function loadFreshCurrentGeo(',
   'const saved = loadFreshCurrentGeo();',
   "source: 'browser-watch'",
@@ -63,7 +63,7 @@ assert.ok(before.server.includes('{ silentLocation: true }'), 'persistência aux
 assert.ok(!before.server.includes('message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true'), 'handler auxiliar não pode interceptar a localização antes do snapshot');
 assert.ok(before.serverIndex.includes('options = {}'), 'ponte Telegram deve aceitar opções');
 assert.ok(before.serverIndex.includes('silent: Boolean(options?.silentLocation)'), 'ponte Telegram deve propagar o modo silencioso');
-assert.ok(before.telegramLocation.includes('if (options.silent) return true;'), 'persistência auxiliar deve silenciar a confirmação duplicada');
+assert.ok(before.telegramLocation.includes('await saveLegacyLocationMirror(message, Boolean(edited))') && !before.telegramLocation.includes('sendTelegramMessage('), 'persistência auxiliar deve silenciar a confirmação duplicada');
 const legacyDispatchFixture = `async function processTelegramUpdate(update = {}) {
   if (chatId && message?.location && await handleV139Telegram(update, sendTelegramMessage)) return true;
   if (chatId && telegramMessagePdfDocument(message)) await handleTelegramPdfRoster(message);
@@ -93,10 +93,10 @@ for (const fixture of [legacyDispatchFixture, preparedDispatchFixture, preparedD
 }
 
 assert.ok(applySource.includes("const VERSION = '14.3.46';"), 'patch de localização deve permanecer versionado como v14.3.46');
-assert.ok(before.runtime.includes("version: '14.3.48'"), 'runtime final deve anunciar v14.3.48');
+assert.ok(before.runtime.includes("version: '14.4.08'"), 'runtime final deve anunciar v14.4.08');
 assert.ok(before.runtime.includes("localStorage.setItem('crewcheck_last_geo_meta'"), 'runtime deve registrar horário e precisão da posição');
-assert.ok(before.release.includes('14.3.48'), 'release final deve anunciar v14.3.48');
-assert.equal(JSON.parse(before.pkg).version, '14.3.48', 'package final deve anunciar v14.3.48');
+assert.ok(before.release.includes('14.4.08'), 'release final deve anunciar v14.4.08');
+assert.equal(JSON.parse(before.pkg).version, '14.4.08', 'package final deve anunciar v14.4.08');
 
 for (const protectedPath of [
   'client/src/lib/pdfParser.ts',
@@ -106,8 +106,8 @@ for (const protectedPath of [
   'client/src/lib/regulatoryEngine.ts',
 ]) assert.ok(!applySource.includes(`update('${protectedPath}'`), `hotfix de localização não pode alterar motor protegido: ${protectedPath}`);
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 após v14.3.46 falhou');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 após v14.3.46 falhou');
 for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `preparação canônica deve ser idempotente em ${relative}`);
 }

@@ -15,6 +15,10 @@ on:
       - agent/v14-0-8-layout-structure-hotfix
       - agent/v14-0-9-layout-lock
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 

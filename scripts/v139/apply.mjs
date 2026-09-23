@@ -173,4 +173,6 @@ await import('../p0-623-regulatory-history-carry-in-final/apply.mjs');
 await import('../p0-623-regulatory-history-carry-in-final/review-hardening.mjs');
 await import('../p2-738-vacation-work-first/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
+await import('../android-play/prepare.mjs');
+await import('../android-play/layout.mjs');
 await import('../ci/sync-canonical-manual.mjs');

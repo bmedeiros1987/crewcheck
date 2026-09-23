@@ -34,6 +34,11 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
 
 update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   let next = source;
+  // Modern CrewLife builds use Companion/native mode detection and do not expose
+  // the obsolete Health Connect remediation copy.
+  if (next.includes('const nativeHealthBridgeMode') && next.includes('const nativeHealthEnabled')) {
+    return next;
+  }
 
   next = next.replace(
     "      toast.info(nativeWrapper\n        ? `A conexão nativa não respondeu${installedVersion ? ' na versão ' + installedVersion : ''}. Feche completamente o CrewCheck e abra novamente. Se persistir, instale a versão 14.3.8.`",

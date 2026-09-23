@@ -48,7 +48,7 @@ export type LifeHealthSnapshot = {
   activityMinutes?: number;
   restingHeartRateAverage?: number;
   periodDays?: number;
-  source: 'health-connect' | 'manual';
+  source: 'health-connect' | 'samsung-companion' | 'manual';
 };
 
 export type LifeRoutineContext = {
@@ -116,6 +116,7 @@ const KEYS = {
   goals: 'crewcheck:life:goals:v1',
   activeSession: 'crewcheck:life:active-session:v1',
   nativeSummary: 'crewcheck:life:health-summary:v1',
+  companionSummary: 'crewcheck:life:companion-summary:v1',
   profile: 'crewcheck:life:profile:v1',
 };
 
@@ -355,6 +356,24 @@ export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
   return snapshot;
 }
 
+export function ingestCompanionSummary(value: unknown): LifeHealthSnapshot | null {
+  const raw = value && typeof value === 'object' ? value as any : null;
+  if (!raw || raw.automatic !== true || String(raw.source || '') !== 'samsung_health') return null;
+  const capturedAt = Number(raw.generatedAtEpochMs) > 0
+    ? new Date(Number(raw.generatedAtEpochMs)).toISOString()
+    : new Date().toISOString();
+  const snapshot = parseHealthSnapshot({ ...raw, capturedAt }, 'samsung-companion');
+  if (!snapshot) return null;
+  writeJson(KEYS.companionSummary, snapshot);
+  const cutoff = daysAgo(35);
+  const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
+  const next = [snapshot, ...(Array.isArray(history) ? history : [])
+    .filter((item) => item.capturedAt !== snapshot.capturedAt && new Date(item.capturedAt).getTime() >= cutoff)]
+    .slice(0, 120);
+  writeJson(KEYS.healthHistory, next);
+  return snapshot;
+}
+
 export function ingestManualSummary(value: unknown): LifeHealthSnapshot | null {
   const snapshot = parseHealthSnapshot({ ...(value as any), capturedAt: (value as any)?.updatedAt || new Date().toISOString() }, 'manual');
   if (!snapshot) return null;
@@ -366,6 +385,8 @@ export function ingestManualSummary(value: unknown): LifeHealthSnapshot | null {
 }
 
 function currentSnapshot(): LifeHealthSnapshot | null {
+  const companion = parseHealthSnapshot(readJson<any>(KEYS.companionSummary, null), 'samsung-companion');
+  if (companion) return companion;
   const direct = parseHealthSnapshot(readJson<any>(KEYS.nativeSummary, null), 'health-connect');
   if (direct) return direct;
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
@@ -628,7 +649,7 @@ export function shareGymCheckInText(gymName = ''): string {
 
 export function clearLifeConciergeData() {
   if (!storageAvailable()) return;
-  Object.values(KEYS).filter((key) => ![KEYS.nativeSummary, KEYS.profile].includes(key)).forEach((key) => {
+  Object.values(KEYS).filter((key) => ![KEYS.nativeSummary, KEYS.companionSummary, KEYS.profile].includes(key)).forEach((key) => {
     try { window.localStorage.removeItem(key); } catch {}
   });
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { cleared: true } }));

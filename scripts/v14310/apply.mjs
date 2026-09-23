@@ -132,6 +132,11 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
 
 update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   let next = source;
+  // CrewLife Companion is the primary automatic source in modern builds.
+  // Do not reinsert the obsolete Health Connect permission button state machine.
+  if (next.includes('const nativeHealthBridgeMode') && next.includes('CrewLife Companion Samsung')) {
+    return next;
+  }
 
   next = next.replace(
     "availability?: 'available' | 'update_required' | 'unavailable' | 'permission_required' | 'partial' | 'connected';",

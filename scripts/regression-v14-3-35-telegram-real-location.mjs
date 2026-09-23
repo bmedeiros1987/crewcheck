@@ -53,7 +53,7 @@ for (const marker of [
   'function conciergeLocationLineV14335(',
   'filterConciergePlacesByLocationV14335(places, freshLocation)',
   'async function conciergePharmaciesReply(snapshot)',
-  'A busca usa somente a localização recente enviada no Telegram',
+  'A busca usa exclusivamente a localização recente compartilhada',
   'Localização atualizada: ${normalized.label}.',
   'Depois desse período pedirei um novo compartilhamento',
   'locationMaxAgeHours: 6',
@@ -63,11 +63,11 @@ for (const marker of [
 
 assert.ok(!serverBefore.includes("snapshot?.preferences?.location ? 'Localização recebida."), 'resposta antiga não pode aceitar localização sem validade');
 assert.ok(serverBefore.includes("textQuery: freshLocation ? String(query || '').trim()"), 'coordenadas recentes devem retirar cidade antiga do texto da busca');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.48';"), 'versão Web/PWA final 14.3.48 ausente');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.48'), 'release.json final 14.3.48 ausente');
+assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.08'), 'release.json final 14.4.08 ausente');
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 falhou');
 assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'preparação final deve preservar a localização Telegram no servidor');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar a localização no cliente');
 
