@@ -7,4 +7,5 @@
     <string name="complication_crewlife">CrewCheck · CrewLife</string>
     <string name="complication_routine">CrewCheck · Rotina</string>
     <string name="complication_battery">CrewCheck · Bateria</string>
+    <string name="complication_concierge">CrewCheck · Concierge</string>
 </resources>
