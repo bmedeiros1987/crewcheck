@@ -77,6 +77,8 @@
             supportedTypes="SHORT_TEXT EMPTY">
             <BoundingRoundBox x="0" y="0" width="112" height="30" outlinePadding="2.0" cornerRadius="15" />
             <DefaultProviderPolicy
+                primaryProvider="com.crewcheck.app/com.crewcheck.watch.BatteryComplicationService"
+                primaryProviderType="SHORT_TEXT"
                 defaultSystemProvider="WATCH_BATTERY"
                 defaultSystemProviderType="SHORT_TEXT" />
             <Complication type="SHORT_TEXT">
