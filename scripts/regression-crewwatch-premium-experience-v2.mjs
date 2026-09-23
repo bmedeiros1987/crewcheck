@@ -97,4 +97,14 @@ assert.match(face, /ConciergeComplicationService/);
 const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
 assert.ok(slots >= 6, 'watch face deve manter pelo menos seis glances/complicações');
 
+
+assert.match(wearMain, /addGlanceRail\(snapshot, now\)/, 'Agora deve mostrar rail de glances essenciais');
+assert.match(wearMain, /"BATERIA"/, 'Agora deve expor bateria em glance legível');
+assert.match(wearMain, /"HOJE"/, 'Agora deve expor quantidade de etapas de hoje');
+assert.match(wearMain, /"SYNC"/, 'Agora deve expor frescor da sincronização');
+assert.match(wearMain, /"PROGRAMAÇÃO · "/, 'Agora deve antecipar a programação do dia');
+assert.match(wearMain, /"DEPOIS"/, 'programação deve mostrar também a etapa seguinte');
+assert.doesNotMatch(wearMain, /actionChip\("↻ Atualizar"/, 'refresh manual não deve dominar a experiência premium');
+assert.match(wearMain, /Sincronização automática\. Toque para atualizar agora\./, 'refresh manual deve ser fallback da sincronização automática');
+
 console.log('[crewwatch-premium-experience-v2] premium navigation + humane fallbacks OK');
