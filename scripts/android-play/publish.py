@@ -128,7 +128,7 @@ def main():
                     },
                 )
             api('POST', url + ':validate')
-            api('POST', url + ':commit')
+            api('POST', url + ':commit', params={'changesNotSentForReview': 'true'})
             committed = True
             print(f'{package}: verified bundles RELEASED TO INTERNAL TESTING. Production untouched.')
         finally:
