@@ -71,6 +71,7 @@ jobs:
           python3 scripts/android-play/test_publish_policy.py
           python3 scripts/android-play/test_credential.py
           python3 scripts/android-play/test_allocate_versions.py
+          python3 scripts/android-play/test_play_error.py
       - name: Web and privacy validation
         run: |
           npx tsc --noEmit
