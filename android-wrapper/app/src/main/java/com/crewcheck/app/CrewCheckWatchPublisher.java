@@ -104,12 +104,30 @@ public final class CrewCheckWatchPublisher {
 
         String state = clean(source.optString("state", "UNKNOWN"), 24).toUpperCase();
         if (!ALLOWED_STATES.contains(state)) state = "UNKNOWN";
+        boolean premiumAccess = source.optBoolean("premiumAccess", false);
 
         JSONObject out = new JSONObject();
         out.put("schemaVersion", SCHEMA_VERSION);
-        copyString(source, out, "contextId", 80);
+        out.put("premiumAccess", premiumAccess);
         out.put("generatedAtEpochMs", generatedAt);
         out.put("validUntilEpochMs", validUntil);
+
+        if (!premiumAccess) {
+            out.put("contextId", "free-tier");
+            out.put("state", "OFF_DUTY");
+            out.put("headline", "CREWWATCH PREMIUM");
+            out.put("detail", "Abra o CrewCheck no celular para ativar o app do relógio.");
+            out.put("changed", false);
+            out.put("source", "free-tier");
+            rejectSensitiveFields(source);
+            String normalizedFree = out.toString();
+            if (normalizedFree.getBytes(StandardCharsets.UTF_8).length > MAX_SNAPSHOT_BYTES) {
+                throw new IllegalArgumentException("Snapshot gratuito excede 16 KiB.");
+            }
+            return normalizedFree;
+        }
+
+        copyString(source, out, "contextId", 80);
         out.put("state", state);
         copyString(source, out, "headline", 42);
         copyString(source, out, "primaryTime", 12);
