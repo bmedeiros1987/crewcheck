@@ -921,6 +921,34 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String readSharedPdfChunk(final String shareId, final String offsetRaw, final String lengthRaw) {
+            try {
+                long offset = Long.parseLong(offsetRaw == null || offsetRaw.trim().isEmpty() ? "0" : offsetRaw.trim());
+                int length = Integer.parseInt(lengthRaw == null || lengthRaw.trim().isEmpty() ? "0" : lengthRaw.trim());
+                byte[] chunk = SharedPdfInbox.readChunk(MainActivity.this, shareId, offset, length, MAX_PDF_BYTES);
+                return Base64.encodeToString(chunk, Base64.NO_WRAP);
+            } catch (Exception error) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public String sharedPdfStatus() {
+            try {
+                SharedPdfInbox.PendingPdf pending = SharedPdfInbox.peek(MainActivity.this);
+                if (pending == null) return "{}";
+                JSONObject payload = new JSONObject();
+                payload.put("shareId", pending.id);
+                payload.put("sourceFileName", pending.fileName);
+                payload.put("byteLength", pending.file.length());
+                payload.put("transport", "android-private-inbox");
+                return payload.toString();
+            } catch (Exception error) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
         public boolean acknowledgeSharedPdf(final String shareId) {
             synchronized (MainActivity.this) {
                 boolean acknowledged = SharedPdfInbox.acknowledge(MainActivity.this, shareId);
@@ -1784,15 +1812,15 @@ public class MainActivity extends Activity {
             if (pending == null) return;
             pendingSharedPdfId = pending.id;
             pendingSharedPdfName = pending.fileName;
-            byte[] bytes = SharedPdfInbox.readBytes(this, pending.id, MAX_PDF_BYTES);
-            pendingSharedPdfBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+            pendingSharedPdfBase64 = null;
 
             JSONObject payload = new JSONObject();
             payload.put("ok", true);
             payload.put("filename", pending.fileName);
             payload.put("sourceFileName", pending.fileName);
             payload.put("shareId", pending.id);
-            payload.put("dataBase64", pendingSharedPdfBase64);
+            payload.put("byteLength", pending.file.length());
+            payload.put("transport", "android-private-inbox");
             String js = "(function(){var payload=" + payload.toString() + ";window.__crewcheckPendingNativePdf=payload;window.dispatchEvent(new CustomEvent('crewcheck:native-pdf',{detail:payload}));})();";
             webView.evaluateJavascript(js, null);
         } catch (Exception ignored) {
