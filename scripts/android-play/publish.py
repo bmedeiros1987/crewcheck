@@ -33,6 +33,10 @@ def main():
     repo = os.environ['GITHUB_REPOSITORY']
     sha = os.environ['GITHUB_SHA']
     wait_deadline = time.time() + 12 * 60
+    # This gate is triggered by completion of Android signed store bundles itself.
+    # It is downstream evidence, not independent CI, so waiting on it here would
+    # deadlock publication. Keep the exclusion explicit and narrow.
+    dependent_ci_workflow_names = {'CrewCheck Priority 0 Release Gate'}
     while True:
         runs = []
         page = 1
@@ -52,6 +56,8 @@ def main():
         latest = {}
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
+                continue
+            if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
                 continue
             key = run['workflow_id']
             if key not in latest or run['id'] > latest[key]['id']:
