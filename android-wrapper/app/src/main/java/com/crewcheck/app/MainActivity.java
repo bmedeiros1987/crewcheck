@@ -171,6 +171,7 @@ public class MainActivity extends Activity {
                 if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
+                dispatchLifeCompanionSummary();
                 view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
             }
 
@@ -225,6 +226,12 @@ public class MainActivity extends Activity {
     }
 
 
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        dispatchLifeCompanionSummary();
+    }
 
     private void requestInitialCrewCheckPermissions() {
         try {
@@ -774,6 +781,38 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private String readLifeCompanionSummaryInternal() {
+        android.database.Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
+            if (cursor == null || !cursor.moveToFirst()) return "";
+            int column = cursor.getColumnIndex("json");
+            return column >= 0 ? String.valueOf(cursor.getString(column)) : "";
+        } catch (SecurityException denied) {
+            return "";
+        } catch (Exception error) {
+            return "";
+        } finally {
+            try { if (cursor != null) cursor.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void dispatchLifeCompanionSummary() {
+        try {
+            if (webView == null) return;
+            String raw = readLifeCompanionSummaryInternal();
+            if (raw == null || raw.isBlank()) raw = "{}";
+            final String js = "(function(){try{var detail=" + raw + ";" +
+                    "window.__crewcheckLifeCompanionSummary=detail;" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:life-companion-summary',{detail:detail}));" +
+                    "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
     public class CrewCheckNativeBridge {
         @JavascriptInterface
         public boolean openExternal(final String url) {
@@ -831,6 +870,55 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean watchSyncAvailable() {
             return true;
+        }
+
+        @JavascriptInterface
+        public String lifeCompanionStatus() {
+            JSONObject status = new JSONObject();
+            try {
+                boolean installed;
+                try {
+                    getPackageManager().getPackageInfo("com.crewcheck.life", 0);
+                    installed = true;
+                } catch (PackageManager.NameNotFoundException missing) {
+                    installed = false;
+                }
+                status.put("installed", installed);
+                status.put("source", "samsung_health_companion");
+                if (!installed) {
+                    status.put("state", "not_installed");
+                    return status.toString();
+                }
+                String summary = readLifeCompanionSummaryInternal();
+                status.put("state", summary == null || summary.isBlank() ? "needs_setup" : "connected");
+                if (summary != null && !summary.isBlank()) {
+                    JSONObject parsed = new JSONObject(summary);
+                    status.put("generatedAtEpochMs", parsed.optLong("generatedAtEpochMs", 0L));
+                    status.put("automatic", parsed.optBoolean("automatic", false));
+                }
+            } catch (Exception error) {
+                try { status.put("state", "unavailable"); } catch (Exception ignored) {}
+            }
+            return status.toString();
+        }
+
+        @JavascriptInterface
+        public String readLifeCompanionSummary() {
+            String summary = readLifeCompanionSummaryInternal();
+            return summary == null || summary.isBlank() ? "{}" : summary;
+        }
+
+        @JavascriptInterface
+        public boolean openLifeCompanion() {
+            try {
+                Intent launch = getPackageManager().getLaunchIntentForPackage("com.crewcheck.life");
+                if (launch == null) return false;
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(launch);
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
         }
 
         @JavascriptInterface
