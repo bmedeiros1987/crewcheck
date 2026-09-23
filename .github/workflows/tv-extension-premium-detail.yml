@@ -1,0 +1,38 @@
+name: TV premium extension consolidation
+on:
+  pull_request:
+    paths:
+      - 'apps/tv-player/**'
+      - 'packages/tv-core/**'
+      - 'server/tv/**'
+      - 'scripts/tv-extension-detail-test.mjs'
+      - 'scripts/tv-sharing-controls-test.mjs'
+      - 'scripts/tv-lifetime-test.mjs'
+      - 'scripts/tv-entitlements-test.mjs'
+      - 'server/tv/**'
+      - 'client/src/pages/TvPairPage.tsx'
+      - 'scripts/tv-broadcast-prepare.mjs'
+      - '.github/workflows/tv-extension-premium-detail.yml'
+permissions:
+  contents: read
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-extension-detail-test.mjs
+      - run: node scripts/tv-entitlements-test.mjs
+      - run: node scripts/tv-trusted-client-test.mjs
+      - run: node scripts/tv-lifetime-test.mjs
+      - run: node scripts/tv-sharing-controls-test.mjs
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
+      - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
+      - run: node scripts/tv-channel-test.mjs && node scripts/tv-broadcast-test.mjs && node scripts/tv-broadcast-fit-test.mjs
+      - run: node scripts/tv-pairing-test.mjs && npx tsc --noEmit -p tsconfig.tv.json

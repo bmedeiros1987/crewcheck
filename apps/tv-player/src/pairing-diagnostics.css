@@ -1,1 +1,17 @@
 .pair-diagnostics{display:flex;align-items:center;justify-content:center;min-height:0}.pair-diagnostics>div{width:52vw}.pair-diagnostics h1{font-size:3.6vw;line-height:1.15}.pair-diagnostics>aside{width:27vw;margin-left:4vw;text-align:center}.pair-diagnostics aside img{width:15vw;height:15vw;max-width:100%;background:white;padding:.6vw}.pair-diagnostics aside h2{font-size:2vw;letter-spacing:.18vw;margin:1vh 0}.pair-diagnostics aside p{font-size:.95vw;overflow-wrap:break-word}.pair-buttons{display:flex;align-items:center}.pair-buttons>button+button{margin-left:1vw}.pair-diagnostic-info{display:flex;flex-direction:column;line-height:1.5;margin-top:1.4vh;font-size:.8vw;color:#bdcbe2}.pair-diagnostic-info strong{color:#f5cf7a;margin-top:.5vh}.theme-mobile .pair-diagnostic-info{color:#334b65}.theme-mobile .pair-diagnostic-info strong{color:#814812}.qr-fallback{padding:2vw;border:1px solid #486389;border-radius:.6vw;font-size:1.1vw}.pair-diagnostics button:disabled{opacity:.6}.pair-diagnostics [role=status]{font-size:1.05vw;max-width:50vw}.pair-diagnostics small{font-size:.8vw;line-height:1.4}
+
+.trusted-tv-choice{display:flex;align-items:center;width:100%;max-width:34vw;margin:1.2vh 0 .45vh;padding:.75vw .9vw;background:rgba(9,31,58,.72);border:1px solid #385778;border-radius:.7vw;text-align:left}
+.trusted-tv-choice[aria-pressed=true]{background:linear-gradient(110deg,rgba(154,77,255,.20),rgba(39,195,232,.12));border-color:#7b62bd}
+.trusted-tv-choice span{width:1.4vw;height:1.4vw;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;margin-right:.6vw;color:#bdeeff}
+.trusted-tv-choice b{font-size:.82vw;letter-spacing:.01vw}.trusted-tv-note{max-width:34vw;color:#89a1bd!important;font-size:.66vw!important;line-height:1.35!important;margin-top:0!important}
+
+/* Readable from the sofa at 720p as well as 1080p. */
+.pair-diagnostics button { min-height: 48px; font-size: max(16px, 1.1vw); }
+.pair-diagnostics button:focus-visible { outline: 3px solid #bdeeff; outline-offset: 4px; }
+.pair-diagnostics .trusted-tv-choice { max-width: 46vw; }
+.pair-diagnostics .trusted-tv-choice b { font-size: max(16px, 1.1vw); }
+.pair-diagnostics .trusted-tv-note { max-width: 46vw; font-size: max(14px, .95vw)!important; line-height: 1.5!important; color: #c5d5e8!important; }
+.pair-diagnostics .tv-free-access { color: #b9f4d4; font-weight: 600; font-size: max(16px, 1.1vw); }
+.theme-mobile .pair-diagnostics .tv-free-access { color: #166534; }
+.theme-mobile .pair-diagnostics .trusted-tv-note { color: #334b65!important; }
+.pair-diagnostics aside h2 { font-variant-numeric: tabular-nums; }

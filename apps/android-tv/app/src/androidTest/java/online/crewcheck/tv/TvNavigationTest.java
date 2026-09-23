@@ -38,7 +38,7 @@ public final class TvNavigationTest {
 
     private void awaitText(String text) throws Exception {
         for (int attempt = 0; attempt < 60; attempt++) {
-            if (evaluate("document.body.innerText").contains(text)) return;
+            if (evaluate("document.body ? document.body.innerText : ''").contains(text)) return;
             Thread.sleep(250);
         }
         fail("Missing visible text: " + text + "; body=" + evaluate("document.body.innerText"));
@@ -52,21 +52,42 @@ public final class TvNavigationTest {
         assertEquals("Hero actions overlap ticker", "true", evaluate(liveFits));
     }
 
+    private void sendRemoteKey(int keyCode) throws Exception {
+        android.util.Log.i("TvRemoteTest", "Sending native key " + keyCode);
+        java.util.concurrent.atomic.AtomicBoolean finished = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread diagnostic = new Thread(() -> {
+            try { Thread.sleep(2000); } catch (InterruptedException ignored) { return; }
+            if (!finished.get()) {
+                for (java.util.Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+                    if (entry.getKey() == android.os.Looper.getMainLooper().getThread() || entry.getKey().getName().contains("Instr")) {
+                        android.util.Log.e("TvRemoteTest", "Blocked thread: " + entry.getKey().getName());
+                        for (StackTraceElement frame : entry.getValue()) android.util.Log.e("TvRemoteTest", "  " + frame);
+                    }
+                }
+            }
+        }, "RemoteDiagnostics");
+        diagnostic.setDaemon(true);
+        diagnostic.start();
+        try { getInstrumentation().sendKeyDownUpSync(keyCode); }
+        finally { finished.set(true); diagnostic.interrupt(); }
+        android.util.Log.i("TvRemoteTest", "Completed native key " + keyCode);
+    }
+
     @Test public void testDemoRemoteNavigationAndBack() throws Exception {
         awaitText("DEMONSTRA");
         awaitText("PRÓXIMA JORNADA");
         assertLayoutFits();
         // Native remote events, not DOM clicks: Agora -> Semana -> Mês.
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_CENTER);
+        sendRemoteKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
+        sendRemoteKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
+        sendRemoteKey(android.view.KeyEvent.KEYCODE_DPAD_CENTER);
         for (int attempt = 0; attempt < 40; attempt++) {
             if (evaluate("document.querySelector('nav .active')?.textContent").contains("Mês")) break;
             Thread.sleep(250);
         }
         assertTrue("D-pad must open month", evaluate("document.querySelector('nav .active')?.textContent").contains("Mês"));
         assertLayoutFits();
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+        sendRemoteKey(android.view.KeyEvent.KEYCODE_BACK);
         awaitText("PRÓXIMA JORNADA");
         assertTrue("Back must return to Agora", evaluate("document.querySelector('nav .active')?.textContent").contains("Agora"));
         assertFalse("Back from month must not close app", getActivity().isFinishing());

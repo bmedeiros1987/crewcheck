@@ -1,6 +1,10 @@
 import { build } from "vite";
 import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+// Apply the runtime-safe pairing layer before any packaged TV build so LG
+// webOS and Android TV both get persistent trusted-device behaviour.
+await import("./tv-pairing-prepare.mjs");
+
 const platform = process.argv[2] || "web";
 if (!["web", "android-tv", "samsung-tizen", "lg-webos"].includes(platform))
   throw new Error("Unsupported platform");

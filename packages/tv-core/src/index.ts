@@ -20,6 +20,10 @@ export type TvActivity = {
   groundBeforeMinutes: number | null;
   confidence: string;
   publishedCode?: string;
+  display?: {
+    role: "flight" | "stay" | "rest" | "reserve" | "standby" | "training" | "duty";
+    title: string;
+  };
 };
 export type TvCalendarDay = { date: string; activities: TvActivity[] };
 export type TvMonthSummary = {
@@ -33,6 +37,28 @@ export type TvFact<T> = {
   source: string;
   observedAt: string;
   expiresAt: string;
+};
+export type TvWeatherContext = {
+  role: "base" | "stay";
+  airport: string;
+  city: string | null;
+  temperature: number;
+  label: string;
+  wind: number | null;
+  rainChance: number | null;
+  source: string;
+  observedAt: string;
+  expiresAt: string;
+};
+export type TvProfileContext = {
+  base: string | null;
+  airline: string | null;
+  airlineVisual?: {
+    imageUrl: string;
+    source: string;
+    licensed: boolean;
+    attribution?: string | null;
+  } | null;
 };
 export type TvSnapshot = {
   schemaVersion: 1;
@@ -53,10 +79,54 @@ export type TvSnapshot = {
     temperature: number;
     label: string;
   }> | null;
+  profile?: TvProfileContext;
+  weatherContexts?: TvWeatherContext[];
+  traffic?: TvFact<{
+    durationText: string | null;
+    delayText: string | null;
+    status: string | null;
+    incidents: number | null;
+  }> | null;
+  audience?: "owner" | "family" | "visitor";
+  sharePermissions?: {
+    crew?: boolean;
+    finance?: boolean;
+    weather?: boolean;
+    hotel?: boolean;
+    operational?: boolean;
+    mobility?: boolean;
+  };
+  journeyDetails?: Record<string, unknown>;
+  mobility?: {
+    provider: "uber";
+    deepLink: string;
+    pickupLabel?: string | null;
+    destinationLabel?: string | null;
+  } | null;
+  entitlements?: {
+    tier: "free" | "premium";
+    userGate: boolean;
+    automaticGate: boolean;
+    automaticTraffic: boolean;
+    automaticWeather: boolean;
+    hotel: boolean;
+    crew: boolean;
+    advancedFinance: boolean;
+    paidProviderAccess: boolean;
+  };
   changes: string[];
   ticker: string[];
 };
 
+function tvAirlineName(roster: CrewRoster, events: CanonicalRosterEvent[]): string | null {
+  const declared = String(roster.airline || "").trim();
+  if (declared) return declared.slice(0, 60);
+  const numbers = events.map(event => String(event.flightNumber || "").trim().toUpperCase()).filter(Boolean);
+  if (numbers.some(value => /^LA\s*\d/.test(value))) return "LATAM";
+  if (numbers.some(value => /^G3\s*\d/.test(value))) return "GOL";
+  if (numbers.some(value => /^AD\s*\d/.test(value))) return "AZUL";
+  return null;
+}
 function twoDigits(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
@@ -88,6 +158,10 @@ function projectEvent(e: CanonicalRosterEvent, privacy: Privacy): TvActivity {
     destination: privacy === "private" ? e.destination || null : null,
     groundBeforeMinutes: privacy === "private" ? e.groundBeforeMinutes : null,
     publishedCode: e.publishedDay.type,
+    display: {
+      role: e.kind === "flight" ? "flight" : e.kind === "stay" ? "stay" : e.kind === "rest" || e.kind === "journey-rest" ? "rest" : /HSB|SOBREAVISO/i.test(String(e.publishedDay.type || "")) ? "standby" : /ASB|RES|RSV|RESERVA/i.test(String(e.publishedDay.type || "")) ? "reserve" : /CRM|TREIN|TRAIN|SIM|CHECK/i.test(String(e.publishedDay.type || "")) ? "training" : "duty",
+      title: e.kind === "flight" ? (privacy === "private" ? (e.flightNumber || "Voo") : "Voo") : e.kind === "stay" ? "Pernoite" : e.kind === "journey-rest" ? "Repouso entre jornadas" : e.kind === "rest" ? "Folga / descanso" : String(e.publishedDay.type || "Programação"),
+    },
     confidence: e.sourceConfidence,
   };
 }
@@ -162,6 +236,34 @@ export function projectRoster(
     leaveAt: null,
     gate: null,
     weather: null,
+    profile: {
+      base: privacy === "private" && /^[A-Z]{3}$/.test(String(roster.base || "").trim().toUpperCase()) ? String(roster.base).trim().toUpperCase() : null,
+      airline: tvAirlineName(roster, events),
+    },
+    weatherContexts: [],
+    traffic: null,
+    audience: privacy === "private" ? "owner" : "family",
+    sharePermissions: {
+      crew: false,
+      finance: false,
+      weather: true,
+      hotel: false,
+      operational: true,
+      mobility: false,
+    },
+    journeyDetails: {},
+    mobility: null,
+    entitlements: {
+      tier: "free",
+      userGate: true,
+      automaticGate: false,
+      automaticTraffic: false,
+      automaticWeather: false,
+      hotel: false,
+      crew: false,
+      advancedFinance: false,
+      paidProviderAccess: false,
+    },
     changes: [],
     ticker: [],
   };
