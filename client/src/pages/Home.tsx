@@ -1551,6 +1551,8 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
+const processedWatchConciergeRequests = new Set<string>();
+
 function watchConciergePrompt(action: string, dictatedText = '') {
   const spoken = String(dictatedText || '').trim();
   if (spoken) return spoken;
@@ -1735,7 +1737,6 @@ function smartDepartureEligible(event: ZeroLeg): boolean {
 
 function UpdateCenterView() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const processedWatchConcierge = useRef<Set<string>>(new Set());
   const [token, setToken] = useState(() => storage.get('crewcheck_update_token', ''));
   const [title, setTitle] = useState('Hotfix visual CrewCheck');
   const [version, setVersion] = useState('runtime');
@@ -4692,9 +4693,9 @@ export default function Home() {
     const onWatchConciergeAction = async (event: Event) => {
       const detail = (event as CustomEvent<any>)?.detail || {};
       const requestId = String(detail.requestId || '').trim();
-      if (!requestId || processedWatchConcierge.current.has(requestId)) return;
+      if (!requestId || processedWatchConciergeRequests.has(requestId)) return;
 
-      processedWatchConcierge.current.add(requestId);
+      processedWatchConciergeRequests.add(requestId);
       const native = (window as any).AndroidCrewCheckNative;
 
       try {
@@ -4702,13 +4703,13 @@ export default function Home() {
         const payload = await askTelegramConcierge(prompt);
         const reply = String(payload?.reply || 'Concierge respondeu, mas sem texto disponível.').trim();
         const accepted = native?.replyWatchConcierge?.(requestId, true, reply);
-        if (accepted === false) processedWatchConcierge.current.delete(requestId);
+        if (accepted === false) processedWatchConciergeRequests.delete(requestId);
       } catch (error) {
         const message = error instanceof Error
           ? error.message
           : 'O Concierge não conseguiu responder agora.';
         const accepted = native?.replyWatchConcierge?.(requestId, false, message);
-        if (accepted === false) processedWatchConcierge.current.delete(requestId);
+        if (accepted === false) processedWatchConciergeRequests.delete(requestId);
       }
     };
 
