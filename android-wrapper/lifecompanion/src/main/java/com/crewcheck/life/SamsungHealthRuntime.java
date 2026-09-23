@@ -2,11 +2,11 @@ package com.crewcheck.life;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.pm.PackageManager;
 
 import org.json.JSONObject;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -15,18 +15,18 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Runtime adapter for Samsung Health Data SDK.
  *
  * The public CrewCheck repository intentionally does not redistribute Samsung's AAR.
- * When samsung-health-data-api.aar is present in lifecompanion/libs, Gradle packages it
- * and this adapter uses the official API reflectively. The same source therefore keeps
- * CI buildable without shipping a third-party binary.
+ * When a samsung-health-data-api*.aar file is present in lifecompanion/libs, Gradle
+ * packages it and this adapter uses the official API reflectively. The same source
+ * therefore keeps CI buildable without shipping a third-party binary.
  */
 final class SamsungHealthRuntime {
-    private static final String HEALTH_PACKAGE = "com.sec.android.app.shealth";
-
     private static final String CLS_SERVICE =
             "com.samsung.android.sdk.health.data.HealthDataService";
     private static final String CLS_DATA_TYPES =
@@ -54,62 +54,73 @@ final class SamsungHealthRuntime {
         }
     }
 
-    static boolean samsungHealthInstalled(Context context) {
-        try {
-            context.getPackageManager().getPackageInfo(HEALTH_PACKAGE, 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return false;
-        }
-    }
-
+    /**
+     * Must be called away from Android's main thread because the Samsung async API
+     * is intentionally awaited here to keep the Java/reflection boundary compact.
+     */
     static JSONObject status(Context context) {
         JSONObject json = new JSONObject();
         try {
             json.put("ok", true);
             json.put("sdkBundled", sdkBundled());
-            json.put("samsungHealthInstalled", samsungHealthInstalled(context));
             json.put("source", "samsung_health");
+
             if (!sdkBundled()) {
                 json.put("state", "sdk_missing");
-                json.put("message", "Adicione samsung-health-data-api.aar para habilitar a leitura automática.");
-            } else if (!samsungHealthInstalled(context)) {
-                json.put("state", "samsung_health_missing");
-                json.put("message", "Samsung Health não está instalado.");
-            } else {
-                Object store = getStore(context);
-                boolean granted = hasAllPermissions(store);
-                json.put("state", granted ? "connected" : "permission_required");
-                json.put("permissionsGranted", granted);
+                json.put("message", "Adicione o Samsung Health Data SDK para habilitar a leitura automática.");
+                return json;
             }
+
+            Object store = getStore(context);
+            boolean granted = hasAllPermissions(store);
+            json.put("state", granted ? "connected" : "permission_required");
+            json.put("permissionsGranted", granted);
         } catch (Throwable error) {
+            Throwable healthError = rootHealthError(error);
             try {
                 json.put("ok", false);
-                json.put("state", "unavailable");
-                json.put("message", error.getClass().getSimpleName());
-            } catch (Exception ignored) {}
+                json.put("sdkBundled", sdkBundled());
+                json.put("source", "samsung_health");
+                json.put("state", stateForError(healthError));
+                json.put("message", friendlyError(healthError));
+                json.put("errorCode", healthErrorCode(healthError));
+            } catch (Exception ignored) {
+            }
         }
         return json;
     }
 
     static boolean requestPermissions(Activity activity) throws Exception {
         if (!sdkBundled()) return false;
+
         Object store = getStore(activity);
         Set<Object> required = requiredPermissions();
-        if (hasAllPermissions(store, required)) return true;
-        Object future = invoke(store, "requestPermissionsAsync", required, activity);
+        Set<Object> granted = grantedPermissions(store, required);
+        if (granted.containsAll(required)) return true;
+
+        Set<Object> missing = new HashSet<>(required);
+        missing.removeAll(granted);
+
+        Object future = invoke(store, "requestPermissionsAsync", missing, activity);
         Object result = invoke(future, "get");
+
+        Set<Object> combined = new HashSet<>(granted);
         if (result instanceof Set<?>) {
-            return ((Set<?>) result).containsAll(required);
+            combined.addAll((Set<?>) result);
         }
-        return hasAllPermissions(store, required);
+        if (combined.containsAll(required)) return true;
+
+        return grantedPermissions(store, required).containsAll(required);
     }
 
     static JSONObject readSummary(Context context) throws Exception {
-        if (!sdkBundled()) throw new IllegalStateException("Samsung Health Data SDK não incluído.");
+        if (!sdkBundled()) {
+            throw new IllegalStateException("Samsung Health Data SDK não incluído.");
+        }
+
         Object store = getStore(context);
         Set<Object> required = requiredPermissions();
-        if (!hasAllPermissions(store, required)) {
+        if (!grantedPermissions(store, required).containsAll(required)) {
             throw new SecurityException("Permissões do Samsung Health ainda não foram concedidas.");
         }
 
@@ -130,10 +141,10 @@ final class SamsungHealthRuntime {
                 localTimeFilter(startOfDay, now)
         ));
 
-        double calories = numberValue(aggregate(
+        double activeCalories = numberValue(aggregate(
                 store,
                 "com.samsung.android.sdk.health.data.request.DataType$ActivitySummaryType",
-                "TOTAL_CALORIES_BURNED",
+                "TOTAL_ACTIVE_CALORIES_BURNED",
                 localTimeFilter(startOfDay, now)
         ));
 
@@ -154,7 +165,7 @@ final class SamsungHealthRuntime {
         json.put("day", LocalDate.now().toString());
         json.put("steps", Math.max(0, steps));
         json.put("activeMinutes", active == null ? 0 : Math.max(0, active.toMinutes()));
-        json.put("caloriesBurned", Math.max(0, Math.round(calories)));
+        json.put("caloriesBurned", Math.max(0, Math.round(activeCalories)));
         json.put("distanceMeters", Math.max(0, Math.round(distance)));
         json.put("sleepMinutes", sleep.optInt("sleepMinutes", 0));
         json.put("sleepScore", sleep.optInt("sleepScore", 0));
@@ -166,9 +177,81 @@ final class SamsungHealthRuntime {
         return json;
     }
 
+    static boolean resolveIfPossible(Throwable error, Activity activity) {
+        Throwable root = rootHealthError(error);
+        if (!"ResolvablePlatformException".equals(root.getClass().getSimpleName())) return false;
+        try {
+            Object hasResolution = invoke(root, "getHasResolution");
+            if (!(hasResolution instanceof Boolean) || !((Boolean) hasResolution)) return false;
+            invoke(root, "resolve", activity);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    static String friendlyError(Throwable error) {
+        Throwable root = rootHealthError(error);
+        int code = healthErrorCode(root);
+        return switch (code) {
+            case 3000 -> "Samsung Health não está instalado";
+            case 3001 -> "Samsung Health precisa ser atualizado";
+            case 3002 -> "Samsung Health está desativado";
+            case 3003 -> "Conclua a configuração inicial do Samsung Health";
+            case 2003 -> "o acesso do app ainda não foi autorizado pela Samsung";
+            case 2004 -> "a assinatura desta build não está autorizada pela Samsung";
+            default -> {
+                if (root instanceof SecurityException) {
+                    yield "permissões do Samsung Health ainda não foram concedidas";
+                }
+                String name = root.getClass().getSimpleName();
+                yield name == null || name.isBlank() ? "erro desconhecido" : name;
+            }
+        };
+    }
+
+    private static String stateForError(Throwable error) {
+        int code = healthErrorCode(error);
+        return switch (code) {
+            case 3000 -> "samsung_health_missing";
+            case 3001 -> "samsung_health_update_required";
+            case 3002 -> "samsung_health_disabled";
+            case 3003 -> "samsung_health_setup_required";
+            case 2003, 2004 -> "authorization_required";
+            default -> "unavailable";
+        };
+    }
+
+    private static int healthErrorCode(Throwable error) {
+        try {
+            Object value = tryInvoke(rootHealthError(error), "getErrorCode");
+            return value instanceof Number ? ((Number) value).intValue() : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private static Throwable rootHealthError(Throwable error) {
+        Throwable current = error == null ? new IllegalStateException("unknown") : error;
+        while (true) {
+            if (current instanceof InvocationTargetException invocation
+                    && invocation.getTargetException() != null) {
+                current = invocation.getTargetException();
+                continue;
+            }
+            if ((current instanceof ExecutionException || current instanceof CompletionException)
+                    && current.getCause() != null) {
+                current = current.getCause();
+                continue;
+            }
+            return current;
+        }
+    }
+
     private static Object getStore(Context context) throws Exception {
         Class<?> service = Class.forName(CLS_SERVICE);
-        return service.getMethod("getStore", Context.class).invoke(null, context.getApplicationContext());
+        return service.getMethod("getStore", Context.class)
+                .invoke(null, context.getApplicationContext());
     }
 
     private static Set<Object> requiredPermissions() throws Exception {
@@ -176,7 +259,11 @@ final class SamsungHealthRuntime {
         Object read = Enum.valueOf((Class<Enum>) Class.forName(CLS_ACCESS), "READ");
         Class<?> permissionClass = Class.forName(CLS_PERMISSION);
         Class<?> dataTypeClass = Class.forName(CLS_DATA_TYPE);
-        Method of = permissionClass.getMethod("of", dataTypeClass, Class.forName(CLS_ACCESS));
+        Method of = permissionClass.getMethod(
+                "of",
+                dataTypeClass,
+                Class.forName(CLS_ACCESS)
+        );
 
         for (String field : new String[]{"STEPS", "SLEEP", "ACTIVITY_SUMMARY", "ENERGY_SCORE"}) {
             Object type = staticField(CLS_DATA_TYPES, field);
@@ -186,20 +273,28 @@ final class SamsungHealthRuntime {
     }
 
     private static boolean hasAllPermissions(Object store) throws Exception {
-        return hasAllPermissions(store, requiredPermissions());
+        Set<Object> required = requiredPermissions();
+        return grantedPermissions(store, required).containsAll(required);
     }
 
-    private static boolean hasAllPermissions(Object store, Set<Object> required) throws Exception {
+    private static Set<Object> grantedPermissions(Object store, Set<Object> required)
+            throws Exception {
         Object future = invoke(store, "getGrantedPermissionsAsync", required);
         Object result = invoke(future, "get");
-        return result instanceof Set<?> && ((Set<?>) result).containsAll(required);
+        Set<Object> granted = new HashSet<>();
+        if (result instanceof Set<?>) {
+            granted.addAll((Set<?>) result);
+        }
+        return granted;
     }
 
-    private static Object localTimeFilter(LocalDateTime start, LocalDateTime end) throws Exception {
+    private static Object localTimeFilter(LocalDateTime start, LocalDateTime end)
+            throws Exception {
         return invokeStatic(Class.forName(CLS_LOCAL_TIME_FILTER), "of", start, end);
     }
 
-    private static Object localDateFilter(LocalDate start, LocalDate end) throws Exception {
+    private static Object localDateFilter(LocalDate start, LocalDate end)
+            throws Exception {
         return invokeStatic(Class.forName(CLS_LOCAL_DATE_FILTER), "of", start, end);
     }
 
@@ -242,9 +337,10 @@ final class SamsungHealthRuntime {
         LocalDateTime latestEnd = null;
         for (Object point : points) {
             Object end = tryInvoke(point, "getEndLocalDateTime");
+            Object start = tryInvoke(point, "getStartLocalDateTime");
             LocalDateTime candidate = end instanceof LocalDateTime
                     ? (LocalDateTime) end
-                    : (LocalDateTime) tryInvoke(point, "getStartLocalDateTime");
+                    : start instanceof LocalDateTime ? (LocalDateTime) start : null;
             if (candidate != null && (latestEnd == null || candidate.isAfter(latestEnd))) {
                 latest = point;
                 latestEnd = candidate;
@@ -270,8 +366,11 @@ final class SamsungHealthRuntime {
     private static JSONObject latestEnergyScore(Object store) throws Exception {
         Object energyType = staticField(CLS_DATA_TYPES, "ENERGY_SCORE");
         Object builder = invoke(energyType, "getReadDataRequestBuilder");
-        invoke(builder, "setLocalDateFilter",
-                localDateFilter(LocalDate.now().minusDays(7), LocalDate.now().plusDays(1)));
+        invoke(
+                builder,
+                "setLocalDateFilter",
+                localDateFilter(LocalDate.now().minusDays(7), LocalDate.now().plusDays(1))
+        );
         Object request = invoke(builder, "build");
         Object future = invoke(store, "readDataAsync", request);
         Object response = invoke(future, "get");
@@ -295,9 +394,16 @@ final class SamsungHealthRuntime {
 
         JSONObject json = new JSONObject();
         if (latest == null) return json;
+
         Object value = invoke(latest, "getValue", scoreField);
-        json.put("energyScore", Math.max(0, Math.min(100, Math.round(numberValue(value)))));
-        json.put("energyDate", latestStart == null ? "" : latestStart.toLocalDate().toString());
+        json.put(
+                "energyScore",
+                Math.max(0, Math.min(100, Math.round(numberValue(value))))
+        );
+        json.put(
+                "energyDate",
+                latestStart == null ? "" : latestStart.toLocalDate().toString()
+        );
         return json;
     }
 
@@ -325,7 +431,8 @@ final class SamsungHealthRuntime {
         }
     }
 
-    private static Object invokeStatic(Class<?> type, String name, Object... args) throws Exception {
+    private static Object invokeStatic(Class<?> type, String name, Object... args)
+            throws Exception {
         try {
             Method method = findMethod(type, name, args);
             return method.invoke(null, args);
@@ -337,7 +444,8 @@ final class SamsungHealthRuntime {
         }
     }
 
-    private static Object invoke(Object target, String name, Object... args) throws Exception {
+    private static Object invoke(Object target, String name, Object... args)
+            throws Exception {
         Method method = findMethod(target.getClass(), name, args);
         return method.invoke(target, args);
     }
@@ -353,7 +461,11 @@ final class SamsungHealthRuntime {
     private static Method findMethod(Class<?> type, String name, Object[] args)
             throws NoSuchMethodException {
         for (Method method : type.getMethods()) {
-            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+            if (!method.getName().equals(name)
+                    || method.getParameterCount() != args.length) {
+                continue;
+            }
+
             Class<?>[] params = method.getParameterTypes();
             boolean compatible = true;
             for (int i = 0; i < params.length; i++) {
