@@ -13,6 +13,9 @@ assert.match(home, /P0 roster continuity/, 'Home deve possuir continuidade canô
 assert.match(home, /openActiveRoster\(\)/, 'boot deve consultar a escala ativa da conta');
 assert.match(home, /rosterFingerprint\(active\.roster\)/, 'reconciliação deve comparar revisão/fingerprint');
 assert.match(home, /\[1500, 5000, 15000\]/, 'cold start deve ter retries curtos sem ação do usuário');
+assert.match(home, /rosterRestorePending/, 'instalação limpa deve distinguir restauração automática de importação manual');
+assert.match(home, /Restaurando sua escala/, 'usuário deve ver restauração da conta enquanto o banco é consultado');
+assert.match(home, /18_000/, 'fallback manual só pode aparecer após janela explícita de restauração');
 assert.match(home, /window\.addEventListener\('online'/, 'retorno da internet deve reconciliar');
 assert.match(home, /window\.addEventListener\('crewcheck:native-ready'/, 'retorno/boot nativo deve reconciliar');
 assert.match(home, /document\.addEventListener\('visibilitychange'/, 'foreground deve reconciliar');
