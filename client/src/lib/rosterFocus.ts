@@ -28,17 +28,16 @@ export function setPendingRosterFocus(date: Date | null | undefined): void {
 
 /** Lê e esvazia. Uma navegação depositada vale para uma abertura só. */
 export function consumePendingRosterFocus(): Date | null {
-  const context = consumePendingNavigationContext('roster');
-  const epoch = context?.dateEpochMs;
-  if (!Number.isFinite(epoch)) return null;
-  const value = new Date(Number(epoch));
+  const epoch = consumePendingNavigationContext('roster')?.dateEpochMs;
+  if (typeof epoch !== 'number' || !Number.isFinite(epoch)) return null;
+  const value = new Date(epoch);
   return Number.isNaN(value.getTime()) ? null : value;
 }
 
 /** Só para teste: inspeciona sem consumir. */
 export function peekPendingRosterFocus(): Date | null {
   const epoch = peekPendingNavigationContext('roster')?.dateEpochMs;
-  if (!Number.isFinite(epoch)) return null;
-  const value = new Date(Number(epoch));
+  if (typeof epoch !== 'number' || !Number.isFinite(epoch)) return null;
+  const value = new Date(epoch);
   return Number.isNaN(value.getTime()) ? null : value;
 }
