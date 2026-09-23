@@ -68,6 +68,8 @@ public class MainActivity extends Activity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 4545;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
+    private static final String CREWCHECK_APP_URL = "https://crewcheck.online?app=1";
+    private static final int MAX_WEB_RECOVERY_ATTEMPTS = 3;
     public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
@@ -94,6 +96,9 @@ public class MainActivity extends Activity {
     private String pendingNativeLocationCallbackId;
     private CrewCheckBillingBridge billingBridge;
     private BroadcastReceiver watchSyncRequestReceiver;
+    private int webRecoveryAttempts = 0;
+    private boolean webBootConfirmed = false;
+    private View webRecoveryOverlay;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -142,7 +147,7 @@ public class MainActivity extends Activity {
         setContentView(rootLayout);
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.WHITE);
+        webView.setBackgroundColor(Color.parseColor("#071D33"));
         webView.setLayoutParams(new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         rootLayout.addView(webView);
 
@@ -154,6 +159,16 @@ public class MainActivity extends Activity {
         registerWatchSyncRequestReceiver();
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                if (isCrewCheckWebUrl(url)) {
+                    webBootConfirmed = false;
+                    hideCrewCheckRecoveryOverlay();
+                    if (url == null || !url.contains("ccRecovery=")) webRecoveryAttempts = 0;
+                }
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (request != null && request.getUrl() != null) {
@@ -172,16 +187,15 @@ public class MainActivity extends Activity {
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
                 view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
+                view.postDelayed(() -> verifyCrewCheckBoot(view, url), 1800);
+                view.postDelayed(() -> verifyCrewCheckBoot(view, url), 5200);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (request != null && request.isForMainFrame()) {
-                    try {
-                        view.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
-                        view.loadUrl("https://crewcheck.online?app=1");
-                    } catch (Exception ignored) {}
+                    recoverCrewCheckWebView("main-frame-error");
                 }
             }
         });
@@ -217,7 +231,7 @@ public class MainActivity extends Activity {
         });
 
         handleIncomingPdfIntent(getIntent());
-        webView.loadUrl("https://crewcheck.online?app=1");
+        webView.loadUrl(CREWCHECK_APP_URL);
         ensureCrewCheckNotificationChannel();
         dispatchCrewCheckPermissionStatus();
         webView.postDelayed(() -> dispatchCrewCheckPermissionStatus(), 900);
@@ -225,6 +239,176 @@ public class MainActivity extends Activity {
     }
 
 
+
+    private void verifyCrewCheckBoot(WebView view, String url) {
+        try {
+            if (view == null || webBootConfirmed || !isCrewCheckWebUrl(url)) return;
+            final String probe =
+                    "(function(){try{" +
+                    "var root=document.getElementById('root');" +
+                    "var text=((root&&root.innerText)||document.body.innerText||'').trim();" +
+                    "var hasUi=!!window.__crewcheckBootReady || !!document.querySelector('.cc-main-content,.cc-life-shell,.cc1270-loader,[role=main],main');" +
+                    "var ready=hasUi && (text.length>8 || (root&&root.children&&root.children.length>0));" +
+                    "return ready?'READY':'BLANK';" +
+                    "}catch(e){return 'ERROR';}})();";
+            view.evaluateJavascript(probe, result -> {
+                try {
+                    String state = String(result == null ? "" : result);
+                    if (state.contains("READY")) {
+                        webBootConfirmed = true;
+                        webRecoveryAttempts = 0;
+                        view.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+                        hideCrewCheckRecoveryOverlay();
+                        return;
+                    }
+                    if (!webBootConfirmed) recoverCrewCheckWebView("blank-after-load");
+                } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void recoverCrewCheckWebView(String reason) {
+        runOnUiThread(() -> {
+            try {
+                if (webView == null || webBootConfirmed) return;
+                if (webRecoveryAttempts >= MAX_WEB_RECOVERY_ATTEMPTS) {
+                    showCrewCheckRecoveryOverlay();
+                    return;
+                }
+
+                webRecoveryAttempts += 1;
+                int attempt = webRecoveryAttempts;
+                webView.stopLoading();
+
+                if (attempt == 1) {
+                    webView.clearCache(true);
+                    webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+                    webView.loadUrl(CREWCHECK_APP_URL + "&ccRecovery=1&t=" + System.currentTimeMillis());
+                    return;
+                }
+
+                String cleanup = attempt == 2
+                        ? "(function(){try{" +
+                          "if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});}" +
+                          "if('caches' in window){caches.keys().then(function(ns){ns.forEach(function(n){if(/crewcheck|workbox|vite/i.test(n))caches.delete(n);});}).catch(function(){});}" +
+                          "['crewcheck_roster','crewcheck_compliance','crewcheck_gym','crewcheck_source_file'].forEach(function(k){sessionStorage.removeItem(k);});" +
+                          "}catch(e){}return true;})()"
+                        : "(function(){try{" +
+                          "['crewcheck_roster','crewcheck_compliance','crewcheck_gym','crewcheck_source_file'].forEach(function(k){sessionStorage.removeItem(k);});" +
+                          "['crewcheck_roster_sync_latest_v108134','crewcheck_latest_roster_bundle','crewcheck_last_loaded_version'].forEach(function(k){localStorage.removeItem(k);});" +
+                          "}catch(e){}return true;})()";
+
+                webView.evaluateJavascript(cleanup, ignored -> webView.postDelayed(() -> {
+                    try {
+                        if (webView == null) return;
+                        webView.clearCache(true);
+                        webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+                        webView.loadUrl(CREWCHECK_APP_URL + "&ccRecovery=" + attempt + "&t=" + System.currentTimeMillis());
+                    } catch (Exception ex) {
+                        showCrewCheckRecoveryOverlay();
+                    }
+                }, 450));
+            } catch (Exception ex) {
+                showCrewCheckRecoveryOverlay();
+            }
+        });
+    }
+
+    private void showCrewCheckRecoveryOverlay() {
+        try {
+            if (rootLayout == null || webRecoveryOverlay != null) return;
+
+            LinearLayout overlay = new LinearLayout(this);
+            overlay.setOrientation(LinearLayout.VERTICAL);
+            overlay.setGravity(Gravity.CENTER);
+            overlay.setPadding(dpNative(28), dpNative(28), dpNative(28), dpNative(28));
+            overlay.setBackgroundColor(Color.parseColor("#071D33"));
+
+            TextView title = new TextView(this);
+            title.setText("CrewCheck está se recuperando");
+            title.setTextColor(Color.WHITE);
+            title.setTextSize(22);
+            title.setGravity(Gravity.CENTER);
+            title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            overlay.addView(title);
+
+            TextView detail = new TextView(this);
+            detail.setText("Detectamos uma tela vazia persistente. Seu login e suas preferências principais foram preservados.");
+            detail.setTextColor(Color.parseColor("#BFD1E3"));
+            detail.setTextSize(14);
+            detail.setGravity(Gravity.CENTER);
+            detail.setPadding(0, dpNative(10), 0, dpNative(18));
+            overlay.addView(detail);
+
+            Button retry = new Button(this);
+            retry.setText("Tentar novamente");
+            retry.setOnClickListener(view -> {
+                webRecoveryAttempts = 0;
+                webBootConfirmed = false;
+                hideCrewCheckRecoveryOverlay();
+                if (webView != null) {
+                    webView.clearCache(true);
+                    webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+                    webView.loadUrl(CREWCHECK_APP_URL + "&ccRecovery=manual&t=" + System.currentTimeMillis());
+                }
+            });
+            overlay.addView(retry, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+
+            Button repair = new Button(this);
+            repair.setText("Reparar estado local");
+            repair.setOnClickListener(view -> repairCrewCheckTransientState());
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            rp.setMargins(0, dpNative(10), 0, 0);
+            overlay.addView(repair, rp);
+
+            webRecoveryOverlay = overlay;
+            rootLayout.addView(overlay, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+            ));
+        } catch (Exception ignored) {}
+    }
+
+    private void hideCrewCheckRecoveryOverlay() {
+        try {
+            if (rootLayout != null && webRecoveryOverlay != null) rootLayout.removeView(webRecoveryOverlay);
+        } catch (Exception ignored) {}
+        webRecoveryOverlay = null;
+    }
+
+    private void repairCrewCheckTransientState() {
+        try {
+            if (webView == null) return;
+            String repair =
+                    "(function(){try{" +
+                    "var keep=['crewcheck_auth_token','crewcheck_auth_user','crewcheck_theme_mode','crewcheck_language','crewcheck_profile_avatar','crewcheck_profile_display_name','crewcheck_profile_company','crewcheck_profile_base','crewcheck_profile_rank','crewcheck_app_mode','crewcheck:life:consent:v1','crewcheck:life:profile:v1','crewcheck:life:manual:v1'];" +
+                    "var saved={};keep.forEach(function(k){var v=localStorage.getItem(k);if(v!==null)saved[k]=v;});" +
+                    "for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('crewcheck')===0&&keep.indexOf(k)<0)localStorage.removeItem(k);}" +
+                    "Object.keys(saved).forEach(function(k){localStorage.setItem(k,saved[k]);});" +
+                    "sessionStorage.clear();" +
+                    "if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});}" +
+                    "if('caches' in window){caches.keys().then(function(ns){ns.forEach(function(n){caches.delete(n);});}).catch(function(){});}" +
+                    "}catch(e){}return true;})()";
+            webView.evaluateJavascript(repair, ignored -> webView.postDelayed(() -> {
+                webRecoveryAttempts = 0;
+                webBootConfirmed = false;
+                hideCrewCheckRecoveryOverlay();
+                webView.clearCache(true);
+                webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+                webView.loadUrl(CREWCHECK_APP_URL + "&ccRecovery=repair&t=" + System.currentTimeMillis());
+            }, 500));
+        } catch (Exception ignored) {}
+    }
+
+    private int dpNative(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
 
     private void requestInitialCrewCheckPermissions() {
         try {
