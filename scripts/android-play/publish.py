@@ -59,6 +59,8 @@ def main():
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
                 continue
+            if run.get('event') != 'push':
+                continue
             if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
                 continue
             key = run['workflow_id']
