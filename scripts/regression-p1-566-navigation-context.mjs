@@ -4,6 +4,9 @@ import ts from 'typescript';
 
 const contextSource = fs.readFileSync('client/src/lib/navigationContext.ts', 'utf8');
 const rosterAdapter = fs.readFileSync('client/src/lib/rosterFocus.ts', 'utf8');
+const contextWithoutComments = contextSource
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/.*$/gm, '');
 
 const compiled = ts.transpileModule(contextSource, {
   compilerOptions: {
@@ -69,18 +72,18 @@ mutable.stayId = 'mutated-after-deposit';
 assert.equal(peekPendingNavigationContext('hotels')?.stayId, 'stay-7', 'pending context must be a sanitized copy');
 clearPendingNavigationContext();
 
-// Privacy and ownership guardrails. Comments may document forbidden persistence,
-// so inspect executable/property-shaped usage instead of failing on documentation text.
+// Privacy and ownership guardrails. Documentation may name forbidden persistence,
+// so strip comments and inspect only executable/type-shaped source.
 assert.ok(
-  !/\b(?:window\.)?(?:localStorage|sessionStorage)\s*\./.test(contextSource),
+  !/\b(?:window\.)?(?:localStorage|sessionStorage)\s*\./.test(contextWithoutComments),
   'Navigation Context must remain in memory and never call browser storage',
 );
 assert.ok(
-  !/\b(?:rawText|originalText|transcript|message)\??\s*:/.test(contextSource),
+  !/\b(?:rawText|originalText|transcript|message)\??\s*:/.test(contextWithoutComments),
   'Navigation Context type/runtime must not expose raw text or conversation fields',
 );
 for (const forbidden of ['pdfParser', 'rosterParser', 'financialRules', 'canonicalRoster']) {
-  assert.ok(!contextSource.includes(forbidden), `Navigation Context must not depend on ${forbidden}`);
+  assert.ok(!contextWithoutComments.includes(forbidden), `Navigation Context must not depend on ${forbidden}`);
 }
 
 // #560 compatibility is now an adapter over the shared relay, not a second navigation bus.
