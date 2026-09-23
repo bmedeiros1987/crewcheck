@@ -53,5 +53,5 @@ jobs:
         run: npx tsc --noEmit
       - name: Validate shared Navigation Context behavior
         run: node scripts/regression-p1-566-navigation-context.mjs
-      - name: Preserve #560 roster focus through the prepare chain
+      - name: "Preserve #560 roster focus through the prepare chain"
         run: node scripts/regression-p1-548-dynamic-calendar.mjs
