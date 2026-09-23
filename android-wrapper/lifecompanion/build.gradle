@@ -1,5 +1,7 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.parcelize'
 }
 
 def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
@@ -83,12 +85,12 @@ android {
 }
 
 dependencies {
-    // The Samsung AAR is a compiled Kotlin library and is distributed without a
-    // Maven POM, so its Kotlin/coroutines runtime dependencies must be explicit.
-    implementation platform("org.jetbrains.kotlin:kotlin-bom:1.8.22")
-    implementation "org.jetbrains.kotlin:kotlin-stdlib"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
-    implementation 'com.google.code.gson:gson:2.9.0'
+    // Samsung's v1.1.0 setup requires Gson + Parcelize. The vendor AAR also
+    // references Kotlin/coroutines; because a local AAR has no Maven POM,
+    // declare those runtime dependencies explicitly.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.3.20"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"
+    implementation 'com.google.code.gson:gson:2.13.2'
 
     if (samsungHealthAarPresent) {
         implementation samsungHealthAars
