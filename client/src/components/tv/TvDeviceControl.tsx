@@ -32,6 +32,11 @@ type TvDevice={
 const DEFAULT_SHARE:TvShare={
   operational:true,weather:true,hotel:false,crew:false,finance:false,mobility:false,traffic:false,
 };
+function tvApi(path:string){
+  const env=(import.meta as unknown as {env?:Record<string,string|undefined>}).env||{};
+  const origin=String(env.VITE_TV_API_ORIGIN||'').replace(/\/$/,'');
+  return origin ? origin+path : path;
+}
 
 function normalized(device:TvDevice):TvPreferences{
   const current=device.preferences||({audience:'owner',share:DEFAULT_SHARE} as TvPreferences);
@@ -73,7 +78,7 @@ export default function TvDeviceControl(){
   async function reload(){
     setLoading(true);
     try{
-      const payload=await authFetch<any>('/api/tv/devices',{cache:'no-store'});
+      const payload=await authFetch<any>(tvApi('/api/tv/devices'),{cache:'no-store'});
       setDevices(Array.isArray(payload)?payload:[]);
     }catch{
       toast.error('Não consegui carregar suas TVs vinculadas.');
@@ -84,7 +89,7 @@ export default function TvDeviceControl(){
   async function save(device:TvDevice,preferences:TvPreferences){
     setBusy(device.deviceId);
     try{
-      const payload=await authFetch<any>('/api/tv/preferences',{
+      const payload=await authFetch<any>(tvApi('/api/tv/preferences'),{
         method:'POST',
         body:JSON.stringify({deviceId:device.deviceId,preferences}),
       });
@@ -132,7 +137,7 @@ export default function TvDeviceControl(){
     setBusy(device.deviceId);
     navigator.geolocation.getCurrentPosition(async position=>{
       try{
-        await authFetch('/api/tv/context',{
+        await authFetch(tvApi('/api/tv/context'),{
           method:'POST',
           body:JSON.stringify({
             deviceId:device.deviceId,
@@ -161,7 +166,7 @@ export default function TvDeviceControl(){
     if(!confirm(`Desvincular ${platformLabel(device.platform)} desta conta?`))return;
     setBusy(device.deviceId);
     try{
-      await authFetch('/api/tv/revoke',{method:'POST',body:JSON.stringify({deviceId:device.deviceId})});
+      await authFetch(tvApi('/api/tv/revoke'),{method:'POST',body:JSON.stringify({deviceId:device.deviceId})});
       setDevices(current=>current.map(item=>item.deviceId===device.deviceId?{...item,revoked:true}:item));
       toast.success('TV desvinculada.');
     }catch{
