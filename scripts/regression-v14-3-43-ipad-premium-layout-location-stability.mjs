@@ -84,9 +84,11 @@ assert.ok(coordinator.includes('await current.update()'), 'service worker deve s
 assert.ok(coordinator.includes("document.visibilityState === 'hidden' || Date.now() - lastActivityAt >= idleMs"), 'ativação deve esperar inatividade');
 assert.ok(coordinator.includes('if (!registration?.waiting || !isSafeToActivate()) return;'), 'worker não pode ser ativado durante uso');
 assert.ok(coordinator.includes("navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)"), 'reload só pode nascer da troca real do service worker');
-assert.ok(coordinator.includes("if (!hadControllerAtStart) return;"), 'primeira aquisição de controller não pode recarregar instalação nova');
+assert.ok(coordinator.includes("if (!controllerSeen)"), 'primeira aquisição de controller não pode recarregar instalação nova');
+assert.ok(coordinator.includes("controllerSeen = true"), 'após a primeira aquisição, trocas futuras do worker devem ser reconhecidas');
 assert.ok(coordinator.includes("if (!reloadPending || reloadStarted || !isSafeToActivate()) return;"), 'reload deve exigir atualização pendente, fronteira segura e trava de execução única');
-assert.ok(coordinator.includes("window.sessionStorage.setItem(key, '1')"), 'reload deve possuir trava de sessão anti-loop');
+assert.ok(coordinator.includes("RELOAD_GUARD_MS = 30_000"), 'reload deve possuir janela curta anti-loop sem bloquear versões futuras');
+assert.ok(coordinator.includes("window.sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))"), 'reload deve registrar a trava temporal antes de recarregar');
 assert.ok(coordinator.includes('window.location.reload()'), 'worker novo já ativado deve alcançar o cliente aberto em fronteira segura');
 assert.equal((coordinator.match(/window\.location\.reload\(\)/g) || []).length, 1, 'coordenador pode ter somente um ponto de reload, protegido pelo fluxo seguro');
 assert.ok(!before.index.includes('crewcheck-release-watch-v14343') && !before.index.includes('crewcheck-release-watch-v14329'), 'watchers legados devem ser removidos');
