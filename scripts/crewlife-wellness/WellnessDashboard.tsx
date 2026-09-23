@@ -21,6 +21,7 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
   async function sync(action: 'status' | 'permissions' | 'read' | 'background', extra: Record<string, unknown> = {}) {
     if (state.current.busy) return;
     const epoch = state.current.epoch;
+    let followUp = false;
     state.current.busy = true; setBusy(true);
     try {
       const result = await samsungRequest(action, extra);
@@ -35,13 +36,13 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
       setNow(Date.now());
       if (result.syncedAt) setLastSync(result.syncedAt);
       if (result.available) setNotice(keys.length ? 'Conectado. Atualização automática ao abrir esta tela e enquanto ela estiver visível.' : 'Escolha os dados e autorize o acesso no Samsung Health.');
-      state.current.busy = false; setBusy(false);
-      if (keys.length && ['status', 'permissions', 'background'].includes(action)) void sync('read');
+      followUp = keys.length > 0 && ['status', 'permissions', 'background'].includes(action);
     } catch {
       if (!state.current.active || epoch !== state.current.epoch) return;
       disconnectSamsung();
       setNotice('Não foi possível acessar o Samsung Health. Confira a instalação, as permissões e a disponibilidade da integração para este app.');
     } finally { if (state.current.active && epoch === state.current.epoch) { state.current.busy = false; setBusy(false); } }
+    if (followUp && state.current.active && epoch === state.current.epoch) void sync('read');
   }
   useEffect(() => {
     state.current.active = true;
@@ -52,7 +53,7 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
     const refresh = window.setInterval(visible, 5 * 60000);
     const age = window.setInterval(() => setNow(Date.now()), 60000);
     if (hasSamsungBridge()) void sync('status');
-    return () => { state.current.active = false; state.current.epoch++; window.clearInterval(refresh); window.clearInterval(age); window.removeEventListener('crewcheck:samsung-disconnected', disconnected); document.removeEventListener('visibilitychange', visible); };
+    return () => { state.current.active = false; state.current.epoch++; state.current.busy = false; window.clearInterval(refresh); window.clearInterval(age); window.removeEventListener('crewcheck:samsung-disconnected', disconnected); document.removeEventListener('visibilitychange', visible); };
   }, []);
   const data = useMemo(() => ({ ...manualWellness(manual, Date.now()), ...normalizeWellness(samsung, 'samsung-health', Date.now()) }), [manual, samsung, now]);
   const suggestion = useMemo(() => suggestWellness(data, feeling, sleepGoalHours, Date.now()), [data, feeling, sleepGoalHours, now]);
@@ -84,7 +85,7 @@ export default function WellnessDashboard({ manual, sleepGoalHours }: { manual: 
     })}</div>
     <section className="cw-connection" aria-labelledby="cw-samsung-title"><div className="cw-connection-title"><Watch aria-hidden="true"/><div><p className="cw-eyebrow">GALAXY WATCH → SAMSUNG HEALTH</p><h3 id="cw-samsung-title">Seus dados, com sua autorização</h3></div><span>{available ? 'Disponível neste aparelho' : 'Em preparação'}</span></div>
       <p role="status">{notice}</p>{lastSync && <p>Última consulta: {new Date(lastSync).toLocaleString('pt-BR')}</p>}
-      {available && <><fieldset><legend>Quais dados você quer consultar?</legend><div className="cw-consent-grid">{METRIC_KEYS.map(key => <label key={key}><input type="checkbox" checked={selected.includes(key)} onChange={() => toggle(key)} disabled={busy}/>{METRICS[key].label}</label>)}</div></fieldset><label className="cw-background"><input type="checkbox" checked={background} disabled={busy || !authorized} onChange={event => void sync('background', { enabled: event.target.checked })}/>Atualizar também com o app fechado</label><p className="cw-background-note">Opcional: guarda um resumo criptografado neste celular por até 24 horas. O Android define quando a atualização pode ocorrer; ela não é instantânea.</p><div className="cw-connection-actions"><button type="button" disabled={busy || !selected.length} onClick={() => request(authorized ? 'read' : 'permissions')}>{busy ? 'Aguardando Samsung Health…' : authorized ? 'Atualizar dados' : 'Autorizar no Samsung Health'}<ArrowUpRight aria-hidden="true"/></button><button type="button" onClick={disconnect}>Desconectar e limpar</button></div></>}
+      {available && <><fieldset><legend>Quais dados você quer consultar?</legend><div className="cw-consent-grid">{METRIC_KEYS.map(key => <label key={key}><input type="checkbox" checked={selected.includes(key)} onChange={() => toggle(key)} disabled={busy}/>{METRICS[key].label}</label>)}</div></fieldset><label className="cw-background"><input type="checkbox" checked={background} disabled={busy || !authorized} onChange={event => void sync('background', { enabled: event.target.checked })}/>Atualizar também com o app fechado</label><p className="cw-background-note">Opcional: guarda neste celular um resumo criptografado com validade de até 24 horas. O Android define quando a atualização pode ocorrer; ela não é instantânea.</p><div className="cw-connection-actions"><button type="button" disabled={busy || !selected.length} onClick={() => request(authorized ? 'read' : 'permissions')}>{busy ? 'Aguardando Samsung Health…' : authorized ? 'Atualizar dados' : 'Autorizar no Samsung Health'}<ArrowUpRight aria-hidden="true"/></button><button type="button" onClick={disconnect}>Desconectar e limpar</button></div></>}
       <p className="cw-privacy"><ShieldCheck aria-hidden="true"/>Sem envio automático para servidor, IA, TV ou relógio. Sem atualização em segundo plano, os valores ficam apenas na memória desta tela. Você pode desconectar e apagar a cópia local a qualquer momento.</p>
     </section>
   </section>;

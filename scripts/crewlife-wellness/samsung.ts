@@ -1,4 +1,4 @@
-import { getStoredUser, isAuthenticated } from '@/lib/authClient';
+import { getStoredUser, isAuthenticated } from '../../lib/authClient';
 import type { MetricKey } from './wellness';
 type Port = { postMessage: (message: string) => void; onmessage: ((event: { data: string }) => void) | null };
 export type SamsungReply = { ok: boolean; available?: boolean; keys?: MetricKey[]; background?: boolean; metrics?: unknown; syncedAt?: number };
@@ -32,6 +32,7 @@ export async function samsungRequest(action: 'status' | 'permissions' | 'read' |
   });
 }
 export function disconnectSamsung() {
+  if (typeof window === 'undefined') return;
   for (const request of pending.values()) { clearTimeout(request.timeout); request.reject(new Error('Conexão encerrada.')); }
   pending.clear();
   try { port()?.postMessage(JSON.stringify({ version: 1, requestId: crypto.randomUUID(), action: 'disconnect' })); } catch {}

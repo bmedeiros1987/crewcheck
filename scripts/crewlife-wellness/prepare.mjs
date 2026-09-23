@@ -57,10 +57,17 @@ patch('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', s
   return replace(source, '        closePortalOnly();\n        if (billingBridge', '        closePortalOnly();\n        if (samsungWellnessBridge != null) samsungWellnessBridge.destroy();\n        if (billingBridge');
 });
 patch('client/src/lib/authClient.ts', source => {
-  source = "import { disconnectSamsung } from '@/components/wellness/samsung';\n" + source;
-  source = replace(source, 'export function clearSession() {', 'export function clearSession() {\n  disconnectSamsung();');
-  source = replace(source, 'export function expireSession() {', 'export function expireSession() {\n  disconnectSamsung();');
-  return replace(source, 'if (previousKey && nextKey && previousKey !== nextKey) {', 'if (previousKey && nextKey && previousKey !== nextKey) {\n      disconnectSamsung();');
+  source = `function clearNativeWellnessConsent() {
+    try {
+      const bridge = (window as unknown as { CrewCheckSamsung?: { postMessage: (value: string) => void } }).CrewCheckSamsung;
+      bridge?.postMessage(JSON.stringify({ version: 1, requestId: crypto.randomUUID(), action: 'disconnect' }));
+      window.dispatchEvent(new Event('crewcheck:samsung-disconnected'));
+    } catch {}
+  }
+` + source;
+  source = replace(source, 'export function clearSession() {', 'export function clearSession() {\n  clearNativeWellnessConsent();');
+  source = replace(source, 'export function expireSession() {', 'export function expireSession() {\n  clearNativeWellnessConsent();');
+  return replace(source, 'if (previousKey && nextKey && previousKey !== nextKey) {', 'if (previousKey && nextKey && previousKey !== nextKey) {\n      clearNativeWellnessConsent();');
 });
 patch('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java', source => {
   const start = source.indexOf('    private void renderCrewLife(long now) {');
