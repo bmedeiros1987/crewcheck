@@ -61,6 +61,7 @@ jobs:
         run: |
           python3 scripts/android-play/test_validate.py
           python3 scripts/android-play/test_publish_policy.py
+          python3 scripts/android-play/test_credential.py
       - name: Web and privacy validation
         run: |
           npx tsc --noEmit
