@@ -42,5 +42,4 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Compile Android mobile shell
-        working-directory: android-wrapper
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug --stacktrace
