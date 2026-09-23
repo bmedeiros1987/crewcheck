@@ -60,6 +60,23 @@ const rejected=new TvSession(mapStorage(),async()=>new Response('{}',{status:401
 await assert.rejects(rejected.call('snapshot'),/pair_again/);
 assert.equal(rejectedStore.map.size,0,'server revocation/expiry must erase trusted credential');
 
+const forbiddenStore=mapStorage();
+const forbiddenSeed=new TvSession(mapStorage(),request,'https://pilot.example.test',forbiddenStore);
+forbiddenSeed.pair(credential);
+const forbidden=new TvSession(mapStorage(),async()=>new Response('{}',{status:403}),'https://pilot.example.test',forbiddenStore);
+await assert.rejects(forbidden.call('snapshot'),/access_forbidden/);
+assert.equal(forbidden.credential?.deviceId,credential.deviceId,'temporary 403 must keep trusted credential in memory');
+assert.equal(forbiddenStore.map.size,1,'temporary 403 must keep trusted credential persisted');
+
+const malformedStore=mapStorage();
+const malformedSeed=new TvSession(mapStorage(),request,'https://pilot.example.test',malformedStore);
+malformedSeed.pair(credential);
+const malformedResponse=async()=>new Response(JSON.stringify({...snapshot,schemaVersion:99}),{status:200,headers:{'Content-Type':'application/json','X-CrewCheck-Server-Time':String(now)}});
+const malformed=new TvSession(mapStorage(),malformedResponse,'https://pilot.example.test',malformedStore);
+await assert.rejects(malformed.sync(now),/invalid_snapshot_schema/);
+assert.equal(malformed.credential?.deviceId,credential.deviceId,'invalid snapshot must not unlink trusted TV');
+assert.equal(malformedStore.map.size,1,'invalid snapshot must keep persistent trusted credential');
+
 const prep=await readFile('scripts/tv-pairing-prepare.mjs','utf8');
 assert.match(prep,/new TvSession\(sessionStorage, fetch,[^\n]+localStorage\)/);
 assert.match(prep,/trusted:trustedTv/);
@@ -67,6 +84,8 @@ assert.match(prep,/Restaurando TV confiável/);
 assert.match(prep,/session\.renew/);
 assert.match(prep,/Fechar app/);
 assert.match(prep,/session\.clear\(forgetTrusted\)/);
+const tvBuild=await readFile('scripts/tv-build.mjs','utf8');
+assert.match(tvBuild,/tv-pairing-prepare\.mjs/,'every packaged TV build must apply persistent pairing');
 const main=await readFile('apps/tv-player/src/main.tsx','utf8');
 assert.match(main,/Desvincular esta TV/);
 
