@@ -108,22 +108,22 @@ for (const marker of [
 ]) assert.ok(serverBefore.includes(marker), `servidor preparado sem marcador: ${marker}`);
 assert.ok(!serverBefore.includes("if (!isConciergeContextFreshV14338(previous)) return previous;"), 'contexto vencido não pode alcançar busca por recordKey, voo ou data');
 for (const marker of [
-  "const DEFAULT_VERSION = '14.3.48';",
+  "const DEFAULT_VERSION = '14.4.08';",
   'data-concierge-semantic="v14.3.41"',
-  'Converse normalmente',
+  'Converse de verdade',
   'O contexto expira em até 6 horas',
   'title="Compreensão" value="Natural"',
   '<h2>Teste a conversa</h2>',
 ]) assert.ok(homeBefore.includes(marker), `interface preparada sem marcador: ${marker}`);
-assert.ok(releaseBefore.includes('14.3.48'), 'release Web/PWA final deve ser 14.3.48');
+assert.ok(releaseBefore.includes('14.4.08'), 'release Web/PWA final deve ser 14.4.08');
 assert.ok(!engineSource.includes('fetch('), 'interpretador semântico deve ser determinístico e sem chamada externa');
 assert.ok(!/OPENAI|GEMINI|ANTHROPIC|LLM_API/i.test(engineSource), 'interpretador não pode depender de modelo generativo externo');
 for (const protectedPath of ['client/src/lib/pdfParser.ts','server/rosterParser.mjs','canonicalRoster','financialRules']) {
   assert.ok(!applySource.includes(`update('${protectedPath}`), `v14.3.41 não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 falhou');
 assert.equal(fs.readFileSync(serverPath, 'utf8'), serverBefore, 'preparação final deve preservar o Concierge semântico no servidor');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar o Concierge semântico na interface');
 assert.equal(fs.readFileSync(releasePath, 'utf8'), releaseBefore, 'preparação final deve preservar o release');

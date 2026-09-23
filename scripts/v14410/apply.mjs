@@ -53,7 +53,9 @@ function patchServer(source) {
   const legacyTag = '// cc-v14409:concierge-gyms-plan-location';
   const gymStart = next.includes(conciergeTag) ? conciergeTag : next.includes(legacyTag) ? legacyTag : 'async function conciergeGymsReply(';
   const routineStart = next.includes('async function conciergeRoutineReply(') ? 'async function conciergeRoutineReply(' : 'function conciergeRoutineReply(';
-  next = replaceBetween(next, gymStart, routineStart, conciergeGyms, 'Concierge Wellhub');
+  const gymEnd = next.indexOf('\n}', next.indexOf(gymStart)) + 2;
+  if (gymEnd < 2) throw new Error(`${TAG} fim da função de academias ausente`);
+  next = next.slice(0, next.indexOf(gymStart)) + conciergeGyms + next.slice(gymEnd);
 
   // Generic words like "modalidade" are not sufficient to route into the gym
   // state machine. Natural activity preferences are admitted only by the hardened

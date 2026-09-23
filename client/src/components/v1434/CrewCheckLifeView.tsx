@@ -158,6 +158,14 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const [manual, setManual] = useState<ManualSummary>(() => readStored(KEYS.manual, DEFAULT_MANUAL));
   const [nativeStatus, setNativeStatus] = useState<NativeHealthStatus>({});
   const [nativeSummary, setNativeSummary] = useState<NativeHealthSummary>(() => readStored(KEYS.nativeSummary, {}));
+  const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(() => {
+    try {
+      const bridge = (window as any).AndroidCrewCheckNative;
+      const raw = bridge?.watchLifeStatus?.();
+      const status = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Boolean(status?.enabled);
+    } catch { return false; }
+  });
   const [whyOpen, setWhyOpen] = useState(false);
   const androidBridge = (window as any).AndroidCrewCheckHealth;
   const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;
@@ -198,6 +206,35 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       leisureMinutes: numberOrZero(manual.leisureMinutes),
     };
   }, [manual, nativeSummary]);
+
+  useEffect(() => {
+    if (!consent.active || !watchMirrorEnabled || !nativeSummary.ok) return;
+    const bridge = (window as any).AndroidCrewCheckNative;
+    if (!bridge?.publishWatchCrewLife) return;
+
+    const now = Date.now();
+    const payload: Record<string, unknown> = {
+      schemaVersion: 1,
+      generatedAtEpochMs: now,
+      validUntilEpochMs: now + 6 * 60 * 60 * 1000,
+      recoveryLabel: 'DESCONHECIDA',
+    };
+    if (Number.isFinite(Number(nativeSummary.sleepMinutes))) {
+      payload.sleepMinutes = Math.max(0, Math.round(Number(nativeSummary.sleepMinutes)));
+      payload.sleepLabel = hoursLabel(nativeSummary.sleepMinutes);
+    }
+    if (Number.isFinite(Number(nativeSummary.steps))) {
+      payload.steps = Math.max(0, Math.round(Number(nativeSummary.steps)));
+    }
+    if (Number.isFinite(Number(nativeSummary.activityMinutes))) {
+      payload.activeMinutes = Math.max(0, Math.round(Number(nativeSummary.activityMinutes)));
+    }
+    if (Number.isFinite(Number(nativeSummary.restingHeartRateAverage))) {
+      payload.restingHeartRate = Math.max(0, Math.round(Number(nativeSummary.restingHeartRateAverage)));
+    }
+
+    try { bridge.publishWatchCrewLife(JSON.stringify(payload)); } catch {}
+  }, [consent.active, nativeSummary, watchMirrorEnabled]);
 
   const recommendation = useMemo(() => {
     const program = nextProgram?.title || (nextProgram?.kind === 'flight' ? 'próxima programação' : 'próximo compromisso operacional');
@@ -273,6 +310,24 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   function refreshAndroid() {
     if (!postAndroid('readSummary', { days: 7, consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('A atualização automática está disponível no aplicativo Android.');
+    }
+  }
+
+  function setWatchMirror(enabled: boolean) {
+    const bridge = (window as any).AndroidCrewCheckNative;
+    if (!bridge?.setWatchLifeConsent) {
+      toast.info('O espelhamento do CrewLife está disponível no aplicativo Android CrewCheck.');
+      return;
+    }
+    try {
+      const ok = bridge.setWatchLifeConsent(Boolean(enabled));
+      if (ok === false) throw new Error('O celular não conseguiu atualizar o consentimento do relógio.');
+      setWatchMirrorEnabled(enabled);
+      toast.success(enabled
+        ? 'CrewLife no relógio ativado. Somente resumos agregados serão enviados.'
+        : 'CrewLife removido do relógio.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui atualizar o CrewLife no relógio.');
     }
   }
 
@@ -370,6 +425,10 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         </article>
         <article className="connected">
           <Check/><div><h3>Entrada manual</h3><p>Funciona no navegador e nos aplicativos, sem vincular nenhuma conta de saúde.</p><small>Disponível agora</small></div>
+        </article>
+        <article className={watchMirrorEnabled ? 'connected' : ''}>
+          <Smartphone/><div><h3>Mostrar CrewLife no relógio</h3><p>Envia somente sono, passos/atividade e FC em repouso agregados quando disponíveis. Nenhum dado bruto é enviado.</p><small>{watchMirrorEnabled ? 'Espelhamento autorizado' : 'Desativado por padrão'}</small></div>
+          <button className={watchMirrorEnabled ? '' : 'primary'} onClick={() => setWatchMirror(!watchMirrorEnabled)}>{watchMirrorEnabled ? 'Desativar no relógio' : 'Ativar no relógio'}</button>
         </article>
       </div>
       {nativeSummary.ok && <p className="cc-life-sync-note">Último resumo nativo: {dateTimeLabel(nativeSummary.capturedAt) || 'agora'} · sono {hoursLabel(nativeSummary.sleepMinutes)} · período {nativeSummary.periodDays || 7} dias. Dados brutos não são copiados para o CrewCheck.</p>}

@@ -14,7 +14,7 @@ const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14337/apply.mjs');"), 'v14.3.37 deve estar na preparação canônica');
 assert.ok(chain.includes("await import('../v14337/compatibility.mjs');"), 'compatibilidade v14.3.37 deve preservar módulos existentes');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.3.48';"), 'versão Web/PWA final 14.3.48 ausente');
+assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente');
 assert.ok(homeBefore.includes('function CrewCheckMark('), 'componente único da marca CrewCheck ausente');
 assert.equal((homeBefore.match(/data-crewcheck-brand="canonical"/g) || []).length, 1, 'a definição da marca canônica deve existir uma única vez');
 assert.ok(homeBefore.includes('<CrewCheckMark/>'), 'cabeçalho deve reutilizar a marca canônica');
@@ -30,7 +30,7 @@ const itemsEnd = bottomBlock.indexOf('const menuViews:', itemsStart);
 assert.ok(itemsStart >= 0 && itemsEnd > itemsStart, 'array de destinos inferiores não localizado');
 const bottomItemsBlock = bottomBlock.slice(itemsStart, itemsEnd);
 const expectedBottom = [
-  "['cockpit','FlyDeck',HomeIcon]",
+  "['cockpit','FlightDeck',HomeIcon]",
   "['roster','Escala',CalendarDays]",
   "['departure','Saída',Navigation]",
   "['alerts','Alertas',Bell]",
@@ -71,20 +71,19 @@ const cockpitStart = homeBefore.indexOf('function Cockpit(');
 const cockpitEnd = homeBefore.indexOf('function rosterCode(', cockpitStart);
 const cockpitBlock = homeBefore.slice(cockpitStart, cockpitEnd);
 for (const marker of [
-  '<small>FlyDeck</small>',
-  'COPILOTO CRONOLÓGICO',
-  'Confirmar programação',
-  'Apresentação e limites',
-  'Preparar saída',
-  'Acompanhar operação',
-  'Revisar próxima etapa',
-  '<SmartCard event={departureEvent} setView={setView}/>',
-  '<FlightCard event={event}/>',
-]) assert.ok(cockpitBlock.includes(marker), `etapa estrutural do FlyDeck ausente: ${marker}`);
-const chronologicalLabels = ['Confirmar programação', 'Apresentação e limites', 'Preparar saída', 'Acompanhar operação', 'Revisar próxima etapa'];
-const positions = chronologicalLabels.map((label) => cockpitBlock.indexOf(label));
-assert.ok(positions.every((position) => position >= 0), 'sequência operacional incompleta');
-assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'sequência do FlyDeck deve permanecer cronológica');
+  '<small>FLIGHTDECK</small>',
+  'Briefing operacional',
+  'flyDeckBriefingPhaseV14353(event, nowMs)',
+  'setPendingRosterFocus(eventStartDateTime(event))',
+  'departureEligible ? <button',
+  'isFlight ? <button',
+  '<OperationalDayTimeline events={events}',
+  'Confirmação obrigatória',
+]) assert.ok(cockpitBlock.includes(marker), `etapa estrutural do FlightDeck ausente: ${marker}`);
+const chronology = ['flyDeckClockV14353(event.presentation)', 'flyDeckClockV14353(event.departure)', 'flyDeckClockV14353(event.arrival)'];
+const positions = chronology.map(marker => cockpitBlock.indexOf(marker));
+assert.ok(positions.every(position => position >= 0), 'horários operacionais incompletos');
+assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'apresentação, início e fim devem aparecer em ordem');
 
 assert.ok(cssBefore.includes('CrewCheck v14.3.37 — FlyDeck cronológico'), 'CSS do FlyDeck não foi aplicado');
 const markPath = path.join(root, 'client/public/brand/crewcheck-mark.svg');
@@ -94,15 +93,15 @@ assert.ok(fs.existsSync(playSourcePath), 'fonte vetorial para o ativo Play Store
 const mark = fs.readFileSync(markPath, 'utf8');
 assert.ok(mark.includes('viewBox="0 0 512 512"'), 'marca deve possuir matriz 512×512');
 assert.equal(fs.readFileSync(playSourcePath, 'utf8'), mark, 'ativo Play Store deve nascer da mesma marca interna');
-assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.3.48'), 'release.json final não foi atualizado');
+assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.08'), 'release.json final não foi atualizado');
 
 const applySource = fs.readFileSync(applyPath, 'utf8');
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'server.mjs', 'financialRules', 'canonicalRoster']) {
   assert.ok(!applySource.includes(`update('${protectedPath}`), `v14.3.37 não pode alterar motor protegido: ${protectedPath}`);
 }
 
-const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14348/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.3.48 falhou');
+const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 falhou');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar o FlyDeck no Home');
 assert.equal(fs.readFileSync(cssPath, 'utf8'), cssBefore, 'preparação final deve preservar o CSS do FlyDeck');
 

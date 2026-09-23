@@ -834,6 +834,67 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String watchLifeStatus() {
+            try {
+                WatchHealthConsent consent = WatchHealthConsent.read(MainActivity.this);
+                JSONObject status = new JSONObject();
+                status.put("enabled", consent.allowsAnyHealth());
+                status.put("routine", consent.allows(WatchHealthConsent.CATEGORY_ROUTINE));
+                status.put("version", WatchHealthConsent.CONSENT_VERSION);
+                return status.toString();
+            } catch (Exception error) {
+                return "{\"enabled\":false,\"routine\":false}";
+            }
+        }
+
+        @JavascriptInterface
+        public boolean setWatchLifeConsent(final boolean enabled) {
+            try {
+                if (!enabled) {
+                    CrewLifeWatchPublisher.revoke(MainActivity.this, null);
+                    return true;
+                }
+                java.util.Set<String> categories = java.util.Set.of(
+                        WatchHealthConsent.CATEGORY_RECOVERY,
+                        WatchHealthConsent.CATEGORY_SLEEP,
+                        WatchHealthConsent.CATEGORY_ACTIVITY,
+                        WatchHealthConsent.CATEGORY_HEART,
+                        WatchHealthConsent.CATEGORY_ROUTINE
+                );
+                WatchHealthConsent.grant(
+                        MainActivity.this,
+                        WatchHealthConsent.CONSENT_VERSION,
+                        categories
+                );
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean publishWatchCrewLife(final String payloadJson) {
+            if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
+            CrewLifeWatchPublisher.publishCrewLife(
+                    MainActivity.this,
+                    payloadJson,
+                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, message)
+            );
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean publishWatchRoutine(final String payloadJson) {
+            if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
+            CrewLifeWatchPublisher.publishRoutine(
+                    MainActivity.this,
+                    payloadJson,
+                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, message)
+            );
+            return true;
+        }
+
+        @JavascriptInterface
         public boolean syncWatchSnapshot(final String snapshotJson) {
             if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
                 dispatchCrewCheckWatchSyncResult(false, "invalid_snapshot", "Snapshot vazio.");
