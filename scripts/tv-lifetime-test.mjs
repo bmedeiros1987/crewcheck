@@ -36,6 +36,17 @@ for (const platform of ['lg-webos','android-tv']) {
   assert.equal(env.state.devices[credential.deviceId].tokenHash, '');
 }
 
+const upgradeEnv = fixture();
+const upgradePair = await upgradeEnv.service.begin('lg-webos', false);
+await upgradeEnv.service.approve('free-account', upgradePair.userCode, 'private');
+const upgradeCredential = await upgradeEnv.service.poll(upgradePair.deviceCode);
+assert.equal(upgradeCredential.trusted, false);
+const upgraded = await upgradeEnv.service.updateTrust('free-account', upgradeCredential.deviceId, true);
+assert.equal(upgraded.trusted, true);
+assert.equal(upgraded.expiresAt, null);
+upgradeEnv.advance(366 * 86400000);
+assert.equal((await upgradeEnv.service.authorize(upgradeCredential.token)).deviceId, upgradeCredential.deviceId);
+
 const temporaryEnv = fixture();
 const temporary = await temporaryEnv.service.begin('android-tv', false);
 await temporaryEnv.service.approve('free-account', temporary.userCode, 'family');
@@ -43,4 +54,4 @@ const session = await temporaryEnv.service.poll(temporary.deviceCode);
 temporaryEnv.advance(86400001);
 await assert.rejects(temporaryEnv.service.authorize(session.token), error => error.status === 401);
 
-console.log('PASS: LG webOS and Android TV trusted pairing survives beyond a year until explicit revocation; temporary pairing still expires.');
+console.log('PASS: LG webOS and Android TV trusted pairing survives beyond a year, existing temporary TVs can be upgraded, explicit revocation still works, and temporary pairing still expires.');
