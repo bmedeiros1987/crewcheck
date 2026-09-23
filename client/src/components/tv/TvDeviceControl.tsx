@@ -18,6 +18,15 @@ type TvShare={
   traffic:boolean;
 };
 type TvPreferences={audience:Audience;share:TvShare};
+export type TvJourneyFinanceContext=Record<string,{
+  finance:{
+    currency:'BRL';
+    estimated?:number|null;
+    perDiem?:number|null;
+    production?:number|null;
+    note?:string|null;
+  };
+}>;
 type TvDevice={
   deviceId:string;
   platform:string;
@@ -69,7 +78,7 @@ const SHARE_ROWS:Array<[keyof TvShare,string,string,any,boolean?]>=[
   ['finance','Financeiro','Estimativas e diárias somente quando você autorizar.',WalletCards,true],
 ];
 
-export default function TvDeviceControl(){
+export default function TvDeviceControl({journeyFinance={}}:{journeyFinance?:TvJourneyFinanceContext}){
   const [devices,setDevices]=useState<TvDevice[]>([]);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState('');
@@ -100,6 +109,28 @@ export default function TvDeviceControl(){
     }finally{setBusy('');}
   }
 
+  async function pushFinance(device:TvDevice,preferences=normalized(device)){
+    if(preferences.audience!=='owner'||preferences.share.finance!==true)return;
+    const entries=Object.entries(journeyFinance).slice(0,12);
+    if(!entries.length){
+      toast.message('Não há estimativa financeira elegível para enviar à TV agora.');
+      return;
+    }
+    setBusy(device.deviceId);
+    try{
+      await authFetch(tvApi('/api/tv/context'),{
+        method:'POST',
+        body:JSON.stringify({
+          deviceId:device.deviceId,
+          context:{journeyDetails:Object.fromEntries(entries),ttlMs:10*60*1000},
+        }),
+      });
+      toast.success('Financeiro atualizado na TV por até 10 minutos.');
+    }catch{
+      toast.error('Não consegui enviar o financeiro para a TV.');
+    }finally{setBusy('');}
+  }
+
   async function setAudience(device:TvDevice,audience:Audience){
     const current=normalized(device);
     const owner=audience==='owner';
@@ -121,7 +152,9 @@ export default function TvDeviceControl(){
       toast.message('Esse dado sensível só pode ser habilitado no modo Proprietário.');
       return;
     }
-    await save(device,{...current,share:{...current.share,[key]:next}});
+    const updated={...current,share:{...current.share,[key]:next}};
+    await save(device,updated);
+    if(key==='finance'&&next) await pushFinance(device,updated);
   }
 
   async function pushTraffic(device:TvDevice){
@@ -226,6 +259,10 @@ export default function TvDeviceControl(){
 
           {owner&&prefs.share.traffic&&<button className="cc-tv-location-button" type="button" disabled={busy===device.deviceId} onClick={()=>pushTraffic(device)}>
             <MapPin/> Atualizar trânsito na TV agora
+          </button>}
+
+          {owner&&prefs.share.finance&&<button className="cc-tv-location-button cc-tv-finance-button" type="button" disabled={busy===device.deviceId} onClick={()=>void pushFinance(device)}>
+            <WalletCards/> Atualizar financeiro na TV por 10 min
           </button>}
 
           <footer>
