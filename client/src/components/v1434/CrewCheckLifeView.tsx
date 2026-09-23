@@ -219,15 +219,37 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         const summaryRaw = native?.readLifeCompanionSummary?.();
         const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : (summaryRaw || {});
         if (summary && typeof summary === 'object' && summary.automatic) {
-          setCompanionSummary({ ...summary, ok: true, source: 'samsung_health' });
+          const normalized = { ...summary, ok: true, source: 'samsung_health' };
+          setCompanionSummary(normalized);
+          try {
+            localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
+              ...normalized,
+              capturedAt: Number(normalized.generatedAtEpochMs) > 0
+                ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
+                : new Date().toISOString(),
+              source: 'samsung-companion',
+            }));
+            window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
+          } catch {}
         }
       } catch {}
     };
     const onCompanion = (event: Event) => {
       const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
       if (detail && detail.automatic) {
-        setCompanionSummary({ ...detail, ok: true, source: 'samsung_health' });
+        const normalized = { ...detail, ok: true, source: 'samsung_health' };
+        setCompanionSummary(normalized);
         setCompanionStatus((current) => ({ ...current, installed: true, state: 'connected', automatic: true }));
+        try {
+          localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
+            ...normalized,
+            capturedAt: Number(normalized.generatedAtEpochMs) > 0
+              ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
+              : new Date().toISOString(),
+            source: 'samsung-companion',
+          }));
+          window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
+        } catch {}
       }
     };
     readCompanion();
