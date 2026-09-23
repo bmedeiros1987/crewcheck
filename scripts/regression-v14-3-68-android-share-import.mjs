@@ -13,7 +13,8 @@ const android = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainAc
 const inbox = read('android-wrapper/app/src/main/java/com/crewcheck/app/SharedPdfInbox.java');
 const manifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const chain = read('scripts/v14365/apply.mjs');
-const finalizer = read('scripts/p0-build-identity/apply.mjs');
+const preparation = read('scripts/v139/apply.mjs');
+const buildIdentityFinalizer = read('scripts/p0-build-identity/apply.mjs');
 
 expect(home.includes("window.addEventListener('crewcheck:native-pdf'"), 'Home não escuta o PDF compartilhado pelo Android.');
 expect(home.includes('processRosterFile(file)'), 'PDF compartilhado não reutiliza o importador canônico.');
@@ -49,6 +50,17 @@ expect(!inbox.includes('getExternalStorage'), 'Inbox não pode depender de armaz
 expect(manifest.includes('android:mimeType="application/pdf"'), 'Manifest perdeu suporte a application/pdf.');
 expect(manifest.includes('android:mimeType="application/octet-stream"'), 'Manifest não aceita compartilhadores que enviam PDF como octet-stream.');
 expect(chain.includes("await import('../v14368/apply.mjs');"), 'Hotfix legado deve continuar na preparação por compatibilidade.');
-expect(finalizer.includes("await import('../p0-shared-pdf-durable/apply.mjs');"), 'Finalizador deve reafirmar o inbox durável depois dos transforms legados.');
 
-console.log('[P0 share] OK — Android/PWA persistem o PDF até ACK real do importador canônico.');
+const durableImport = "await import('../p0-shared-pdf-durable/apply.mjs');";
+const rosterWindowImport = "await import('../p0-673-order-independent-window/apply.mjs');";
+const finalManualImport = "await import('../ci/sync-canonical-manual.mjs');";
+const durableIndex = preparation.indexOf(durableImport);
+const rosterWindowIndex = preparation.indexOf(rosterWindowImport);
+const finalManualIndex = preparation.indexOf(finalManualImport);
+expect(!buildIdentityFinalizer.includes(durableImport), 'Inbox durável não deve reescrever Home antes dos patchers canônicos de roster.');
+expect(durableIndex >= 0, 'Preparação final deve reafirmar o inbox durável.');
+expect(rosterWindowIndex >= 0 && durableIndex > rosterWindowIndex, 'Inbox durável deve materializar somente depois do P0 #673 preservar a janela canônica.');
+expect(finalManualIndex >= 0 && durableIndex > finalManualIndex, 'Inbox durável deve ser o transform final, depois da materialização Android/manual.');
+expect(preparation.indexOf(durableImport, durableIndex + 1) < 0, 'Inbox durável deve ser aplicado uma única vez na preparação final.');
+
+console.log('[P0 share] OK — Android/PWA persistem o PDF até ACK real do importador canônico e só materializam após patchers canônicos.');
