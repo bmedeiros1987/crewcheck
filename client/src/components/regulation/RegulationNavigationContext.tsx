@@ -40,7 +40,8 @@ export default function RegulationNavigationContext() {
 
   function returnToRoster() {
     const current = peekPendingNavigationContext('regulation');
-    const source = isRosterContext(current) ? current : context;
+    const source = isRosterContext(current) ? current : (isRosterContext(context) ? context : null);
+    if (!source) return;
     const epoch = Number(source.dateEpochMs);
 
     // Clear the persistent regulation context first. Then deposit the one-shot roster
