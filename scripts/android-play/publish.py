@@ -9,11 +9,11 @@ from urllib.parse import quote
 import google.auth.transport.requests
 from google.oauth2 import service_account
 import requests
+from credential import load_service_account_secret
 
 def main():
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
-    account = json.loads(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
-    assert account.get('type') == 'service_account', 'Expected service account credential'
+    account = load_service_account_secret(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
     credentials = service_account.Credentials.from_service_account_info(account, scopes=['https://www.googleapis.com/auth/androidpublisher'])
     session = google.auth.transport.requests.AuthorizedSession(credentials)
     root = Path(sys.argv[1])
