@@ -16,9 +16,19 @@ if(!main.includes("from './BroadcastPanels'")){
  main=replace(main,'<header><TvBrand/>','<header><OfficialTvBrand/>');
  main=main.replace('Prévia visual 0.1.6','Prévia visual 0.2.2');
  main=replace(main,'<span>{v}</span>',"<span>{v==='Mês'?'Escala':v==='Meteorologia'?'Clima':v}</span>");
- const a=main.indexOf("      {view === 'Agora' && <section"),b=main.indexOf("      {(view === 'Mês'",a);
- if(a<0||b<a)throw Error('Broadcast view boundaries changed');
- main=main.slice(0,a)+"      {(['Agora','Meteorologia','Radar','Apresentação','Pernoite'] as string[]).includes(view) && <BroadcastPanel view={view as any} snapshot={snapshot} demo={demo} clock={clock} openDay={date=>openDay(date,view)} openView={setView} prefs={displayPrefs.value}/> }\n"+main.slice(b);
+ const calendarMarker="      {(view === 'Mês' || view === 'Semana') && <section";
+ const calendarAt=main.indexOf(calendarMarker);
+ if(calendarAt<0)throw Error('Broadcast calendar boundary changed');
+ if(main.includes("from './HomeEssentials'")){
+   // The premium operational Home owns Agora. Compose only the secondary
+   // broadcast views so rerunning this preparer never overwrites the new Home.
+   const secondary="      {(['Meteorologia','Radar','Apresentação','Pernoite'] as string[]).includes(view) && <BroadcastPanel view={view as any} snapshot={snapshot} demo={demo} clock={clock} openDay={date=>openDay(date,view)} openView={setView} prefs={displayPrefs.value}/> }\n";
+   if(!main.includes("['Meteorologia','Radar','Apresentação','Pernoite'] as string[]")) main=main.slice(0,calendarAt)+secondary+main.slice(calendarAt);
+ } else {
+   const a=main.indexOf("      {view === 'Agora' && <section");
+   if(a<0||calendarAt<a)throw Error('Broadcast view boundaries changed');
+   main=main.slice(0,a)+"      {(['Agora','Meteorologia','Radar','Apresentação','Pernoite'] as string[]).includes(view) && <BroadcastPanel view={view as any} snapshot={snapshot} demo={demo} clock={clock} openDay={date=>openDay(date,view)} openView={setView} prefs={displayPrefs.value}/> }\n"+main.slice(calendarAt);
+ }
  main=replace(main,'<div className="calendar-actions">','<div className="calendar-actions"><button onClick={()=>setView(view===\'Mês\'?\'Semana\':\'Mês\')}>{view===\'Mês\'?\'Ver semana\':\'Ver mês\'}</button>');
  main=replace(main,'<p className="note">Selecione um dia com OK. Dias sem programação não significam folga confirmada.</p>','<div className="note"><span>OK abre o dia. Sem programação não significa folga confirmada.</span><ProviderCredit provider="crewtopia" demo={demo}/></div>');
  main=replace(main,'<ChannelDock channel={channel}/></footer>','<ChannelDock channel={channel}/><CreatorCredit/></footer>');
