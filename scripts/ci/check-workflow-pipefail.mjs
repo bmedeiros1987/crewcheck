@@ -96,7 +96,10 @@ async function main() {
 
   if (violations.length) {
     console.error('[ci-pipefail] unsafe workflow pipelines found:');
-    for (const violation of violations) console.error(`- ${violation}`);
+    for (const violation of violations) {
+      console.error(`- ${violation}`);
+      console.error(`::error title=CI pipeline safety::${violation}`);
+    }
     process.exitCode = 1;
     return;
   }
@@ -106,5 +109,6 @@ async function main() {
 
 main().catch((error) => {
   console.error('[ci-pipefail] audit crashed', error);
+  console.error(`::error title=CI pipeline safety audit crashed::${String(error?.stack || error)}`);
   process.exitCode = 1;
 });
