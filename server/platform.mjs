@@ -34,7 +34,6 @@ const PLAN_CATALOG = [
       'Conformidade preventiva e carga de trabalho',
       'Diárias e salário com parâmetros informados pelo usuário',
       'PDF, ICS e envio de relatório pelo CrewCheck',
-      'CrewWatch Face grátis para relógios Wear OS compatíveis',
       'Concierge Telegram por texto e 1 teste de ligação por mês',
     ],
   },
@@ -52,7 +51,6 @@ const PLAN_CATALOG = [
       'Saída Inteligente, meteorologia e rotinas conectadas',
       'Hotéis, aprendizado de apresentação e academias parceiras',
       'Comparação de escala, visitantes e chat interno',
-      'CrewWatch Premium com Agora, Jornada, Alertas, CrewLife e Concierge no relógio',
       '20 ligações do despertador por mês',
       'Sincronização e compartilhamentos revogáveis em banco',
     ],
@@ -581,7 +579,6 @@ async function subscriptionStatus(db, profile) {
     premiumAccess: plan !== 'free',
     entitlements: {
       roster: true, compliance: true, workload: true, finance: true, export: true,
-      watchFace: true, watchApp: plan !== 'free',
       radar: plan !== 'free', smartDeparture: plan !== 'free', hotelLearning: plan !== 'free',
       gyms: plan !== 'free', visitors: plan !== 'free', rosterComparison: plan !== 'free', chat: plan !== 'free',
     },
