@@ -16,6 +16,7 @@ const chain = read('scripts/v14365/apply.mjs');
 
 expect(home.includes("window.addEventListener('crewcheck:native-pdf'"), 'Home não escuta o PDF compartilhado pelo Android.');
 expect(home.includes('processRosterFile(file)'), 'PDF compartilhado não reutiliza o importador canônico.');
+expect(home.includes('nativeBridge.readSharedPdfChunk'), 'Home deve reconstruir o arquivo por chunks do inbox nativo.');
 expect(home.includes('const imported = await processRosterFile(file);'), 'ACK precisa depender do resultado real da importação.');
 expect(home.includes('AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId)'), 'Cliente não confirma o consumo do PDF nativo.');
 expect(home.includes('syncRosterWithTelegramConcierge(roster, file.name)'), 'Fluxo canônico deixou de sincronizar a escala com o Concierge/Telegram.');
@@ -26,7 +27,11 @@ expect(android.includes('SharedPdfInbox.capture(this, uri, MAX_PDF_BYTES)'), 'An
 expect(android.includes('restorePendingSharedPdfFromInbox()'), 'Cold start não restaura PDF pendente.');
 expect(android.includes('intent.getClipData().getItemAt(0).getUri()'), 'Android não aceita URI recebida via ClipData.');
 expect(android.includes('payload.put("shareId", pending.id)'), 'Payload nativo não envia shareId persistente.');
-expect(android.includes('SharedPdfInbox.readBytes(this, pending.id, MAX_PDF_BYTES)'), 'Dispatch deve ler o arquivo persistido, não depender apenas de RAM.');
+expect(android.includes('payload.put("byteLength", pending.file.length())'), 'Dispatch deve enviar apenas metadados do arquivo persistido.');
+expect(android.includes('payload.put("transport", "android-private-inbox")'), 'Payload deve identificar o transporte privado e durável.');
+expect(android.includes('readSharedPdfChunk'), 'Bridge Android deve expor leitura em blocos, sem injetar o PDF inteiro no JavaScript.');
+expect(android.includes('SharedPdfInbox.readChunk(MainActivity.this, shareId'), 'Chunks devem sair diretamente do inbox persistente.');
+expect(!android.includes('payload.put("dataBase64", pendingSharedPdfBase64)'), 'Dispatch compartilhado não deve injetar Base64 gigante no WebView.');
 expect(android.includes('public boolean acknowledgeSharedPdf(final String shareId)'), 'Bridge Android não expõe ACK do PDF.');
 expect(android.includes('SharedPdfInbox.acknowledge(MainActivity.this, shareId)'), 'ACK deve remover o item do inbox persistente.');
 
@@ -34,6 +39,8 @@ expect(inbox.includes('context.getFilesDir()'), 'Inbox precisa usar armazenament
 expect(inbox.includes('KEY_CREATED_AT'), 'Inbox deve registrar idade do item pendente.');
 expect(inbox.includes('MAX_PENDING_AGE_MS'), 'Inbox deve expirar handoffs abandonados.');
 expect(inbox.includes("header[0] != '%'"), 'Inbox deve validar assinatura PDF antes de persistir.');
+expect(inbox.includes('public static synchronized byte[] readChunk'), 'Inbox deve permitir leitura limitada em blocos.');
+expect(inbox.includes('Math.min(requestedLength, 256 * 1024)'), 'Cada leitura deve ter limite rígido de tamanho.');
 expect(inbox.includes('public static synchronized boolean acknowledge'), 'Inbox precisa de ACK explícito.');
 expect(!inbox.includes('getExternalStorage'), 'Inbox não pode depender de armazenamento externo compartilhado.');
 
