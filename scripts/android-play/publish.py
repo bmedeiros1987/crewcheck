@@ -18,7 +18,7 @@ def main():
     session = google.auth.transport.requests.AuthorizedSession(credentials)
     root = Path(sys.argv[1])
     report = json.loads((root / 'release-report.json').read_text())
-    policy = json.loads(Path('scripts/android-play/release-policy.json').read_text())
+    policy = json.loads((root / 'resolved-release-policy.json').read_text())
     assert {r['module'] for r in report} == set(policy['artifacts']), 'Incomplete release'
     for item in report:
         assert all(item[k] == v for k, v in policy['artifacts'][item['module']].items()), 'Report/policy mismatch'
