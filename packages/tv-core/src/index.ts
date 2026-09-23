@@ -89,7 +89,11 @@ function calendarDate(date: string): string {
   if (!match) throw new Error("Invalid canonical date");
   return `${match[3]}-${match[2]}-${match[1]}`;
 }
-function projectEvent(e: CanonicalRosterEvent, privacy: Privacy): TvActivity {
+function projectEvent(
+  e: CanonicalRosterEvent,
+  privacy: Privacy,
+  routeVisibility: "none" | "route" | "flight" = "none",
+): TvActivity {
   // Fail closed on the legacy canonical fallback: require published evidence,
   // but never calculate or substitute a presentation in this consumer.
   const publishedPresentation = [
@@ -107,9 +111,18 @@ function projectEvent(e: CanonicalRosterEvent, privacy: Privacy): TvActivity {
       e.showPresentation && e.presentation && publishedPresentation
         ? e.presentation
         : null,
-    flight: privacy === "private" ? e.flightNumber || null : null,
-    origin: privacy === "private" ? e.origin || null : null,
-    destination: privacy === "private" ? e.destination || null : null,
+    flight:
+      privacy === "private" || routeVisibility === "flight"
+        ? e.flightNumber || null
+        : null,
+    origin:
+      privacy === "private" || routeVisibility !== "none"
+        ? e.origin || null
+        : null,
+    destination:
+      privacy === "private" || routeVisibility !== "none"
+        ? e.destination || null
+        : null,
     groundBeforeMinutes: privacy === "private" ? e.groundBeforeMinutes : null,
     publishedCode: e.publishedDay.type,
     confidence: e.sourceConfidence,
@@ -136,15 +149,24 @@ export function projectRoster(
     generatedAt: string;
     expiresAt: string;
     privacy?: Privacy;
+    routeVisibility?: "none" | "route" | "flight";
     now?: Date;
   },
 ): TvSnapshot {
   const privacy = options.privacy === "private" ? "private" : "family";
+  const routeVisibility =
+    privacy === "private"
+      ? "flight"
+      : options.routeVisibility === "flight"
+        ? "flight"
+        : options.routeVisibility === "route"
+          ? "route"
+          : "none";
   const events = buildCanonicalRosterEvents(roster);
   const next = selectNextRosterEvent(events, options.now ?? new Date());
   const journeyIds = [...new Set(events.map((e) => e.journeyId))];
   const activities = events.map((e, index) => ({
-    ...projectEvent(e, privacy),
+    ...projectEvent(e, privacy, routeVisibility),
     // Canonical IDs can contain flight/airport strings. Family transport uses
     // source-version-scoped references so redaction covers identifiers too.
     ...(privacy === "family"
