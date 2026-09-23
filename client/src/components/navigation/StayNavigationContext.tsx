@@ -58,8 +58,8 @@ export default function StayNavigationContext({ targetView }: { targetView: Stay
     </button>
     <div>
       <small>ABERTO PELO PERNOITE</small>
-      <strong>{targetView === 'wakeup' ? 'Despertador no contexto da estadia' : 'Concierge no contexto da estadia'}</strong>
-      <span>{detail || 'Pernoite selecionado na tela anterior'}</span>
+      <strong>{targetView === 'wakeup' ? 'Despertador aberto a partir do Pernoite' : 'Concierge aberto a partir do Pernoite'}</strong>
+      <span>{detail || 'Pernoite selecionado na tela anterior'} · confirme a programação exibida antes de alterar alertas ou horários.</span>
     </div>
   </section>;
 }
