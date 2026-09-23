@@ -86,21 +86,27 @@ fluxo de usuário final.
 
 ## GitHub Actions com o SDK real
 
-Crie um secret de Actions:
+O AAR oficial é maior que o limite de um GitHub Actions Secret e, por ser um binário
+de terceiro, não deve ser commitado no repositório público.
 
-`SAMSUNG_HEALTH_DATA_AAR_BASE64`
+Para build release automatizado, mantenha o AAR em um artifact store **privado** e
+configure secrets pequenos:
 
-O valor deve ser o AAR oficial codificado em Base64.
+- `SAMSUNG_HEALTH_DATA_AAR_URL`: URL HTTPS privada/pre-assinada do AAR;
+- `SAMSUNG_HEALTH_DATA_AAR_TOKEN`: token Bearer opcional quando o endpoint exigir;
+- `SAMSUNG_HEALTH_DATA_AAR_SHA256`: SHA-256 esperado do AAR para pin de integridade.
 
 O workflow `CrewLife Samsung companion`:
 
 - sempre valida arquitetura, TypeScript e build debug;
-- quando o secret existe, restaura temporariamente o AAR;
+- quando a URL privada existe, baixa temporariamente o AAR;
+- valida SHA-256 quando configurado;
 - gera APK e AAB release assinados;
 - verifica a assinatura;
 - apaga o AAR ao final.
 
-O AAR nunca entra no git.
+Para o primeiro teste físico não é necessário configurar artifact store: use o helper
+local com o ZIP oficial baixado diretamente da Samsung.
 
 ## Parceria Samsung para distribuição
 
