@@ -2,10 +2,11 @@
 def requested = providers.gradleProperty('crewcheckSamsung').orElse('false').get().toBoolean()
 android.buildFeatures.buildConfig = true
 android.defaultConfig.buildConfigField 'boolean', 'SAMSUNG_WELLNESS_ENABLED', requested.toString()
-android.sourceSets.main.java.srcDir 'src/samsung/java'
+android.sourceSets.main.java.srcDir requested ? 'src/samsung/java' : 'src/samsung-disabled/java'
+if (requested) android.defaultConfig.minSdk = 29
 apply plugin: 'kotlin-parcelize'
 dependencies {
-    implementation files('src/samsung/libs/samsung-health-data-api-1.1.0.aar')
+    if (requested) implementation files('src/samsung/libs/samsung-health-data-api-1.1.0.aar')
     implementation 'com.google.code.gson:gson:2.11.0'
     implementation 'androidx.work:work-runtime-ktx:2.10.1'
     testImplementation 'junit:junit:4.13.2'

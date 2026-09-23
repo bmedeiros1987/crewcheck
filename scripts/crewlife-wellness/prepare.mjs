@@ -36,11 +36,13 @@ patch('client/src/components/v14313/LifeConciergePanel.tsx', source => {
   return replace(source, '    </article>\n\n    <div className="cc-life-ai-dashboard">', '    </article>}\n\n    <div className="cc-life-ai-dashboard">');
 });
 
-// Native Samsung code is always compiled, but public release builds cannot enable it yet.
+// CI compiles Samsung debug mode; public builds use a SDK-free stub until approval.
 fs.cpSync('scripts/crewlife-wellness/native', 'android-wrapper/app/src/samsung', { recursive: true });
 const nativeDir = 'android-wrapper/app/src/samsung/java/com/crewcheck/app';
 fs.mkdirSync(nativeDir, { recursive: true });
 for (const name of ['SamsungWellnessReader.kt', 'SamsungWellnessStorage.kt', 'SamsungWellnessWorker.kt', 'SamsungWellnessBridge.kt']) fs.copyFileSync(`scripts/crewlife-wellness/native/${name}`, `${nativeDir}/${name}`);
+fs.mkdirSync('android-wrapper/app/src/samsung-disabled/java/com/crewcheck/app', { recursive: true });
+fs.copyFileSync('scripts/crewlife-wellness/native/SamsungWellnessDisabled.kt', 'android-wrapper/app/src/samsung-disabled/java/com/crewcheck/app/SamsungWellnessBridge.kt');
 fs.copyFileSync('scripts/crewlife-wellness/samsung.ts', `${destination}/samsung.ts`);
 const gradle = 'android-wrapper/app/build.gradle';
 const gradleSource = fs.readFileSync(gradle, 'utf8');

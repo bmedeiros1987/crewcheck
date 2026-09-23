@@ -10,7 +10,7 @@ Wear uses readable vertically stacked wellness cards with source/age, no synthet
 
 ## Release gate
 
-`SAMSUNG_WELLNESS_ENABLED` defaults to false. An explicit `-PcrewcheckSamsung=true :app:assembleDebug` compiles a device-validation build. Any requested Samsung-enabled release task is rejected until partnership approval and physical validation have been reviewed and the gate deliberately revised. Default signed store builds retain manual-only behavior. No production publication is performed by this feature.
+`SAMSUNG_WELLNESS_ENABLED` defaults to false. An explicit `-PcrewcheckSamsung=true :app:assembleDebug` compiles a device-validation build. Any requested Samsung-enabled release task is rejected until partnership approval and physical validation have been reviewed and the gate deliberately revised. Default signed store builds retain manual-only behavior and exclude the Samsung SDK. Debug validation mode requires API 29; the store build remains API 26. No production publication is performed by this feature.
 
 The official AAR (downloaded from Samsung Developer) is vendored only as an app dependency under native/libs, alongside the supplied open-source notice. The SDK's official usage requirements continue to apply. Java 17, Android API 29+ and Samsung Health 6.30.2+ are needed for this integration; manual app support remains API 26+.
 
