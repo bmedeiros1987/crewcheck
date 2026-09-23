@@ -81,9 +81,21 @@ android {
 }
 
 dependencies {
+    implementation 'com.google.code.gson:gson:2.9.0'
     if (samsungHealthAar.exists()) {
         implementation files(samsungHealthAar)
     }
 }
 
 preBuild.dependsOn generateCrewLifeBrandAssets
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseRequested = graph.allTasks.any {
+        it.project == project && (it.name == 'assembleRelease' || it.name == 'bundleRelease')
+    }
+    if (releaseRequested && !samsungHealthAar.exists()) {
+        throw new GradleException(
+            'CrewLife Companion release requires android-wrapper/lifecompanion/libs/samsung-health-data-api.aar'
+        )
+    }
+}
