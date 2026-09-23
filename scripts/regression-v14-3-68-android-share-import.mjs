@@ -20,6 +20,7 @@ expect(home.includes("window.addEventListener('crewcheck:native-pdf'"), 'Home n�
 expect(home.includes('processRosterFile(file)'), 'PDF compartilhado não reutiliza o importador canônico.');
 expect(home.includes('nativeBridge.readSharedPdfChunk'), 'Home deve reconstruir o arquivo por chunks do inbox nativo.');
 expect(home.includes('const imported = await processRosterFile(file);'), 'ACK precisa depender do resultado real da importação.');
+expect(home.includes('const decision = await confirmRosterImport(roster, file.name);'), 'Importador compartilhado deve aguardar a decisão assíncrona do guardião antes de tocar a escala ativa.');
 expect(home.includes('AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId)'), 'Cliente não confirma o consumo do PDF nativo.');
 expect(home.includes('claimPendingPwaSharedPdf()'), 'PWA compartilhado não converge no mesmo importador canônico.');
 expect(home.includes('acknowledgePwaSharedPdf(claim.shareId)'), 'PWA não confirma o handoff após importação bem-sucedida.');
