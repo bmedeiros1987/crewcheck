@@ -1,9 +1,14 @@
 // Samsung partner distribution stays disabled until reviewed approval is recorded.
 def requested = providers.gradleProperty('crewcheckSamsung').orElse('false').get().toBoolean()
 android.buildFeatures.buildConfig = true
+android.defaultConfig.manifestPlaceholders.crewcheckAppLabel = requested ? 'CrewCheck Teste Samsung' : 'CrewCheck'
 android.defaultConfig.buildConfigField 'boolean', 'SAMSUNG_WELLNESS_ENABLED', requested.toString()
 android.sourceSets.main.java.srcDir requested ? 'src/samsung/java' : 'src/samsung-disabled/java'
-if (requested) android.defaultConfig.minSdk = 29
+if (requested) {
+    android.defaultConfig.minSdk = 29
+    android.buildTypes.debug.applicationIdSuffix = '.samsungtest'
+    android.buildTypes.debug.versionNameSuffix = '-samsung-validation'
+}
 apply plugin: 'kotlin-parcelize'
 dependencies {
     if (requested) implementation files('src/samsung/libs/samsung-health-data-api-1.1.0.aar')

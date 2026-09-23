@@ -80,6 +80,12 @@ jobs:
           echo "EXPECTED_UPLOAD_CERT_SHA256=$(sha256sum "$RUNNER_TEMP/upload-cert.der" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
       - name: Compile Samsung debug adapter against official SDK
         run: gradle -p android-wrapper --no-daemon --console=plain -PcrewcheckSamsung=true :app:assembleDebug
+      - name: Save Samsung validation APK (separate test package)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewLife-Samsung-validation-APK
+          path: android-wrapper/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Test and build separate signed bundles
         env:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}

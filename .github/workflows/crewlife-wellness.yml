@@ -17,5 +17,6 @@ jobs:
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node scripts/crewlife-wellness/test.mjs
+      - run: node scripts/crewlife-wellness/test-transport.mjs
       - run: node scripts/android-play/check-sources.mjs
       - run: npx tsc --noEmit

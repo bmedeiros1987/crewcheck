@@ -48,7 +48,8 @@ const gradle = 'android-wrapper/app/build.gradle';
 const gradleSource = fs.readFileSync(gradle, 'utf8');
 if (!gradleSource.includes("apply from: 'src/samsung/samsung.gradle'")) fs.appendFileSync(gradle, "\napply from: 'src/samsung/samsung.gradle'\n");
 const manifest = 'android-wrapper/app/src/main/AndroidManifest.xml';
-let manifestSource = fs.readFileSync(manifest, 'utf8');
+let manifestSource = fs.readFileSync(manifest, 'utf8').replace('android:label="CrewCheck"', 'android:label="${crewcheckAppLabel}"');
+fs.writeFileSync(manifest, manifestSource);
 if (!manifestSource.includes('com.sec.android.app.shealth')) fs.writeFileSync(manifest, manifestSource.replace('    <application', '    <queries><package android:name="com.sec.android.app.shealth" /></queries>\n    <application'));
 patch('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', source => {
   source = replace(source, '    private boolean isCrewCheckWebUrl(', '    private SamsungWellnessBridge samsungWellnessBridge;\n\n    private boolean isCrewCheckWebUrl(');
@@ -77,3 +78,12 @@ patch('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java'
   source = replace(source, 'view.setTextSize(sp);', 'view.setTextSize(Math.max(sp, 12));');
   return source;
 });
+
+// The bundled/mobile web shell must invalidate the previous service-worker cache.
+const releasePolicy = JSON.parse(fs.readFileSync('scripts/android-play/release-policy.json', 'utf8'));
+const webRelease = JSON.parse(fs.readFileSync('client/public/release.json', 'utf8'));
+webRelease.version = releasePolicy.versionName;
+webRelease.notes = 'Novo painel CrewLife e leitura mais clara no relógio. Integração Samsung disponível apenas em validação, aguardando aprovação.';
+fs.writeFileSync('client/public/release.json', JSON.stringify(webRelease, null, 2) + '\n');
+const { syncServiceWorkerVersion } = await import('../ci/sync-service-worker-version.mjs');
+fs.writeFileSync('client/public/sw.js', syncServiceWorkerVersion(fs.readFileSync('client/public/sw.js', 'utf8'), webRelease.version));
