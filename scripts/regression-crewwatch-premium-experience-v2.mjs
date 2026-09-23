@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const read = (p) => fs.readFileSync(p, 'utf8');
+const main = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java');
+const life = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewLifeSnapshot.java');
+const text = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/ComplicationText.java');
+const backdrop = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/PremiumBackdropView.java');
+const face = read('android-wrapper/watchface/src/main/res/raw/watchface.xml');
+
+assert.match(main, /MODE_JOURNEY = 1/);
+assert.match(main, /PAGE_COUNT = 5/);
+assert.match(main, /handleSwipeGesture/);
+assert.match(main, /SOURCE_ROTARY_ENCODER/);
+assert.match(main, /HapticFeedbackConstants\.CLOCK_TICK/);
+assert.match(main, /renderJourney\(/);
+assert.match(main, /Sua jornada/);
+assert.match(main, /PRÓXIMOS PASSOS/);
+assert.match(main, /PremiumBackdropView/);
+assert.match(main, /CrewLife é opcional/);
+assert.doesNotMatch(main, /life\.recoveryScore > 0 \? life\.recoveryScore \+ "%" : life\.recoveryLabel/);
+
+assert.match(backdrop, /drawArc/);
+assert.match(backdrop, /LinearGradient/);
+
+assert.match(life, /return "LOCAL"/);
+assert.match(life, /!"DESCONHECIDA"\.equals\(recoveryLabel\)/);
+assert.match(text, /CrewLife opcional · abra no celular/);
+assert.doesNotMatch(text, /Ative a sincronização de saúde no celular/);
+
+const slots = [...face.matchAll(/<ComplicationSlot\b/g)].length;
+assert.ok(slots >= 5, 'watch face deve manter pelo menos cinco glances/complicações');
+
+console.log('[crewwatch-premium-experience-v2] premium navigation + humane fallbacks OK');
