@@ -165,7 +165,13 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const [nativeStatus, setNativeStatus] = useState<NativeHealthStatus>({});
   const [nativeSummary, setNativeSummary] = useState<NativeHealthSummary>(() => readStored(KEYS.nativeSummary, {}));
   const [companionSummary, setCompanionSummary] = useState<NativeHealthSummary>({});
-  const [companionStatus, setCompanionStatus] = useState<{ installed?: boolean; state?: string; automatic?: boolean }>({});
+  const [companionStatus, setCompanionStatus] = useState<{
+    installed?: boolean;
+    state?: string;
+    automatic?: boolean;
+    migrationRequired?: boolean;
+    officialStoreUrl?: string;
+  }>({});
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(() => {
     try {
       const bridge = (window as any).AndroidCrewCheckNative;
@@ -272,6 +278,42 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   );
   const effectiveSummary = companionFresh ? companionSummary : nativeSummary;
   const automaticSamsung = companionFresh;
+
+  const companionMigrationRequired = Boolean(
+    companionStatus.migrationRequired || companionStatus.state === 'bridge_incompatible'
+  );
+  const companionStateLabel = automaticSamsung
+    ? 'Samsung Health conectado · automático'
+    : companionMigrationRequired
+      ? 'Companion antigo · migrar para a versão oficial'
+      : companionStatus.installed
+        ? 'Companion instalado · concluir conexão'
+        : 'Samsung Health · não instalado';
+
+  function openCompanionStore() {
+    const native = (window as any).AndroidCrewCheckNative;
+    try {
+      if (native?.openLifeCompanionStore?.()) return;
+    } catch {}
+    window.open(
+      companionStatus.officialStoreUrl || 'https://play.google.com/store/apps/details?id=com.crewcheck.life',
+      '_blank',
+      'noopener,noreferrer',
+    );
+    toast.info('A sincronização automática com Samsung Health requer o app Android CrewLife Companion.');
+  }
+
+  function migrateCompanionToOfficialPlay() {
+    const native = (window as any).AndroidCrewCheckNative;
+    try {
+      if (native?.migrateLifeCompanionToPlay?.()) {
+        toast.info('O Android pedirá para remover somente o Companion antigo. Depois o CrewCheck abrirá a versão oficial na Play Store.');
+        return;
+      }
+    } catch {}
+    toast.info('Remova somente o CrewLife Companion antigo e instale a versão oficial pela Play Store. Não desinstale o CrewCheck.');
+    openCompanionStore();
+  }
 
   const metrics = useMemo(() => {
     const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
@@ -504,11 +546,19 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
       <div className="cc-life-integration-grid">
         <article className={automaticSamsung ? 'connected' : companionStatus.installed ? 'ready' : ''}>
-          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{automaticSamsung ? 'Samsung Health conectado · automático' : companionStatus.installed ? 'Instalado · concluir conexão' : 'Companion não instalado'}</small></div>
+          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{companionStateLabel}</small>{companionMigrationRequired && <p>Você está usando uma versão piloto antiga. O Android precisa remover somente o Companion uma vez para instalar a versão oficial da Play. Seu CrewCheck, login e escala não serão removidos.</p>}</div>
           <button className={automaticSamsung ? '' : 'primary'} onClick={() => {
+            if (companionMigrationRequired) {
+              migrateCompanionToOfficialPlay();
+              return;
+            }
+            if (!companionStatus.installed) {
+              openCompanionStore();
+              return;
+            }
             const ok = (window as any).AndroidCrewCheckNative?.openLifeCompanion?.();
-            if (!ok) toast.info('Instale o CrewLife Companion Samsung para ativar a sincronização automática.');
-          }}>{automaticSamsung ? 'Abrir Companion' : companionStatus.installed ? 'Conectar' : 'Como instalar'}</button>
+            if (!ok) toast.info('Abra o CrewLife Companion para concluir a conexão com o Samsung Health.');
+          }}>{automaticSamsung ? 'Abrir Companion' : companionMigrationRequired ? 'Migrar para versão oficial' : companionStatus.installed ? 'Conectar' : 'Baixar na Play Store'}</button>
         </article>
         {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
           <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>

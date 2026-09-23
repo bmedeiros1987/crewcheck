@@ -232,6 +232,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumeLifeCompanionMigrationIfNeeded();
         syncLifeCompanionToCrewCheckAndWatch("resume-cached");
         requestLifeCompanionRefresh();
         if (webView != null) {
@@ -795,6 +796,76 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private boolean isLifeCompanionInstalled() {
+        try {
+            getPackageManager().getPackageInfo("com.crewcheck.life", 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException missing) {
+            return false;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private String lifeCompanionBridgeState() {
+        if (!isLifeCompanionInstalled()) return "not_installed";
+        android.database.Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
+            if (cursor == null || !cursor.moveToFirst()) return "needs_setup";
+            int column = cursor.getColumnIndex("json");
+            String raw = column >= 0 ? cursor.getString(column) : "";
+            return raw == null || raw.isBlank() ? "needs_setup" : "connected";
+        } catch (SecurityException denied) {
+            // Early pilot builds can have the same package but a signing/provider
+            // contract that is incompatible with the Play-delivered CrewCheck.
+            return "bridge_incompatible";
+        } catch (Exception error) {
+            return "unavailable";
+        } finally {
+            try { if (cursor != null) cursor.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void openLifeCompanionStoreInternal() {
+        runOnUiThread(() -> {
+            try {
+                Intent market = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("market://details?id=com.crewcheck.life")
+                );
+                market.setPackage("com.android.vending");
+                startActivity(market);
+                return;
+            } catch (Exception ignored) {}
+
+            try {
+                Intent web = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=com.crewcheck.life")
+                );
+                startActivity(web);
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void resumeLifeCompanionMigrationIfNeeded() {
+        try {
+            boolean pending = getSharedPreferences(
+                    "crewlife_companion_migration",
+                    Context.MODE_PRIVATE
+            ).getBoolean("pending", false);
+            if (!pending || isLifeCompanionInstalled()) return;
+
+            getSharedPreferences(
+                    "crewlife_companion_migration",
+                    Context.MODE_PRIVATE
+            ).edit().remove("pending").apply();
+            openLifeCompanionStoreInternal();
+        } catch (Exception ignored) {}
+    }
+
     private String readLifeCompanionSummaryInternal() {
         android.database.Cursor cursor = null;
         try {
@@ -961,25 +1032,21 @@ public class MainActivity extends Activity {
         public String lifeCompanionStatus() {
             JSONObject status = new JSONObject();
             try {
-                boolean installed;
-                try {
-                    getPackageManager().getPackageInfo("com.crewcheck.life", 0);
-                    installed = true;
-                } catch (PackageManager.NameNotFoundException missing) {
-                    installed = false;
-                }
+                boolean installed = isLifeCompanionInstalled();
+                String state = lifeCompanionBridgeState();
                 status.put("installed", installed);
                 status.put("source", "samsung_health_companion");
-                if (!installed) {
-                    status.put("state", "not_installed");
-                    return status.toString();
-                }
-                String summary = readLifeCompanionSummaryInternal();
-                status.put("state", summary == null || summary.isBlank() ? "needs_setup" : "connected");
-                if (summary != null && !summary.isBlank()) {
-                    JSONObject parsed = new JSONObject(summary);
-                    status.put("generatedAtEpochMs", parsed.optLong("generatedAtEpochMs", 0L));
-                    status.put("automatic", parsed.optBoolean("automatic", false));
+                status.put("state", state);
+                status.put("officialStoreUrl", "https://play.google.com/store/apps/details?id=com.crewcheck.life");
+                status.put("migrationRequired", "bridge_incompatible".equals(state));
+
+                if ("connected".equals(state)) {
+                    String summary = readLifeCompanionSummaryInternal();
+                    if (summary != null && !summary.isBlank()) {
+                        JSONObject parsed = new JSONObject(summary);
+                        status.put("generatedAtEpochMs", parsed.optLong("generatedAtEpochMs", 0L));
+                        status.put("automatic", parsed.optBoolean("automatic", false));
+                    }
                 }
             } catch (Exception error) {
                 try { status.put("state", "unavailable"); } catch (Exception ignored) {}
@@ -997,9 +1064,46 @@ public class MainActivity extends Activity {
         public boolean openLifeCompanion() {
             try {
                 Intent launch = getPackageManager().getLaunchIntentForPackage("com.crewcheck.life");
-                if (launch == null) return false;
+                if (launch == null) {
+                    openLifeCompanionStoreInternal();
+                    return true;
+                }
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(launch);
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean openLifeCompanionStore() {
+            try {
+                openLifeCompanionStoreInternal();
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean migrateLifeCompanionToPlay() {
+            try {
+                if (!isLifeCompanionInstalled()) {
+                    openLifeCompanionStoreInternal();
+                    return true;
+                }
+
+                getSharedPreferences(
+                        "crewlife_companion_migration",
+                        Context.MODE_PRIVATE
+                ).edit().putBoolean("pending", true).apply();
+
+                Intent uninstall = new Intent(
+                        Intent.ACTION_DELETE,
+                        Uri.parse("package:com.crewcheck.life")
+                );
+                startActivity(uninstall);
                 return true;
             } catch (Exception error) {
                 return false;
