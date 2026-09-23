@@ -12,13 +12,9 @@ import java.nio.charset.StandardCharsets;
 /**
  * Background receiver for the compact canonical watch projection.
  *
- * Três canais independentes, cada um com o seu próprio destino de cache:
- *   /crewcheck/watch/context/v1   -> escala (SecureSnapshotStore)
- *   /crewcheck/watch/crewlife/v1  -> bem-estar agregado (WellbeingStore)
- *   /crewcheck/watch/routine/v1   -> sugestão de rotina (WellbeingStore)
- *
- * O canal de saúde é separado para poder ser revogado sem derrubar a escala, e um payload
- * inválido em um canal nunca invalida os outros.
+ * The roster channel is always available, including Free. Premium-only channels are isolated
+ * and are cleared on downgrade so stale CrewLife/Concierge data never survives an entitlement
+ * change. The watch remains a renderer: it never parses PDF or recalculates operational rules.
  */
 public final class CrewCheckDataLayerService extends WearableListenerService {
     @Override
@@ -27,13 +23,13 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
             String path = event.getDataItem().getUri().getPath();
             if (path == null) continue;
 
-            // Revogação: o celular apaga o item e o relógio precisa esquecer o dado de saúde
-            // que já tinha em cache. A escala não é apagada por esse caminho.
             if (event.getType() == DataEvent.TYPE_DELETED) {
                 if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     new WellbeingStore(this).clearCrewLife();
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     new WellbeingStore(this).clearRoutine();
+                } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
+                    new WatchConciergeStore(this).clear();
                 }
                 continue;
             }
@@ -43,26 +39,21 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
                 if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                    if (json != null) {
-                        WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
-                        WatchNotificationCenter.postForSnapshot(this, snapshot);
-                        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
-                                .setPackage(getPackageName()));
-                    }
+                    if (json != null) applyContextSnapshot(json);
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
-                    if (json != null) new WellbeingStore(this).saveCrewLife(json);
+                    if (json != null && WatchEntitlements.crewLife(this)) {
+                        new WellbeingStore(this).saveCrewLife(json);
+                    }
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_ROUTINE_JSON);
-                    if (json != null) new WellbeingStore(this).saveRoutine(json);
+                    if (json != null && WatchEntitlements.crewLife(this)) {
+                        new WellbeingStore(this).saveRoutine(json);
+                    }
                 } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CONCIERGE_RESPONSE_JSON);
-                    if (json != null) {
-                        WatchConciergeStore.Snapshot response =
-                                new WatchConciergeStore(this).save(json);
-                        WatchNotificationCenter.postConciergeResponse(this, response);
-                        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
-                                .setPackage(getPackageName()));
+                    if (json != null && WatchEntitlements.concierge(this)) {
+                        saveConciergeResponse(json);
                     }
                 }
             } catch (Exception ignored) {
@@ -80,27 +71,39 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
         try {
             if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_SNAPSHOT_BYTES) return;
-                WatchContextSnapshot snapshot = new SecureSnapshotStore(this)
-                        .save(new String(data, StandardCharsets.UTF_8));
-                WatchNotificationCenter.postForSnapshot(this, snapshot);
-                sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
-                        .setPackage(getPackageName()));
+                applyContextSnapshot(new String(data, StandardCharsets.UTF_8));
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
-                if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
+                if (data.length > WatchContract.MAX_WELLBEING_BYTES || !WatchEntitlements.crewLife(this)) return;
                 new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));
             } else if (WatchContract.ROUTINE_PATH.equals(path)) {
-                if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
+                if (data.length > WatchContract.MAX_WELLBEING_BYTES || !WatchEntitlements.crewLife(this)) return;
                 new WellbeingStore(this).saveRoutine(new String(data, StandardCharsets.UTF_8));
             } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
-                if (data.length > WatchContract.MAX_CONCIERGE_BYTES) return;
-                WatchConciergeStore.Snapshot response = new WatchConciergeStore(this)
-                        .save(new String(data, StandardCharsets.UTF_8));
-                WatchNotificationCenter.postConciergeResponse(this, response);
-                sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
-                        .setPackage(getPackageName()));
+                if (data.length > WatchContract.MAX_CONCIERGE_BYTES || !WatchEntitlements.concierge(this)) return;
+                saveConciergeResponse(new String(data, StandardCharsets.UTF_8));
             }
         } catch (Exception ignored) {
             // Fail closed: do not replace a valid cache with malformed data.
         }
+    }
+
+    private void applyContextSnapshot(String json) {
+        WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
+        if (!snapshot.premiumAccess) {
+            WellbeingStore wellbeing = new WellbeingStore(this);
+            wellbeing.clearCrewLife();
+            wellbeing.clearRoutine();
+            new WatchConciergeStore(this).clear();
+        }
+        WatchNotificationCenter.postForSnapshot(this, snapshot);
+        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                .setPackage(getPackageName()));
+    }
+
+    private void saveConciergeResponse(String json) {
+        WatchConciergeStore.Snapshot response = new WatchConciergeStore(this).save(json);
+        WatchNotificationCenter.postConciergeResponse(this, response);
+        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                .setPackage(getPackageName()));
     }
 }
