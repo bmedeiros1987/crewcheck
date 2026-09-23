@@ -125,18 +125,22 @@ source = source.replace(
 );
 
 const pdfStart = '      const decision = confirmRosterImport(roster, file.name);';
-const pdfEnd = '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);';
+const booleanImporter = source.includes('async function processRosterFile(file: File): Promise<boolean>');
+const pdfEnd = booleanImporter
+  ? '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundleRef.current, roster);'
+  : '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);';
+const cancelReturn = booleanImporter ? 'return false;' : 'return;';
 if (source.includes(pdfStart)) {
   const pdfReplacement = `      const decision = await confirmRosterImport(roster, file.name);
       let auditImport = false;
       const detectedDays = Array.isArray(roster.days) ? roster.days.length : 0;
       if (!detectedDays) {
         toast.error('Nenhuma data de escala foi reconhecida. A importação não substituirá sua escala ativa; tente novamente para acionar a leitura visual alternativa.');
-        return;
+        ${cancelReturn}
       }
       if (!decision.ok) {
         toast.message('Importação cancelada. Sua escala ativa foi preservada.');
-        return;
+        ${cancelReturn}
       }`;
   source = replaceBlock(source, pdfStart, pdfEnd, pdfReplacement, 'consentimento PDF');
 }
