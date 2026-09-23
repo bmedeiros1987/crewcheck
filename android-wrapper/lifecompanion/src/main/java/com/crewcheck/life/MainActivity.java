@@ -140,6 +140,7 @@ public final class MainActivity extends Activity {
             case "samsung_health_disabled" -> "Samsung Health está desativado";
             case "samsung_health_setup_required" -> "Conclua a configuração do Samsung Health";
             case "authorization_required" -> "Esta build ainda não está autorizada pela Samsung";
+            case "samsung_health_timeout" -> "Samsung Health demorou para responder";
             case "sdk_missing" -> "SDK Samsung ainda não incluído nesta build";
             default -> "Samsung Health indisponível";
         });
@@ -154,7 +155,7 @@ public final class MainActivity extends Activity {
             case "samsung_health_update_required" -> "Atualizar Samsung Health";
             case "samsung_health_disabled" -> "Ativar Samsung Health";
             case "samsung_health_setup_required" -> "Concluir configuração";
-            case "authorization_required" -> "Tentar novamente";
+            case "authorization_required", "samsung_health_timeout" -> "Tentar novamente";
             case "connected" -> "Samsung Health conectado";
             default -> "Conectar Samsung Health";
         });
