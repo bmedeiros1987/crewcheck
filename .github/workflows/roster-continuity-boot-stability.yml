@@ -1,0 +1,39 @@
+name: CrewCheck roster continuity and boot stability
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/pwaUpdateCoordinator.ts'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'server/platform.mjs'
+      - 'scripts/v14373/**'
+      - 'scripts/v14393/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-roster-continuity-boot-stability.mjs'
+      - '.github/workflows/roster-continuity-boot-stability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  roster-continuity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Roster continuity / blank-screen regression
+        run: node scripts/regression-roster-continuity-boot-stability.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Build web shell
+        run: npx vite build
