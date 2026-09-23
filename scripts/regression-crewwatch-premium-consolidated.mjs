@@ -20,7 +20,7 @@ assert.match(wearGradle, /generateCrewWatchBrandAssets/);
 assert.match(faceGradle, /generateCrewWatchFaceBrandAssets/);
 
 assert.match(wearMain, /Sem registros no relógio ainda/);
-assert.doesNotMatch(wearMain, /DESCONHECIDA/);
+assert.doesNotMatch(wearMain, /life\.recoveryScore > 0 \? life\.recoveryScore \+ "%" : life\.recoveryLabel/);
 assert.match(wearMain, /renderNotifications/);
 assert.match(wearMain, /renderCrewLife/);
 assert.match(wearMain, /renderSchedule/);
