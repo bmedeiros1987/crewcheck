@@ -151,7 +151,11 @@ self.addEventListener('message', (event) => {
   if (type === 'CLEAR_CREWCHECK_CACHE') {
     event.waitUntil(
       caches.keys()
-        .then((names) => Promise.all(names.filter((name) => /crewcheck|workbox|vite/i.test(name)).map((name) => caches.delete(name))))
+        .then((names) => Promise.all(
+          names
+            .filter((name) => /crewcheck|workbox|vite/i.test(name) && name !== SHARED_PDF_CACHE)
+            .map((name) => caches.delete(name)),
+        ))
         .catch(() => undefined),
     );
   }
