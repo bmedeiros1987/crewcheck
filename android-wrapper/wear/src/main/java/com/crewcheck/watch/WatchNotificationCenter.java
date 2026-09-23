@@ -23,8 +23,11 @@ public final class WatchNotificationCenter {
     private static final String PREFS = "crewcheck_watch_notifications";
     private static final String ENABLED = "enabled";
     private static final String LAST_FINGERPRINT = "last_fingerprint";
+    private static final String LAST_CONCIERGE_FINGERPRINT = "last_concierge_fingerprint";
     private static final String OPS_CHANNEL = "crewcheck_watch_ops";
+    private static final String CONCIERGE_CHANNEL = "crewcheck_watch_concierge";
     private static final int OPS_NOTIFICATION_ID = 4101;
+    private static final int CONCIERGE_NOTIFICATION_ID = 4102;
 
     private WatchNotificationCenter() {}
 
@@ -81,6 +84,65 @@ public final class WatchNotificationCenter {
 
         manager.notify(OPS_NOTIFICATION_ID, notification);
         prefs.edit().putString(LAST_FINGERPRINT, fingerprint).apply();
+    }
+
+    public static void postConciergeResponse(
+            Context context,
+            WatchConciergeStore.Snapshot snapshot
+    ) {
+        if (context == null || snapshot == null || !snapshot.ok || snapshot.reply.isBlank()
+                || !isEnabled(context)) return;
+        if (Build.VERSION.SDK_INT >= 33
+                && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) return;
+
+        SharedPreferences prefs = preferences(context);
+        String fingerprint = "concierge|" + snapshot.requestId + "|" + snapshot.updatedAtEpochMs;
+        if (fingerprint.equals(prefs.getString(LAST_CONCIERGE_FINGERPRINT, ""))) return;
+
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        ensureConciergeChannel(manager);
+
+        Intent launch = new Intent(context, MainActivity.class)
+                .putExtra("crewcheck_screen", "concierge")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                context,
+                CONCIERGE_NOTIFICATION_ID,
+                launch,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Notification notification = new Notification.Builder(context, CONCIERGE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_crewcheck_complication)
+                .setContentTitle("Concierge respondeu")
+                .setContentText(snapshot.reply)
+                .setStyle(new Notification.BigTextStyle().bigText(snapshot.reply))
+                .setCategory(Notification.CATEGORY_MESSAGE)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(true)
+                .build();
+
+        manager.notify(CONCIERGE_NOTIFICATION_ID, notification);
+        prefs.edit().putString(LAST_CONCIERGE_FINGERPRINT, fingerprint).apply();
+    }
+
+    private static void ensureConciergeChannel(NotificationManager manager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationChannel existing = manager.getNotificationChannel(CONCIERGE_CHANNEL);
+        if (existing != null) return;
+
+        NotificationChannel channel = new NotificationChannel(
+                CONCIERGE_CHANNEL,
+                "CrewCheck Concierge",
+                NotificationManager.IMPORTANCE_DEFAULT
+        );
+        channel.setDescription("Respostas de pedidos enviados pelo Concierge no relógio.");
+        channel.enableVibration(true);
+        manager.createNotificationChannel(channel);
     }
 
     private static void ensureChannel(NotificationManager manager) {

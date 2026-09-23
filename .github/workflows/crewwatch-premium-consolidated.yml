@@ -7,8 +7,10 @@ on:
       - 'android-wrapper/watchface/**'
       - 'android-wrapper/app/**'
       - 'client/src/components/v1434/CrewCheckLifeView.tsx'
+      - 'client/src/pages/Home.tsx'
       - 'android-wrapper/settings.gradle'
       - 'scripts/regression-crewwatch-premium-consolidated.mjs'
+      - 'scripts/regression-crewwatch-premium-experience-v2.mjs'
       - '.github/workflows/crewwatch-premium-consolidated.yml'
   workflow_dispatch:
 
@@ -51,6 +53,9 @@ jobs:
 
       - name: Premium consolidated regression
         run: node scripts/regression-crewwatch-premium-consolidated.mjs
+
+      - name: Premium experience v2 regression
+        run: node scripts/regression-crewwatch-premium-experience-v2.mjs
 
       - name: TypeScript
         run: npx tsc --noEmit

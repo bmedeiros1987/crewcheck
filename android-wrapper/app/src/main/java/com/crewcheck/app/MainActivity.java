@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
     public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
+    public static final String ACTION_WATCH_CONCIERGE_REQUEST = "com.crewcheck.app.WATCH_CONCIERGE_REQUEST";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
@@ -176,6 +177,7 @@ public class MainActivity extends Activity {
                 dispatchPendingSharedPdf();
                 syncLifeCompanionToCrewCheckAndWatch("page-finished");
                 view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
+                view.postDelayed(MainActivity.this::dispatchPendingWatchConciergeRequest, 900);
             }
 
             @Override
@@ -240,6 +242,15 @@ public class MainActivity extends Activity {
                     () -> syncLifeCompanionToCrewCheckAndWatch("resume-refreshed"),
                     LIFE_COMPANION_REFRESH_SETTLE_MS
             );
+            webView.postDelayed(
+                    () -> requestCrewCheckWatchSnapshotFromWeb("phone-resume"),
+                    350L
+            );
+            webView.postDelayed(
+                    () -> requestCrewCheckWatchSnapshotFromWeb("phone-resume-retry"),
+                    1400L
+            );
+            webView.postDelayed(this::dispatchPendingWatchConciergeRequest, 650L);
         }
     }
 
@@ -753,7 +764,9 @@ public class MainActivity extends Activity {
                 }
             }
         };
-        IntentFilter filter = new IntentFilter(ACTION_WATCH_SYNC_REQUEST);
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ACTION_WATCH_SYNC_REQUEST);
+        filter.addAction(ACTION_WATCH_CONCIERGE_REQUEST);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(watchSyncRequestReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -765,6 +778,20 @@ public class MainActivity extends Activity {
         if (watchSyncRequestReceiver == null) return;
         try { unregisterReceiver(watchSyncRequestReceiver); } catch (Exception ignored) {}
         watchSyncRequestReceiver = null;
+    }
+
+    private void dispatchPendingWatchConciergeRequest() {
+        try {
+            if (webView == null) return;
+            String pending = CrewCheckWatchConciergeBridge.peekPending(this);
+            if (pending == null || pending.isBlank()) return;
+            final String js = "(function(){try{var detail=" + pending + ";"
+                    + "window.dispatchEvent(new CustomEvent('crewcheck:watch-concierge-action',{detail:detail}));"
+                    + "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
     }
 
     private void requestCrewCheckWatchSnapshotFromWeb(String reason) {
@@ -1086,6 +1113,25 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean requestWatchSnapshot() {
             requestCrewCheckWatchSnapshotFromWeb("watch-request");
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean replyWatchConcierge(
+                final String requestId,
+                final boolean ok,
+                final String reply
+        ) {
+            if (requestId == null || requestId.trim().isEmpty()) return false;
+            CrewCheckWatchConciergeBridge.publishResponse(
+                    MainActivity.this,
+                    requestId,
+                    ok,
+                    reply,
+                    (sent, message) -> {
+                        if (sent) CrewCheckWatchConciergeBridge.clearPending(MainActivity.this, requestId);
+                    }
+            );
             return true;
         }
 

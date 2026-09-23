@@ -16,6 +16,11 @@ public final class NextStepComplicationService extends BaseComplicationService {
     }
 
     @Override
+    protected String tapScreen() {
+        return "journey";
+    }
+
+    @Override
     protected ComplicationRendering render(long nowEpochMs, boolean preview) {
         return nextStep(this, nowEpochMs, preview);
     }

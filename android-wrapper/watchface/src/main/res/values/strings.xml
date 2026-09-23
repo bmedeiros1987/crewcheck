@@ -6,4 +6,5 @@
     <string name="crewlife_label">CrewLife</string>
     <string name="routine_label">Rotina CrewCheck</string>
     <string name="battery_label">Bateria do relógio</string>
+    <string name="concierge_label">Concierge CrewCheck</string>
 </resources>

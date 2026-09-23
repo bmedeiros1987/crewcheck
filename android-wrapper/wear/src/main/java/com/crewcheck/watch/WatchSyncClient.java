@@ -128,7 +128,14 @@ public final class WatchSyncClient {
                                 String json = map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
                                 long sentAt = map.getLong("sentAtEpochMs", 0L);
                                 if (json != null && sentAt > baselineSentAt) {
-                                    new SecureSnapshotStore(context).save(json);
+                                    WatchContextSnapshot saved = new SecureSnapshotStore(context).save(json);
+                                    if (saved.isStale(System.currentTimeMillis())) {
+                                        callback.onFinished(
+                                                true,
+                                                "Celular respondeu · CrewCheck precisa atualizar"
+                                        );
+                                        return;
+                                    }
                                     fresh = true;
                                     break;
                                 }

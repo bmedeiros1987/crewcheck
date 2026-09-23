@@ -10,7 +10,31 @@ import com.google.android.gms.wearable.WearableListenerService;
 public final class CrewCheckWatchSyncService extends WearableListenerService {
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
-        if (!CrewCheckWatchPublisher.REQUEST_SYNC_PATH.equals(messageEvent.getPath())) return;
+        String path = messageEvent.getPath();
+
+        if (CrewCheckWatchConciergeBridge.REQUEST_PATH.equals(path)) {
+            try {
+                String payload = CrewCheckWatchConciergeBridge.sanitizeRequest(messageEvent.getData());
+                CrewCheckWatchConciergeBridge.queue(this, payload);
+                CrewCheckWatchConciergeBridge.processInBackground(
+                        this,
+                        payload,
+                        (ok, message) -> {
+                            if (ok) return;
+                            android.content.Intent request =
+                                    new android.content.Intent(
+                                            MainActivity.ACTION_WATCH_CONCIERGE_REQUEST
+                                    ).setPackage(getPackageName());
+                            sendBroadcast(request);
+                        }
+                );
+            } catch (Exception ignored) {
+                // Invalid requests never reach the WebView/Concierge.
+            }
+            return;
+        }
+
+        if (!CrewCheckWatchPublisher.REQUEST_SYNC_PATH.equals(path)) return;
         // Fast path: resend the last validated snapshot if one already exists.
         CrewCheckWatchPublisher.republishLast(this);
 

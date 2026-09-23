@@ -14,6 +14,11 @@ public final class CrewLifeComplicationService extends BaseComplicationService {
     }
 
     @Override
+    protected String tapScreen() {
+        return "crewlife";
+    }
+
+    @Override
     protected ComplicationRendering render(long nowEpochMs, boolean preview) {
         CrewLifeSnapshot snapshot = preview
                 ? CrewLifeSnapshot.demo(nowEpochMs)

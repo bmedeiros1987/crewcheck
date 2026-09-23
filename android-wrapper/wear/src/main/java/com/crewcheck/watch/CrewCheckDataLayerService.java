@@ -46,6 +46,8 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                     if (json != null) {
                         WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
                         WatchNotificationCenter.postForSnapshot(this, snapshot);
+                        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                                .setPackage(getPackageName()));
                     }
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
@@ -53,6 +55,15 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_ROUTINE_JSON);
                     if (json != null) new WellbeingStore(this).saveRoutine(json);
+                } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
+                    String json = dataMap.getString(WatchContract.DATA_KEY_CONCIERGE_RESPONSE_JSON);
+                    if (json != null) {
+                        WatchConciergeStore.Snapshot response =
+                                new WatchConciergeStore(this).save(json);
+                        WatchNotificationCenter.postConciergeResponse(this, response);
+                        sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                                .setPackage(getPackageName()));
+                    }
                 }
             } catch (Exception ignored) {
                 // Fail closed: keep the last valid snapshot.
@@ -72,12 +83,21 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 WatchContextSnapshot snapshot = new SecureSnapshotStore(this)
                         .save(new String(data, StandardCharsets.UTF_8));
                 WatchNotificationCenter.postForSnapshot(this, snapshot);
+                sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                        .setPackage(getPackageName()));
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));
             } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveRoutine(new String(data, StandardCharsets.UTF_8));
+            } else if (WatchContract.CONCIERGE_RESPONSE_PATH.equals(path)) {
+                if (data.length > WatchContract.MAX_CONCIERGE_BYTES) return;
+                WatchConciergeStore.Snapshot response = new WatchConciergeStore(this)
+                        .save(new String(data, StandardCharsets.UTF_8));
+                WatchNotificationCenter.postConciergeResponse(this, response);
+                sendBroadcast(new android.content.Intent(MainActivity.ACTION_SNAPSHOT_UPDATED)
+                        .setPackage(getPackageName()));
             }
         } catch (Exception ignored) {
             // Fail closed: do not replace a valid cache with malformed data.

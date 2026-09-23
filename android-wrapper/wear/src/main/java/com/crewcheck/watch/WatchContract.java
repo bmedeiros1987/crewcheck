@@ -31,6 +31,13 @@ public final class WatchContract {
     public static final String DATA_KEY_CREWLIFE_JSON = "crewLifeJson";
     public static final String DATA_KEY_ROUTINE_JSON = "routineJson";
 
+    // Concierge uses its own narrow channel. No credentials or raw wellness data travel here.
+    public static final int CONCIERGE_SCHEMA_VERSION = 1;
+    public static final int MAX_CONCIERGE_BYTES = 4 * 1024;
+    public static final String CONCIERGE_REQUEST_PATH = "/crewcheck/watch/concierge/request/v1";
+    public static final String CONCIERGE_RESPONSE_PATH = "/crewcheck/watch/concierge/response/v1";
+    public static final String DATA_KEY_CONCIERGE_RESPONSE_JSON = "conciergeResponseJson";
+
     private WatchContract() {
     }
 }

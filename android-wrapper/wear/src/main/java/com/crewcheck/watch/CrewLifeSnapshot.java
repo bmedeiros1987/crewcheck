@@ -21,14 +21,12 @@ import java.util.Set;
  */
 public final class CrewLifeSnapshot {
     private static final Set<String> LABELS = Set.of("OTIMA", "BOA", "REGULAR", "BAIXA", "DESCONHECIDA");
-    private static final Set<String> SCORE_KINDS = Set.of("RECOVERY", "ENERGY");
 
     public final int schemaVersion;
     public final long generatedAtEpochMs;
     public final long validUntilEpochMs;
     public final int recoveryScore;
     public final String recoveryLabel;
-    public final String scoreKind;
     public final int sleepMinutes;
     public final String sleepLabel;
     public final int steps;
@@ -44,7 +42,6 @@ public final class CrewLifeSnapshot {
             long validUntilEpochMs,
             int recoveryScore,
             String recoveryLabel,
-            String scoreKind,
             int sleepMinutes,
             String sleepLabel,
             int steps,
@@ -59,7 +56,6 @@ public final class CrewLifeSnapshot {
         this.validUntilEpochMs = validUntilEpochMs;
         this.recoveryScore = recoveryScore;
         this.recoveryLabel = recoveryLabel;
-        this.scoreKind = scoreKind;
         this.sleepMinutes = sleepMinutes;
         this.sleepLabel = sleepLabel;
         this.steps = steps;
@@ -110,8 +106,6 @@ public final class CrewLifeSnapshot {
 
         String label = normalizeLabel(json.optString("recoveryLabel", "DESCONHECIDA"), 12);
         if (!LABELS.contains(label)) label = "DESCONHECIDA";
-        String scoreKind = normalizeLabel(json.optString("scoreKind", "RECOVERY"), 12);
-        if (!SCORE_KINDS.contains(scoreKind)) scoreKind = "RECOVERY";
 
         return new CrewLifeSnapshot(
                 schemaVersion,
@@ -119,7 +113,6 @@ public final class CrewLifeSnapshot {
                 validUntil,
                 bounded(json, "recoveryScore", 0, 100),
                 label,
-                scoreKind,
                 bounded(json, "sleepMinutes", 0, 24 * 60),
                 clean(json.optString("sleepLabel", ""), 10),
                 bounded(json, "steps", 0, 200_000),
@@ -138,7 +131,6 @@ public final class CrewLifeSnapshot {
                 .put("validUntilEpochMs", validUntilEpochMs)
                 .put("recoveryScore", recoveryScore)
                 .put("recoveryLabel", recoveryLabel)
-                .put("scoreKind", scoreKind)
                 .put("sleepMinutes", sleepMinutes)
                 .put("sleepLabel", sleepLabel)
                 .put("steps", steps)
@@ -153,34 +145,41 @@ public final class CrewLifeSnapshot {
         return nowEpochMs > validUntilEpochMs;
     }
 
-    public boolean isEnergyScore() {
-        return "ENERGY".equals(scoreKind);
-    }
-
     /** Título curto da complicação. */
     public String complicationTitle() {
-        return isEnergyScore() ? "ENERGIA" : "CREWLIFE";
+        return "CREWLIFE";
     }
 
-    /** Valor de glance preserva a semântica da fonte. */
+    /** Valor curto e humano. Nunca expõe "DESCONHECIDA" como estado de produto. */
     public String complicationText(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "--";
-        if (recoveryScore > 0) {
-            return isEnergyScore() ? recoveryScore + "/100" : recoveryScore + "%";
+        if (recoveryScore > 0) return recoveryScore + "%";
+        if (!recoveryLabel.isBlank() && !"DESCONHECIDA".equals(recoveryLabel)) return recoveryLabel;
+        if (!sleepLabel.isBlank()) return sleepLabel;
+        if (sleepMinutes > 0) {
+            return (sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", sleepMinutes % 60);
         }
-        return recoveryLabel;
+        if (steps > 0) {
+            return steps >= 1000
+                    ? String.format(Locale.ROOT, "%.1fk", steps / 1000.0)
+                    : String.valueOf(steps);
+        }
+        if (activeMinutes > 0) return activeMinutes + "m";
+        return "LOCAL";
     }
 
     public String accessibilityDescription(long nowEpochMs) {
-        if (isStale(nowEpochMs)) return "Dados de bem-estar desatualizados.";
-        StringBuilder text = new StringBuilder(isEnergyScore() ? "Energia Samsung " : "Recuperação ");
-        if (recoveryScore > 0) {
-            text.append(isEnergyScore() ? recoveryScore + " de 100" : recoveryScore + " por cento");
-        } else {
-            text.append(recoveryLabel.toLowerCase(Locale.ROOT));
+        if (isStale(nowEpochMs)) return "CrewLife sem atualização recente. Abra o CrewCheck no celular.";
+        StringBuilder text = new StringBuilder("CrewLife opcional.");
+        if (recoveryScore > 0) text.append(" Recuperação ").append(recoveryScore).append(" por cento.");
+        else if (!recoveryLabel.isBlank() && !"DESCONHECIDA".equals(recoveryLabel)) {
+            text.append(" Recuperação ").append(recoveryLabel.toLowerCase(Locale.ROOT)).append(".");
         }
-        if (!sleepLabel.isEmpty()) text.append(", sono ").append(sleepLabel);
-        if (!detail.isEmpty()) text.append(". ").append(detail);
+        if (!sleepLabel.isEmpty()) text.append(" Sono ").append(sleepLabel).append(".");
+        else if (sleepMinutes > 0) text.append(" Sono registrado.");
+        if (steps > 0) text.append(" ").append(steps).append(" passos.");
+        if (activeMinutes > 0) text.append(" ").append(activeMinutes).append(" minutos de atividade.");
+        if (!detail.isEmpty()) text.append(" ").append(detail);
         return text.toString();
     }
 
@@ -192,7 +191,6 @@ public final class CrewLifeSnapshot {
                     .put("validUntilEpochMs", nowEpochMs + 6 * 60 * 60 * 1000L)
                     .put("recoveryScore", 78)
                     .put("recoveryLabel", "BOA")
-                    .put("scoreKind", "RECOVERY")
                     .put("sleepMinutes", 412)
                     .put("sleepLabel", "6h52")
                     .put("steps", 6430)
