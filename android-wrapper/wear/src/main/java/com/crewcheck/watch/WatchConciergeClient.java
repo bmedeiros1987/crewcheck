@@ -22,8 +22,13 @@ final class WatchConciergeClient {
     static void send(Context context, String action, String text, Callback callback) {
         Context app = context.getApplicationContext();
         String requestId = UUID.randomUUID().toString();
-        final byte[] payload;
 
+        if (!WatchEntitlements.concierge(app)) {
+            callback.onFinished(false, requestId, "Concierge no relógio é Premium");
+            return;
+        }
+
+        final byte[] payload;
         try {
             JSONObject json = new JSONObject()
                     .put("schemaVersion", WatchContract.CONCIERGE_SCHEMA_VERSION)
