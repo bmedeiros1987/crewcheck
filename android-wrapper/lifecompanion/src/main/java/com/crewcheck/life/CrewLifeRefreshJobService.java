@@ -8,13 +8,7 @@ public final class CrewLifeRefreshJobService extends JobService {
     public boolean onStartJob(JobParameters params) {
         new Thread(() -> {
             try {
-                if (SamsungHealthRuntime.sdkBundled()) {
-                    org.json.JSONObject status = SamsungHealthRuntime.status(this);
-                    if ("connected".equals(status.optString("state"))) {
-                        LifeSummaryStore.save(this, SamsungHealthRuntime.readSummary(this));
-                    }
-                }
-            } catch (Throwable ignored) {
+                CrewLifeRefresh.refreshNow(this);
             } finally {
                 jobFinished(params, false);
             }
