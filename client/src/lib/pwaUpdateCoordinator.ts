@@ -7,7 +7,7 @@ const DEFAULT_IDLE_MS = 5 * 60_000;
 const DEFAULT_CHECK_INTERVAL_MS = 15 * 60_000;
 
 /**
- * Coordinates PWA updates without forcing reloads or interrupting active use.
+ * Coordinates PWA updates without disruptive reload loops or interrupting active use.
  * A waiting worker is activated only when the document is hidden or the user
  * has been idle for the configured period. After the new worker takes control,
  * the page reloads once at a safe boundary so an open CrewCheck does not remain
