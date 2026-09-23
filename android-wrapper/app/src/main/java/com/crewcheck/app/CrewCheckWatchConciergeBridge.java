@@ -2,6 +2,7 @@ package com.crewcheck.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.webkit.CookieManager;
 
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.PutDataMapRequest;
@@ -9,6 +10,12 @@ import com.google.android.gms.wearable.Wearable;
 
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
@@ -84,6 +91,126 @@ public final class CrewCheckWatchConciergeBridge {
         } catch (Exception ignored) {
         }
         prefs.edit().remove(KEY_PENDING).apply();
+    }
+
+    public static void processInBackground(
+            Context context,
+            String requestPayload,
+            Callback callback
+    ) {
+        Callback safe = callback == null ? (ok, message) -> {} : callback;
+        Context app = context.getApplicationContext();
+
+        new Thread(() -> {
+            try {
+                JSONObject request = new JSONObject(requestPayload);
+                String requestId = request.optString("requestId", "");
+                String prompt = promptFor(
+                        request.optString("action", ""),
+                        request.optString("text", "")
+                );
+                if (requestId.isBlank() || prompt.isBlank()) {
+                    safe.onResult(false, "Pedido Concierge incompleto.");
+                    return;
+                }
+
+                String cookie = "";
+                try {
+                    cookie = String.valueOf(
+                            CookieManager.getInstance().getCookie("https://crewcheck.online")
+                    );
+                } catch (Exception ignored) {
+                }
+                if (cookie.isBlank() || "null".equalsIgnoreCase(cookie)) {
+                    safe.onResult(false, "Sessão do CrewCheck indisponível em segundo plano.");
+                    return;
+                }
+
+                HttpURLConnection connection = (HttpURLConnection) new URL(
+                        "https://crewcheck.online/api/telegram/concierge/ask"
+                ).openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(8_000);
+                connection.setReadTimeout(18_000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Cookie", cookie);
+
+                byte[] body = new JSONObject().put("text", prompt)
+                        .toString()
+                        .getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(body.length);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(body);
+                }
+
+                int status = connection.getResponseCode();
+                InputStream stream = status >= 200 && status < 300
+                        ? connection.getInputStream()
+                        : connection.getErrorStream();
+                String responseBody = readStream(stream);
+                connection.disconnect();
+
+                JSONObject response = responseBody.isBlank()
+                        ? new JSONObject()
+                        : new JSONObject(responseBody);
+                if (status < 200 || status >= 300 || !response.optBoolean("ok", false)) {
+                    safe.onResult(
+                            false,
+                            clean(response.optString("message", "Concierge indisponível."), 180)
+                    );
+                    return;
+                }
+
+                String reply = clean(response.optString("reply", ""), 520);
+                if (reply.isBlank()) {
+                    safe.onResult(false, "Concierge respondeu sem texto.");
+                    return;
+                }
+
+                publishResponse(app, requestId, true, reply, (sent, message) -> {
+                    if (sent) clearPending(app, requestId);
+                    safe.onResult(sent, message);
+                });
+            } catch (Exception error) {
+                safe.onResult(false, "Concierge aguardando o app no celular.");
+            }
+        }, "crewcheck-watch-concierge").start();
+    }
+
+    private static String promptFor(String action, String dictatedText) {
+        String spoken = clean(dictatedText, 220);
+        if (!spoken.isBlank()) return spoken;
+
+        return switch (clean(action, 24).toUpperCase()) {
+            case "WAKEUP" ->
+                    "Com base na minha próxima programação, qual horário você recomenda para eu despertar?";
+            case "TRANSFER" ->
+                    "Qual é a orientação ou o status do meu pickup ou transfer para a próxima programação?";
+            case "ROOM" ->
+                    "Preciso de ajuda com meu quarto ou hotel do pernoite. O que posso fazer agora?";
+            case "AIRPORT" -> "/proximo";
+            case "FOOD" -> "Onde posso comer perto do meu pernoite ou hotel agora?";
+            default -> "/hoje";
+        };
+    }
+
+    private static String readStream(InputStream stream) throws Exception {
+        if (stream == null) return "";
+        StringBuilder out = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(stream, StandardCharsets.UTF_8)
+        )) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (out.length() > 128 * 1024) {
+                    throw new IllegalArgumentException("Resposta Concierge excessiva.");
+                }
+                out.append(line);
+            }
+        }
+        return out.toString();
     }
 
     public static void publishResponse(
