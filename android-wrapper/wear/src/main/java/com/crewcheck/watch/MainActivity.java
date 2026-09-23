@@ -799,6 +799,32 @@ public final class MainActivity extends FragmentActivity
         subtitle.setPadding(0, 0, 0, dp(7));
         content.addView(subtitle);
 
+        if (snapshot != null && !snapshot.isStale(now)) {
+            Primary current = primaryFor(snapshot);
+            LinearLayout currentCard = premiumCard(current.accent);
+            currentCard.setGravity(Gravity.CENTER_HORIZONTAL);
+            currentCard.setPadding(dp(10), dp(8), dp(10), dp(8));
+
+            TextView currentLabel = text("ESCALA ATUAL · " + current.eyebrow,
+                    7, current.accent, true, Gravity.CENTER);
+            currentLabel.setLetterSpacing(.08f);
+            currentCard.addView(currentLabel);
+
+            TextView currentValue = text(current.value, current.value.length() > 14 ? 16 : 19,
+                    WHITE, true, Gravity.CENTER);
+            currentValue.setPadding(0, dp(2), 0, 0);
+            currentCard.addView(currentValue);
+
+            String currentDetail = firstNonBlank(current.detail, current.secondary);
+            if (!currentDetail.isBlank()) {
+                TextView detail = text(currentDetail, 8, MUTED, false, Gravity.CENTER);
+                detail.setMaxLines(2);
+                detail.setPadding(0, dp(2), 0, 0);
+                currentCard.addView(detail);
+            }
+            content.addView(currentCard, cardParams());
+        }
+
         if (snapshot == null || snapshot.schedule.isEmpty()) {
             TextView empty = text(
                     "Sincronize o CrewCheck no celular para abrir sua escala aqui.",
@@ -843,7 +869,10 @@ public final class MainActivity extends FragmentActivity
         copy.setOrientation(LinearLayout.VERTICAL);
         copy.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView headline = text(item.title, 12, WHITE, true, Gravity.START);
+        TextView headline = text(
+                (first ? "AGORA · " : "") + item.title,
+                12, WHITE, true, Gravity.START
+        );
         headline.setMaxLines(1);
         copy.addView(headline);
 
