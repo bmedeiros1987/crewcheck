@@ -84,6 +84,20 @@ await check(
   },
 );
 await check(
+  "explicit visitor route projection reveals cities/codes but not flight number or ground metadata",
+  () => {
+    const s = projectRoster(roster, { ...opts, routeVisibility: "route" });
+    const json = JSON.stringify(s);
+    assert.equal(s.next.flight, null);
+    assert.equal(s.next.origin, "BSB");
+    assert.equal(s.next.destination, "GRU");
+    assert.equal(s.next.groundBeforeMinutes, null);
+    assert.ok(!json.includes("LA3301"));
+    assert.ok(json.includes("BSB"));
+    assert.ok(json.includes("GRU"));
+  },
+);
+await check(
   "private projection keeps canonical IDs and APZ distinct from departure",
   () => {
     const s = projectRoster(roster, { ...opts, privacy: "private" });
