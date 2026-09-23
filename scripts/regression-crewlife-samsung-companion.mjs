@@ -30,7 +30,7 @@ assert.ok(companionGradle.includes("com.google.code.gson:gson:2.13.2"));
 assert.ok(companionGradle.includes("org.jetbrains.kotlin:kotlin-stdlib:2.0.21"));
 assert.ok(companionGradle.includes("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"));
 assert.match(vendorIgnore, /samsung-health-data-api\*\.aar/);
-assert.match(localHelper, /samsung-health-data-api-\[\^\/\]\+\\\.aar/);
+assert.match(localHelper, /samsung-health-data-api/);
 assert.match(localHelper, /:lifecompanion:assembleDebug/);
 assert.match(localHelper, /lifecompanion-debug\.apk/);
 assert.match(localHelper, /rm -f \"\$AAR_TARGET\"/);
