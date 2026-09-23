@@ -46,15 +46,15 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', s => {
   s = s.replace('[consent.active, nativeSummary, watchMirrorEnabled]', '[consent.active, manual, watchMirrorEnabled]');
   return s;
 });
-update('client/src/lib/lifeConcierge.ts', s => s
+update('client/src/lib/lifeConcierge.ts', source => {
   // Samsung Companion source union + local snapshot survive the terminal Play policy.
-  .replace("source: 'health-connect' | 'manual';", "source: 'health-connect' | 'samsung-companion' | 'manual';")
-  .replace("  nativeSummary: 'crewcheck:life:health-summary:v1',", "  nativeSummary: 'crewcheck:life:health-summary:v1',\n  companionSummary: 'crewcheck:life:companion-summary:v1',")
-  .replace('shareGymCheckins: true,', 'shareGymCheckins: false,')
-  .replace(/export function ingestHealthSummary\(value: unknown\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
+  let s = source
+    .replace("source: 'health-connect' | 'manual';", "source: 'health-connect' | 'samsung-companion' | 'manual';")
+    .replace('shareGymCheckins: true,', 'shareGymCheckins: false,')
+    .replace(/export function ingestHealthSummary\(value: unknown\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
   return null; // Health Connect imports are disabled; manual records remain available.
 }`)
-  .replace(/function currentSnapshot\(\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `function currentSnapshot(): LifeHealthSnapshot | null {
+    .replace(/function currentSnapshot\(\): LifeHealthSnapshot \| null \{[^]*?\n\}/, `function currentSnapshot(): LifeHealthSnapshot | null {
   const companion = parseHealthSnapshot(readJson<any>(KEYS.companionSummary, null), 'samsung-companion');
   if (companion) return companion;
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
@@ -65,7 +65,15 @@ update('client/src/lib/lifeConcierge.ts', s => s
     if (parsed) return parsed;
   }
   return null;
-}`));
+}`);
+  if (!s.includes("companionSummary: 'crewcheck:life:companion-summary:v1'")) {
+    s = s.replace(
+      "  nativeSummary: 'crewcheck:life:health-summary:v1',",
+      "  nativeSummary: 'crewcheck:life:health-summary:v1',\n  companionSummary: 'crewcheck:life:companion-summary:v1',"
+    );
+  }
+  return s;
+});
 update('client/src/components/v14314/RoutineDailyConcierge.tsx', s => s
   .replace(/  async function connectHealth\(\) \{[^]*?\n  \}/, `  function openManualLife() {
     window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'life' }));
