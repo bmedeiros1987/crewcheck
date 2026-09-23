@@ -175,4 +175,5 @@ await import('../p2-738-vacation-work-first/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
+await import('../crewlife-wellness/prepare.mjs');
 await import('../ci/sync-canonical-manual.mjs');

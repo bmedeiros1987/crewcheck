@@ -1,0 +1,21 @@
+name: CrewLife wellness safety
+on:
+  pull_request:
+    branches: [main]
+    paths: ['scripts/crewlife-wellness/**', 'scripts/v139/apply.mjs', '.github/workflows/crewlife-wellness.yml']
+permissions:
+  contents: read
+jobs:
+  wellness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/crewlife-wellness/test.mjs
+      - run: node scripts/android-play/check-sources.mjs
+      - run: npx tsc --noEmit
