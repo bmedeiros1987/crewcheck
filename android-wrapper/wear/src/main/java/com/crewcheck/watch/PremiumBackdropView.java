@@ -9,6 +9,7 @@ import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.view.View;
+import android.view.ViewTreeObserver;
 
 /**
  * Lightweight decorative layer for CrewWatch.
@@ -32,6 +33,9 @@ public final class PremiumBackdropView extends View {
     private final RectF outerArc = new RectF();
     private final RectF innerArc = new RectF();
     private final RectF bezelOval = new RectF();
+    private final WearUiCompliance uiCompliance = new WearUiCompliance();
+    private final ViewTreeObserver.OnGlobalLayoutListener complianceLayoutListener =
+            () -> uiCompliance.applyIfNeeded(this);
 
     private float width;
     private float height;
@@ -54,6 +58,22 @@ public final class PremiumBackdropView extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         setFocusable(false);
         setClickable(false);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        getViewTreeObserver().addOnGlobalLayoutListener(complianceLayoutListener);
+        post(() -> uiCompliance.applyIfNeeded(this));
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        ViewTreeObserver observer = getViewTreeObserver();
+        if (observer.isAlive()) {
+            observer.removeOnGlobalLayoutListener(complianceLayoutListener);
+        }
+        super.onDetachedFromWindow();
     }
 
     @Override
