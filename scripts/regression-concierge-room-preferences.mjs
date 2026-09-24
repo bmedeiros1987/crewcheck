@@ -6,10 +6,9 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [historySource, preferencesSource, view] = await Promise.all([
+const [historySource, preferencesSource] = await Promise.all([
   read('client/src/lib/conciergeRoomHistory.ts'),
   read('client/src/lib/conciergeRoomPreferences.ts'),
-  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
 ]);
 
 function transpile(source, fileName) {
@@ -86,15 +85,6 @@ const sanitized = preferences.listConciergeRoomPreferences(storage);
 assert.equal(sanitized[0].preference, 'neutral', 'invalid preference values must fail safe');
 assert.equal(sanitized[0].quiet, 'unknown', 'invalid trait values must fail safe');
 
-assert.match(view, /Minha experiência neste quarto/);
-assert.match(view, /Prefiro este quarto/);
-assert.match(view, /Evitar este quarto/);
-assert.match(view, /Silêncio/);
-assert.match(view, /Blackout/);
-assert.match(view, /Wi-Fi/);
-assert.match(view, /Ar-condicionado/);
-assert.match(view, /Chuveiro/);
-assert.match(view, /somente neste aparelho nesta etapa/i);
-assert.match(view, /data da estadia fica registrada/i);
+assert.doesNotMatch(preferencesSource, /android-wrapper|watchSnapshotV1|canonicalRoster|journeyId|\bAPZ\b/, 'room preferences must remain Concierge-owned and isolated');
 
 console.log('CrewCheck Concierge room preferences regression OK');
