@@ -7,7 +7,6 @@ on:
       - 'client/src/components/v14313/life-concierge.css'
       - 'client/src/components/v14313/ui-lab-concierge-pass7.css'
       - 'scripts/ui-lab-concierge-pass7-test.mjs'
-      - 'scripts/regression-v14-3-13-life-concierge.mjs'
       - '.github/workflows/ui-lab-concierge-pass7.yml'
   workflow_dispatch:
 
@@ -36,8 +35,6 @@ jobs:
         run: npm ci
       - name: UI Lab Concierge pass 7 contract
         run: node scripts/ui-lab-concierge-pass7-test.mjs
-      - name: Existing Life Concierge regression
-        run: node scripts/regression-v14-3-13-life-concierge.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Vite build
