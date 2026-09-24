@@ -1,0 +1,312 @@
+/* CrewCheck UI Lab · TV pass 4
+   Presentation-only refinements for 10-foot readability, remote focus and calm hierarchy.
+   webOS 4 / Chromium 53 safe: flexbox, explicit margins, no Grid/gap/backdrop-filter/clamp().
+   This layer must never hide operational content or change roster/provider state. */
+
+/* Header / trust state: readable from the sofa without competing with the clock. */
+.tv-app .header-status{
+  max-width:42vw;
+  padding:.55vw .9vw;
+  border:1px solid #30445f;
+  border-radius:.72vw;
+  background:rgba(7,20,41,.72);
+  color:#d2deed;
+  font-size:.9vw;
+  line-height:1.25;
+}
+.tv-app .header-status small{
+  margin-top:.45vh;
+  color:#9fb1c8;
+  font-size:.76vw;
+  line-height:1.35;
+}
+.tv-app .header-status.state-stale,
+.tv-app .header-status.state-unknown{
+  border-color:#735f3f;
+  background:rgba(62,43,22,.26);
+}
+.tv-app .header-status.state-demo{
+  border-color:#674d89;
+  background:rgba(57,35,88,.28);
+}
+
+/* D-pad navigation: larger targets and an unmistakable focused state. */
+.tv-app nav button{
+  min-height:4.9vh;
+  padding:.72vw 1vw;
+  font-size:1.08vw;
+  border-radius:.72vw;
+}
+.tv-app button:focus,
+.tv-app a:focus{
+  outline:4px solid #dff8ff;
+  outline-offset:4px;
+  border-color:#8de9ff;
+  box-shadow:0 0 0 3px rgba(39,195,232,.22),0 .55vw 1.8vw rgba(0,0,0,.24);
+  transform:scale(1.025);
+}
+.tv-app nav button:focus{
+  background:#203854;
+}
+.tv-app nav button.active:focus{
+  background:linear-gradient(115deg,#8d46dc,#b73187);
+}
+
+/* Home: preserve density but raise the type floor and quiet secondary chrome. */
+.tv-app .hero{
+  border-color:#4b5578;
+  box-shadow:0 1.4vw 3.2vw rgba(0,0,0,.18);
+}
+.tv-app .eyebrow{
+  font-size:.91vw;
+  line-height:1.3;
+}
+.tv-app .mode-pill{
+  font-size:.78vw;
+}
+.tv-app .route-heading h1{
+  font-size:3.85vw;
+  line-height:1.08;
+}
+.tv-app .flight{
+  font-size:1.04vw;
+  padding:.42vw .72vw;
+}
+.tv-app .time-card{
+  padding:1.05vw 1.2vw;
+}
+.tv-app .time-card label{
+  font-size:.9vw;
+}
+.tv-app .time-card small{
+  font-size:.77vw;
+  color:#aebed2;
+}
+.tv-app .gate{
+  padding:.82vw 1.05vw;
+  font-size:.82vw;
+}
+.tv-app .gate>small{
+  font-size:.72vw;
+}
+.tv-app .hero-bottom>span{
+  font-size:.77vw;
+}
+.tv-app .hero-bottom button{
+  min-height:4.6vh;
+  font-size:.92vw;
+}
+
+/* Side rail: less visual noise, stronger labels and consistent card separation. */
+.tv-app .side article{
+  padding:1.08vw 1.25vw;
+  border-color:#344762;
+  background:linear-gradient(125deg,#101e35,#09162b);
+}
+.tv-app .side article+article{
+  margin-top:1.45vh;
+}
+.tv-app .side .eyebrow{
+  margin-bottom:1.05vh;
+  font-size:.82vw;
+}
+.tv-app .side p:not(.eyebrow){
+  font-size:.99vw;
+  line-height:1.38;
+}
+.tv-app .side small{
+  font-size:.71vw;
+  line-height:1.4;
+}
+.tv-app .weather-label{
+  font-size:1.05vw;
+}
+.tv-app .week-stats span{
+  font-size:.75vw;
+}
+
+/* Calendar / empty and detail states: increase scanning clarity at 720p and 1080p. */
+.tv-app .calendar-actions span{
+  font-size:.95vw;
+}
+.tv-app .weekdays>span{
+  font-size:.86vw;
+}
+.tv-app .day-button{
+  border-color:#33445e;
+}
+.tv-app .day-button b{
+  font-size:1.45vw;
+}
+.tv-app .day-button span{
+  font-size:.87vw;
+  line-height:1.28;
+}
+.tv-app .day-button small{
+  font-size:.81vw;
+  line-height:1.3;
+}
+.tv-app .note{
+  font-size:.75vw;
+  line-height:1.4;
+}
+.tv-app .detail h1{
+  font-size:2.7vw;
+}
+.tv-app .empty-card{
+  min-height:16vh;
+  padding:1.5vw;
+  border:1px dashed #405675;
+  border-radius:1vw;
+  background:rgba(10,27,50,.54);
+  color:#b8c8da;
+  font-size:.96vw;
+  line-height:1.45;
+}
+.tv-app .news-item h2,
+.tv-app .change-item{
+  line-height:1.35;
+}
+
+/* Program drill-down: same facts, larger type and calmer metadata. */
+.tv-app .program-day-title h1,
+.tv-app .program-overview-head h1,
+.tv-app .program-detail-title h1{
+  font-size:2.55vw;
+}
+.tv-app .program-day-title>span{
+  font-size:.84vw;
+}
+.tv-app .program-card{
+  min-height:18vh;
+  padding:1.4vw;
+  border-color:#35506e;
+}
+.tv-app .program-card-copy small{
+  font-size:.71vw;
+}
+.tv-app .program-card-copy h2{
+  font-size:1.56vw;
+  line-height:1.13;
+}
+.tv-app .program-card-copy>p{
+  font-size:.78vw;
+  line-height:1.35;
+}
+.tv-app .program-card-meta span{
+  font-size:.68vw;
+  line-height:1.3;
+}
+.tv-app .program-route-mini b{
+  font-size:.9vw;
+}
+.tv-app .program-overview-head>div>p:last-child,
+.tv-app .program-detail-title>div>p:last-child{
+  font-size:.86vw;
+  line-height:1.4;
+}
+.tv-app .flight-leg-main small{
+  font-size:.67vw;
+}
+.tv-app .flight-leg-main h3{
+  font-size:1.18vw;
+}
+.tv-app .flight-leg-main>div{
+  font-size:.71vw;
+}
+.tv-app .ground-chip{
+  font-size:.65vw;
+}
+.tv-app .program-key-facts small{
+  font-size:.65vw;
+}
+.tv-app .program-key-facts strong{
+  font-size:1.28vw;
+}
+.tv-app .program-key-facts span{
+  font-size:.68vw;
+}
+.tv-app .program-details-button{
+  min-height:4.6vh;
+  font-size:.8vw;
+}
+.tv-app .detail-module header small{
+  font-size:.62vw;
+}
+.tv-app .detail-module header h2{
+  font-size:1.22vw;
+}
+.tv-app .detail-module dt,
+.tv-app .detail-module dd,
+.tv-app .detail-module>p{
+  font-size:.76vw;
+  line-height:1.35;
+}
+.tv-app .sensitive-locked b{
+  font-size:.86vw;
+}
+.tv-app .sensitive-locked span,
+.tv-app .sensitive-module li{
+  font-size:.68vw;
+}
+.tv-app .detail-disclaimer{
+  font-size:.67vw;
+}
+
+/* Settings: remote-readable labels, without turning the TV into a mobile form. */
+.tv-app .display-pref-grid>button{
+  min-height:8.8vh!important;
+  padding:.78vw .9vw!important;
+}
+.tv-app .display-pref-grid b{
+  font-size:.78vw;
+}
+.tv-app .display-pref-grid small{
+  font-size:.64vw;
+  line-height:1.35;
+}
+.tv-app .display-pref-grid em,
+.tv-app .display-pref-grid>button>i{
+  font-size:.56vw;
+}
+
+/* Footer remains present but secondary to operation. */
+.tv-app footer{
+  font-size:.86vw;
+}
+.tv-app footer strong{
+  font-size:.88vw;
+}
+.tv-app .remote-hint{
+  font-size:.7vw;
+}
+
+/* 720p / denser Android TV viewport: do not shrink critical labels below sofa-reading size. */
+@media (max-width:1280px), (max-height:720px){
+  .tv-app{padding:2.3vh 2.6vw;font-size:1.34vw}
+  .tv-app .header-status{font-size:1.02vw;padding:.62vw 1vw}
+  .tv-app .header-status small{font-size:.88vw}
+  .tv-app nav button{font-size:1.18vw;min-height:5.2vh}
+  .tv-app .eyebrow{font-size:1vw}
+  .tv-app .time-card small,.tv-app .gate>small,.tv-app .side small{font-size:.82vw}
+  .tv-app .day-button span{font-size:.98vw}
+  .tv-app .day-button small{font-size:.9vw}
+  .tv-app .program-card-copy small,.tv-app .program-card-meta span{font-size:.78vw}
+  .tv-app .program-card-copy>p{font-size:.88vw}
+  .tv-app .detail-module dt,.tv-app .detail-module dd,.tv-app .detail-module>p{font-size:.84vw}
+  .tv-app .display-pref-grid small{font-size:.74vw}
+  .tv-app .note,.tv-app .remote-hint{font-size:.82vw}
+}
+
+/* Respect reduced motion without removing information or focus. */
+@media (prefers-reduced-motion:reduce){
+  .tv-app *,
+  .tv-app *:before,
+  .tv-app *:after{
+    animation-duration:.001ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.001ms!important;
+  }
+  .tv-app button:focus,
+  .tv-app a:focus{transform:none}
+}
