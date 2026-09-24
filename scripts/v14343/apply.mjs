@@ -145,10 +145,10 @@ const releaseWatcher = `<script id="crewcheck-release-watch-v14343">
           var payload = await response.json().catch(function () { return {}; });
           var serverRelease = normalized(payload.version);
           if (!serverRelease || serverRelease === normalized(currentRelease)) return;
-          var reloadKey = 'crewcheck-release-reload:' + serverRelease;
-          var previousReload = Number(window.localStorage && window.localStorage.getItem(reloadKey) || 0);
-          if (previousReload && Date.now() - previousReload < cooldownMs) return;
-          if (window.localStorage) window.localStorage.setItem(reloadKey, String(Date.now()));
+          var updateKey = 'crewcheck-release-update:' + serverRelease;
+          var previousCheck = Number(window.localStorage && window.localStorage.getItem(updateKey) || 0);
+          if (previousCheck && Date.now() - previousCheck < cooldownMs) return;
+          if (window.localStorage) window.localStorage.setItem(updateKey, String(Date.now()));
           if ('serviceWorker' in navigator) {
             var registration = await navigator.serviceWorker.getRegistration();
             if (registration) {
