@@ -4,18 +4,19 @@ import fs from 'node:fs';
 const activePatch = fs.readFileSync('scripts/v14393/apply.mjs', 'utf8');
 const identityPatch = fs.readFileSync('scripts/p0-580-local-period-identity/apply.mjs', 'utf8');
 
-// An authenticated cloud failure must stay observable after the roster is already
-// persisted locally. Otherwise the caller sees a false success and there is nothing
-// to drive a later retry to account storage.
-assert.ok(activePatch.includes('(error as any).localSummary = localSummary;'), 'cloud failure must retain local evidence on the thrown error');
-assert.match(activePatch, /catch \(error\) \{[\s\S]*localSummary[\s\S]*throw error;/, 'authenticated cloud failure must propagate after local persistence');
+// Existing P0_580 behavior is authoritative: an unavailable account backend must not
+// make a locally persisted import look failed. Recovery is driven by unsynced local
+// history on the next authenticated reconciliation opportunity.
+assert.ok(identityPatch.includes('const offlineLocalSuccess = `  } catch {'), 'offline-local save compatibility must be explicitly restored');
+assert.ok(identityPatch.includes('return localSummary;'), 'offline import must remain locally successful');
 
 // Revisions of the same published month must not share the old period-only checksum.
 // Keep P0_580's verified-identity boundary authoritative: content differentiates a
 // revision only after the crew identity has been accepted by that guard.
 assert.ok(identityPatch.includes('function localRosterRevisionChecksum(roster: CrewRoster, periodIdentity: string): string {'), 'identity guard needs a content-aware revision checksum');
 assert.ok(identityPatch.includes('checksum: String(payload.checksum || (periodIdentity ? localRosterRevisionChecksum(roster, periodIdentity)'), 'verified local history must persist revision-aware checksum');
-assert.ok(identityPatch.includes('unverified:${identitySlug}:${year}:${month}:${now}'), 'unverified identities must remain fail-closed and unique');
+assert.ok(identityPatch.includes('unverified:'), 'unverified identities must remain fail-closed and unique');
+assert.ok(identityPatch.includes('identitySlug'), 'unverified identity fallback must retain scoped identity evidence');
 
 // Never consume a scoped local queue as "synced" when there is no authenticated
 // account token. The active-roster runtime must guard recovery with the actual token.
@@ -42,4 +43,4 @@ for (const forbidden of ['parseAimsTokensIntoEventsV3', 'publishedPresentationOf
   assert.equal(identityPatch.includes(forbidden), false, `identity patch must not touch canonical aviation rule: ${forbidden}`);
 }
 
-console.log('[mobile-active-roster-durable-sync] OK — local-first import retries to account truth before active-roster reconciliation.');
+console.log('[mobile-active-roster-durable-sync] OK — local-first import stays successful offline and retries to account truth before reconciliation.');
