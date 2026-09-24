@@ -18,7 +18,9 @@ import android.view.View;
  * information or keeping the display active with decorative animation.
  */
 public final class PremiumBackdropView extends View {
-    private static final int BASE = Color.rgb(3, 8, 20);
+    // Wear OS quality WO-V13: preserve a true black activity background.
+    // CrewCheck identity is carried by the restrained accent glows and cards.
+    private static final int BASE = Color.BLACK;
 
     private final Paint focusGlow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint lowerGlow = new Paint(Paint.ANTI_ALIAS_FLAG);

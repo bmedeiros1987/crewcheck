@@ -217,7 +217,9 @@ public final class MainActivity extends FragmentActivity
 
     private void renderRoot() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(ambient ? BLACK : NAVY);
+        // Wear OS quality WO-V13: the activity canvas itself stays truly black.
+        // Brand color remains in cards/accents instead of becoming the screen background.
+        root.setBackgroundColor(BLACK);
 
         PremiumBackdropView backdrop = new PremiumBackdropView(this);
         root.addView(backdrop, new FrameLayout.LayoutParams(
@@ -229,7 +231,18 @@ public final class MainActivity extends FragmentActivity
         scroll.setBackgroundColor(Color.TRANSPARENT);
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        scroll.setVerticalScrollBarEnabled(false);
+
+        // Wear OS quality WO-V8: a scrollable surface must expose a scrollbar while
+        // the user interacts with it. Keep it as an inside overlay so it remains
+        // visible on round displays without stealing layout width.
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.setScrollbarFadingEnabled(true);
+        scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        scroll.setVerticalScrollbarPosition(View.SCROLLBAR_POSITION_RIGHT);
+        scroll.setScrollBarSize(dp(3));
+        scroll.setScrollBarDefaultDelayBeforeFade(450);
+        scroll.setScrollBarFadeDuration(650);
+
         scroll.setOnTouchListener((view, event) -> handleSwipeGesture(event));
 
         content = new LinearLayout(this);
@@ -322,7 +335,7 @@ public final class MainActivity extends FragmentActivity
 
         content.removeAllViews();
         applySafePadding();
-        content.getRootView().setBackgroundColor(ambient ? BLACK : NAVY);
+        content.getRootView().setBackgroundColor(BLACK);
 
         WatchContextSnapshot snapshot = store.load();
         long now = System.currentTimeMillis();

@@ -16,7 +16,12 @@ assert.match(main, /MODE_CREWLIFE = 4/);
 assert.match(main, /MODE_CONCIERGE = 5/);
 
 // The round-first atmosphere must remain calm, static and cheap to render.
-assert.match(backdrop, /private static final int BASE = Color\.rgb\(3, 8, 20\)/);
+// Pass 10 legitimately hardened the canvas to true black for Wear visual quality,
+// so the original navy base and the standards-compliant black base are both calm.
+assert.match(
+  backdrop,
+  /private static final int BASE = (?:Color\.BLACK|Color\.rgb\(3, 8, 20\))/
+);
 assert.match(backdrop, /onSizeChanged\(/, 'gradients and geometry must be cached when size changes');
 assert.match(backdrop, /edgeVignette/);
 assert.match(backdrop, /bezelOval/);
