@@ -3,6 +3,7 @@ import { Building2, Clock, History, Home, Hotel, MapPin, Save, Search, ShieldChe
 import { toast } from 'sonner';
 import { CREW_HOTEL_CATALOG } from '@/data/crewHotels';
 import { buildConciergeRoomMemory } from '@/lib/conciergeRoomHistory';
+import { buildConciergeRoomIntelligence } from '@/lib/conciergeRoomIntelligence';
 import { buildConciergeStaySuggestions, selectConciergeStayFocus, type ConciergeHotelSource } from '@/lib/conciergeStayInference';
 import { listConciergeStays, saveConciergeStay } from '@/lib/conciergeStaySync';
 import { v139Api } from '@/components/v139/api';
@@ -132,6 +133,10 @@ export default function PresentationStayManagerView({ events }: { events: Roster
   const roomMemory = useMemo(
     () => buildConciergeRoomMemory(stays, draft.hotelName, draft.room, draft.stayDate),
     [stays, draft.hotelName, draft.room, draft.stayDate],
+  );
+  const roomIntelligence = useMemo(
+    () => buildConciergeRoomIntelligence(stays, draft.hotelName, draft.stayDate),
+    [stays, draft.hotelName, draft.stayDate],
   );
 
   async function refresh() {
@@ -276,6 +281,21 @@ export default function PresentationStayManagerView({ events }: { events: Roster
           {roomMemory.roomStayDates.length > 0 && <div className="cc139-badges">{roomMemory.roomStayDates.slice(0, 3).map((day) => <span key={day}>Estadia · {labelStayDay(day)}</span>)}</div>}
         </> : <p>Informe o número do quarto para o CrewCheck reconhecer automaticamente quando você voltar ao mesmo quarto.</p>}
         <small>Esta memória é privada e usa apenas suas próprias estadias salvas. A estadia atual não entra na contagem histórica.</small>
+      </>}
+    </section>
+    <section className="cc139-card">
+      <History/><h2>Room Intelligence</h2>
+      {!draft.hotelName.trim() ? <p>Selecione ou informe o hotel para o CrewCheck analisar seus quartos anteriores.</p> : roomIntelligence.hotelVisits === 0 ? <>
+        <p>Ainda não há estadias anteriores suficientes neste hotel para formar inteligência de quarto.</p>
+        <small>O CrewCheck começa a aprender automaticamente conforme seus pernoites e quartos são salvos.</small>
+      </> : <>
+        <p>Seu histórico neste hotel tem {roomIntelligence.hotelVisits} {roomIntelligence.hotelVisits === 1 ? 'estadia anterior' : 'estadias anteriores'} e {roomIntelligence.distinctRooms} {roomIntelligence.distinctRooms === 1 ? 'quarto identificado' : 'quartos identificados'}.</p>
+        {roomIntelligence.mostFrequentRoom ? <>
+          <p>Quarto mais recorrente: <strong>{roomIntelligence.mostFrequentRoom.room}</strong> · {timesLabel(roomIntelligence.mostFrequentRoom.visits)} · última em {labelStayDay(roomIntelligence.mostFrequentRoom.lastStayDate)}.</p>
+          {roomIntelligence.mostRecentRoom && roomIntelligence.mostRecentRoom.room !== roomIntelligence.mostFrequentRoom.room && <p>Último quarto registrado: <strong>{roomIntelligence.mostRecentRoom.room}</strong> · {labelStayDay(roomIntelligence.mostRecentRoom.lastStayDate)}.</p>}
+          <div className="cc139-badges">{roomIntelligence.knownRooms.slice(0, 3).map((item) => <span key={item.room}>Quarto {item.room} · {timesLabel(item.visits)} · {labelStayDay(item.lastStayDate)}</span>)}</div>
+        </> : <p>Há histórico do hotel, mas os pernoites anteriores não possuem número de quarto registrado.</p>}
+        <small>Room Intelligence usa apenas seu histórico privado sincronizado. Um quarto recorrente é uma referência histórica e não significa que este seja o quarto atribuído agora.</small>
       </>}
     </section>
     <section className="cc139-card">
