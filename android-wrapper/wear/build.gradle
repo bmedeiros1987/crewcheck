@@ -90,6 +90,9 @@ dependencies {
     implementation 'com.google.android.gms:play-services-wearable:20.0.1'
     implementation 'androidx.wear:wear:1.4.0'
     implementation 'androidx.wear.watchface:watchface-complications-data-source:1.2.1'
+    // OnBackPressedDispatcher chega transitivamente via fragment, mas o botão
+    // de voltar do relógio depende dele: melhor não ficar na sorte da resolução.
+    implementation 'androidx.activity:activity:1.9.3'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'
