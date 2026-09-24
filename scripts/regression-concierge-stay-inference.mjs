@@ -63,6 +63,14 @@ assert.equal(noSavedGru.hotelName, 'Hotel Publicado');
 assert.equal(noSavedGru.hotelSource, 'roster');
 assert.equal(noSavedGru.presentationTime, '10:15', 'next real operational presentation should be inherited by the stay context');
 
+const crossAirportSavedGru = inference.buildConciergeStaySuggestions(events, [
+  { stayDate: '2026-09-24', airport: 'GIG', hotelName: 'Hotel Rio', presentationTime: '07:00', updatedAt: '2026-09-24T03:00:00Z' },
+], catalog).find((item) => item.eventId === 'stay-gru');
+assert.equal(crossAirportSavedGru.hotelName, 'Hotel Publicado', 'a saved stay at another airport on the same date must never override this stay');
+assert.equal(crossAirportSavedGru.hotelSource, 'roster');
+assert.equal(crossAirportSavedGru.presentationTime, '10:15', 'presentation from another airport on the same date must not leak into this stay');
+assert.equal(crossAirportSavedGru.airport, 'GRU', 'airport identity must remain tied to the canonical stay');
+
 const cwb = suggestions.find((item) => item.eventId === 'stay-cwb');
 assert.equal(cwb.hotelName, 'Hotel Histórico', 'one unique personal hotel for the airport may be suggested');
 assert.equal(cwb.hotelSource, 'history-unique');
