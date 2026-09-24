@@ -128,6 +128,17 @@ assert.match(life, /companionSummary\.automatic/);
 assert.match(life, /nativeHealthEnabled/);
 assert.match(life, /Energy Score/);
 assert.match(life, /scoreKind = 'ENERGY'/);
+
+// #794 diagnostic contract: never collapse materially different Companion states.
+assert.match(life, /companionStatus\.state === 'needs_setup'/);
+assert.match(life, /companionStatus\.state === 'unavailable'/);
+assert.match(life, /companionConnectedStale/);
+assert.match(life, /Companion instalado · resumo vazio/);
+assert.match(life, /Bridge do Companion indisponível/);
+assert.match(life, /Samsung Health conectado · resumo desatualizado/);
+assert.match(life, /Samsung Health conectado · automático/);
+assert.match(life, /Companion não instalado/);
+
 assert.match(wearSnapshot, /isEnergyScore/);
 assert.match(wearSnapshot, /Energia Samsung/);
 assert.match(wearMain, /Energy Score · Samsung Health/);
