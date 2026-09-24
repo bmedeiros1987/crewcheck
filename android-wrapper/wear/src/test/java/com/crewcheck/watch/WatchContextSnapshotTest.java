@@ -38,6 +38,17 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
+    public void spacedGateIsCompactedForShortComplication() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("state", "BOARDING")
+                .put("gate", "A 12")
+                .put("currentFlight", "LA3721"));
+
+        assertEquals("PORTÃO A 12", snapshot.gateLabel());
+        assertEquals("PA12", snapshot.complicationShortText(NOW));
+    }
+
+    @Test
     public void carriesCompactRosterScheduleWithoutChangingOperationalMeaning() throws Exception {
         JSONArray schedule = new JSONArray()
                 .put(new JSONObject()
