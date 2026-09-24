@@ -1,110 +1,115 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  CrewCheck Pulse Free — round-first Watch Face Format face for Galaxy Watch / Wear OS 4+.
+  CrewCheck Pulse Free — UI Lab pass 5.
 
-  Product rule:
-  - the watch face is useful on its own for free users;
-  - it never depends on the Premium CrewWatch APK to render time, date, steps, battery
+  Round-first Watch Face Format face for Galaxy Watch / Wear OS 4+.
+  Product contract preserved:
+  - useful by itself for Free users;
+  - no dependency on the Premium CrewWatch APK for time, date, steps, battery
     or the next system event;
-  - Premium users can still choose CrewCheck complication providers manually in the
-    watch-face editor after installing the CrewWatch app.
+  - users may replace system complications with CrewCheck providers after
+    installing CrewWatch, without coupling this bundle to the APK.
 
-  The design is intentionally round-first and uses only resource XML, which keeps this
-  bundle independent from the Wear application bundle.
+  Visual direction:
+  - time is dominant;
+  - restrained CrewCheck signature, no repeated slogan/branding;
+  - two glance tiles plus one wide next-event surface;
+  - subtle instrument-style rings sized for a round 450x450 canvas;
+  - ambient mode keeps only essential clock/date information.
 -->
 <WatchFace width="450" height="450">
     <Metadata key="CLOCK_TYPE" value="DIGITAL" />
     <Metadata key="PREVIEW_TIME" value="18:16:00" />
 
-    <Scene backgroundColor="#FF030A16">
-        <!-- Premium circular identity ring. Hidden in ambient mode. -->
-        <PartDraw x="24" y="24" width="402" height="402">
-            <Ellipse x="0" y="0" width="402" height="402">
-                <Stroke thickness="5" color="#CC22D3EE" />
+    <Scene backgroundColor="#FF020814">
+        <!-- Quiet instrument rings: identity without competing with the data. -->
+        <PartDraw x="27" y="27" width="396" height="396">
+            <Ellipse x="0" y="0" width="396" height="396">
+                <Stroke thickness="2" color="#7A22D3EE" />
             </Ellipse>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
-        <PartDraw x="31" y="31" width="388" height="388">
-            <Ellipse x="0" y="0" width="388" height="388">
-                <Stroke thickness="3" color="#995B5CF6" />
+        <PartDraw x="36" y="36" width="378" height="378">
+            <Ellipse x="0" y="0" width="378" height="378">
+                <Stroke thickness="2" color="#5AA78BFA" />
             </Ellipse>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
 
-        <!-- Restrained brand signature. -->
-        <PartText x="0" y="45" width="450" height="26">
+        <!-- One restrained brand signature. -->
+        <PartText x="0" y="48" width="450" height="22">
             <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="17" weight="BOLD" color="#FF22D3EE"><![CDATA[CREWCHECK]]></Font>
+                <Font family="SYNC_TO_DEVICE" size="14" weight="BOLD" color="#FF36DFF2"><![CDATA[CrewCheck]]></Font>
             </Text>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartText>
 
-        <!-- Time owns the face. -->
+        <!-- Time owns the face; date remains readable without becoming a second hero. -->
         <DigitalClock x="0" y="0" width="450" height="450">
             <TimeText
                 x="0"
-                y="76"
+                y="78"
                 width="450"
-                height="102"
+                height="100"
                 alpha="255"
                 align="CENTER"
                 format="hh:mm"
                 hourFormat="SYNC_TO_DEVICE">
-                <Font family="SYNC_TO_DEVICE" size="92" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
+                <Font family="SYNC_TO_DEVICE" size="90" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
                 <Variant mode="AMBIENT" target="alpha" value="0" />
             </TimeText>
 
             <TimeText
                 x="0"
-                y="86"
+                y="88"
                 width="450"
-                height="92"
+                height="90"
                 alpha="0"
                 align="CENTER"
                 format="hh:mm"
                 hourFormat="SYNC_TO_DEVICE">
-                <Font family="SYNC_TO_DEVICE" size="84" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
+                <Font family="SYNC_TO_DEVICE" size="82" weight="THIN" slant="NORMAL" color="#FFDCE5F0" />
                 <Variant mode="AMBIENT" target="alpha" value="255" />
             </TimeText>
 
             <TimeText
                 x="0"
-                y="177"
+                y="178"
                 width="450"
-                height="28"
+                height="26"
                 alpha="255"
                 align="CENTER"
                 format="EEE dd MMM"
                 hourFormat="SYNC_TO_DEVICE">
-                <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" slant="NORMAL" color="#FFA78BFA" />
+                <Font family="SYNC_TO_DEVICE" size="17" weight="BOLD" slant="NORMAL" color="#FFA78BFA" />
             </TimeText>
         </DigitalClock>
 
-        <!-- Free complication: steps. -->
+        <!-- Free glance: steps. -->
         <ComplicationSlot
-            x="78"
-            y="220"
-            width="132"
-            height="72"
+            x="76"
+            y="218"
+            width="136"
+            height="74"
             slotId="1"
             displayName="steps_label"
             supportedTypes="SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="132" height="72" outlinePadding="2.0" cornerRadius="34" />
+            <BoundingRoundBox x="0" y="0" width="136" height="74" outlinePadding="2.0" cornerRadius="35" />
             <DefaultProviderPolicy
                 defaultSystemProvider="STEP_COUNT"
                 defaultSystemProviderType="SHORT_TEXT" />
             <Complication type="SHORT_TEXT">
-                <PartText x="4" y="5" width="124" height="18">
+                <PartText x="4" y="6" width="128" height="18">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="12" weight="NORMAL" color="#FF7D8DA6">
+                        <Font family="SYNC_TO_DEVICE" size="11" weight="NORMAL" color="#FF8291AA">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
-                <PartText x="4" y="24" width="124" height="40">
+                <PartText x="4" y="24" width="128" height="42">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FF22D3EE">
+                        <Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FF36DFF2">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -113,31 +118,31 @@
             </Complication>
         </ComplicationSlot>
 
-        <!-- Free complication: battery. -->
+        <!-- Free glance: battery. -->
         <ComplicationSlot
-            x="240"
-            y="220"
-            width="132"
-            height="72"
+            x="238"
+            y="218"
+            width="136"
+            height="74"
             slotId="2"
             displayName="battery_label"
             supportedTypes="SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="132" height="72" outlinePadding="2.0" cornerRadius="34" />
+            <BoundingRoundBox x="0" y="0" width="136" height="74" outlinePadding="2.0" cornerRadius="35" />
             <DefaultProviderPolicy
                 defaultSystemProvider="WATCH_BATTERY"
                 defaultSystemProviderType="SHORT_TEXT" />
             <Complication type="SHORT_TEXT">
-                <PartText x="4" y="5" width="124" height="18">
+                <PartText x="4" y="6" width="128" height="18">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="12" weight="NORMAL" color="#FF7D8DA6">
+                        <Font family="SYNC_TO_DEVICE" size="11" weight="NORMAL" color="#FF8291AA">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
-                <PartText x="4" y="24" width="124" height="40">
+                <PartText x="4" y="24" width="128" height="42">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FF34D399">
+                        <Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FF6EE7B7">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -147,35 +152,34 @@
         </ComplicationSlot>
 
         <!--
-          Free, useful third slot: next calendar event. Users can customize this slot.
-          Premium customers may choose "CrewCheck · Próximo passo" here after installing
-          the CrewWatch APK, without coupling the free face bundle to the paid app.
+          Wide operational slot. NEXT_EVENT keeps the Free face useful on day one.
+          A CrewCheck next-step provider can be selected by users who install CrewWatch.
         -->
         <ComplicationSlot
-            x="58"
-            y="310"
-            width="334"
-            height="88"
+            x="60"
+            y="306"
+            width="330"
+            height="90"
             slotId="3"
             displayName="next_event_label"
             supportedTypes="LONG_TEXT SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="334" height="88" outlinePadding="2.0" cornerRadius="30" />
+            <BoundingRoundBox x="0" y="0" width="330" height="90" outlinePadding="2.0" cornerRadius="31" />
             <DefaultProviderPolicy
                 defaultSystemProvider="NEXT_EVENT"
                 defaultSystemProviderType="LONG_TEXT" />
 
             <Complication type="LONG_TEXT">
-                <PartText x="12" y="7" width="310" height="22">
+                <PartText x="14" y="8" width="302" height="20">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="13" weight="BOLD" color="#FF7D8DA6">
+                        <Font family="SYNC_TO_DEVICE" size="12" weight="BOLD" color="#FF8291AA">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
-                <PartText x="12" y="31" width="310" height="48">
+                <PartText x="14" y="31" width="302" height="48">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="21" weight="BOLD" color="#FFFFFFFF">
+                        <Font family="SYNC_TO_DEVICE" size="20" weight="BOLD" color="#FFFFFFFF">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -184,17 +188,17 @@
             </Complication>
 
             <Complication type="SHORT_TEXT">
-                <PartText x="12" y="11" width="310" height="22">
+                <PartText x="14" y="10" width="302" height="20">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="13" weight="BOLD" color="#FF7D8DA6">
+                        <Font family="SYNC_TO_DEVICE" size="12" weight="BOLD" color="#FF8291AA">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
-                <PartText x="12" y="35" width="310" height="42">
+                <PartText x="14" y="34" width="302" height="42">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FFFFFFFF">
+                        <Font family="SYNC_TO_DEVICE" size="23" weight="BOLD" color="#FFFFFFFF">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -202,12 +206,5 @@
                 </PartText>
             </Complication>
         </ComplicationSlot>
-
-        <PartText x="0" y="408" width="450" height="20">
-            <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="11" weight="NORMAL" color="#FF53657D"><![CDATA[WE DO CARE ABOUT US]]></Font>
-            </Text>
-            <Variant mode="AMBIENT" target="alpha" value="0" />
-        </PartText>
     </Scene>
 </WatchFace>
