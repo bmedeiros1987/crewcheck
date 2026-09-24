@@ -90,19 +90,43 @@ def main():
     assert h * 3600 + m * 60 + sec == script["variables"]["faxina_horas"] * 3600, \
         "timer.modo_faxina duration must match faxina_horas"
     render_vars = next(s["variables"] for s in script["sequence"] if "variables" in s)
+    acoes_choose = next(s["choose"] for s in script["sequence"] if "choose" in s)
+    teclado_step = next(s for s in script["sequence"] if "teclado" in str(s.get("if", "")))
+    menu_fixo = script["variables"]["menu_fixo"]
+    for rotulo, destino in menu_fixo.items():
+        assert "," not in rotulo and ":" not in rotulo, f"menu_fixo: rótulo inválido {rotulo!r}"
     acoes = ["nav menu", "nav faxina", "nav luzes", "nav cenas", "nav musica", "nav status", "nav xpto",
              "faxina_on", "faxina_1h", "faxina_mais", "faxina_off", "luz light.sala", "luzes_on",
              "luzes_off", "cena cheguei", "cena saindo", "cena cinema", "cena boanoite",
-             "musica vol_up", "dnd", ""]
+             "musica vol_up", "dnd", "", "teclado", "teclado_off", "txt oi tudo bem?"] + \
+            [f"txt {r}" for r in menu_fixo]
     count = 0
     for nome_cenario, states in scenarios():
         env = make_env(states)
         for acao in acoes:
-            ctx = {"acao": acao, "chat_id": 123, "message_id": 9, "callback_id": "abc", "nome": "Bruno"}
+            via_menu_fixo = acao.startswith("txt ") or acao.startswith("teclado")
+            ctx = {"acao": acao, "chat_id": 123, "nome": "Bruno",
+                   "message_id": "" if via_menu_fixo else 9, "callback_id": "" if via_menu_fixo else "abc"}
             for k, v in script["variables"].items():
                 ctx[k] = render(env, v, ctx)
+            if acao.startswith("txt "):
+                esperado = menu_fixo.get(acao[4:], "ignorar")
+                assert ctx["pedido"] == esperado, f"{acao!r} -> {ctx['pedido']!r}"
+                if esperado == "ignorar":
+                    continue
+            if ctx["cmd"] in ("teclado", "teclado_off"):
+                tv = {k: render(env, v, ctx) for k, v in teclado_step["then"][0]["variables"].items()}
+                rows = tv["teclado_msg"]
+                assert isinstance(rows, list), rows
+                if ctx["cmd"] == "teclado_off":
+                    assert rows == [], rows
+                    continue
+                botoes = [b.strip() for r in rows for b in r.split(",")]
+                assert botoes == list(menu_fixo), botoes
+                assert all(len(r.split(",")) <= 2 for r in rows), rows
+                print(f"\n==== menu fixo\n{tv['aviso_msg']}\n{rows}")
             # every condition/template in the action choose must render
-            for opt in script["sequence"][1]["choose"]:
+            for opt in acoes_choose:
                 render(env, opt["conditions"], ctx)
                 for step in opt["sequence"]:
                     for field in ("service", "target", "data"):
@@ -119,7 +143,7 @@ def main():
             assert "Home Concierge" in ctx["texto"], where
             assert len(ctx["texto"]) < 4096, where
             count += 1
-            if acao.startswith("nav") and acao != "nav xpto":
+            if (acao.startswith("nav") and acao != "nav xpto") or acao == "txt 🌙 Boa noite":
                 print(f"\n==== {where}\n{ctx['texto']}\n{ctx['teclado']}")
     for auto in pkg["automation"]:
         for trig in auto["trigger"]:

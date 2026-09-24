@@ -15,7 +15,8 @@ Painel premium da casa no bot do Telegram. É um pacote único do Home Assistant
 | Status em texto simples | Mostra o tempo que falta, as luzes acesas com o brilho, o que está tocando, o tempo lá fora, as temperaturas, portas e janelas e o nascer/pôr do sol |
 | — | **Cenas**: 🏡 Cheguei · 🚪 Saindo · 🍿 Cinema · 🌙 Boa noite |
 | — | **🔕 Não perturbe**: silencia os avisos que não são urgentes |
-| — | Comandos `/menu` `/casa` `/status` `/faxina` `/luzes` `/cenas` |
+| — | **Menu fixo** (como o do CrewCheck): uma grade de botões grandes embaixo do campo de mensagem, sempre visível |
+| — | Comandos `/menu` `/casa` `/status` `/faxina` `/luzes` `/cenas` `/ocultar` |
 | — | Saudação por horário e pelo nome de quem clicou |
 
 ## Instalação
@@ -43,6 +44,27 @@ Painel premium da casa no bot do Telegram. É um pacote único do Home Assistant
 
 Requer o Home Assistant 2024.1 ou mais novo, com a integração `telegram_bot`
 configurada e o seu chat em `allowed_chat_ids`.
+
+## Menu fixo
+
+`/menu` (ou `/start`, `/casa`) mostra o painel e ativa o menu fixo embaixo do
+campo de mensagem:
+
+```
+🧹 Faxina       💡 Luzes
+🎬 Cenas        🎵 Laurinha
+🏡 Cheguei      🚪 Saindo
+🍿 Cinema       🌙 Boa noite
+📊 Status       🔕 Não perturbe
+🏠 Painel da casa
+```
+
+- Os botões de navegação (Faxina, Luzes…) abrem o painel direto na tela certa.
+- Os botões de cena executam a ação na hora e o painel confirma com "✅".
+- Para mudar botões ou a ordem, edite `menu_fixo` no bloco CONFIGURAÇÃO. São
+  2 botões por linha; com total ímpar, o último ocupa a linha inteira.
+- `/ocultar` esconde o menu fixo; `/menu` mostra de novo.
+- Mensagens digitadas que não são botões do menu são ignoradas pelo concierge.
 
 ## Vincular o Smart Life (Tuya) ao Home Assistant
 

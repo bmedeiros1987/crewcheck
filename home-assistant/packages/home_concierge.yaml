@@ -66,8 +66,26 @@ script:
       aberturas: {}
       # Duração padrão do Modo Faxina (horas)
       faxina_horas: 6  # mantenha igual ao `duration` do timer.modo_faxina
+      # Menu fixo (teclado grande embaixo do campo de mensagem, 2 por linha;
+      # se o total for ímpar, o último ocupa a linha inteira).
+      # Botão: ação. Sem vírgulas nem dois-pontos nos nomes.
+      menu_fixo:
+        "🧹 Faxina": nav faxina
+        "💡 Luzes": nav luzes
+        "🎬 Cenas": nav cenas
+        "🎵 Laurinha": nav musica
+        "🏡 Cheguei": cena cheguei
+        "🚪 Saindo": cena saindo
+        "🍿 Cinema": cena cinema
+        "🌙 Boa noite": cena boanoite
+        "📊 Status": nav status
+        "🔕 Não perturbe": dnd
+        "🏠 Painel da casa": nav menu
       # ================================================
-      pedido: "{{ (acao | default('nav menu', true) | string).strip() }}"
+      pedido: >-
+        {%- set bruto = (acao | default('nav menu', true) | string).strip() -%}
+        {%- if bruto.startswith('txt ') -%}{{ menu_fixo.get(bruto[4:].strip(), 'ignorar') }}
+        {%- else -%}{{ bruto }}{%- endif -%}
       cmd: "{{ pedido.split(' ')[0] }}"
       arg: "{{ pedido.split(' ', 1)[1] if ' ' in pedido else '' }}"
       fx_restante: >-
@@ -96,6 +114,44 @@ script:
         {%- elif cmd == 'musica' -%}musica
         {%- else -%}menu{%- endif -%}
     sequence:
+      # 0) Texto digitado que não é botão do menu fixo: não é com a gente
+      - if: "{{ cmd == 'ignorar' }}"
+        then:
+          - stop: "Texto fora do menu fixo"
+
+      # 0b) Menu fixo: envia (ou remove) o teclado grande
+      - if: "{{ cmd in ['teclado', 'teclado_off'] }}"
+        then:
+          - variables:
+              teclado_msg: >-
+                {%- if cmd == 'teclado_off' -%}{{ [] }}
+                {%- else -%}
+                {%- set rotulos = menu_fixo.keys() | list -%}
+                {%- set ns = namespace(rows=[]) -%}
+                {%- for par in rotulos | batch(2) -%}{%- set ns.rows = ns.rows + [par | join(', ')] -%}{%- endfor -%}
+                {{ ns.rows }}
+                {%- endif -%}
+              aviso_msg: >-
+                {{ '⌨️ Menu fixo oculto. Envie /menu para mostrar de novo.' if cmd == 'teclado_off'
+                   else '⌨️ Menu da casa pronto. Use os botões abaixo a qualquer momento 👇' }}
+          - if: "{{ chat_id | default('', true) | string != '' }}"
+            then:
+              - service: telegram_bot.send_message
+                data:
+                  target: "{{ chat_id }}"
+                  message: "{{ aviso_msg }}"
+                  keyboard: "{{ teclado_msg }}"
+                  resize_keyboard: true
+            else:
+              - service: telegram_bot.send_message
+                data:
+                  message: "{{ aviso_msg }}"
+                  keyboard: "{{ teclado_msg }}"
+                  resize_keyboard: true
+          - if: "{{ cmd == 'teclado_off' }}"
+            then:
+              - stop: "Menu fixo oculto"
+
       # 1) Toast imediato (o Telegram exige resposta rápida ao clique)
       - if: "{{ callback_id | default('', true) | string != '' }}"
         then:
@@ -219,7 +275,7 @@ script:
                   entity_id: input_boolean.concierge_nao_perturbe
 
       # 3) Dá tempo dos dispositivos reportarem o novo estado
-      - if: "{{ cmd != 'nav' }}"
+      - if: "{{ cmd not in ['nav', 'teclado'] }}"
         then:
           - delay: "00:00:01"
 
@@ -252,6 +308,9 @@ script:
             <b>🏠 Home Concierge</b>
             {{ saud }}{{ ', ' ~ quem if quem }} · {{ now().strftime('%H:%M') }}{{ '  🔕' if dnd }}
             ━━━━━━━━━━━━━━━
+            {%- if callback_id | default('', true) | string == '' and cmd not in ['nav', 'teclado'] %}
+            ✅ {{ toast }}
+            {%- endif %}
             {%- if tela == 'menu' %}
             🧹 Faxina: {{ ('<b>ativa</b> · faltam ' ~ rest ~ ' (até ' ~ ate ~ ')') if s > 0 else ('<b>ativa</b>' if fx else 'desligada') }}
             💡 Luzes: {{ (ns.nomes | count ~ ' acesa' ~ ('s' if ns.nomes | count > 1) ~ ' · ' ~ ns.nomes | join(', ')) if ns.nomes else 'todas apagadas' }}
@@ -323,7 +382,7 @@ script:
           teclado: >-
             {%- set fx = is_state('input_boolean.modo_faxina', 'on') or is_state('timer.modo_faxina', 'active') -%}
             {%- set dnd = is_state('input_boolean.concierge_nao_perturbe', 'on') -%}
-            {%- set voltar = '⬅️ Voltar:/hc nav menu' -%}
+            {%- set voltar = '⬅️ Voltar ao menu:/hc nav menu' -%}
             {%- set ids = luzes.keys() | list -%}
             {%- set n_on = ids | select('is_state', 'on') | list | count -%}
             {%- if tela == 'menu' -%}
@@ -420,7 +479,8 @@ automation:
           nome: "{{ trigger.event.data.from_first | default('') }}"
 
   # ------------------------------------------------------------------
-  # Comandos digitados: /menu /casa /start /status /faxina /luzes /cenas
+  # Comandos digitados: /menu /casa /start (painel + menu fixo),
+  # /status /faxina /luzes /cenas, /ocultar (esconde o menu fixo)
   # ------------------------------------------------------------------
   - id: home_concierge_comandos
     alias: "🏠 Home Concierge · comandos"
@@ -429,13 +489,30 @@ automation:
       - platform: event
         event_type: telegram_command
     condition:
-      - "{{ trigger.event.data.command in ['/menu', '/casa', '/start', '/status', '/faxina', '/luzes', '/cenas'] }}"
+      - "{{ trigger.event.data.command in ['/menu', '/casa', '/start', '/status', '/faxina', '/luzes', '/cenas', '/ocultar'] }}"
     action:
       - service: script.home_concierge
         data:
           acao: >-
             {{ {'/status': 'nav status', '/faxina': 'nav faxina', '/luzes': 'nav luzes',
-                '/cenas': 'nav cenas'}.get(trigger.event.data.command, 'nav menu') }}
+                '/cenas': 'nav cenas', '/ocultar': 'teclado_off'}.get(trigger.event.data.command, 'teclado') }}
+          chat_id: "{{ trigger.event.data.chat_id }}"
+          nome: "{{ trigger.event.data.from_first | default('') }}"
+
+  # ------------------------------------------------------------------
+  # Botões do menu fixo (chegam como texto; o script ignora o resto)
+  # ------------------------------------------------------------------
+  - id: home_concierge_menu_fixo
+    alias: "🏠 Home Concierge · menu fixo"
+    mode: queued
+    max: 25
+    trigger:
+      - platform: event
+        event_type: telegram_text
+    action:
+      - service: script.home_concierge
+        data:
+          acao: "txt {{ trigger.event.data.text | default('') }}"
           chat_id: "{{ trigger.event.data.chat_id }}"
           nome: "{{ trigger.event.data.from_first | default('') }}"
 
