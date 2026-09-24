@@ -32,6 +32,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.13'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
       - run: npm ci || npm install
       - name: Prepare canonical CrewCheck source
         run: node scripts/v139/apply.mjs
