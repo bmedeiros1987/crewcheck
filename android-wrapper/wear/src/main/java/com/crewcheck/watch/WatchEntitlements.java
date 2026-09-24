@@ -17,7 +17,20 @@ final class WatchEntitlements {
 
     static boolean premium(Context context) {
         WatchContextSnapshot snapshot = new SecureSnapshotStore(context).load();
-        return snapshot != null && snapshot.premiumAccess;
+        return premiumFromSnapshot(snapshot, System.currentTimeMillis());
+    }
+
+    /**
+     * Premium is fail-closed when entitlement freshness can no longer be proven.
+     *
+     * The operational roster remains available through {@link #basicRoster(Context)} even when
+     * stale/offline, but costly/advanced capabilities must not remain unlocked indefinitely from
+     * an expired cached snapshot after a downgrade or a long period without sync.
+     */
+    static boolean premiumFromSnapshot(WatchContextSnapshot snapshot, long nowEpochMs) {
+        return snapshot != null
+                && snapshot.premiumAccess
+                && !snapshot.isStale(nowEpochMs);
     }
 
     static boolean crewLife(Context context) {
