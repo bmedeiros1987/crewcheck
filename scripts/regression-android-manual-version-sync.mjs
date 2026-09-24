@@ -19,8 +19,9 @@ const manualImport = "await import('../ci/sync-canonical-manual.mjs');";
 const durableTransportImport = "await import('../p0-shared-pdf-durable/apply.mjs');";
 const manualIndex = chain.indexOf(manualImport);
 const durableIndex = chain.indexOf(durableTransportImport);
-assert.ok(manualIndex >= 0, 'sincronização do manual deve permanecer na preparação canônica');
-assert.ok(durableIndex > manualIndex, 'transporte PDF final pode envolver a UI somente depois da sincronização do manual');
+assert.ok(durableIndex >= 0, 'transporte PDF durável deve permanecer na preparação canônica');
+assert.ok(manualIndex > durableIndex, 'sincronização do manual deve suceder o transporte PDF durável');
+assert.ok(chain.trimEnd().endsWith(manualImport), 'sincronização do manual deve encerrar a preparação canônica');
 assert.equal(chain.indexOf(manualImport, manualIndex + 1), -1, 'sincronização do manual deve ocorrer uma única vez');
 
 const staleFixture = manual.replaceAll(`CrewCheck v${version}`, 'CrewCheck v0.0.1');
@@ -29,4 +30,4 @@ assert.ok(repairedFixture.includes(`<title>Manual CrewCheck v${version}</title>`
 assert.ok(repairedFixture.includes(`<span class="tag">CrewCheck v${version}</span>`), 'sincronização deve reparar selo legado');
 assert.ok(repairedFixture.includes(`Última revisão: CrewCheck v${version}`), 'sincronização deve reparar revisão legada');
 
-console.log(`[android-manual-sync] OK — manual/release alinhados em ${version}; transporte final executa depois sem reversionar o manual.`);
+console.log(`[android-manual-sync] OK — manual/release alinhados em ${version}; transporte PDF durável precede o finalizador documental.`);
