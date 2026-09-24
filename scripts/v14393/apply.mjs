@@ -9,7 +9,7 @@ for (const file of [homeFile, rosterFile]) {
 }
 
 let home = fs.readFileSync(homeFile, 'utf8');
-const syncMarker = "const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'interval') =>";
+const syncMarker = "const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'online' | 'interval') =>";
 if (!home.includes(syncMarker)) {
   const legacyEffect = /\n\s*useEffect\(\(\) => \{\n\s*\/\/ A escala ativa pertence à conta, não ao cache deste dispositivo\.[\s\S]*?\n\s*\}, \[\]\);/;
   if (!legacyEffect.test(home)) throw new Error('[v14393] efeito legado de escala ativa não encontrado.');
@@ -20,7 +20,7 @@ if (!home.includes(syncMarker)) {
     let alive = true;
     let syncing = false;
 
-    const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'interval') => {
+    const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'online' | 'interval') => {
       if (!alive || syncing) return;
       syncing = true;
       try {
@@ -71,21 +71,24 @@ if (!home.includes(syncMarker)) {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void reconcileActiveRoster('visible');
     };
+    const onOnline = () => { void reconcileActiveRoster('online'); };
     const intervalId = window.setInterval(() => { void reconcileActiveRoster('interval'); }, 60000);
     window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       alive = false;
       window.clearInterval(intervalId);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [bundle.roster]);`;
   home = home.replace(legacyEffect, replacement);
 }
 
-for (const required of [syncMarker, 'rosterFingerprint(active.roster)', "window.addEventListener('focus'", "document.addEventListener('visibilitychange'", '60000']) {
+for (const required of [syncMarker, 'rosterFingerprint(active.roster)', "window.addEventListener('focus'", "window.addEventListener('online'", "document.addEventListener('visibilitychange'", '60000']) {
   if (!home.includes(required)) throw new Error(`[v14393] contrato de sincronização ausente: ${required}`);
 }
 fs.writeFileSync(homeFile, home, 'utf8');
@@ -116,7 +119,7 @@ if (!roster.includes('event.hotel && !atBase')) {
 const hotelActionOld = `{(mode === 'stay' || event.hotel) && <button type="button" onClick={() => setView('presentation')}><Building2/> Hotel e apresentação</button>}`;
 const hotelActionNew = `{(mode === 'stay' || event.hotel) && !atBase && <button type="button" onClick={() => setView('presentation')}><Building2/> Hotel e apresentação</button>}`;
 if (!roster.includes("(mode === 'stay' || event.hotel) && !atBase")) {
-  if (!roster.includes(hotelActionOld)) throw new Error('[v14393] ação legada de hotel não encontrada.');
+  if (!roster.includes(hotelActionOld)) throw new Error('[v14393] ação legada de hotel não encontrado.');
   roster = roster.replace(hotelActionOld, hotelActionNew);
 }
 
@@ -124,4 +127,4 @@ if (!roster.includes("return 'Descanso na base';")) throw new Error('[v14393] r�
 if (roster.includes('Descanso publicado${code ?')) throw new Error('[v14393] código técnico ainda pode vazar no descanso.');
 fs.writeFileSync(rosterFile, roster, 'utf8');
 
-console.log(`[v14393] CrewCheck ${VERSION}: escala ativa reconcilia entre canais e descanso na base usa linguagem humana.`);
+console.log(`[v14393] CrewCheck ${VERSION}: escala ativa reconcilia entre canais, reconecta imediatamente e descanso na base usa linguagem humana.`);
