@@ -53,7 +53,13 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_SCHEDULE = 3;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
-    private static final int NAVY = Color.rgb(3, 10, 22);
+    /**
+     * Fundo de tela preto puro, exigido pelas Diretrizes de qualidade de apps
+     * para Wear (e o que a revisão do Play recusou em 24/09/2026: "o segundo
+     * plano não é preto"). O navy #030A16 anterior acendia pixel em OLED na
+     * área inteira da tela. Os cards continuam usando SURFACE/SURFACE_ALT.
+     */
+    private static final int SCREEN_BG = Color.BLACK;
     private static final int BLACK = Color.BLACK;
     private static final int SURFACE = Color.rgb(8, 22, 42);
     private static final int SURFACE_ALT = Color.rgb(11, 30, 57);
@@ -209,10 +215,15 @@ public final class MainActivity extends FragmentActivity
 
     private void renderRoot() {
         scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(ambient ? BLACK : NAVY);
+        scrollView.setBackgroundColor(SCREEN_BG);
         scrollView.setFillViewport(true);
         scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        scrollView.setVerticalScrollBarEnabled(false);
+        // Indicador de rolagem visível: a ausência dele foi recusada pela
+        // revisão do Play em 24/09/2026 ("barra de rolagem ausente"). Fica
+        // dentro do padding para não encostar na borda da tela redonda.
+        scrollView.setVerticalScrollBarEnabled(true);
+        scrollView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        scrollView.setScrollbarFadingEnabled(true);
         enableRotaryScroll(scrollView);
 
         content = new LinearLayout(this);
@@ -362,7 +373,7 @@ public final class MainActivity extends FragmentActivity
         content.removeAllViews();
         applySafePadding();
         applyBurnInShift();
-        content.getRootView().setBackgroundColor(ambient ? BLACK : NAVY);
+        content.getRootView().setBackgroundColor(SCREEN_BG);
 
         WatchContextSnapshot snapshot = store.load();
         long now = System.currentTimeMillis();
