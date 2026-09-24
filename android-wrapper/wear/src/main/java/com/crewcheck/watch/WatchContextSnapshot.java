@@ -115,6 +115,7 @@ public final class WatchContextSnapshot {
     public final String hotelPickup;
     public final boolean changed;
     public final String source;
+    public final boolean premiumAccess;
     public final List<ScheduleItem> schedule;
 
     private WatchContextSnapshot(
@@ -143,6 +144,7 @@ public final class WatchContextSnapshot {
             String hotelPickup,
             boolean changed,
             String source,
+            boolean premiumAccess,
             List<ScheduleItem> schedule
     ) {
         this.schemaVersion = schemaVersion;
@@ -170,6 +172,7 @@ public final class WatchContextSnapshot {
         this.hotelPickup = hotelPickup;
         this.changed = changed;
         this.source = source;
+        this.premiumAccess = premiumAccess;
         this.schedule = Collections.unmodifiableList(new ArrayList<>(schedule));
     }
 
@@ -262,6 +265,7 @@ public final class WatchContextSnapshot {
                 clean(json.optString("hotelPickup", ""), 64),
                 changed,
                 clean(json.optString("source", "canonical-roster"), 40),
+                json.optBoolean("premiumAccess", false),
                 schedule
         );
     }
@@ -293,7 +297,8 @@ public final class WatchContextSnapshot {
                     .put("overnight", overnight)
                     .put("hotelPickup", hotelPickup)
                     .put("changed", changed)
-                    .put("source", source);
+                    .put("source", source)
+                    .put("premiumAccess", premiumAccess);
 
             JSONArray items = new JSONArray();
             for (ScheduleItem item : schedule) items.put(item.toJson());
@@ -441,6 +446,7 @@ public final class WatchContextSnapshot {
                     .put("hotelPickup", "Pickup 20:00")
                     .put("changed", false)
                     .put("source", "debug-demo")
+                    .put("premiumAccess", true)
                     .put("schedule", schedule));
         } catch (JSONException error) {
             throw new IllegalStateException("Não foi possível criar o snapshot de demonstração.", error);

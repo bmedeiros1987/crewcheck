@@ -14,6 +14,11 @@ public final class GateComplicationService extends BaseComplicationService {
     }
 
     @Override
+    protected String tapScreen() {
+        return "journey";
+    }
+
+    @Override
     protected ComplicationRendering render(long nowEpochMs, boolean preview) {
         WatchContextSnapshot snapshot = preview
                 ? WatchContextSnapshot.demo(nowEpochMs)

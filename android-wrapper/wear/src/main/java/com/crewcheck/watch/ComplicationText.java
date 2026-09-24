@@ -68,9 +68,9 @@ final class ComplicationText {
         if (snapshot == null) {
             return new ComplicationRendering(
                     "--",
-                    "Ative o CrewLife no celular",
+                    "CrewLife opcional · abra no celular",
                     "CREWLIFE",
-                    "CrewLife sem dados. Ative a sincronização de saúde no celular."
+                    "CrewLife opcional. Abra o CrewCheck no celular para escolher o que mostrar no relógio."
             );
         }
         return new ComplicationRendering(
@@ -103,13 +103,12 @@ final class ComplicationText {
 
         StringBuilder text = new StringBuilder();
         if (snapshot.recoveryScore > 0) {
-            if (snapshot.isEnergyScore()) {
-                text.append("Energia ").append(snapshot.recoveryScore);
-            } else {
-                text.append(snapshot.recoveryScore).append("%");
-            }
-        } else {
+            text.append(snapshot.recoveryScore).append("%");
+        } else if (!snapshot.recoveryLabel.isBlank()
+                && !"DESCONHECIDA".equals(snapshot.recoveryLabel)) {
             text.append(snapshot.recoveryLabel);
+        } else {
+            text.append("Registros locais");
         }
         if (!snapshot.sleepLabel.isEmpty()) {
             text.append(" · ").append(snapshot.sleepLabel);

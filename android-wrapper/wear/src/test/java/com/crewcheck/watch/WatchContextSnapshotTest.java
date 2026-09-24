@@ -61,6 +61,59 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
+    public void freeTierKeepsCanonicalRosterAndComplicationsUseful() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("premiumAccess", false)
+                .put("state", "REPORTING")
+                .put("presentationTime", "13:30")
+                .put("currentFlight", "LA3721"));
+
+        assertFalse(snapshot.premiumAccess);
+        assertEquals("LA3721", snapshot.complicationShortText(NOW));
+        assertEquals("APRESENTAÇÃO", snapshot.complicationTitle(NOW));
+        assertEquals("APZ 13:30", snapshot.complicationLongText(NOW));
+        assertEquals("LA3721", snapshot.currentFlight);
+    }
+
+    @Test
+    public void oldV1PeerCanOmitOptionalCommercialAndScheduleFields() throws Exception {
+        JSONObject legacy = base();
+        legacy.remove("premiumAccess");
+        legacy.remove("schedule");
+        legacy.put("state", "REPORTING");
+        legacy.put("presentationTime", "13:30");
+        legacy.put("currentFlight", "LA3721");
+
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(legacy);
+        assertFalse(snapshot.premiumAccess);
+        assertTrue(snapshot.schedule.isEmpty());
+        assertEquals("LA3721", snapshot.complicationShortText(NOW));
+    }
+
+    @Test
+    public void additiveUnknownV1FieldsAreIgnored() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("futureOptionalField", "ignored")
+                .put("state", "REPORTING")
+                .put("presentationTime", "13:30"));
+
+        assertEquals("APRESENTAÇÃO", snapshot.complicationTitle(NOW));
+    }
+
+    @Test
+    public void premiumDowngradeKeepsBasicRosterUseful() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("premiumAccess", false)
+                .put("state", "BOARDING")
+                .put("currentFlight", "LA3721")
+                .put("gate", "24"));
+
+        assertFalse(snapshot.premiumAccess);
+        assertEquals("P24", snapshot.complicationShortText(NOW));
+        assertEquals("EMBARQUE", snapshot.complicationTitle(NOW));
+    }
+
+    @Test
     public void rejectsUnknownSchemaAndSensitiveFields() throws Exception {
         assertThrows(IllegalArgumentException.class, () ->
                 WatchContextSnapshot.fromJson(base().put("schemaVersion", 2)));
@@ -90,6 +143,7 @@ public final class WatchContextSnapshotTest {
                 .put("validUntilEpochMs", NOW + 60_000L)
                 .put("state", "UNKNOWN")
                 .put("headline", "PRÓXIMO PASSO")
-                .put("source", "canonical-roster");
+                .put("source", "canonical-roster")
+                .put("premiumAccess", true);
     }
 }
