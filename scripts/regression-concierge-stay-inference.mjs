@@ -92,6 +92,8 @@ const active = inference.selectConciergeStayFocus(suggestions, new Date('2026-09
 assert.equal(active.eventId, 'stay-gru', 'active overnight must be the Concierge focus');
 const future = inference.selectConciergeStayFocus(suggestions, new Date('2026-09-25T05:00:00Z'));
 assert.equal(future.eventId, 'stay-cwb', 'otherwise focus the next future overnight');
+const expired = inference.selectConciergeStayFocus(suggestions, new Date('2026-09-27T13:00:00Z'));
+assert.equal(expired, null, 'completed overnights must not remain as stale Concierge focus when nothing active or future exists');
 
 assert.doesNotMatch(source, /android-wrapper|watchSnapshotV1|Data Layer|watch face|\bTV\b/, 'stay inference must remain inside the Concierge lane');
 
