@@ -82,5 +82,18 @@ const newMerge = `    ...previousItems.filter((candidate) => !periodIdentity || 
 if (source.includes(oldMerge)) source = source.replace(oldMerge, newMerge);
 else if (!source.includes('!periodIdentity || localRosterPeriodIdentity(candidate.roster) !== periodIdentity')) throw new Error('[p0-580-local-period-identity] filtro de merge não localizado');
 
+// saveRosterAnalysis has always been local-first/offline-friendly. The Mobile retry
+// loop below reads unsynced local history directly, so a 5xx must not turn a durable
+// local import into a rejected user action or break P0_580's existing offline contract.
+const mobileCloudThrow = `  } catch (error) {
+    (error as any).localSummary = localSummary;
+    throw error;
+  }`;
+const offlineLocalSuccess = `  } catch {
+    return localSummary;
+  }`;
+if (source.includes(mobileCloudThrow)) source = source.replace(mobileCloudThrow, offlineLocalSuccess);
+if (!source.includes(offlineLocalSuccess)) throw new Error('[p0-580-local-period-identity] contrato local-first offline ausente');
+
 fs.writeFileSync(path, source, 'utf8');
-console.log('[p0-580-local-period-identity] applied with Mobile revision-aware checksum.');
+console.log('[p0-580-local-period-identity] applied with Mobile revision-aware checksum and offline-local save compatibility.');
