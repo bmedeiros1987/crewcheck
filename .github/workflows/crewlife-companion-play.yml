@@ -37,6 +37,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      sdk_ready: ${{ steps.sdk.outputs.ready }}
     env:
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
       STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
@@ -80,15 +82,8 @@ jobs:
       - name: Private Samsung SDK sourcing policy
         run: node scripts/regression-crewlife-sdk-private-source.mjs
 
-      - name: Install Play API client
-        if: github.ref == 'refs/heads/main'
-        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
-
-      - name: Allocate live Companion version
-        if: github.ref == 'refs/heads/main'
-        run: python3 scripts/android-play/companion_play.py allocate
-
       - name: Restore Samsung Health Data SDK
+        id: sdk
         shell: bash
         run: |
           set -euo pipefail
@@ -96,13 +91,10 @@ jobs:
           target='android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar'
           expected_sha256='f5d3d83cf00b97d0bb1b1db4da076e861eb1c3e6e704d89a34e68909d2f38654'
           echo "SAMSUNG_SDK_READY=false" >> "$GITHUB_ENV"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
 
           if [ -z "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
-            if [ "${GITHUB_REF:-}" = 'refs/heads/main' ]; then
-              echo "::error::Samsung-enabled Companion Play build requires private SAMSUNG_HEALTH_DATA_AAR_URL; public Git-history recovery is forbidden."
-              exit 1
-            fi
-            echo "::notice::Samsung-enabled Play artifact skipped on PR: private SDK source is unavailable. Policy/tests continue without redistributing the vendor SDK."
+            echo "::notice::Samsung-enabled Play artifact skipped: configure private SAMSUNG_HEALTH_DATA_AAR_URL. Public Git-history recovery is forbidden."
             exit 0
           fi
 
@@ -128,6 +120,15 @@ jobs:
           fi
 
           echo "SAMSUNG_SDK_READY=true" >> "$GITHUB_ENV"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Play API client
+        if: github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'
+        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+
+      - name: Allocate live Companion version
+        if: github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'
+        run: python3 scripts/android-play/companion_play.py allocate
 
       - name: Restore CrewCheck signing key
         if: env.SAMSUNG_SDK_READY == 'true'
@@ -198,7 +199,7 @@ jobs:
 
   publish-internal:
     needs: build
-    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal) || github.event_name == 'push')
+    if: needs.build.outputs.sdk_ready == 'true' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal) || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
