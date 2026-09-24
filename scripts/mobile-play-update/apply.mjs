@@ -34,8 +34,11 @@ if (!source.includes('playUpdateCoordinator.onPageReady();')) {
 }
 
 if (!source.includes('if (playUpdateCoordinator != null) playUpdateCoordinator.checkForUpdate();')) {
-  const resumeAnchor = '    protected void onResume() {\n        super.onResume();';
-  if (!source.includes(resumeAnchor)) throw new Error('[mobile-play-update] anchor onResume mudou.');
+  // android-play/prepare owns the first statement after super.onResume(): its
+  // revocation retry must remain adjacent because the store release gate pins
+  // that lifecycle invariant. Append the Play availability check after it.
+  const resumeAnchor = '        CrewLifeWatchPublisher.retryPendingRevocation(this, this::dispatchCrewCheckWatchSyncResult);';
+  if (!source.includes(resumeAnchor)) throw new Error('[mobile-play-update] CrewLife onResume anchor mudou.');
   source = source.replace(
     resumeAnchor,
     `${resumeAnchor}\n        if (playUpdateCoordinator != null) playUpdateCoordinator.checkForUpdate();`,
@@ -59,6 +62,10 @@ for (const required of [
   'playUpdateCoordinator.destroy();',
 ]) {
   if (!source.includes(required)) throw new Error(`[mobile-play-update] contrato final ausente: ${required}`);
+}
+
+if (!/super\.onResume\(\);\s*CrewLifeWatchPublisher\.retryPendingRevocation/.test(source)) {
+  throw new Error('[mobile-play-update] contrato android-play de revogação CrewLife foi deslocado.');
 }
 
 fs.writeFileSync(activityFile, source, 'utf8');
