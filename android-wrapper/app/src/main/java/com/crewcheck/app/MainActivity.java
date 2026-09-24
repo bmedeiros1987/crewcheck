@@ -5,6 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
 import android.app.PendingIntent;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -66,9 +68,12 @@ public class MainActivity extends Activity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 4545;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
+    public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
+    private static final String LIFE_COMPANION_PACKAGE = "com.crewcheck.life";
+    private static final long LIFE_COMPANION_REFRESH_SETTLE_MS = 1800L;
 
     private FrameLayout rootLayout;
     private WebView webView;
@@ -90,6 +95,7 @@ public class MainActivity extends Activity {
     private String pendingGeolocationOrigin;
     private String pendingNativeLocationCallbackId;
     private CrewCheckBillingBridge billingBridge;
+    private BroadcastReceiver watchSyncRequestReceiver;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -147,6 +153,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");
         billingBridge = new CrewCheckBillingBridge(this, webView);
         webView.addJavascriptInterface(billingBridge, "AndroidCrewCheckBilling");
+        registerWatchSyncRequestReceiver();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -166,6 +173,8 @@ public class MainActivity extends Activity {
                 if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
+                syncLifeCompanionToCrewCheckAndWatch("page-finished");
+                view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
             }
 
             @Override
@@ -219,6 +228,20 @@ public class MainActivity extends Activity {
     }
 
 
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        resumeLifeCompanionMigrationIfNeeded();
+        syncLifeCompanionToCrewCheckAndWatch("resume-cached");
+        requestLifeCompanionRefresh();
+        if (webView != null) {
+            webView.postDelayed(
+                    () -> syncLifeCompanionToCrewCheckAndWatch("resume-refreshed"),
+                    LIFE_COMPANION_REFRESH_SETTLE_MS
+            );
+        }
+    }
 
     private void requestInitialCrewCheckPermissions() {
         try {
@@ -659,7 +682,8 @@ public class MainActivity extends Activity {
                 "try{AndroidCrewCheckIFlight.openPortalAndImport(String(url),JSON.stringify(options||{}),id);}catch(e){resolve({ok:false,error:String(e&&e.message||e)});}" +
                 "});" +
                 "}};" +
-                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener(\'crewcheck:watch-snapshot\',function(event){try{window.CrewCheckNative.syncWatchSnapshot(event&&event.detail?event.detail:{});}catch(e){}});}" +
                 "window.CrewCheckPremium=window.CrewCheckNative;" +
                 "try{window.dispatchEvent(new CustomEvent('crewcheck:native-ready',{detail:window.CrewCheckNative.permissionStatus()}));}catch(e){}" +
                 "})();";
@@ -707,6 +731,242 @@ public class MainActivity extends Activity {
                 startActivity(intent);
             } catch (Exception ignored) {}
         }
+    }
+
+    private void registerWatchSyncRequestReceiver() {
+        if (watchSyncRequestReceiver != null) return;
+        watchSyncRequestReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent == null || !ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
+                syncLifeCompanionToCrewCheckAndWatch("watch-data-layer-request");
+                requestLifeCompanionRefresh();
+                requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request");
+                if (webView != null) {
+                    webView.postDelayed(
+                            () -> {
+                                syncLifeCompanionToCrewCheckAndWatch("watch-data-layer-request-refreshed");
+                                requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request-retry");
+                            },
+                            LIFE_COMPANION_REFRESH_SETTLE_MS
+                    );
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter(ACTION_WATCH_SYNC_REQUEST);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(watchSyncRequestReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(watchSyncRequestReceiver, filter);
+        }
+    }
+
+    private void unregisterWatchSyncRequestReceiver() {
+        if (watchSyncRequestReceiver == null) return;
+        try { unregisterReceiver(watchSyncRequestReceiver); } catch (Exception ignored) {}
+        watchSyncRequestReceiver = null;
+    }
+
+    private void requestCrewCheckWatchSnapshotFromWeb(String reason) {
+        try {
+            if (webView == null) return;
+            String safeReason = reason == null ? "native-request" : reason.replace("'", "");
+            final String js = "(function(){try{window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot-request',{detail:{reason:'" + safeReason + "'}}));}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchCrewCheckWatchSyncResult(boolean ok, String code, String message) {
+        try {
+            if (webView == null) return;
+            JSONObject payload = new JSONObject();
+            payload.put("ok", ok);
+            payload.put("code", code == null ? "" : code);
+            payload.put("message", message == null ? "" : message);
+            payload.put("at", System.currentTimeMillis());
+            final String js = "(function(){try{var detail=" + payload.toString() + ";" +
+                    "window.__crewcheckLastWatchSync=detail;" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:watch-sync-result',{detail:detail}));" +
+                    "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private boolean isLifeCompanionInstalled() {
+        try {
+            getPackageManager().getPackageInfo("com.crewcheck.life", 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException missing) {
+            return false;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private String lifeCompanionBridgeState() {
+        if (!isLifeCompanionInstalled()) return "not_installed";
+        android.database.Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
+            if (cursor == null || !cursor.moveToFirst()) return "needs_setup";
+            int column = cursor.getColumnIndex("json");
+            String raw = column >= 0 ? cursor.getString(column) : "";
+            return raw == null || raw.isBlank() ? "needs_setup" : "connected";
+        } catch (SecurityException denied) {
+            // Early pilot builds can have the same package but a signing/provider
+            // contract that is incompatible with the Play-delivered CrewCheck.
+            return "bridge_incompatible";
+        } catch (Exception error) {
+            return "unavailable";
+        } finally {
+            try { if (cursor != null) cursor.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void openLifeCompanionStoreInternal() {
+        runOnUiThread(() -> {
+            try {
+                Intent market = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("market://details?id=com.crewcheck.life")
+                );
+                market.setPackage("com.android.vending");
+                startActivity(market);
+                return;
+            } catch (Exception ignored) {}
+
+            try {
+                Intent web = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=com.crewcheck.life")
+                );
+                startActivity(web);
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void resumeLifeCompanionMigrationIfNeeded() {
+        try {
+            boolean pending = getSharedPreferences(
+                    "crewlife_companion_migration",
+                    Context.MODE_PRIVATE
+            ).getBoolean("pending", false);
+            if (!pending || isLifeCompanionInstalled()) return;
+
+            getSharedPreferences(
+                    "crewlife_companion_migration",
+                    Context.MODE_PRIVATE
+            ).edit().remove("pending").apply();
+            openLifeCompanionStoreInternal();
+        } catch (Exception ignored) {}
+    }
+
+    private String readLifeCompanionSummaryInternal() {
+        android.database.Cursor cursor = null;
+        try {
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
+            if (cursor == null || !cursor.moveToFirst()) return "";
+            int column = cursor.getColumnIndex("json");
+            return column >= 0 ? String.valueOf(cursor.getString(column)) : "";
+        } catch (SecurityException denied) {
+            return "";
+        } catch (Exception error) {
+            return "";
+        } finally {
+            try { if (cursor != null) cursor.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void requestLifeCompanionRefresh() {
+        try {
+            Uri uri = Uri.parse("content://com.crewcheck.life.summary/v1/current");
+            getContentResolver().call(uri, "refresh", null, null);
+        } catch (SecurityException denied) {
+        } catch (Exception ignored) {}
+    }
+
+    private void syncLifeCompanionToCrewCheckAndWatch(String reason) {
+        final String threadName = "crewlife-companion-sync";
+        new Thread(() -> {
+            try {
+                String raw = readLifeCompanionSummaryInternal();
+                dispatchLifeCompanionSummaryRaw(raw);
+                publishLifeCompanionSummaryToWatch(raw);
+            } catch (Exception ignored) {}
+        }, threadName).start();
+    }
+
+    private void publishLifeCompanionSummaryToWatch(String raw) {
+        try {
+            if (raw == null || raw.isBlank()) return;
+            WatchHealthConsent consent = WatchHealthConsent.read(this);
+            if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) return;
+
+            JSONObject source = new JSONObject(raw);
+            if (!source.optBoolean("automatic", false)) return;
+
+            long generatedAt = source.optLong("generatedAtEpochMs", 0L);
+            if (generatedAt <= 0L) return;
+
+            JSONObject payload = new JSONObject();
+            payload.put("schemaVersion", 1);
+            payload.put("generatedAtEpochMs", generatedAt);
+            payload.put("validUntilEpochMs", generatedAt + 6L * 60L * 60L * 1000L);
+            payload.put("recoveryLabel", "DESCONHECIDA");
+
+            int energyScore = source.optInt("energyScore", 0);
+            if (energyScore > 0 && energyScore <= 100) {
+                payload.put("recoveryScore", energyScore);
+                payload.put("scoreKind", "ENERGY");
+            }
+
+            int sleepMinutes = source.optInt("sleepMinutes", 0);
+            if (sleepMinutes > 0 && sleepMinutes <= 24 * 60) {
+                payload.put("sleepMinutes", sleepMinutes);
+                payload.put(
+                        "sleepLabel",
+                        (sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", sleepMinutes % 60)
+                );
+            }
+
+            int steps = source.optInt("steps", 0);
+            if (steps >= 0 && steps <= 200_000) payload.put("steps", steps);
+
+            int activeMinutes = source.optInt("activeMinutes", 0);
+            if (activeMinutes >= 0 && activeMinutes <= 24 * 60) {
+                payload.put("activeMinutes", activeMinutes);
+            }
+
+            CrewLifeWatchPublisher.publishCrewLife(
+                    this,
+                    payload.toString(),
+                    this::dispatchCrewCheckWatchSyncResult
+            );
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchLifeCompanionSummaryRaw(String raw) {
+        try {
+            if (webView == null) return;
+            String safe = raw == null || raw.isBlank() ? "{}" : raw;
+            final String js = "(function(){try{var detail=" + safe + ";" +
+                    "window.__crewcheckLifeCompanionSummary=detail;" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:life-companion-summary',{detail:detail}));" +
+                    "}catch(e){}})();";
+            runOnUiThread(() -> {
+                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchLifeCompanionSummary() {
+        dispatchLifeCompanionSummaryRaw(readLifeCompanionSummaryInternal());
     }
 
     public class CrewCheckNativeBridge {
@@ -761,6 +1021,175 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String permissionStatus() {
             return crewCheckPermissionStatusJson();
+        }
+
+        @JavascriptInterface
+        public boolean watchSyncAvailable() {
+            return true;
+        }
+
+        @JavascriptInterface
+        public String lifeCompanionStatus() {
+            JSONObject status = new JSONObject();
+            try {
+                boolean installed = isLifeCompanionInstalled();
+                String state = lifeCompanionBridgeState();
+                status.put("installed", installed);
+                status.put("source", "samsung_health_companion");
+                status.put("state", state);
+                status.put("officialStoreUrl", "https://play.google.com/store/apps/details?id=com.crewcheck.life");
+                status.put("migrationRequired", "bridge_incompatible".equals(state));
+
+                if ("connected".equals(state)) {
+                    String summary = readLifeCompanionSummaryInternal();
+                    if (summary != null && !summary.isBlank()) {
+                        JSONObject parsed = new JSONObject(summary);
+                        status.put("generatedAtEpochMs", parsed.optLong("generatedAtEpochMs", 0L));
+                        status.put("automatic", parsed.optBoolean("automatic", false));
+                    }
+                }
+            } catch (Exception error) {
+                try { status.put("state", "unavailable"); } catch (Exception ignored) {}
+            }
+            return status.toString();
+        }
+
+        @JavascriptInterface
+        public String readLifeCompanionSummary() {
+            String summary = readLifeCompanionSummaryInternal();
+            return summary == null || summary.isBlank() ? "{}" : summary;
+        }
+
+        @JavascriptInterface
+        public boolean openLifeCompanion() {
+            try {
+                Intent launch = getPackageManager().getLaunchIntentForPackage("com.crewcheck.life");
+                if (launch == null) {
+                    openLifeCompanionStoreInternal();
+                    return true;
+                }
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(launch);
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean openLifeCompanionStore() {
+            try {
+                openLifeCompanionStoreInternal();
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean migrateLifeCompanionToPlay() {
+            try {
+                if (!isLifeCompanionInstalled()) {
+                    openLifeCompanionStoreInternal();
+                    return true;
+                }
+
+                getSharedPreferences(
+                        "crewlife_companion_migration",
+                        Context.MODE_PRIVATE
+                ).edit().putBoolean("pending", true).apply();
+
+                Intent uninstall = new Intent(
+                        Intent.ACTION_DELETE,
+                        Uri.parse("package:com.crewcheck.life")
+                );
+                startActivity(uninstall);
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public String watchLifeStatus() {
+            try {
+                WatchHealthConsent consent = WatchHealthConsent.read(MainActivity.this);
+                JSONObject status = new JSONObject();
+                status.put("enabled", consent.allowsAnyHealth());
+                status.put("routine", consent.allows(WatchHealthConsent.CATEGORY_ROUTINE));
+                status.put("version", WatchHealthConsent.CONSENT_VERSION);
+                return status.toString();
+            } catch (Exception error) {
+                return "{\"enabled\":false,\"routine\":false}";
+            }
+        }
+
+        @JavascriptInterface
+        public boolean setWatchLifeConsent(final boolean enabled) {
+            try {
+                if (!enabled) {
+                    CrewLifeWatchPublisher.revoke(MainActivity.this, null);
+                    return true;
+                }
+                java.util.Set<String> categories = java.util.Set.of(
+                        WatchHealthConsent.CATEGORY_RECOVERY,
+                        WatchHealthConsent.CATEGORY_SLEEP,
+                        WatchHealthConsent.CATEGORY_ACTIVITY,
+                        WatchHealthConsent.CATEGORY_HEART,
+                        WatchHealthConsent.CATEGORY_ROUTINE
+                );
+                WatchHealthConsent.grant(
+                        MainActivity.this,
+                        WatchHealthConsent.CONSENT_VERSION,
+                        categories
+                );
+                syncLifeCompanionToCrewCheckAndWatch("watch-consent-granted");
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean publishWatchCrewLife(final String payloadJson) {
+            if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
+            CrewLifeWatchPublisher.publishCrewLife(
+                    MainActivity.this,
+                    payloadJson,
+                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, message)
+            );
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean publishWatchRoutine(final String payloadJson) {
+            if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
+            CrewLifeWatchPublisher.publishRoutine(
+                    MainActivity.this,
+                    payloadJson,
+                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, message)
+            );
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean syncWatchSnapshot(final String snapshotJson) {
+            if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
+                dispatchCrewCheckWatchSyncResult(false, "invalid_snapshot", "Snapshot vazio.");
+                return false;
+            }
+            CrewCheckWatchPublisher.publish(
+                    MainActivity.this,
+                    snapshotJson,
+                    MainActivity.this::dispatchCrewCheckWatchSyncResult
+            );
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean requestWatchSnapshot() {
+            requestCrewCheckWatchSnapshotFromWeb("watch-request");
+            return true;
         }
 
         @JavascriptInterface
@@ -2298,6 +2727,7 @@ try{
             webView.destroy();
             webView = null;
         }
+        unregisterWatchSyncRequestReceiver();
         super.onDestroy();
     }
 }

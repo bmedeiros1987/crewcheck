@@ -113,6 +113,11 @@ update('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 
 
 update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   let next = source;
+  // Samsung Companion builds intentionally do not expose the legacy Health Connect
+  // connection controls in the main CrewCheck UI.
+  if (next.includes('const nativeHealthBridgeMode') && next.includes('CrewLife Companion Samsung')) {
+    return next;
+  }
   const blockPattern = /  function connectAndroid\(\) \{[\s\S]*?\n  \}\n\n  function manageAndroidAccess\(\) \{[\s\S]*?\n  \}\n\n  function refreshAndroid/;
   if (!blockPattern.test(next)) throw new Error('[v14311] Bloco de conexão Android não encontrado.');
   next = next.replace(blockPattern, `  function callNativeHealth(method: 'openHealthConnect' | 'openHealthConnectSettings'): boolean {

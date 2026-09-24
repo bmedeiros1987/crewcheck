@@ -35,24 +35,17 @@ function file(label, path) {
 
 const release = JSON.parse(read('client/public/release.json'));
 const VERSION = String(process.env.CREWCHECK_VERSION || release.version || '').trim();
-const versionParts = VERSION.split('.').map(Number);
-const derivedVersionCode = versionParts.length === 3 && versionParts.every(Number.isInteger)
-  ? String(versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2])
-  : '';
-const VERSION_CODE = String(process.env.CREWCHECK_VERSION_CODE || derivedVersionCode).trim();
-
-expect('canonical release', Boolean(VERSION) && String(release.version) === VERSION, `esperado ${VERSION}, obtido ${release.version}`);
-expect('canonical version code', Boolean(VERSION_CODE), `não foi possível derivar versionCode de ${VERSION}`);
-contains('Android versionName', 'android-wrapper/app/build.gradle', `versionName "${VERSION}"`);
-contains('Android versionCode', 'android-wrapper/app/build.gradle', `versionCode ${VERSION_CODE}`);
+const policy = JSON.parse(read('scripts/android-play/release-policy.json'));
+expect('canonical web release', Boolean(VERSION) && String(release.version) === VERSION);
+contains('Android versionName', 'android-wrapper/app/build.gradle', `versionName '${policy.versionName}'`);
+contains('Android versionCode', 'android-wrapper/app/build.gradle', `versionCode ${policy.artifacts.app.versionCode}`);
+await import('../android-play/check-sources.mjs');
 contains('Android Gradle plugin', 'android-wrapper/build.gradle', "id 'com.android.application' version '8.11.1'");
 contains('Kotlin plugin', 'android-wrapper/build.gradle', "id 'org.jetbrains.kotlin.android' version '2.0.21'");
 matches('compileSdk 36', 'android-wrapper/app/build.gradle', /compileSdk\s+36/);
-contains('Health Connect dependency', 'android-wrapper/app/build.gradle', 'androidx.health.connect:connect-client:1.1.0');
-contains('Health Connect manage-data intent', 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt', 'HealthConnectClient.getHealthConnectManageDataIntent(activity, HEALTH_CONNECT_PACKAGE)');
-contains('Health Connect refreshFromHost', 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt', 'fun refreshFromHost()');
-contains('MainActivity Health refresh hook', 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 'healthBridge.refreshFromHost()');
-absent('protected Health permissions intent absent', 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckHealthBridge.kt', 'android.health.connect.action.MANAGE_HEALTH_PERMISSIONS');
+absent('Health permissions absent', 'android-wrapper/app/src/main/AndroidManifest.xml', 'android.permission.health.');
+contains('Store SDK exclusion', 'android-wrapper/store-policy.gradle', "exclude group: 'androidx.health.connect', module: 'connect-client'");
+contains('Manual compatibility facade', 'android-wrapper/app/src/store/java/com/crewcheck/app/CrewCheckHealthBridge.java', 'crewcheck-life-manual-only');
 
 for (const [label, path] of [
   ['Control Center module', 'server/v14316/controlCenter.mjs'],
@@ -76,8 +69,8 @@ contains('Nearby location restriction', 'scripts/v14365/health-nearby.snippet', 
 contains('Nearby 35 km guard', 'scripts/v14365/health-nearby.snippet', 'filterConciergePlacesByLocationV14335(places, current, 35)');
 contains('Telegram location mirror handoff', 'server/v14316/telegramLocation.mjs', 'await saveLegacyLocationMirror(message, Boolean(edited))');
 contains('Telegram canonical continuation', 'server/v14316/telegramLocation.mjs', 'return false;');
-contains('Life continuous sync marker', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'data-health-sync="continuous"');
-contains('Life 60s refresh', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'window.setInterval(refresh, 60_000)');
+contains('Life companion/manual mode', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'CrewLife opcional · Samsung automático via Companion ou manual');
+contains('Life ignores legacy health events', 'client/src/components/v1434/CrewCheckLifeView.tsx', 'Ignore legacy health events');
 contains('Smart Departure live location refresh', 'client/src/pages/Home.tsx', 'refreshSmartDepartureLocation');
 contains('Visitor real-day filter', 'client/src/pages/VisitorAccessPage.tsx', '.filter(visitorRealDay)');
 contains('Concierge layover-aware reply', 'server/v1403/premium-helpers.snippet', 'conciergeLayoverAwareReply');

@@ -187,7 +187,14 @@ export function requestToken(req) {
   const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
   if (bearer) return bearer.trim();
   const match = String(req.headers.cookie || '').match(/(?:^|;\s*)crewcheck_auth_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    // Android WebView can retain cookies written by older builds. Treat malformed
+    // percent-encoding as an expired session instead of throwing URIError.
+    return '';
+  }
 }
 
 export function setAuthCookie(res, token) {

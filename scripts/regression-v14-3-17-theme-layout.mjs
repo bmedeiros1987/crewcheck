@@ -34,7 +34,8 @@ const about = read('client/src/pages/AboutUsPage.tsx');
 const gradle = read('android-wrapper/app/build.gradle');
 
 check(atLeast(pkg.version, '14.3.17'), `package em versão compatível (${pkg.version})`);
-check(gradle.includes(`versionName "${pkg.version}"`), `Android sincronizado com package.json (${pkg.version})`);
+const storePolicy = JSON.parse(read('scripts/android-play/release-policy.json'));
+check(gradle.match(/versionName\s+["']([^"']+)["']/)?.[1] === storePolicy.versionName, `Android sincronizado com a política de publicação (${storePolicy.versionName})`);
 check(/versionCode\s+\d+/.test(gradle), 'Android possui versionCode válido');
 check(main.includes("import './lib/themeRuntime';") && main.includes('import "./theme-v14-3-17.css";') && main.includes('import "./theme-v14-3-18.css";'), 'camadas de tema carregadas na ordem correta');
 check(runtime.includes("type CrewCheckThemePreference = 'system' | 'light' | 'dark'"), 'preferência automática, clara e escura');

@@ -1,0 +1,117 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.parcelize'
+}
+
+def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
+def storePasswordValue = project.findProperty('CREWCHECK_STORE_PASSWORD') ?: System.getenv('CREWCHECK_STORE_PASSWORD')
+def keyAliasValue = project.findProperty('CREWCHECK_KEY_ALIAS') ?: System.getenv('CREWCHECK_KEY_ALIAS')
+def keyPasswordValue = project.findProperty('CREWCHECK_KEY_PASSWORD') ?: System.getenv('CREWCHECK_KEY_PASSWORD')
+def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
+def samsungHealthAars = fileTree(dir: 'libs', include: ['samsung-health-data-api*.aar'])
+def samsungHealthAarPresent = !samsungHealthAars.files.isEmpty()
+def crewLifeVersionCode = Integer.parseInt(
+        String.valueOf(project.findProperty('CREWLIFE_VERSION_CODE') ?: System.getenv('CREWLIFE_VERSION_CODE') ?: '101')
+)
+def crewLifeVersionName = String.valueOf(
+        project.findProperty('CREWLIFE_VERSION_NAME') ?: System.getenv('CREWLIFE_VERSION_NAME') ?: '1.0.1'
+)
+def generatedRes = file("$buildDir/generated/res/crewcheckBrand")
+
+tasks.register('generateCrewLifeBrandAssets') {
+    inputs.file(file('../../client/public/icons/crewcheck-icon-v2.png'))
+    outputs.file(file("$generatedRes/drawable-nodpi/crewcheck_life_icon.png"))
+    doLast {
+        def target = file("$generatedRes/drawable-nodpi")
+        target.mkdirs()
+        copy {
+            from file('../../client/public/icons/crewcheck-icon-v2.png')
+            into target
+            rename { 'crewcheck_life_icon.png' }
+        }
+    }
+}
+
+android {
+    namespace 'com.crewcheck.life'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.crewcheck.life'
+        minSdk 29
+        targetSdk 36
+        versionCode crewLifeVersionCode
+        versionName crewLifeVersionName
+        buildConfigField 'boolean', 'SAMSUNG_HEALTH_SDK_INCLUDED',
+                samsungHealthAarPresent ? 'true' : 'false'
+    }
+
+    sourceSets {
+        main.res.srcDir generatedRes
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            versionNameSuffix '-dev'
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            debuggable false
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+        }
+    }
+}
+
+dependencies {
+    // Samsung's v1.1.0 setup requires Gson + Parcelize. The vendor AAR also
+    // references Kotlin/coroutines; because a local AAR has no Maven POM,
+    // declare those runtime dependencies explicitly using CrewCheck's canonical pins.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+    implementation 'com.google.code.gson:gson:2.13.2'
+
+    if (samsungHealthAarPresent) {
+        implementation samsungHealthAars
+    }
+}
+
+preBuild.dependsOn generateCrewLifeBrandAssets
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseRequested = graph.allTasks.any {
+        it.project == project && (it.name == 'assembleRelease' || it.name == 'bundleRelease')
+    }
+    if (releaseRequested && !samsungHealthAarPresent) {
+        throw new GradleException(
+            'CrewLife Companion release requires android-wrapper/lifecompanion/libs/samsung-health-data-api*.aar'
+        )
+    }
+}

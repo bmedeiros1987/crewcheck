@@ -61,7 +61,7 @@ const checks = [
   ['sono protegido antes da próxima programação', guide.includes('latestWake') && guide.includes('sleepTargetMinutes') && guide.includes('preparationMinutes')],
   ['folga longa habilita bate-volta', guide.includes('tripEligible') && guide.includes("category: 'trip'")],
   ['carga elevada prioriza recuperação', guide.includes('recoveryPriority') && guide.includes('RECUPERAÇÃO REFORÇADA')],
-  ['conexão rápida Health Connect', guide.includes('connectHealth') && guide.includes('openHealthConnect')],
+  ['CrewLife manual opcional', guide.includes('openManualLife') && guide.includes("detail: 'life'") && !guide.includes('openHealthConnect')],
   ['conexão rápida Telegram', guide.includes('connectTelegram') && guide.includes('/api/telegram/health') && guide.includes('tg://resolve')],
   ['conexão rápida calendário e notificações', guide.includes('openCalendar') && guide.includes('connectNotifications')],
   ['check-in usa local encontrado', guide.includes('recordGymCheckIn(place.name') && guide.includes('shareGymCheckInText(place.name)')],

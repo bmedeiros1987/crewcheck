@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <queries>
+        <package android:name="com.crewcheck.life" />
+    </queries>
     <application
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
@@ -51,5 +54,16 @@
             </intent-filter>
         </activity>
         <receiver android:name=".CrewCheckNotificationReceiver" android:exported="false" />
+        <service
+            android:name=".CrewCheckWatchSyncService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/crewcheck/watch/request-sync/"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

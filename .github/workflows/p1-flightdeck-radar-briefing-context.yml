@@ -1,0 +1,70 @@
+name: P1 FlightDeck Radar Briefing context
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/navigation/FlightDeckNavigationContext.tsx'
+      - 'client/src/components/navigation/flight-context.css'
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/p1-566-flightdeck-radar-briefing-context/**'
+      - 'scripts/p0-build-identity/apply.mjs'
+      - 'scripts/regression-p1-566-flightdeck-radar-briefing-context.mjs'
+      - '.github/workflows/p1-flightdeck-radar-briefing-context.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/navigation/FlightDeckNavigationContext.tsx'
+      - 'client/src/components/navigation/flight-context.css'
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/p1-566-flightdeck-radar-briefing-context/**'
+      - 'scripts/p0-build-identity/apply.mjs'
+      - 'scripts/regression-p1-566-flightdeck-radar-briefing-context.mjs'
+      - '.github/workflows/p1-flightdeck-radar-briefing-context.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+
+concurrency:
+  group: p1-flightdeck-radar-briefing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Flight context round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical client sources
+        run: node scripts/v139/apply.mjs
+      - name: Preserve canonical-prepare diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-566-prepare-failure-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/android-build.log
+            ${{ runner.temp }}/android-build-tail.log
+            client/src/pages/Home.tsx
+          if-no-files-found: warn
+          retention-days: 1
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Shared Navigation Context regression
+        run: node scripts/regression-p1-566-navigation-context.mjs
+      - name: FlightDeck Radar Weather context regression
+        run: node scripts/regression-p1-566-flightdeck-radar-briefing-context.mjs
+      - name: Radar occurrence identity
+        run: node scripts/regression-v14-3-92-radar-occurrence-identity.mjs

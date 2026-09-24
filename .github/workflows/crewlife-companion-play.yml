@@ -1,0 +1,196 @@
+name: CrewLife Companion Play
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/lifecompanion/**'
+      - 'scripts/regression-crewlife-samsung-companion.mjs'
+      - 'scripts/android-play/companion_play.py'
+      - 'scripts/android-play/credential.py'
+      - 'scripts/android-play/play_error.py'
+      - 'scripts/android-play/review_policy.py'
+      - '.github/workflows/crewlife-companion-play.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'android-wrapper/lifecompanion/**'
+      - 'scripts/regression-crewlife-samsung-companion.mjs'
+      - 'scripts/android-play/companion_play.py'
+      - '.github/workflows/crewlife-companion-play.yml'
+  workflow_dispatch:
+    inputs:
+      publish_internal:
+        description: 'Release CrewLife Companion to Internal Testing only'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewlife-companion-play
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      SAMSUNG_HEALTH_DATA_AAR_URL: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_URL }}
+      SAMSUNG_HEALTH_DATA_AAR_TOKEN: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_TOKEN }}
+      SAMSUNG_HEALTH_DATA_AAR_SHA256: ${{ secrets.SAMSUNG_HEALTH_DATA_AAR_SHA256 }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+
+      - run: npm ci
+
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+
+      - name: CrewLife Companion contracts
+        run: node scripts/regression-crewlife-samsung-companion.mjs
+
+      - name: Install Play API client
+        if: github.ref == 'refs/heads/main'
+        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+
+      - name: Allocate live Companion version
+        if: github.ref == 'refs/heads/main'
+        run: python3 scripts/android-play/companion_play.py allocate
+
+      - name: Restore Samsung Health Data SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-wrapper/lifecompanion/libs
+          target='android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar'
+
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
+            args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
+            if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
+              args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
+            fi
+            curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
+          else
+            pinned_sha='46bfb582a91d6b4b4fa5d41a5cb8444ca7e55637'
+            pinned_path='scripts/crewlife-wellness/native/libs/samsung-health-data-api-1.1.0.aar'
+            git fetch --no-tags --depth=1 origin "$pinned_sha"
+            git show "$pinned_sha:$pinned_path" > "$target"
+          fi
+
+          test -s "$target"
+          unzip -tq "$target" >/dev/null
+          actual="$(sha256sum "$target" | cut -d ' ' -f1)"
+          echo "Samsung Health Data SDK SHA-256: $actual"
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ]; then
+            test "$actual" = "${SAMSUNG_HEALTH_DATA_AAR_SHA256}"
+          fi
+
+      - name: Restore CrewCheck signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+          keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+      - name: Build signed Samsung-enabled Companion
+        working-directory: android-wrapper
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: gradle --no-daemon --console=plain :lifecompanion:assembleRelease :lifecompanion:bundleRelease :lifecompanion:lintRelease
+
+      - name: Verify and stage Companion
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='android-wrapper/lifecompanion/build/outputs/apk/release/lifecompanion-release.apk'
+          aab='android-wrapper/lifecompanion/build/outputs/bundle/release/lifecompanion-release.aab'
+          test -s "$apk" && test -s "$aab"
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs "$apk"
+          jarsigner -verify -verbose -certs "$aab" | grep -F 'jar verified.'
+
+          out="$RUNNER_TEMP/crewlife-play"
+          mkdir -p "$out"
+          cp "$apk" "$out/CrewLife-Companion-Samsung-signed.apk"
+          cp "$aab" "$out/CrewLife-Companion-Samsung-signed.aab"
+
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          out = Path(os.environ['RUNNER_TEMP']) / 'crewlife-play'
+          code = int(os.environ.get('CREWLIFE_VERSION_CODE', '101'))
+          name = os.environ.get('CREWLIFE_VERSION_NAME', '1.0.1')
+          (out / 'crewlife-play-metadata.json').write_text(json.dumps({
+              'package': 'com.crewcheck.life',
+              'versionCode': code,
+              'versionName': name,
+              'file': 'CrewLife-Companion-Samsung-signed.aab',
+          }, indent=2) + '\n')
+          PY
+
+          (cd "$out" && sha256sum CrewLife-Companion-Samsung-signed.* > SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewLife-Companion-Play
+          path: ${{ runner.temp }}/crewlife-play/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary SDK and signing material
+        if: always()
+        run: |
+          rm -f android-wrapper/lifecompanion/libs/samsung-health-data-api-*.aar
+          rm -f "$CREWCHECK_STORE_FILE"
+
+  publish-internal:
+    needs: build
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal) || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: CrewLife-Companion-Play
+          path: crewlife-play
+
+      - run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+
+      - name: Release Companion to Internal Testing only
+        run: python3 scripts/android-play/companion_play.py publish crewlife-play

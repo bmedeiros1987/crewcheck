@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { requestToken } from './server/v139/common.mjs';
 
 const packageMetadata = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
 const expectedVersion = String(packageMetadata.version || '');
@@ -38,6 +39,13 @@ try {
       if (premium?.callLimit !== 20 || premium?.googlePlayProductId !== 'crewcheck_premium_monthly') throw new Error('Plano Premium incorreto');
     }
   }
+  const malformedCookieToken = requestToken({
+    headers: { authorization: '', cookie: 'crewcheck_auth_token=%E0%A4%A' },
+  });
+  if (malformedCookieToken !== '') {
+    throw new Error('Cookie de sessão malformado deve ser tratado como sessão expirada.');
+  }
+
   console.log('CrewCheck server routes smoke test OK');
 } finally {
   child.kill('SIGTERM');
