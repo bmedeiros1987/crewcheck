@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { CloudSun, Gauge, MapPin, Newspaper, Plane, Users, WalletCards, BedDouble, Languages, Image as ImageIcon } from 'lucide-react';
+import './ui-lab-tv-pass4.css';
 
 export type TvPreset='operacional'|'equilibrado'|'visitante'|'minimalista';
 export type TvDisplayPreferences={
