@@ -1,3 +1,5 @@
+import { getStoredUser } from '@/lib/authClient';
+
 export type CrewCheckWatchState =
   | 'OFF_DUTY'
   | 'LEAVE_SOON'
@@ -46,6 +48,7 @@ export type CrewCheckWatchSnapshot = {
   hotelPickup: string;
   changed: boolean;
   source: 'canonical-roster';
+  premiumAccess: boolean;
   schedule: CrewCheckWatchScheduleItem[];
 };
 
@@ -88,6 +91,14 @@ function clean(value: unknown): string {
   return text === '—' || /^a confirmar$/i.test(text) ? '' : text;
 }
 
+function storedWatchPremiumAccess(): boolean {
+  try {
+    return Boolean(getStoredUser()?.premiumAccess);
+  } catch {
+    return false;
+  }
+}
+
 function clockBeforeOrAt(referenceMs: number, clock: string): number {
   const match = String(clock || '').match(/^(\d{1,2}):(\d{2})$/);
   if (!match || !Number.isFinite(referenceMs)) return referenceMs;
@@ -114,6 +125,7 @@ export function buildCrewCheckWatchSnapshot(
   event: WatchEventLike,
   route: WatchRouteContext | null = null,
   now = Date.now(),
+  premiumAccess = storedWatchPremiumAccess(),
 ): CrewCheckWatchSnapshot {
   if (!event || event.placeholder) {
     return {
@@ -142,6 +154,7 @@ export function buildCrewCheckWatchSnapshot(
       hotelPickup: '',
       changed: false,
       source: 'canonical-roster',
+      premiumAccess,
       schedule: [],
     };
   }
@@ -305,6 +318,7 @@ export function buildCrewCheckWatchSnapshot(
     hotelPickup: '',
     changed: false,
     source: 'canonical-roster',
+    premiumAccess,
     schedule,
   };
 }
