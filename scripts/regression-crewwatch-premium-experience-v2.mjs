@@ -19,6 +19,7 @@ const watchContract = read('android-wrapper/wear/src/main/java/com/crewcheck/wat
 const watchEntitlements = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchEntitlements.java');
 const watchConciergeClient = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchConciergeClient.java');
 const watchConciergeStore = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchConciergeStore.java');
+const wellbeingStore = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WellbeingStore.java');
 const conciergeProvider = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/ConciergeComplicationService.java');
 const wearManifest = read('android-wrapper/wear/src/main/AndroidManifest.xml');
 const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
@@ -103,17 +104,23 @@ assert.match(watchEntitlements, /static boolean crewLife\(Context context\)/);
 assert.match(watchEntitlements, /static boolean concierge\(Context context\)/);
 assert.match(watchEntitlements, /static boolean smartDeparture\(Context context\)/);
 assert.match(watchEntitlements, /static boolean liveOps\(Context context\)/);
-assert.match(dataLayer, /if \(!snapshot\.premiumAccess\)/, 'downgrade deve limpar caches Premium sem apagar escala');
+assert.match(watchEntitlements, /premiumFromSnapshot/);
+assert.match(watchEntitlements, /!snapshot\.isStale\(nowEpochMs\)/, 'Premium deve falhar fechado quando entitlement expira');
+assert.match(dataLayer, /!WatchEntitlements\.premiumFromSnapshot\(snapshot, System\.currentTimeMillis\(\)\)/, 'downgrade\/expiry deve limpar caches Premium sem apagar escala');
 assert.match(dataLayer, /WatchEntitlements\.crewLife/);
 assert.match(dataLayer, /WatchEntitlements\.concierge/);
 assert.match(watchConciergeClient, /WatchEntitlements\.concierge/);
+assert.match(watchConciergeStore, /WatchEntitlements\.concierge\(context\)/, 'cache Concierge não pode sobreviver a entitlement vencido');
 assert.match(watchConciergeStore, /void clear\(\)/);
+assert.match(wellbeingStore, /WatchEntitlements\.crewLife\(context\)/, 'cache CrewLife não pode sobreviver a entitlement vencido');
+assert.match(wellbeingStore, /preferences\.contains\(CREWLIFE_IV\)/, 'purge em leitura não pode gerar loop de complication update vazio');
 
 // Phone-side producer behavior is a documented handoff, not implementation owned by this branch.
 assert.match(protocol, /Handoff para Mobile Core/);
 assert.match(protocol, /Free sempre receba roster básico/);
 assert.match(protocol, /peer v1 antigo/);
 assert.match(protocol, /Downgrade Premium → Free/);
+assert.match(protocol, /premiumAccess=true.*validUntilEpochMs/s, 'entitlement Premium deve ter validade limitada pelo snapshot');
 assert.match(protocol, /Nenhuma implementação de `android-wrapper\/app\/\*\*` ou `client\/\*\*`/);
 
 console.log('[crewwatch-premium-experience-v2] peripheral Free roster + Premium capability boundaries OK');
