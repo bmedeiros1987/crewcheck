@@ -1,0 +1,55 @@
+name: Mobile P0 auth scroll gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/pages/AuthPage.tsx'
+      - 'client/src/styles/auth-mobile-scroll-p0.css'
+      - 'client/src/styles/auth-p1-entry-polish.css'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14356/**'
+      - 'scripts/v14357/**'
+      - 'scripts/v14378/**'
+      - 'scripts/regression-auth-mobile-scroll-p0.mjs'
+      - '.github/workflows/mobile-auth-scroll-p0.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/pages/AuthPage.tsx'
+      - 'client/src/styles/auth-mobile-scroll-p0.css'
+      - 'client/src/styles/auth-p1-entry-polish.css'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14356/**'
+      - 'scripts/v14357/**'
+      - 'scripts/v14378/**'
+      - 'scripts/regression-auth-mobile-scroll-p0.mjs'
+      - '.github/workflows/mobile-auth-scroll-p0.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-p0-auth-scroll-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-scroll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Guard mobile auth scroll and keyboard reachability
+        run: node scripts/regression-auth-mobile-scroll-p0.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
