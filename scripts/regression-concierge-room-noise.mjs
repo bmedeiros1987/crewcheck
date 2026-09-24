@@ -71,6 +71,19 @@ assert.equal(records[0].evidenceIds.length, 1, 'evidence ids must be deduplicate
 assert.equal(records[0].dayPeriods[0], 'overnight');
 assert.ok(records[0].validUntil, 'circumstantial noise must expire');
 
+records = noise.saveConciergeRoomNoiseObservation('Hotel São José', '812', {
+  origin: 'neighbor',
+  intensity: 'moderate',
+  recurrence: 'isolated',
+  dayPeriods: ['overnight'],
+  observedAt: '2026-09-24T03:00:00-03:00',
+  confidence: 'medium',
+  evidenceIds: ['stay-2026-09-24'],
+}, { storage, now: new Date('2026-09-24T06:05:00Z') });
+assert.equal(records.length, 1, 'repeated taps for the same stay, room and origin must coalesce instead of inflating evidence');
+assert.equal(records[0].intensity, 'moderate', 'the latest correction for the same evidence must replace the older observation');
+assert.equal(records[0].observedAt, '2026-09-24T06:00:00.000Z');
+
 const aliasCurrent = noise.findCurrentConciergeRoomNoise(records, 'Hôtel São José', 'room 812', new Date('2026-09-26T05:00:00Z'));
 assert.equal(aliasCurrent.length, 1, 'hotel and room aliases must resolve to the same private observation');
 const expiredNeighbor = noise.findCurrentConciergeRoomNoise(records, 'Hotel São José', '812', new Date('2026-10-05T05:00:00Z'));
