@@ -1,0 +1,525 @@
+# =====================================================================
+#  🏠 HOME CONCIERGE PREMIUM — pacote Home Assistant (Telegram)
+# ---------------------------------------------------------------------
+#  Painel único e "vivo" no Telegram: cada botão EDITA a mesma mensagem
+#  (sem spam no chat), confirma com um toast discreto e mostra o estado
+#  real da casa em tempo real.
+#
+#  Instalação: ver home-assistant/README.md
+#  Personalização: edite SOMENTE o bloco "CONFIGURAÇÃO" do script
+#  `home_concierge` logo abaixo.
+# =====================================================================
+
+input_boolean:
+  modo_faxina:
+    name: Modo Faxina
+    icon: mdi:broom
+  concierge_nao_perturbe:
+    name: Concierge · Não perturbe
+    icon: mdi:bell-sleep
+
+timer:
+  modo_faxina:
+    name: Modo Faxina
+    icon: mdi:broom
+    duration: "03:00:00"
+    restore: true
+
+script:
+  home_concierge:
+    alias: "🏠 Home Concierge"
+    icon: mdi:room-service
+    description: "Executa uma ação do concierge e desenha o painel no Telegram."
+    # queued: cliques rápidos são processados em ordem, um por vez.
+    # Isso elimina o "liga/desliga/liga" em sequência da versão antiga.
+    mode: queued
+    max: 25
+    fields:
+      acao:
+        description: "Ex.: 'nav menu', 'faxina_on', 'luz light.sala', 'cena boanoite'"
+        example: nav menu
+      chat_id:
+        description: "Chat do Telegram (vazio = chat padrão do bot)"
+      message_id:
+        description: "Mensagem a editar (vazio = envia um painel novo)"
+      callback_id:
+        description: "ID do callback para responder com toast"
+      nome:
+        description: "Primeiro nome de quem clicou"
+    variables:
+      # ================= CONFIGURAÇÃO =================
+      # Luzes exibidas no painel (entity_id: nome no botão)
+      luzes:
+        light.cozinha: Cozinha
+        light.sala: Sala
+      # Luz que fica baixinha na cena Cinema (as outras apagam)
+      luz_cinema: light.sala
+      # Caixa de som da Laurinha (deixe '' para esconder)
+      laurinha: media_player.laurinha
+      # Previsão do tempo (deixe '' para esconder)
+      clima: weather.forecast_home
+      # Sensores de temperatura (entity_id: nome). Ex.: sensor.temp_sala: Sala
+      temperaturas: {}
+      # Portas/janelas (binary_sensor: nome). Ex.: binary_sensor.porta_entrada: Entrada
+      aberturas: {}
+      # Duração padrão do Modo Faxina (horas)
+      faxina_horas: 3
+      # ================================================
+      pedido: "{{ (acao | default('nav menu', true) | string).strip() }}"
+      cmd: "{{ pedido.split(' ')[0] }}"
+      arg: "{{ pedido.split(' ', 1)[1] if ' ' in pedido else '' }}"
+      fx_restante: >-
+        {%- set fim = state_attr('timer.modo_faxina', 'finishes_at') -%}
+        {%- if fim and is_state('timer.modo_faxina', 'active') -%}
+          {{ [((as_datetime(fim) - now()).total_seconds()) | int, 0] | max }}
+        {%- else -%}0{%- endif -%}
+      toast: >-
+        {%- set cenas = {'cheguei': '🏡 Bem-vindo de volta!', 'saindo': '🚪 Casa pronta, boa saída!',
+                         'cinema': '🍿 Modo cinema ligado', 'boanoite': '🌙 Boa noite! Casa em repouso'} -%}
+        {%- if cmd == 'faxina_on' -%}🧹 Faxina ativa por {{ faxina_horas }}h
+        {%- elif cmd == 'faxina_1h' -%}🧹 Faxina ativa por 1h
+        {%- elif cmd == 'faxina_mais' -%}➕ Mais 1 hora de faxina
+        {%- elif cmd == 'faxina_off' -%}✅ Faxina encerrada
+        {%- elif cmd == 'luz' -%}💡 {{ luzes.get(arg, 'Luz') }}: {{ 'apagando' if is_state(arg, 'on') else 'acendendo' }}
+        {%- elif cmd == 'luzes_on' -%}✨ Acendendo tudo
+        {%- elif cmd == 'luzes_off' -%}🌑 Apagando tudo
+        {%- elif cmd == 'cena' -%}{{ cenas.get(arg, '🎬 Cena aplicada') }}
+        {%- elif cmd == 'musica' -%}🎵 Laurinha
+        {%- elif cmd == 'dnd' -%}{{ '🔔 Avisos reativados' if is_state('input_boolean.concierge_nao_perturbe', 'on') else '🔕 Avisos silenciados' }}
+        {%- else -%}🏠 Home Concierge{%- endif -%}
+      tela: >-
+        {%- if cmd == 'nav' -%}{{ arg if arg in ['menu', 'faxina', 'luzes', 'cenas', 'musica', 'status'] else 'menu' }}
+        {%- elif cmd.startswith('faxina') -%}faxina
+        {%- elif cmd in ['luz', 'luzes_on', 'luzes_off'] -%}luzes
+        {%- elif cmd == 'musica' -%}musica
+        {%- else -%}menu{%- endif -%}
+    sequence:
+      # 1) Toast imediato (o Telegram exige resposta rápida ao clique)
+      - if: "{{ callback_id | default('', true) | string != '' }}"
+        then:
+          - service: telegram_bot.answer_callback_query
+            continue_on_error: true
+            data:
+              callback_query_id: "{{ callback_id }}"
+              message: "{{ toast }}"
+              show_alert: false
+
+      # 2) Ação
+      - choose:
+          - conditions: "{{ cmd in ['faxina_on', 'faxina_1h', 'faxina_mais'] }}"
+            sequence:
+              - service: timer.start
+                target:
+                  entity_id: timer.modo_faxina
+                data:
+                  duration: >-
+                    {%- if cmd == 'faxina_mais' -%}{{ fx_restante | int + 3600 }}
+                    {%- elif cmd == 'faxina_1h' -%}3600
+                    {%- else -%}{{ (faxina_horas | float * 3600) | int }}{%- endif -%}
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.modo_faxina
+
+          - conditions: "{{ cmd == 'faxina_off' }}"
+            sequence:
+              - service: timer.cancel
+                target:
+                  entity_id: timer.modo_faxina
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: input_boolean.modo_faxina
+
+          - conditions: "{{ cmd == 'luz' and arg in luzes }}"
+            sequence:
+              - service: light.toggle
+                continue_on_error: true
+                target:
+                  entity_id: "{{ arg }}"
+
+          - conditions: "{{ cmd in ['luzes_on', 'luzes_off'] }}"
+            sequence:
+              - service: "light.turn_{{ 'on' if cmd == 'luzes_on' else 'off' }}"
+                continue_on_error: true
+                target:
+                  entity_id: "{{ luzes.keys() | list }}"
+
+          - conditions: "{{ cmd == 'cena' and arg == 'cheguei' }}"
+            sequence:
+              - service: light.turn_on
+                continue_on_error: true
+                target:
+                  entity_id: "{{ luzes.keys() | list }}"
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: input_boolean.concierge_nao_perturbe
+
+          - conditions: "{{ cmd == 'cena' and arg == 'saindo' }}"
+            sequence:
+              - service: light.turn_off
+                continue_on_error: true
+                target:
+                  entity_id: "{{ luzes.keys() | list }}"
+              - if: "{{ laurinha != '' and is_state(laurinha, 'playing') }}"
+                then:
+                  - service: media_player.media_pause
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ laurinha }}"
+
+          - conditions: "{{ cmd == 'cena' and arg == 'cinema' }}"
+            sequence:
+              - service: light.turn_off
+                continue_on_error: true
+                target:
+                  entity_id: "{{ luzes.keys() | reject('eq', luz_cinema) | list }}"
+              - if: "{{ luz_cinema in luzes }}"
+                then:
+                  - service: light.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ luz_cinema }}"
+                    data:
+                      brightness_pct: 15
+
+          - conditions: "{{ cmd == 'cena' and arg == 'boanoite' }}"
+            sequence:
+              - service: light.turn_off
+                continue_on_error: true
+                target:
+                  entity_id: "{{ luzes.keys() | list }}"
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.concierge_nao_perturbe
+
+          - conditions: "{{ cmd == 'musica' and laurinha != '' }}"
+            sequence:
+              - service: >-
+                  {{ {'play_pause': 'media_player.media_play_pause',
+                      'vol_up': 'media_player.volume_up',
+                      'vol_down': 'media_player.volume_down',
+                      'next': 'media_player.media_next_track'}.get(arg, 'media_player.media_play_pause') }}
+                continue_on_error: true
+                target:
+                  entity_id: "{{ laurinha }}"
+
+          - conditions: "{{ cmd == 'dnd' }}"
+            sequence:
+              - service: input_boolean.toggle
+                target:
+                  entity_id: input_boolean.concierge_nao_perturbe
+
+      # 3) Dá tempo dos dispositivos reportarem o novo estado
+      - if: "{{ cmd != 'nav' }}"
+        then:
+          - delay: "00:00:01"
+
+      # 4) Monta o painel com o estado atualizado
+      - variables:
+          texto: |-
+            {%- set h = now().hour -%}
+            {%- set saud = 'Bom dia' if 5 <= h < 12 else ('Boa tarde' if 12 <= h < 18 else 'Boa noite') -%}
+            {%- set quem = nome | default('', true) | string -%}
+            {%- set fx = is_state('input_boolean.modo_faxina', 'on') or is_state('timer.modo_faxina', 'active') -%}
+            {%- set fim = state_attr('timer.modo_faxina', 'finishes_at') -%}
+            {%- set s = ([((as_datetime(fim) - now()).total_seconds()) | int, 0] | max) if fim and is_state('timer.modo_faxina', 'active') else 0 -%}
+            {%- set rest = '%dh%02d' % (s // 3600, (s % 3600) // 60) -%}
+            {%- set ate = (as_datetime(fim) | as_local).strftime('%H:%M') if s > 0 else '' -%}
+            {%- set ids = luzes.keys() | list -%}
+            {%- set acesas = ids | select('is_state', 'on') | list -%}
+            {%- set ns = namespace(nomes=[]) -%}
+            {%- for e in acesas -%}{%- set ns.nomes = ns.nomes + [luzes[e]] -%}{%- endfor -%}
+            {%- set dnd = is_state('input_boolean.concierge_nao_perturbe', 'on') -%}
+            {%- set mp = laurinha if laurinha != '' and states(laurinha) not in ['unknown', 'unavailable'] else '' -%}
+            {%- set titulo = (state_attr(mp, 'media_title') or '') | replace('&', '&amp;') | replace('<', '&lt;') if mp else '' -%}
+            {%- set vol = ((state_attr(mp, 'volume_level') or 0) * 100) | round(0) | int if mp else 0 -%}
+            {%- set cond = {'sunny': '☀️ Ensolarado', 'clear-night': '🌙 Céu limpo', 'partlycloudy': '⛅ Parcialmente nublado',
+                            'cloudy': '☁️ Nublado', 'rainy': '🌧️ Chuva', 'pouring': '🌧️ Chuva forte', 'lightning': '⚡ Raios',
+                            'lightning-rainy': '⛈️ Tempestade', 'fog': '🌫️ Neblina', 'windy': '💨 Ventando',
+                            'windy-variant': '💨 Ventando', 'snowy': '❄️ Neve', 'hail': '🧊 Granizo', 'exceptional': '⚠️ Tempo extremo'} -%}
+            {%- set tempo = (cond.get(states(clima), states(clima)) ~ ' · ' ~ state_attr(clima, 'temperature') ~ '°') if clima != '' and states(clima) not in ['unknown', 'unavailable'] else '' -%}
+            {%- set abertas = namespace(n=[]) -%}
+            {%- for e, n in aberturas.items() if is_state(e, 'on') -%}{%- set abertas.n = abertas.n + [n] -%}{%- endfor -%}
+            <b>🏠 Home Concierge</b>
+            {{ saud }}{{ ', ' ~ quem if quem }} · {{ now().strftime('%H:%M') }}{{ '  🔕' if dnd }}
+            ━━━━━━━━━━━━━━━
+            {%- if tela == 'menu' %}
+            🧹 Faxina: {{ ('<b>ativa</b> · faltam ' ~ rest ~ ' (até ' ~ ate ~ ')') if s > 0 else ('<b>ativa</b>' if fx else 'desligada') }}
+            💡 Luzes: {{ (ns.nomes | count ~ ' acesa' ~ ('s' if ns.nomes | count > 1) ~ ' · ' ~ ns.nomes | join(', ')) if ns.nomes else 'todas apagadas' }}
+            {%- if mp %}
+            🎵 Laurinha: {{ ('tocando' ~ (' · <i>' ~ titulo ~ '</i>' if titulo)) if is_state(mp, 'playing') else 'em silêncio' }}
+            {%- endif %}
+            {%- if tempo %}
+            🌤️ Lá fora: {{ tempo }}
+            {%- endif %}
+            {%- if abertas.n %}
+            🚪 Abertas: {{ abertas.n | join(', ') }}
+            {%- endif %}
+
+            O que deseja fazer?
+            {%- elif tela == 'faxina' %}
+            <b>🧹 Modo Faxina</b>
+            {%- if s > 0 %}
+            Ativo · faltam <b>{{ rest }}</b> (termina às {{ ate }})
+            As luzes <b>não</b> serão apagadas automaticamente.
+            Aviso 10 min antes do fim, com opção de estender.
+            {%- elif fx %}
+            Ativo (sem cronômetro).
+            {%- else %}
+            Desligado. As automações de iluminação estão normais.
+            Ative para a diarista trabalhar sem as luzes apagarem.
+            {%- endif %}
+            {%- elif tela == 'luzes' %}
+            <b>💡 Luzes</b>
+            {%- for e in ids %}
+            {{ '🟡' if is_state(e, 'on') else ('⚠️' if states(e) in ['unknown', 'unavailable'] else '⚫') }} {{ luzes[e] }}{{ (' · ' ~ ((state_attr(e, 'brightness') | int(0)) / 2.55) | round(0) | int ~ '%') if is_state(e, 'on') and state_attr(e, 'brightness') }}{{ ' · indisponível' if states(e) in ['unknown', 'unavailable'] }}
+            {%- endfor %}
+
+            Toque numa luz para acender/apagar.
+            {%- elif tela == 'cenas' %}
+            <b>🎬 Cenas</b>
+            🏡 <b>Cheguei</b> · acende as luzes e reativa os avisos
+            🚪 <b>Saindo</b> · apaga tudo e pausa a música
+            🍿 <b>Cinema</b> · {{ luzes.get(luz_cinema, 'luz') }} a 15%, resto apagado
+            🌙 <b>Boa noite</b> · apaga tudo e silencia os avisos
+            {%- elif tela == 'musica' %}
+            <b>🎵 Laurinha</b>
+            {%- if mp %}
+            {{ '▶️ Tocando' if is_state(mp, 'playing') else ('⏸️ Pausado' if is_state(mp, 'paused') else '⏹️ Parado') }}{{ (' · <i>' ~ titulo ~ '</i>') if titulo }}
+            🔊 Volume: {{ vol }}%
+            {%- else %}
+            ⚠️ Caixa de som indisponível no momento.
+            {%- endif %}
+            {%- elif tela == 'status' %}
+            <b>📊 Status da casa</b>
+            🧹 Faxina: {{ ('ativa até ' ~ ate ~ ' (' ~ rest ~ ')') if s > 0 else ('ativa' if fx else 'desligada') }}
+            💡 Luzes acesas: {{ ns.nomes | join(', ') if ns.nomes else 'nenhuma' }}
+            {%- if mp %}
+            🎵 Laurinha: {{ {'playing': 'tocando', 'paused': 'pausada', 'idle': 'parada', 'off': 'desligada', 'on': 'ligada'}.get(states(mp), states(mp)) }}{{ ' · ' ~ vol ~ '%' if is_state(mp, 'playing') }}
+            {%- endif %}
+            {%- if tempo %}
+            🌤️ Lá fora: {{ tempo }}
+            {%- endif %}
+            {%- for e, n in temperaturas.items() if states(e) not in ['unknown', 'unavailable'] %}
+            🌡️ {{ n }}: {{ states(e) }}{{ state_attr(e, 'unit_of_measurement') or '°' }}
+            {%- endfor %}
+            {%- if aberturas %}
+            🚪 Portas/janelas: {{ 'abertas · ' ~ abertas.n | join(', ') if abertas.n else 'tudo fechado ✅' }}
+            {%- endif %}
+            {%- if state_attr('sun.sun', 'next_setting') %}
+            {{ '🌅 Pôr do sol: ' ~ (as_datetime(state_attr('sun.sun', 'next_setting')) | as_local).strftime('%H:%M') if is_state('sun.sun', 'above_horizon') else '🌄 Nascer do sol: ' ~ (as_datetime(state_attr('sun.sun', 'next_rising')) | as_local).strftime('%H:%M') }}
+            {%- endif %}
+            🔔 Avisos: {{ 'silenciados' if dnd else 'ativos' }}
+            {%- endif %}
+          teclado: >-
+            {%- set fx = is_state('input_boolean.modo_faxina', 'on') or is_state('timer.modo_faxina', 'active') -%}
+            {%- set dnd = is_state('input_boolean.concierge_nao_perturbe', 'on') -%}
+            {%- set voltar = '⬅️ Voltar:/hc nav menu' -%}
+            {%- set ids = luzes.keys() | list -%}
+            {%- set n_on = ids | select('is_state', 'on') | list | count -%}
+            {%- if tela == 'menu' -%}
+            {{ [
+              ('🧹 Faxina ' ~ ('● ON' if fx else 'OFF')) ~ ':/hc nav faxina, ' ~ ('💡 Luzes (' ~ n_on ~ ')' if n_on else '💡 Luzes') ~ ':/hc nav luzes',
+              '🎬 Cenas:/hc nav cenas' ~ (', 🎵 Laurinha:/hc nav musica' if laurinha != '' else ''),
+              '📊 Status:/hc nav status, ' ~ ('🔔 Reativar avisos' if dnd else '🔕 Silenciar') ~ ':/hc dnd',
+              '🔄 Atualizar:/hc nav menu'
+            ] }}
+            {%- elif tela == 'faxina' -%}
+            {{ ([
+              '➕ Mais 1h:/hc faxina_mais, 🔁 Renovar ' ~ faxina_horas ~ 'h:/hc faxina_on',
+              '⏹️ Encerrar agora:/hc faxina_off'
+            ] if fx else [
+              '🧹 Ativar por ' ~ faxina_horas ~ 'h:/hc faxina_on, ⏱️ Só 1h:/hc faxina_1h'
+            ]) + [voltar] }}
+            {%- elif tela == 'luzes' -%}
+            {%- set out = namespace(rows=[]) -%}
+            {%- for par in ids | batch(2) -%}
+              {%- set bts = namespace(b=[]) -%}
+              {%- for e in par -%}
+                {%- set bts.b = bts.b + [('🟡 ' if is_state(e, 'on') else '⚫ ') ~ luzes[e] ~ ':/hc luz ' ~ e] -%}
+              {%- endfor -%}
+              {%- set out.rows = out.rows + [bts.b | join(', ')] -%}
+            {%- endfor -%}
+            {{ out.rows + ['✨ Acender tudo:/hc luzes_on, 🌑 Apagar tudo:/hc luzes_off', voltar] }}
+            {%- elif tela == 'cenas' -%}
+            {{ [
+              '🏡 Cheguei:/hc cena cheguei, 🚪 Saindo:/hc cena saindo',
+              '🍿 Cinema:/hc cena cinema, 🌙 Boa noite:/hc cena boanoite',
+              voltar
+            ] }}
+            {%- elif tela == 'musica' -%}
+            {{ [
+              '⏯️ Tocar / Pausar:/hc musica play_pause, ⏭️ Próxima:/hc musica next',
+              '🔉 Volume -:/hc musica vol_down, 🔊 Volume +:/hc musica vol_up',
+              '🔄 Atualizar:/hc nav musica, ⬅️ Voltar:/hc nav menu'
+            ] }}
+            {%- else -%}
+            {{ ['🔄 Atualizar:/hc nav status, ⬅️ Voltar:/hc nav menu'] }}
+            {%- endif -%}
+
+      # 5) Edita o painel existente (clique) ou envia um novo (/menu)
+      - if: "{{ message_id | default('', true) | string != '' }}"
+        then:
+          - service: telegram_bot.edit_message
+            # "message is not modified" não é erro real: ignorar.
+            continue_on_error: true
+            data:
+              chat_id: "{{ chat_id }}"
+              message_id: "{{ message_id }}"
+              message: "{{ texto }}"
+              parse_mode: html
+              disable_web_page_preview: true
+              inline_keyboard: "{{ teclado }}"
+        else:
+          - if: "{{ chat_id | default('', true) | string != '' }}"
+            then:
+              - service: telegram_bot.send_message
+                data:
+                  target: "{{ chat_id }}"
+                  message: "{{ texto }}"
+                  parse_mode: html
+                  disable_web_page_preview: true
+                  inline_keyboard: "{{ teclado }}"
+            else:
+              - service: telegram_bot.send_message
+                data:
+                  message: "{{ texto }}"
+                  parse_mode: html
+                  disable_web_page_preview: true
+                  inline_keyboard: "{{ teclado }}"
+
+automation:
+  # ------------------------------------------------------------------
+  # Botões do painel (callback_data começa com "/hc ")
+  # ------------------------------------------------------------------
+  - id: home_concierge_botoes
+    alias: "🏠 Home Concierge · botões"
+    mode: queued
+    max: 25
+    trigger:
+      - platform: event
+        event_type: telegram_callback
+    condition:
+      - "{{ (trigger.event.data.data | default('') | string).startswith('/hc ') }}"
+    action:
+      - service: script.home_concierge
+        data:
+          acao: "{{ trigger.event.data.data[4:] }}"
+          chat_id: "{{ trigger.event.data.chat_id }}"
+          message_id: "{{ trigger.event.data.message.message_id }}"
+          callback_id: "{{ trigger.event.data.id }}"
+          nome: "{{ trigger.event.data.from_first | default('') }}"
+
+  # ------------------------------------------------------------------
+  # Comandos digitados: /menu /casa /start /status /faxina /luzes /cenas
+  # ------------------------------------------------------------------
+  - id: home_concierge_comandos
+    alias: "🏠 Home Concierge · comandos"
+    mode: queued
+    trigger:
+      - platform: event
+        event_type: telegram_command
+    condition:
+      - "{{ trigger.event.data.command in ['/menu', '/casa', '/start', '/status', '/faxina', '/luzes', '/cenas'] }}"
+    action:
+      - service: script.home_concierge
+        data:
+          acao: >-
+            {{ {'/status': 'nav status', '/faxina': 'nav faxina', '/luzes': 'nav luzes',
+                '/cenas': 'nav cenas'}.get(trigger.event.data.command, 'nav menu') }}
+          chat_id: "{{ trigger.event.data.chat_id }}"
+          nome: "{{ trigger.event.data.from_first | default('') }}"
+
+  # ------------------------------------------------------------------
+  # Mantém interruptor e cronômetro da faxina sempre coerentes, mesmo
+  # quando a faxina é ligada/desligada pelo app, Alexa ou dashboard.
+  # ------------------------------------------------------------------
+  - id: home_concierge_faxina_sync
+    alias: "🏠 Home Concierge · faxina sincronizada"
+    mode: queued
+    trigger:
+      - platform: state
+        entity_id: input_boolean.modo_faxina
+        to: "on"
+        id: ligou
+      - platform: state
+        entity_id: input_boolean.modo_faxina
+        to: "off"
+        id: desligou
+    action:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: ligou
+              - condition: state
+                entity_id: timer.modo_faxina
+                state: idle
+            sequence:
+              - service: timer.start
+                target:
+                  entity_id: timer.modo_faxina
+          - conditions:
+              - condition: trigger
+                id: desligou
+              - condition: not
+                conditions:
+                  - condition: state
+                    entity_id: timer.modo_faxina
+                    state: idle
+            sequence:
+              - service: timer.cancel
+                target:
+                  entity_id: timer.modo_faxina
+
+  # ------------------------------------------------------------------
+  # Aviso 10 minutos antes do fim, com botões para estender/encerrar
+  # (respeita o "Não perturbe")
+  # ------------------------------------------------------------------
+  - id: home_concierge_faxina_aviso
+    alias: "🏠 Home Concierge · faxina acabando"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >-
+          {%- set fim = state_attr('timer.modo_faxina', 'finishes_at') -%}
+          {{ is_state('timer.modo_faxina', 'active') and fim is not none
+             and (as_datetime(fim) - now()).total_seconds() <= 600 }}
+    condition:
+      - condition: state
+        entity_id: input_boolean.concierge_nao_perturbe
+        state: "off"
+    action:
+      - service: telegram_bot.send_message
+        data:
+          parse_mode: html
+          message: |-
+            <b>⏳ Modo Faxina termina em ~10 min</b>
+            Depois disso as luzes voltam a apagar automaticamente.
+            Precisa de mais tempo?
+          inline_keyboard:
+            - "➕ Mais 1h:/hc faxina_mais, ⏹️ Encerrar:/hc faxina_off"
+            - "🏠 Abrir painel:/hc nav menu"
+
+  # ------------------------------------------------------------------
+  # Fim do cronômetro: desliga a faxina e avisa (silencioso se 🔕)
+  # ------------------------------------------------------------------
+  - id: home_concierge_faxina_fim
+    alias: "🏠 Home Concierge · faxina encerrada"
+    mode: single
+    trigger:
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.modo_faxina
+    action:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.modo_faxina
+      - service: telegram_bot.send_message
+        data:
+          parse_mode: html
+          disable_notification: "{{ is_state('input_boolean.concierge_nao_perturbe', 'on') }}"
+          message: |-
+            <b>✅ Modo Faxina encerrado</b>
+            As automações normais de iluminação voltaram a funcionar.
+          inline_keyboard:
+            - "🧹 Reativar 1h:/hc faxina_1h, 🏠 Painel:/hc nav menu"
