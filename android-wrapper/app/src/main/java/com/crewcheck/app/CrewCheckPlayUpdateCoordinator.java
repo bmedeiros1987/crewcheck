@@ -42,6 +42,11 @@ final class CrewCheckPlayUpdateCoordinator {
     private final AppUpdateManager appUpdateManager;
     private boolean checking;
     private boolean destroyed;
+    private String lastState;
+    private int lastAvailableVersion;
+    private Integer lastStalenessDays;
+    private int lastPriority;
+    private long lastCheckedAt;
 
     CrewCheckPlayUpdateCoordinator(Activity activity, WebView webView) {
         this.activity = activity;
@@ -67,6 +72,12 @@ final class CrewCheckPlayUpdateCoordinator {
             checking = false;
             publishStatus("unavailable", 0, null, 0);
         }
+    }
+
+    void onPageReady() {
+        if (destroyed) return;
+        if (lastState != null) dispatchStatus();
+        checkForUpdate();
     }
 
     void destroy() {
@@ -158,14 +169,23 @@ final class CrewCheckPlayUpdateCoordinator {
     }
 
     private void publishStatus(String state, int availableVersion, Integer stalenessDays, int priority) {
+        lastState = state;
+        lastAvailableVersion = availableVersion;
+        lastStalenessDays = stalenessDays;
+        lastPriority = priority;
+        lastCheckedAt = System.currentTimeMillis();
+        dispatchStatus();
+    }
+
+    private void dispatchStatus() {
         try {
-            if (webView == null || destroyed) return;
+            if (webView == null || destroyed || lastState == null) return;
             JSONObject detail = new JSONObject();
-            detail.put("state", state);
-            detail.put("availableVersionCode", availableVersion > 0 ? availableVersion : JSONObject.NULL);
-            detail.put("stalenessDays", stalenessDays == null ? JSONObject.NULL : stalenessDays);
-            detail.put("priority", priority);
-            detail.put("checkedAt", System.currentTimeMillis());
+            detail.put("state", lastState);
+            detail.put("availableVersionCode", lastAvailableVersion > 0 ? lastAvailableVersion : JSONObject.NULL);
+            detail.put("stalenessDays", lastStalenessDays == null ? JSONObject.NULL : lastStalenessDays);
+            detail.put("priority", lastPriority);
+            detail.put("checkedAt", lastCheckedAt);
             final String payload = detail.toString();
             final String js = "(function(){try{var detail=" + payload + ";" +
                     "window.__crewcheckNativeUpdateStatus=detail;" +
