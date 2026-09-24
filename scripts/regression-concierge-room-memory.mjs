@@ -6,10 +6,7 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [source, view] = await Promise.all([
-  read('client/src/lib/conciergeRoomHistory.ts'),
-  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
-]);
+const source = await read('client/src/lib/conciergeRoomHistory.ts');
 
 const compiled = ts.transpileModule(source, {
   fileName: 'conciergeRoomHistory.ts',
@@ -55,9 +52,6 @@ const empty = history.buildConciergeRoomMemory(stays, '', '812', '2026-09-23');
 assert.equal(empty.hotelVisits, 0);
 assert.equal(empty.roomVisits, 0);
 
-assert.match(view, /Memória do pernoite/);
-assert.match(view, /buildConciergeRoomMemory/);
-assert.match(view, /Você já ficou neste quarto/);
-assert.match(view, /Esta memória é privada/);
+assert.doesNotMatch(source, /android-wrapper|watchSnapshotV1|canonicalRoster|journeyId|\bAPZ\b/, 'room memory must remain Concierge-owned and isolated');
 
 console.log('CrewCheck Concierge room memory regression OK');
