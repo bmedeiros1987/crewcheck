@@ -96,7 +96,18 @@ export function overlayPendingConciergeStays(
     if (!pending?.patch) continue;
     const patch = sanitizeConciergeStayPatch(pending.patch);
     const key = conciergeStayKey(patch);
-    const index = next.findIndex((item) => conciergeStayKey(item) === key);
+    let index = next.findIndex((item) => conciergeStayKey(item) === key);
+
+    if (index < 0 && !isServerStayId(patch.id)) {
+      const day = stayDay(patch.stayDate);
+      if (day) {
+        const sameDayIndexes = next
+          .map((item, itemIndex) => stayDay(item?.stayDate) === day ? itemIndex : -1)
+          .filter((itemIndex) => itemIndex >= 0);
+        if (sameDayIndexes.length === 1) index = sameDayIndexes[0];
+      }
+    }
+
     if (index >= 0) {
       const existing = next[index];
       next[index] = { ...existing, ...patch, id: patch.id || existing.id };
