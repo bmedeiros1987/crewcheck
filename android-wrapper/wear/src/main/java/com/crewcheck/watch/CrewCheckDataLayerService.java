@@ -13,8 +13,9 @@ import java.nio.charset.StandardCharsets;
  * Background receiver for the compact canonical watch projection.
  *
  * The roster channel is always available, including Free. Premium-only channels are isolated
- * and are cleared on downgrade so stale CrewLife/Concierge data never survives an entitlement
- * change. The watch remains a renderer: it never parses PDF or recalculates operational rules.
+ * and are cleared on downgrade or entitlement expiry so stale CrewLife/Concierge data never
+ * survives a commercial-state change. The watch remains a renderer: it never parses PDF or
+ * recalculates operational rules.
  */
 public final class CrewCheckDataLayerService extends WearableListenerService {
     @Override
@@ -89,7 +90,7 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
 
     private void applyContextSnapshot(String json) {
         WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
-        if (!snapshot.premiumAccess) {
+        if (!WatchEntitlements.premiumFromSnapshot(snapshot, System.currentTimeMillis())) {
             WellbeingStore wellbeing = new WellbeingStore(this);
             wellbeing.clearCrewLife();
             wellbeing.clearRoutine();
