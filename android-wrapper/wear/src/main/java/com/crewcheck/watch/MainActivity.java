@@ -58,7 +58,6 @@ public final class MainActivity extends FragmentActivity
      * acentos disputando a tela ao mesmo tempo. Aqui o fundo desaparece e sobra o dado.
      */
     private static final int SURFACE = Color.rgb(28, 28, 30);
-    private static final int SURFACE = Color.rgb(8, 22, 42);
     private static final int WHITE = Color.rgb(248, 250, 252);
     private static final int MUTED = Color.rgb(152, 152, 157);
     private static final int MUTED_AMBIENT = Color.rgb(150, 150, 150);
