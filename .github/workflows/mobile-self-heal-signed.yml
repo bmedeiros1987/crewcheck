@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/p0-android-self-heal/**'
+      - 'android-wrapper/app/src/main/res/drawable-nodpi/crewcheck_logo_neon.png'
       - '.github/workflows/mobile-self-heal-signed.yml'
   workflow_dispatch:
 
