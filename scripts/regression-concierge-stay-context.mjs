@@ -84,4 +84,6 @@ assert.match(card, /não inventa horário de traslado/);
 assert.match(noiseCard, /ConciergeStayContextCard/);
 assert.doesNotMatch(source, /canonicalRoster|journeyId|\bAPZ\b/, 'context engine must remain isolated from canonical roster concepts');
 
+await import('./regression-concierge-stay-notifications.mjs');
+
 console.log('CrewCheck Concierge contextual stay regression OK');
