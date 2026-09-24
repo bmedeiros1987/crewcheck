@@ -36,6 +36,8 @@ Campos sensíveis como CPF, e-mail, telefone, credenciais/tokens, nome de tripul
 
 - Um consumidor v1 deve ignorar campos opcionais desconhecidos.
 - Um peer v1 antigo que não envie `premiumAccess` ou `schedule` continua válido: defaults são `false` e `[]`.
+- Os três campos numéricos obrigatórios devem chegar como inteiros JSON reais; representações textuais (`"1"`, `"1800000000000"`) e números fracionários são rejeitados, sem coerção implícita.
+- Booleanos opcionais ausentes ou com tipo inválido usam o default seguro. Em especial, `premiumAccess` só pode habilitar Premium quando o valor recebido for o booleano JSON `true`; string `"true"`, `1` ou outro tipo não promovem entitlement.
 - Dentro do schema 1, evolução é somente aditiva e opcional; nenhum campo existente pode mudar de significado.
 - `schemaVersion > 1` é rejeitado com segurança pelo consumidor v1. O relógio mantém o último snapshot v1 validado e o marca stale quando expirar; não tenta reinterpretar versão nova.
 - O produtor não deve remover os três campos obrigatórios nem enviar timestamps incoerentes.
