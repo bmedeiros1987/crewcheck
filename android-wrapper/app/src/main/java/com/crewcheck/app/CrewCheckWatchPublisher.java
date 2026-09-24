@@ -17,6 +17,10 @@ import java.util.Set;
 /**
  * Sends only an allow-listed, presentation-ready roster projection to the paired watch.
  * The watch never receives login tokens, CPF, e-mail, crew name or hotel room numbers.
+ *
+ * watchSnapshotV1 is backward-compatible: basic canonical roster is always available. The
+ * optional premiumAccess flag defaults to false, so an older phone/peer fails closed and keeps
+ * basic roster rather than exposing fields that may depend on paid/costly integrations.
  */
 public final class CrewCheckWatchPublisher {
     public static final String SNAPSHOT_PATH = "/crewcheck/watch/context/v1";
@@ -104,35 +108,45 @@ public final class CrewCheckWatchPublisher {
 
         String state = clean(source.optString("state", "UNKNOWN"), 24).toUpperCase();
         if (!ALLOWED_STATES.contains(state)) state = "UNKNOWN";
+        boolean premiumAccess = source.optBoolean("premiumAccess", false);
 
         JSONObject out = new JSONObject();
         out.put("schemaVersion", SCHEMA_VERSION);
+        out.put("premiumAccess", premiumAccess);
         copyString(source, out, "contextId", 80);
         out.put("generatedAtEpochMs", generatedAt);
         out.put("validUntilEpochMs", validUntil);
         out.put("state", state);
+
+        // Free/basic contract: canonical roster facts do not depend on paid APIs.
         copyString(source, out, "headline", 42);
         copyString(source, out, "primaryTime", 12);
         copyString(source, out, "detail", 96);
         copyString(source, out, "presentationTime", 12);
         copyString(source, out, "presentationPlace", 42);
-        copyString(source, out, "leaveTime", 12);
-        copyString(source, out, "trafficDetail", 64);
         copyString(source, out, "currentFlight", 16);
         copyString(source, out, "currentRoute", 32);
-        copyString(source, out, "gate", 18);
-        out.put("remoteStand", source.optBoolean("remoteStand", false));
         copyString(source, out, "boardingTime", 12);
         copyString(source, out, "eta", 12);
         copyString(source, out, "connection", 16);
         copyString(source, out, "nextFlight", 16);
         copyString(source, out, "nextDetail", 64);
         copyString(source, out, "overnight", 24);
-        copyString(source, out, "hotelPickup", 64);
-        out.put("changed", source.optBoolean("changed", false));
-        out.put("source", "canonical-roster");
-        copySchedule(source, out);
+        copySchedule(source, out, premiumAccess);
 
+        // Premium-only projection. Absence or downgrade removes these fields on the next snapshot.
+        if (premiumAccess) {
+            copyString(source, out, "leaveTime", 12);
+            copyString(source, out, "trafficDetail", 64);
+            copyString(source, out, "gate", 18);
+            out.put("remoteStand", source.optBoolean("remoteStand", false));
+            copyString(source, out, "hotelPickup", 64);
+            out.put("changed", source.optBoolean("changed", false));
+        } else {
+            out.put("changed", false);
+        }
+
+        out.put("source", "canonical-roster");
         rejectSensitiveFields(source);
 
         String normalized = out.toString();
@@ -142,7 +156,7 @@ public final class CrewCheckWatchPublisher {
         return normalized;
     }
 
-    private static void copySchedule(JSONObject source, JSONObject target) throws Exception {
+    private static void copySchedule(JSONObject source, JSONObject target, boolean premiumAccess) throws Exception {
         JSONArray input = source.optJSONArray("schedule");
         if (input == null) return;
 
@@ -159,7 +173,7 @@ public final class CrewCheckWatchPublisher {
             copyString(item, cleanItem, "title", 24);
             copyString(item, cleanItem, "route", 32);
             copyString(item, cleanItem, "presentation", 12);
-            copyString(item, cleanItem, "gate", 18);
+            if (premiumAccess) copyString(item, cleanItem, "gate", 18);
             copyString(item, cleanItem, "detail", 64);
             if (cleanItem.length() > 0) output.put(cleanItem);
         }
