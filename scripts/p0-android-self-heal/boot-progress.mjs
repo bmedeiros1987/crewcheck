@@ -14,8 +14,9 @@ if (!source.includes('CREWCHECK_FAST_REVEAL_DELAY_MS')) {
   replaceOnce(
     '    private static final long CREWCHECK_SHELL_WATCHDOG_DELAY_MS = 3200L;\n',
     '    private static final long CREWCHECK_SHELL_WATCHDOG_DELAY_MS = 3200L;\n' +
-      '    private static final long CREWCHECK_FAST_REVEAL_DELAY_MS = 160L;\n',
-    'constante de fast reveal',
+      '    private static final long CREWCHECK_FAST_REVEAL_DELAY_MS = 160L;\n' +
+      '    private static final long CREWCHECK_PROGRESS_DELAY_MS = 900L;\n',
+    'constantes do fast reveal/progresso',
   );
 }
 
@@ -23,8 +24,8 @@ if (!source.includes('private LinearLayout crewCheckBootOverlay;')) {
   replaceOnce(
     '    private TextView crewCheckBootStatusText;\n',
     '    private LinearLayout crewCheckBootOverlay;\n' +
-      '    private TextView crewCheckBootStatusText;\n' +
-      '    private TextView crewCheckBootDetailText;\n',
+      '    private android.widget.ProgressBar crewCheckBootProgress;\n' +
+      '    private TextView crewCheckBootStatusText;\n',
     'campos do overlay premium',
   );
 }
@@ -43,73 +44,36 @@ const premiumOverlayMethods = `    private void showCrewCheckBootStatus(final St
                     LinearLayout overlay = new LinearLayout(MainActivity.this);
                     overlay.setOrientation(LinearLayout.VERTICAL);
                     overlay.setGravity(Gravity.CENTER);
-                    overlay.setPadding(dp(30), dp(36), dp(30), dp(36));
-                    overlay.setBackgroundColor(Color.parseColor("#061426"));
+                    overlay.setPadding(dp(24), dp(28), dp(24), dp(28));
+                    // O fundo replica o canto da nova marca para não criar um
+                    // quadrado visível ao redor do PNG.
+                    overlay.setBackgroundColor(Color.parseColor("#00010E"));
 
                     android.widget.ImageView brand = new android.widget.ImageView(MainActivity.this);
-                    brand.setImageResource(R.drawable.crewcheck_icon_site);
+                    brand.setImageResource(R.drawable.crewcheck_logo_neon);
                     brand.setContentDescription("CrewCheck");
                     brand.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-                    LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(dp(82), dp(82));
-                    brandParams.setMargins(0, 0, 0, dp(14));
+                    LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(dp(168), dp(168));
+                    brandParams.setMargins(0, 0, 0, dp(18));
                     overlay.addView(brand, brandParams);
 
-                    TextView brandName = new TextView(MainActivity.this);
-                    brandName.setText("CrewCheck");
-                    brandName.setTextColor(Color.WHITE);
-                    brandName.setTextSize(29f);
-                    brandName.setGravity(Gravity.CENTER);
-                    brandName.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                    LinearLayout.LayoutParams brandNameParams = new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
+                    android.widget.ProgressBar progress = new android.widget.ProgressBar(
+                            MainActivity.this,
+                            null,
+                            android.R.attr.progressBarStyleHorizontal
                     );
-                    brandNameParams.setMargins(0, 0, 0, dp(22));
-                    overlay.addView(brandName, brandNameParams);
-
-                    android.widget.ProgressBar progress = new android.widget.ProgressBar(MainActivity.this);
                     progress.setIndeterminate(true);
+                    progress.setVisibility(View.INVISIBLE);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         progress.setIndeterminateTintList(
                                 android.content.res.ColorStateList.valueOf(Color.parseColor("#22D3EE"))
                         );
+                        progress.setProgressBackgroundTintList(
+                                android.content.res.ColorStateList.valueOf(Color.parseColor("#172554"))
+                        );
                     }
-                    LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(38), dp(38));
-                    progressParams.setMargins(0, 0, 0, dp(18));
+                    LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(156), dp(4));
                     overlay.addView(progress, progressParams);
-
-                    TextView status = new TextView(MainActivity.this);
-                    status.setTextColor(Color.WHITE);
-                    status.setTextSize(18f);
-                    status.setGravity(Gravity.CENTER);
-                    status.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                    status.setPadding(dp(8), 0, dp(8), 0);
-                    overlay.addView(status, new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                    ));
-
-                    TextView detail = new TextView(MainActivity.this);
-                    detail.setTextColor(Color.parseColor("#9EC1D8"));
-                    detail.setTextSize(13f);
-                    detail.setGravity(Gravity.CENTER);
-                    detail.setPadding(dp(14), dp(8), dp(14), 0);
-                    LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                    );
-                    detailParams.setMargins(0, 0, 0, dp(24));
-                    overlay.addView(detail, detailParams);
-
-                    TextView safety = new TextView(MainActivity.this);
-                    safety.setText("Carregamento seguro · isso leva só alguns segundos");
-                    safety.setTextColor(Color.parseColor("#6F93AD"));
-                    safety.setTextSize(11f);
-                    safety.setGravity(Gravity.CENTER);
-                    overlay.addView(safety, new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                    ));
 
                     FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -117,21 +81,23 @@ const premiumOverlayMethods = `    private void showCrewCheckBootStatus(final St
                     );
                     rootLayout.addView(overlay, params);
                     crewCheckBootOverlay = overlay;
-                    crewCheckBootStatusText = status;
-                    crewCheckBootDetailText = detail;
+                    crewCheckBootProgress = progress;
                 }
 
-                boolean opening = message == null || message.startsWith("Abrindo");
-                crewCheckBootStatusText.setText(
-                        opening ? "Entrando no CrewCheck" : message
-                );
-                crewCheckBootDetailText.setText(
-                        opening
-                                ? "Sincronizando sua escala e preparando sua experiência."
-                                : "Recuperando a interface sem apagar login, escala ou preferências."
-                );
                 crewCheckBootOverlay.setVisibility(View.VISIBLE);
                 crewCheckBootOverlay.bringToFront();
+                if (crewCheckBootProgress != null) {
+                    crewCheckBootProgress.setVisibility(View.INVISIBLE);
+                    crewCheckBootProgress.postDelayed(() -> {
+                        try {
+                            if (crewCheckBootOverlay != null
+                                    && crewCheckBootOverlay.getVisibility() == View.VISIBLE
+                                    && crewCheckBootProgress != null) {
+                                crewCheckBootProgress.setVisibility(View.VISIBLE);
+                            }
+                        } catch (Exception ignored) {}
+                    }, CREWCHECK_PROGRESS_DELAY_MS);
+                }
             } catch (Exception ignored) {}
         });
     }
@@ -139,7 +105,12 @@ const premiumOverlayMethods = `    private void showCrewCheckBootStatus(final St
     private void hideCrewCheckBootStatus() {
         runOnUiThread(() -> {
             try {
-                if (crewCheckBootOverlay != null) crewCheckBootOverlay.setVisibility(View.GONE);
+                if (crewCheckBootProgress != null) {
+                    crewCheckBootProgress.setVisibility(View.INVISIBLE);
+                }
+                if (crewCheckBootOverlay != null) {
+                    crewCheckBootOverlay.setVisibility(View.GONE);
+                }
             } catch (Exception ignored) {}
         });
     }
@@ -194,4 +165,4 @@ const fastRevealMethods = `    private void scheduleCrewCheckShellWatchdog(final
 source = source.slice(0, newScheduleStart) + fastRevealMethods + source.slice(verifyStart);
 
 fs.writeFileSync(file, source, 'utf8');
-console.log('[p0-android-self-heal:boot-progress] overlay premium + fast reveal não destrutivo aplicados.');
+console.log('[p0-android-self-heal:boot-progress] logo nova + barra tardia + fast reveal não destrutivo aplicados.');
