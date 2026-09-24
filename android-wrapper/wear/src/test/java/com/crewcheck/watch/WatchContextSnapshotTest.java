@@ -114,6 +114,42 @@ public final class WatchContextSnapshotTest {
     }
 
     @Test
+    public void malformedPremiumBooleanFailsClosedWithoutBreakingFreeRoster() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("premiumAccess", "true")
+                .put("state", "BOARDING")
+                .put("currentFlight", "LA3721")
+                .put("gate", "24"));
+
+        assertFalse(snapshot.premiumAccess);
+        assertEquals("P24", snapshot.complicationShortText(NOW));
+        assertEquals("LA3721", snapshot.currentFlight);
+    }
+
+    @Test
+    public void malformedOptionalBooleansUseSafeDefaults() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(base()
+                .put("remoteStand", "true")
+                .put("changed", "true")
+                .put("state", "BOARDING")
+                .put("currentFlight", "LA3721"));
+
+        assertFalse(snapshot.remoteStand);
+        assertFalse(snapshot.changed);
+        assertEquals("LA3721", snapshot.complicationShortText(NOW));
+    }
+
+    @Test
+    public void rejectsCoercedRequiredNumericFields() throws Exception {
+        assertThrows(IllegalArgumentException.class, () ->
+                WatchContextSnapshot.fromJson(base().put("schemaVersion", "1")));
+        assertThrows(IllegalArgumentException.class, () ->
+                WatchContextSnapshot.fromJson(base().put("generatedAtEpochMs", Long.toString(NOW - 60_000L))));
+        assertThrows(IllegalArgumentException.class, () ->
+                WatchContextSnapshot.fromJson(base().put("validUntilEpochMs", Double.valueOf(NOW + 60_000L))));
+    }
+
+    @Test
     public void rejectsUnknownSchemaAndSensitiveFields() throws Exception {
         assertThrows(IllegalArgumentException.class, () ->
                 WatchContextSnapshot.fromJson(base().put("schemaVersion", 2)));
