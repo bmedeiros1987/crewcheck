@@ -1,0 +1,46 @@
+import fs from 'node:fs';
+
+function read(path) {
+  return fs.readFileSync(path, 'utf8');
+}
+
+function requireText(source, needle, label) {
+  if (!source.includes(needle)) {
+    throw new Error(`Missing ${label}: ${needle}`);
+  }
+}
+
+const publisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java');
+const telemetry = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchDeviceTelemetry.java');
+const syncService = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java');
+const manifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
+const watchContext = read('client/src/lib/watchContext.ts');
+const contract = read('docs/mobile_watch_snapshot_v1_contract.md');
+
+requireText(publisher, 'source.optBoolean("premiumAccess", false)', 'fail-closed premium default');
+requireText(publisher, 'if (premiumAccess) {', 'premium projection gate');
+requireText(publisher, 'copySchedule(source, out, premiumAccess)', 'schedule premium boundary');
+requireText(publisher, 'out.put("changed", false)', 'downgrade changed reset');
+requireText(publisher, 'out.put("source", "canonical-roster")', 'canonical source marker');
+requireText(publisher, '"token", "accessToken", "refreshToken", "authorization"', 'sensitive-field rejection');
+
+requireText(watchContext, 'premiumAccess: boolean;', 'watchSnapshot v1 additive entitlement field');
+requireText(watchContext, 'premiumAccess = storedWatchPremiumAccess()', 'mobile entitlement producer default');
+requireText(watchContext, 'return Boolean(getStoredUser()?.premiumAccess);', 'stored entitlement source');
+
+requireText(telemetry, 'STATUS_REQUEST_PATH = "/crewcheck/watch/device-status/request/v1"', 'telemetry request v1');
+requireText(telemetry, 'STATUS_RESPONSE_PATH = "/crewcheck/watch/device-status/response/v1"', 'telemetry response v1');
+requireText(telemetry, 'REQUEST_WINDOW_MS = 5_000L', 'bounded nonce window');
+requireText(telemetry, 'boolean legacyResponse = responseRequestId.isBlank();', 'old-peer telemetry compatibility');
+requireText(telemetry, 'if (!legacyResponse && !verifiedRoundTrip) return;', 'mismatched nonce rejection');
+
+requireText(syncService, 'CrewCheckWatchDeviceTelemetry.STATUS_RESPONSE_PATH.equals(path)', 'phone telemetry routing');
+requireText(syncService, 'CrewCheckWatchPublisher.republishLast(this)', 'cached snapshot fast path');
+requireText(manifest, 'android:name=".CrewCheckDeviceHubActivity"', 'Device Hub activity');
+requireText(manifest, 'android:pathPrefix="/crewcheck/watch/device-status/response/"', 'telemetry manifest filter');
+
+requireText(contract, 'missing `premiumAccess` means `false`', 'old-phone/new-peer compatibility documentation');
+requireText(contract, 'Republish therefore **never turns stale data into fresh data**', 'stale/offline documentation');
+requireText(contract, 'durable Android/PWA shared-PDF handoff from #797 or its successor', 'PDF durability merge gate');
+
+console.log('mobile watch v1 handoff regression: PASS');
