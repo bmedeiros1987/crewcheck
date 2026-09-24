@@ -29,6 +29,10 @@ const events = [
     canonical: { kind: 'stay', date: '24/09/2026', startDateTime: '2026-09-24T01:00:00.000Z', endDateTime: '2026-09-24T13:00:00.000Z' },
   },
   {
+    id: 'flight-wrong-airport', kind: 'flight', date: '24/09/2026', origin: 'GIG', destination: 'BSB', presentation: '06:40',
+    canonical: { kind: 'flight', date: '24/09/2026', startDateTime: '2026-09-24T13:10:00.000Z', endDateTime: '2026-09-24T14:30:00.000Z', showPresentation: true },
+  },
+  {
     id: 'flight-next', kind: 'flight', date: '24/09/2026', origin: 'GRU', destination: 'BSB', presentation: '10:15',
     canonical: { kind: 'flight', date: '24/09/2026', startDateTime: '2026-09-24T13:30:00.000Z', endDateTime: '2026-09-24T15:00:00.000Z', showPresentation: true },
   },
@@ -57,11 +61,13 @@ assert.equal(gru.hotelName, 'Hotel Contingência', 'saved user stay must overrid
 assert.equal(gru.hotelSource, 'saved');
 assert.equal(gru.presentationTime, '09:50', 'saved presentation must win when available');
 assert.equal(gru.airport, 'GRU');
+assert.equal(gru.nextEventId, 'flight-next', 'next operational context must remain scoped to the overnight airport');
 
 const noSavedGru = inference.buildConciergeStaySuggestions(events, [], catalog).find((item) => item.eventId === 'stay-gru');
 assert.equal(noSavedGru.hotelName, 'Hotel Publicado');
 assert.equal(noSavedGru.hotelSource, 'roster');
-assert.equal(noSavedGru.presentationTime, '10:15', 'next real operational presentation should be inherited by the stay context');
+assert.equal(noSavedGru.presentationTime, '10:15', 'next real operational presentation should be inherited only from the same overnight airport');
+assert.equal(noSavedGru.nextEventId, 'flight-next', 'an earlier flight from another airport must not become the overnight next event');
 
 const crossAirportSavedGru = inference.buildConciergeStaySuggestions(events, [
   { stayDate: '2026-09-24', airport: 'GIG', hotelName: 'Hotel Rio', presentationTime: '07:00', updatedAt: '2026-09-24T03:00:00Z' },
@@ -71,11 +77,24 @@ assert.equal(crossAirportSavedGru.hotelSource, 'roster');
 assert.equal(crossAirportSavedGru.presentationTime, '10:15', 'presentation from another airport on the same date must not leak into this stay');
 assert.equal(crossAirportSavedGru.airport, 'GRU', 'airport identity must remain tied to the canonical stay');
 
+const noMatchingOperational = inference.buildConciergeStaySuggestions([
+  {
+    id: 'stay-gru-isolated', kind: 'stay', date: '28/09/2026', origin: 'GRU', destination: 'GRU',
+    canonical: { kind: 'stay', date: '28/09/2026', startDateTime: '2026-09-28T01:00:00.000Z', endDateTime: '2026-09-28T13:00:00.000Z' },
+  },
+  {
+    id: 'flight-gig-only', kind: 'flight', date: '28/09/2026', origin: 'GIG', destination: 'BSB', presentation: '08:00',
+    canonical: { kind: 'flight', date: '28/09/2026', startDateTime: '2026-09-28T13:30:00.000Z', endDateTime: '2026-09-28T15:00:00.000Z' },
+  },
+], [], [])[0];
+assert.equal(noMatchingOperational.presentationTime, '', 'Concierge must prefer unknown presentation over inheriting a time from another airport');
+assert.equal(noMatchingOperational.nextEventId, null, 'cross-airport operational events must not be linked to the overnight');
+
 const cwb = suggestions.find((item) => item.eventId === 'stay-cwb');
 assert.equal(cwb.hotelName, 'Hotel Histórico', 'one unique personal hotel for the airport may be suggested');
 assert.equal(cwb.hotelSource, 'history-unique');
 
-const catalogOnly = inference.buildConciergeStaySuggestions([events[3]], [], catalog)[0];
+const catalogOnly = inference.buildConciergeStaySuggestions([events[4]], [], catalog)[0];
 assert.equal(catalogOnly.hotelName, 'Hotel Único');
 assert.equal(catalogOnly.hotelSource, 'catalog-unique');
 
