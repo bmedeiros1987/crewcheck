@@ -6,11 +6,10 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [historySource, noiseSource, noiseCardSource, stayManagerSource] = await Promise.all([
+const [historySource, noiseSource, noiseCardSource] = await Promise.all([
   read('client/src/lib/conciergeRoomHistory.ts'),
   read('client/src/lib/conciergeRoomNoise.ts'),
   read('client/src/components/v1391/ConciergeRoomNoiseCard.tsx'),
-  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
 ]);
 
 function transpile(source, fileName) {
@@ -41,7 +40,6 @@ assert.match(noiseCardSource, /Obra \/ reforma/, 'noise card must expose a quick
 assert.match(noiseCardSource, /Trânsito \/ avenida/, 'noise card must expose a quick structural-candidate traffic action');
 assert.match(noiseCardSource, /candidato estrutural · não confirmado/, 'UI must not present one private structural candidate as confirmed fact');
 assert.match(noiseCardSource, /ficam somente neste aparelho/, 'UI must disclose the local-private persistence boundary');
-assert.match(stayManagerSource, /<ConciergeRoomNoiseCard hotelName=\{draft\.hotelName\} room=\{draft\.room\} stayDate=\{draft\.stayDate\}\/>/, 'stay manager must surface the structured noise card in the Concierge flow');
 
 function createMemoryStorage() {
   const data = new Map();
@@ -132,5 +130,6 @@ assert.equal(sanitized[0].recurrence, 'unknown', 'unknown recurrence must fail s
 assert.equal(sanitized[0].source, 'user-private', 'local private storage must not accept an invented external reporter identity');
 assert.equal(sanitized[0].confidence, 'medium', 'invalid confidence must fail safe');
 assert.deepEqual(sanitized[0].evidenceIds, ['a', 'b']);
+assert.doesNotMatch(noiseCardSource, /PresentationStayManagerView|android-wrapper|watchSnapshotV1/, 'Concierge noise card must not own shared-shell integration');
 
 console.log('CrewCheck Concierge structured room noise regression OK');
