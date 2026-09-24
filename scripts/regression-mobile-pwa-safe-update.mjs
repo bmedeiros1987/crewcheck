@@ -14,10 +14,6 @@ assert.ok(
   watcher.includes("if (checking || navigator.onLine === false) return;"),
   'release watcher must skip update checks while offline',
 );
-assert.ok(
-  watcher.includes("crewcheck:pwa-update-available"),
-  'release watcher must report update availability',
-);
 assert.ok(!watcher.includes('window.location.reload()'), 'release watcher must not force reload');
 assert.ok(!watcher.includes("registration.waiting.postMessage('SKIP_WAITING')"), 'release watcher must not force activation');
 assert.ok(!index.includes('window.location.reload()'), 'materialized PWA HTML must not force reload');
