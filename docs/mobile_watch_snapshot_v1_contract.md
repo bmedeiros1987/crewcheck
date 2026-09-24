@@ -2,7 +2,7 @@
 
 ## Ownership and source of truth
 
-This document describes the **phone-side contract owned by CrewCheck Mobile**. Peripherals consume it; they do not own `android-wrapper/app/**` or the mobile/PWA producer. The integration was reconciled on top of `main@5c925ab5bb62dcea28ecd533381b7461f935a253` after reviewing peripheral specifications in PR #773 and PR #801.
+This document describes the **phone-side contract owned by CrewCheck Mobile**. Peripherals consume it; they do not own `android-wrapper/app/**` or the mobile/PWA producer. The integration was reconciled on top of `main@5c925ab5bb62dcea28ecd533381b7461f935a253` and re-audited against peripheral specs #773@`7f30c16b2abb19427646f0ffccbac50f2471fba8` and #801@`913520fa00ca0a9d398b9120fc9358adec7072e7`.
 
 The watch never parses PDFs, recalculates APZ/journeys/compliance/finance, or becomes an operational source of truth. The source remains the canonical CrewCheck roster. The phone only projects an allow-listed presentation snapshot and transports it through Wear Data Layer.
 
@@ -22,17 +22,19 @@ Maximum normalized payload: 16 KiB.
 - `generatedAtEpochMs`: positive epoch milliseconds.
 - `validUntilEpochMs`: epoch milliseconds greater than or equal to `generatedAtEpochMs`.
 
+All three required numeric fields must be JSON integer values, never numeric strings or fractional numbers. The native sanitizer rejects coercive representations instead of silently promoting them into a valid v1 snapshot.
+
 `state` is accepted from the canonical producer but normalized to the allow-list (`OFF_DUTY`, `LEAVE_SOON`, `REPORTING`, `BOARDING`, `IN_FLIGHT`, `CONNECTION`, `OVERNIGHT`, `CHANGED`, `UNKNOWN`). Missing or unsupported values become `UNKNOWN`.
 
 ### Optional/basic fields
 
-The phone may send `contextId`, `headline`, `primaryTime`, `detail`, `presentationTime`, `presentationPlace`, `currentFlight`, `currentRoute`, `boardingTime`, `eta`, `connection`, `nextFlight`, `nextDetail`, `overnight` and up to eight `schedule` items. Schedule items are allow-listed to `id`, `kind`, `time`, `title`, `route`, `presentation`, optional `gate`, and `detail`.
+The phone may send `contextId`, `headline`, `primaryTime`, `detail`, `presentationTime`, `presentationPlace`, `currentFlight`, `currentRoute`, `boardingTime`, `eta`, `connection`, `nextFlight`, `nextDetail`, `overnight` and up to eight `schedule` items. Schedule items are allow-listed to `id`, `kind`, `time`, `title`, `route`, `presentation`, optional `gate`, and `detail`; invalid or missing `schedule[].kind` becomes `duty` before publication.
 
 The normalized phone payload always injects `source: "canonical-roster"`. Credentials, CPF, e-mail, phone number, crew name, hotel room, tokens and authorization fields are rejected.
 
 ### Premium boundary
 
-`premiumAccess` is an **optional additive v1 field**. Its default is `false` when absent. The current mobile producer derives it from the stored CrewCheck entitlement and may explicitly override it for tests/controlled callers.
+`premiumAccess` is an **optional additive v1 field**. Its default is `false` when absent. Only the JSON boolean `true` enables Premium; any other type fails closed to `false`. The same strict-boolean rule applies to optional boolean projection fields such as `remoteStand` and `changed`. The current mobile producer derives entitlement from the stored CrewCheck account and may explicitly override it for tests/controlled callers.
 
 Basic roster remains available with `premiumAccess=false`. Fields that can depend on paid/costly integrations are projected only when `premiumAccess=true`:
 
@@ -49,7 +51,7 @@ When Premium is absent or downgraded, the next normalized snapshot omits those o
 ## Backward compatibility
 
 - **Old peripheral + new phone:** the extra `premiumAccess` field is additive; old consumers must ignore unknown fields and continue reading schema v1.
-- **New peripheral + old phone:** missing `premiumAccess` means `false`. Basic roster still works; premium-derived fields must not be assumed available.
+- **New peripheral + old phone:** missing `premiumAccess` means `false`. Basic roster still works; premium-derived fields must not be assumed available. A malformed non-boolean entitlement value also fails closed instead of being coerced.
 - **Old telemetry peer:** a Device Hub status response without `requestId` may refresh cached device status but is explicitly unverified and cannot complete the current round-trip test.
 - **New telemetry peer:** a non-empty `requestId` must exactly match the phone's active nonce inside the 5-second verification window. Mismatched or late nonces are ignored.
 
