@@ -2,6 +2,7 @@ export type ConciergeStayReminderKind = 'wake' | 'presentation';
 
 export type ConciergeStayReminderContext = {
   stayDate?: unknown;
+  stayId?: unknown;
   presentationTime?: unknown;
   presentationAt?: Date | null;
   wakeAt?: Date | null;
@@ -62,6 +63,18 @@ function stayKey(value: unknown): string {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
 }
 
+function stableStayIdentity(value: unknown): string {
+  const raw = text(value);
+  if (!raw) return '';
+  const slug = raw.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'stay';
+  let hash = 2166136261;
+  for (let index = 0; index < raw.length; index += 1) {
+    hash ^= raw.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${slug}-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
 function presentationLabel(context: ConciergeStayReminderContext): string {
   const explicit = text(context.presentationTime);
   if (/^\d{2}:\d{2}$/.test(explicit)) return explicit;
@@ -82,12 +95,22 @@ function existingJobScheduledAt(job: ConciergeStayReminderExistingJob): Date | n
   return dateLike(job?.scheduledAt || job?.scheduled_at);
 }
 
-export function conciergeStayReminderJobKeys(stayDate: unknown): Record<ConciergeStayReminderKind, string> | null {
+export function conciergeStayReminderJobKeys(
+  stayDate: unknown,
+  stayId?: unknown,
+): Record<ConciergeStayReminderKind, string> | null {
   const day = stayKey(stayDate);
   if (!day) return null;
+  const identity = stableStayIdentity(stayId);
+  if (!identity) {
+    return {
+      wake: `concierge:stay:${day}:wake:v1`,
+      presentation: `concierge:stay:${day}:presentation:v1`,
+    };
+  }
   return {
-    wake: `concierge:stay:${day}:wake:v1`,
-    presentation: `concierge:stay:${day}:presentation:v1`,
+    wake: `concierge:stay:${day}:${identity}:wake:v2`,
+    presentation: `concierge:stay:${day}:${identity}:presentation:v2`,
   };
 }
 
@@ -96,7 +119,7 @@ export function buildConciergeStayReminderPlan(
   nowInput: Date = new Date(),
 ): ConciergeStayReminderPlanItem[] {
   const now = validDate(nowInput) || new Date();
-  const keys = conciergeStayReminderJobKeys(context?.stayDate);
+  const keys = conciergeStayReminderJobKeys(context?.stayDate, context?.stayId);
   const presentationAt = validDate(context?.presentationAt);
   const wakeAt = validDate(context?.wakeAt);
   if (!keys || !presentationAt || context?.isPast) return [];
@@ -172,8 +195,9 @@ export function buildConciergeStayReminderReconciliation(
   desiredPlan: ConciergeStayReminderPlanItem[],
   existingJobs: ConciergeStayReminderExistingJob[],
   desiredChannel: unknown,
+  stayId?: unknown,
 ): ConciergeStayReminderReconciliation {
-  const keys = conciergeStayReminderJobKeys(stayDate);
+  const keys = conciergeStayReminderJobKeys(stayDate, stayId);
   if (!keys) {
     return {
       enabled: false,
