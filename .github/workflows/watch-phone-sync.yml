@@ -6,6 +6,8 @@ on:
       - 'android-wrapper/app/**'
       - 'client/src/lib/watchContext.ts'
       - 'client/src/pages/Home.tsx'
+      - 'docs/mobile_watch_snapshot_v1_contract.md'
+      - 'scripts/regression-mobile-watch-v1-handoff.mjs'
       - '.github/workflows/watch-phone-sync.yml'
   workflow_dispatch:
 
@@ -39,6 +41,9 @@ jobs:
 
       - name: Install web dependencies
         run: npm ci
+
+      - name: Guard mobile-owned watch v1 contract
+        run: node scripts/regression-mobile-watch-v1-handoff.mjs
 
       - name: Prepare CrewCheck sources
         run: node scripts/v139/apply.mjs
