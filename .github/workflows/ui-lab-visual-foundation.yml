@@ -8,6 +8,7 @@ on:
       - 'client/src/styles/**'
       - 'scripts/regression-ui-lab-foundation.mjs'
       - 'scripts/regression-ui-lab-life-pass2.mjs'
+      - 'scripts/regression-ui-lab-roster-pass3.mjs'
       - '.github/workflows/ui-lab-visual-foundation.yml'
   workflow_dispatch:
 
@@ -38,6 +39,8 @@ jobs:
         run: node scripts/regression-ui-lab-foundation.mjs
       - name: UI Lab CrewLife pass 2 regression
         run: node scripts/regression-ui-lab-life-pass2.mjs
+      - name: UI Lab Roster pass 3 regression
+        run: node scripts/regression-ui-lab-roster-pass3.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Vite build
