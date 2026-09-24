@@ -14,8 +14,14 @@ assert.ok(
   'normalização do menu deve rodar depois de quem insere destinos',
 );
 
-const prepared = spawnSync(process.execPath, [path.join(root, 'scripts/v139/apply.mjs')], { cwd: root, encoding: 'utf8' });
-assert.equal(prepared.status, 0, prepared.stderr || prepared.stdout || 'preparação canônica falhou');
+// A cadeia canônica só roda em árvore limpa: reaplicar sobre uma já preparada falha em
+// âncora, por construção. O job de validação prepara antes de chamar as regressões, então
+// aqui só preparamos se ainda não estiver preparado.
+const MENU_MARKER = 'ordem por importância operacional — p1-menu-premium';
+if (!read('client/src/pages/Home.tsx').includes(MENU_MARKER)) {
+  const prepared = spawnSync(process.execPath, [path.join(root, 'scripts/v139/apply.mjs')], { cwd: root, encoding: 'utf8' });
+  assert.equal(prepared.status, 0, prepared.stderr || prepared.stdout || 'preparação canônica falhou');
+}
 
 const home = read('client/src/pages/Home.tsx');
 const menuStart = home.indexOf('function MenuDrawer(');
@@ -23,10 +29,11 @@ const menuEnd = home.indexOf('function Cockpit(', menuStart);
 assert.ok(menuStart >= 0 && menuEnd > menuStart, 'MenuDrawer não localizado');
 const menu = home.slice(menuStart, menuEnd);
 
-// Ordem dos grupos: do que acontece agora para o que é eventual.
+// Ordem dos grupos: do que acontece agora para o que é eventual. Os NOMES são contrato
+// de regression-v14-3-37-flydeck-navigation-brand.mjs — renomear grupo quebra aquele gate.
 const EXPECTED_GROUPS = [
   'Hoje', 'Preparação', 'Em operação', 'Escala e planejamento',
-  'Financeiro', 'Rotina e bem-estar', 'Documentos', 'Conta e ajuda',
+  'Financeiro', 'Rotina e apoio', 'Documentos', 'Conta, ajuda e segurança',
 ];
 const renderedGroups = [...menu.matchAll(/\{ title: '([^']+)', items: \[/g)].map((match) => match[1]);
 assert.deepEqual(

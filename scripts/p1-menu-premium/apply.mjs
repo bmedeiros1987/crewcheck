@@ -24,9 +24,9 @@ const GROUPS = [
   { title: 'Em operação', views: ['radar', 'alerts', 'regulation', 'load', 'emergency'] },
   { title: 'Escala e planejamento', views: ['import', 'iflight', 'bids', 'map', 'database'] },
   { title: 'Financeiro', views: ['perdiem', 'salary', 'crew'] },
-  { title: 'Rotina e bem-estar', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
+  { title: 'Rotina e apoio', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
   { title: 'Documentos', views: ['crewlocker', 'crewlock', 'reports', 'calendar', 'exports'] },
-  { title: 'Conta e ajuda', views: ['settings', 'plans', 'guardian', 'manual', 'support'] },
+  { title: 'Conta, ajuda e segurança', views: ['settings', 'plans', 'guardian', 'manual', 'support'] },
 ];
 
 const ADMIN_GROUP = { title: 'Administração', views: ['updates', 'maintenance', 'admin'] };
