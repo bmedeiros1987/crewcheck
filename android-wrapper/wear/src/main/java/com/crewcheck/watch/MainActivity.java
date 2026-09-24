@@ -8,6 +8,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -478,20 +479,7 @@ public final class MainActivity extends FragmentActivity
             content.addView(secondary);
         }
 
-        List<Fact> facts = secondaryFacts(snapshot);
-        if (!facts.isEmpty()) {
-            LinearLayout stats = new LinearLayout(this);
-            stats.setOrientation(LinearLayout.HORIZONTAL);
-            stats.setGravity(Gravity.CENTER);
-            addMiniStat(stats, facts.get(0));
-            if (facts.size() > 1) addMiniStat(stats, facts.get(1));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            params.setMargins(0, dp(6), 0, dp(2));
-            content.addView(stats, params);
-        }
+        addFactGrid(secondaryFacts(snapshot));
 
         TextView cta = heroAction(actionLabel(snapshot), accent);
         cta.setOnClickListener(view -> {
@@ -848,7 +836,62 @@ public final class MainActivity extends FragmentActivity
             facts.add(new Fact("PERNOITE", s.overnight, s.hotelPickup, WARNING));
         }
 
+        Fact battery = batteryFact();
+        if (battery != null) facts.add(battery);
+
         return facts;
+    }
+
+    /**
+     * Carga do próprio relógio.
+     *
+     * Não é dado de saúde nem vem do celular: é estado do aparelho, lido sem permissão
+     * nenhuma, então não passa pelo portão de consentimento do CrewLife. Fica por último
+     * porque é contexto, não operação — mas vira alerta colorido quando cai, que é
+     * justamente quando importa antes de uma jornada longa.
+     */
+    private Fact batteryFact() {
+        BatteryManager manager = getSystemService(BatteryManager.class);
+        if (manager == null) return null;
+        int level = manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+        if (level < 0 || level > 100) return null;
+        int accent = level <= 15 ? MAGENTA : level <= 30 ? ORANGE : BLUE;
+        return new Fact("BATERIA", level + "%", manager.isCharging() ? "carregando" : "", accent);
+    }
+
+    /**
+     * Grade de dados em duas colunas.
+     *
+     * secondaryFacts() já montava até cinco dados — apresentação, portão, ETA, próximo voo
+     * e pernoite — e a tela mostrava só os dois primeiros: o resto era calculado e jogado
+     * fora. Agora tudo que existe aparece, em linhas de dois, na ordem de importância
+     * operacional em que a lista é construída.
+     *
+     * Com número ímpar entra um espaçador em vez de deixar o último quadro esticar para a
+     * largura toda: quadro de tamanho diferente sem motivo lê como defeito, não como ênfase.
+     */
+    private void addFactGrid(List<Fact> facts) {
+        for (int index = 0; index < facts.size(); index += 2) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+
+            addMiniStat(row, facts.get(index));
+            if (index + 1 < facts.size()) {
+                addMiniStat(row, facts.get(index + 1));
+            } else {
+                View filler = new View(this);
+                row.addView(filler, new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+            }
+
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            params.setMargins(0, dp(index == 0 ? 6 : 4), 0, dp(2));
+            content.addView(row, params);
+        }
     }
 
     private void addMiniStat(LinearLayout row, Fact fact) {
