@@ -218,5 +218,5 @@ export function selectConciergeStayFocus(
   if (active) return active;
 
   const future = sorted.find((item) => Date.parse(item.startDateTime || `${item.stayDate}T00:00:00Z`) > clock);
-  return future || sorted[sorted.length - 1];
+  return future || null;
 }
