@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Hotel } from 'lucide-react';
+import { Bell, BellOff, Clock, Hotel } from 'lucide-react';
+import { toast } from 'sonner';
 import { buildConciergeStayContext, type ConciergeStayContextStep } from '@/lib/conciergeStayContext';
+import {
+  buildConciergeStayReminderPlan,
+  type ConciergeStayReminderKind,
+} from '@/lib/conciergeStayNotificationPlan';
+import {
+  cancelConciergeStayReminders,
+  getConciergeStayReminderDelivery,
+  listConciergeStayReminderJobs,
+  scheduleConciergeStayReminders,
+  type ConciergeStayReminderJob,
+} from '@/lib/conciergeStayNotifications';
 import { listConciergeStays } from '@/lib/conciergeStaySync';
 
 type SavedStay = {
@@ -59,6 +71,14 @@ function countdownLabel(minutes: number | null): string {
   return rest > 0 ? `em ${hours} h ${rest} min` : `em ${hours} h`;
 }
 
+function reminderKindLabel(kind: ConciergeStayReminderKind): string {
+  return kind === 'wake' ? 'Despertar' : 'Apresentação próxima';
+}
+
+function reminderJobKey(job: ConciergeStayReminderJob): string {
+  return text(job?.jobKey || job?.job_key);
+}
+
 export default function ConciergeStayContextCard({
   hotelName,
   room,
@@ -71,24 +91,41 @@ export default function ConciergeStayContextCard({
   const [savedStay, setSavedStay] = useState<SavedStay | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [localOnly, setLocalOnly] = useState(false);
+  const [reminderJobs, setReminderJobs] = useState<ConciergeStayReminderJob[]>([]);
+  const [reminderBusy, setReminderBusy] = useState(false);
+
+  async function refresh() {
+    const [stayPayload, jobs] = await Promise.all([
+      listConciergeStays(),
+      listConciergeStayReminderJobs(stayDate).catch(() => []),
+    ]);
+    const target = (stayPayload.stays || []).find((item: SavedStay) => text(item?.stayDate).slice(0, 10) === stayDate) || null;
+    setSavedStay(target);
+    setLocalOnly(Boolean(stayPayload.localOnly));
+    setReminderJobs(jobs);
+  }
 
   useEffect(() => {
     let active = true;
 
-    async function refresh() {
+    async function guardedRefresh() {
       try {
-        const payload = await listConciergeStays();
+        const [stayPayload, jobs] = await Promise.all([
+          listConciergeStays(),
+          listConciergeStayReminderJobs(stayDate).catch(() => []),
+        ]);
         if (!active) return;
-        const target = (payload.stays || []).find((item: SavedStay) => text(item?.stayDate).slice(0, 10) === stayDate) || null;
+        const target = (stayPayload.stays || []).find((item: SavedStay) => text(item?.stayDate).slice(0, 10) === stayDate) || null;
         setSavedStay(target);
-        setLocalOnly(Boolean(payload.localOnly));
+        setLocalOnly(Boolean(stayPayload.localOnly));
+        setReminderJobs(jobs);
       } catch {
         if (active) setSavedStay(null);
       }
     }
 
-    refresh().catch(() => undefined);
-    const handleRefresh = () => refresh().catch(() => undefined);
+    guardedRefresh().catch(() => undefined);
+    const handleRefresh = () => guardedRefresh().catch(() => undefined);
     window.addEventListener('online', handleRefresh);
     window.addEventListener('focus', handleRefresh);
     return () => {
@@ -111,11 +148,56 @@ export default function ConciergeStayContextCard({
     leadMinutes: savedStay?.leadMinutes,
   }, now), [hotelName, room, stayDate, savedStay, now]);
 
+  const reminderPlan = useMemo(
+    () => buildConciergeStayReminderPlan(context, now),
+    [context, now],
+  );
+  const delivery = getConciergeStayReminderDelivery();
+  const pendingReminderJobs = reminderJobs.filter((job) => ['pending', 'processing'].includes(text(job.status).toLowerCase()));
+  const pendingKeys = new Set(pendingReminderJobs.map(reminderJobKey).filter(Boolean));
+
   const copy = stepCopy(context.step);
   const resolvedHotel = text(hotelName || savedStay?.hotelName);
   const resolvedRoom = text(room || savedStay?.room);
   const wakeCountdown = countdownLabel(context.minutesUntilWake);
   const presentationCountdown = countdownLabel(context.minutesUntilPresentation);
+
+  async function activateReminders() {
+    if (!reminderPlan.length) {
+      toast.info('Não há um horário futuro confiável para agendar lembretes neste pernoite.');
+      return;
+    }
+    setReminderBusy(true);
+    try {
+      const result = await scheduleConciergeStayReminders(reminderPlan);
+      await refresh();
+      if (result.scheduled === reminderPlan.length) {
+        toast.success(`${result.scheduled === 1 ? 'Lembrete atualizado' : 'Lembretes atualizados'} pelo ${result.channelLabel}.`);
+      } else if (result.scheduled > 0) {
+        toast.info(`${result.scheduled} lembrete(s) salvo(s); ${result.failed} não puderam ser ativados.`);
+      } else {
+        toast.error(result.errors[0] || 'Não consegui ativar os lembretes deste pernoite.');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui ativar os lembretes deste pernoite.');
+    } finally {
+      setReminderBusy(false);
+    }
+  }
+
+  async function disableReminders() {
+    setReminderBusy(true);
+    try {
+      const result = await cancelConciergeStayReminders(stayDate);
+      await refresh();
+      if (result.errors.length) toast.error(result.errors[0]);
+      else toast.success(result.cancelled ? 'Lembretes deste pernoite desativados.' : 'Nenhum lembrete pendente para cancelar.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não consegui desativar os lembretes deste pernoite.');
+    } finally {
+      setReminderBusy(false);
+    }
+  }
 
   return <section className="cc139-card">
     <Clock/><h2>Agora no pernoite</h2>
@@ -126,6 +208,20 @@ export default function ConciergeStayContextCard({
       {context.wakeAt && <span>Despertar {timeLabel(context.wakeAt)}{wakeCountdown ? ` · ${wakeCountdown}` : ''}</span>}
       {context.presentationAt && <span>Apresentação {timeLabel(context.presentationAt)}{presentationCountdown ? ` · ${presentationCountdown}` : ''}</span>}
     </div>
+
+    <h3><Bell/> Lembretes deste pernoite</h3>
+    {reminderPlan.length > 0 ? <>
+      <div className="cc139-badges">{reminderPlan.map((item) => <span key={item.jobKey}>
+        {reminderKindLabel(item.kind)} · {timeLabel(item.scheduledAt)}{pendingKeys.has(item.jobKey) ? ' · ativo' : ''}
+      </span>)}</div>
+      <div className="cc139-actions">
+        <button onClick={activateReminders} disabled={reminderBusy}><Bell/> {pendingReminderJobs.length ? 'Atualizar lembretes' : 'Ativar lembretes'}</button>
+        {pendingReminderJobs.length > 0 && <button onClick={disableReminders} disabled={reminderBusy}><BellOff/> Desativar</button>}
+      </div>
+      <small>Canal: {delivery.channelLabel}. O Concierge reutiliza o canal já escolhido no Despertador e só agenda após sua ação.</small>
+      <small>Os lembretes usam o scheduler persistente do CrewCheck e continuam ativos mesmo com o app fechado. Se você alterar apresentação ou antecedência, toque em “Atualizar lembretes” para substituir os horários pendentes deste pernoite.</small>
+    </> : <small>Sem apresentação futura e antecedência válidas, nenhum lembrete é agendado.</small>}
+    {context.step === 'register-room' && <small>Registrar o quarto continua como próximo passo, mas não vira notificação programada: o CrewCheck não possui um horário confiável de chegada ao hotel e não inventa esse marco.</small>}
     {context.canPrepareWakeReminder && <small>Linha de preparação pronta: o despertar usa somente a antecedência salva para este pernoite.</small>}
     {localOnly && <small>Contexto obtido do cache local. O CrewCheck reconciliará a estadia quando a conexão estiver disponível.</small>}
     <small>Este card usa somente o pernoite salvo e não altera a escala canônica. Apresentação, APZ oficial e pickup/saída do hotel continuam conceitos separados; o Concierge não inventa horário de traslado.</small>
