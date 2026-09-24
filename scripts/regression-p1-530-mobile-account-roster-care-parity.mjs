@@ -15,8 +15,8 @@ const roster = await readFile('client/src/components/v1391/RosterLaunchView.tsx'
 // while mobile can remain on an older same-month publication.
 assert.match(
   home,
-  /const reconcileActiveRoster = async \(reason: 'mount' \| 'focus' \| 'visible' \| 'interval'/,
-  'prepared mobile runtime must keep the existing cross-channel reconciler',
+  /const reconcileActiveRoster = async \(reason: 'mount' \| 'focus' \| 'visible' \| 'online' \| 'interval'/,
+  'prepared mobile runtime must keep the existing cross-channel reconciler including reconnect recovery',
 );
 assert.match(
   database,
