@@ -30,7 +30,7 @@ for (const token of [
 
 for (const preserved of [
   'className="cc-life-shell"',
-  'className="cc-life-recommendation',
+  'cc-life-recommendation',
   'className="cc-life-metrics"',
   'className="cc-life-block cc-life-integrations"',
   'Samsung Health conectado · automático',
