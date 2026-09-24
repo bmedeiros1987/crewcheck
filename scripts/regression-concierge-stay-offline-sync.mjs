@@ -6,10 +6,9 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [queueSource, syncSource, viewSource] = await Promise.all([
+const [queueSource, syncSource] = await Promise.all([
   read('client/src/lib/conciergeStayQueue.ts'),
   read('client/src/lib/conciergeStaySync.ts'),
-  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
 ]);
 
 const compiled = ts.transpileModule(queueSource, {
@@ -52,13 +51,24 @@ assert.equal(overlaid[0].room, '814', 'pending local edit must stay visible unti
 const withServerId = queue.sanitizeConciergeStayPatch({ id: serverId, stayDate: '2026-09-24', room: '901' });
 assert.equal(withServerId.id, serverId, 'real UUID stay ids must remain editable after reconnect');
 
+const syncCompiled = ts.transpileModule(syncSource, {
+  fileName: 'conciergeStaySync.ts',
+  reportDiagnostics: true,
+  compilerOptions: {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+  },
+});
+const syncErrors = (syncCompiled.diagnostics || []).filter((item) => item.category === ts.DiagnosticCategory.Error);
+assert.equal(syncErrors.length, 0, 'conciergeStaySync.ts must transpile without syntax errors');
+
 assert.match(syncSource, /crewcheck_concierge_stays_pending_v1/, 'sync layer needs its own durable pending queue');
 assert.match(syncSource, /for \(const pending of snapshot\)/, 'pending stays must replay sequentially');
 assert.match(syncSource, /payload\?\.localOnly/, 'network fallback must remain queued instead of being discarded');
 assert.match(syncSource, /overlayPendingConciergeStays/, 'server refresh must not hide unsynced local edits');
-assert.match(viewSource, /listConciergeStays/, 'stay manager must load through the sync-aware facade');
-assert.match(viewSource, /saveConciergeStay/, 'stay manager must save through the sync-aware facade');
-assert.match(viewSource, /addEventListener\('online'/, 'reconnect must automatically trigger a sync attempt');
-assert.match(viewSource, /sincronizará automaticamente quando a internet voltar/, 'offline save must clearly explain automatic recovery');
+assert.match(syncSource, /listPlatformStays/, 'Concierge sync facade must read stays through the existing platform boundary');
+assert.match(syncSource, /updatePlatformStay/, 'Concierge sync facade must write stays through the existing platform boundary');
+assert.doesNotMatch(syncSource, /addEventListener\(|PresentationStayManagerView|android-wrapper|watchSnapshotV1|Data Layer|watch face|\bTV\b/, 'reconnect lifecycle and device-shell hooks belong to Mobile Core/Peripherals, not Concierge sync');
+assert.doesNotMatch(syncSource, /canonicalRoster|journeyId|\bAPZ\b/, 'offline stay sync must stay isolated from the canonical roster core');
 
 console.log('Concierge offline stay sync regression: PASS');
