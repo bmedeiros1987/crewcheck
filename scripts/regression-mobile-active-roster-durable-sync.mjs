@@ -9,6 +9,12 @@ const activePatch = fs.readFileSync('scripts/v14393/apply.mjs', 'utf8');
 assert.ok(activePatch.includes('(error as any).localSummary = localSummary;'), 'cloud failure must retain local evidence on the thrown error');
 assert.match(activePatch, /catch \(error\) \{[\s\S]*localSummary[\s\S]*throw error;/, 'authenticated cloud failure must propagate after local persistence');
 
+// Revisions of the same published month must not share the old period-only checksum.
+// Otherwise one previously synced September roster can suppress a later corrected
+// September roster after a transient offline import.
+assert.ok(activePatch.includes('function localRosterContentChecksum(roster: CrewRoster): string {'), 'local history needs a content-aware checksum');
+assert.ok(activePatch.includes('checksum: String(payload.checksum || localRosterContentChecksum(roster)),'), 'local history must persist the revision-aware checksum');
+
 // Never consume a scoped local queue as "synced" when there is no authenticated
 // account token. The active-roster runtime must guard recovery with the actual token.
 assert.ok(activePatch.includes("import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';"), 'active-roster runtime must retain a real auth-token gate');
