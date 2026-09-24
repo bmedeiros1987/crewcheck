@@ -65,6 +65,10 @@ public final class WellbeingStore {
     }
 
     public synchronized CrewLifeSnapshot loadCrewLife() {
+        if (!WatchEntitlements.crewLife(context)) {
+            clearCrewLife();
+            return null;
+        }
         String raw = read(CREWLIFE_IV, CREWLIFE_PAYLOAD);
         if (raw == null) return null;
         try {
@@ -76,6 +80,10 @@ public final class WellbeingStore {
     }
 
     public synchronized RoutineSnapshot loadRoutine() {
+        if (!WatchEntitlements.crewLife(context)) {
+            clearRoutine();
+            return null;
+        }
         String raw = read(ROUTINE_IV, ROUTINE_PAYLOAD);
         if (raw == null) return null;
         try {
