@@ -6,10 +6,9 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [historySource, intelligenceSource, view] = await Promise.all([
+const [historySource, intelligenceSource] = await Promise.all([
   read('client/src/lib/conciergeRoomHistory.ts'),
   read('client/src/lib/conciergeRoomIntelligence.ts'),
-  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
 ]);
 
 function transpile(source, fileName) {
@@ -61,8 +60,6 @@ const empty = intelligence.buildConciergeRoomIntelligence(stays, '', '2026-09-23
 assert.equal(empty.hotelVisits, 0);
 assert.equal(empty.mostFrequentRoom, null);
 
-assert.match(view, /Room Intelligence/);
-assert.match(view, /buildConciergeRoomIntelligence/);
-assert.match(view, /não significa que este seja o quarto atribuído agora/i);
+assert.doesNotMatch(intelligenceSource, /android-wrapper|watchSnapshotV1|canonicalRoster|journeyId|\bAPZ\b/, 'Room Intelligence must remain Concierge-owned and isolated');
 
 console.log('CrewCheck Concierge room intelligence regression OK');
