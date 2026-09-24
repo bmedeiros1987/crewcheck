@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'client/src/lib/conciergeStayInference.ts'
-      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'scripts/regression-concierge-stay-inference.mjs'
       - '.github/workflows/concierge-stay-inference.yml'
   workflow_dispatch:
