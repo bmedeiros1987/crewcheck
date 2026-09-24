@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crewcheck.online/schemas/watchSnapshotV1.schema.json",
+  "title": "CrewCheck watchSnapshotV1",
+  "description": "Portable additive v1 contract consumed by peripheral renderers. Unknown optional fields are allowed for backwards-compatible evolution.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "generatedAtEpochMs",
+    "validUntilEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "contextId": { "type": "string", "maxLength": 96, "default": "" },
+    "generatedAtEpochMs": { "type": "integer", "minimum": 1 },
+    "validUntilEpochMs": { "type": "integer", "minimum": 1 },
+    "state": {
+      "type": "string",
+      "default": "UNKNOWN",
+      "enum": [
+        "OFF_DUTY",
+        "LEAVE_SOON",
+        "REPORTING",
+        "BOARDING",
+        "IN_FLIGHT",
+        "CONNECTION",
+        "OVERNIGHT",
+        "CHANGED",
+        "UNKNOWN"
+      ]
+    },
+    "headline": { "type": "string", "maxLength": 80, "default": "" },
+    "primaryTime": { "type": "string", "maxLength": 16, "default": "" },
+    "detail": { "type": "string", "maxLength": 160, "default": "" },
+    "presentationTime": { "type": "string", "maxLength": 16, "default": "" },
+    "presentationPlace": { "type": "string", "maxLength": 42, "default": "" },
+    "leaveTime": { "type": "string", "maxLength": 16, "default": "" },
+    "trafficDetail": { "type": "string", "maxLength": 120, "default": "" },
+    "currentFlight": { "type": "string", "maxLength": 24, "default": "" },
+    "currentRoute": { "type": "string", "maxLength": 64, "default": "" },
+    "gate": { "type": "string", "maxLength": 24, "default": "" },
+    "remoteStand": { "type": "boolean", "default": false },
+    "boardingTime": { "type": "string", "maxLength": 16, "default": "" },
+    "eta": { "type": "string", "maxLength": 16, "default": "" },
+    "connection": { "type": "string", "maxLength": 40, "default": "" },
+    "nextFlight": { "type": "string", "maxLength": 24, "default": "" },
+    "nextDetail": { "type": "string", "maxLength": 120, "default": "" },
+    "overnight": { "type": "string", "maxLength": 120, "default": "" },
+    "hotelPickup": { "type": "string", "maxLength": 80, "default": "" },
+    "changed": { "type": "boolean", "default": false },
+    "source": { "type": "string", "const": "canonical-roster", "default": "canonical-roster" },
+    "premiumAccess": { "type": "boolean", "default": false },
+    "schedule": {
+      "type": "array",
+      "default": [],
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string", "maxLength": 96, "default": "" },
+          "kind": { "type": "string", "enum": ["flight", "stay", "duty"], "default": "duty" },
+          "time": { "type": "string", "maxLength": 16, "default": "" },
+          "title": { "type": "string", "maxLength": 40, "default": "" },
+          "route": { "type": "string", "maxLength": 64, "default": "" },
+          "presentation": { "type": "string", "maxLength": 16, "default": "" },
+          "gate": { "type": "string", "maxLength": 24, "default": "" },
+          "detail": { "type": "string", "maxLength": 120, "default": "" }
+        }
+      }
+    }
+  }
+}
