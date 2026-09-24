@@ -5,9 +5,12 @@ on:
     paths:
       - 'client/src/lib/conciergeStayContext.ts'
       - 'client/src/lib/conciergeStaySync.ts'
+      - 'client/src/lib/conciergeStayNotificationPlan.ts'
+      - 'client/src/lib/conciergeStayNotifications.ts'
       - 'client/src/components/v1391/ConciergeStayContextCard.tsx'
       - 'client/src/components/v1391/ConciergeRoomNoiseCard.tsx'
       - 'scripts/regression-concierge-stay-context.mjs'
+      - 'scripts/regression-concierge-stay-notifications.mjs'
       - '.github/workflows/concierge-stay-context.yml'
   workflow_dispatch:
 
@@ -24,5 +27,7 @@ jobs:
       - run: npm ci
       - name: Concierge contextual stay regression
         run: node scripts/regression-concierge-stay-context.mjs
+      - name: Concierge contextual notification regression
+        run: node scripts/regression-concierge-stay-notifications.mjs
       - name: TypeScript
         run: npx tsc --noEmit
