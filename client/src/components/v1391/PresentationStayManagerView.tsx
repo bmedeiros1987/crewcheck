@@ -3,7 +3,7 @@ import { Building2, Clock, History, Home, Hotel, MapPin, Save, Search, ShieldChe
 import { toast } from 'sonner';
 import { CREW_HOTEL_CATALOG } from '@/data/crewHotels';
 import { buildConciergeRoomMemory } from '@/lib/conciergeRoomHistory';
-import { listPlatformStays, updatePlatformStay } from '@/lib/platformClient';
+import { listConciergeStays, saveConciergeStay } from '@/lib/conciergeStaySync';
 import { v139Api } from '@/components/v139/api';
 import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
@@ -73,6 +73,7 @@ export default function PresentationStayManagerView({ events }: { events: Roster
   const [query, setQuery] = useState('');
   const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const selected = operational.find((event) => event.id === selectedId) || operational[0] || null;
   const [draft, setDraft] = useState<StayDraft>({ hotelName: '', airport: '', stayDate: isoDay(), room: '', presentationTime: '', leadMinutes: '90', shareSameHotel: false });
 
@@ -105,17 +106,23 @@ export default function PresentationStayManagerView({ events }: { events: Roster
 
   async function refresh() {
     const [stayPayload, addressPayload] = await Promise.all([
-      listPlatformStays(),
+      listConciergeStays(),
       v139Api('/api/platform/home-address').catch(() => ({ address: null })),
     ]);
     setStays(stayPayload.stays || []);
+    setPendingSyncCount(Number(stayPayload.pendingSyncCount || 0));
     if (addressPayload.address) {
       setHomeAddress(addressPayload.address.formattedAddress || '');
       setPostalCode(addressPayload.address.postalCode || '');
     }
   }
 
-  useEffect(() => { refresh().catch(() => undefined); }, []);
+  useEffect(() => {
+    refresh().catch(() => undefined);
+    const handleOnline = () => refresh().catch(() => undefined);
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
   useEffect(() => {
     if (!selected) return;
@@ -144,7 +151,7 @@ export default function PresentationStayManagerView({ events }: { events: Roster
     setBusy(true);
     try {
       const existing = stays.find((item) => String(item.stayDate || '').slice(0, 10) === draft.stayDate);
-      const payload = await updatePlatformStay({
+      const payload = await saveConciergeStay({
         id: existing?.id,
         stayDate: draft.stayDate,
         hotelName: draft.hotelName.trim(),
@@ -158,8 +165,13 @@ export default function PresentationStayManagerView({ events }: { events: Roster
         source: manual ? 'contingency-manual' : 'catalog-preferred',
       });
       setStays(payload.stays || stays);
-      await refresh();
-      toast.success('Hotel, quarto e apresentação salvos para esta programação.');
+      setPendingSyncCount(Number(payload.pendingSyncCount || 0));
+      if (payload.queued) {
+        toast.info('Pernoite salvo neste aparelho. O CrewCheck sincronizará automaticamente quando a internet voltar.');
+      } else {
+        await refresh();
+        toast.success('Hotel, quarto e apresentação salvos para esta programação.');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui salvar o pernoite.');
     } finally {
@@ -203,6 +215,7 @@ export default function PresentationStayManagerView({ events }: { events: Roster
         <label><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/> Autorizar colegas no mesmo hotel a me localizar em emergência</label>
       </div>
       <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy}><Save/> Salvar hotel, quarto e horário</button><button onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button></div>
+      {pendingSyncCount > 0 && <small>{pendingSyncCount === 1 ? '1 alteração de pernoite aguarda sincronização.' : `${pendingSyncCount} alterações de pernoite aguardam sincronização.`} O envio será retomado automaticamente quando houver conexão.</small>}
     </section>
     <section className="cc139-card">
       <History/><h2>Memória do pernoite</h2>
