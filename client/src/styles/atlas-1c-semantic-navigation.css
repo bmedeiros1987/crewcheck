@@ -29,7 +29,7 @@
 .cz-menu-section > button:is([data-menu-label='Saída Inteligente'], [data-menu-label='Meu carro'], [data-menu-label='Radar de voos'], [data-menu-label='Locais próximos'], [data-menu-label='Rotina'], [data-menu-label='Tripulação e função'], [data-menu-label='Pessoas e visitantes'], [data-menu-label='CrewCheck Life']) {
   --cc-atlas-tone: var(--cc-atlas-positive);
 }
-.cz-menu-section > button:is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala']) {
+.cz-menu-section > button:is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala'], [data-menu-label='Mapa do mês']) {
   --cc-atlas-tone: var(--cc-atlas-flight);
 }
 .cz-menu-section > button:is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Manutenção']) {
