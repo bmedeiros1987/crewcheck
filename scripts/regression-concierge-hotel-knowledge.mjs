@@ -58,6 +58,7 @@ let records = noise.saveConciergeRoomNoiseObservation('Hotel Central', '101', {
   intensity: 'moderate',
   recurrence: 'recurring',
   observedAt: '2026-09-20T22:00:00-03:00',
+  evidenceIds: ['stay:2026-09-20'],
 }, { storage, now: new Date('2026-09-20T23:00:00-03:00') });
 
 records = noise.saveConciergeRoomNoiseObservation('Hotel Central', '202', {
@@ -65,6 +66,7 @@ records = noise.saveConciergeRoomNoiseObservation('Hotel Central', '202', {
   intensity: 'moderate',
   recurrence: 'recurring',
   observedAt: '2026-09-22T22:00:00-03:00',
+  evidenceIds: ['stay:2026-09-22'],
 }, { storage, now: new Date('2026-09-22T23:00:00-03:00') });
 
 records = noise.saveConciergeRoomNoiseObservation('Hotel Central', '303', {
@@ -72,6 +74,7 @@ records = noise.saveConciergeRoomNoiseObservation('Hotel Central', '303', {
   intensity: 'high',
   recurrence: 'isolated',
   observedAt: '2026-09-01T01:00:00-03:00',
+  evidenceIds: ['stay:2026-09-01'],
 }, { storage, now: new Date('2026-09-01T02:00:00-03:00') });
 
 records = noise.saveConciergeRoomNoiseObservation('Outro Hotel', '101', {
@@ -79,18 +82,31 @@ records = noise.saveConciergeRoomNoiseObservation('Outro Hotel', '101', {
   intensity: 'high',
   recurrence: 'recurring',
   observedAt: '2026-09-23T06:00:00-03:00',
+  evidenceIds: ['stay:2026-09-23'],
 }, { storage, now: new Date('2026-09-23T07:00:00-03:00') });
 
-const summary = knowledge.buildConciergeHotelKnowledge(records, 'Hôtel Central', new Date('2026-09-24T12:00:00Z'));
+const room101Traffic = records.find((item) => item.hotelKey === 'hotel central' && item.roomKey === '101' && item.origin === 'traffic');
+assert.ok(room101Traffic);
+const recordsWithLegacyDuplicate = [
+  ...records,
+  {
+    ...room101Traffic,
+    id: 'legacy-duplicate-same-stay',
+    observedAt: '2026-09-21T01:05:00.000Z',
+    updatedAt: '2026-09-21T01:05:00.000Z',
+  },
+];
+
+const summary = knowledge.buildConciergeHotelKnowledge(recordsWithLegacyDuplicate, 'Hôtel Central', new Date('2026-09-24T12:00:00Z'));
 assert.equal(summary.hotelKey, 'hotel central');
-assert.equal(summary.activeObservations, 2, 'only current observations for the selected hotel should count as active');
+assert.equal(summary.activeObservations, 2, 'duplicate records from the same stay evidence must not inflate active hotel knowledge');
 assert.equal(summary.expiredObservations, 1, 'expired hotel observations should remain historical but not current');
 assert.equal(summary.roomsWithActiveObservations, 2, 'active hotel context must preserve distinct room scope');
 assert.equal(summary.signals.length, 1, 'same origin and durability should collapse into one hotel signal');
 assert.equal(summary.signals[0].origin, 'traffic');
 assert.equal(summary.signals[0].roomCount, 2);
 assert.deepEqual(summary.signals[0].roomKeys, ['101', '202']);
-assert.equal(summary.signals[0].observationCount, 2);
+assert.equal(summary.signals[0].observationCount, 2, 'signal strength must count independent stay evidence, not duplicate taps or legacy duplicates');
 assert.equal(summary.structuralCandidateSignals.length, 1);
 assert.equal(summary.temporalSignals.length, 0);
 assert.equal(summary.circumstantialSignals.length, 0);
