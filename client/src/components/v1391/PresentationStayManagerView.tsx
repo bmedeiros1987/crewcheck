@@ -15,6 +15,7 @@ import {
 } from '@/lib/conciergeRoomPreferences';
 import { buildConciergeStaySuggestions, selectConciergeStayFocus, type ConciergeHotelSource } from '@/lib/conciergeStayInference';
 import { listConciergeStays, saveConciergeStay } from '@/lib/conciergeStaySync';
+import ConciergeRoomNoiseCard from '@/components/v1391/ConciergeRoomNoiseCard';
 import { v139Api } from '@/components/v139/api';
 import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
@@ -370,6 +371,7 @@ export default function PresentationStayManagerView({ events }: { events: Roster
         <small>Estas observações são privadas e ficam somente neste aparelho nesta etapa. A data da estadia fica registrada para evitar tratar uma percepção antiga como fato atual.</small>
       </>}
     </section>
+    <ConciergeRoomNoiseCard hotelName={draft.hotelName} room={draft.room} stayDate={draft.stayDate}/>
     <section className="cc139-card">
       <h2>Hotéis preferenciais do catálogo</h2>
       <p>Resultados do aeroporto da programação aparecem primeiro. Use cadastro manual quando a contingência levar a outro hotel.</p>
