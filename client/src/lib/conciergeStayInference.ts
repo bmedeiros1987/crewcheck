@@ -129,13 +129,22 @@ function latestByDate<T extends ConciergeKnownStay>(items: T[]): T[] {
 function resolveSavedStay(
   day: string,
   stayAirport: string,
+  eventId: string,
   stays: ConciergeKnownStay[],
 ): ConciergeKnownStay | undefined {
   const sameDay = latestByDate(stays.filter((item) => normalizeDay(item.stayDate) === day));
   if (!sameDay.length) return undefined;
 
+  const exactEvent = sameDay.find((item) => {
+    if (!eventId || text(item.id) !== eventId) return false;
+    const savedAirport = airport(item.airport);
+    return !stayAirport || !savedAirport || savedAirport === stayAirport;
+  });
+  if (exactEvent) return exactEvent;
+
   if (stayAirport) {
-    return sameDay.find((item) => airport(item.airport) === stayAirport);
+    const sameAirport = sameDay.filter((item) => airport(item.airport) === stayAirport);
+    return sameAirport.length === 1 ? sameAirport[0] : undefined;
   }
 
   return sameDay.length === 1 ? sameDay[0] : undefined;
@@ -144,11 +153,12 @@ function resolveSavedStay(
 function resolveHotel(
   day: string,
   stayAirport: string,
+  eventId: string,
   rosterHotel: string,
   stays: ConciergeKnownStay[],
   catalog: ConciergeHotelCatalogEntry[],
 ): { hotelName: string; hotelSource: ConciergeHotelSource } {
-  const savedForStay = resolveSavedStay(day, stayAirport, stays);
+  const savedForStay = resolveSavedStay(day, stayAirport, eventId, stays);
   if (savedForStay?.hotelName) return { hotelName: text(savedForStay.hotelName), hotelSource: 'saved' };
 
   if (rosterHotel) return { hotelName: rosterHotel, hotelSource: 'roster' };
@@ -187,8 +197,8 @@ export function buildConciergeStaySuggestions(
     const day = stayDay(event);
     const stayAirport = airport(event.destination || event.origin);
     const next = nextOperationalEvent(sorted, event, stayAirport);
-    const resolved = resolveHotel(day, stayAirport, text(event.hotel), knownStays, hotels);
-    const saved = resolveSavedStay(day, stayAirport, knownStays);
+    const resolved = resolveHotel(day, stayAirport, event.id, text(event.hotel), knownStays, hotels);
+    const saved = resolveSavedStay(day, stayAirport, event.id, knownStays);
     return {
       eventId: event.id,
       stayDate: day,
