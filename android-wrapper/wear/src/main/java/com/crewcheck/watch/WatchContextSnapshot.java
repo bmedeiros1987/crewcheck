@@ -338,7 +338,7 @@ public final class WatchContextSnapshot {
             String minutes = normalized.substring("SAIR EM ".length()).replaceAll("[^0-9]", "");
             if (!minutes.isBlank()) return truncate("SAIR" + minutes, 7);
         }
-        if (!gate.isBlank()) return truncate("P" + gate.replaceAll("\\s+", ""), 7);
+        if (!gate.isBlank()) return truncate("P" + gate.replaceAll("\s+", ""), 7);
         if (!currentFlight.isBlank()) return truncate(currentFlight, 7);
         if (!presentationTime.isBlank()) {
             return truncate("APZ" + presentationTime.replace(":", ""), 7);
@@ -513,8 +513,8 @@ public final class WatchContextSnapshot {
 
     private static String clean(String value, int maxLength) {
         if (value == null) return "";
-        String normalized = value.replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", " ")
-                .replaceAll("\\s+", " ")
+        String normalized = value.replaceAll("[\p{Cntrl}&&[^\n\t]]", " ")
+                .replaceAll("\s+", " ")
                 .trim();
         return truncate(normalized, maxLength);
     }
