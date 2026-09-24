@@ -5,7 +5,6 @@ on:
     paths:
       - 'client/src/lib/conciergeStayQueue.ts'
       - 'client/src/lib/conciergeStaySync.ts'
-      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'scripts/regression-concierge-stay-offline-sync.mjs'
       - '.github/workflows/concierge-stay-offline-sync.yml'
   workflow_dispatch:
