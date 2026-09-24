@@ -64,7 +64,7 @@ public final class CrewCheckWatchDeviceTelemetry {
             appVersionCode = Math.max(0L, json.optLong("appVersionCode", 0L));
             int rawBattery = json.optInt("batteryPercent", -1);
             batteryPercent = rawBattery >= 0 && rawBattery <= 100 ? rawBattery : -1;
-            round = json.optBoolean("round", true);
+            round = json.optBoolean("round", false);
             screenWidthDp = clamp(json.optInt("screenWidthDp", 0), 0, 1000);
             screenHeightDp = clamp(json.optInt("screenHeightDp", 0), 0, 1000);
             snapshotGeneratedAtEpochMs = Math.max(0L, json.optLong("snapshotGeneratedAtEpochMs", 0L));
@@ -155,21 +155,23 @@ public final class CrewCheckWatchDeviceTelemetry {
             if (source.optInt("schemaVersion", 0) != 1) return;
 
             SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String pendingRequestId = clean(prefs.getString(KEY_PENDING_REQUEST_ID, ""), 64);
+            String pendingRequestId = prefs.getString(KEY_PENDING_REQUEST_ID, "");
+            if (pendingRequestId == null) pendingRequestId = "";
             long requestedAt = Math.max(0L, prefs.getLong(KEY_PENDING_REQUEST_AT, 0L));
             long now = System.currentTimeMillis();
-            String responseRequestId = clean(source.optString("requestId", ""), 64);
+            String responseRequestId = exactRequestId(source);
 
-            boolean legacyResponse = responseRequestId.isBlank();
+            boolean legacyResponse = responseRequestId.isEmpty();
             long requestAgeMs = requestedAt > 0L ? now - requestedAt : -1L;
-            boolean hasActivePendingRequest = !pendingRequestId.isBlank()
+            boolean hasActivePendingRequest = !pendingRequestId.isEmpty()
                     && requestAgeMs >= 0L
                     && requestAgeMs <= REQUEST_WINDOW_MS;
             boolean verifiedRoundTrip = hasActivePendingRequest
                     && responseRequestId.equals(pendingRequestId);
 
-            // A mismatched nonce belongs to an older/concurrent request or arrived after timeout.
-            // Never let it replace the last known-good status or complete a timed-out test.
+            // requestId is opaque. It is validated for bounds/control characters, then compared
+            // byte-for-byte-equivalent as a Java String: no trim, whitespace collapse or rewrite.
+            // A malformed/oversized requestId degrades to legacy/unverified and can never verify.
             if (!legacyResponse && !verifiedRoundTrip) return;
 
             JSONObject clean = new JSONObject();
@@ -183,7 +185,7 @@ public final class CrewCheckWatchDeviceTelemetry {
 
             int battery = source.optInt("batteryPercent", -1);
             clean.put("batteryPercent", battery >= 0 && battery <= 100 ? battery : -1);
-            clean.put("round", source.optBoolean("round", true));
+            clean.put("round", source.optBoolean("round", false));
             clean.put("screenWidthDp", clamp(source.optInt("screenWidthDp", 0), 0, 1000));
             clean.put("screenHeightDp", clamp(source.optInt("screenHeightDp", 0), 0, 1000));
             clean.put("snapshotGeneratedAtEpochMs", Math.max(0L, source.optLong("snapshotGeneratedAtEpochMs", 0L)));
@@ -219,6 +221,26 @@ public final class CrewCheckWatchDeviceTelemetry {
             return new Status(json);
         } catch (Exception ignored) {
             return null;
+        }
+    }
+
+    private static String exactRequestId(JSONObject source) {
+        try {
+            if (source == null || !source.has("requestId") || source.isNull("requestId")) return "";
+            Object raw = source.opt("requestId");
+            if (!(raw instanceof String)) return "";
+            String value = (String) raw;
+            if (value.isEmpty()) return "";
+            if (value.codePointCount(0, value.length()) > 64) return "";
+            if (value.getBytes(StandardCharsets.UTF_8).length > 256) return "";
+            for (int offset = 0; offset < value.length();) {
+                int codePoint = value.codePointAt(offset);
+                if (Character.isISOControl(codePoint)) return "";
+                offset += Character.charCount(codePoint);
+            }
+            return value;
+        } catch (Exception ignored) {
+            return "";
         }
     }
 
