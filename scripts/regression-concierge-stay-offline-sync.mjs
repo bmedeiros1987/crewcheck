@@ -51,6 +51,24 @@ assert.equal(overlaid[0].room, '814', 'pending local edit must stay visible unti
 const withServerId = queue.sanitizeConciergeStayPatch({ id: serverId, stayDate: '2026-09-24', room: '901' });
 assert.equal(withServerId.id, serverId, 'real UUID stay ids must remain editable after reconnect');
 
+const secondServerId = '0e794c84-d51c-4e7e-82d7-a5657e17a5d4';
+let sameDayServerPending = queue.coalescePendingConciergeStays([], {
+  id: serverId, stayDate: '2026-09-24', hotelName: 'Hotel A', room: '901',
+}, '2026-09-24T10:00:00.000Z');
+sameDayServerPending = queue.coalescePendingConciergeStays(sameDayServerPending, {
+  id: secondServerId, stayDate: '2026-09-24', hotelName: 'Hotel B', room: '1204',
+}, '2026-09-24T10:05:00.000Z');
+assert.equal(sameDayServerPending.length, 2, 'two server-backed stays on the same day must keep independent offline queue entries');
+assert.notEqual(sameDayServerPending[0].key, sameDayServerPending[1].key, 'server stay identity must outrank the calendar day when building the offline queue key');
+
+const sameDayOverlay = queue.overlayPendingConciergeStays([
+  { id: serverId, stayDate: '2026-09-24', hotelName: 'Hotel A', room: '900' },
+  { id: secondServerId, stayDate: '2026-09-24', hotelName: 'Hotel B', room: '1203' },
+], sameDayServerPending);
+assert.equal(sameDayOverlay.length, 2, 'overlay must not collapse two server stays that share a date');
+assert.equal(sameDayOverlay.find((item) => item.id === serverId)?.room, '901');
+assert.equal(sameDayOverlay.find((item) => item.id === secondServerId)?.room, '1204');
+
 const syncCompiled = ts.transpileModule(syncSource, {
   fileName: 'conciergeStaySync.ts',
   reportDiagnostics: true,
