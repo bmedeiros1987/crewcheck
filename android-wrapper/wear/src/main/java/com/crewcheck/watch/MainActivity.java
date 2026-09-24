@@ -817,7 +817,10 @@ public final class MainActivity extends FragmentActivity
         List<Fact> facts = new ArrayList<>();
 
         if (!s.presentationTime.isBlank() && !"REPORTING".equals(s.state)) {
-            facts.add(new Fact("APRESENTAÇÃO", s.presentationTime, s.presentationPlace, CYAN));
+            // APZ, não "APRESENTAÇÃO": é o termo da tripulação e é o que o resto do app já
+            // usa em espaço curto (complicação, cartão de escala). O nome por extenso fica
+            // para o título de estado, que tem a largura toda.
+            facts.add(new Fact("APZ", s.presentationTime, s.presentationPlace, CYAN));
         }
 
         if (!s.gateLabel().isBlank()) {
