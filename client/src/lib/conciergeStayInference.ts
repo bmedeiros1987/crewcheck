@@ -1,0 +1,1 @@
+export const CONCIERGE_STAY_INFERENCE_VERSION = 1;
