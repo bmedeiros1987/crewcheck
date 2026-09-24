@@ -155,16 +155,40 @@ function sanitizeRecord(value: unknown): ConciergeRoomNoiseObservation | null {
   };
 }
 
+function evidenceIdentity(item: ConciergeRoomNoiseObservation): string {
+  const evidenceIds = normalizeEvidenceIds(item.evidenceIds).sort((a, b) => a.localeCompare(b));
+  if (!evidenceIds.length) return `id:${item.id}`;
+  return `${item.hotelKey}\u001f${item.roomKey}\u001f${item.origin}\u001f${evidenceIds.join('\u001e')}`;
+}
+
+export function dedupeConciergeNoiseObservationsByEvidence(
+  observations: ConciergeRoomNoiseObservation[],
+): ConciergeRoomNoiseObservation[] {
+  const preferred = [...(Array.isArray(observations) ? observations : [])].sort((a, b) => {
+    const updated = (b.updatedAt || b.observedAt).localeCompare(a.updatedAt || a.observedAt);
+    if (updated) return updated;
+    return b.observedAt.localeCompare(a.observedAt);
+  });
+  const seen = new Set<string>();
+  const deduped = preferred.filter((item) => {
+    const key = evidenceIdentity(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return deduped.sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+}
+
 export function listConciergeRoomNoiseObservations(storage?: NoiseStorage | null): ConciergeRoomNoiseObservation[] {
   const target = storageOrNull(storage);
   if (!target) return [];
   try {
     const parsed = JSON.parse(target.getItem(CONCIERGE_ROOM_NOISE_KEY) || '[]');
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    const sanitized = parsed
       .map(sanitizeRecord)
-      .filter((item): item is ConciergeRoomNoiseObservation => Boolean(item))
-      .sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+      .filter((item): item is ConciergeRoomNoiseObservation => Boolean(item));
+    return dedupeConciergeNoiseObservationsByEvidence(sanitized);
   } catch {
     return [];
   }
@@ -204,7 +228,7 @@ export function saveConciergeRoomNoiseObservation(
     updatedAt: now.toISOString(),
   };
   const current = listConciergeRoomNoiseObservations(options.storage);
-  const merged = [next, ...current.filter((item) => item.id !== next.id)].slice(0, MAX_NOISE_OBSERVATIONS);
+  const merged = dedupeConciergeNoiseObservationsByEvidence([next, ...current]).slice(0, MAX_NOISE_OBSERVATIONS);
   const target = storageOrNull(options.storage);
   if (target) {
     try {
@@ -233,7 +257,7 @@ export function findCurrentConciergeRoomNoise(
   const hotelKey = normalizeConciergeHotelName(hotelName);
   const roomKey = normalizeConciergeRoom(room);
   if (!hotelKey || !roomKey) return [];
-  return (Array.isArray(observations) ? observations : [])
+  return dedupeConciergeNoiseObservationsByEvidence(Array.isArray(observations) ? observations : [])
     .filter((item) => item.hotelKey === hotelKey && item.roomKey === roomKey)
     .filter((item) => isConciergeNoiseObservationCurrent(item, now))
     .sort((a, b) => b.observedAt.localeCompare(a.observedAt));
@@ -247,7 +271,7 @@ export function buildConciergeRoomNoiseSummary(
 ) {
   const hotelKey = normalizeConciergeHotelName(hotelName);
   const roomKey = normalizeConciergeRoom(room);
-  const matching = (Array.isArray(observations) ? observations : [])
+  const matching = dedupeConciergeNoiseObservationsByEvidence(Array.isArray(observations) ? observations : [])
     .filter((item) => item.hotelKey === hotelKey && item.roomKey === roomKey);
   const current = matching.filter((item) => isConciergeNoiseObservationCurrent(item, now));
   const unique = (items: ConciergeRoomNoiseObservation[], durability: ConciergeNoiseDurability) => [
