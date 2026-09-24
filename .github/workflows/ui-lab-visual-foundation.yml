@@ -1,0 +1,41 @@
+name: UI Lab Visual Foundation
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/main.tsx'
+      - 'client/src/components/ErrorBoundary.tsx'
+      - 'client/src/styles/**'
+      - 'scripts/regression-ui-lab-foundation.mjs'
+      - '.github/workflows/ui-lab-visual-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-lab-visual-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: UI Lab static regression
+        run: node scripts/regression-ui-lab-foundation.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Vite build
+        run: npx vite build
