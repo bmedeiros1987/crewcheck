@@ -137,7 +137,7 @@ const releaseWatcher = `<script id="crewcheck-release-watch-v14343">
       var cooldownMs = 30 * 60 * 1000;
       function normalized(value) { return String(value || '').trim(); }
       async function checkRelease() {
-        if (checking) return;
+        if (checking || navigator.onLine === false) return;
         checking = true;
         try {
           var response = await fetch('/release.json?ts=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' });
@@ -153,10 +153,9 @@ const releaseWatcher = `<script id="crewcheck-release-watch-v14343">
             var registration = await navigator.serviceWorker.getRegistration();
             if (registration) {
               await registration.update().catch(function () {});
-              if (registration.waiting) registration.waiting.postMessage('SKIP_WAITING');
             }
           }
-          window.setTimeout(function () { window.location.reload(); }, 180);
+          // Activation and navigation stay under the safe PWA coordinator.
         } catch (error) {
         } finally {
           checking = false;
