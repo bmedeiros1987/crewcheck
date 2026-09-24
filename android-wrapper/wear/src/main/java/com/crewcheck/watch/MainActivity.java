@@ -13,12 +13,16 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.fragment.app.FragmentActivity;
 import androidx.wear.ambient.AmbientModeSupport;
 
@@ -75,6 +79,7 @@ public final class MainActivity extends FragmentActivity
 
     private SecureSnapshotStore store;
     private WellbeingStore wellbeingStore;
+    private ScrollView scroll;
     private LinearLayout content;
     private TextView clockView;
     private TextView transientStatus;
@@ -88,6 +93,7 @@ public final class MainActivity extends FragmentActivity
         store = new SecureSnapshotStore(this);
         wellbeingStore = new WellbeingStore(this);
         AmbientModeSupport.attach(this);
+        installBackNavigation();
         applyIntentScreen(getIntent());
         renderRoot();
         handler.postDelayed(this::requestNotificationPermissionIfNeeded, 850L);
@@ -106,6 +112,7 @@ public final class MainActivity extends FragmentActivity
         super.onResume();
         restartClock();
         renderSnapshot();
+        ensureRotaryFocus();
     }
 
     @Override
@@ -159,11 +166,12 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void renderRoot() {
-        ScrollView scroll = new ScrollView(this);
+        scroll = new ScrollView(this);
         scroll.setBackgroundColor(ambient ? BLACK : NAVY);
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setVerticalScrollBarEnabled(false);
+        enableRotaryScrolling(scroll);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -176,6 +184,77 @@ public final class MainActivity extends FragmentActivity
         ));
         setContentView(scroll);
         renderSnapshot();
+    }
+
+    /**
+     * Moldura giratória do Galaxy Watch e coroa dos demais Wear OS.
+     *
+     * Sem isto o giro não faz nada: a ScrollView só responde a toque, e num relógio com
+     * moldura o gesto natural do usuário é girar. O evento chega como ACTION_SCROLL vindo
+     * de SOURCE_ROTARY_ENCODER, com AXIS_SCROLL positivo para cima — daí o sinal invertido
+     * ao converter em deslocamento de rolagem.
+     *
+     * O foco é pedido em {@link #ensureRotaryFocus()}, não aqui: rotary só é entregue à view
+     * focada, e requestFocus() numa view ainda sem janela não faz nada.
+     */
+    private void enableRotaryScrolling(ScrollView target) {
+        target.setFocusable(true);
+        target.setFocusableInTouchMode(true);
+        target.setOnGenericMotionListener((view, event) -> {
+            if (event.getAction() != MotionEvent.ACTION_SCROLL
+                    || !event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
+                return false;
+            }
+            float delta = -event.getAxisValue(MotionEvent.AXIS_SCROLL)
+                    * ViewConfiguration.get(this).getScaledVerticalScrollFactor();
+            target.scrollBy(0, Math.round(delta));
+            return true;
+        });
+    }
+
+    /**
+     * Voltar (inclusive o gesto de arrastar da borda) sobe um nível em vez de fechar o app.
+     *
+     * Estando numa tela interna, sair do app inteiro é perda de contexto: o usuário quer
+     * voltar para Agora. Só na tela raiz o voltar segue para o sistema.
+     */
+    /**
+     * Mantém a ScrollView com foco, que é para onde o sistema entrega o giro da moldura.
+     *
+     * Precisa ser reafirmado depois de cada render: renderSnapshot() recria os filhos, e um
+     * filho focável pode tomar o foco no caminho.
+     */
+    private void ensureRotaryFocus() {
+        if (scroll == null || ambient) return;
+        scroll.post(() -> {
+            if (scroll != null && !scroll.hasFocus()) scroll.requestFocus();
+        });
+    }
+
+    private void installBackNavigation() {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (screenMode != MODE_NOW) {
+                    showScreen(MODE_NOW);
+                    return;
+                }
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+            }
+        });
+    }
+
+    /**
+     * Troca de tela sempre volta ao topo.
+     *
+     * renderSnapshot() recria o conteúdo, mas a ScrollView guarda o deslocamento anterior:
+     * trocar de tela no fim da rolagem abria a próxima no meio, sem cabeçalho.
+     */
+    private void showScreen(int mode) {
+        screenMode = mode;
+        renderSnapshot();
+        if (scroll != null) scroll.post(() -> scroll.scrollTo(0, 0));
     }
 
     private void applySafePadding() {
@@ -224,14 +303,15 @@ public final class MainActivity extends FragmentActivity
                     store.save(WatchContextSnapshot.demo(generated).toJson().toString());
                     wellbeingStore.saveCrewLife(CrewLifeSnapshot.demo(generated).toJson().toString());
                     wellbeingStore.saveRoutine(RoutineSnapshot.demo(generated).toJson().toString());
-                    screenMode = MODE_NOW;
-                    renderSnapshot();
+                    showScreen(MODE_NOW);
                 } catch (Exception error) {
                     if (transientStatus != null) transientStatus.setText("Demo indisponível");
                 }
             });
             content.addView(demo);
         }
+
+        ensureRotaryFocus();
     }
 
     private void renderHeader(WatchContextSnapshot snapshot) {
@@ -258,10 +338,7 @@ public final class MainActivity extends FragmentActivity
             LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20), dp(20));
             bp.setMargins(0, 0, dp(4), 0);
             row.addView(badge, bp);
-            badge.setOnClickListener(view -> {
-                screenMode = MODE_NOTIFICATIONS;
-                renderSnapshot();
-            });
+            badge.setOnClickListener(view -> showScreen(MODE_NOTIFICATIONS));
         }
 
         clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
@@ -403,10 +480,7 @@ public final class MainActivity extends FragmentActivity
         TextView cta = heroAction(actionLabel(snapshot), accent);
         cta.setOnClickListener(view -> {
             if ("LEAVE_SOON".equals(snapshot.state)) requestSync();
-            else {
-                screenMode = MODE_SCHEDULE;
-                renderSnapshot();
-            }
+            else showScreen(MODE_SCHEDULE);
         });
         content.addView(cta);
 
@@ -650,10 +724,7 @@ public final class MainActivity extends FragmentActivity
 
     private TextView navChip(String label, int accent, int mode) {
         TextView chip = actionChip(label, accent, screenMode == mode);
-        chip.setOnClickListener(view -> {
-            screenMode = mode;
-            renderSnapshot();
-        });
+        chip.setOnClickListener(view -> showScreen(mode));
         return chip;
     }
 
