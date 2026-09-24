@@ -8,7 +8,6 @@ on:
       - 'client/src/lib/conciergeRoomPreferences.ts'
       - 'client/src/lib/conciergeRoomNoise.ts'
       - 'client/src/lib/conciergeHotelKnowledge.ts'
-      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'client/src/components/v1391/ConciergeRoomNoiseCard.tsx'
       - 'scripts/regression-concierge-room-memory.mjs'
       - 'scripts/regression-concierge-room-intelligence.mjs'
