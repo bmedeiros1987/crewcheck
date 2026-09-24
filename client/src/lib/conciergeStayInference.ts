@@ -121,6 +121,21 @@ function latestByDate<T extends ConciergeKnownStay>(items: T[]): T[] {
   });
 }
 
+function resolveSavedStay(
+  day: string,
+  stayAirport: string,
+  stays: ConciergeKnownStay[],
+): ConciergeKnownStay | undefined {
+  const sameDay = latestByDate(stays.filter((item) => normalizeDay(item.stayDate) === day));
+  if (!sameDay.length) return undefined;
+
+  if (stayAirport) {
+    return sameDay.find((item) => airport(item.airport) === stayAirport);
+  }
+
+  return sameDay.length === 1 ? sameDay[0] : undefined;
+}
+
 function resolveHotel(
   day: string,
   stayAirport: string,
@@ -128,9 +143,8 @@ function resolveHotel(
   stays: ConciergeKnownStay[],
   catalog: ConciergeHotelCatalogEntry[],
 ): { hotelName: string; hotelSource: ConciergeHotelSource } {
-  const sameDay = latestByDate(stays.filter((item) => normalizeDay(item.stayDate) === day && text(item.hotelName)));
-  const savedAtAirport = sameDay.find((item) => !stayAirport || airport(item.airport) === stayAirport) || sameDay[0];
-  if (savedAtAirport?.hotelName) return { hotelName: text(savedAtAirport.hotelName), hotelSource: 'saved' };
+  const savedForStay = resolveSavedStay(day, stayAirport, stays);
+  if (savedForStay?.hotelName) return { hotelName: text(savedForStay.hotelName), hotelSource: 'saved' };
 
   if (rosterHotel) return { hotelName: rosterHotel, hotelSource: 'roster' };
 
@@ -169,7 +183,7 @@ export function buildConciergeStaySuggestions(
     const stayAirport = airport(event.destination || event.origin);
     const next = nextOperationalEvent(sorted, event);
     const resolved = resolveHotel(day, stayAirport, text(event.hotel), knownStays, hotels);
-    const saved = latestByDate(knownStays.filter((item) => normalizeDay(item.stayDate) === day))[0];
+    const saved = resolveSavedStay(day, stayAirport, knownStays);
     return {
       eventId: event.id,
       stayDate: day,
