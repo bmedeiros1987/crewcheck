@@ -6,9 +6,11 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [historySource, noiseSource] = await Promise.all([
+const [historySource, noiseSource, noiseCardSource, stayManagerSource] = await Promise.all([
   read('client/src/lib/conciergeRoomHistory.ts'),
   read('client/src/lib/conciergeRoomNoise.ts'),
+  read('client/src/components/v1391/ConciergeRoomNoiseCard.tsx'),
+  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
 ]);
 
 function transpile(source, fileName) {
@@ -18,6 +20,7 @@ function transpile(source, fileName) {
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.ESNext,
+      jsx: ts.JsxEmit.ReactJSX,
     },
   });
   const errors = (compiled.diagnostics || []).filter((item) => item.category === ts.DiagnosticCategory.Error);
@@ -30,6 +33,15 @@ const historyUrl = 'data:text/javascript;base64,' + Buffer.from(historyOutput).t
 const noiseOutput = transpile(noiseSource, 'conciergeRoomNoise.ts')
   .replace("from './conciergeRoomHistory'", `from '${historyUrl}'`);
 const noise = await import('data:text/javascript;base64,' + Buffer.from(noiseOutput).toString('base64'));
+
+transpile(noiseCardSource, 'ConciergeRoomNoiseCard.tsx');
+assert.match(noiseCardSource, /saveConciergeRoomNoiseObservation/, 'noise card must persist observations through the structured noise contract');
+assert.match(noiseCardSource, /Vizinho barulhento/, 'noise card must expose a quick circumstantial-neighbor action');
+assert.match(noiseCardSource, /Obra \/ reforma/, 'noise card must expose a quick temporal-construction action');
+assert.match(noiseCardSource, /Trânsito \/ avenida/, 'noise card must expose a quick structural-candidate traffic action');
+assert.match(noiseCardSource, /candidato estrutural · não confirmado/, 'UI must not present one private structural candidate as confirmed fact');
+assert.match(noiseCardSource, /ficam somente neste aparelho/, 'UI must disclose the local-private persistence boundary');
+assert.match(stayManagerSource, /<ConciergeRoomNoiseCard hotelName=\{draft\.hotelName\} room=\{draft\.room\} stayDate=\{draft\.stayDate\}\/>/, 'stay manager must surface the structured noise card in the Concierge flow');
 
 function createMemoryStorage() {
   const data = new Map();
