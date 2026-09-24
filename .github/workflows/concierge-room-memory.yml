@@ -1,0 +1,26 @@
+name: Concierge room memory
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/conciergeRoomHistory.ts'
+      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
+      - 'scripts/regression-concierge-room-memory.mjs'
+      - '.github/workflows/concierge-room-memory.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Concierge room-memory regression
+        run: node scripts/regression-concierge-room-memory.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
