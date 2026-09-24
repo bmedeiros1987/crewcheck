@@ -175,7 +175,7 @@ await import('../p2-738-vacation-work-first/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
-await import('../ci/sync-canonical-manual.mjs');
-// Transport/UI handoff is deliberately last: it wraps the already-final canonical
-// importer without changing parser, active-roster, APZ, journey or compliance logic.
+// Transport/UI handoff is applied after Android/native finalizers so legacy transforms cannot
+// erase the durable inbox/ACK behavior; canonical manual sync remains the terminal preparation step.
 await import('../p0-shared-pdf-durable/apply.mjs');
+await import('../ci/sync-canonical-manual.mjs');
