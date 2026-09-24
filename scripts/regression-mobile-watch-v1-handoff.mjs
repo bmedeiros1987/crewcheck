@@ -10,6 +10,12 @@ function requireText(source, needle, label) {
   }
 }
 
+function forbidText(source, needle, label) {
+  if (source.includes(needle)) {
+    throw new Error(`Forbidden ${label}: ${needle}`);
+  }
+}
+
 const publisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java');
 const telemetry = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchDeviceTelemetry.java');
 const syncService = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java');
@@ -31,8 +37,16 @@ requireText(watchContext, 'return Boolean(getStoredUser()?.premiumAccess);', 'st
 requireText(telemetry, 'STATUS_REQUEST_PATH = "/crewcheck/watch/device-status/request/v1"', 'telemetry request v1');
 requireText(telemetry, 'STATUS_RESPONSE_PATH = "/crewcheck/watch/device-status/response/v1"', 'telemetry response v1');
 requireText(telemetry, 'REQUEST_WINDOW_MS = 5_000L', 'bounded nonce window');
-requireText(telemetry, 'boolean legacyResponse = responseRequestId.isBlank();', 'old-peer telemetry compatibility');
+requireText(telemetry, 'boolean legacyResponse = responseRequestId.isEmpty();', 'old-peer telemetry compatibility');
 requireText(telemetry, 'if (!legacyResponse && !verifiedRoundTrip) return;', 'mismatched nonce rejection');
+requireText(telemetry, 'private static String exactRequestId(JSONObject source)', 'exact opaque nonce parser');
+requireText(telemetry, 'value.codePointCount(0, value.length()) > 64', 'nonce Unicode code point bound');
+requireText(telemetry, 'value.getBytes(StandardCharsets.UTF_8).length > 256', 'nonce UTF-8 byte bound');
+requireText(telemetry, 'Character.isISOControl', 'nonce control-character rejection');
+requireText(telemetry, 'json.optBoolean("round", false)', 'phone cache round=false default');
+requireText(telemetry, 'source.optBoolean("round", false)', 'peer response round=false default');
+forbidText(telemetry, 'clean(source.optString("requestId", ""), 64)', 'requestId normalization before correlation');
+forbidText(telemetry, 'clean(prefs.getString(KEY_PENDING_REQUEST_ID, ""), 64)', 'pending nonce normalization before correlation');
 
 requireText(syncService, 'CrewCheckWatchDeviceTelemetry.STATUS_RESPONSE_PATH.equals(path)', 'phone telemetry routing');
 requireText(syncService, 'CrewCheckWatchPublisher.republishLast(this)', 'cached snapshot fast path');
@@ -42,5 +56,7 @@ requireText(manifest, 'android:pathPrefix="/crewcheck/watch/device-status/respon
 requireText(contract, 'missing `premiumAccess` means `false`', 'old-phone/new-peer compatibility documentation');
 requireText(contract, 'Republish therefore **never turns stale data into fresh data**', 'stale/offline documentation');
 requireText(contract, 'durable Android/PWA shared-PDF handoff from #797 or its successor', 'PDF durability merge gate');
+requireText(contract, 'without trim, normalization or rewriting', 'exact nonce documentation');
+requireText(contract, '`round` defaults to `false`', 'device-status round default documentation');
 
 console.log('mobile watch v1 handoff regression: PASS');
