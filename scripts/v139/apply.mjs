@@ -176,3 +176,6 @@ await import('../ci/sync-service-worker-version.mjs');
 await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
 await import('../ci/sync-canonical-manual.mjs');
+// Transport/UI handoff is deliberately last: it wraps the already-final canonical
+// importer without changing parser, active-roster, APZ, journey or compliance logic.
+await import('../p0-shared-pdf-durable/apply.mjs');
