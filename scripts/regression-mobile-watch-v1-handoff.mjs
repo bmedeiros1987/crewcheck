@@ -23,7 +23,17 @@ const manifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const watchContext = read('client/src/lib/watchContext.ts');
 const contract = read('docs/mobile_watch_snapshot_v1_contract.md');
 
-requireText(publisher, 'source.optBoolean("premiumAccess", false)', 'fail-closed premium default');
+requireText(publisher, 'strictOptionalBoolean(source, "premiumAccess", false)', 'strict fail-closed premium default');
+requireText(publisher, 'strictRequiredJsonInteger(source, "schemaVersion")', 'schemaVersion strict JSON integer');
+requireText(publisher, 'strictRequiredJsonInteger(source, "generatedAtEpochMs")', 'generatedAt strict JSON integer');
+requireText(publisher, 'strictRequiredJsonInteger(source, "validUntilEpochMs")', 'validUntil strict JSON integer');
+requireText(publisher, 'cleanItem.put("kind", normalizeScheduleKind(item));', 'schedule kind canonical downgrade');
+requireText(publisher, 'strictOptionalBoolean(source, "remoteStand", false)', 'remoteStand strict boolean default');
+requireText(publisher, 'strictOptionalBoolean(source, "changed", false)', 'changed strict boolean default');
+forbidText(publisher, 'source.optInt("schemaVersion", 0)', 'coercive schemaVersion parsing');
+forbidText(publisher, 'source.optLong("generatedAtEpochMs", 0L)', 'coercive generatedAt parsing');
+forbidText(publisher, 'source.optLong("validUntilEpochMs", 0L)', 'coercive validUntil parsing');
+forbidText(publisher, 'source.optBoolean("premiumAccess", false)', 'coercive premium boolean parsing');
 requireText(publisher, 'if (premiumAccess) {', 'premium projection gate');
 requireText(publisher, 'copySchedule(source, out, premiumAccess)', 'schedule premium boundary');
 requireText(publisher, 'out.put("changed", false)', 'downgrade changed reset');
@@ -54,6 +64,9 @@ requireText(manifest, 'android:name=".CrewCheckDeviceHubActivity"', 'Device Hub 
 requireText(manifest, 'android:pathPrefix="/crewcheck/watch/device-status/response/"', 'telemetry manifest filter');
 
 requireText(contract, 'missing `premiumAccess` means `false`', 'old-phone/new-peer compatibility documentation');
+requireText(contract, 'JSON integer values, never numeric strings or fractional numbers', 'strict required numeric type documentation');
+requireText(contract, 'Only the JSON boolean `true` enables Premium', 'strict optional boolean documentation');
+requireText(contract, 'invalid or missing `schedule[].kind` becomes `duty`', 'schedule kind downgrade documentation');
 requireText(contract, 'Republish therefore **never turns stale data into fresh data**', 'stale/offline documentation');
 requireText(contract, 'durable Android/PWA shared-PDF handoff from #797 or its successor', 'PDF durability merge gate');
 requireText(contract, 'without trim, normalization or rewriting', 'exact nonce documentation');
