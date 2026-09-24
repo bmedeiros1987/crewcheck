@@ -13,11 +13,12 @@ final class WatchConciergeStore {
     private static final String KEY_RESPONSE = "response_json";
     private static final int MAX_BYTES = 4 * 1024;
 
+    private final Context context;
     private final SharedPreferences prefs;
 
     WatchConciergeStore(Context context) {
-        prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        this.context = context.getApplicationContext();
+        prefs = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
     Snapshot save(String raw) {
@@ -27,6 +28,10 @@ final class WatchConciergeStore {
     }
 
     Snapshot load() {
+        if (!WatchEntitlements.concierge(context)) {
+            clear();
+            return null;
+        }
         String raw = prefs.getString(KEY_RESPONSE, "");
         if (raw == null || raw.isBlank()) return null;
         try {
