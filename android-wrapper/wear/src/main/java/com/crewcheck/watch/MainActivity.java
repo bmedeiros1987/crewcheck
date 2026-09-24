@@ -257,10 +257,26 @@ public final class MainActivity extends FragmentActivity
         if (scroll != null) scroll.post(() -> scroll.scrollTo(0, 0));
     }
 
+    /**
+     * Margem segura proporcional à tela, não em dp fixo.
+     *
+     * Numa tela redonda quem corta o conteúdo é a curva, e ela depende do tamanho do
+     * mostrador: o mesmo dp que cabe num 450 px sobra num 390 px. Medir em fração da menor
+     * dimensão faz a margem acompanhar o relógio.
+     *
+     * A folga vertical é maior que a horizontal de propósito: no topo e na base da área
+     * visível é onde o círculo mais fecha, e é ali que o primeiro e o último item eram
+     * aparados.
+     */
     private void applySafePadding() {
-        int horizontal = isRoundScreen() ? dp(30) : dp(18);
-        int topSafe = isRoundScreen() ? dp(18) : dp(10);
-        int bottomSafe = isRoundScreen() ? dp(32) : dp(22);
+        int extent = Math.min(
+                getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels
+        );
+        boolean round = isRoundScreen();
+        int horizontal = Math.round(extent * (round ? 0.10f : 0.06f));
+        int topSafe = Math.round(extent * (round ? 0.12f : 0.05f));
+        int bottomSafe = Math.round(extent * (round ? 0.16f : 0.10f));
         content.setPadding(horizontal, topSafe, horizontal, bottomSafe);
     }
 
@@ -1050,11 +1066,28 @@ public final class MainActivity extends FragmentActivity
         return chip;
     }
 
+    /**
+     * Piso de legibilidade da tipografia.
+     *
+     * Quinze dos textos da tela estavam entre 7sp e 10sp. No celular isso é um rodapé
+     * discreto; num pulso a braço estendido é texto que não se lê, e era boa parte do ar
+     * rudimentar da tela. O piso comprime a base da escala sem inverter nenhuma relação —
+     * o que era menor continua menor — e não toca nos números grandes, que já funcionam.
+     *
+     * setTextSize usa SP, então a preferência de fonte do usuário continua valendo por cima.
+     */
+    private static int readable(int sp) {
+        if (sp <= 8) return 11;
+        if (sp <= 10) return 12;
+        if (sp <= 13) return 13;
+        return sp;
+    }
+
     private TextView text(String value, int sp, int color, boolean bold, int gravity) {
         TextView view = new TextView(this);
         view.setText(value == null ? "" : value);
         view.setTextColor(color);
-        view.setTextSize(sp);
+        view.setTextSize(readable(sp));
         view.setGravity(gravity);
         view.setMaxLines(3);
         view.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
