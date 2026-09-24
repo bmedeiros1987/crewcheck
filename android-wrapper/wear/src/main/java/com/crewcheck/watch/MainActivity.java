@@ -48,12 +48,19 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_SCHEDULE = 3;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
-    private static final int NAVY = Color.rgb(3, 10, 22);
     private static final int BLACK = Color.BLACK;
+
+    /**
+     * Superfícies chapadas sobre preto verdadeiro.
+     *
+     * Num OLED o preto puro é pixel desligado: contraste máximo e menos bateria. A carta
+     * anterior era azul-marinho com gradiente e contorno colorido em cada quadro — cinco
+     * acentos disputando a tela ao mesmo tempo. Aqui o fundo desaparece e sobra o dado.
+     */
+    private static final int SURFACE = Color.rgb(28, 28, 30);
     private static final int SURFACE = Color.rgb(8, 22, 42);
-    private static final int SURFACE_ALT = Color.rgb(11, 30, 57);
     private static final int WHITE = Color.rgb(248, 250, 252);
-    private static final int MUTED = Color.rgb(153, 169, 194);
+    private static final int MUTED = Color.rgb(152, 152, 157);
     private static final int MUTED_AMBIENT = Color.rgb(150, 150, 150);
     private static final int CYAN = Color.rgb(34, 211, 238);
     private static final int BLUE = Color.rgb(59, 130, 246);
@@ -168,7 +175,7 @@ public final class MainActivity extends FragmentActivity
 
     private void renderRoot() {
         scroll = new ScrollView(this);
-        scroll.setBackgroundColor(ambient ? BLACK : NAVY);
+        scroll.setBackgroundColor(BLACK);
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setVerticalScrollBarEnabled(false);
@@ -286,7 +293,7 @@ public final class MainActivity extends FragmentActivity
 
         content.removeAllViews();
         applySafePadding();
-        content.getRootView().setBackgroundColor(ambient ? BLACK : NAVY);
+        content.getRootView().setBackgroundColor(BLACK);
 
         WatchContextSnapshot snapshot = store.load();
         long now = System.currentTimeMillis();
@@ -359,6 +366,7 @@ public final class MainActivity extends FragmentActivity
         }
 
         clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
+        tabular(clockView);
         row.addView(clockView, new LinearLayout.LayoutParams(dp(52), dp(26)));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -435,15 +443,6 @@ public final class MainActivity extends FragmentActivity
         Primary primary = primaryFor(snapshot);
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 
-        View glow = new View(this);
-        GradientDrawable glowBg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(CYAN, 20), withAlpha(VIOLET, 45), withAlpha(MAGENTA, 20)}
-        );
-        glowBg.setCornerRadius(dp(28));
-        glow.setBackground(glowBg);
-        content.addView(glow, new LinearLayout.LayoutParams(dp(118), dp(3)));
-
         TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
         icon.setPadding(0, dp(8), 0, dp(2));
         content.addView(icon);
@@ -462,6 +461,7 @@ public final class MainActivity extends FragmentActivity
         );
         value.setMaxLines(2);
         value.setPadding(0, dp(3), 0, 0);
+        tabular(value);
         content.addView(value);
 
         if (!primary.detail.isBlank()) {
@@ -903,10 +903,14 @@ public final class MainActivity extends FragmentActivity
         box.setPadding(dp(5), dp(5), dp(5), dp(5));
 
         TextView label = text(fact.label, 7, MUTED, true, Gravity.CENTER);
+        label.setLetterSpacing(.08f);
+        label.setMaxLines(1);
         box.addView(label);
 
-        TextView value = text(fact.value, 13, fact.accent, true, Gravity.CENTER);
+        TextView value = text(fact.value, 15, fact.accent, true, Gravity.CENTER);
         value.setMaxLines(1);
+        tabular(value);
+        value.setPadding(0, dp(2), 0, 0);
         box.addView(value);
 
         if (!fact.detail.isBlank()) {
@@ -1050,16 +1054,20 @@ public final class MainActivity extends FragmentActivity
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    /**
+     * Quadro chapado, cantos generosos, sem contorno.
+     *
+     * O acento não pinta mais o fundo nem a borda: ele vive no valor, que é o que se lê de
+     * relance. Fundo colorido atrás de número reduz contraste justamente onde ele precisa
+     * ser máximo.
+     */
     private LinearLayout premiumCard(int accent) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(10), dp(8), dp(10), dp(8));
-        GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(accent, 24), SURFACE_ALT}
-        );
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(SURFACE);
         background.setCornerRadius(dp(22));
-        background.setStroke(dp(1), withAlpha(accent, 100));
         card.setBackground(background);
         return card;
     }
@@ -1074,14 +1082,13 @@ public final class MainActivity extends FragmentActivity
     }
 
     private TextView heroAction(String label, int accent) {
-        TextView chip = text(label, 10, WHITE, true, Gravity.CENTER);
-        chip.setPadding(dp(16), dp(9), dp(16), dp(9));
-        GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(BLUE, 180), withAlpha(accent, 145)}
-        );
+        // Botão preenchido com o acento do estado e texto preto — o contraste mais alto
+        // disponível. O gradiente azul-para-acento que havia aqui lavava as duas cores.
+        TextView chip = text(label, 12, BLACK, true, Gravity.CENTER);
+        chip.setPadding(dp(20), dp(11), dp(20), dp(11));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(accent);
         background.setCornerRadius(dp(24));
-        background.setStroke(dp(1), withAlpha(CYAN, 150));
         chip.setBackground(background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -1094,13 +1101,14 @@ public final class MainActivity extends FragmentActivity
     }
 
     private TextView actionChip(String label, int accent, boolean selected) {
-        TextView chip = text(label, 9, selected ? WHITE : accent, true, Gravity.CENTER);
-        chip.setPadding(dp(12), dp(7), dp(12), dp(7));
+        // Só o selecionado carrega cor. Antes todos tinham contorno aceso, e a tela inteira
+        // competia por atenção — sem nada indicando onde você está.
+        TextView chip = text(label, 11, selected ? BLACK : MUTED, true, Gravity.CENTER);
+        chip.setPadding(dp(14), dp(9), dp(14), dp(9));
 
         GradientDrawable background = new GradientDrawable();
-        background.setColor(selected ? withAlpha(accent, 48) : SURFACE_ALT);
+        background.setColor(selected ? accent : SURFACE);
         background.setCornerRadius(dp(20));
-        background.setStroke(dp(1), withAlpha(accent, selected ? 190 : 80));
         chip.setBackground(background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -1127,6 +1135,17 @@ public final class MainActivity extends FragmentActivity
         if (sp <= 10) return 12;
         if (sp <= 13) return 13;
         return sp;
+    }
+
+    /**
+     * Algarismos de largura fixa.
+     *
+     * Sem isto o relógio "pula" a cada minuto e o horário da APZ dança quando o valor muda,
+     * porque o 1 é mais estreito que o 8 na fonte padrão. É detalhe pequeno e é exatamente
+     * o tipo de coisa que separa uma tela caprichada de uma tela feita às pressas.
+     */
+    private static void tabular(TextView view) {
+        view.setFontFeatureSettings("tnum");
     }
 
     private TextView text(String value, int sp, int color, boolean bold, int gravity) {
