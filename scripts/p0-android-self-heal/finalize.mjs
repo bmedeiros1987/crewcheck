@@ -15,7 +15,7 @@ if (!source.includes('recoverCrewCheckShell(view, "main-frame-error")')
     throw new Error('[p0-android-self-heal:finalize] WebViewClient/onReceivedError canônico não localizado.');
   }
 
-  const replacement = `            @Override\n            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {\n                super.onReceivedError(view, request, error);\n                if (request != null && request.isForMainFrame()) {\n                    recoverCrewCheckShell(view, "main-frame-error");\n                }\n            }\n\n            @Override\n            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {\n                super.onReceivedHttpError(view, request, errorResponse);\n                if (request != null && request.isForMainFrame() && errorResponse != null\n                        && errorResponse.getStatusCode() >= 500) {\n                    recoverCrewCheckShell(view, "http-" + errorResponse.getStatusCode());\n                }\n            }\n`;
+  const replacement = `            @Override\n            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {\n                super.onReceivedError(view, request, error);\n                if (request != null && request.isForMainFrame()) {\n                    recoverCrewCheckShell(view, "main-frame-error");\n                }\n            }\n\n            @Override\n            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {\n                super.onReceivedHttpError(view, request, error);\n                if (request != null && request.isForMainFrame() && errorResponse != null\n                        && errorResponse.getStatusCode() >= 500) {\n                    recoverCrewCheckShell(view, "http-" + errorResponse.getStatusCode());\n                }\n            }\n`;
 
   source = source.slice(0, start) + replacement + source.slice(end);
 }
@@ -32,3 +32,7 @@ for (const required of [
 
 fs.writeFileSync(file, source, 'utf8');
 console.log('[p0-android-self-heal:finalize] hooks finais de erro/HTTP reafirmados após android-play/layout.');
+
+// Phone-only post-finalizer: after every native/store transform has settled, attach
+// the non-disruptive Google Play availability bridge without touching roster state.
+await import('../mobile-play-update/apply.mjs');
