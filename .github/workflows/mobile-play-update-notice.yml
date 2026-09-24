@@ -37,6 +37,8 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Assert non-disruptive Play update contract
         run: node scripts/regression-mobile-play-update-notice.mjs
+      - name: Build embedded/offline web shell
+        run: npm run build
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
