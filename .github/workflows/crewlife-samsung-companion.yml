@@ -12,6 +12,7 @@ on:
       - 'scripts/android-play/**'
       - 'scripts/crewlife-samsung-local-test.sh'
       - 'scripts/regression-crewlife-samsung-companion.mjs'
+      - 'scripts/regression-crewlife-sdk-private-source.mjs'
       - '.github/workflows/crewlife-samsung-companion.yml'
   workflow_dispatch:
 
@@ -57,6 +58,9 @@ jobs:
       - name: Companion contracts
         run: node scripts/regression-crewlife-samsung-companion.mjs
 
+      - name: Private Samsung SDK sourcing policy
+        run: node scripts/regression-crewlife-sdk-private-source.mjs
+
       - name: TypeScript
         run: npx tsc --noEmit
 
@@ -74,33 +78,35 @@ jobs:
           set -euo pipefail
           mkdir -p android-wrapper/lifecompanion/libs
           target='android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar'
+          expected_sha256='f5d3d83cf00b97d0bb1b1db4da076e861eb1c3e6e704d89a34e68909d2f38654'
+          echo "SAMSUNG_SDK_READY=false" >> "$GITHUB_ENV"
 
-          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
-            args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
-            if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
-              args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
-            fi
-            curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
-            echo "::notice::Samsung SDK restored from configured private artifact source."
-          else
-            # Temporary reproducible fallback for #794. The exact SDK 1.1.0 AAR was
-            # already validated in the frozen #757 candidate. We read that immutable
-            # historical blob at build time without adding the vendor binary to this branch.
-            pinned_sha='46bfb582a91d6b4b4fa5d41a5cb8444ca7e55637'
-            pinned_path='scripts/crewlife-wellness/native/libs/samsung-health-data-api-1.1.0.aar'
-            git fetch --no-tags --depth=1 origin "$pinned_sha"
-            git show "$pinned_sha:$pinned_path" > "$target"
-            echo "::notice::Samsung SDK restored from pinned validated repository history for #794."
+          if [ -z "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
+            echo "::notice::Samsung-enabled Companion build skipped: configure the private SAMSUNG_HEALTH_DATA_AAR_URL artifact source. The proprietary SDK is never recovered from repository history."
+            exit 0
           fi
+
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ] && [ "${SAMSUNG_HEALTH_DATA_AAR_SHA256}" != "$expected_sha256" ]; then
+            echo "::error::Configured Samsung SDK SHA-256 does not match the owner-verified Samsung Health Data SDK 1.1.0 hash."
+            exit 1
+          fi
+
+          args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
+            args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
+          fi
+          curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
 
           test -s "$target"
           unzip -tq "$target" >/dev/null
-          sha256sum "$target"
-
-          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ]; then
-            printf '%s  %s\n' "${SAMSUNG_HEALTH_DATA_AAR_SHA256}" "$target" | sha256sum -c -
+          actual_sha256="$(sha256sum "$target" | awk '{print $1}')"
+          if [ "$actual_sha256" != "$expected_sha256" ]; then
+            echo "::error::Downloaded Samsung Health Data SDK AAR failed the pinned SHA-256 integrity check."
+            rm -f "$target"
+            exit 1
           fi
 
+          echo "::notice::Samsung SDK 1.1.0 restored from the configured private artifact source and verified by pinned SHA-256."
           echo "SAMSUNG_SDK_READY=true" >> "$GITHUB_ENV"
 
       - name: Build scaffold companion and mobile bridge
