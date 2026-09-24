@@ -16,9 +16,29 @@ export type ConciergeStayReminderPlanItem = {
   message: string;
 };
 
+export type ConciergeStayReminderExistingJob = {
+  jobKey?: unknown;
+  job_key?: unknown;
+  scheduledAt?: unknown;
+  scheduled_at?: unknown;
+  channel?: unknown;
+  status?: unknown;
+};
+
+export type ConciergeStayReminderReconciliation = {
+  enabled: boolean;
+  reason: 'active-reminders' | 'no-active-reminders' | 'invalid-stay';
+  schedule: ConciergeStayReminderPlanItem[];
+  cancelJobKeys: string[];
+  unchangedJobKeys: string[];
+  deferredJobKeys: string[];
+};
+
 const PRESENTATION_REMINDER_MINUTES = 20;
 const MINIMUM_FUTURE_MS = 60_000;
 const COLLISION_WINDOW_MS = 10 * 60_000;
+const RECONCILIATION_TIME_TOLERANCE_MS = 30_000;
+const ACTIVE_REMINDER_STATUSES = new Set(['pending', 'processing']);
 
 function text(value: unknown): string {
   return String(value ?? '').trim();
@@ -27,6 +47,14 @@ function text(value: unknown): string {
 function validDate(value: unknown): Date | null {
   if (!(value instanceof Date)) return null;
   return Number.isFinite(value.getTime()) ? value : null;
+}
+
+function dateLike(value: unknown): Date | null {
+  if (value instanceof Date) return validDate(value);
+  const raw = text(value);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
 function stayKey(value: unknown): string {
@@ -40,6 +68,18 @@ function presentationLabel(context: ConciergeStayReminderContext): string {
   const date = validDate(context.presentationAt);
   if (!date) return '';
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function existingJobKey(job: ConciergeStayReminderExistingJob): string {
+  return text(job?.jobKey || job?.job_key);
+}
+
+function existingJobStatus(job: ConciergeStayReminderExistingJob): string {
+  return text(job?.status).toLowerCase();
+}
+
+function existingJobScheduledAt(job: ConciergeStayReminderExistingJob): Date | null {
+  return dateLike(job?.scheduledAt || job?.scheduled_at);
 }
 
 export function conciergeStayReminderJobKeys(stayDate: unknown): Record<ConciergeStayReminderKind, string> | null {
@@ -125,4 +165,96 @@ export function conciergeReminderChannelLabel(value: unknown): string {
     'telegram+telegram-call+phone-call': 'todos os canais do Despertador',
   };
   return labels[channel] || 'Telegram';
+}
+
+export function buildConciergeStayReminderReconciliation(
+  stayDate: unknown,
+  desiredPlan: ConciergeStayReminderPlanItem[],
+  existingJobs: ConciergeStayReminderExistingJob[],
+  desiredChannel: unknown,
+): ConciergeStayReminderReconciliation {
+  const keys = conciergeStayReminderJobKeys(stayDate);
+  if (!keys) {
+    return {
+      enabled: false,
+      reason: 'invalid-stay',
+      schedule: [],
+      cancelJobKeys: [],
+      unchangedJobKeys: [],
+      deferredJobKeys: [],
+    };
+  }
+
+  const allowedKeys = new Set(Object.values(keys));
+  const existingByKey = new Map<string, ConciergeStayReminderExistingJob>();
+  for (const job of Array.isArray(existingJobs) ? existingJobs : []) {
+    const key = existingJobKey(job);
+    if (!allowedKeys.has(key) || existingByKey.has(key)) continue;
+    existingByKey.set(key, job);
+  }
+
+  const hasActiveReminder = [...existingByKey.values()].some((job) => ACTIVE_REMINDER_STATUSES.has(existingJobStatus(job)));
+  if (!hasActiveReminder) {
+    return {
+      enabled: false,
+      reason: 'no-active-reminders',
+      schedule: [],
+      cancelJobKeys: [],
+      unchangedJobKeys: [],
+      deferredJobKeys: [],
+    };
+  }
+
+  const desiredByKey = new Map<string, ConciergeStayReminderPlanItem>();
+  for (const item of Array.isArray(desiredPlan) ? desiredPlan : []) {
+    if (allowedKeys.has(item?.jobKey)) desiredByKey.set(item.jobKey, item);
+  }
+
+  const desiredChannelNormalized = normalizeConciergeReminderChannel(desiredChannel);
+  const schedule: ConciergeStayReminderPlanItem[] = [];
+  const cancelJobKeys: string[] = [];
+  const unchangedJobKeys: string[] = [];
+  const deferredJobKeys: string[] = [];
+
+  for (const key of Object.values(keys)) {
+    const current = existingByKey.get(key);
+    const desired = desiredByKey.get(key);
+    const status = current ? existingJobStatus(current) : '';
+    const isActive = ACTIVE_REMINDER_STATUSES.has(status);
+
+    if (!desired) {
+      if (isActive) cancelJobKeys.push(key);
+      continue;
+    }
+
+    if (!current || !isActive) {
+      schedule.push(desired);
+      continue;
+    }
+
+    const currentAt = existingJobScheduledAt(current);
+    const sameTime = Boolean(currentAt) && Math.abs(currentAt!.getTime() - desired.scheduledAt.getTime()) <= RECONCILIATION_TIME_TOLERANCE_MS;
+    const sameChannel = normalizeConciergeReminderChannel(current.channel) === desiredChannelNormalized;
+
+    if (sameTime && sameChannel) {
+      unchangedJobKeys.push(key);
+      continue;
+    }
+
+    if (status === 'processing') {
+      deferredJobKeys.push(key);
+      continue;
+    }
+
+    schedule.push(desired);
+  }
+
+  return {
+    enabled: true,
+    reason: 'active-reminders',
+    schedule,
+    cancelJobKeys,
+    unchangedJobKeys,
+    deferredJobKeys,
+  };
 }
