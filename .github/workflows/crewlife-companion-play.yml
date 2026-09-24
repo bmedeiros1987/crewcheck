@@ -5,6 +5,7 @@ on:
     paths:
       - 'android-wrapper/lifecompanion/**'
       - 'scripts/regression-crewlife-samsung-companion.mjs'
+      - 'scripts/regression-crewlife-sdk-private-source.mjs'
       - 'scripts/android-play/companion_play.py'
       - 'scripts/android-play/credential.py'
       - 'scripts/android-play/play_error.py'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'android-wrapper/lifecompanion/**'
       - 'scripts/regression-crewlife-samsung-companion.mjs'
+      - 'scripts/regression-crewlife-sdk-private-source.mjs'
       - 'scripts/android-play/companion_play.py'
       - '.github/workflows/crewlife-companion-play.yml'
   workflow_dispatch:
@@ -35,6 +37,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      sdk_ready: ${{ steps.sdk.outputs.ready }}
     env:
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
       STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
@@ -75,43 +79,59 @@ jobs:
       - name: CrewLife Companion contracts
         run: node scripts/regression-crewlife-samsung-companion.mjs
 
-      - name: Install Play API client
-        if: github.ref == 'refs/heads/main'
-        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
-
-      - name: Allocate live Companion version
-        if: github.ref == 'refs/heads/main'
-        run: python3 scripts/android-play/companion_play.py allocate
+      - name: Private Samsung SDK sourcing policy
+        run: node scripts/regression-crewlife-sdk-private-source.mjs
 
       - name: Restore Samsung Health Data SDK
+        id: sdk
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p android-wrapper/lifecompanion/libs
           target='android-wrapper/lifecompanion/libs/samsung-health-data-api-1.1.0.aar'
+          expected_sha256='f5d3d83cf00b97d0bb1b1db4da076e861eb1c3e6e704d89a34e68909d2f38654'
+          echo "SAMSUNG_SDK_READY=false" >> "$GITHUB_ENV"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
 
-          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
-            args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
-            if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
-              args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
-            fi
-            curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
-          else
-            pinned_sha='46bfb582a91d6b4b4fa5d41a5cb8444ca7e55637'
-            pinned_path='scripts/crewlife-wellness/native/libs/samsung-health-data-api-1.1.0.aar'
-            git fetch --no-tags --depth=1 origin "$pinned_sha"
-            git show "$pinned_sha:$pinned_path" > "$target"
+          if [ -z "${SAMSUNG_HEALTH_DATA_AAR_URL:-}" ]; then
+            echo "::notice::Samsung-enabled Play artifact skipped: configure private SAMSUNG_HEALTH_DATA_AAR_URL. Public Git-history recovery is forbidden."
+            exit 0
           fi
+
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ] && [ "${SAMSUNG_HEALTH_DATA_AAR_SHA256}" != "$expected_sha256" ]; then
+            echo "::error::Configured Samsung SDK SHA-256 does not match the owner-verified Samsung Health Data SDK 1.1.0 hash."
+            exit 1
+          fi
+
+          args=(--fail --location --retry 3 --proto '=https' --tlsv1.2)
+          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_TOKEN:-}" ]; then
+            args+=(-H "Authorization: Bearer ${SAMSUNG_HEALTH_DATA_AAR_TOKEN}")
+          fi
+          curl "${args[@]}" "${SAMSUNG_HEALTH_DATA_AAR_URL}" -o "$target"
 
           test -s "$target"
           unzip -tq "$target" >/dev/null
           actual="$(sha256sum "$target" | cut -d ' ' -f1)"
           echo "Samsung Health Data SDK SHA-256: $actual"
-          if [ -n "${SAMSUNG_HEALTH_DATA_AAR_SHA256:-}" ]; then
-            test "$actual" = "${SAMSUNG_HEALTH_DATA_AAR_SHA256}"
+          if [ "$actual" != "$expected_sha256" ]; then
+            echo "::error::Downloaded Samsung Health Data SDK AAR failed the pinned SHA-256 integrity check."
+            rm -f "$target"
+            exit 1
           fi
 
+          echo "SAMSUNG_SDK_READY=true" >> "$GITHUB_ENV"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Play API client
+        if: github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'
+        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+
+      - name: Allocate live Companion version
+        if: github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'
+        run: python3 scripts/android-play/companion_play.py allocate
+
       - name: Restore CrewCheck signing key
+        if: env.SAMSUNG_SDK_READY == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -121,6 +141,7 @@ jobs:
           keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
 
       - name: Build signed Samsung-enabled Companion
+        if: env.SAMSUNG_SDK_READY == 'true'
         working-directory: android-wrapper
         env:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
@@ -129,6 +150,7 @@ jobs:
         run: gradle --no-daemon --console=plain :lifecompanion:assembleRelease :lifecompanion:bundleRelease :lifecompanion:lintRelease
 
       - name: Verify and stage Companion
+        if: env.SAMSUNG_SDK_READY == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -162,6 +184,7 @@ jobs:
           (cd "$out" && sha256sum CrewLife-Companion-Samsung-signed.* > SHA256SUMS.txt)
 
       - uses: actions/upload-artifact@v4
+        if: env.SAMSUNG_SDK_READY == 'true'
         with:
           name: CrewLife-Companion-Play
           path: ${{ runner.temp }}/crewlife-play/
@@ -176,7 +199,7 @@ jobs:
 
   publish-internal:
     needs: build
-    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal) || github.event_name == 'push')
+    if: needs.build.outputs.sdk_ready == 'true' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal) || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
