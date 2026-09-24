@@ -14,6 +14,31 @@ for (const file of [homeFile, rosterFile, databaseFile, offlineFile]) {
 // online opportunity can observe that cloud persistence failed. Keep the local copy,
 // but propagate authenticated network failures so offlineSync can retry them.
 let database = fs.readFileSync(databaseFile, 'utf8');
+
+// The historical slot is period-scoped, but its retry identity cannot be. LATAM can
+// publish a corrected roster for the same month; a period-only checksum would make a
+// previously synced September suppress a newer September after an offline import.
+const contentChecksumHelper = `function localRosterContentChecksum(roster: CrewRoster): string {
+  const text = JSON.stringify(roster || {});
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return \`${'${localRosterPeriodIdentity(roster)}:${(hash >>> 0).toString(16).padStart(8, \'0\')}'}\`;
+}`;
+const persistAnchor = 'function persistRosterHistoryLocally(payload: SaveRosterPayload): SavedRosterSummary {';
+if (!database.includes('function localRosterContentChecksum(roster: CrewRoster): string {')) {
+  if (!database.includes(persistAnchor)) throw new Error('[v14393] persistência local de escala não encontrada.');
+  database = database.replace(persistAnchor, `${contentChecksumHelper}\n${persistAnchor}`);
+}
+const periodChecksumOld = '    checksum: String(payload.checksum || periodIdentity),';
+const revisionChecksumNew = '    checksum: String(payload.checksum || localRosterContentChecksum(roster)),';
+if (!database.includes(revisionChecksumNew)) {
+  if (!database.includes(periodChecksumOld)) throw new Error('[v14393] checksum local por competência não encontrado.');
+  database = database.replace(periodChecksumOld, revisionChecksumNew);
+}
+
 const localFallbackOld = `  try {
     const result = await jsonFetch<{ ok: boolean; roster: SavedRosterSummary }>('/api/rosters', {
       method: 'POST',
@@ -201,4 +226,4 @@ if (!roster.includes("return 'Descanso na base';")) throw new Error('[v14393] r�
 if (roster.includes('Descanso publicado${code ?')) throw new Error('[v14393] código técnico ainda pode vazar no descanso.');
 fs.writeFileSync(rosterFile, roster, 'utf8');
 
-console.log(`[v14393] CrewCheck ${VERSION}: escala local pendente sobe antes da verdade ativa da conta; reconexão entre canais e descanso na base permanecem canônicos.`);
+console.log(`[v14393] CrewCheck ${VERSION}: escala local pendente e revisões da mesma competência sobem antes da verdade ativa da conta; reconexão entre canais e descanso na base permanecem canônicos.`);
