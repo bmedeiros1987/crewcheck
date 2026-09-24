@@ -66,8 +66,15 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
         String path = messageEvent.getPath();
+        if (path == null) return;
+
+        if (WatchDeviceTelemetry.STATUS_REQUEST_PATH.equals(path)) {
+            WatchDeviceTelemetry.reply(this, messageEvent.getSourceNodeId(), messageEvent.getData());
+            return;
+        }
+
         byte[] data = messageEvent.getData();
-        if (path == null || data == null || data.length == 0) return;
+        if (data == null || data.length == 0) return;
 
         try {
             if (WatchContract.SNAPSHOT_PATH.equals(path)) {
