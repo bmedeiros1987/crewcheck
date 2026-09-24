@@ -1,0 +1,44 @@
+name: UI Lab Concierge Pass 7
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/v14313/LifeConciergePanel.tsx'
+      - 'client/src/components/v14313/life-concierge.css'
+      - 'client/src/components/v14313/ui-lab-concierge-pass7.css'
+      - 'scripts/ui-lab-concierge-pass7-test.mjs'
+      - 'scripts/regression-v14-3-13-life-concierge.mjs'
+      - '.github/workflows/ui-lab-concierge-pass7.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-lab-concierge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  concierge-visual-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: UI Lab Concierge pass 7 contract
+        run: node scripts/ui-lab-concierge-pass7-test.mjs
+      - name: Existing Life Concierge regression
+        run: node scripts/regression-v14-3-13-life-concierge.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Vite build
+        run: npx vite build
