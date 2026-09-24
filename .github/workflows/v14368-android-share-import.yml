@@ -42,5 +42,7 @@ jobs:
         run: node scripts/regression-v14-3-68-android-share-import.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
+      - name: Build offline web shell consumed by Android
+        run: npx vite build
       - name: Compile Android mobile shell
         run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug --stacktrace
