@@ -6,6 +6,7 @@ const cssPath = path.join(root, 'apps/tv-player/src/ui-lab-tv-pass4.css');
 const loaderPath = path.join(root, 'apps/tv-player/src/displayPreferences.tsx');
 
 const css = fs.readFileSync(cssPath, 'utf8');
+const executableCss = css.replace(/\/\*[\s\S]*?\*\//g, '');
 const loader = fs.readFileSync(loaderPath, 'utf8');
 
 function assert(condition, message) {
@@ -31,11 +32,11 @@ const forbidden = [
   ['content-visibility', 'content-visibility'],
 ];
 for (const [needle, label] of forbidden) {
-  assert(!css.includes(needle), `${label} is outside the Chromium 53-safe contract`);
+  assert(!executableCss.includes(needle), `${label} is outside the Chromium 53-safe contract`);
 }
 
 const suppression = /(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:[;\s}]|$))/i;
-assert(!suppression.test(css), 'presentation layer must not suppress visible operational content');
+assert(!suppression.test(executableCss), 'presentation layer must not suppress visible operational content');
 
 const uiImports = [...loader.matchAll(/^import\s+['"]\.\/ui-lab-tv-pass4\.css['"];?$/gm)];
 assert(uiImports.length === 1, 'visual layer must be imported exactly once');
