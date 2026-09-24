@@ -9,6 +9,7 @@ on:
       - 'scripts/tv-sharing-controls-test.mjs'
       - 'scripts/tv-lifetime-test.mjs'
       - 'scripts/tv-entitlements-test.mjs'
+      - 'scripts/ui-lab-tv-pass4-test.mjs'
       - 'server/tv/**'
       - 'client/src/pages/TvPairPage.tsx'
       - 'scripts/tv-broadcast-prepare.mjs'
@@ -26,6 +27,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: node scripts/ui-lab-tv-pass4-test.mjs
       - run: node scripts/tv-extension-detail-test.mjs
       - run: node scripts/tv-entitlements-test.mjs
       - run: node scripts/tv-trusted-client-test.mjs
