@@ -1,5 +1,6 @@
 import { authFetch, getStoredUser } from './authClient';
 import {
+  buildConciergeStayReminderReconciliation,
   conciergeReminderChannelLabel,
   conciergeStayReminderJobKeys,
   normalizeConciergeReminderChannel,
@@ -36,6 +37,21 @@ function storageGet(key: string): string {
 
 function jobKeyOf(job: ConciergeStayReminderJob): string {
   return String(job?.jobKey || job?.job_key || '').trim();
+}
+
+async function cancelConciergeStayReminderJobKey(jobKey: string) {
+  try {
+    const payload = await authFetch<any>('/api/alarm/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ jobKey }),
+    });
+    return { cancelled: Number(payload?.cancelled || 0), error: '' };
+  } catch (error) {
+    return {
+      cancelled: 0,
+      error: error instanceof Error ? error.message : `Não foi possível cancelar ${jobKey}.`,
+    };
+  }
 }
 
 export function getConciergeStayReminderDelivery(): ConciergeStayReminderDelivery {
@@ -101,15 +117,68 @@ export async function cancelConciergeStayReminders(stayDate: unknown) {
   let cancelled = 0;
   const errors: string[] = [];
   for (const jobKey of Object.values(keys)) {
-    try {
-      const payload = await authFetch<any>('/api/alarm/cancel', {
-        method: 'POST',
-        body: JSON.stringify({ jobKey }),
-      });
-      cancelled += Number(payload?.cancelled || 0);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : `Não foi possível cancelar ${jobKey}.`);
-    }
+    const result = await cancelConciergeStayReminderJobKey(jobKey);
+    cancelled += result.cancelled;
+    if (result.error) errors.push(result.error);
   }
   return { cancelled, errors };
+}
+
+export async function reconcileConciergeStayReminders(
+  stayDate: unknown,
+  desiredPlan: ConciergeStayReminderPlanItem[],
+) {
+  const existingJobs = await listConciergeStayReminderJobs(stayDate);
+  const delivery = getConciergeStayReminderDelivery();
+  const reconciliation = buildConciergeStayReminderReconciliation(
+    stayDate,
+    desiredPlan,
+    existingJobs,
+    delivery.channel,
+  );
+
+  if (!reconciliation.enabled) {
+    return {
+      enabled: false,
+      reason: reconciliation.reason,
+      scheduled: 0,
+      cancelled: 0,
+      unchanged: 0,
+      deferred: 0,
+      errors: [] as string[],
+      channel: delivery.channel,
+      channelLabel: delivery.channelLabel,
+    };
+  }
+
+  let cancelled = 0;
+  const errors: string[] = [];
+  for (const jobKey of reconciliation.cancelJobKeys) {
+    const result = await cancelConciergeStayReminderJobKey(jobKey);
+    cancelled += result.cancelled;
+    if (result.error) errors.push(result.error);
+  }
+
+  const scheduleResult = reconciliation.schedule.length
+    ? await scheduleConciergeStayReminders(reconciliation.schedule)
+    : {
+        scheduled: 0,
+        failed: 0,
+        errors: [] as string[],
+        channel: delivery.channel,
+        channelLabel: delivery.channelLabel,
+      };
+  errors.push(...scheduleResult.errors);
+
+  return {
+    enabled: true,
+    reason: reconciliation.reason,
+    scheduled: scheduleResult.scheduled,
+    cancelled,
+    unchanged: reconciliation.unchangedJobKeys.length,
+    deferred: reconciliation.deferredJobKeys.length,
+    errors,
+    channel: scheduleResult.channel,
+    channelLabel: scheduleResult.channelLabel,
+  };
 }
