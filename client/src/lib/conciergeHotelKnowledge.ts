@@ -1,5 +1,6 @@
 import { normalizeConciergeHotelName } from './conciergeRoomHistory';
 import {
+  dedupeConciergeNoiseObservationsByEvidence,
   isConciergeNoiseObservationCurrent,
   type ConciergeNoiseDurability,
   type ConciergeNoiseOrigin,
@@ -49,7 +50,7 @@ export function buildConciergeHotelKnowledge(
   const hotelKey = normalizeConciergeHotelName(hotelName);
   if (!hotelKey) return emptyKnowledge();
 
-  const matching = (Array.isArray(observations) ? observations : [])
+  const matching = dedupeConciergeNoiseObservationsByEvidence(Array.isArray(observations) ? observations : [])
     .filter((item) => item.hotelKey === hotelKey);
   const active = matching.filter((item) => isConciergeNoiseObservationCurrent(item, now));
 
