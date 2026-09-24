@@ -31,8 +31,8 @@ assert.match(css, /html\[data-crew-theme="dark"\]/, 'layout deve possuir modo es
 assert.ok(v14378Index >= 0, 'v14.3.78 deve participar da preparação canônica');
 assert.ok(latestPreparation, 'a preparação canônica deve possuir uma etapa funcional final');
 assert.ok((latestPreparation?.index ?? -1) >= v14378Index, 'versões posteriores devem preservar a autenticação premium da v14.3.78');
-assert.ok(manualFinalizerIndex > (latestPreparation?.index ?? -1), 'o finalizador documental deve rodar depois da release funcional mais recente');
-assert.ok(transportFinalizerIndex > manualFinalizerIndex, 'o handoff de transporte pode envolver a UI apenas depois do finalizador documental');
-assert.ok(chain.trimEnd().endsWith(transportFinalizer), 'o transform final deve ser o transporte durável, sem reversionar AuthPage/manual');
+assert.ok(transportFinalizerIndex > (latestPreparation?.index ?? -1), 'o handoff de transporte deve ser reafirmado apenas depois das etapas funcionais que podem materializar a UI');
+assert.ok(manualFinalizerIndex > transportFinalizerIndex, 'o finalizador documental deve suceder o transporte PDF durável sem reversionar a UI');
+assert.ok(chain.trimEnd().endsWith(manualFinalizer), 'o finalizador documental deve encerrar a preparação canônica');
 
-console.log('[v14.3.78-auth-visual] OK — login/cadastro padronizados; documentação finalizada antes do transporte PDF durável.');
+console.log('[v14.3.78-auth-visual] OK — login/cadastro padronizados; transporte PDF é reafirmado após a UI e o sync documental permanece terminal.');
