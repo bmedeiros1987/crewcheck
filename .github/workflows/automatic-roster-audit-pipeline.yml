@@ -8,6 +8,9 @@ on:
       - 'scripts/fixtures/official-roster-*-anonymized.json'
       - 'scripts/regression-official-roster-corpus.mjs'
       - 'scripts/regression-official-roster-corpus-privacy.mjs'
+      - 'scripts/regression-p0-530-nominal-day-authority.mjs'
+      - 'client/src/lib/databaseClient.ts'
+      - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/lib/official-roster-corpus-validator.mjs'
       - '.github/workflows/automatic-roster-audit-pipeline.yml'
   workflow_dispatch:
@@ -172,6 +175,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/regression-p0-530-adjacent-month-retention.mjs
+          node scripts/regression-p0-530-nominal-day-authority.mjs
           node scripts/regression-p1-530-full-history-retention.mjs
           node scripts/regression-p0-580-overlap-reimport.mjs
       - name: Republication invalidates stale derived stays
