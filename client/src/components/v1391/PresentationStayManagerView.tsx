@@ -4,6 +4,15 @@ import { toast } from 'sonner';
 import { CREW_HOTEL_CATALOG } from '@/data/crewHotels';
 import { buildConciergeRoomMemory } from '@/lib/conciergeRoomHistory';
 import { buildConciergeRoomIntelligence } from '@/lib/conciergeRoomIntelligence';
+import {
+  findConciergeRoomPreference,
+  listConciergeRoomPreferences,
+  nextConciergeRoomTrait,
+  saveConciergeRoomPreference,
+  type ConciergeRoomPreference,
+  type ConciergeRoomPreferenceValue,
+  type ConciergeRoomTraitValue,
+} from '@/lib/conciergeRoomPreferences';
 import { buildConciergeStaySuggestions, selectConciergeStayFocus, type ConciergeHotelSource } from '@/lib/conciergeStayInference';
 import { listConciergeStays, saveConciergeStay } from '@/lib/conciergeStaySync';
 import { v139Api } from '@/components/v139/api';
@@ -40,6 +49,16 @@ type StayDraft = {
   leadMinutes: string;
   shareSameHotel: boolean;
 };
+
+type RoomTraitKey = 'quiet' | 'blackout' | 'wifi' | 'climate' | 'shower';
+
+const ROOM_TRAITS: Array<{ key: RoomTraitKey; label: string }> = [
+  { key: 'quiet', label: 'Silêncio' },
+  { key: 'blackout', label: 'Blackout' },
+  { key: 'wifi', label: 'Wi-Fi' },
+  { key: 'climate', label: 'Ar-condicionado' },
+  { key: 'shower', label: 'Chuveiro' },
+];
 
 function isoDay(value?: Date | string) {
   if (typeof value === 'string') {
@@ -87,6 +106,18 @@ function hotelSourceLabel(source: ConciergeHotelSource) {
   return 'Hotel a confirmar';
 }
 
+function roomPreferenceLabel(value: ConciergeRoomPreferenceValue | undefined) {
+  if (value === 'prefer') return 'Prefiro este quarto';
+  if (value === 'avoid') return 'Evitar este quarto';
+  return 'Sem preferência definida';
+}
+
+function roomTraitLabel(value: ConciergeRoomTraitValue | undefined) {
+  if (value === 'good') return 'Bom';
+  if (value === 'bad') return 'Ruim';
+  return 'Não avaliado';
+}
+
 export default function PresentationStayManagerView({ events }: { events: RosterEvent[] }) {
   const operational = useMemo(() => events.filter((event) => !event.kind || ['flight', 'duty', 'stay'].includes(event.kind)).filter((event) => Number.isFinite(eventStart(event).getTime())).sort((a, b) => eventStart(a).getTime() - eventStart(b).getTime()), [events]);
   const [stays, setStays] = useState<any[]>([]);
@@ -97,6 +128,7 @@ export default function PresentationStayManagerView({ events }: { events: Roster
   const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [roomPreferences, setRoomPreferences] = useState<ConciergeRoomPreference[]>(() => listConciergeRoomPreferences());
   const didAutoFocusStay = useRef(false);
   const selected = operational.find((event) => event.id === selectedId) || operational[0] || null;
   const [draft, setDraft] = useState<StayDraft>({ hotelName: '', airport: '', stayDate: isoDay(), room: '', presentationTime: '', leadMinutes: '90', shareSameHotel: false });
@@ -137,6 +169,10 @@ export default function PresentationStayManagerView({ events }: { events: Roster
   const roomIntelligence = useMemo(
     () => buildConciergeRoomIntelligence(stays, draft.hotelName, draft.stayDate),
     [stays, draft.hotelName, draft.stayDate],
+  );
+  const currentRoomPreference = useMemo(
+    () => findConciergeRoomPreference(roomPreferences, draft.hotelName, draft.room),
+    [roomPreferences, draft.hotelName, draft.room],
   );
 
   async function refresh() {
@@ -186,6 +222,21 @@ export default function PresentationStayManagerView({ events }: { events: Roster
     setDraft((current) => ({ ...current, hotelName: hotel.name, airport: hotel.airport || hotel.alternateAirport || current.airport }));
     setManual(false);
     toast.success('Hotel do catálogo selecionado.');
+  }
+
+  function updateRoomPreference(preference: ConciergeRoomPreferenceValue) {
+    if (!draft.hotelName.trim() || !draft.room.trim()) return toast.info('Informe hotel e quarto antes de registrar sua experiência.');
+    setRoomPreferences(saveConciergeRoomPreference(draft.hotelName, draft.room, { preference, observedStayDate: draft.stayDate }));
+    toast.success('Preferência do quarto salva neste aparelho.');
+  }
+
+  function cycleRoomTrait(key: RoomTraitKey) {
+    if (!draft.hotelName.trim() || !draft.room.trim()) return toast.info('Informe hotel e quarto antes de registrar sua experiência.');
+    const current = currentRoomPreference?.[key] || 'unknown';
+    setRoomPreferences(saveConciergeRoomPreference(draft.hotelName, draft.room, {
+      [key]: nextConciergeRoomTrait(current),
+      observedStayDate: draft.stayDate,
+    }));
   }
 
   async function saveStay() {
@@ -296,6 +347,27 @@ export default function PresentationStayManagerView({ events }: { events: Roster
           <div className="cc139-badges">{roomIntelligence.knownRooms.slice(0, 3).map((item) => <span key={item.room}>Quarto {item.room} · {timesLabel(item.visits)} · {labelStayDay(item.lastStayDate)}</span>)}</div>
         </> : <p>Há histórico do hotel, mas os pernoites anteriores não possuem número de quarto registrado.</p>}
         <small>Room Intelligence usa apenas seu histórico privado sincronizado. Um quarto recorrente é uma referência histórica e não significa que este seja o quarto atribuído agora.</small>
+      </>}
+    </section>
+    <section className="cc139-card">
+      <History/><h2>Minha experiência neste quarto</h2>
+      {!draft.hotelName.trim() ? <p>Selecione ou informe o hotel para registrar sua experiência.</p> : !draft.room.trim() ? <p>Informe o número do quarto para salvar uma preferência privada e observações objetivas.</p> : <>
+        <p>Quarto <strong>{draft.room.trim()}</strong> · {roomPreferenceLabel(currentRoomPreference?.preference)}.</p>
+        <div className="cc139-form">
+          <label>Minha preferência
+            <select value={currentRoomPreference?.preference || 'neutral'} onChange={(event) => updateRoomPreference(event.target.value as ConciergeRoomPreferenceValue)}>
+              <option value="neutral">Sem preferência definida</option>
+              <option value="prefer">Prefiro este quarto</option>
+              <option value="avoid">Evitar este quarto</option>
+            </select>
+          </label>
+        </div>
+        <div className="cc139-choices">{ROOM_TRAITS.map((trait) => {
+          const value = currentRoomPreference?.[trait.key] || 'unknown';
+          return <button key={trait.key} className={value === 'good' ? 'active' : ''} onClick={() => cycleRoomTrait(trait.key)}>{trait.label}<small>{roomTraitLabel(value)} · toque para alterar</small></button>;
+        })}</div>
+        {currentRoomPreference?.updatedAt && <small>Observação vinculada à estadia de {labelStayDay(currentRoomPreference.observedStayDate || draft.stayDate)} · atualizada em {labelDate(new Date(currentRoomPreference.updatedAt))}.</small>}
+        <small>Estas observações são privadas e ficam somente neste aparelho nesta etapa. A data da estadia fica registrada para evitar tratar uma percepção antiga como fato atual.</small>
       </>}
     </section>
     <section className="cc139-card">
