@@ -54,14 +54,18 @@ expect(chain.includes("await import('../v14368/apply.mjs');"), 'Hotfix legado de
 
 const durableImport = "await import('../p0-shared-pdf-durable/apply.mjs');";
 const rosterWindowImport = "await import('../p0-673-order-independent-window/apply.mjs');";
+const androidLayoutImport = "await import('../android-play/layout.mjs');";
 const finalManualImport = "await import('../ci/sync-canonical-manual.mjs');";
 const durableIndex = preparation.indexOf(durableImport);
 const rosterWindowIndex = preparation.indexOf(rosterWindowImport);
+const androidLayoutIndex = preparation.indexOf(androidLayoutImport);
 const finalManualIndex = preparation.indexOf(finalManualImport);
 expect(!buildIdentityFinalizer.includes(durableImport), 'Inbox durável não deve reescrever Home antes dos patchers canônicos de roster.');
 expect(durableIndex >= 0, 'Preparação final deve reafirmar o inbox durável.');
 expect(rosterWindowIndex >= 0 && durableIndex > rosterWindowIndex, 'Inbox durável deve materializar somente depois do P0 #673 preservar a janela canônica.');
-expect(finalManualIndex >= 0 && durableIndex > finalManualIndex, 'Inbox durável deve ser o transform final, depois da materialização Android/manual.');
+expect(androidLayoutIndex >= 0 && durableIndex > androidLayoutIndex, 'Inbox durável deve ser reaplicado depois dos finalizadores Android para não ser apagado por materialização legada.');
+expect(finalManualIndex > durableIndex, 'Sincronização documental deve suceder o transporte PDF durável sem reescrever seu runtime.');
+expect(preparation.trimEnd().endsWith(finalManualImport), 'Sincronização documental deve continuar como etapa terminal da preparação canônica.');
 expect(preparation.indexOf(durableImport, durableIndex + 1) < 0, 'Inbox durável deve ser aplicado uma única vez na preparação final.');
 
-console.log('[P0 share] OK — Android/PWA persistem o PDF até ACK real do importador canônico e só materializam após patchers canônicos.');
+console.log('[P0 share] OK — Android/PWA persistem o PDF até ACK real do importador canônico; transporte é reafirmado após finalizadores Android e antes do sync documental terminal.');
