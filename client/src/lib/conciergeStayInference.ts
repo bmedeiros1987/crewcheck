@@ -105,11 +105,16 @@ function isCanonicalStay(event: ConciergeRosterEvent): boolean {
   return event.kind === 'stay' || event.canonical?.kind === 'stay';
 }
 
-function nextOperationalEvent(events: ConciergeRosterEvent[], stay: ConciergeRosterEvent): ConciergeRosterEvent | null {
+function nextOperationalEvent(
+  events: ConciergeRosterEvent[],
+  stay: ConciergeRosterEvent,
+  stayAirport: string,
+): ConciergeRosterEvent | null {
   const end = eventEnd(stay);
   return events
     .filter((item) => item.id !== stay.id && ['flight', 'duty'].includes(String(item.kind || item.canonical?.kind || '')))
     .filter((item) => eventStart(item) >= end - 60_000)
+    .filter((item) => !stayAirport || airport(item.origin) === stayAirport)
     .sort((a, b) => eventStart(a) - eventStart(b))[0] || null;
 }
 
@@ -181,7 +186,7 @@ export function buildConciergeStaySuggestions(
   return sorted.filter(isCanonicalStay).map((event) => {
     const day = stayDay(event);
     const stayAirport = airport(event.destination || event.origin);
-    const next = nextOperationalEvent(sorted, event);
+    const next = nextOperationalEvent(sorted, event, stayAirport);
     const resolved = resolveHotel(day, stayAirport, text(event.hotel), knownStays, hotels);
     const saved = resolveSavedStay(day, stayAirport, knownStays);
     return {
