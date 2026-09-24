@@ -347,7 +347,7 @@ public final class MainActivity extends FragmentActivity
             }
         }
 
-        renderFooter();
+        renderFooter(snapshot, now);
 
         if (BuildConfig.DEBUG) {
             TextView demo = text("Demonstração local", 8, MUTED, false, Gravity.CENTER);
@@ -1111,16 +1111,20 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void addNavigation(WatchContextSnapshot snapshot) {
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setGravity(Gravity.CENTER);
+        shell.setPadding(dp(4), dp(3), dp(4), dp(4));
+
+        GradientDrawable shellBg = new GradientDrawable();
+        shellBg.setColor(withAlpha(SURFACE, 216));
+        shellBg.setCornerRadius(dp(20));
+        shellBg.setStroke(dp(1), withAlpha(pageAccent(), 78));
+        shell.setBackground(shellBg);
+
         LinearLayout rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.HORIZONTAL);
         rail.setGravity(Gravity.CENTER_VERTICAL);
-        rail.setPadding(dp(4), dp(3), dp(4), dp(3));
-
-        GradientDrawable railBg = new GradientDrawable();
-        railBg.setColor(withAlpha(SURFACE, 228));
-        railBg.setCornerRadius(dp(22));
-        railBg.setStroke(dp(1), withAlpha(pageAccent(), 105));
-        rail.setBackground(railBg);
 
         final int previous = screenMode - 1;
         final int next = screenMode + 1;
@@ -1130,26 +1134,45 @@ public final class MainActivity extends FragmentActivity
             left.setContentDescription("Ir para " + pageTitle(previous));
             left.setOnClickListener(view -> transitionToPage(previous, -1));
         }
-        rail.addView(left, new LinearLayout.LayoutParams(dp(38), dp(36)));
+        rail.addView(left, new LinearLayout.LayoutParams(dp(32), dp(32)));
 
-        TextView selected = text(
-                pageTitle() + "  " + (screenMode + 1) + "/" + PAGE_COUNT,
-                9, WHITE, true, Gravity.CENTER
-        );
-        selected.setLetterSpacing(.05f);
-        selected.setMinHeight(dp(36));
-        GradientDrawable selectedBg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(BLUE, 170), withAlpha(pageAccent(), 135)}
-        );
-        selectedBg.setCornerRadius(dp(19));
-        selectedBg.setStroke(dp(1), withAlpha(CYAN, 105));
-        selected.setBackground(selectedBg);
+        LinearLayout center = new LinearLayout(this);
+        center.setOrientation(LinearLayout.VERTICAL);
+        center.setGravity(Gravity.CENTER);
+
+        TextView selected = text(pageTitle(), 9, WHITE, true, Gravity.CENTER);
+        selected.setLetterSpacing(.06f);
         selected.setContentDescription(
                 "Tela " + (screenMode + 1) + " de " + PAGE_COUNT + ", " + pageTitle()
         );
-        rail.addView(selected, new LinearLayout.LayoutParams(
-                0, dp(36), 1f
+        center.addView(selected, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(18)
+        ));
+
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER);
+        for (int index = 0; index < PAGE_COUNT; index++) {
+            View dot = new View(this);
+            GradientDrawable dotBg = new GradientDrawable();
+            dotBg.setShape(GradientDrawable.OVAL);
+            dotBg.setColor(index == screenMode
+                    ? pageAccent()
+                    : withAlpha(MUTED, 92));
+            dot.setBackground(dotBg);
+            int size = index == screenMode ? dp(5) : dp(4);
+            LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(size, size);
+            dotParams.setMargins(dp(2), 0, dp(2), 0);
+            dots.addView(dot, dotParams);
+        }
+        center.addView(dots, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(9)
+        ));
+
+        rail.addView(center, new LinearLayout.LayoutParams(
+                0, dp(32), 1f
         ));
 
         TextView right = navigationButton("›", next < PAGE_COUNT);
@@ -1157,26 +1180,31 @@ public final class MainActivity extends FragmentActivity
             right.setContentDescription("Ir para " + pageTitle(next));
             right.setOnClickListener(view -> transitionToPage(next, 1));
         }
-        rail.addView(right, new LinearLayout.LayoutParams(dp(38), dp(36)));
+        rail.addView(right, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+        shell.addView(rail, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(32)
+        ));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(42)
+                LinearLayout.LayoutParams.WRAP_CONTENT
         );
         params.setMargins(0, 0, 0, dp(6));
-        content.addView(rail, params);
+        content.addView(shell, params);
     }
 
     private TextView navigationButton(String label, boolean enabled) {
-        TextView button = text(label, 22, enabled ? WHITE : withAlpha(MUTED, 90),
+        TextView button = text(label, 20, enabled ? WHITE : withAlpha(MUTED, 72),
                 true, Gravity.CENTER);
         button.setEnabled(enabled);
-        button.setMinWidth(dp(38));
-        button.setMinHeight(dp(36));
+        button.setMinWidth(dp(32));
+        button.setMinHeight(dp(32));
         if (enabled) {
             GradientDrawable bg = new GradientDrawable();
-            bg.setColor(withAlpha(SURFACE_ALT, 170));
-            bg.setCornerRadius(dp(18));
+            bg.setColor(withAlpha(SURFACE_ALT, 145));
+            bg.setCornerRadius(dp(16));
             button.setBackground(bg);
         }
         return button;
@@ -1361,20 +1389,41 @@ public final class MainActivity extends FragmentActivity
         content.addView(card, cardParams());
     }
 
-    private void renderFooter() {
+    private void renderFooter(WatchContextSnapshot snapshot, long now) {
         String normalized = lastSyncStatus == null ? "" : lastSyncStatus.toLowerCase(Locale.ROOT);
-        boolean attention = normalized.contains("offline")
+        boolean stale = snapshot != null && snapshot.isStale(now);
+        boolean attention = snapshot == null
+                || stale
+                || normalized.contains("offline")
                 || normalized.contains("não respondeu")
                 || normalized.contains("não conectado")
                 || normalized.contains("precisa atualizar")
                 || normalized.contains("antig");
-        int accent = attention ? WARNING : SUCCESS;
 
-        String label = lastSyncStatus == null || lastSyncStatus.isBlank()
-                ? "● Sincronização automática"
-                : "● " + lastSyncStatus;
-        transientStatus = actionChip(label, accent, false);
-        transientStatus.setTextSize(7);
+        int accent = attention ? WARNING : SUCCESS;
+        String label;
+        if (autoSyncInFlight) {
+            label = "↻ Atualizando";
+            accent = CYAN;
+        } else if (snapshot == null) {
+            label = "● Sem dados · toque para sincronizar";
+        } else if (stale) {
+            label = "● Dados antigos · toque para atualizar";
+        } else {
+            label = "● Sync automático · " + syncAgeLabel(snapshot, now);
+        }
+
+        if (attention || autoSyncInFlight) {
+            transientStatus = actionChip(label, accent, false);
+            transientStatus.setTextSize(7);
+        } else {
+            transientStatus = text(label, 7, MUTED, true, Gravity.CENTER);
+            transientStatus.setTextColor(withAlpha(SUCCESS, 205));
+            transientStatus.setPadding(dp(8), dp(5), dp(8), dp(4));
+            transientStatus.setMinHeight(dp(28));
+        }
+
+        transientStatus.setMaxLines(2);
         transientStatus.setContentDescription(
                 "Sincronização automática. Toque para atualizar agora."
         );
@@ -1383,6 +1432,15 @@ public final class MainActivity extends FragmentActivity
             requestSync();
         });
         content.addView(transientStatus);
+    }
+
+    private String syncAgeLabel(WatchContextSnapshot snapshot, long now) {
+        if (snapshot == null) return "sem dados";
+        if (snapshot.isStale(now)) return "dados antigos";
+        long minutes = Math.max(0L, (now - snapshot.generatedAtEpochMs) / 60_000L);
+        if (minutes < 1L) return "agora";
+        if (minutes < 60L) return "há " + minutes + " min";
+        return "há " + (minutes / 60L) + " h";
     }
 
     private Primary primaryFor(WatchContextSnapshot s) {
