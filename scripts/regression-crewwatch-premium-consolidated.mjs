@@ -29,14 +29,18 @@ assert.match(dataService, /ROUTINE_PATH/);
 
 assert.match(contract, /SNAPSHOT_PROTOCOL = "watchSnapshotV1"/);
 assert.match(contract, /SCHEMA_VERSION = 1/);
-assert.match(snapshot, /generatedAtEpochMs obrigatório/);
-assert.match(snapshot, /validUntilEpochMs obrigatório/);
-assert.match(snapshot, /optBoolean\("premiumAccess", false\)/);
+assert.match(snapshot, /requiredInt\(json, "schemaVersion"\)/);
+assert.match(snapshot, /requiredLong\(json, "generatedAtEpochMs"\)/);
+assert.match(snapshot, /requiredLong\(json, "validUntilEpochMs"\)/);
+assert.match(snapshot, /optionalBoolean\(json, "premiumAccess", false\)/);
+assert.match(snapshot, /value instanceof Boolean/);
 assert.match(snapshot, /optJSONArray\("schedule"\)/);
 
 assert.match(protocol, /Obrigatórios:/);
 assert.match(protocol, /Opcionais e defaults/);
 assert.match(protocol, /peer v1 antigo/);
+assert.match(protocol, /inteiros JSON reais/);
+assert.match(protocol, /string `"true"`/);
 assert.match(protocol, /Downgrade Premium → Free/);
 assert.match(protocol, /Handoff para Mobile Core/);
 assert.match(protocol, /Nenhuma implementação de `android-wrapper\/app\/\*\*` ou `client\/\*\*`/);
