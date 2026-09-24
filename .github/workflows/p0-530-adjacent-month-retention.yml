@@ -10,6 +10,7 @@ on:
       - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/p1-530-full-history-display/**'
       - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
+      - 'scripts/regression-p0-530-nominal-day-authority.mjs'
       - 'scripts/regression-p1-530-full-history-retention.mjs'
       - 'scripts/regression-p2-530-adjacent-fallback-finance.mjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
@@ -31,6 +32,8 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Real August/September continuity regression
         run: node scripts/regression-p0-530-adjacent-month-retention.mjs
+      - name: Nominal competence owns complete boundary day
+        run: node scripts/regression-p0-530-nominal-day-authority.mjs
       - name: Full June-September retention after September reimport
         run: node scripts/regression-p1-530-full-history-retention.mjs
       - name: Adjacent fallback and finance scope regression
