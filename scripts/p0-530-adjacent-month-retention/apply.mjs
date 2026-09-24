@@ -46,13 +46,32 @@ function displayDaysBeforeNominalMerge(primary: CrewRoster, adjacent: CrewRoster
   });
 }
 
+function adjacentDaysAfterPrimaryNominalAuthority(primary: CrewRoster, adjacent: CrewRoster) {
+  const year = Number(primary.year);
+  const month = Number(primary.month);
+  const nominalDateKeys = new Set(
+    (primary.days || [])
+      .map((day) => ({ date: parseCrewRosterDate(day.date), key: rosterDisplayDateKey(day.date) }))
+      .filter(({ date, key }) => Boolean(key && date && date.getFullYear() === year && date.getMonth() + 1 === month))
+      .map(({ key }) => key as string),
+  );
+  if (!nominalDateKeys.size) return adjacent.days || [];
+  return (adjacent.days || []).filter((day) => {
+    const key = rosterDisplayDateKey(day.date);
+    return !key || !nominalDateKeys.has(key);
+  });
+}
+
 function mergeRosterDisplayAdjacent(primary: CrewRoster, adjacent: CrewRoster, position: 'prepend' | 'append'): CrewRoster {
   // Boundary days may be repeated by the prior/next publication. Whenever the exact
   // nominal competence has a row for that civil date, that publication is the display
   // authority for the whole date. This prevents an older carry-over copy from hiding a
-  // corrected duty/flight in the month that actually owns the date.
+  // corrected duty/flight in the month that actually owns the date. Authority is
+  // symmetric: stale carry-over from the adjacent historical competence cannot add
+  // residual legs to a date already published by the primary nominal competence.
   const retainedPrimaryDays = displayDaysBeforeNominalMerge(primary, adjacent);
-  const adjacentDays = dedupeAdjacentRosterDays(retainedPrimaryDays, adjacent.days || []);
+  const authoritativeAdjacentDays = adjacentDaysAfterPrimaryNominalAuthority(primary, adjacent);
+  const adjacentDays = dedupeAdjacentRosterDays(retainedPrimaryDays, authoritativeAdjacentDays);
   const days = position === 'prepend'
     ? [...adjacentDays, ...retainedPrimaryDays]
     : [...retainedPrimaryDays, ...adjacentDays];
@@ -145,7 +164,8 @@ for (const fragment of [
   'newestDisplaySummaryByCompetence(sameCrew, primaryOrdinal)',
   'rosterPeriodOrdinal(localOpened.roster) !== targetOrdinal',
   'displayDaysBeforeNominalMerge(primary, adjacent)',
-  'dedupeAdjacentRosterDays(retainedPrimaryDays, adjacent.days || [])',
+  'adjacentDaysAfterPrimaryNominalAuthority(primary, adjacent)',
+  'dedupeAdjacentRosterDays(retainedPrimaryDays, authoritativeAdjacentDays)',
   'const sameCrew = summaries.filter((item) => crewIdentityToken(item) === primaryCrew)',
   `window.dispatchEvent(new CustomEvent('${historyEvent}'))`,
 ]) {
