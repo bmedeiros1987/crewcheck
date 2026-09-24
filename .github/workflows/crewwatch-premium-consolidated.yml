@@ -1,14 +1,14 @@
-name: CrewWatch premium consolidated
+name: CrewWatch peripherals contract
 
 on:
   pull_request:
     paths:
       - 'android-wrapper/wear/**'
       - 'android-wrapper/watchface/**'
-      - 'android-wrapper/app/**'
-      - 'client/src/components/v1434/CrewCheckLifeView.tsx'
-      - 'android-wrapper/settings.gradle'
+      - 'docs/crewwatch_multiplatform_product.md'
+      - 'docs/peripherals/**'
       - 'scripts/regression-crewwatch-premium-consolidated.mjs'
+      - 'scripts/regression-crewwatch-premium-experience-v2.mjs'
       - '.github/workflows/crewwatch-premium-consolidated.yml'
   workflow_dispatch:
 
@@ -18,7 +18,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
     env:
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE_FILE_BASE64 || secrets.SIGNING_KEY }}
       STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
@@ -28,11 +28,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
-          cache: npm
 
       - uses: actions/setup-java@v5
         with:
@@ -43,20 +44,24 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Install web dependencies
-        run: npm ci
+      - name: Ownership fence
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${GITHUB_BASE_REF}"
+          forbidden="$(git diff --name-only "origin/${GITHUB_BASE_REF}"...HEAD | grep -E '^(android-wrapper/app/|client/)' || true)"
+          if [ -n "$forbidden" ]; then
+            echo 'Peripheral PR contains Mobile-owned files:' >&2
+            echo "$forbidden" >&2
+            exit 1
+          fi
 
-      - name: Prepare canonical CrewCheck sources
-        run: node scripts/v139/apply.mjs
-
-      - name: Premium consolidated regression
+      - name: Peripheral contract regression
         run: node scripts/regression-crewwatch-premium-consolidated.mjs
 
-      - name: TypeScript
-        run: npx tsc --noEmit
-
-      - name: Build web
-        run: npx vite build
+      - name: Premium experience regression
+        run: node scripts/regression-crewwatch-premium-experience-v2.mjs
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -81,17 +86,16 @@ jobs:
           chmod 600 "$CREWCHECK_STORE_FILE"
           keytool -list -keystore "$CREWCHECK_STORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
 
-      - name: Unit tests
+      - name: Wear unit tests
         run: gradle -p android-wrapper :wear:testDebugUnitTest
 
-      - name: Build signed mobile + watch + face
+      - name: Build signed CrewWatch + Watch Face
         working-directory: android-wrapper
         env:
           CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
-        run: |
-          gradle --no-daemon --console=plain             :app:assembleRelease             :wear:assembleRelease             :watchface:assembleRelease
+        run: gradle --no-daemon --console=plain :wear:assembleRelease :watchface:assembleRelease
 
       - name: Lint Wear
         run: gradle -p android-wrapper :wear:lintDebug
@@ -101,26 +105,24 @@ jobs:
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          mobile='android-wrapper/app/build/outputs/apk/release/app-release.apk'
           watch='android-wrapper/wear/build/outputs/apk/release/wear-release.apk'
           face='android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk'
-          for apk in "$mobile" "$watch" "$face"; do
+          for apk in "$watch" "$face"; do
             test -s "$apk"
             "$APKSIGNER" verify --verbose --print-certs "$apk"
           done
-          out="$RUNNER_TEMP/crewwatch-premium"
+          out="$RUNNER_TEMP/crewwatch-peripherals"
           mkdir -p "$out"
-          cp "$mobile" "$out/CrewCheck-Mobile-PremiumWatch-signed.apk"
-          cp "$watch" "$out/CrewCheck-CrewWatch-Premium-signed.apk"
-          cp "$face" "$out/CrewCheck-WatchFace-Premium-signed.apk"
+          cp "$watch" "$out/CrewCheck-CrewWatch-signed.apk"
+          cp "$face" "$out/CrewCheck-WatchFace-signed.apk"
           (cd "$out" && sha256sum *.apk > SHA256SUMS.txt)
 
-      - name: Upload signed pilot
+      - name: Upload signed peripheral pilot
         uses: actions/upload-artifact@v6
         with:
-          name: crewwatch-premium-consolidated-signed
+          name: crewwatch-peripherals-signed
           retention-days: 14
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/crewwatch-premium/*.apk
-            ${{ runner.temp }}/crewwatch-premium/SHA256SUMS.txt
+            ${{ runner.temp }}/crewwatch-peripherals/*.apk
+            ${{ runner.temp }}/crewwatch-peripherals/SHA256SUMS.txt

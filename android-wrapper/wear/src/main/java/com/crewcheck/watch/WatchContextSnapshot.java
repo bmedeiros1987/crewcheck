@@ -115,6 +115,7 @@ public final class WatchContextSnapshot {
     public final String hotelPickup;
     public final boolean changed;
     public final String source;
+    public final boolean premiumAccess;
     public final List<ScheduleItem> schedule;
 
     private WatchContextSnapshot(
@@ -143,6 +144,7 @@ public final class WatchContextSnapshot {
             String hotelPickup,
             boolean changed,
             String source,
+            boolean premiumAccess,
             List<ScheduleItem> schedule
     ) {
         this.schemaVersion = schemaVersion;
@@ -170,6 +172,7 @@ public final class WatchContextSnapshot {
         this.hotelPickup = hotelPickup;
         this.changed = changed;
         this.source = source;
+        this.premiumAccess = premiumAccess;
         this.schedule = Collections.unmodifiableList(new ArrayList<>(schedule));
     }
 
@@ -190,17 +193,17 @@ public final class WatchContextSnapshot {
     public static WatchContextSnapshot fromJson(JSONObject json) {
         rejectSensitiveFields(json);
 
-        int schemaVersion = json.optInt("schemaVersion", 0);
+        int schemaVersion = requiredInt(json, "schemaVersion");
         if (schemaVersion != WatchContract.SCHEMA_VERSION) {
             throw new IllegalArgumentException("Versão de snapshot incompatível.");
         }
 
-        long generatedAt = json.optLong("generatedAtEpochMs", 0L);
+        long generatedAt = requiredLong(json, "generatedAtEpochMs");
         if (generatedAt <= 0L) {
             throw new IllegalArgumentException("generatedAtEpochMs obrigatório.");
         }
 
-        long validUntil = json.optLong("validUntilEpochMs", 0L);
+        long validUntil = requiredLong(json, "validUntilEpochMs");
         if (validUntil <= 0L) {
             throw new IllegalArgumentException("validUntilEpochMs obrigatório.");
         }
@@ -211,14 +214,14 @@ public final class WatchContextSnapshot {
         String state = clean(json.optString("state", "UNKNOWN"), 24).toUpperCase(Locale.ROOT);
         if (!STATES.contains(state)) state = "UNKNOWN";
 
-        boolean remoteStand = json.optBoolean("remoteStand", false);
+        boolean remoteStand = optionalBoolean(json, "remoteStand", false);
         String gate = clean(json.optString("gate", ""), 18);
         if ("REMOTA".equalsIgnoreCase(gate) || "REMOTE".equalsIgnoreCase(gate)) {
             remoteStand = true;
             gate = "";
         }
 
-        boolean changed = json.optBoolean("changed", false) || "CHANGED".equals(state);
+        boolean changed = optionalBoolean(json, "changed", false) || "CHANGED".equals(state);
         String headline = clean(json.optString("headline", ""), 42);
         if (headline.isBlank()) {
             headline = defaultHeadline(state, remoteStand, changed);
@@ -261,7 +264,8 @@ public final class WatchContextSnapshot {
                 clean(json.optString("overnight", ""), 24),
                 clean(json.optString("hotelPickup", ""), 64),
                 changed,
-                clean(json.optString("source", "canonical-roster"), 40),
+                canonicalSource(json),
+                optionalBoolean(json, "premiumAccess", false),
                 schedule
         );
     }
@@ -293,7 +297,8 @@ public final class WatchContextSnapshot {
                     .put("overnight", overnight)
                     .put("hotelPickup", hotelPickup)
                     .put("changed", changed)
-                    .put("source", source);
+                    .put("source", source)
+                    .put("premiumAccess", premiumAccess);
 
             JSONArray items = new JSONArray();
             for (ScheduleItem item : schedule) items.put(item.toJson());
@@ -333,7 +338,7 @@ public final class WatchContextSnapshot {
             String minutes = normalized.substring("SAIR EM ".length()).replaceAll("[^0-9]", "");
             if (!minutes.isBlank()) return truncate("SAIR" + minutes, 7);
         }
-        if (!gate.isBlank()) return truncate("P" + gate.replaceAll("\s+", ""), 7);
+        if (!gate.isBlank()) return truncate("P" + gate.replace(" ", ""), 7);
         if (!currentFlight.isBlank()) return truncate(currentFlight, 7);
         if (!presentationTime.isBlank()) {
             return truncate("APZ" + presentationTime.replace(":", ""), 7);
@@ -440,7 +445,8 @@ public final class WatchContextSnapshot {
                     .put("overnight", "GYN")
                     .put("hotelPickup", "Pickup 20:00")
                     .put("changed", false)
-                    .put("source", "debug-demo")
+                    .put("source", "canonical-roster")
+                    .put("premiumAccess", true)
                     .put("schedule", schedule));
         } catch (JSONException error) {
             throw new IllegalStateException("Não foi possível criar o snapshot de demonstração.", error);
@@ -457,6 +463,39 @@ public final class WatchContextSnapshot {
                 throw new IllegalArgumentException("Campo pessoal não permitido no relógio: " + key);
             }
         }
+    }
+
+    private static String canonicalSource(JSONObject json) {
+        if (!json.has("source")) return "canonical-roster";
+        Object value = json.opt("source");
+        if (!(value instanceof String) || !"canonical-roster".equals(value)) {
+            throw new IllegalArgumentException("source deve ser canonical-roster.");
+        }
+        return (String) value;
+    }
+
+    private static int requiredInt(JSONObject json, String key) {
+        long value = requiredLong(json, key);
+        if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(key + " deve ser inteiro.");
+        }
+        return (int) value;
+    }
+
+    private static long requiredLong(JSONObject json, String key) {
+        Object value = json.opt(key);
+        if (!(value instanceof Byte)
+                && !(value instanceof Short)
+                && !(value instanceof Integer)
+                && !(value instanceof Long)) {
+            throw new IllegalArgumentException(key + " deve ser inteiro JSON.");
+        }
+        return ((Number) value).longValue();
+    }
+
+    private static boolean optionalBoolean(JSONObject json, String key, boolean fallback) {
+        Object value = json.opt(key);
+        return value instanceof Boolean ? (Boolean) value : fallback;
     }
 
     private static String firstNonBlank(String... values) {
@@ -483,10 +522,20 @@ public final class WatchContextSnapshot {
 
     private static String clean(String value, int maxLength) {
         if (value == null) return "";
-        String normalized = value.replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        return truncate(normalized, maxLength);
+        StringBuilder normalized = new StringBuilder(value.length());
+        boolean pendingSpace = false;
+        for (int offset = 0; offset < value.length();) {
+            int codePoint = value.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (Character.isWhitespace(codePoint) || Character.isISOControl(codePoint)) {
+                pendingSpace = normalized.length() > 0;
+                continue;
+            }
+            if (pendingSpace) normalized.append(' ');
+            normalized.appendCodePoint(codePoint);
+            pendingSpace = false;
+        }
+        return truncate(normalized.toString(), maxLength);
     }
 
     private static String truncate(String value, int maxLength) {

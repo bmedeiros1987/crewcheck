@@ -79,7 +79,7 @@ public final class ComplicationTextTest {
     public void crewLifeWithoutOptInStaysEmpty() {
         ComplicationRendering rendering = ComplicationText.crewLife(null, NOW);
         assertEquals("--", rendering.shortText);
-        assertEquals("Ative o CrewLife no celular", rendering.longText);
+        assertEquals("CrewLife opcional · abra no celular", rendering.longText);
         assertEquals("CREWLIFE", rendering.title);
     }
 

@@ -65,6 +65,10 @@ public final class WellbeingStore {
     }
 
     public synchronized CrewLifeSnapshot loadCrewLife() {
+        if (!WatchEntitlements.crewLife(context)) {
+            clearCrewLife();
+            return null;
+        }
         String raw = read(CREWLIFE_IV, CREWLIFE_PAYLOAD);
         if (raw == null) return null;
         try {
@@ -76,6 +80,10 @@ public final class WellbeingStore {
     }
 
     public synchronized RoutineSnapshot loadRoutine() {
+        if (!WatchEntitlements.crewLife(context)) {
+            clearRoutine();
+            return null;
+        }
         String raw = read(ROUTINE_IV, ROUTINE_PAYLOAD);
         if (raw == null) return null;
         try {
@@ -88,13 +96,15 @@ public final class WellbeingStore {
 
     /** Revogar bem-estar não pode derrubar a escala: só este store é apagado. */
     public synchronized void clearCrewLife() {
+        boolean hadData = preferences.contains(CREWLIFE_IV) || preferences.contains(CREWLIFE_PAYLOAD);
         preferences.edit().remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD).apply();
-        requestUpdate(CrewLifeComplicationService.class);
+        if (hadData) requestUpdate(CrewLifeComplicationService.class);
     }
 
     public synchronized void clearRoutine() {
+        boolean hadData = preferences.contains(ROUTINE_IV) || preferences.contains(ROUTINE_PAYLOAD);
         preferences.edit().remove(ROUTINE_IV).remove(ROUTINE_PAYLOAD).apply();
-        requestUpdate(RoutineComplicationService.class);
+        if (hadData) requestUpdate(RoutineComplicationService.class);
     }
 
     public synchronized void clearAll() {

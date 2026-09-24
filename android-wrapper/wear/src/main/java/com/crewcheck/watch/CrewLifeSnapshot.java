@@ -162,25 +162,43 @@ public final class CrewLifeSnapshot {
         return isEnergyScore() ? "ENERGIA" : "CREWLIFE";
     }
 
-    /** Valor de glance preserva a semântica da fonte. */
+    /** Valor curto e humano, preservando a semântica da fonte Samsung quando aplicável. */
     public String complicationText(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "--";
         if (recoveryScore > 0) {
             return isEnergyScore() ? recoveryScore + "/100" : recoveryScore + "%";
         }
-        return recoveryLabel;
+        if (!recoveryLabel.isBlank() && !"DESCONHECIDA".equals(recoveryLabel)) return recoveryLabel;
+        if (!sleepLabel.isBlank()) return sleepLabel;
+        if (sleepMinutes > 0) {
+            return (sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", sleepMinutes % 60);
+        }
+        if (steps > 0) {
+            return steps >= 1000
+                    ? String.format(Locale.ROOT, "%.1fk", steps / 1000.0)
+                    : String.valueOf(steps);
+        }
+        if (activeMinutes > 0) return activeMinutes + "m";
+        return "LOCAL";
     }
 
     public String accessibilityDescription(long nowEpochMs) {
-        if (isStale(nowEpochMs)) return "Dados de bem-estar desatualizados.";
-        StringBuilder text = new StringBuilder(isEnergyScore() ? "Energia Samsung " : "Recuperação ");
+        if (isStale(nowEpochMs)) return "CrewLife sem atualização recente. Abra o CrewCheck no celular.";
+        StringBuilder text = new StringBuilder("CrewLife opcional.");
         if (recoveryScore > 0) {
-            text.append(isEnergyScore() ? recoveryScore + " de 100" : recoveryScore + " por cento");
-        } else {
-            text.append(recoveryLabel.toLowerCase(Locale.ROOT));
+            if (isEnergyScore()) {
+                text.append(" Energia Samsung ").append(recoveryScore).append(" de 100.");
+            } else {
+                text.append(" Recuperação ").append(recoveryScore).append(" por cento.");
+            }
+        } else if (!recoveryLabel.isBlank() && !"DESCONHECIDA".equals(recoveryLabel)) {
+            text.append(" Recuperação ").append(recoveryLabel.toLowerCase(Locale.ROOT)).append(".");
         }
-        if (!sleepLabel.isEmpty()) text.append(", sono ").append(sleepLabel);
-        if (!detail.isEmpty()) text.append(". ").append(detail);
+        if (!sleepLabel.isEmpty()) text.append(" Sono ").append(sleepLabel).append(".");
+        else if (sleepMinutes > 0) text.append(" Sono registrado.");
+        if (steps > 0) text.append(" ").append(steps).append(" passos.");
+        if (activeMinutes > 0) text.append(" ").append(activeMinutes).append(" minutos de atividade.");
+        if (!detail.isEmpty()) text.append(" ").append(detail);
         return text.toString();
     }
 
