@@ -11,6 +11,7 @@ on:
       - 'android-wrapper/settings.gradle'
       - 'scripts/regression-crewwatch-premium-consolidated.mjs'
       - 'scripts/regression-crewwatch-premium-experience-v2.mjs'
+      - 'scripts/ui-lab-watchface-pass5-test.mjs'
       - '.github/workflows/crewwatch-premium-consolidated.yml'
   workflow_dispatch:
 
@@ -50,6 +51,9 @@ jobs:
 
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
+
+      - name: UI Lab Watch Face pass 5 contract
+        run: node scripts/ui-lab-watchface-pass5-test.mjs
 
       - name: Premium consolidated regression
         run: node scripts/regression-crewwatch-premium-consolidated.mjs
@@ -96,7 +100,10 @@ jobs:
           CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
         run: |
-          gradle --no-daemon --console=plain             :app:assembleRelease             :wear:assembleRelease             :watchface:assembleRelease
+          gradle --no-daemon --console=plain \
+            :app:assembleRelease \
+            :wear:assembleRelease \
+            :watchface:assembleRelease
 
       - name: Lint Wear
         run: gradle -p android-wrapper :wear:lintDebug
