@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - 'client/src/lib/conciergeRoomHistory.ts'
+      - 'client/src/lib/conciergeRoomIntelligence.ts'
       - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'scripts/regression-concierge-room-memory.mjs'
+      - 'scripts/regression-concierge-room-intelligence.mjs'
       - '.github/workflows/concierge-room-memory.yml'
   workflow_dispatch:
 
@@ -22,5 +24,7 @@ jobs:
       - run: npm ci
       - name: Concierge room-memory regression
         run: node scripts/regression-concierge-room-memory.mjs
+      - name: Concierge room-intelligence regression
+        run: node scripts/regression-concierge-room-intelligence.mjs
       - name: TypeScript
         run: npx tsc --noEmit
