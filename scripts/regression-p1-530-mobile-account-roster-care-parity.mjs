@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { reconcileActiveRosterIdentity } from '../shared/activeRosterIdentity.mjs';
 
 const home = await readFile('client/src/pages/Home.tsx', 'utf8');
 const database = await readFile('client/src/lib/databaseClient.ts', 'utf8');
@@ -14,8 +15,8 @@ const roster = await readFile('client/src/components/v1391/RosterLaunchView.tsx'
 // while mobile can remain on an older same-month publication.
 assert.match(
   home,
-  /const reconcileActiveRoster = async \(reason: 'mount' \| 'focus' \| 'visible' \| 'interval'\) =>/,
-  'prepared mobile runtime must keep the existing cross-channel reconciler',
+  /const reconcileActiveRoster = async \(reason: 'mount' \| 'focus' \| 'visible' \| 'online' \| 'interval'/,
+  'prepared mobile runtime must keep the existing cross-channel reconciler including reconnect recovery',
 );
 assert.match(
   database,
@@ -64,6 +65,42 @@ assert.match(
   'verified account-active publication must become the mobile active cache after conflict adjudication',
 );
 
+// Fresh install / cleared local cache must accept the authenticated account-active
+// publication, persist it locally and retry immediately when connectivity returns.
+// Without an online listener, a foreground app that launched offline waits for the
+// 60s interval (or an unrelated focus/visibility transition) before restoring roster.
+const remoteOnly = reconcileActiveRosterIdentity({
+  remote: { id: 'remote-2026-09', checksum: 'remote-checksum', year: 2026, month: 9 },
+  local: null,
+});
+assert.equal(remoteOnly.decision, 'use-remote', 'remote-only account truth must be accepted when the device has no local active roster');
+assert.equal(remoteOnly.source, 'remote-only', 'remote-only restore must remain an explicit identity decision');
+assert.match(
+  home,
+  /reason: 'mount' \| 'focus' \| 'visible' \| 'online' \| 'interval'/,
+  'mobile reconciler must expose a dedicated online recovery reason',
+);
+assert.match(
+  home,
+  /const onOnline = \(\) => \{ void reconcileActiveRoster\('online'\); \};/,
+  'mobile must retry account-active restoration immediately when the browser/native shell reports connectivity restored',
+);
+assert.match(
+  home,
+  /window\.addEventListener\('online', onOnline\)/,
+  'mobile must subscribe to connectivity restoration while the roster reconciler is alive',
+);
+assert.match(
+  home,
+  /window\.removeEventListener\('online', onOnline\)/,
+  'mobile must remove the connectivity listener during effect cleanup',
+);
+assert.match(
+  home,
+  /saveRoster\(active\.roster, 'Escala ativa sincronizada'\);\s*setBundle\(\{ roster: active\.roster,/,
+  'remote-only restore must persist the authenticated roster locally before publishing it into UI state',
+);
+
 // Care Mode parity: the owner-supplied September source publishes VC on 17-30 Sep.
 // Mobile Roster must not collapse VC into the generic "Descanso publicado" copy.
 assert.match(
@@ -82,4 +119,4 @@ assert.match(
   'Roster card eyebrow must say Férias/Luto/Folga/Repouso when Care authority exists',
 );
 
-console.log('PASS P1 #530 mobile account-active conflict + Care Mode parity (prepared runtime)');
+console.log('PASS P1 #530 mobile account-active conflict + reconnect recovery + Care Mode parity (prepared runtime)');
