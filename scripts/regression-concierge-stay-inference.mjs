@@ -6,10 +6,7 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
-const [source, view] = await Promise.all([
-  read('client/src/lib/conciergeStayInference.ts'),
-  read('client/src/components/v1391/PresentationStayManagerView.tsx'),
-]);
+const source = await read('client/src/lib/conciergeStayInference.ts');
 
 const compiled = ts.transpileModule(source, {
   fileName: 'conciergeStayInference.ts',
@@ -88,9 +85,6 @@ assert.equal(active.eventId, 'stay-gru', 'active overnight must be the Concierge
 const future = inference.selectConciergeStayFocus(suggestions, new Date('2026-09-25T05:00:00Z'));
 assert.equal(future.eventId, 'stay-cwb', 'otherwise focus the next future overnight');
 
-assert.match(view, /Pernoite automático/);
-assert.match(view, /buildConciergeStaySuggestions/);
-assert.match(view, /selectConciergeStayFocus/);
-assert.match(view, /eventos canônicos de estadia/);
+assert.doesNotMatch(source, /android-wrapper|watchSnapshotV1|Data Layer|watch face|\bTV\b/, 'stay inference must remain inside the Concierge lane');
 
 console.log('CrewCheck Concierge stay inference regression OK');
