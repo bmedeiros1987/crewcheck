@@ -18,7 +18,7 @@ requireText(layer, '.cc-life-ai-shell .cc-life-ai-action-grid', 'quick actions')
 requireText(layer, '.cc-life-ai-shell .cc-life-ai-collapsible', 'secondary surfaces');
 requireText(layer, ':focus-visible', 'keyboard focus');
 requireText(layer, '@media (max-width: 680px)', 'mobile layout');
-requireText(layer, '@media (max-width: 420px)', 'small watch-sized viewport guard');
+requireText(layer, '@media (max-width: 420px)', 'small viewport guard');
 requireText(layer, '@media (prefers-reduced-motion: reduce)', 'reduced motion');
 
 for (const className of [
@@ -35,7 +35,7 @@ for (const className of [
 const forbiddenCss = [
   /display\s*:\s*none/i,
   /visibility\s*:\s*hidden/i,
-  /opacity\s*:\s*0(?:\D|$)/i,
+  /opacity\s*:\s*0\s*[;}]/i,
   /localStorage/i,
   /sessionStorage/i,
   /\bfetch\s*\(/i,
