@@ -86,6 +86,9 @@ def scenarios():
 def main():
     pkg = yaml.safe_load(PKG.read_text())
     script = pkg["script"]["home_concierge"]
+    h, m, sec = map(int, pkg["timer"]["modo_faxina"]["duration"].split(":"))
+    assert h * 3600 + m * 60 + sec == script["variables"]["faxina_horas"] * 3600, \
+        "timer.modo_faxina duration must match faxina_horas"
     render_vars = next(s["variables"] for s in script["sequence"] if "variables" in s)
     acoes = ["nav menu", "nav faxina", "nav luzes", "nav cenas", "nav musica", "nav status", "nav xpto",
              "faxina_on", "faxina_1h", "faxina_mais", "faxina_off", "luz light.sala", "luzes_on",

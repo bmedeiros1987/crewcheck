@@ -22,7 +22,8 @@ timer:
   modo_faxina:
     name: Modo Faxina
     icon: mdi:broom
-    duration: "03:00:00"
+    # Mantenha igual a `faxina_horas` no script home_concierge
+    duration: "06:00:00"
     restore: true
 
 script:
@@ -48,7 +49,8 @@ script:
         description: "Primeiro nome de quem clicou"
     variables:
       # ================= CONFIGURAÇÃO =================
-      # Luzes exibidas no painel (entity_id: nome no botão)
+      # Luzes exibidas no painel (entity_id: nome no botão).
+      # Aceita light.* e switch.* (ex.: interruptores/tomadas Smart Life)
       luzes:
         light.cozinha: Cozinha
         light.sala: Sala
@@ -63,7 +65,7 @@ script:
       # Portas/janelas (binary_sensor: nome). Ex.: binary_sensor.porta_entrada: Entrada
       aberturas: {}
       # Duração padrão do Modo Faxina (horas)
-      faxina_horas: 3
+      faxina_horas: 6  # mantenha igual ao `duration` do timer.modo_faxina
       # ================================================
       pedido: "{{ (acao | default('nav menu', true) | string).strip() }}"
       cmd: "{{ pedido.split(' ')[0] }}"
@@ -131,21 +133,21 @@ script:
 
           - conditions: "{{ cmd == 'luz' and arg in luzes }}"
             sequence:
-              - service: light.toggle
+              - service: homeassistant.toggle
                 continue_on_error: true
                 target:
                   entity_id: "{{ arg }}"
 
           - conditions: "{{ cmd in ['luzes_on', 'luzes_off'] }}"
             sequence:
-              - service: "light.turn_{{ 'on' if cmd == 'luzes_on' else 'off' }}"
+              - service: "homeassistant.turn_{{ 'on' if cmd == 'luzes_on' else 'off' }}"
                 continue_on_error: true
                 target:
                   entity_id: "{{ luzes.keys() | list }}"
 
           - conditions: "{{ cmd == 'cena' and arg == 'cheguei' }}"
             sequence:
-              - service: light.turn_on
+              - service: homeassistant.turn_on
                 continue_on_error: true
                 target:
                   entity_id: "{{ luzes.keys() | list }}"
@@ -155,7 +157,7 @@ script:
 
           - conditions: "{{ cmd == 'cena' and arg == 'saindo' }}"
             sequence:
-              - service: light.turn_off
+              - service: homeassistant.turn_off
                 continue_on_error: true
                 target:
                   entity_id: "{{ luzes.keys() | list }}"
@@ -168,11 +170,11 @@ script:
 
           - conditions: "{{ cmd == 'cena' and arg == 'cinema' }}"
             sequence:
-              - service: light.turn_off
+              - service: homeassistant.turn_off
                 continue_on_error: true
                 target:
                   entity_id: "{{ luzes.keys() | reject('eq', luz_cinema) | list }}"
-              - if: "{{ luz_cinema in luzes }}"
+              - if: "{{ luz_cinema in luzes and luz_cinema.startswith('light.') }}"
                 then:
                   - service: light.turn_on
                     continue_on_error: true
@@ -180,10 +182,18 @@ script:
                       entity_id: "{{ luz_cinema }}"
                     data:
                       brightness_pct: 15
+                else:
+                  # switch.* (ex.: interruptor Smart Life) não tem brilho
+                  - if: "{{ luz_cinema in luzes }}"
+                    then:
+                      - service: homeassistant.turn_on
+                        continue_on_error: true
+                        target:
+                          entity_id: "{{ luz_cinema }}"
 
           - conditions: "{{ cmd == 'cena' and arg == 'boanoite' }}"
             sequence:
-              - service: light.turn_off
+              - service: homeassistant.turn_off
                 continue_on_error: true
                 target:
                   entity_id: "{{ luzes.keys() | list }}"
