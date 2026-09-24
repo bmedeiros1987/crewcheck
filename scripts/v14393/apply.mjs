@@ -3,12 +3,69 @@ import fs from 'node:fs';
 const VERSION = '14.3.93';
 const homeFile = 'client/src/pages/Home.tsx';
 const rosterFile = 'client/src/components/v1391/RosterLaunchView.tsx';
+const databaseFile = 'client/src/lib/databaseClient.ts';
+const offlineFile = 'client/src/lib/offlineSync.ts';
 
-for (const file of [homeFile, rosterFile]) {
+for (const file of [homeFile, rosterFile, databaseFile, offlineFile]) {
   if (!fs.existsSync(file)) throw new Error(`[v14393] arquivo ausente: ${file}`);
 }
 
+// Mobile P0: local-first persistence is only durable across reinstall once a later
+// online opportunity can observe that cloud persistence failed. Keep the local copy,
+// but propagate authenticated network failures so offlineSync can retry them.
+let database = fs.readFileSync(databaseFile, 'utf8');
+const localFallbackOld = `  try {
+    const result = await jsonFetch<{ ok: boolean; roster: SavedRosterSummary }>('/api/rosters', {
+      method: 'POST',
+      body: JSON.stringify(onlinePayload),
+    });
+    return result.roster || localSummary;
+  } catch {
+    return localSummary;
+  }`;
+const localFallbackNew = `  try {
+    const result = await jsonFetch<{ ok: boolean; roster: SavedRosterSummary }>('/api/rosters', {
+      method: 'POST',
+      body: JSON.stringify(onlinePayload),
+    });
+    return result.roster || localSummary;
+  } catch (error) {
+    (error as any).localSummary = localSummary;
+    throw error;
+  }`;
+if (!database.includes('(error as any).localSummary = localSummary;')) {
+  if (!database.includes(localFallbackOld)) throw new Error('[v14393] fallback local de saveRosterAnalysis não encontrado.');
+  database = database.replace(localFallbackOld, localFallbackNew);
+}
+fs.writeFileSync(databaseFile, database, 'utf8');
+
+// The roster POST is account-active. Replaying newest first would end with an older
+// publication active. Replay oldest -> newest so the last user import remains the
+// final account truth after reconnection.
+let offline = fs.readFileSync(offlineFile, 'utf8');
+const retryQueueOld = '  const queue = [...readQueue(), ...backfill];';
+const retryQueueNew = `  const queue = [...readQueue(), ...backfill]
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));`;
+if (!offline.includes(".sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));")) {
+  if (!offline.includes(retryQueueOld)) throw new Error('[v14393] fila offline de escalas não encontrada.');
+  offline = offline.replace(retryQueueOld, retryQueueNew);
+}
+fs.writeFileSync(offlineFile, offline, 'utf8');
+
 let home = fs.readFileSync(homeFile, 'utf8');
+const authImportOld = "import { authFetch, getStoredUser, logout } from '@/lib/authClient';";
+const authImportNew = "import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';";
+if (!home.includes(authImportNew)) {
+  if (!home.includes(authImportOld)) throw new Error('[v14393] import de autenticação do Home não encontrado.');
+  home = home.replace(authImportOld, authImportNew);
+}
+const databaseImport = "import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';";
+const offlineImport = "import { syncPendingRosters } from '@/lib/offlineSync';";
+if (!home.includes(offlineImport)) {
+  if (!home.includes(databaseImport)) throw new Error('[v14393] import de databaseClient do Home não encontrado.');
+  home = home.replace(databaseImport, `${databaseImport}\n${offlineImport}`);
+}
+
 const syncMarker = "const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'online' | 'interval') =>";
 if (!home.includes(syncMarker)) {
   const legacyEffect = /\n\s*useEffect\(\(\) => \{\n\s*\/\/ A escala ativa pertence à conta, não ao cache deste dispositivo\.[\s\S]*?\n\s*\}, \[\]\);/;
@@ -24,6 +81,12 @@ if (!home.includes(syncMarker)) {
       if (!alive || syncing) return;
       syncing = true;
       try {
+        if (getToken()) {
+          const pendingSync = await syncPendingRosters().catch(() => ({ synced: 0, remaining: 0, errors: [] }));
+          if (pendingSync.synced > 0) {
+            console.info('[crewcheck:active-roster-sync]', { reason, status: 'local-history-uploaded', synced: pendingSync.synced, remaining: pendingSync.remaining });
+          }
+        }
         const active = await openActiveRoster();
         if (!alive || !active?.roster?.days?.length) return;
 
@@ -88,7 +151,18 @@ if (!home.includes(syncMarker)) {
   home = home.replace(legacyEffect, replacement);
 }
 
-for (const required of [syncMarker, 'rosterFingerprint(active.roster)', "window.addEventListener('focus'", "window.addEventListener('online'", "document.addEventListener('visibilitychange'", '60000']) {
+for (const required of [
+  syncMarker,
+  'rosterFingerprint(active.roster)',
+  "window.addEventListener('focus'",
+  "window.addEventListener('online'",
+  "document.addEventListener('visibilitychange'",
+  '60000',
+  authImportNew,
+  offlineImport,
+  'if (getToken()) {',
+  "await syncPendingRosters().catch(() => ({ synced: 0, remaining: 0, errors: [] }));",
+]) {
   if (!home.includes(required)) throw new Error(`[v14393] contrato de sincronização ausente: ${required}`);
 }
 fs.writeFileSync(homeFile, home, 'utf8');
@@ -127,4 +201,4 @@ if (!roster.includes("return 'Descanso na base';")) throw new Error('[v14393] r�
 if (roster.includes('Descanso publicado${code ?')) throw new Error('[v14393] código técnico ainda pode vazar no descanso.');
 fs.writeFileSync(rosterFile, roster, 'utf8');
 
-console.log(`[v14393] CrewCheck ${VERSION}: escala ativa reconcilia entre canais, reconecta imediatamente e descanso na base usa linguagem humana.`);
+console.log(`[v14393] CrewCheck ${VERSION}: escala local pendente sobe antes da verdade ativa da conta; reconexão entre canais e descanso na base permanecem canônicos.`);
