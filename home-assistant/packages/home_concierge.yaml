@@ -1,11 +1,17 @@
 # =====================================================================
-#  🏠 HOME CONCIERGE PREMIUM — pacote Home Assistant (Telegram)
+#  🏠 HOME CONCIERGE PREMIUM — central da casa no Telegram
 # ---------------------------------------------------------------------
-#  Painel único e "vivo" no Telegram: cada botão EDITA a mesma mensagem
-#  (sem spam no chat), confirma com um toast discreto e mostra o estado
-#  real da casa em tempo real.
+#  • Painel "vivo": cada botão EDITA a mesma mensagem (sem spam no chat)
+#  • Menu fixo com botões grandes embaixo do campo de mensagem
+#  • 🛋️ Cômodos automáticos (Áreas do HA): luzes, tomadas, ventiladores,
+#    cortinas e ar-condicionado, com brilho por cômodo
+#  • 🛡️ Alarme: armar ausente / em casa / noite, desarmar com confirmação
+#    e aviso urgente se disparar
+#  • ⏰ Despertador: horário pelo Telegram, dias úteis, luz gradual,
+#    som e soneca
+#  • 🧹 Faxina com cronômetro, 🎬 cenas, 🎵 Laurinha, 📊 status
 #
-#  Instalação: ver home-assistant/README.md
+#  Instalação: home-assistant/README.md
 #  Personalização: edite SOMENTE o bloco "CONFIGURAÇÃO" do script
 #  `home_concierge` logo abaixo.
 # =====================================================================
@@ -17,6 +23,19 @@ input_boolean:
   concierge_nao_perturbe:
     name: Concierge · Não perturbe
     icon: mdi:bell-sleep
+  concierge_despertador:
+    name: Despertador
+    icon: mdi:alarm
+  concierge_despertador_uteis:
+    name: Despertador · só dias úteis
+    icon: mdi:calendar-week
+
+input_datetime:
+  concierge_despertador:
+    name: Despertador · horário
+    icon: mdi:alarm
+    has_date: false
+    has_time: true
 
 timer:
   modo_faxina:
@@ -25,19 +44,62 @@ timer:
     # Mantenha igual a `faxina_horas` no script home_concierge
     duration: "06:00:00"
     restore: true
+  concierge_soneca:
+    name: Despertador · soneca
+    icon: mdi:sleep
+    duration: "00:10:00"
 
 script:
+  # ------------------------------------------------------------------
+  # Arma/desarma um alarm_control_panel (com ou sem código)
+  # ------------------------------------------------------------------
+  concierge_alarme:
+    alias: "🛡️ Concierge · alarme"
+    mode: queued
+    fields:
+      entidade:
+        description: alarm_control_panel a controlar
+      modo:
+        description: "away | home | night | disarm"
+      codigo:
+        description: "Código do alarme ('' se não usa)"
+    sequence:
+      - variables:
+          servico: >-
+            {{ {'away': 'alarm_control_panel.alarm_arm_away',
+                'home': 'alarm_control_panel.alarm_arm_home',
+                'night': 'alarm_control_panel.alarm_arm_night',
+                'disarm': 'alarm_control_panel.alarm_disarm'}.get(modo, '') }}
+      - if: "{{ servico == '' or entidade | default('', true) == '' }}"
+        then:
+          - stop: "Modo ou entidade inválidos"
+      - if: "{{ codigo | default('', true) | string != '' }}"
+        then:
+          - service: "{{ servico }}"
+            continue_on_error: true
+            target:
+              entity_id: "{{ entidade }}"
+            data:
+              code: "{{ codigo | string }}"
+        else:
+          - service: "{{ servico }}"
+            continue_on_error: true
+            target:
+              entity_id: "{{ entidade }}"
+
+  # ------------------------------------------------------------------
+  # O concierge: executa a ação pedida e desenha o painel
+  # ------------------------------------------------------------------
   home_concierge:
     alias: "🏠 Home Concierge"
     icon: mdi:room-service
     description: "Executa uma ação do concierge e desenha o painel no Telegram."
     # queued: cliques rápidos são processados em ordem, um por vez.
-    # Isso elimina o "liga/desliga/liga" em sequência da versão antiga.
     mode: queued
     max: 25
     fields:
       acao:
-        description: "Ex.: 'nav menu', 'faxina_on', 'luz light.sala', 'cena boanoite'"
+        description: "Ex.: 'nav menu', 'comodo sala', 'alarme away', 'cena boanoite'"
         example: nav menu
       chat_id:
         description: "Chat do Telegram (vazio = chat padrão do bot)"
@@ -48,20 +110,40 @@ script:
       nome:
         description: "Primeiro nome de quem clicou"
     variables:
-      # ================= CONFIGURAÇÃO =================
-      # Luzes exibidas no painel (entity_id: nome no botão).
-      # Aceita light.* e switch.* (ex.: interruptores/tomadas Smart Life)
+      # ======================= CONFIGURAÇÃO =======================
+      # ⭐ Favoritos: aparecem como um cômodo próprio e são as luzes da
+      # cena "Cheguei". Aceita light.* e switch.* (ex.: Smart Life).
       luzes:
         light.cozinha: Cozinha
         light.sala: Sala
+      # 🛋️ Cômodos: vêm AUTOMATICAMENTE das Áreas do Home Assistant
+      # (Configurações → Áreas). Tipos de aparelho exibidos:
+      comodos_dominios: [light, switch, fan, cover, climate]
+      # IDs de áreas para esconder. Ex.: [garagem, area_externa]
+      comodos_ignorar: []
+      # 🛡️ Alarme (alarm_control_panel.*). Deixe '' se não tiver.
+      alarme: ""
+      # Código do alarme, se ele exigir ('' = sem código)
+      alarme_codigo: ""
+      # Cenas que mexem no alarme
+      saindo_arma_alarme: true      # 🚪 Saindo → arma "ausente"
+      boanoite_arma_alarme: true    # 🌙 Boa noite → arma "noite"
+      cheguei_desarma_alarme: false # 🏡 Cheguei → desarma (cuidado!)
+      # ⏰ Despertador: luzes que acendem aos poucos ([] = Favoritos)
+      despertador_luzes: []
+      despertador_transicao: 300    # segundos até 100% de brilho
+      # Som do despertador (media_player; '' = sem som)
+      despertador_som: ""
+      despertador_volume: 0.25
+      # Mídia opcional (URL/playlist). '' = só dá "play" no que estava tocando
+      despertador_midia: ""
+      despertador_midia_tipo: music
       # Luz que fica baixinha na cena Cinema (as outras apagam)
       luz_cinema: light.sala
-      # Caixa de som da Laurinha (deixe '' para esconder)
+      # Caixa de som da Laurinha ('' para esconder)
       laurinha: media_player.laurinha
-      # Previsão do tempo (deixe '' para esconder)
+      # Previsão do tempo ('' para esconder)
       clima: weather.forecast_home
-      # Sensores de temperatura (entity_id: nome). Ex.: sensor.temp_sala: Sala
-      temperaturas: {}
       # Portas/janelas (binary_sensor: nome). Ex.: binary_sensor.porta_entrada: Entrada
       aberturas: {}
       # Duração padrão do Modo Faxina (horas)
@@ -70,47 +152,98 @@ script:
       # se o total for ímpar, o último ocupa a linha inteira).
       # Botão: ação. Sem vírgulas nem dois-pontos nos nomes.
       menu_fixo:
+        "🛋️ Cômodos": nav comodos
+        "🛡️ Alarme": nav alarme
+        "⏰ Despertador": nav despertador
         "🧹 Faxina": nav faxina
-        "💡 Luzes": nav luzes
         "🎬 Cenas": nav cenas
         "🎵 Laurinha": nav musica
-        "🏡 Cheguei": cena cheguei
         "🚪 Saindo": cena saindo
-        "🍿 Cinema": cena cinema
         "🌙 Boa noite": cena boanoite
         "📊 Status": nav status
         "🔕 Não perturbe": dnd
         "🏠 Painel da casa": nav menu
-      # ================================================
+      # ============================================================
       pedido: >-
         {%- set bruto = (acao | default('nav menu', true) | string).strip() -%}
         {%- if bruto.startswith('txt ') -%}{{ menu_fixo.get(bruto[4:].strip(), 'ignorar') }}
         {%- else -%}{{ bruto }}{%- endif -%}
       cmd: "{{ pedido.split(' ')[0] }}"
       arg: "{{ pedido.split(' ', 1)[1] if ' ' in pedido else '' }}"
+      # Cômodos: [{'id', 'nome', 'ents'}], Favoritos primeiro
+      comodos: >-
+        {%- set rx = '^(' ~ comodos_dominios | join('|') ~ ')\.' -%}
+        {%- set ns = namespace(l=[]) -%}
+        {%- if luzes -%}
+          {%- set ns.l = ns.l + [{'id': 'fav', 'nome': '⭐ Favoritos', 'ents': luzes.keys() | list}] -%}
+        {%- endif -%}
+        {%- for a in areas() | sort if a not in comodos_ignorar -%}
+          {%- set ents = area_entities(a) | select('match', rx) | sort -%}
+          {%- if ents -%}
+            {%- set nm = (area_name(a) or a) | replace(',', ' ') | replace(':', ' ') -%}
+            {%- set ns.l = ns.l + [{'id': a, 'nome': nm, 'ents': ents}] -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ ns.l }}
+      # Todas as luzes da casa (Favoritos + light.* de todos os cômodos)
+      luzes_casa: >-
+        {%- set ns = namespace(l=luzes.keys() | list) -%}
+        {%- for c in comodos -%}
+          {%- for e in c.ents if e.startswith('light.') and e not in ns.l -%}{%- set ns.l = ns.l + [e] -%}{%- endfor -%}
+        {%- endfor -%}
+        {{ ns.l }}
+      sala_id: "{{ (arg | string).split(' ')[0] if cmd in ['comodo', 'ctog', 'con', 'coff', 'cbri'] else '' }}"
+      sala: >-
+        {%- set l = comodos | selectattr('id', 'eq', sala_id) | list -%}
+        {{ l[0] if l else {} }}
+      alvo: >-
+        {%- set p = (arg | string).split(' ') -%}
+        {%- if cmd == 'ctog' and sala and p | count > 1 and p[1] | int(-1) in range(sala.ents | count) -%}{{ sala.ents[p[1] | int] }}
+        {%- else -%}{%- endif -%}
       fx_restante: >-
         {%- set fim = state_attr('timer.modo_faxina', 'finishes_at') -%}
         {%- if fim and is_state('timer.modo_faxina', 'active') -%}
           {{ [((as_datetime(fim) - now()).total_seconds()) | int, 0] | max }}
         {%- else -%}0{%- endif -%}
+      desp_min: >-
+        {%- set t = states('input_datetime.concierge_despertador') -%}
+        {%- set p = t.split(':') -%}
+        {{ (p[0] | int(7)) * 60 + (p[1] | int(0)) if p | count >= 2 else 420 }}
       toast: >-
         {%- set cenas = {'cheguei': '🏡 Bem-vindo de volta!', 'saindo': '🚪 Casa pronta, boa saída!',
                          'cinema': '🍿 Modo cinema ligado', 'boanoite': '🌙 Boa noite! Casa em repouso'} -%}
+        {%- set alarmes = {'away': '🛡️ Armando: ausente', 'home': '🏠 Armando: em casa',
+                           'night': '🌙 Armando: noite', 'disarm': '🔓 Desarmando'} -%}
         {%- if cmd == 'faxina_on' -%}🧹 Faxina ativa por {{ faxina_horas }}h
         {%- elif cmd == 'faxina_1h' -%}🧹 Faxina ativa por 1h
         {%- elif cmd == 'faxina_mais' -%}➕ Mais 1 hora de faxina
         {%- elif cmd == 'faxina_off' -%}✅ Faxina encerrada
-        {%- elif cmd == 'luz' -%}💡 {{ luzes.get(arg, 'Luz') }}: {{ 'apagando' if is_state(arg, 'on') else 'acendendo' }}
-        {%- elif cmd == 'luzes_on' -%}✨ Acendendo tudo
-        {%- elif cmd == 'luzes_off' -%}🌑 Apagando tudo
+        {%- elif cmd == 'ctog' and alvo -%}{{ (state_attr(alvo, 'friendly_name') or alvo) ~ (' · desligando' if is_state(alvo, 'on') else (' · ligando' if states(alvo) in ['off', 'closed'] else ' · alternando')) }}
+        {%- elif cmd == 'con' -%}💡 {{ sala.nome | default('Cômodo') }}: acendendo
+        {%- elif cmd == 'coff' -%}🌑 {{ sala.nome | default('Cômodo') }}: apagando
+        {%- elif cmd == 'cbri' -%}🔆 {{ sala.nome | default('Cômodo') }}: {{ (arg | string).split(' ')[-1] }}%
+        {%- elif cmd == 'luzes_on' -%}✨ Acendendo a casa
+        {%- elif cmd == 'luzes_off' -%}🌑 Apagando a casa
         {%- elif cmd == 'cena' -%}{{ cenas.get(arg, '🎬 Cena aplicada') }}
+        {%- elif cmd == 'alarme' -%}{{ alarmes.get(arg, '🛡️ Alarme') }}
+        {%- elif cmd == 'alarme_conf' -%}⚠️ Confirme para desarmar
+        {%- elif cmd == 'desp_toggle' -%}{{ '⏰ Despertador desligado' if is_state('input_boolean.concierge_despertador', 'on') else '⏰ Despertador ligado' }}
+        {%- elif cmd == 'desp_uteis' -%}{{ '📅 Todos os dias' if is_state('input_boolean.concierge_despertador_uteis', 'on') else '📅 Só dias úteis' }}
+        {%- elif cmd in ['desp_adj', 'desp_set'] -%}⏰ Horário ajustado
+        {%- elif cmd == 'soneca' -%}😴 Mais 10 minutinhos
+        {%- elif cmd == 'acordei' -%}☀️ Bom dia!
         {%- elif cmd == 'musica' -%}🎵 Laurinha
         {%- elif cmd == 'dnd' -%}{{ '🔔 Avisos reativados' if is_state('input_boolean.concierge_nao_perturbe', 'on') else '🔕 Avisos silenciados' }}
         {%- else -%}🏠 Home Concierge{%- endif -%}
       tela: >-
-        {%- if cmd == 'nav' -%}{{ arg if arg in ['menu', 'faxina', 'luzes', 'cenas', 'musica', 'status'] else 'menu' }}
+        {%- set telas = ['menu', 'comodos', 'alarme', 'despertador', 'faxina', 'cenas', 'musica', 'status'] -%}
+        {%- if cmd == 'nav' -%}{{ 'comodos' if arg == 'luzes' else (arg if arg in telas else 'menu') }}
+        {%- elif cmd in ['comodo', 'ctog', 'con', 'coff', 'cbri'] -%}{{ 'comodo' if sala else 'comodos' }}
+        {%- elif cmd in ['luzes_on', 'luzes_off'] -%}comodos
+        {%- elif cmd.startswith('alarme') -%}alarme
+        {%- elif cmd.startswith('desp_') -%}despertador
+        {%- elif cmd in ['despertar', 'soneca'] -%}despertar
         {%- elif cmd.startswith('faxina') -%}faxina
-        {%- elif cmd in ['luz', 'luzes_on', 'luzes_off'] -%}luzes
         {%- elif cmd == 'musica' -%}musica
         {%- else -%}menu{%- endif -%}
     sequence:
@@ -126,9 +259,8 @@ script:
               teclado_msg: >-
                 {%- if cmd == 'teclado_off' -%}{{ [] }}
                 {%- else -%}
-                {%- set rotulos = menu_fixo.keys() | list -%}
                 {%- set ns = namespace(rows=[]) -%}
-                {%- for par in rotulos | batch(2) -%}{%- set ns.rows = ns.rows + [par | join(', ')] -%}{%- endfor -%}
+                {%- for par in menu_fixo.keys() | list | batch(2) -%}{%- set ns.rows = ns.rows + [par | join(', ')] -%}{%- endfor -%}
                 {{ ns.rows }}
                 {%- endif -%}
               aviso_msg: >-
@@ -164,6 +296,7 @@ script:
 
       # 2) Ação
       - choose:
+          # ---------- Faxina ----------
           - conditions: "{{ cmd in ['faxina_on', 'faxina_1h', 'faxina_mais'] }}"
             sequence:
               - service: timer.start
@@ -187,50 +320,206 @@ script:
                 target:
                   entity_id: input_boolean.modo_faxina
 
-          - conditions: "{{ cmd == 'luz' and arg in luzes }}"
+          # ---------- Cômodos ----------
+          - conditions: "{{ cmd == 'ctog' and alvo != '' }}"
             sequence:
               - service: homeassistant.toggle
                 continue_on_error: true
                 target:
-                  entity_id: "{{ arg }}"
+                  entity_id: "{{ alvo }}"
 
-          - conditions: "{{ cmd in ['luzes_on', 'luzes_off'] }}"
+          - conditions: "{{ cmd in ['con', 'coff'] and sala | count > 0 }}"
+            sequence:
+              - variables:
+                  luzes_sala: "{{ sala.ents | select('match', '^light\\.') | list + (sala.ents | select('in', luzes.keys() | list) | reject('match', '^light\\.') | list) }}"
+              - if: "{{ luzes_sala | count > 0 }}"
+                then:
+                  - service: "homeassistant.turn_{{ 'on' if cmd == 'con' else 'off' }}"
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ luzes_sala }}"
+
+          - conditions: "{{ cmd == 'cbri' and sala | count > 0 }}"
+            sequence:
+              - variables:
+                  dimaveis: "{{ sala.ents | select('match', '^light\\.') | list }}"
+              - if: "{{ dimaveis | count > 0 }}"
+                then:
+                  - service: light.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ dimaveis }}"
+                    data:
+                      brightness_pct: "{{ [[(arg | string).split(' ')[-1] | int(100), 1] | max, 100] | min }}"
+
+          - conditions: "{{ cmd in ['luzes_on', 'luzes_off'] and luzes_casa | count > 0 }}"
             sequence:
               - service: "homeassistant.turn_{{ 'on' if cmd == 'luzes_on' else 'off' }}"
                 continue_on_error: true
                 target:
-                  entity_id: "{{ luzes.keys() | list }}"
+                  entity_id: "{{ luzes_casa }}"
 
+          # ---------- Alarme ----------
+          - conditions: "{{ cmd == 'alarme' and alarme != '' and arg in ['away', 'home', 'night', 'disarm'] }}"
+            sequence:
+              - service: script.concierge_alarme
+                data:
+                  entidade: "{{ alarme }}"
+                  modo: "{{ arg }}"
+                  codigo: "{{ alarme_codigo }}"
+
+          # ---------- Despertador ----------
+          - conditions: "{{ cmd == 'desp_toggle' }}"
+            sequence:
+              - service: input_boolean.toggle
+                target:
+                  entity_id: input_boolean.concierge_despertador
+
+          - conditions: "{{ cmd == 'desp_uteis' }}"
+            sequence:
+              - service: input_boolean.toggle
+                target:
+                  entity_id: input_boolean.concierge_despertador_uteis
+
+          - conditions: "{{ cmd in ['desp_adj', 'desp_set'] }}"
+            sequence:
+              - service: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.concierge_despertador
+                data:
+                  time: >-
+                    {%- if cmd == 'desp_adj' -%}
+                      {%- set t = (desp_min | int + arg | int(0)) % 1440 -%}
+                    {%- else -%}
+                      {%- set a = '%04d' % ((arg | string).strip() | int(700)) -%}
+                      {%- set t = ((a[:2] | int(7)) % 24) * 60 + ((a[2:] | int(0)) % 60) -%}
+                    {%- endif -%}
+                    {{ '%02d:%02d:00' % (t // 60, t % 60) }}
+              # Mexeu no horário = quer acordar: liga o despertador
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.concierge_despertador
+
+          - conditions: "{{ cmd == 'despertar' }}"
+            sequence:
+              - service: timer.cancel
+                target:
+                  entity_id: timer.concierge_soneca
+              - variables:
+                  acordar: "{{ despertador_luzes if despertador_luzes else luzes.keys() | list }}"
+              - if: "{{ acordar | select('match', '^light\\.') | list | count > 0 }}"
+                then:
+                  - service: light.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ acordar | select('match', '^light\\.') | list }}"
+                    data:
+                      brightness_pct: 100
+                      transition: "{{ despertador_transicao | int(300) }}"
+              - if: "{{ acordar | reject('match', '^light\\.') | list | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ acordar | reject('match', '^light\\.') | list }}"
+              - if: "{{ despertador_som != '' }}"
+                then:
+                  - service: media_player.volume_set
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ despertador_som }}"
+                    data:
+                      volume_level: "{{ despertador_volume | float(0.25) }}"
+                  - if: "{{ despertador_midia != '' }}"
+                    then:
+                      - service: media_player.play_media
+                        continue_on_error: true
+                        target:
+                          entity_id: "{{ despertador_som }}"
+                        data:
+                          media_content_id: "{{ despertador_midia }}"
+                          media_content_type: "{{ despertador_midia_tipo }}"
+                    else:
+                      - service: media_player.media_play
+                        continue_on_error: true
+                        target:
+                          entity_id: "{{ despertador_som }}"
+
+          - conditions: "{{ cmd == 'soneca' }}"
+            sequence:
+              - if: "{{ despertador_som != '' }}"
+                then:
+                  - service: media_player.media_pause
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ despertador_som }}"
+              - service: timer.start
+                target:
+                  entity_id: timer.concierge_soneca
+
+          - conditions: "{{ cmd == 'acordei' }}"
+            sequence:
+              - service: timer.cancel
+                target:
+                  entity_id: timer.concierge_soneca
+              - if: "{{ despertador_som != '' }}"
+                then:
+                  - service: media_player.media_pause
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ despertador_som }}"
+
+          # ---------- Cenas ----------
           - conditions: "{{ cmd == 'cena' and arg == 'cheguei' }}"
             sequence:
-              - service: homeassistant.turn_on
-                continue_on_error: true
-                target:
-                  entity_id: "{{ luzes.keys() | list }}"
+              - if: "{{ luzes | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ luzes.keys() | list }}"
               - service: input_boolean.turn_off
                 target:
                   entity_id: input_boolean.concierge_nao_perturbe
+              - if: "{{ cheguei_desarma_alarme and alarme != '' and not is_state(alarme, 'disarmed') }}"
+                then:
+                  - service: script.concierge_alarme
+                    data:
+                      entidade: "{{ alarme }}"
+                      modo: disarm
+                      codigo: "{{ alarme_codigo }}"
 
           - conditions: "{{ cmd == 'cena' and arg == 'saindo' }}"
             sequence:
-              - service: homeassistant.turn_off
-                continue_on_error: true
-                target:
-                  entity_id: "{{ luzes.keys() | list }}"
+              - if: "{{ luzes_casa | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_off
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ luzes_casa }}"
               - if: "{{ laurinha != '' and is_state(laurinha, 'playing') }}"
                 then:
                   - service: media_player.media_pause
                     continue_on_error: true
                     target:
                       entity_id: "{{ laurinha }}"
+              - if: "{{ saindo_arma_alarme and alarme != '' and is_state(alarme, 'disarmed') }}"
+                then:
+                  - service: script.concierge_alarme
+                    data:
+                      entidade: "{{ alarme }}"
+                      modo: away
+                      codigo: "{{ alarme_codigo }}"
 
           - conditions: "{{ cmd == 'cena' and arg == 'cinema' }}"
             sequence:
-              - service: homeassistant.turn_off
-                continue_on_error: true
-                target:
-                  entity_id: "{{ luzes.keys() | reject('eq', luz_cinema) | list }}"
-              - if: "{{ luz_cinema in luzes and luz_cinema.startswith('light.') }}"
+              - if: "{{ luzes_casa | reject('eq', luz_cinema) | list | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_off
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ luzes_casa | reject('eq', luz_cinema) | list }}"
+              - if: "{{ luz_cinema.startswith('light.') }}"
                 then:
                   - service: light.turn_on
                     continue_on_error: true
@@ -240,7 +529,7 @@ script:
                       brightness_pct: 15
                 else:
                   # switch.* (ex.: interruptor Smart Life) não tem brilho
-                  - if: "{{ luz_cinema in luzes }}"
+                  - if: "{{ luz_cinema != '' }}"
                     then:
                       - service: homeassistant.turn_on
                         continue_on_error: true
@@ -249,14 +538,24 @@ script:
 
           - conditions: "{{ cmd == 'cena' and arg == 'boanoite' }}"
             sequence:
-              - service: homeassistant.turn_off
-                continue_on_error: true
-                target:
-                  entity_id: "{{ luzes.keys() | list }}"
+              - if: "{{ luzes_casa | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_off
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ luzes_casa }}"
               - service: input_boolean.turn_on
                 target:
                   entity_id: input_boolean.concierge_nao_perturbe
+              - if: "{{ boanoite_arma_alarme and alarme != '' and is_state(alarme, 'disarmed') }}"
+                then:
+                  - service: script.concierge_alarme
+                    data:
+                      entidade: "{{ alarme }}"
+                      modo: night
+                      codigo: "{{ alarme_codigo }}"
 
+          # ---------- Laurinha / avisos ----------
           - conditions: "{{ cmd == 'musica' and laurinha != '' }}"
             sequence:
               - service: >-
@@ -275,12 +574,66 @@ script:
                   entity_id: input_boolean.concierge_nao_perturbe
 
       # 3) Dá tempo dos dispositivos reportarem o novo estado
-      - if: "{{ cmd not in ['nav', 'teclado'] }}"
+      - if: "{{ cmd not in ['nav', 'teclado', 'comodo', 'alarme_conf'] }}"
         then:
           - delay: "00:00:01"
 
       # 4) Monta o painel com o estado atualizado
       - variables:
+          # Resumo de cada aparelho do cômodo aberto: {entity: [ícone, nome, detalhe]}
+          info: >-
+            {%- set ns = namespace(d={}) -%}
+            {%- for e in (sala.ents if sala else []) -%}
+              {%- set st = states(e) -%}
+              {%- set dom = e.split('.')[0] -%}
+              {%- set nome_c = (state_attr(e, 'friendly_name') or e.split('.')[1]) | replace(',', '') | replace(':', '') | trim -%}
+              {%- if sala.id == 'fav' -%}
+                {%- set curto = luzes.get(e, nome_c) | replace(',', '') | replace(':', '') -%}
+              {%- elif nome_c.lower().startswith(sala.nome.lower() ~ ' ') -%}
+                {%- set curto = nome_c[sala.nome | length:] | trim -%}
+              {%- else -%}
+                {%- set curto = nome_c -%}
+              {%- endif -%}
+              {%- if st in ['unknown', 'unavailable'] -%}
+                {%- set i, det = '⚠️', 'indisponível' -%}
+              {%- elif dom == 'light' -%}
+                {%- set b = state_attr(e, 'brightness') -%}
+                {%- set i, det = ('🟡', ((b | int(0)) / 2.55) | round(0) | int ~ '%' if b else 'acesa') if st == 'on' else ('⚫', 'apagada') -%}
+              {%- elif dom == 'switch' -%}
+                {%- set i, det = ('🟢', 'ligado') if st == 'on' else ('⚫', 'desligado') -%}
+              {%- elif dom == 'fan' -%}
+                {%- set pct = state_attr(e, 'percentage') -%}
+                {%- set i, det = ('🌀', 'ligado' ~ (' · ' ~ pct ~ '%' if pct else '')) if st == 'on' else ('⚫', 'desligado') -%}
+              {%- elif dom == 'cover' -%}
+                {%- set pos = state_attr(e, 'current_position') -%}
+                {%- set i = '🪟' -%}
+                {%- set det = {'open': 'aberta', 'closed': 'fechada', 'opening': 'abrindo', 'closing': 'fechando'}.get(st, st) ~ (' · ' ~ pos ~ '%' if pos is not none and st == 'open' else '') -%}
+              {%- elif dom == 'climate' -%}
+                {%- set cur = state_attr(e, 'current_temperature') -%}
+                {%- set alvo_t = state_attr(e, 'temperature') -%}
+                {%- set i = '⚫' if st == 'off' else ('🔥' if st == 'heat' else '❄️') -%}
+                {%- set det = ('desligado' if st == 'off' else {'cool': 'resfriando', 'heat': 'aquecendo', 'dry': 'desumidificando', 'fan_only': 'ventilando', 'auto': 'automático', 'heat_cool': 'automático'}.get(st, st))
+                              ~ (' · ' ~ cur ~ '°' if cur is not none else '') ~ (' → ' ~ alvo_t ~ '°' if alvo_t is not none and st != 'off' else '') -%}
+              {%- else -%}
+                {%- set i, det = ('🟢' if st == 'on' else '⚫'), st -%}
+              {%- endif -%}
+              {%- set ns.d = dict(ns.d, **{e: [i, curto[:22], det]}) -%}
+            {%- endfor -%}
+            {{ ns.d }}
+          # Por cômodo: [ligados, total, temperatura]
+          resumo_comodos: >-
+            {%- set ns = namespace(d={}) -%}
+            {%- for c in comodos -%}
+              {%- set lig = c.ents | select('is_state', ['on', 'open', 'cool', 'heat', 'heat_cool', 'auto', 'dry', 'fan_only']) | list | count -%}
+              {%- set temp = namespace(v='') -%}
+              {%- if c.id != 'fav' -%}
+                {%- for s in area_entities(c.id) | select('match', '^sensor\.') if state_attr(s, 'device_class') == 'temperature' and states(s) | is_number and temp.v == '' -%}
+                  {%- set temp.v = states(s) | float | round(1) ~ '°' -%}
+                {%- endfor -%}
+              {%- endif -%}
+              {%- set ns.d = dict(ns.d, **{c.id: [lig, c.ents | count, temp.v]}) -%}
+            {%- endfor -%}
+            {{ ns.d }}
           texto: |-
             {%- set h = now().hour -%}
             {%- set saud = 'Bom dia' if 5 <= h < 12 else ('Boa tarde' if 12 <= h < 18 else 'Boa noite') -%}
@@ -290,10 +643,7 @@ script:
             {%- set s = ([((as_datetime(fim) - now()).total_seconds()) | int, 0] | max) if fim and is_state('timer.modo_faxina', 'active') else 0 -%}
             {%- set rest = '%dh%02d' % (s // 3600, (s % 3600) // 60) -%}
             {%- set ate = (as_datetime(fim) | as_local).strftime('%H:%M') if s > 0 else '' -%}
-            {%- set ids = luzes.keys() | list -%}
-            {%- set acesas = ids | select('is_state', 'on') | list -%}
-            {%- set ns = namespace(nomes=[]) -%}
-            {%- for e in acesas -%}{%- set ns.nomes = ns.nomes + [luzes[e]] -%}{%- endfor -%}
+            {%- set acesas = luzes_casa | select('is_state', 'on') | list -%}
             {%- set dnd = is_state('input_boolean.concierge_nao_perturbe', 'on') -%}
             {%- set mp = laurinha if laurinha != '' and states(laurinha) not in ['unknown', 'unavailable'] else '' -%}
             {%- set titulo = (state_attr(mp, 'media_title') or '') | replace('&', '&amp;') | replace('<', '&lt;') if mp else '' -%}
@@ -305,17 +655,55 @@ script:
             {%- set tempo = (cond.get(states(clima), states(clima)) ~ ' · ' ~ state_attr(clima, 'temperature') ~ '°') if clima != '' and states(clima) not in ['unknown', 'unavailable'] else '' -%}
             {%- set abertas = namespace(n=[]) -%}
             {%- for e, n in aberturas.items() if is_state(e, 'on') -%}{%- set abertas.n = abertas.n + [n] -%}{%- endfor -%}
+            {%- set al_st = states(alarme) if alarme != '' else '' -%}
+            {%- set al_txt = {'disarmed': '🔓 desarmado', 'armed_away': '🛡️ armado · ausente', 'armed_home': '🏠 armado · em casa',
+                              'armed_night': '🌙 armado · noite', 'armed_vacation': '🧳 armado · férias', 'armed_custom_bypass': '🛡️ armado · personalizado',
+                              'arming': '⏳ armando…', 'pending': '⏳ aguardando…', 'disarming': '⏳ desarmando…',
+                              'triggered': '🚨 <b>DISPARADO</b>', 'unavailable': '⚠️ indisponível', 'unknown': '⚠️ indisponível'}.get(al_st, al_st) -%}
+            {%- set dm = desp_min | int -%}
+            {%- set desp_on = is_state('input_boolean.concierge_despertador', 'on') -%}
+            {%- set uteis = is_state('input_boolean.concierge_despertador_uteis', 'on') -%}
+            {%- set desp_hora = '%dh%02d' % (dm // 60, dm % 60) -%}
+            {%- set sfim = state_attr('timer.concierge_soneca', 'finishes_at') -%}
+            {%- set soneca_ate = (as_datetime(sfim) | as_local).strftime('%H:%M') if sfim and is_state('timer.concierge_soneca', 'active') else '' -%}
+            {%- set n_lig = namespace(c=0, nomes=[]) -%}
+            {%- for c in comodos if c.id != 'fav' and c.ents | select('match', '^light\.') | select('is_state', 'on') | list | count > 0 -%}{%- set n_lig.nomes = n_lig.nomes + [c.nome] -%}{%- endfor -%}
+            {%- if tela == 'despertar' -%}
+            <b>⏰ {{ saud }}{{ ', ' ~ quem if quem }}!</b> São {{ now().strftime('%H:%M') }}.
+            {%- if soneca_ate %}
+            😴 Soneca até <b>{{ soneca_ate }}</b>.
+            {%- else %}
+            {%- if tempo %}
+            🌤️ Lá fora: {{ tempo }}
+            {%- endif %}
+            {%- if al_txt %}
+            🛡️ Alarme: {{ al_txt }}
+            {%- endif %}
+            {%- if fx %}
+            🧹 Faxina ativa{{ ' até ' ~ ate if ate }}
+            {%- endif %}
+
+            Tenha um ótimo dia! ☀️
+            {%- endif %}
+            {%- else -%}
             <b>🏠 Home Concierge</b>
             {{ saud }}{{ ', ' ~ quem if quem }} · {{ now().strftime('%H:%M') }}{{ '  🔕' if dnd }}
             ━━━━━━━━━━━━━━━
-            {%- if callback_id | default('', true) | string == '' and cmd not in ['nav', 'teclado'] %}
+            {%- if callback_id | default('', true) | string == '' and cmd not in ['nav', 'teclado', 'comodo'] %}
             ✅ {{ toast }}
             {%- endif %}
             {%- if tela == 'menu' %}
+            {%- if al_st == 'triggered' %}
+            🚨 <b>ALARME DISPARADO!</b>
+            {%- endif %}
+            💡 Luzes: {{ (acesas | count ~ ' acesa' ~ ('s' if acesas | count > 1)) if acesas else 'todas apagadas' }}{{ ' · ' ~ n_lig.nomes | join(', ') if n_lig.nomes }}
+            {%- if al_txt %}
+            🛡️ Alarme: {{ al_txt }}
+            {%- endif %}
+            ⏰ Despertador: {{ (desp_hora ~ (' · dias úteis' if uteis else ' · todo dia')) if desp_on else 'desligado' }}{{ ' · 😴 soneca até ' ~ soneca_ate if soneca_ate }}
             🧹 Faxina: {{ ('<b>ativa</b> · faltam ' ~ rest ~ ' (até ' ~ ate ~ ')') if s > 0 else ('<b>ativa</b>' if fx else 'desligada') }}
-            💡 Luzes: {{ (ns.nomes | count ~ ' acesa' ~ ('s' if ns.nomes | count > 1) ~ ' · ' ~ ns.nomes | join(', ')) if ns.nomes else 'todas apagadas' }}
-            {%- if mp %}
-            🎵 Laurinha: {{ ('tocando' ~ (' · <i>' ~ titulo ~ '</i>' if titulo)) if is_state(mp, 'playing') else 'em silêncio' }}
+            {%- if mp and is_state(mp, 'playing') %}
+            🎵 Laurinha: tocando{{ ' · <i>' ~ titulo ~ '</i>' if titulo }}
             {%- endif %}
             {%- if tempo %}
             🌤️ Lá fora: {{ tempo }}
@@ -325,6 +713,55 @@ script:
             {%- endif %}
 
             O que deseja fazer?
+            {%- elif tela == 'comodos' %}
+            <b>🛋️ Cômodos</b>
+            {%- for c in comodos %}
+            {%- set r = resumo_comodos[c.id] %}
+            {{ '🟡' if r[0] > 0 else '⚫' }} <b>{{ c.nome }}</b> · {{ r[0] ~ ' de ' ~ r[1] ~ ' ligado' ~ ('s' if r[0] != 1) if r[0] > 0 else 'tudo desligado' }}{{ ' · 🌡️ ' ~ r[2] if r[2] }}
+            {%- else %}
+            Nenhum cômodo encontrado.
+            Crie Áreas em <i>Configurações → Áreas</i> e coloque os aparelhos nelas.
+            {%- endfor %}
+
+            Toque num cômodo para controlar.
+            {%- elif tela == 'comodo' %}
+            {%- set r = resumo_comodos[sala.id] %}
+            <b>{{ '🛋️ ' if sala.id != 'fav' }}{{ sala.nome }}</b>{{ ' · 🌡️ ' ~ r[2] if r[2] }}
+            {%- for e in sala.ents %}
+            {{ info[e][0] }} {{ info[e][1] }} · {{ info[e][2] }}
+            {%- endfor %}
+
+            Toque num aparelho para ligar/desligar.
+            {%- elif tela == 'alarme' %}
+            <b>🛡️ Alarme</b>
+            {%- if alarme == '' %}
+            Nenhum alarme configurado.
+            Informe o <code>alarm_control_panel</code> em <code>alarme</code>, no bloco CONFIGURAÇÃO.
+            {%- else %}
+            Estado: {{ al_txt }}
+            {%- if cmd == 'alarme_conf' %}
+
+            ⚠️ <b>Tem certeza que deseja DESARMAR o alarme?</b>
+            {%- elif al_st == 'disarmed' %}
+
+            🛡️ <b>Ausente</b> · todos os sensores
+            🏠 <b>Em casa</b> · só portas e janelas
+            🌙 <b>Noite</b> · modo para dormir
+            {%- endif %}
+            {%- endif %}
+            {%- elif tela == 'despertador' %}
+            <b>⏰ Despertador</b>
+            {{ '🟢 Ligado' if desp_on else '⚫ Desligado' }} · <b>{{ desp_hora }}</b>
+            📅 {{ 'Segunda a sexta' if uteis else 'Todos os dias' }}
+            💡 Luzes acendem aos poucos em {{ ((despertador_transicao | int(300)) / 60) | round(0) | int }} min
+            {%- if despertador_som %}
+            🔊 Som: {{ state_attr(despertador_som, 'friendly_name') or despertador_som }}
+            {%- endif %}
+            {%- if soneca_ate %}
+            😴 Soneca até {{ soneca_ate }}
+            {%- endif %}
+
+            Ajuste o horário nos botões abaixo.
             {%- elif tela == 'faxina' %}
             <b>🧹 Modo Faxina</b>
             {%- if s > 0 %}
@@ -337,19 +774,12 @@ script:
             Desligado. As automações de iluminação estão normais.
             Ative para a diarista trabalhar sem as luzes apagarem.
             {%- endif %}
-            {%- elif tela == 'luzes' %}
-            <b>💡 Luzes</b>
-            {%- for e in ids %}
-            {{ '🟡' if is_state(e, 'on') else ('⚠️' if states(e) in ['unknown', 'unavailable'] else '⚫') }} {{ luzes[e] }}{{ (' · ' ~ ((state_attr(e, 'brightness') | int(0)) / 2.55) | round(0) | int ~ '%') if is_state(e, 'on') and state_attr(e, 'brightness') }}{{ ' · indisponível' if states(e) in ['unknown', 'unavailable'] }}
-            {%- endfor %}
-
-            Toque numa luz para acender/apagar.
             {%- elif tela == 'cenas' %}
             <b>🎬 Cenas</b>
-            🏡 <b>Cheguei</b> · acende as luzes e reativa os avisos
-            🚪 <b>Saindo</b> · apaga tudo e pausa a música
-            🍿 <b>Cinema</b> · {{ luzes.get(luz_cinema, 'luz') }} a 15%, resto apagado
-            🌙 <b>Boa noite</b> · apaga tudo e silencia os avisos
+            🏡 <b>Cheguei</b> · acende os Favoritos e reativa os avisos{{ ' · desarma o alarme' if cheguei_desarma_alarme and alarme != '' }}
+            🚪 <b>Saindo</b> · apaga a casa e pausa a música{{ ' · arma o alarme' if saindo_arma_alarme and alarme != '' }}
+            🍿 <b>Cinema</b> · {{ luzes.get(luz_cinema, state_attr(luz_cinema, 'friendly_name') or 'luz') }} a 15%, resto apagado
+            🌙 <b>Boa noite</b> · apaga a casa e silencia os avisos{{ ' · alarme modo noite' if boanoite_arma_alarme and alarme != '' }}
             {%- elif tela == 'musica' %}
             <b>🎵 Laurinha</b>
             {%- if mp %}
@@ -360,17 +790,24 @@ script:
             {%- endif %}
             {%- elif tela == 'status' %}
             <b>📊 Status da casa</b>
+            {%- if al_txt %}
+            🛡️ Alarme: {{ al_txt }}
+            {%- endif %}
+            💡 Luzes acesas: {{ acesas | count if acesas else 'nenhuma' }}
+            {%- for c in comodos if c.id != 'fav' %}
+            {%- set r = resumo_comodos[c.id] %}
+            {%- if r[0] > 0 or r[2] %}
+               • {{ c.nome }}{{ ': ' ~ r[0] ~ ' ligado' ~ ('s' if r[0] != 1) if r[0] > 0 }}{{ ' · 🌡️ ' ~ r[2] if r[2] }}
+            {%- endif %}
+            {%- endfor %}
+            ⏰ Despertador: {{ desp_hora if desp_on else 'desligado' }}
             🧹 Faxina: {{ ('ativa até ' ~ ate ~ ' (' ~ rest ~ ')') if s > 0 else ('ativa' if fx else 'desligada') }}
-            💡 Luzes acesas: {{ ns.nomes | join(', ') if ns.nomes else 'nenhuma' }}
             {%- if mp %}
             🎵 Laurinha: {{ {'playing': 'tocando', 'paused': 'pausada', 'idle': 'parada', 'off': 'desligada', 'on': 'ligada'}.get(states(mp), states(mp)) }}{{ ' · ' ~ vol ~ '%' if is_state(mp, 'playing') }}
             {%- endif %}
             {%- if tempo %}
             🌤️ Lá fora: {{ tempo }}
             {%- endif %}
-            {%- for e, n in temperaturas.items() if states(e) not in ['unknown', 'unavailable'] %}
-            🌡️ {{ n }}: {{ states(e) }}{{ state_attr(e, 'unit_of_measurement') or '°' }}
-            {%- endfor %}
             {%- if aberturas %}
             🚪 Portas/janelas: {{ 'abertas · ' ~ abertas.n | join(', ') if abertas.n else 'tudo fechado ✅' }}
             {%- endif %}
@@ -379,19 +816,72 @@ script:
             {%- endif %}
             🔔 Avisos: {{ 'silenciados' if dnd else 'ativos' }}
             {%- endif %}
+            {%- endif %}
           teclado: >-
             {%- set fx = is_state('input_boolean.modo_faxina', 'on') or is_state('timer.modo_faxina', 'active') -%}
             {%- set dnd = is_state('input_boolean.concierge_nao_perturbe', 'on') -%}
             {%- set voltar = '⬅️ Voltar ao menu:/hc nav menu' -%}
-            {%- set ids = luzes.keys() | list -%}
-            {%- set n_on = ids | select('is_state', 'on') | list | count -%}
+            {%- set n_on = luzes_casa | select('is_state', 'on') | list | count -%}
+            {%- set al_st = states(alarme) if alarme != '' else '' -%}
+            {%- set dm = desp_min | int -%}
+            {%- set desp_on = is_state('input_boolean.concierge_despertador', 'on') -%}
             {%- if tela == 'menu' -%}
             {{ [
-              ('🧹 Faxina ' ~ ('● ON' if fx else 'OFF')) ~ ':/hc nav faxina, ' ~ ('💡 Luzes (' ~ n_on ~ ')' if n_on else '💡 Luzes') ~ ':/hc nav luzes',
+              ('🛋️ Cômodos (' ~ n_on ~ ')' if n_on else '🛋️ Cômodos') ~ ':/hc nav comodos, '
+                ~ ('🚨 Alarme' if al_st == 'triggered' else ('🛡️ Alarme ●' if al_st.startswith('armed') else '🛡️ Alarme')) ~ ':/hc nav alarme',
+              ('⏰ ' ~ ('%dh%02d' % (dm // 60, dm % 60)) if desp_on else '⏰ Despertador') ~ ':/hc nav despertador, '
+                ~ ('🧹 Faxina ● ON' if fx else '🧹 Faxina') ~ ':/hc nav faxina',
               '🎬 Cenas:/hc nav cenas' ~ (', 🎵 Laurinha:/hc nav musica' if laurinha != '' else ''),
               '📊 Status:/hc nav status, ' ~ ('🔔 Reativar avisos' if dnd else '🔕 Silenciar') ~ ':/hc dnd',
               '🔄 Atualizar:/hc nav menu'
             ] }}
+            {%- elif tela == 'comodos' -%}
+            {%- set out = namespace(rows=[]) -%}
+            {%- for par in comodos | batch(2) -%}
+              {%- set bts = namespace(b=[]) -%}
+              {%- for c in par -%}
+                {%- set bts.b = bts.b + [('🟡 ' if resumo_comodos[c.id][0] > 0 else '⚫ ') ~ c.nome[:22] ~ ':/hc comodo ' ~ c.id] -%}
+              {%- endfor -%}
+              {%- set out.rows = out.rows + [bts.b | join(', ')] -%}
+            {%- endfor -%}
+            {{ out.rows + ['✨ Acender a casa:/hc luzes_on, 🌑 Apagar a casa:/hc luzes_off', voltar] }}
+            {%- elif tela == 'comodo' -%}
+            {%- set out = namespace(rows=[]) -%}
+            {%- for par in sala.ents | batch(2) -%}
+              {%- set bts = namespace(b=[]) -%}
+              {%- for e in par -%}
+                {%- set bts.b = bts.b + [info[e][0] ~ ' ' ~ info[e][1] ~ ':/hc ctog ' ~ sala.id ~ ' ' ~ sala.ents.index(e)] -%}
+              {%- endfor -%}
+              {%- set out.rows = out.rows + [bts.b | join(', ')] -%}
+            {%- endfor -%}
+            {%- set tem_luz = sala.ents | select('match', '^light\.') | list | count > 0 -%}
+            {%- set out.rows = out.rows + ['💡 Acender:/hc con ' ~ sala.id ~ ', 🌑 Apagar:/hc coff ' ~ sala.id] -%}
+            {%- if tem_luz -%}
+              {%- set out.rows = out.rows + ['🔅 25%:/hc cbri ' ~ sala.id ~ ' 25, 🔆 50%:/hc cbri ' ~ sala.id ~ ' 50, ☀️ 100%:/hc cbri ' ~ sala.id ~ ' 100'] -%}
+            {%- endif -%}
+            {{ out.rows + ['🔄 Atualizar:/hc comodo ' ~ sala.id ~ ', ⬅️ Cômodos:/hc nav comodos', voltar] }}
+            {%- elif tela == 'alarme' -%}
+            {%- if alarme == '' -%}
+            {{ [voltar] }}
+            {%- elif cmd == 'alarme_conf' -%}
+            {{ ['✅ Sim desarmar:/hc alarme disarm, ✖️ Cancelar:/hc nav alarme', voltar] }}
+            {%- elif al_st == 'disarmed' -%}
+            {{ ['🛡️ Ausente:/hc alarme away, 🏠 Em casa:/hc alarme home', '🌙 Noite:/hc alarme night, 🔄 Atualizar:/hc nav alarme', voltar] }}
+            {%- else -%}
+            {{ ['🔓 Desarmar:/hc alarme_conf disarm, 🔄 Atualizar:/hc nav alarme', voltar] }}
+            {%- endif -%}
+            {%- elif tela == 'despertador' -%}
+            {{ [
+              ('⏸️ Desligar despertador' if desp_on else '▶️ Ligar despertador') ~ ':/hc desp_toggle',
+              '➖ 1h:/hc desp_adj -60, ➖ 15min:/hc desp_adj -15, ➕ 15min:/hc desp_adj 15, ➕ 1h:/hc desp_adj 60',
+              '5h30:/hc desp_set 0530, 6h:/hc desp_set 0600, 6h30:/hc desp_set 0630, 7h:/hc desp_set 0700',
+              ('📅 Mudar para todos os dias' if is_state('input_boolean.concierge_despertador_uteis', 'on') else '📅 Mudar para dias úteis') ~ ':/hc desp_uteis',
+              '🧪 Testar agora:/hc despertar',
+              voltar
+            ] }}
+            {%- elif tela == 'despertar' -%}
+            {{ (['✅ Acordei:/hc acordei'] if is_state('timer.concierge_soneca', 'active')
+                else ['😴 Soneca 10 min:/hc soneca, ✅ Acordei:/hc acordei']) + ['🏠 Painel:/hc nav menu'] }}
             {%- elif tela == 'faxina' -%}
             {{ ([
               '➕ Mais 1h:/hc faxina_mais, 🔁 Renovar ' ~ faxina_horas ~ 'h:/hc faxina_on',
@@ -399,16 +889,6 @@ script:
             ] if fx else [
               '🧹 Ativar por ' ~ faxina_horas ~ 'h:/hc faxina_on, ⏱️ Só 1h:/hc faxina_1h'
             ]) + [voltar] }}
-            {%- elif tela == 'luzes' -%}
-            {%- set out = namespace(rows=[]) -%}
-            {%- for par in ids | batch(2) -%}
-              {%- set bts = namespace(b=[]) -%}
-              {%- for e in par -%}
-                {%- set bts.b = bts.b + [('🟡 ' if is_state(e, 'on') else '⚫ ') ~ luzes[e] ~ ':/hc luz ' ~ e] -%}
-              {%- endfor -%}
-              {%- set out.rows = out.rows + [bts.b | join(', ')] -%}
-            {%- endfor -%}
-            {{ out.rows + ['✨ Acender tudo:/hc luzes_on, 🌑 Apagar tudo:/hc luzes_off', voltar] }}
             {%- elif tela == 'cenas' -%}
             {{ [
               '🏡 Cheguei:/hc cena cheguei, 🚪 Saindo:/hc cena saindo',
@@ -419,13 +899,14 @@ script:
             {{ [
               '⏯️ Tocar / Pausar:/hc musica play_pause, ⏭️ Próxima:/hc musica next',
               '🔉 Volume -:/hc musica vol_down, 🔊 Volume +:/hc musica vol_up',
-              '🔄 Atualizar:/hc nav musica, ⬅️ Voltar:/hc nav menu'
+              '🔄 Atualizar:/hc nav musica',
+              voltar
             ] }}
             {%- else -%}
-            {{ ['🔄 Atualizar:/hc nav status, ⬅️ Voltar:/hc nav menu'] }}
+            {{ ['🔄 Atualizar:/hc nav status', voltar] }}
             {%- endif -%}
 
-      # 5) Edita o painel existente (clique) ou envia um novo (/menu)
+      # 5) Edita o painel existente (clique) ou envia um novo
       - if: "{{ message_id | default('', true) | string != '' }}"
         then:
           - service: telegram_bot.edit_message
@@ -479,8 +960,7 @@ automation:
           nome: "{{ trigger.event.data.from_first | default('') }}"
 
   # ------------------------------------------------------------------
-  # Comandos digitados: /menu /casa /start (painel + menu fixo),
-  # /status /faxina /luzes /cenas, /ocultar (esconde o menu fixo)
+  # Comandos digitados
   # ------------------------------------------------------------------
   - id: home_concierge_comandos
     alias: "🏠 Home Concierge · comandos"
@@ -489,13 +969,16 @@ automation:
       - platform: event
         event_type: telegram_command
     condition:
-      - "{{ trigger.event.data.command in ['/menu', '/casa', '/start', '/status', '/faxina', '/luzes', '/cenas', '/ocultar'] }}"
+      - >-
+        {{ trigger.event.data.command in ['/menu', '/casa', '/start', '/status', '/faxina', '/luzes', '/comodos',
+                                          '/cenas', '/alarme', '/despertador', '/ocultar'] }}
     action:
       - service: script.home_concierge
         data:
           acao: >-
-            {{ {'/status': 'nav status', '/faxina': 'nav faxina', '/luzes': 'nav luzes',
-                '/cenas': 'nav cenas', '/ocultar': 'teclado_off'}.get(trigger.event.data.command, 'teclado') }}
+            {{ {'/status': 'nav status', '/faxina': 'nav faxina', '/luzes': 'nav comodos', '/comodos': 'nav comodos',
+                '/cenas': 'nav cenas', '/alarme': 'nav alarme', '/despertador': 'nav despertador',
+                '/ocultar': 'teclado_off'}.get(trigger.event.data.command, 'teclado') }}
           chat_id: "{{ trigger.event.data.chat_id }}"
           nome: "{{ trigger.event.data.from_first | default('') }}"
 
@@ -515,6 +998,59 @@ automation:
           acao: "txt {{ trigger.event.data.text | default('') }}"
           chat_id: "{{ trigger.event.data.chat_id }}"
           nome: "{{ trigger.event.data.from_first | default('') }}"
+
+  # ------------------------------------------------------------------
+  # ⏰ Despertador: toca no horário (e de novo ao fim da soneca)
+  # ------------------------------------------------------------------
+  - id: home_concierge_despertador
+    alias: "🏠 Home Concierge · despertador"
+    mode: single
+    trigger:
+      - platform: time
+        at: input_datetime.concierge_despertador
+        id: horario
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.concierge_soneca
+        id: soneca
+    condition:
+      - condition: or
+        conditions:
+          - condition: trigger
+            id: soneca
+          - condition: and
+            conditions:
+              - condition: state
+                entity_id: input_boolean.concierge_despertador
+                state: "on"
+              - "{{ not is_state('input_boolean.concierge_despertador_uteis', 'on') or now().isoweekday() <= 5 }}"
+    action:
+      - service: script.home_concierge
+        data:
+          acao: despertar
+
+  # ------------------------------------------------------------------
+  # 🚨 Alarme disparado: aviso urgente (ignora o "Não perturbe")
+  # ------------------------------------------------------------------
+  - id: home_concierge_alarme_disparado
+    alias: "🏠 Home Concierge · alarme disparado"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >-
+          {{ states.alarm_control_panel | selectattr('state', 'eq', 'triggered') | list | count > 0 }}
+    action:
+      - service: telegram_bot.send_message
+        data:
+          parse_mode: html
+          disable_notification: false
+          message: |-
+            🚨🚨 <b>ALARME DISPARADO</b> 🚨🚨
+            {{ states.alarm_control_panel | selectattr('state', 'eq', 'triggered') | map(attribute='name') | join(', ') }} · {{ now().strftime('%H:%M:%S') }}
+          inline_keyboard:
+            - "🔓 Desarmar:/hc alarme_conf disarm, 🛡️ Ver alarme:/hc nav alarme"
+            - "🏠 Painel:/hc nav menu"
 
   # ------------------------------------------------------------------
   # Mantém interruptor e cronômetro da faxina sempre coerentes, mesmo
@@ -558,8 +1094,7 @@ automation:
                   entity_id: timer.modo_faxina
 
   # ------------------------------------------------------------------
-  # Aviso 10 minutos antes do fim, com botões para estender/encerrar
-  # (respeita o "Não perturbe")
+  # Aviso 10 minutos antes do fim da faxina (respeita o "Não perturbe")
   # ------------------------------------------------------------------
   - id: home_concierge_faxina_aviso
     alias: "🏠 Home Concierge · faxina acabando"

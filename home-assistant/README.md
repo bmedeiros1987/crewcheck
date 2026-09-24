@@ -1,120 +1,140 @@
 # 🏠 Home Concierge Premium (Home Assistant + Telegram)
 
-Painel premium da casa no bot do Telegram. É um pacote único do Home Assistant:
-`packages/home_concierge.yaml`.
+Central completa da casa no bot do Telegram. É um pacote único do Home
+Assistant: `packages/home_concierge.yaml`.
 
-## O que muda em relação à versão antiga
+> ⚠️ **Se o bot ainda mostra "Faxina ON / Faxina OFF / Cozinha / Sala /
+> Laurinha / Status"**, é o concierge **antigo**: o pacote novo ainda não foi
+> instalado. Siga a [Instalação](#instalação).
 
-| Antes | Agora |
+## O que ele faz
+
+| Tela | O que tem |
 |---|---|
-| Cada clique gerava uma mensagem nova no chat ("ativado", "encerrado", "ativado"…) | **Painel vivo**: o clique edita a mesma mensagem e mostra um toast discreto |
-| Cliques rápidos ligavam, desligavam e ligavam de novo a faxina | Script em fila (`mode: queued`): `Faxina ON` só liga, `OFF` só desliga |
-| Menu fixo de 6 botões | Menu com submenus: Faxina, Luzes, Cenas, Laurinha, Status |
-| Faxina só de 3h | **6h** (padrão), 1h, **+1h** somando ao tempo restante, e renovar |
-| Fim da faxina sem aviso prévio | Aviso **10 min antes** com botões `➕ Mais 1h` e `⏹️ Encerrar` |
-| Status em texto simples | Mostra o tempo que falta, as luzes acesas com o brilho, o que está tocando, o tempo lá fora, as temperaturas, portas e janelas e o nascer/pôr do sol |
-| — | **Cenas**: 🏡 Cheguei · 🚪 Saindo · 🍿 Cinema · 🌙 Boa noite |
-| — | **🔕 Não perturbe**: silencia os avisos que não são urgentes |
-| — | **Menu fixo** (como o do CrewCheck): uma grade de botões grandes embaixo do campo de mensagem, sempre visível |
-| — | Comandos `/menu` `/casa` `/status` `/faxina` `/luzes` `/cenas` `/ocultar` |
-| — | Saudação por horário e pelo nome de quem clicou |
+| 🏠 **Painel** | Resumo vivo da casa: luzes acesas, alarme, despertador, faxina, música, clima. Cada clique **edita a mesma mensagem**, sem encher o chat |
+| 🛋️ **Cômodos** | Criados **automaticamente** a partir das Áreas do HA. Em cada cômodo: liga/desliga cada aparelho (luz, tomada, ventilador, cortina, ar-condicionado), acende/apaga tudo e brilho 25/50/100%. Mostra a temperatura do cômodo |
+| 🛡️ **Alarme** | Armar **ausente / em casa / noite** e **desarmar com confirmação**. Se o alarme disparar, chega um aviso urgente (mesmo com 🔕), com botão para desarmar |
+| ⏰ **Despertador** | Horário pelos botões (±15 min, ±1 h, 5h30/6h/6h30/7h), só dias úteis ou todo dia. Na hora, a luz do quarto acende aos poucos, o som toca e chega um "Bom dia" com o tempo e **😴 Soneca 10 min** |
+| 🧹 **Faxina** | 6 h (padrão), 1 h, +1 h, renovar, encerrar. Aviso 10 min antes do fim |
+| 🎬 **Cenas** | 🏡 Cheguei · 🚪 Saindo (apaga a casa e **arma o alarme**) · 🍿 Cinema · 🌙 Boa noite (apaga a casa, silencia e **arma modo noite**) |
+| 🎵 **Laurinha** | Tocar/pausar, próxima, volume |
+| 📊 **Status** | Alarme, luzes por cômodo, temperaturas, despertador, faxina, música, clima, portas, sol |
+| ⌨️ **Menu fixo** | Grade de botões grandes embaixo do campo de mensagem, como no bot CrewCheck |
+
+```
+🛋️ Cômodos      🛡️ Alarme
+⏰ Despertador   🧹 Faxina
+🎬 Cenas         🎵 Laurinha
+🚪 Saindo        🌙 Boa noite
+📊 Status        🔕 Não perturbe
+🏠 Painel da casa
+```
+
+Comandos: `/menu` `/casa` `/start` `/comodos` `/alarme` `/despertador`
+`/faxina` `/cenas` `/status` `/ocultar`.
 
 ## Instalação
 
-1. Em `configuration.yaml`, habilite os pacotes (se ainda não estiver):
+Requer o Home Assistant 2024.1 ou mais novo, com a integração **Telegram bot**
+já funcionando (o seu bot atual já usa ela).
+
+1. **Instale um editor de arquivos no HA** (se ainda não tiver):
+   *Configurações → Complementos → Loja → **File editor*** → Instalar →
+   Iniciar → ative "Mostrar na barra lateral".
+2. **Habilite os pacotes.** No File editor, abra `configuration.yaml` e
+   confira se existe (adicione se não existir):
    ```yaml
    homeassistant:
      packages: !include_dir_named packages
    ```
-2. Copie `packages/home_concierge.yaml` para `/config/packages/`.
-3. Edite o bloco **CONFIGURAÇÃO** no início do script `home_concierge`:
-   - `luzes`: os `light.*` reais e o nome de cada botão (aceita quantas luzes quiser)
-   - `laurinha`: o `media_player` da caixa de som (use `''` para esconder)
-   - `clima`, `temperaturas`, `aberturas`: opcionais
-4. **Evite IDs duplicados:** se `input_boolean.modo_faxina` ou `timer.modo_faxina`
-   já existirem como helpers criados pela interface, apague-os na interface ou
-   remova esses blocos do pacote. As automações de luz que respeitam a faxina
-   devem continuar checando `input_boolean.modo_faxina`.
-5. **Desative a automação antiga do concierge** e as que mandavam as mensagens
-   "Modo Faxina ativado/encerrado/renovado". Isso acaba com as mensagens repetidas
-   que aparecem no chat hoje.
-6. Em *Ferramentas de desenvolvedor → YAML*, clique em **Verificar configuração**
-   e depois reinicie o Home Assistant.
-7. No Telegram, envie `/menu`.
+3. **Crie o pacote.** No File editor, crie a pasta `packages` (se não existir) e,
+   dentro dela, o arquivo `home_concierge.yaml`. Cole nele todo o conteúdo de
+   [`packages/home_concierge.yaml`](packages/home_concierge.yaml) (no GitHub,
+   botão **Raw** → copiar tudo).
+4. **Ajuste o bloco CONFIGURAÇÃO** (no início do script `home_concierge`):
+   - `luzes`: suas luzes favoritas (`light.*` ou `switch.*`) e o nome de cada uma
+   - `alarme`: o seu `alarm_control_panel.*` (e `alarme_codigo`, se ele pedir código)
+   - `despertador_luzes` e `despertador_som`: o que acende e o que toca de manhã
+   - `laurinha`, `clima`, `aberturas`: opcionais
+   Os nomes das entidades ficam em *Configurações → Entidades*.
+5. **Organize os cômodos:** em *Configurações → Áreas*, crie as áreas (Sala,
+   Quarto, Cozinha…) e coloque cada aparelho na área certa. A tela 🛋️ Cômodos
+   é montada sozinha a partir disso.
+6. **Desligue o concierge antigo:** em *Configurações → Automações*, desative a
+   automação antiga do Home Concierge e as que mandam "Modo Faxina
+   ativado/encerrado/renovado".
+7. **Evite IDs duplicados:** se `input_boolean.modo_faxina` ou
+   `timer.modo_faxina` já existem como helpers criados pela interface, apague
+   esses helpers (o pacote cria os dele com o mesmo nome).
+8. *Ferramentas de desenvolvedor → YAML* → **Verificar configuração** →
+   **Reiniciar**.
+9. No Telegram, envie **`/menu`**.
 
-Requer o Home Assistant 2024.1 ou mais novo, com a integração `telegram_bot`
-configurada e o seu chat em `allowed_chat_ids`.
+## Alarme
 
-## Menu fixo
+Funciona com qualquer `alarm_control_panel` do HA: Alarmo, Tuya/Smart Life,
+Ring, Intelbras/JFL via integração, etc.
 
-`/menu` (ou `/start`, `/casa`) mostra o painel e ativa o menu fixo embaixo do
-campo de mensagem:
+- Desarmar pelo Telegram **sempre pede confirmação**.
+- Se o alarme exige código, informe em `alarme_codigo`.
+- As cenas mexem no alarme conforme a configuração: `saindo_arma_alarme`,
+  `boanoite_arma_alarme` e `cheguei_desarma_alarme` (esta vem desligada, por
+  segurança).
+- 🚨 Se **qualquer** alarme disparar, chega um aviso urgente com botão de
+  desarmar, mesmo com o 🔕 Não perturbe ligado.
 
-```
-🧹 Faxina       💡 Luzes
-🎬 Cenas        🎵 Laurinha
-🏡 Cheguei      🚪 Saindo
-🍿 Cinema       🌙 Boa noite
-📊 Status       🔕 Não perturbe
-🏠 Painel da casa
-```
+Não tem alarme no HA? O jeito mais simples é o **Alarmo** (HACS): ele
+transforma sensores de porta/movimento (inclusive Smart Life) num alarme
+completo.
 
-- Os botões de navegação (Faxina, Luzes…) abrem o painel direto na tela certa.
-- Os botões de cena executam a ação na hora e o painel confirma com "✅".
-- Para mudar botões ou a ordem, edite `menu_fixo` no bloco CONFIGURAÇÃO. São
-  2 botões por linha; com total ímpar, o último ocupa a linha inteira.
-- `/ocultar` esconde o menu fixo; `/menu` mostra de novo.
-- Mensagens digitadas que não são botões do menu são ignoradas pelo concierge.
+## Despertador
+
+- Ajuste o horário pelos botões. Mexer no horário já liga o despertador.
+- `📅 Dias úteis` faz ele tocar só de segunda a sexta.
+- Na hora: as luzes de `despertador_luzes` (ou os Favoritos) acendem de 0 a
+  100% em `despertador_transicao` segundos; `despertador_som` toca
+  `despertador_midia` (ou retoma o que estava tocando) no volume
+  `despertador_volume`; chega a mensagem de bom dia.
+- **😴 Soneca** pausa o som e toca de novo em 10 min. **✅ Acordei** encerra.
+- **🧪 Testar agora** executa a rotina na hora.
 
 ## Vincular o Smart Life (Tuya) ao Home Assistant
 
-A integração oficial **Tuya** do Home Assistant entra com a própria conta do app
-Smart Life, via QR code. Não precisa de conta de desenvolvedor Tuya.
+A integração oficial **Tuya** entra com a própria conta do app Smart Life, via
+QR code. Não precisa de conta de desenvolvedor.
 
-1. No celular, abra o **Smart Life** → **Eu** → ⚙️ **Configurações** →
-   **Conta e segurança** → copie o **Código de usuário** (User Code).
-2. No Home Assistant: **Configurações → Dispositivos e serviços →
-   ➕ Adicionar integração → Tuya**.
-3. Cole o código de usuário e toque em **Continuar**. O HA mostra um QR code.
-4. No Smart Life, toque no **ícone de escanear** (canto superior direito da tela
-   inicial), leia o QR code e confirme o login.
-5. Todos os aparelhos do Smart Life aparecem no HA com os mesmos nomes do app.
-   Lâmpadas viram `light.*`; interruptores e tomadas viram `switch.*`.
-6. Veja os `entity_id` em **Configurações → Entidades**. Filtre por "Tuya" e
-   coloque as entidades no bloco `luzes` do pacote. Exemplo:
-   ```yaml
-   luzes:
-     light.cozinha: Cozinha
-     light.sala: Sala
-     switch.abajur_quarto: Abajur   # interruptor Smart Life
-   ```
+1. No Smart Life: **Eu** → ⚙️ **Configurações** → **Conta e segurança** →
+   copie o **Código de usuário**.
+2. No HA: **Configurações → Dispositivos e serviços → ➕ Adicionar integração →
+   Tuya**, cole o código e toque em **Continuar**.
+3. No Smart Life, toque no **ícone de escanear** (canto superior direito), leia
+   o QR code e confirme.
+4. Os aparelhos aparecem com os mesmos nomes do app. Coloque cada um na sua
+   **Área** e eles surgem sozinhos em 🛋️ Cômodos.
 
-O painel aceita `light.*` e `switch.*`. Na cena Cinema, o brilho de 15% só se
-aplica a `light.*`. Um `switch.*` é apenas ligado.
-
-A integração Tuya funciona pela nuvem. Se a internet cair, os aparelhos Smart
-Life param de responder ao HA até ela voltar. Para controle 100% local, existe a
-integração da comunidade *Tuya Local* (HACS), que dá mais trabalho para
-configurar.
+A integração Tuya funciona pela nuvem: sem internet, os aparelhos Smart Life
+não respondem ao HA. Para controle 100% local existe o *Tuya Local* (HACS).
 
 ## Como funciona
 
-- Todo botão envia `callback_data` com o formato `/hc <ação>`. O prefixo evita
-  conflito com outras automações de Telegram que você já tenha.
-- A automação `home_concierge_botoes` repassa o clique ao script `home_concierge`.
-  O script responde com o toast, executa a ação, espera 1 segundo pelo novo
-  estado e **edita** o painel.
-- `home_concierge_faxina_sync` mantém o interruptor e o cronômetro coerentes,
-  mesmo quando a faxina é ligada pela Alexa, pelo app ou pelo dashboard.
+- Todo botão envia `callback_data` no formato `/hc <ação>`. O prefixo evita
+  conflito com outras automações de Telegram.
+- O script `home_concierge` responde com um toast, executa a ação, espera 1 s
+  pelo novo estado e **edita** o painel. Ele roda em fila, então cliques
+  rápidos nunca se atropelam.
 - Você pode chamar o script de qualquer lugar (dashboard, NFC, Alexa):
   ```yaml
   service: script.home_concierge
   data:
     acao: cena boanoite
   ```
-  Ações: `nav <menu|faxina|luzes|cenas|musica|status>`, `faxina_on`, `faxina_1h`,
-  `faxina_mais`, `faxina_off`, `luz <light.x>`, `luzes_on`, `luzes_off`,
-  `cena <cheguei|saindo|cinema|boanoite>`, `musica <play_pause|next|vol_up|vol_down>`, `dnd`.
+  Ações: `nav <menu|comodos|alarme|despertador|faxina|cenas|musica|status>`,
+  `comodo <area>`, `ctog <area> <n>`, `con <area>`, `coff <area>`,
+  `cbri <area> <pct>`, `luzes_on`, `luzes_off`, `alarme <away|home|night|disarm>`,
+  `desp_toggle`, `desp_uteis`, `desp_adj <min>`, `desp_set <HHMM>`, `despertar`,
+  `soneca`, `acordei`, `faxina_on`, `faxina_1h`, `faxina_mais`, `faxina_off`,
+  `cena <cheguei|saindo|cinema|boanoite>`,
+  `musica <play_pause|next|vol_up|vol_down>`, `dnd`.
 
 ## Teste offline
 
@@ -123,7 +143,8 @@ pip install pyyaml jinja2
 python3 home-assistant/tests/render_check.py
 ```
 
-O teste renderiza todas as telas e ações com estados simulados da casa: faxina
-ativa, tudo desligado com o "Não perturbe" ligado, e entidades inexistentes. Ele
-também valida o formato dos teclados do Telegram e o limite de 64 bytes do
-`callback_data`.
+O teste **simula o script passo a passo** (variáveis, `if`, `choose`, `stop`)
+contra um Home Assistant falso com cômodos, alarme, ar-condicionado, cortina e
+ventilador, em três cenários (casa completa, alarme disparado com soneca, HA
+vazio). Ele confere os serviços chamados em cada ação, o texto de cada tela, o
+formato dos teclados do Telegram e o limite de 64 bytes do `callback_data`.
