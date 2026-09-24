@@ -35,11 +35,11 @@ export function sanitizeConciergeStayPatch(patch: ConciergeStayPatch): Concierge
 }
 
 export function conciergeStayKey(patch: ConciergeStayPatch): string {
-  const day = stayDay(patch?.stayDate);
-  if (day) return `day:${day}`;
-
   const id = text(patch?.id);
   if (isServerStayId(id)) return `id:${id.toLowerCase()}`;
+
+  const day = stayDay(patch?.stayDate);
+  if (day) return `day:${day}`;
 
   const hotelKey = text(patch?.hotelKey).toLocaleLowerCase('pt-BR');
   if (hotelKey) return `hotel:${hotelKey}`;
