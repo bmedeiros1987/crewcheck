@@ -44,6 +44,8 @@ Campos sensíveis como CPF, e-mail, telefone, credenciais/tokens, nome de tripul
 
 Downgrade não remove o roster básico. O próximo snapshot segue contendo Agora/Jornada/Escala e muda `premiumAccess` para `false`. Canais/caches Premium (CrewLife, rotina, Concierge, smart departure/Live Ops quando separados) devem ser limpos ou deixar de ser publicados sem apagar o último snapshot operacional Free válido.
 
+Como proteção contra downgrade perdido ou peer desconectado, `premiumAccess=true` só autoriza capabilities Premium enquanto o snapshot estiver dentro de `validUntilEpochMs`. Após expirar, o periférico falha fechado para Premium, mas mantém o roster básico em modo stale/offline. Isso evita entitlement Premium indefinido a partir de cache antigo sem tornar a escala Free indisponível.
+
 ## Handoff para Mobile Core
 
 O Mobile Core deve implementar o produtor/bridge, sem código autoritativo nesta trilha:
