@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, Clock, Home, Hotel, MapPin, Save, Search, ShieldCheck } from 'lucide-react';
+import { Building2, Clock, History, Home, Hotel, MapPin, Save, Search, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { CREW_HOTEL_CATALOG } from '@/data/crewHotels';
+import { buildConciergeRoomMemory } from '@/lib/conciergeRoomHistory';
 import { listPlatformStays, updatePlatformStay } from '@/lib/platformClient';
 import { v139Api } from '@/components/v139/api';
 import { V139Header } from '@/components/v139/Shell';
@@ -54,6 +55,15 @@ function labelDate(date: Date) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
+function labelStayDay(day: string) {
+  const match = String(day || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : day;
+}
+
+function timesLabel(value: number) {
+  return value === 1 ? '1 vez' : `${value} vezes`;
+}
+
 export default function PresentationStayManagerView({ events }: { events: RosterEvent[] }) {
   const operational = useMemo(() => events.filter((event) => !event.kind || ['flight', 'duty', 'stay'].includes(event.kind)).filter((event) => Number.isFinite(eventStart(event).getTime())).sort((a, b) => eventStart(a).getTime() - eventStart(b).getTime()), [events]);
   const [stays, setStays] = useState<any[]>([]);
@@ -88,6 +98,10 @@ export default function PresentationStayManagerView({ events }: { events: Roster
       .slice(0, 12)
       .map(({ hotel }) => hotel);
   }, [query, targetAirport]);
+  const roomMemory = useMemo(
+    () => buildConciergeRoomMemory(stays, draft.hotelName, draft.room, draft.stayDate),
+    [stays, draft.hotelName, draft.room, draft.stayDate],
+  );
 
   async function refresh() {
     const [stayPayload, addressPayload] = await Promise.all([
@@ -189,6 +203,17 @@ export default function PresentationStayManagerView({ events }: { events: Roster
         <label><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/> Autorizar colegas no mesmo hotel a me localizar em emergência</label>
       </div>
       <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy}><Save/> Salvar hotel, quarto e horário</button><button onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button></div>
+    </section>
+    <section className="cc139-card">
+      <History/><h2>Memória do pernoite</h2>
+      {!draft.hotelName.trim() ? <p>Selecione ou informe o hotel para consultar seu histórico privado de estadias.</p> : <>
+        <p>{roomMemory.hotelVisits > 0 ? `Você já ficou neste hotel ${timesLabel(roomMemory.hotelVisits)}.` : 'Ainda não há outra estadia registrada neste hotel.'}</p>
+        {draft.room.trim() ? <>
+          <p>{roomMemory.roomVisits > 0 ? `Você já ficou neste quarto ${timesLabel(roomMemory.roomVisits)}.` : `O quarto ${draft.room.trim()} ainda não aparece no seu histórico anterior.`}</p>
+          {roomMemory.roomStayDates.length > 0 && <div className="cc139-badges">{roomMemory.roomStayDates.slice(0, 3).map((day) => <span key={day}>Estadia · {labelStayDay(day)}</span>)}</div>}
+        </> : <p>Informe o número do quarto para o CrewCheck reconhecer automaticamente quando você voltar ao mesmo quarto.</p>}
+        <small>Esta memória é privada e usa apenas suas próprias estadias salvas. A estadia atual não entra na contagem histórica.</small>
+      </>}
     </section>
     <section className="cc139-card">
       <h2>Hotéis preferenciais do catálogo</h2>
