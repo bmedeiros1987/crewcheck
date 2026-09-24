@@ -264,7 +264,7 @@ public final class WatchContextSnapshot {
                 clean(json.optString("overnight", ""), 24),
                 clean(json.optString("hotelPickup", ""), 64),
                 changed,
-                clean(json.optString("source", "canonical-roster"), 40),
+                canonicalSource(json),
                 optionalBoolean(json, "premiumAccess", false),
                 schedule
         );
@@ -445,7 +445,7 @@ public final class WatchContextSnapshot {
                     .put("overnight", "GYN")
                     .put("hotelPickup", "Pickup 20:00")
                     .put("changed", false)
-                    .put("source", "debug-demo")
+                    .put("source", "canonical-roster")
                     .put("premiumAccess", true)
                     .put("schedule", schedule));
         } catch (JSONException error) {
@@ -463,6 +463,15 @@ public final class WatchContextSnapshot {
                 throw new IllegalArgumentException("Campo pessoal não permitido no relógio: " + key);
             }
         }
+    }
+
+    private static String canonicalSource(JSONObject json) {
+        if (!json.has("source")) return "canonical-roster";
+        Object value = json.opt("source");
+        if (!(value instanceof String) || !"canonical-roster".equals(value)) {
+            throw new IllegalArgumentException("source deve ser canonical-roster.");
+        }
+        return (String) value;
     }
 
     private static int requiredInt(JSONObject json, String key) {
