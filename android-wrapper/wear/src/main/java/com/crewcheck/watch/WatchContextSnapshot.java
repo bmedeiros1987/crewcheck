@@ -338,7 +338,7 @@ public final class WatchContextSnapshot {
             String minutes = normalized.substring("SAIR EM ".length()).replaceAll("[^0-9]", "");
             if (!minutes.isBlank()) return truncate("SAIR" + minutes, 7);
         }
-        if (!gate.isBlank()) return truncate("P" + gate.replaceAll("\s+", ""), 7);
+        if (!gate.isBlank()) return truncate("P" + gate.replace(" ", ""), 7);
         if (!currentFlight.isBlank()) return truncate(currentFlight, 7);
         if (!presentationTime.isBlank()) {
             return truncate("APZ" + presentationTime.replace(":", ""), 7);
@@ -513,10 +513,20 @@ public final class WatchContextSnapshot {
 
     private static String clean(String value, int maxLength) {
         if (value == null) return "";
-        String normalized = value.replaceAll("[\p{Cntrl}&&[^\n\t]]", " ")
-                .replaceAll("\s+", " ")
-                .trim();
-        return truncate(normalized, maxLength);
+        StringBuilder normalized = new StringBuilder(value.length());
+        boolean pendingSpace = false;
+        for (int offset = 0; offset < value.length();) {
+            int codePoint = value.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (Character.isWhitespace(codePoint) || Character.isISOControl(codePoint)) {
+                pendingSpace = normalized.length() > 0;
+                continue;
+            }
+            if (pendingSpace) normalized.append(' ');
+            normalized.appendCodePoint(codePoint);
+            pendingSpace = false;
+        }
+        return truncate(normalized.toString(), maxLength);
     }
 
     private static String truncate(String value, int maxLength) {
