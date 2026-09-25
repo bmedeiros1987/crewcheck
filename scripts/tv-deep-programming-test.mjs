@@ -44,15 +44,19 @@ assert.match(programTitle(programs[1],false),/Pernoite/);
 
 assert.deepEqual(airportCodeExplanation('SBBR'),{iata:'BSB',icao:'SBBR',city:'Brasília',known:true});
 assert.deepEqual(airportCodeExplanation('BSB'),{iata:'BSB',icao:'SBBR',city:'Brasília',known:true});
-assert.match(visitorAirportLabel('SBBR',true),/Brasília/);
-assert.match(visitorAirportLabel('SBBR',true),/BSB · SBBR/);
+assert.equal(visitorAirportLabel('SBBR',true),'Brasília (BSB)');
+const bsbGlossary=visitorRouteGlossary(programs[0]).find(item=>item.iata==='BSB');
+assert.equal(bsbGlossary?.icao,'SBBR');
 assert.equal(simpleCodeExplanation('HSB'),'Sobreaviso em casa');
 assert.equal(simpleCodeExplanation('EXTRA'),'Deslocamento como passageiro');
 assert.equal(visitorRouteGlossary(programs[0]).length,3);
 
 const calendar=await readFile('apps/tv-player/src/CalendarProgramPreview.tsx','utf8');
-assert.match(calendar,/program-stay/);
-assert.match(calendar,/program-rest/);
+assert.match(calendar,/program\.kind==='stay'/);
+assert.match(calendar,/program\.kind==='rest'/);
+const calendarCss=await readFile('apps/tv-player/src/calendar-program-preview.css','utf8');
+assert.match(calendarCss,/\.calendar-program-line\.program-stay/);
+assert.match(calendarCss,/\.calendar-program-line\.program-rest/);
 assert.match(calendar,/programRouteCodes/);
 assert.match(calendar,/programs\.slice\(0,max\)/);
 
