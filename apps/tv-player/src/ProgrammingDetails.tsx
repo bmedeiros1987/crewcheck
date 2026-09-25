@@ -40,7 +40,7 @@ function routeText(program:TvProgram,visitor:boolean){
   return codes.length?codes.map(code=>visitorAirportLabel(code,visitor)).join(' → '):programTitle(program,visitor);
 }
 function programIcon(program:TvProgram){
-  if(program.kind==='stay')return <BedDouble/>;
+  if(program.kind==='stay')return <span className="stay-program-symbol" aria-hidden="true"><Hotel/><Moon/></span>;
   if(program.kind==='rest')return <Moon/>;
   return <Plane/>;
 }
@@ -60,7 +60,7 @@ export function DayProgrammingView({snapshot,date,onBack,onOpenProgram}:{snapsho
         <span className="program-card-icon">{programIcon(program)}</span>
         <div className="program-card-copy"><small>{programKicker(program)}</small><h2>{programTitle(program,visitor)}</h2>
           {program.kind==='journey'&&<div className="program-route-mini">{programRouteCodes(program).map((code,index)=><React.Fragment key={code+'-'+index}><b>{visitorAirportLabel(code,visitor)}</b>{index<programRouteCodes(program).length-1&&<i/>}</React.Fragment>)}</div>}
-          {program.kind==='stay'&&<p>Descanso publicado · visual separado de voo</p>}
+          {program.kind==='stay'&&<p className="stay-card-caption"><BedDouble/> Pernoite publicado · descanso fora da base</p>}
           <div className="program-card-meta"><span><Clock3/>{fullProgramTime(program)}</span>{programPresentation(program)&&<span><ShieldCheck/>Apresentação {programPresentation(program)}</span>}</div>
         </div>
         <ChevronRight className="program-card-open"/>
