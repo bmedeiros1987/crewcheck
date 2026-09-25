@@ -31,8 +31,12 @@ export const TV_DISPLAY_PRESETS:Record<TvDisplayPreset,TvDisplayPreferences>={
 function load():TvDisplayPreferences{
   try{
     const parsed=JSON.parse(localStorage.getItem(KEY)||'{}');
-    return{...DEFAULT_TV_DISPLAY_PREFERENCES,...Object.fromEntries(Object.keys(DEFAULT_TV_DISPLAY_PREFERENCES).map(key=>[key,typeof parsed?.[key]==='boolean'?parsed[key]:(DEFAULT_TV_DISPLAY_PREFERENCES as any)[key]]))} as TvDisplayPreferences;
-  }catch{return DEFAULT_TV_DISPLAY_PREFERENCES;}
+    const next={...DEFAULT_TV_DISPLAY_PREFERENCES} as TvDisplayPreferences;
+    (Object.keys(DEFAULT_TV_DISPLAY_PREFERENCES) as Array<keyof TvDisplayPreferences>).forEach(key=>{
+      if(typeof parsed?.[key]==='boolean') next[key]=parsed[key];
+    });
+    return next;
+  }catch{return {...DEFAULT_TV_DISPLAY_PREFERENCES};}
 }
 function save(value:TvDisplayPreferences){try{localStorage.setItem(KEY,JSON.stringify(value));}catch{}}
 
