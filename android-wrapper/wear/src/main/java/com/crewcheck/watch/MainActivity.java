@@ -8,17 +8,22 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.fragment.app.FragmentActivity;
 import androidx.wear.ambient.AmbientModeSupport;
 
@@ -43,12 +48,18 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_SCHEDULE = 3;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
-    private static final int NAVY = Color.rgb(3, 10, 22);
     private static final int BLACK = Color.BLACK;
-    private static final int SURFACE = Color.rgb(8, 22, 42);
-    private static final int SURFACE_ALT = Color.rgb(11, 30, 57);
+
+    /**
+     * Superfícies chapadas sobre preto verdadeiro.
+     *
+     * Num OLED o preto puro é pixel desligado: contraste máximo e menos bateria. A carta
+     * anterior era azul-marinho com gradiente e contorno colorido em cada quadro — cinco
+     * acentos disputando a tela ao mesmo tempo. Aqui o fundo desaparece e sobra o dado.
+     */
+    private static final int SURFACE = Color.rgb(28, 28, 30);
     private static final int WHITE = Color.rgb(248, 250, 252);
-    private static final int MUTED = Color.rgb(153, 169, 194);
+    private static final int MUTED = Color.rgb(152, 152, 157);
     private static final int MUTED_AMBIENT = Color.rgb(150, 150, 150);
     private static final int CYAN = Color.rgb(34, 211, 238);
     private static final int BLUE = Color.rgb(59, 130, 246);
@@ -75,6 +86,7 @@ public final class MainActivity extends FragmentActivity
 
     private SecureSnapshotStore store;
     private WellbeingStore wellbeingStore;
+    private ScrollView scroll;
     private LinearLayout content;
     private TextView clockView;
     private TextView transientStatus;
@@ -88,6 +100,7 @@ public final class MainActivity extends FragmentActivity
         store = new SecureSnapshotStore(this);
         wellbeingStore = new WellbeingStore(this);
         AmbientModeSupport.attach(this);
+        installBackNavigation();
         applyIntentScreen(getIntent());
         renderRoot();
         handler.postDelayed(this::requestNotificationPermissionIfNeeded, 850L);
@@ -106,6 +119,7 @@ public final class MainActivity extends FragmentActivity
         super.onResume();
         restartClock();
         renderSnapshot();
+        ensureRotaryFocus();
     }
 
     @Override
@@ -159,11 +173,12 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void renderRoot() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(ambient ? BLACK : NAVY);
+        scroll = new ScrollView(this);
+        scroll.setBackgroundColor(BLACK);
         scroll.setFillViewport(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setVerticalScrollBarEnabled(false);
+        enableRotaryScrolling(scroll);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -178,10 +193,97 @@ public final class MainActivity extends FragmentActivity
         renderSnapshot();
     }
 
+    /**
+     * Moldura giratória do Galaxy Watch e coroa dos demais Wear OS.
+     *
+     * Sem isto o giro não faz nada: a ScrollView só responde a toque, e num relógio com
+     * moldura o gesto natural do usuário é girar. O evento chega como ACTION_SCROLL vindo
+     * de SOURCE_ROTARY_ENCODER, com AXIS_SCROLL positivo para cima — daí o sinal invertido
+     * ao converter em deslocamento de rolagem.
+     *
+     * O foco é pedido em {@link #ensureRotaryFocus()}, não aqui: rotary só é entregue à view
+     * focada, e requestFocus() numa view ainda sem janela não faz nada.
+     */
+    private void enableRotaryScrolling(ScrollView target) {
+        target.setFocusable(true);
+        target.setFocusableInTouchMode(true);
+        target.setOnGenericMotionListener((view, event) -> {
+            if (event.getAction() != MotionEvent.ACTION_SCROLL
+                    || !event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
+                return false;
+            }
+            float delta = -event.getAxisValue(MotionEvent.AXIS_SCROLL)
+                    * ViewConfiguration.get(this).getScaledVerticalScrollFactor();
+            target.scrollBy(0, Math.round(delta));
+            return true;
+        });
+    }
+
+    /**
+     * Voltar (inclusive o gesto de arrastar da borda) sobe um nível em vez de fechar o app.
+     *
+     * Estando numa tela interna, sair do app inteiro é perda de contexto: o usuário quer
+     * voltar para Agora. Só na tela raiz o voltar segue para o sistema.
+     */
+    /**
+     * Mantém a ScrollView com foco, que é para onde o sistema entrega o giro da moldura.
+     *
+     * Precisa ser reafirmado depois de cada render: renderSnapshot() recria os filhos, e um
+     * filho focável pode tomar o foco no caminho.
+     */
+    private void ensureRotaryFocus() {
+        if (scroll == null || ambient) return;
+        scroll.post(() -> {
+            if (scroll != null && !scroll.hasFocus()) scroll.requestFocus();
+        });
+    }
+
+    private void installBackNavigation() {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (screenMode != MODE_NOW) {
+                    showScreen(MODE_NOW);
+                    return;
+                }
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+            }
+        });
+    }
+
+    /**
+     * Troca de tela sempre volta ao topo.
+     *
+     * renderSnapshot() recria o conteúdo, mas a ScrollView guarda o deslocamento anterior:
+     * trocar de tela no fim da rolagem abria a próxima no meio, sem cabeçalho.
+     */
+    private void showScreen(int mode) {
+        screenMode = mode;
+        renderSnapshot();
+        if (scroll != null) scroll.post(() -> scroll.scrollTo(0, 0));
+    }
+
+    /**
+     * Margem segura proporcional à tela, não em dp fixo.
+     *
+     * Numa tela redonda quem corta o conteúdo é a curva, e ela depende do tamanho do
+     * mostrador: o mesmo dp que cabe num 450 px sobra num 390 px. Medir em fração da menor
+     * dimensão faz a margem acompanhar o relógio.
+     *
+     * A folga vertical é maior que a horizontal de propósito: no topo e na base da área
+     * visível é onde o círculo mais fecha, e é ali que o primeiro e o último item eram
+     * aparados.
+     */
     private void applySafePadding() {
-        int horizontal = isRoundScreen() ? dp(30) : dp(18);
-        int topSafe = isRoundScreen() ? dp(18) : dp(10);
-        int bottomSafe = isRoundScreen() ? dp(32) : dp(22);
+        int extent = Math.min(
+                getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels
+        );
+        boolean round = isRoundScreen();
+        int horizontal = Math.round(extent * (round ? 0.10f : 0.06f));
+        int topSafe = Math.round(extent * (round ? 0.12f : 0.05f));
+        int bottomSafe = Math.round(extent * (round ? 0.16f : 0.10f));
         content.setPadding(horizontal, topSafe, horizontal, bottomSafe);
     }
 
@@ -190,7 +292,7 @@ public final class MainActivity extends FragmentActivity
 
         content.removeAllViews();
         applySafePadding();
-        content.getRootView().setBackgroundColor(ambient ? BLACK : NAVY);
+        content.getRootView().setBackgroundColor(BLACK);
 
         WatchContextSnapshot snapshot = store.load();
         long now = System.currentTimeMillis();
@@ -224,14 +326,15 @@ public final class MainActivity extends FragmentActivity
                     store.save(WatchContextSnapshot.demo(generated).toJson().toString());
                     wellbeingStore.saveCrewLife(CrewLifeSnapshot.demo(generated).toJson().toString());
                     wellbeingStore.saveRoutine(RoutineSnapshot.demo(generated).toJson().toString());
-                    screenMode = MODE_NOW;
-                    renderSnapshot();
+                    showScreen(MODE_NOW);
                 } catch (Exception error) {
                     if (transientStatus != null) transientStatus.setText("Demo indisponível");
                 }
             });
             content.addView(demo);
         }
+
+        ensureRotaryFocus();
     }
 
     private void renderHeader(WatchContextSnapshot snapshot) {
@@ -258,13 +361,11 @@ public final class MainActivity extends FragmentActivity
             LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20), dp(20));
             bp.setMargins(0, 0, dp(4), 0);
             row.addView(badge, bp);
-            badge.setOnClickListener(view -> {
-                screenMode = MODE_NOTIFICATIONS;
-                renderSnapshot();
-            });
+            badge.setOnClickListener(view -> showScreen(MODE_NOTIFICATIONS));
         }
 
         clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
+        tabular(clockView);
         row.addView(clockView, new LinearLayout.LayoutParams(dp(52), dp(26)));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -341,15 +442,6 @@ public final class MainActivity extends FragmentActivity
         Primary primary = primaryFor(snapshot);
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 
-        View glow = new View(this);
-        GradientDrawable glowBg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(CYAN, 20), withAlpha(VIOLET, 45), withAlpha(MAGENTA, 20)}
-        );
-        glowBg.setCornerRadius(dp(28));
-        glow.setBackground(glowBg);
-        content.addView(glow, new LinearLayout.LayoutParams(dp(118), dp(3)));
-
         TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
         icon.setPadding(0, dp(8), 0, dp(2));
         content.addView(icon);
@@ -368,6 +460,7 @@ public final class MainActivity extends FragmentActivity
         );
         value.setMaxLines(2);
         value.setPadding(0, dp(3), 0, 0);
+        tabular(value);
         content.addView(value);
 
         if (!primary.detail.isBlank()) {
@@ -385,28 +478,12 @@ public final class MainActivity extends FragmentActivity
             content.addView(secondary);
         }
 
-        List<Fact> facts = secondaryFacts(snapshot);
-        if (!facts.isEmpty()) {
-            LinearLayout stats = new LinearLayout(this);
-            stats.setOrientation(LinearLayout.HORIZONTAL);
-            stats.setGravity(Gravity.CENTER);
-            addMiniStat(stats, facts.get(0));
-            if (facts.size() > 1) addMiniStat(stats, facts.get(1));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            params.setMargins(0, dp(6), 0, dp(2));
-            content.addView(stats, params);
-        }
+        addFactGrid(secondaryFacts(snapshot));
 
         TextView cta = heroAction(actionLabel(snapshot), accent);
         cta.setOnClickListener(view -> {
             if ("LEAVE_SOON".equals(snapshot.state)) requestSync();
-            else {
-                screenMode = MODE_SCHEDULE;
-                renderSnapshot();
-            }
+            else showScreen(MODE_SCHEDULE);
         });
         content.addView(cta);
 
@@ -650,10 +727,7 @@ public final class MainActivity extends FragmentActivity
 
     private TextView navChip(String label, int accent, int mode) {
         TextView chip = actionChip(label, accent, screenMode == mode);
-        chip.setOnClickListener(view -> {
-            screenMode = mode;
-            renderSnapshot();
-        });
+        chip.setOnClickListener(view -> showScreen(mode));
         return chip;
     }
 
@@ -742,7 +816,10 @@ public final class MainActivity extends FragmentActivity
         List<Fact> facts = new ArrayList<>();
 
         if (!s.presentationTime.isBlank() && !"REPORTING".equals(s.state)) {
-            facts.add(new Fact("APRESENTAÇÃO", s.presentationTime, s.presentationPlace, CYAN));
+            // APZ, não "APRESENTAÇÃO": é o termo da tripulação e é o que o resto do app já
+            // usa em espaço curto (complicação, cartão de escala). O nome por extenso fica
+            // para o título de estado, que tem a largura toda.
+            facts.add(new Fact("APZ", s.presentationTime, s.presentationPlace, CYAN));
         }
 
         if (!s.gateLabel().isBlank()) {
@@ -761,7 +838,62 @@ public final class MainActivity extends FragmentActivity
             facts.add(new Fact("PERNOITE", s.overnight, s.hotelPickup, WARNING));
         }
 
+        Fact battery = batteryFact();
+        if (battery != null) facts.add(battery);
+
         return facts;
+    }
+
+    /**
+     * Carga do próprio relógio.
+     *
+     * Não é dado de saúde nem vem do celular: é estado do aparelho, lido sem permissão
+     * nenhuma, então não passa pelo portão de consentimento do CrewLife. Fica por último
+     * porque é contexto, não operação — mas vira alerta colorido quando cai, que é
+     * justamente quando importa antes de uma jornada longa.
+     */
+    private Fact batteryFact() {
+        BatteryManager manager = getSystemService(BatteryManager.class);
+        if (manager == null) return null;
+        int level = manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+        if (level < 0 || level > 100) return null;
+        int accent = level <= 15 ? MAGENTA : level <= 30 ? ORANGE : BLUE;
+        return new Fact("BATERIA", level + "%", manager.isCharging() ? "carregando" : "", accent);
+    }
+
+    /**
+     * Grade de dados em duas colunas.
+     *
+     * secondaryFacts() já montava até cinco dados — apresentação, portão, ETA, próximo voo
+     * e pernoite — e a tela mostrava só os dois primeiros: o resto era calculado e jogado
+     * fora. Agora tudo que existe aparece, em linhas de dois, na ordem de importância
+     * operacional em que a lista é construída.
+     *
+     * Com número ímpar entra um espaçador em vez de deixar o último quadro esticar para a
+     * largura toda: quadro de tamanho diferente sem motivo lê como defeito, não como ênfase.
+     */
+    private void addFactGrid(List<Fact> facts) {
+        for (int index = 0; index < facts.size(); index += 2) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+
+            addMiniStat(row, facts.get(index));
+            if (index + 1 < facts.size()) {
+                addMiniStat(row, facts.get(index + 1));
+            } else {
+                View filler = new View(this);
+                row.addView(filler, new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+            }
+
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            params.setMargins(0, dp(index == 0 ? 6 : 4), 0, dp(2));
+            content.addView(row, params);
+        }
     }
 
     private void addMiniStat(LinearLayout row, Fact fact) {
@@ -770,10 +902,14 @@ public final class MainActivity extends FragmentActivity
         box.setPadding(dp(5), dp(5), dp(5), dp(5));
 
         TextView label = text(fact.label, 7, MUTED, true, Gravity.CENTER);
+        label.setLetterSpacing(.08f);
+        label.setMaxLines(1);
         box.addView(label);
 
-        TextView value = text(fact.value, 13, fact.accent, true, Gravity.CENTER);
+        TextView value = text(fact.value, 15, fact.accent, true, Gravity.CENTER);
         value.setMaxLines(1);
+        tabular(value);
+        value.setPadding(0, dp(2), 0, 0);
         box.addView(value);
 
         if (!fact.detail.isBlank()) {
@@ -917,16 +1053,20 @@ public final class MainActivity extends FragmentActivity
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    /**
+     * Quadro chapado, cantos generosos, sem contorno.
+     *
+     * O acento não pinta mais o fundo nem a borda: ele vive no valor, que é o que se lê de
+     * relance. Fundo colorido atrás de número reduz contraste justamente onde ele precisa
+     * ser máximo.
+     */
     private LinearLayout premiumCard(int accent) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(10), dp(8), dp(10), dp(8));
-        GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(accent, 24), SURFACE_ALT}
-        );
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(SURFACE);
         background.setCornerRadius(dp(22));
-        background.setStroke(dp(1), withAlpha(accent, 100));
         card.setBackground(background);
         return card;
     }
@@ -941,14 +1081,13 @@ public final class MainActivity extends FragmentActivity
     }
 
     private TextView heroAction(String label, int accent) {
-        TextView chip = text(label, 10, WHITE, true, Gravity.CENTER);
-        chip.setPadding(dp(16), dp(9), dp(16), dp(9));
-        GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{withAlpha(BLUE, 180), withAlpha(accent, 145)}
-        );
+        // Botão preenchido com o acento do estado e texto preto — o contraste mais alto
+        // disponível. O gradiente azul-para-acento que havia aqui lavava as duas cores.
+        TextView chip = text(label, 12, BLACK, true, Gravity.CENTER);
+        chip.setPadding(dp(20), dp(11), dp(20), dp(11));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(accent);
         background.setCornerRadius(dp(24));
-        background.setStroke(dp(1), withAlpha(CYAN, 150));
         chip.setBackground(background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -961,13 +1100,14 @@ public final class MainActivity extends FragmentActivity
     }
 
     private TextView actionChip(String label, int accent, boolean selected) {
-        TextView chip = text(label, 9, selected ? WHITE : accent, true, Gravity.CENTER);
-        chip.setPadding(dp(12), dp(7), dp(12), dp(7));
+        // Só o selecionado carrega cor. Antes todos tinham contorno aceso, e a tela inteira
+        // competia por atenção — sem nada indicando onde você está.
+        TextView chip = text(label, 11, selected ? BLACK : MUTED, true, Gravity.CENTER);
+        chip.setPadding(dp(14), dp(9), dp(14), dp(9));
 
         GradientDrawable background = new GradientDrawable();
-        background.setColor(selected ? withAlpha(accent, 48) : SURFACE_ALT);
+        background.setColor(selected ? accent : SURFACE);
         background.setCornerRadius(dp(20));
-        background.setStroke(dp(1), withAlpha(accent, selected ? 190 : 80));
         chip.setBackground(background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -979,11 +1119,39 @@ public final class MainActivity extends FragmentActivity
         return chip;
     }
 
+    /**
+     * Piso de legibilidade da tipografia.
+     *
+     * Quinze dos textos da tela estavam entre 7sp e 10sp. No celular isso é um rodapé
+     * discreto; num pulso a braço estendido é texto que não se lê, e era boa parte do ar
+     * rudimentar da tela. O piso comprime a base da escala sem inverter nenhuma relação —
+     * o que era menor continua menor — e não toca nos números grandes, que já funcionam.
+     *
+     * setTextSize usa SP, então a preferência de fonte do usuário continua valendo por cima.
+     */
+    private static int readable(int sp) {
+        if (sp <= 8) return 11;
+        if (sp <= 10) return 12;
+        if (sp <= 13) return 13;
+        return sp;
+    }
+
+    /**
+     * Algarismos de largura fixa.
+     *
+     * Sem isto o relógio "pula" a cada minuto e o horário da APZ dança quando o valor muda,
+     * porque o 1 é mais estreito que o 8 na fonte padrão. É detalhe pequeno e é exatamente
+     * o tipo de coisa que separa uma tela caprichada de uma tela feita às pressas.
+     */
+    private static void tabular(TextView view) {
+        view.setFontFeatureSettings("tnum");
+    }
+
     private TextView text(String value, int sp, int color, boolean bold, int gravity) {
         TextView view = new TextView(this);
         view.setText(value == null ? "" : value);
         view.setTextColor(color);
-        view.setTextSize(sp);
+        view.setTextSize(readable(sp));
         view.setGravity(gravity);
         view.setMaxLines(3);
         view.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
