@@ -1,0 +1,21 @@
+// Opt-in lab build only. Nothing under phone-bridge enters any normal app variant.
+// gradle -p android-wrapper -I auto/phone-bridge/init.gradle :app:assembleDriveLab
+// When invoked from the repository root, use -I android-wrapper/auto/phone-bridge/init.gradle.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.buildTypes.create('driveLab') {
+                initWith project.android.buildTypes.getByName('debug')
+                applicationIdSuffix '.drivelab'
+                versionNameSuffix '-drive-lab'
+                debuggable true
+                signingConfig project.android.signingConfigs.getByName('debug')
+                matchingFallbacks = ['debug']
+            }
+            project.android.sourceSets.getByName('driveLab') {
+                java.srcDir project.rootProject.file('auto/phone-bridge/java')
+                manifest.srcFile project.rootProject.file('auto/phone-bridge/AndroidManifest.xml')
+            }
+        }
+    }
+}

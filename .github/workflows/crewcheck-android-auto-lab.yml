@@ -3,8 +3,7 @@ name: CrewCheck Android Auto Lab
 on:
   workflow_dispatch:
   push:
-    branches:
-      - feat/android-auto-foundation
+    branches: [feat/android-auto-foundation]
     paths:
       - 'android-wrapper/auto/**'
       - 'android-wrapper/settings.gradle'
@@ -18,35 +17,57 @@ on:
 jobs:
   build-auto-debug:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
-
       - name: Install Android API 36
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-
-      - name: Build CrewCheck Drive Lab
-        run: gradle -p android-wrapper --no-daemon --console=plain :auto:assembleDebug --stacktrace
-
-      - name: Upload debug APK
+      - name: Unit tests and Auto APK
+        run: gradle -p android-wrapper --no-daemon --console=plain :auto:testDebugUnitTest :auto:assembleDebug --stacktrace
+      - name: Build isolated phone lab with read-only bridge
+        run: gradle -p android-wrapper -I android-wrapper/auto/phone-bridge/init.gradle --no-daemon --console=plain :app:assembleDriveLab --stacktrace
+      - name: Verify separate package IDs and matching lab signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTO=android-wrapper/auto/build/outputs/apk/debug/auto-debug.apk
+          PHONE=android-wrapper/app/build/outputs/apk/driveLab/app-driveLab.apk
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          "$TOOLS/aapt" dump badging "$AUTO" | grep -F "package: name='com.crewcheck.auto.prototype'"
+          "$TOOLS/aapt" dump badging "$PHONE" | grep -F "package: name='com.crewcheck.app.drivelab'"
+          AUTO_CERT=$("$TOOLS/apksigner" verify --print-certs "$AUTO" | grep 'Signer #1 certificate SHA-256 digest:')
+          PHONE_CERT=$("$TOOLS/apksigner" verify --print-certs "$PHONE" | grep 'Signer #1 certificate SHA-256 digest:')
+          test "$AUTO_CERT" = "$PHONE_CERT"
+          mkdir -p drive-lab-artifacts
+          cp "$AUTO" drive-lab-artifacts/crewcheck-drive-lab.apk
+          cp "$PHONE" drive-lab-artifacts/crewcheck-phone-lab.apk
+          cp android-wrapper/auto/README.md drive-lab-artifacts/LEIA-ME.md
+          printf '%s\n' "$GITHUB_SHA" > drive-lab-artifacts/COMMIT.txt
+          (cd drive-lab-artifacts && sha256sum *.apk > SHA256SUMS.txt)
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcheck-drive-lab-tests
+          path: android-wrapper/auto/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn
+      - name: Upload paired lab APKs
         uses: actions/upload-artifact@v4
         with:
           name: crewcheck-drive-lab-debug
-          path: android-wrapper/auto/build/outputs/apk/debug/auto-debug.apk
+          path: drive-lab-artifacts/
           if-no-files-found: error

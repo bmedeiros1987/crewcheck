@@ -3,7 +3,6 @@ plugins {
 }
 
 def generatedCrewCheckAutoRes = file("$buildDir/generated/res/crewcheckAutoBrand")
-
 tasks.register('generateCrewCheckAutoBrandAssets') {
     inputs.file(file('../../client/public/icons/crewcheck-icon-v2.png'))
     outputs.file(file("$generatedCrewCheckAutoRes/drawable-nodpi/crewcheck_icon_site.png"))
@@ -17,42 +16,31 @@ tasks.register('generateCrewCheckAutoBrandAssets') {
         }
     }
 }
-
 android {
     namespace 'com.crewcheck.auto'
     compileSdk 36
-
     defaultConfig {
         applicationId 'com.crewcheck.auto.prototype'
         minSdk 28
         targetSdk 36
-        versionCode 1
-        versionName '0.1.0-lab'
+        versionCode 2
+        versionName '0.2.0-lab'
     }
-
-    sourceSets {
-        main.res.srcDir generatedCrewCheckAutoRes
-    }
-
+    sourceSets { main.res.srcDir generatedCrewCheckAutoRes }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-
     buildTypes {
-        release {
-            minifyEnabled false
-            shrinkResources false
-        }
-        debug {
-            debuggable true
-        }
+        release { minifyEnabled false; shrinkResources false }
+        debug { debuggable true }
     }
 }
-
 preBuild.dependsOn generateCrewCheckAutoBrandAssets
 
 dependencies {
     implementation 'androidx.car.app:app:1.7.0'
     implementation 'androidx.car.app:app-projected:1.7.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
 }
