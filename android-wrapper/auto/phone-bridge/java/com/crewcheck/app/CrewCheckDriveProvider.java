@@ -36,30 +36,42 @@ public final class CrewCheckDriveProvider extends ContentProvider {
             throw new IllegalArgumentException("Consulta não suportada.");
         }
         MatrixCursor out = new MatrixCursor(new String[]{"snapshotJson"});
-        Context app = getContext();
-        requestFreshProjection(app);
-        String cached = app.getSharedPreferences("crewcheck_watch_sync", Context.MODE_PRIVATE)
-                .getString("last_snapshot", "");
+        long identity = Binder.clearCallingIdentity();
         try {
-            if (cached == null || cached.getBytes(StandardCharsets.UTF_8).length > 16 * 1024 || cached.isBlank()) return out;
-            JSONObject source = new JSONObject(CrewCheckWatchPublisher.sanitize(cached));
+            Context app = getContext();
+            requestFreshProjection(app);
+            String cached = app.getSharedPreferences("crewcheck_watch_sync", Context.MODE_PRIVATE)
+                    .getString("last_snapshot", "");
+            if (cached == null || cached.getBytes(StandardCharsets.UTF_8).length > 16 * 1024 || cached.trim().isEmpty()) return out;
+            // This private cache is written by the existing native publisher. Rebuild a smaller allow-list.
+            JSONObject source = new JSONObject(cached);
+            if (source.optInt("schemaVersion", 0) != 1 || !"canonical-roster".equals(source.optString("source"))) return out;
             JSONObject minimal = new JSONObject();
             for (String key : new String[]{"schemaVersion", "source", "contextId", "generatedAtEpochMs",
                     "validUntilEpochMs", "state", "presentationPlace", "presentationTime", "currentFlight"}) {
-                if (source.has(key)) minimal.put(key, source.get(key));
+                Object value = source.opt(key);
+                if (value instanceof String) {
+                    String clean = ((String) value).replaceAll("[\\p{Cntrl}\\p{Cf}]", " ").trim();
+                    minimal.put(key, clean.substring(0, Math.min(clean.length(), 96)));
+                } else if (value instanceof Number) minimal.put(key, value);
             }
-            if ("OVERNIGHT".equals(source.optString("state"))) minimal.put("detail", source.optString("detail", ""));
+            if ("OVERNIGHT".equals(source.optString("state"))) {
+                Object hotel = source.opt("detail");
+                if (hotel instanceof String) {
+                    String clean = ((String) hotel).replaceAll("[\\p{Cntrl}\\p{Cf}]", " ").trim();
+                    minimal.put("detail", clean.substring(0, Math.min(clean.length(), 96)));
+                }
+            }
             out.addRow(new Object[]{minimal.toString()});
         } catch (Exception ignored) {
             // Fail closed, without disclosing raw data or changing the canonical roster.
-        }
+        } finally { Binder.restoreCallingIdentity(identity); }
         return out;
     }
     private synchronized void requestFreshProjection(Context app) {
         long now = SystemClock.elapsedRealtime();
         if (now - lastRefresh < 30_000L) return;
         lastRefresh = now;
-        // Uses the existing in-process projection path only when its Activity is alive.
         app.sendBroadcast(new Intent(MainActivity.ACTION_WATCH_SYNC_REQUEST).setPackage(app.getPackageName()));
     }
     @Override public String getType(Uri uri) { enforce(uri); return "vnd.android.cursor.item/vnd.crewcheck.drive.v1"; }

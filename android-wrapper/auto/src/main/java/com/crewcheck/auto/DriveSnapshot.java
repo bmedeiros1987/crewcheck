@@ -2,17 +2,18 @@ package com.crewcheck.auto;
 
 import org.json.JSONObject;
 import java.net.URLEncoder;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 /** Read-only adapter of watchContext.ts v1. Never parses a roster or calculates APZ. */
 public final class DriveSnapshot {
     public static final long MAX_AGE_MS = 15 * 60_000L;
     public static final int MAX_BYTES = 16 * 1024;
-    private static final Set<String> STATES = Set.of("OFF_DUTY", "LEAVE_SOON", "REPORTING",
+    private static final List<String> STATES = Arrays.asList("OFF_DUTY", "LEAVE_SOON", "REPORTING",
             "BOARDING", "IN_FLIGHT", "CONNECTION", "OVERNIGHT", "CHANGED", "UNKNOWN");
     public final String contextId, state, place, presentationTime, flight, hotel;
     public final long generatedAt, validUntil;
@@ -39,7 +40,7 @@ public final class DriveSnapshot {
     }
 
     public static DriveSnapshot parse(String raw, long now) throws Exception {
-        if (raw == null || raw.isBlank() || raw.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
+        if (raw == null || raw.trim().isEmpty() || raw.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
             throw new IllegalArgumentException("Projeção vazia ou grande demais.");
         }
         return new DriveSnapshot(new JSONObject(raw), now);
@@ -80,20 +81,20 @@ public final class DriveSnapshot {
         if (!isFresh(now)) return Collections.emptyList();
         List<Destination> out = new ArrayList<>();
         // Reserve, standby, connection and flight states must not produce a ground trip.
-        if (Set.of("REPORTING", "LEAVE_SOON", "BOARDING").contains(state)
+        if (("REPORTING".equals(state) || "LEAVE_SOON".equals(state) || "BOARDING".equals(state))
                 && !flight.isEmpty() && place.matches("[A-Z]{3}")) {
-            out.add(new Destination(contextId + ":" + generatedAt + ":airport", "Aeroporto " + place,
+            out.add(new Destination(contextId + ":airport", "Aeroporto " + place,
                     "Aeroporto " + place, presentationTime.isEmpty() ? "Destino da apresentação"
                     : "Apresentação informada: " + presentationTime, true));
         } else if ("OVERNIGHT".equals(state) && !hotel.isEmpty()
                 && !hotel.matches("[A-Z]{3}") && !hotel.equalsIgnoreCase("hotel")) {
-            out.add(new Destination(contextId + ":" + generatedAt + ":hotel", hotel,
+            out.add(new Destination(contextId + ":hotel", hotel,
                     hotel + (place.isEmpty() ? "" : ", " + place), "Hotel informado para o pernoite", true));
         }
         return Collections.unmodifiableList(out);
     }
 
-    /** Strict allow-list: no tokens, health, roster arrays, identity or room numbers are retained. */
+    /** Strict allow-list: no tokens, health, roster arrays, identity or room fields are retained. */
     public String toSafeJson() throws Exception {
         return new JSONObject().put("schemaVersion", 1).put("source", "canonical-roster")
                 .put("contextId", contextId).put("generatedAtEpochMs", generatedAt)
@@ -117,10 +118,14 @@ public final class DriveSnapshot {
             }
         }
         public String geoUri() {
-            return "geo:0,0?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
+            try {
+                // String overload works on API 28; the Charset overload requires API 33.
+                return "geo:0,0?q=" + URLEncoder.encode(query, "UTF-8");
+            } catch (UnsupportedEncodingException impossible) { throw new AssertionError(impossible); }
         }
         public boolean sameTarget(Destination other) {
-            return other != null && id.equals(other.id) && query.equals(other.query) && canonical == other.canonical;
+            return other != null && id.equals(other.id) && query.equals(other.query)
+                    && context.equals(other.context) && canonical == other.canonical;
         }
     }
 }

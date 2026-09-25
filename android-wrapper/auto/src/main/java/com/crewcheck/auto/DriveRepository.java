@@ -36,6 +36,14 @@ public final class DriveRepository {
     private boolean inFlight;
     private long generation;
     private boolean wasFresh;
+    // A short grace period bridges Home -> Detail lifecycle handoff without losing the target.
+    private final Runnable clearSession = () -> {
+        if (!listeners.isEmpty()) return;
+        generation++;
+        snapshot = null;
+        safeJson = "";
+        wasFresh = false;
+    };
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (listeners.isEmpty()) return;
@@ -49,7 +57,6 @@ public final class DriveRepository {
     private DriveRepository(Context context) {
         app = context;
         prefs = app.getSharedPreferences("crewcheck_drive_lab", Context.MODE_PRIVATE);
-        // Canonical data is intentionally session-only: never restore another user's old cache.
         if (enabled()) status = "Conectando ao CrewCheck Phone Lab";
     }
 
@@ -64,6 +71,7 @@ public final class DriveRepository {
         if (enabled) refresh();
     }
     public void start(Runnable listener) {
+        handler.removeCallbacks(clearSession);
         listeners.add(listener);
         listener.run();
         handler.removeCallbacks(tick);
@@ -73,9 +81,8 @@ public final class DriveRepository {
         listeners.remove(listener);
         if (listeners.isEmpty()) {
             handler.removeCallbacks(tick);
-            generation++;
-            snapshot = null;
-            safeJson = "";
+            handler.removeCallbacks(clearSession);
+            handler.postDelayed(clearSession, 1000L);
         }
     }
     public String status() {
@@ -113,7 +120,6 @@ public final class DriveRepository {
             } catch (SecurityException error) {
                 message = "Conexão não autorizada. Use o par de APKs do mesmo build.";
             } catch (Exception error) {
-                // Do not expose data or exception payloads on the car display or logs.
                 message = "Não foi possível ler a escala. Abra o Phone Lab.";
             }
             final DriveSnapshot result = next;
