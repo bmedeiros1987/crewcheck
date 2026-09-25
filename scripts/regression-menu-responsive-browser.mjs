@@ -51,7 +51,10 @@ assert.ok(menu.includes('data-menu-label='), 'Render the current canonical label
 const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
 const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m => m[0]).join('\n');
 assert.ok(links, 'Use CSS linked by the real Vite build');
-const attrs = Object.entries(rootProps).map(([k, v]) => `${k}="${String(v).replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`).join(' ');
+// rootProps usa o nome JSX (className); no HTML estático o atributo é class. Sem isso o
+// fixture saía com className="cz-app" literal e nenhuma regra .cz-app do CSS real casava —
+// o teste media uma cascata diferente da que o app mostra.
+const attrs = Object.entries(rootProps).map(([k, v]) => `${k === 'className' ? 'class' : k}="${String(v).replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`).join(' ');
 const fixture = `<!doctype html><html lang="pt-BR" data-crew-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root"><div ${attrs}>${menu}</div></div></body></html>`;
 fs.writeFileSync(path.join(output, 'menu.html'), fixture);
 fs.writeFileSync(path.join(output, 'prepared-menu.tsx'), declarations.map(n => n.getText(source)).join('\n'));
