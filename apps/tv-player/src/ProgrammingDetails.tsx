@@ -170,7 +170,7 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
       </article>}
     </div>
 
-    {prefs.traffic&&permissions.mobility!==false&&<UberHandoff mobility={extended.mobility}/>}
+    {prefs.mobility&&permissions.mobility!==false&&<UberHandoff mobility={extended.mobility}/>}
     <p className="detail-disclaimer"><Info/>Dados sensíveis só devem chegar à TV quando o proprietário autorizar. Revogar no celular deve interromper a próxima sincronização.</p>
   </section>;
 }
