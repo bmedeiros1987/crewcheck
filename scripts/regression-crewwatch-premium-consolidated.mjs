@@ -46,6 +46,16 @@ assert.doesNotMatch(wearMain, /setEnabled\(false\);\s*getOnBackPressedDispatcher
 // Selo, chip e tela de alertas contam a mesma lista.
 assert.match(wearMain, /List<NotificationItem> alerts = operationalAlerts\(snapshot, now\);/);
 assert.doesNotMatch(wearMain, /int alertCount\(WatchContextSnapshot/);
+// Leitor de tela: decoração fora, títulos como cabeçalho, quadros lidos de uma vez e
+// o chip da tela atual anunciando o estado.
+assert.match(wearMain, /decorative\(logo\);/);
+assert.match(wearMain, /decorative\(icon\);/);
+assert.ok((wearMain.match(/setAccessibilityHeading\(true\)/g) || []).length >= 5);
+assert.ok((wearMain.match(/setScreenReaderFocusable\(true\)/g) || []).length >= 5);
+assert.match(wearMain, /chip\.setSelected\(selected\);/);
+assert.match(wearMain, /badge\.setContentDescription\(/);
+const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
+assert.match(notificationCenter, /if \(snapshot\.isStale\(System\.currentTimeMillis\(\)\)\) return;/);
 
 assert.match(dataService, /CREWLIFE_PATH/);
 assert.match(dataService, /ROUTINE_PATH/);

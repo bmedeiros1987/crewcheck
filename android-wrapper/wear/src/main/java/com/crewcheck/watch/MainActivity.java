@@ -406,6 +406,7 @@ public final class MainActivity extends FragmentActivity
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.crewcheck_official);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        decorative(logo);
         row.addView(logo, new LinearLayout.LayoutParams(dp(26), dp(26)));
 
         TextView brand = text("CrewCheck", 11, WHITE, true, Gravity.START);
@@ -420,6 +421,7 @@ public final class MainActivity extends FragmentActivity
             bg.setColor(MAGENTA);
             bg.setShape(GradientDrawable.OVAL);
             badge.setBackground(bg);
+            badge.setContentDescription(count == 1 ? "1 alerta" : count + " alertas");
             LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20), dp(20));
             bp.setMargins(0, 0, dp(4), 0);
             row.addView(badge, bp);
@@ -488,10 +490,12 @@ public final class MainActivity extends FragmentActivity
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.crewcheck_official);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        decorative(logo);
         content.addView(logo, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
         TextView title = text("SINCRONIZAR", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
+        title.setAccessibilityHeading(true);
         title.setPadding(0, dp(8), 0, dp(4));
         content.addView(title);
 
@@ -519,6 +523,7 @@ public final class MainActivity extends FragmentActivity
 
         TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
         icon.setPadding(0, dp(8), 0, dp(4));
+        decorative(icon);
         content.addView(icon);
 
         TextView eyebrow = text(
@@ -526,6 +531,7 @@ public final class MainActivity extends FragmentActivity
                 9, accent, true, Gravity.CENTER
         );
         eyebrow.setLetterSpacing(.08f);
+        eyebrow.setAccessibilityHeading(true);
         content.addView(eyebrow);
 
         TextView value = text(
@@ -571,6 +577,7 @@ public final class MainActivity extends FragmentActivity
     private void renderNotifications(List<NotificationItem> alerts, long now) {
         TextView title = text("NOTIFICAÇÕES", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
+        title.setAccessibilityHeading(true);
         title.setPadding(0, dp(4), 0, dp(4));
         content.addView(title);
 
@@ -618,6 +625,7 @@ public final class MainActivity extends FragmentActivity
 
     private void renderCrewLife(long now) {
         TextView overline = text("CrewLife opcional", 9, MAGENTA, true, Gravity.CENTER);
+        overline.setAccessibilityHeading(true);
         overline.setPadding(0, dp(4), 0, dp(4));
         content.addView(overline);
 
@@ -687,6 +695,7 @@ public final class MainActivity extends FragmentActivity
                     8, MUTED, false, Gravity.CENTER);
             rDetail.setMaxLines(2);
             card.addView(rDetail);
+            card.setScreenReaderFocusable(true);
             content.addView(card, cardParams());
         }
 
@@ -702,6 +711,7 @@ public final class MainActivity extends FragmentActivity
     private void renderSchedule(WatchContextSnapshot snapshot, long now) {
         TextView title = text("MINHA ESCALA", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.09f);
+        title.setAccessibilityHeading(true);
         title.setPadding(0, dp(4), 0, dp(4));
         content.addView(title);
 
@@ -769,6 +779,7 @@ public final class MainActivity extends FragmentActivity
 
         card.addView(copy, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        card.setScreenReaderFocusable(true);
         content.addView(card, cardParams());
     }
 
@@ -978,6 +989,7 @@ public final class MainActivity extends FragmentActivity
     private void addMiniStat(LinearLayout row, Fact fact) {
         LinearLayout box = premiumCard(fact.accent);
         box.setGravity(Gravity.CENTER);
+        box.setScreenReaderFocusable(true);
         box.setPadding(dp(5), dp(5), dp(5), dp(5));
 
         TextView label = text(fact.label, 7, MUTED, true, Gravity.CENTER);
@@ -1007,6 +1019,7 @@ public final class MainActivity extends FragmentActivity
     private void addCrewLifeStat(LinearLayout row, String label, String value, int accent) {
         LinearLayout box = premiumCard(accent);
         box.setGravity(Gravity.CENTER);
+        box.setScreenReaderFocusable(true);
         box.setPadding(dp(4), dp(6), dp(4), dp(6));
         box.addView(text(label, 7, MUTED, true, Gravity.CENTER));
         TextView metric = text(value, 11, accent, true, Gravity.CENTER);
@@ -1040,6 +1053,7 @@ public final class MainActivity extends FragmentActivity
         body.setMaxLines(3);
         body.setPadding(0, dp(3), 0, 0);
         card.addView(body);
+        card.setScreenReaderFocusable(true);
 
         content.addView(card, cardParams());
     }
@@ -1195,6 +1209,8 @@ public final class MainActivity extends FragmentActivity
         background.setColor(selected ? accent : SURFACE);
         background.setCornerRadius(dp(20));
         chip.setBackground(background);
+        // A cor é o único sinal visual de "você está aqui"; o leitor de tela precisa do estado.
+        chip.setSelected(selected);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1231,6 +1247,15 @@ public final class MainActivity extends FragmentActivity
      */
     private static void tabular(TextView view) {
         view.setFontFeatureSettings("tnum");
+    }
+
+    /**
+     * Fora do leitor de tela. O logo repete a marca que já está escrita ao lado e o glifo
+     * de estado repete a legenda logo abaixo: lidos em voz alta, viravam "imagem sem
+     * rótulo" e "avião" antes da informação que importa.
+     */
+    private static void decorative(View view) {
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
     private TextView text(String value, int sp, int color, boolean bold, int gravity) {
