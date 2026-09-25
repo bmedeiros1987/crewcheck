@@ -83,6 +83,25 @@ export type WatchRouteContext = {
 
 const HOUR_MS = 60 * 60 * 1000;
 
+/**
+ * Reenvio mínimo de um snapshot sem mudança de conteúdo.
+ *
+ * A validade de um snapshot nunca é menor que 15 min (validWindow), então reenviar a cada
+ * 10 min mantém o relógio vigente enquanto o app está aberto, sem acordá-lo a cada minuto.
+ */
+export const WATCH_UNCHANGED_REPUBLISH_MS = 10 * 60 * 1000;
+
+/**
+ * Conteúdo do snapshot sem os carimbos de tempo.
+ *
+ * generatedAt e validUntil mudam a cada chamada; se entrassem na comparação, todo tick
+ * pareceria uma mudança e o celular voltaria a publicar um DataItem urgente por minuto.
+ */
+export function watchSnapshotContentSignature(snapshot: CrewCheckWatchSnapshot): string {
+  const { generatedAtEpochMs: _generated, validUntilEpochMs: _validUntil, ...content } = snapshot;
+  return JSON.stringify(content);
+}
+
 function clean(value: unknown): string {
   const text = String(value ?? '').trim();
   return text === '—' || /^a confirmar$/i.test(text) ? '' : text;

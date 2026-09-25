@@ -66,6 +66,16 @@ assert.match(wearMain, /scroll\.scrollTo\(0, keepScroll\)/);
 // Valor herói medido, não chutado por contagem de caracteres.
 assert.match(wearMain, /setAutoSizeTextTypeUniformWithConfiguration/);
 assert.doesNotMatch(wearMain, /\.value\.length\(\) > 1[24] \?/);
+// Celular não acorda o relógio a cada minuto sem mudança de conteúdo; pedidos explícitos
+// continuam publicando sempre (o relógio confirma o sync por um sentAt novo).
+const watchContext = read('client/src/lib/watchContext.ts');
+const home = read('client/src/pages/Home.tsx');
+assert.match(watchContext, /export function watchSnapshotContentSignature/);
+assert.match(watchContext, /generatedAtEpochMs: _generated, validUntilEpochMs: _validUntil/);
+assert.match(watchContext, /WATCH_UNCHANGED_REPUBLISH_MS = 10 \* 60 \* 1000/);
+assert.match(watchContext, /Math\.max\(now \+ 15 \* 60 \* 1000/, 'validade mínima precisa seguir maior que o reenvio sem mudança');
+assert.match(home, /const onRequest = \(\) => publishWatchSnapshot\(true\);/);
+assert.match(home, /setInterval\(\(\) => publishWatchSnapshot\(false\), 60_000\)/);
 const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
 assert.match(notificationCenter, /if \(snapshot\.isStale\(System\.currentTimeMillis\(\)\)\) return;/);
 
