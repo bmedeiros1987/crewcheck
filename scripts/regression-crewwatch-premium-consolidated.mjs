@@ -7,6 +7,7 @@ const settings = read('android-wrapper/settings.gradle');
 const wearGradle = read('android-wrapper/wear/build.gradle');
 const faceGradle = read('android-wrapper/watchface/build.gradle');
 const wearMain = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java');
+const wearStyles = read('android-wrapper/wear/src/main/res/values/styles.xml');
 const dataService = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewCheckDataLayerService.java');
 const phoneMain = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const lifeView = read('client/src/components/v1434/CrewCheckLifeView.tsx');
@@ -28,6 +29,9 @@ assert.match(wearMain, /APRESENTAÇÃO/);
 assert.match(wearMain, /VOO ATUAL/);
 assert.match(wearMain, /CONEXÃO/);
 assert.match(wearMain, /PERNOITE/);
+assert.match(wearMain, /delayUntilNextMinute/);
+assert.match(wearMain, /updateAmbientClock/);
+assert.match(wearStyles, /windowBackground">#000000/);
 
 assert.match(dataService, /CREWLIFE_PATH/);
 assert.match(dataService, /ROUTINE_PATH/);

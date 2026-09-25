@@ -81,8 +81,13 @@ public final class MainActivity extends FragmentActivity
         @Override
         public void run() {
             if (!ambient && clockView != null) {
-                clockView.setText(LocalTime.now().format(clockFormatter));
-                handler.postDelayed(this, 30_000L);
+                String current = LocalTime.now().format(clockFormatter);
+                if (!current.contentEquals(clockView.getText())) {
+                    clockView.setText(current);
+                }
+                // A tela mostra apenas HH:mm: alinhar o próximo tick à virada do minuto
+                // evita uma atualização inútil no meio dele e reduz trabalho no main thread.
+                handler.postDelayed(this, delayUntilNextMinute());
             }
         }
     };
@@ -92,6 +97,7 @@ public final class MainActivity extends FragmentActivity
     private ScrollView scroll;
     private LinearLayout content;
     private TextView clockView;
+    private TextView ambientClockView;
     private TextView transientStatus;
     private boolean ambient;
     private int screenMode = MODE_NOW;
@@ -157,7 +163,7 @@ public final class MainActivity extends FragmentActivity
 
             @Override
             public void onUpdateAmbient() {
-                if (ambient) renderSnapshot();
+                if (ambient) updateAmbientClock();
             }
         };
     }
@@ -173,6 +179,11 @@ public final class MainActivity extends FragmentActivity
     private void restartClock() {
         handler.removeCallbacks(clockTick);
         if (!ambient) handler.post(clockTick);
+    }
+
+    private static long delayUntilNextMinute() {
+        long now = System.currentTimeMillis();
+        return 60_000L - (now % 60_000L) + 50L;
     }
 
     private void renderRoot() {
@@ -305,6 +316,7 @@ public final class MainActivity extends FragmentActivity
             return;
         }
 
+        ambientClockView = null;
         renderHeader(snapshot);
 
         switch (screenMode) {
@@ -388,6 +400,7 @@ public final class MainActivity extends FragmentActivity
         // O relógio do modo ambiente fica aceso o tempo todo: é onde o pulo de dígito da
         // fonte proporcional mais incomoda.
         tabular(time);
+        ambientClockView = time;
         content.addView(time);
 
         if (snapshot == null || snapshot.isStale(now)) {
@@ -413,6 +426,15 @@ public final class MainActivity extends FragmentActivity
                     10, MUTED_AMBIENT, true, Gravity.CENTER);
             gate.setPadding(0, dp(8), 0, 0);
             content.addView(gate);
+        }
+    }
+
+    /** Atualiza somente o relógio no ambiente; o restante da tela permanece estático. */
+    private void updateAmbientClock() {
+        if (ambientClockView == null) return;
+        String current = LocalTime.now().format(clockFormatter);
+        if (!current.contentEquals(ambientClockView.getText())) {
+            ambientClockView.setText(current);
         }
     }
 
