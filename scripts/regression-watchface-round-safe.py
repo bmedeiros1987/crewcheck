@@ -1,4 +1,4 @@
-"""WFF visual/geometry/privacy checks. Official XSD validation runs separately in CI."""
+"""WFF geometry/privacy checks. The official XSD is also validated in CI."""
 from copy import deepcopy
 from hashlib import sha256
 from itertools import combinations, product
@@ -84,8 +84,7 @@ def validate_config(root, labels):
         accent = n.get('colors').split()[0]
         for bg in ('#FF000000', '#FF0C1726', '#FF050E18'):
             assert (luminance(accent) + .05) / (luminance(bg) + .05) >= 4.5, 'accent text contrast'
-    scene = root.find('Scene')
-    refs = scene.findall('ListConfiguration')
+    scene = root.find('Scene'); refs = scene.findall('ListConfiguration')
     assert len(refs) == 1 and refs[0].get('id') == choice.get('id'), 'unbound style selector'
     assert [n.get('id') for n in refs[0]] == ['0', '1', '2']
     for option in refs[0]: profile_children(option)
@@ -100,14 +99,10 @@ def validate_config(root, labels):
 
 def resolve_profile(root, style, palette):
     """Flatten only an identity Group for geometry checks; not a WFF renderer."""
-    selected = deepcopy(root)
-    scene = selected.find('Scene')
-    config = scene.find('ListConfiguration')
+    selected = deepcopy(root); scene = selected.find('Scene'); config = scene.find('ListConfiguration')
     option = config.find(f"ListOption[@id='{style}']")
     assert option is not None, 'unknown profile'
-    children = profile_children(option)
-    index = list(scene).index(config)
-    scene.remove(config)
+    children = profile_children(option); index = list(scene).index(config); scene.remove(config)
     for n in reversed(children): scene.insert(index, deepcopy(n))
     colors = PALETTES[palette].split()
     for n in selected.iter():
@@ -130,8 +125,7 @@ def validate(root, style='0'):
         bound = slot.find('BoundingRoundBox')
         assert bound is not None and box(bound) == (0, 0, box(slot)[2], box(slot)[3])
         round_safe(box(slot), float(bound.get('outlinePadding', '0')))
-        key, expected = PROVIDERS[sid]
-        policy = slot.find('DefaultProviderPolicy')
+        key, expected = PROVIDERS[sid]; policy = slot.find('DefaultProviderPolicy')
         assert policy is not None and policy.get(key) == expected, 'installed provider changed'
         assert policy.get('primaryProviderType' if key == 'primaryProvider' else 'defaultSystemProviderType') == ('LONG_TEXT' if sid == 1 else 'SHORT_TEXT')
         comps = slot.findall('Complication')
@@ -144,7 +138,8 @@ def validate(root, style='0'):
                 x, y, w, h = box(part)
                 assert x >= 0 and y >= 0 and x + w <= box(slot)[2] and y + h <= box(slot)[3], 'text leaves slot'
                 text = part.find('Text')
-                assert text is not None and text.get('isAutoSize') == 'TRUE' and text.get('ellipsis') == 'TRUE'
+                assert text is not None and text.get('ellipsis') == 'TRUE'
+                assert set(text.attrib) <= {'align', 'ellipsis', 'maxLines'}, 'unsupported WFF v1 Text attribute'
                 assert text.get('maxLines') in ('1', '2')
                 font = text.find('Font')
                 assert font is not None and float(font.get('size')) >= 18, 'tiny label reintroduced'
@@ -169,8 +164,7 @@ def validate(root, style='0'):
     assert (active.find('Font').get('size'), active.find('Font').get('weight')) == CLOCKS[style]
     assert ambient.find('Font').get('size') == '80' and ambient.find('Font').get('weight') == 'THIN'
     assert ambient.find('Font').get('color') == '#FFDDE3EC'
-    dates = scene.findall('PartText')
-    assert len(dates) == 1, 'One calendar shared by all profiles'
+    dates = scene.findall('PartText'); assert len(dates) == 1, 'One calendar shared by all profiles'
     date = dates[0]; font = date.find('Text/Font')
     assert font is not None and float(font.get('size')) >= 20
     assert [p.get('expression') for p in font.findall('Upper/Template/Parameter')] == CALENDAR
@@ -184,8 +178,7 @@ def validate(root, style='0'):
     assert 'tintColor' not in images[0].attrib, 'do not recolor the original logo'
     round_safe(box(images[0])); assert hidden_in_ambient(images[0])
     assert all(not overlaps(box(images[0]), box(s)) for s in slots)
-    surfaces = scene.findall('PartDraw')
-    assert len(surfaces) == (0 if style == '2' else 1)
+    surfaces = scene.findall('PartDraw'); assert len(surfaces) == (0 if style == '2' else 1)
     for surface in surfaces:
         assert box(surface) == box(hero) and hidden_in_ambient(surface)
         rect = surface.find('RoundRectangle')
@@ -225,6 +218,7 @@ def run():
         ('.//DigitalClock/TimeText/Variant', {'value': '255'}),
         ('.//DigitalClock/TimeText', {'format': 'EEE dd MMM'}),
         ('Scene/PartText/Text/Font/Upper/Template/Parameter', {'expression': '[HOUR_0_23]'}),
+        ('.//ComplicationSlot//Text', {'isAutoSize': 'TRUE'}),
     ]
     negative = 0
     for style, palette in product(CLOCKS, PALETTES):
@@ -257,7 +251,7 @@ def run():
     try: validate_config(changed, labels)
     except AssertionError: negative += 1
     else: raise AssertionError('multiple ListOption children not caught')
-    print(f'[watchface-premium-layout] PASS: 9 combinations, calendar/order/groups, active/AOD, six stable slots, original logo; {negative} negative cases')
+    print(f'[watchface-premium-layout] PASS: 9 combinations, WFF v1 text/calendar/groups, active/AOD, six stable slots, original logo; {negative} negative cases')
 
 
 if __name__ == '__main__': run()
