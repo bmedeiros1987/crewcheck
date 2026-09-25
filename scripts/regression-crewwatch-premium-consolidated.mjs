@@ -33,6 +33,20 @@ assert.match(wearMain, /delayUntilNextMinute/);
 assert.match(wearMain, /updateAmbientClock/);
 assert.match(wearStyles, /windowBackground">#000000/);
 
+// Tela aberta acompanha o celular: dados novos redesenham sem toque, e dado vencido não
+// fica aceso no sempre-ligado.
+assert.match(wearMain, /registerChangeListener\(dataListener\)/);
+assert.match(wearMain, /unregisterChangeListener\(dataListener\)/);
+assert.match(wearMain, /private final Runnable dataRefresh = this::renderSnapshot;/);
+assert.doesNotMatch(wearMain, /removeCallbacks\(this::/, 'removeCallbacks precisa do mesmo Runnable, não de uma referência nova');
+assert.match(wearMain, /if \(renderedSnapshotExpired\(\)\) renderSnapshot\(\);/);
+// Voltar sobe um nível sem se desligar para sempre na raiz.
+assert.match(wearMain, /backToNow\.setEnabled\(!ambient && screenMode != MODE_NOW\)/);
+assert.doesNotMatch(wearMain, /setEnabled\(false\);\s*getOnBackPressedDispatcher\(\)\.onBackPressed\(\)/);
+// Selo, chip e tela de alertas contam a mesma lista.
+assert.match(wearMain, /List<NotificationItem> alerts = operationalAlerts\(snapshot, now\);/);
+assert.doesNotMatch(wearMain, /int alertCount\(WatchContextSnapshot/);
+
 assert.match(dataService, /CREWLIFE_PATH/);
 assert.match(dataService, /ROUTINE_PATH/);
 
