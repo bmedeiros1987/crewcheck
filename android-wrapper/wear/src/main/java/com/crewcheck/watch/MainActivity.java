@@ -64,7 +64,10 @@ public final class MainActivity extends FragmentActivity
     private static final int CYAN = Color.rgb(34, 211, 238);
     private static final int BLUE = Color.rgb(59, 130, 246);
     private static final int TEAL = Color.rgb(45, 212, 191);
-    private static final int VIOLET = Color.rgb(139, 92, 246);
+    // violet-400. O 139,92,246 anterior dava 4,02:1 sobre o quadro — abaixo do mínimo de
+    // 4,5:1 — e era o único valor da grade que reprovava. Este é o mesmo violeta que o
+    // atlas do app já usa na web, então corrige contraste e alinha a marca de uma vez.
+    private static final int VIOLET = Color.rgb(167, 139, 250);
     private static final int MAGENTA = Color.rgb(236, 72, 153);
     private static final int SUCCESS = Color.rgb(52, 211, 153);
     private static final int WARNING = Color.rgb(251, 191, 36);
@@ -382,6 +385,9 @@ public final class MainActivity extends FragmentActivity
 
         TextView time = text(LocalTime.now().format(clockFormatter), 38,
                 WHITE, false, Gravity.CENTER);
+        // O relógio do modo ambiente fica aceso o tempo todo: é onde o pulo de dígito da
+        // fonte proporcional mais incomoda.
+        tabular(time);
         content.addView(time);
 
         if (snapshot == null || snapshot.isStale(now)) {
@@ -393,12 +399,13 @@ public final class MainActivity extends FragmentActivity
 
         Primary primary = primaryFor(snapshot);
         TextView eyebrow = text(primary.eyebrow, 8, MUTED_AMBIENT, true, Gravity.CENTER);
-        eyebrow.setPadding(0, dp(12), 0, dp(3));
+        eyebrow.setPadding(0, dp(12), 0, dp(4));
         content.addView(eyebrow);
 
         TextView value = text(primary.value, primary.value.length() > 12 ? 18 : 22,
                 WHITE, true, Gravity.CENTER);
         value.setMaxLines(2);
+        tabular(value);
         content.addView(value);
 
         if (!snapshot.gateLabel().isBlank()) {
@@ -417,7 +424,7 @@ public final class MainActivity extends FragmentActivity
 
         TextView title = text("SINCRONIZAR", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
-        title.setPadding(0, dp(8), 0, dp(5));
+        title.setPadding(0, dp(8), 0, dp(4));
         content.addView(title);
 
         TextView value = text("Conecte ao CrewCheck", 23, WHITE, true, Gravity.CENTER);
@@ -429,7 +436,7 @@ public final class MainActivity extends FragmentActivity
                 10, MUTED, false, Gravity.CENTER
         );
         detail.setMaxLines(4);
-        detail.setPadding(0, dp(6), 0, dp(8));
+        detail.setPadding(0, dp(8), 0, dp(8));
         content.addView(detail);
 
         TextView sync = heroAction("Sincronizar agora", CYAN);
@@ -443,7 +450,7 @@ public final class MainActivity extends FragmentActivity
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 
         TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
-        icon.setPadding(0, dp(8), 0, dp(2));
+        icon.setPadding(0, dp(8), 0, dp(4));
         content.addView(icon);
 
         TextView eyebrow = text(
@@ -473,7 +480,7 @@ public final class MainActivity extends FragmentActivity
 
         if (!primary.secondary.isBlank()) {
             TextView secondary = text(primary.secondary, 9, MUTED, false, Gravity.CENTER);
-            secondary.setPadding(0, dp(4), 0, dp(5));
+            secondary.setPadding(0, dp(4), 0, dp(4));
             secondary.setMaxLines(2);
             content.addView(secondary);
         }
@@ -496,7 +503,7 @@ public final class MainActivity extends FragmentActivity
     private void renderNotifications(WatchContextSnapshot snapshot, long now) {
         TextView title = text("NOTIFICAÇÕES", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
-        title.setPadding(0, dp(4), 0, dp(5));
+        title.setPadding(0, dp(4), 0, dp(4));
         content.addView(title);
 
         boolean enabled = WatchNotificationCenter.isEnabled(this);
@@ -541,7 +548,7 @@ public final class MainActivity extends FragmentActivity
 
     private void renderCrewLife(long now) {
         TextView overline = text("CrewLife opcional", 9, MAGENTA, true, Gravity.CENTER);
-        overline.setPadding(0, dp(3), 0, dp(4));
+        overline.setPadding(0, dp(4), 0, dp(4));
         content.addView(overline);
 
         CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
@@ -556,7 +563,7 @@ public final class MainActivity extends FragmentActivity
                     9, MUTED, false, Gravity.CENTER
             );
             detail.setMaxLines(4);
-            detail.setPadding(0, dp(6), 0, dp(8));
+            detail.setPadding(0, dp(8), 0, dp(8));
             content.addView(detail);
             TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);
             sync.setOnClickListener(view -> requestSync());
@@ -574,7 +581,7 @@ public final class MainActivity extends FragmentActivity
                 ? "Energy Score · Samsung Health"
                 : "Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT);
         TextView label = text(scoreCaption, 10, WHITE, true, Gravity.CENTER);
-        label.setPadding(0, dp(1), 0, dp(6));
+        label.setPadding(0, dp(0), 0, dp(8));
         content.addView(label);
 
         LinearLayout stats = new LinearLayout(this);
@@ -591,7 +598,7 @@ public final class MainActivity extends FragmentActivity
 
         if (!life.recommendation.isBlank()) {
             TextView recommendation = text(life.recommendation, 10, MAGENTA, true, Gravity.CENTER);
-            recommendation.setPadding(0, dp(7), 0, dp(2));
+            recommendation.setPadding(0, dp(8), 0, dp(4));
             content.addView(recommendation);
         }
 
@@ -624,7 +631,7 @@ public final class MainActivity extends FragmentActivity
     private void renderSchedule(WatchContextSnapshot snapshot, long now) {
         TextView title = text("MINHA ESCALA", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.09f);
-        title.setPadding(0, dp(3), 0, dp(2));
+        title.setPadding(0, dp(4), 0, dp(4));
         content.addView(title);
 
         TextView subtitle = text("Próximos passos", 15, WHITE, true, Gravity.CENTER);
@@ -637,7 +644,7 @@ public final class MainActivity extends FragmentActivity
                     10, MUTED, false, Gravity.CENTER
             );
             empty.setMaxLines(4);
-            empty.setPadding(0, dp(10), 0, dp(12));
+            empty.setPadding(0, dp(12), 0, dp(12));
             content.addView(empty);
             return;
         }
