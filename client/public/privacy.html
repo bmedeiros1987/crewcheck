@@ -25,6 +25,10 @@
       <p><strong>Dados extraídos da escala:</strong> nome do tripulante quando presente no PDF, BP/matrícula quando presente, base, função, mês/ano, voos, treinamentos, reservas, sobreavisos, folgas, repousos, pernoites, alertas e estatísticas da escala.</p>
       <p><strong>Dados de uso local:</strong> preferências de interface, configurações do Google Calendar, fila offline de escalas e histórico local necessário para deduplicação e funcionamento offline.</p>
       <p><strong>Dados opcionais de integração:</strong> quando o usuário conecta o Google Calendar, o app solicita autorização para listar calendários graváveis e criar, atualizar ou remover eventos gerados pelo CrewCheck no calendário escolhido.</p>
+      <p><strong>Localização:</strong> somente quando o usuário autoriza ou envia voluntariamente para Saída Inteligente, emergência, busca de locais próximos ou busca na rede do plano de saúde.</p>
+      <p><strong>Dados médicos de emergência (opcionais):</strong> perfil médico de emergência e cartões Guardian informados pelo usuário, detalhados na seção 3-B.</p>
+      <p><strong>Assinatura e pagamento:</strong> plano, estado, período, provedor e identificadores técnicos. O CrewCheck não armazena o número completo do cartão.</p>
+      <p><strong>Comunicações e compartilhamentos:</strong> mensagens de suporte, Concierge, notificações, convites, chat com visitantes e colegas autorizados e registros necessários para entrega e segurança.</p>
       <p><strong>Dados opcionais do CrewLife:</strong> registros manuais e resumos de atividade física, sono e bem-estar recebidos por integração opcional. As fontes, finalidades, limitações e formas de controle estão detalhadas na seção 3-A.</p>
 
       <h2>3. Como usamos os dados</h2>
@@ -44,9 +48,21 @@
         <p>A proteção inclui minimização, controles de acesso entre aplicativos, consentimento separado para o relógio e exclusão do conteúdo de saúde de logs e analytics do CrewCheck. Nenhum sistema é totalmente imune a riscos; mantenha o dispositivo protegido. Dúvidas sobre acesso, correção, revogação ou exclusão podem ser encaminhadas para suporte@crewcheck.app.</p>
       </section>
 
+      <section id="emergency-privacy">
+        <h2>3-B. Emergência, Guardian e plano de saúde</h2>
+        <p>Emergência e Guardian são recursos opcionais de segurança pessoal. Na Central de Emergência, o usuário pode cadastrar um perfil médico de emergência com tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora e código do plano de saúde. Esse perfil é armazenado nos servidores do CrewCheck com criptografia autenticada e só é usado nos fluxos de emergência descritos nesta seção.</p>
+        <p>Um alerta de emergência é enviado pelo Telegram às pessoas configuradas pelo usuário: contatos salvos, conexões aceitas e, quando o usuário e o colega ativaram o compartilhamento de mesmo hotel, colegas hospedados no mesmo hotel na mesma data. Por padrão, o alerta vai aos contatos salvos, às conexões aceitas e aos colegas do mesmo hotel e inclui a localização; o usuário pode alterar essas escolhas nas preferências. O CrewCheck registra o alerta, os destinatários e o link de localização enviado para permitir o acompanhamento e as respostas.</p>
+        <p>Os dados médicos só entram em um alerta de emergência médica quando o usuário ativa essa inclusão e marca a autorização “Autorizo o envio desses dados em uma emergência médica confirmada”. Essa inclusão fica desligada por padrão. As mensagens trafegam pelo Telegram, que possui política própria.</p>
+        <p>O Guardian gera, a pedido do usuário, um cartão de emergência acessível por QR code ou link, com nome, identificação de tripulante, tipo sanguíneo, alergias, medicamentos, condições, observações críticas e um contato de emergência informados pelo usuário. O conteúdo é armazenado com criptografia, o link tem validade temporária (72 horas por padrão, no máximo 30 dias) e pode ser revogado a qualquer momento. Qualquer pessoa com o QR code ou o link pode ver o cartão enquanto ele estiver válido; compartilhe-o apenas com quem precisar dele.</p>
+        <p>A busca na rede credenciada do plano de saúde envia ao CrewCheck a localização, a cidade, o estado e o termo pesquisado, usados para responder à busca na rede publicada pela operadora.</p>
+        <p>Esses recursos não são dispositivos médicos e não substituem serviços públicos de emergência nem avaliação médica; em uma emergência, acione também o serviço local (192, 193 ou 190 no Brasil). A entrega do alerta depende do Telegram e dos destinatários configurados. Dados médicos de emergência não são vendidos, não são usados para publicidade e não são compartilhados pelo CrewCheck com empregadores, companhias aéreas ou anunciantes.</p>
+        <p>O usuário pode editar ou limpar o perfil médico na Central de Emergência, revogar cartões Guardian a qualquer momento e excluir a conta. A exclusão da conta remove o perfil médico, as preferências, as sessões, os alertas de emergência e os cartões Guardian vinculados à conta.</p>
+      </section>
+
       <h2>4. Compartilhamento de dados</h2>
       <p>Não vendemos dados pessoais, inclusive dados de saúde. Não compartilhamos dados com anunciantes. O CrewCheck não utiliza os dados da escala ou do CrewLife para publicidade comportamental.</p>
-      <p>Podemos usar provedores de infraestrutura, banco de dados, hospedagem, e-mail transacional e APIs do Google quando o usuário ativa a integração. Esses provedores tratam dados apenas na medida necessária para operar o serviço.</p>
+      <p>Podem receber dados, no limite necessário, fornecedores de hospedagem, banco de dados, e-mail, mensageria (como o Telegram), mapas e locais (como as APIs do Google Maps), meteorologia, pagamentos (Google Play e processador de pagamentos) e Google Calendar. Esses provedores tratam dados apenas na medida necessária para operar o serviço.</p>
+      <p>Compartilhamentos com visitantes, colegas, contatos de emergência ou links públicos dependem de ação do titular, permissões definidas, prazo e possibilidade de revogação. O fluxo de alertas de emergência e do Guardian está descrito na seção 3-B.</p>
       <p>O fluxo opcional entre CrewLife Companion, CrewCheck e o relógio do próprio usuário está descrito na seção 3-A, com consentimentos separados e sem envio de séries brutas de saúde aos servidores do CrewCheck.</p>
       <p>Podemos divulgar dados se houver obrigação legal, ordem de autoridade competente ou necessidade de proteção contra fraude, abuso ou risco de segurança.</p>
 
@@ -58,6 +74,7 @@
       <h2>6. Retenção, revogação e exclusão</h2>
       <p>Mantemos dados enquanto forem necessários para operar o CrewCheck, cumprir obrigações legais, preservar segurança ou permitir histórico solicitado pelo usuário.</p>
       <p>O usuário pode apagar escalas salvas quando a funcionalidade estiver disponível na tela de histórico ou solicitar exclusão/correção dos dados pelo contato abaixo.</p>
+      <p>A exclusão da conta remove também o perfil médico de emergência, as preferências, as sessões, os alertas e os cartões Guardian vinculados à conta.</p>
       <p>Os controles específicos do CrewLife e a revogação independente do Companion no Samsung Health estão descritos na seção 3-A. A exclusão de registros locais do CrewLife não exige apagar a escala ou a conta principal do CrewCheck.</p>
 
       <h2>7. Crianças</h2>

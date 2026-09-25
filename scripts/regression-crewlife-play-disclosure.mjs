@@ -29,6 +29,28 @@ function htmlParagraphs(source) {
     .replace(/&#39;/g, "'").replace(/&amp;/g, '&'));
 }
 
+function legalSection(source, title) {
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const section = source.match(new RegExp(`title: '${escaped}',\\s*paragraphs:\\s*\\[([\\s\\S]*?)\\n\\s*\\],`));
+  assert.ok(section, `${title} must be rendered by LegalPage`);
+  return [...section[1].matchAll(/^\s*'((?:\\.|[^'\\])*)',?\s*$/gm)]
+    .map((match) => match[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\'));
+}
+
+function htmlSection(source, id) {
+  const section = source.match(new RegExp(`<section id="${id}">([\\s\\S]*?)<\\/section>`));
+  assert.ok(section, `Public HTML must expose ${id} without JavaScript/login`);
+  return [...section[1].matchAll(/<p>([\s\S]*?)<\/p>/g)].map((match) => match[1]
+    .replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&amp;/g, '&'));
+}
+
+function assertEmergencyParity(reactSource, htmlSource) {
+  const paragraphs = legalSection(reactSource, '3-B. Emergência, Guardian e plano de saúde');
+  assert.equal(paragraphs.length, 7, 'All seven emergency privacy paragraphs are required');
+  assert.deepEqual(htmlSection(htmlSource, 'emergency-privacy'), paragraphs, 'Public and in-app emergency disclosures must match');
+}
+
 function assertParity(reactSource, htmlSource) {
   const paragraphs = legalParagraphs(reactSource);
   assert.equal(paragraphs.length, 8, 'All eight CrewLife privacy paragraphs are required');
@@ -65,6 +87,44 @@ function assertNoHealthPermissions(source) {
 
 test('CrewLife privacy paragraphs are identical on both public surfaces', () => {
   assertParity(legal, html);
+});
+
+test('emergency, Guardian and health-plan disclosure is identical on both public surfaces', () => {
+  assertEmergencyParity(legal, html);
+  for (const text of [
+    'tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora e código do plano de saúde',
+    'criptografia autenticada', 'Autorizo o envio desses dados em uma emergência médica confirmada',
+    'Essa inclusão fica desligada por padrão', '72 horas por padrão, no máximo 30 dias',
+    'Qualquer pessoa com o QR code ou o link pode ver o cartão', 'não são dispositivos médicos',
+    'A exclusão da conta remove o perfil médico',
+  ]) assert.ok(html.includes(text), `emergency disclosure missing: ${text}`);
+});
+
+test('emergency disclosure matches the code it describes', () => {
+  const emergency = read('server/v1391/emergency.mjs');
+  const guardian = read('server/v14316/controlCenter.mjs');
+  const ui = read('client/src/components/v1391/EmergencyCenterView.tsx');
+  const platform = read('server/platform.mjs');
+  for (const field of ['bloodType', 'allergies', 'continuousMedication', 'medicalNotes', 'healthPlanProvider', 'healthPlanCode']) {
+    assert.ok(ui.includes(`${field}: string`), `Undocumented medical profile change: ${field}`);
+  }
+  assert.ok(ui.includes('Autorizo o envio desses dados em uma emergência médica confirmada'));
+  assert.match(emergency, /include_medical_profile: 0/, 'medical data must stay out of alerts by default');
+  assert.match(emergency, /notify_saved_contacts: 1,\s*notify_hotel_companions: 1,\s*include_location: 1/);
+  assert.match(emergency, /aes-256-gcm/);
+  assert.match(guardian, /Number\(body\?\.validHours\) \|\| 72/);
+  assert.match(guardian, /Math\.min\(24 \* 30,/);
+  for (const field of ['bloodType', 'allergies', 'medications', 'conditions', 'criticalNotes', 'emergencyContact']) {
+    assert.ok(guardian.includes(`${field}:`), `Undocumented Guardian field change: ${field}`);
+  }
+  for (const table of ['crewcheck_platform_emergency_profiles', 'crewcheck_platform_emergency_preferences',
+    'crewcheck_platform_emergency_sessions', 'crewcheck_platform_emergency_alerts', 'crewcheck_guardian_cards']) {
+    assert.ok(platform.includes(`DELETE FROM ${table} WHERE owner_email=$1`), `account deletion must remove ${table}`);
+  }
+});
+
+test('negative: divergent emergency disclosure fails the parity gate', () => {
+  assert.throws(() => assertEmergencyParity(legal, html.replace('Essa inclusão fica desligada por padrão', 'Essa inclusão fica ligada por padrão')));
 });
 
 test('privacy dates agree without changing the Terms date', () => {

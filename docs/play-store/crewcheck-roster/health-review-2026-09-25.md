@@ -21,6 +21,18 @@ CrewLife se enquadra em bem-estar/fitness pessoal pelas funções de atividade f
 
 A declaração é do aplicativo inteiro, não apenas do CrewLife: antes de remover qualquer outra categoria, verificar os demais recursos realmente distribuídos, inclusive Guardian/Concierge e eventual conteúdo de saúde. Não remover categorias necessárias para funções existentes nem declarar funcionalidades futuras/experimentais ainda ausentes do artefato.
 
+### Outros recursos com dados de saúde no app inteiro (verificados no código)
+
+Além do CrewLife, o artefato distribuído contém recursos que tratam informações médicas informadas pelo usuário. Eles precisam ser considerados na declaração e no formulário de Segurança dos dados; não declarar o app como restrito a fitness/sono:
+
+- **Central de Emergência** (`client/src/components/v1391/EmergencyCenterView.tsx`, `server/v1391/emergency.mjs`): perfil médico de emergência com tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora/código do plano de saúde, armazenado **no servidor** com AES-256-GCM. Alertas via Telegram para contatos salvos, conexões e colegas do mesmo hotel (padrão: contatos e colegas ligados, localização incluída). Dados médicos só entram em alerta médico com inclusão ativada **e** autorização explícita; inclusão desligada por padrão.
+- **Guardian** (`server/v14316/controlCenter.mjs`): cartão de emergência por QR/link com dados médicos e contato de emergência, criptografado, validade 72 h por padrão (máx. 30 dias), revogável, legível por quem tiver o link.
+- **Busca na rede do plano de saúde (Amil)**: envia localização, cidade, estado e termo de busca ao servidor.
+
+Escolher no Console a categoria que corresponda a essas funções (informações médicas de emergência informadas pelo usuário), usando os rótulos que o formulário apresentar; não inventar rótulos neste documento. Não se trata de diagnóstico, tratamento ou dispositivo médico.
+
+**Exclusão de conta:** até esta PR, `handleAccountDeletion` não apagava perfil médico, preferências, sessões e alertas de emergência nem cartões Guardian. A PR passa a removê-los na mesma transação (`accountHealthDeletionStatements`, testado em `scripts/regression-account-health-deletion.mjs`). Só responder "o usuário pode solicitar exclusão" para esses dados depois que esta correção estiver em produção. Outras tabelas de preferências fora do escopo de saúde (por exemplo `crewcheck_platform_routine_preferences` e `crewcheck_platform_addresses`) também não são alcançadas pela exclusão atual; tratar em correção própria antes de responder ao formulário sobre exclusão para esses tipos de dado.
+
 ## Health Connect: destino das cinco permissões
 
 Para a variante principal atual sem Health Connect, remover as solicitações e justificativas antigas destas cinco permissões; **não substituir por justificativas fictícias para manter acesso não utilizado**:
@@ -47,7 +59,7 @@ O aviso deve informar que CrewLife/Companion não são dispositivos médicos, n�
 
 ## Segurança dos dados
 
-Revisar os fluxos reais de todo o app e SDKs antes de responder ao formulário. Ausência de Health Connect não significa ausência de tratamento de dados de saúde. Distinguir processamento no aparelho, comunicação local com o Companion e transferência opcional de resumos para Wear OS. Não afirmar que dados nunca saem do aparelho quando o espelhamento está ativo. Não declarar coleta/compartilhamento como ausentes sem verificar as definições e exceções do formulário, transporte da plataforma, logs, analytics e eventuais backups.
+Revisar os fluxos reais de todo o app e SDKs antes de responder ao formulário. Fluxos verificados no código, além do CrewLife: informações de saúde do perfil de emergência e do Guardian (coletadas e armazenadas no servidor, criptografadas; compartilhadas por ação do usuário com os destinatários que ele configura via Telegram ou com quem tiver o link do Guardian); localização (Saída Inteligente, emergência, busca de locais, rede do plano) repassada às APIs do Google Maps/Places pelo servidor e incluída em alertas; mensagens de chat com visitantes/colegas; e dados de assinatura (Google Play e processador de pagamentos). Ausência de Health Connect não significa ausência de tratamento de dados de saúde. Distinguir processamento no aparelho, comunicação local com o Companion e transferência opcional de resumos para Wear OS. Não afirmar que dados nunca saem do aparelho quando o espelhamento está ativo. Não declarar coleta/compartilhamento como ausentes sem verificar as definições e exceções do formulário, transporte da plataforma, logs, analytics e eventuais backups.
 
 Revogar a autorização do Companion no Samsung Health é diferente de apagar resumos no CrewCheck. Validar esses controles com o aparelho de teste, sem apagar a escala, a conta principal ou dados de produção.
 

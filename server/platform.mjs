@@ -2531,6 +2531,11 @@ async function handleAccountDeletion(req, res) {
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2) OR state_key=$3', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`]);
+    // Perfil médico de emergência, preferências, sessões com localização, alertas e cartões
+    // Guardian são dados de saúde do titular: a exclusão da conta precisa alcançá-los.
+    for (const [sql, params] of accountHealthDeletionStatements(context.identity.email)) {
+      await deleteIfTableExists(client, sql, params);
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -2545,6 +2550,36 @@ async function handleAccountDeletion(req, res) {
     manageGooglePlayUrl: subscription?.provider === 'google_play' ? 'https://play.google.com/store/account/subscriptions' : null,
     message: subscription?.provider === 'google_play' ? 'Dados excluídos e sessão encerrada. A assinatura Google Play deve ser cancelada separadamente na Play Store.' : 'Dados excluídos e sessão encerrada.',
   });
+}
+
+/**
+ * Tabelas de emergência e Guardian criadas sob demanda pelos seus módulos. Guardam dados
+ * de saúde (tipo sanguíneo, alergias, medicação, observações médicas, plano de saúde) e
+ * localização de alertas; por isso entram na exclusão de conta. As respostas se ligam ao
+ * alerta, não ao e-mail, e saem antes dele.
+ */
+export function accountHealthDeletionStatements(email) {
+  return [
+    ['DELETE FROM crewcheck_platform_emergency_responses WHERE alert_id IN (SELECT id FROM crewcheck_platform_emergency_alerts WHERE owner_email=$1)', [email]],
+    ['DELETE FROM crewcheck_platform_emergency_alerts WHERE owner_email=$1', [email]],
+    ['DELETE FROM crewcheck_platform_emergency_sessions WHERE owner_email=$1', [email]],
+    ['DELETE FROM crewcheck_platform_emergency_preferences WHERE owner_email=$1', [email]],
+    ['DELETE FROM crewcheck_platform_emergency_profiles WHERE owner_email=$1', [email]],
+    ['DELETE FROM crewcheck_guardian_cards WHERE owner_email=$1', [email]],
+  ];
+}
+
+/**
+ * Uma tabela que o módulo ainda não criou não tem dado a apagar. No MySQL o erro de um
+ * comando não desfaz a transação, então só esse caso é tolerado; qualquer outro erro
+ * continua abortando a exclusão inteira.
+ */
+export async function deleteIfTableExists(client, sql, params) {
+  try {
+    await client.query(sql, params);
+  } catch (error) {
+    if (String(error?.code || '') !== 'ER_NO_SUCH_TABLE') throw error;
+  }
 }
 
 export async function handlePlatformRoute(req, res, url) {
