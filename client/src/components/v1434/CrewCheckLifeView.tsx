@@ -282,13 +282,37 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const companionMigrationRequired = Boolean(
     companionStatus.migrationRequired || companionStatus.state === 'bridge_incompatible'
   );
+  const companionConnectedStale = Boolean(
+    companionStatus.state === 'connected'
+      && companionSummary.automatic
+      && !companionFresh
+      && Number.isFinite(companionAgeMs)
+      && companionAgeMs >= 0
+  );
   const companionStateLabel = automaticSamsung
     ? 'Samsung Health conectado · automático'
     : companionMigrationRequired
       ? 'Companion antigo · migrar para a versão oficial'
-      : companionStatus.installed
-        ? 'Companion instalado · concluir conexão'
-        : 'Samsung Health · não instalado';
+      : companionStatus.state === 'needs_setup'
+        ? 'Companion instalado · resumo vazio'
+        : companionStatus.state === 'unavailable'
+          ? 'Bridge do Companion indisponível'
+          : companionConnectedStale
+            ? 'Samsung Health conectado · resumo desatualizado'
+            : companionStatus.state === 'connected'
+              ? 'Samsung Health conectado · resumo inválido'
+              : companionStatus.installed
+                ? 'Companion instalado · estado desconhecido'
+                : 'Companion não instalado';
+  const companionDiagnosticDetail = companionStatus.state === 'needs_setup'
+    ? 'O Companion está instalado, mas ainda não publicou um resumo agregado para o CrewCheck. Abra o Companion para autorizar ou atualizar o Samsung Health.'
+    : companionStatus.state === 'unavailable'
+      ? 'O Companion está instalado, mas o CrewCheck não conseguiu consultar o provider local agora. Abra o Companion e tente novamente.'
+      : companionConnectedStale
+        ? 'O último resumo agregado tem mais de 6 horas. Abra o Companion para buscar uma atualização do Samsung Health.'
+        : companionStatus.state === 'connected' && !automaticSamsung
+          ? 'O provider respondeu, mas não há um resumo agregado válido e recente para exibir.'
+          : '';
 
   function openCompanionStore() {
     const native = (window as any).AndroidCrewCheckNative;
@@ -546,7 +570,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
       <div className="cc-life-integration-grid">
         <article className={automaticSamsung ? 'connected' : companionStatus.installed ? 'ready' : ''}>
-          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{companionStateLabel}</small>{companionMigrationRequired && <p>Você está usando uma versão piloto antiga. O Android precisa remover somente o Companion uma vez para instalar a versão oficial da Play. Seu CrewCheck, login e escala não serão removidos.</p>}</div>
+          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{companionStateLabel}</small>{companionDiagnosticDetail && <p>{companionDiagnosticDetail}</p>}{companionMigrationRequired && <p>Você está usando uma versão piloto antiga. O Android precisa remover somente o Companion uma vez para instalar a versão oficial da Play. Seu CrewCheck, login e escala não serão removidos.</p>}</div>
           <button className={automaticSamsung ? '' : 'primary'} onClick={() => {
             if (companionMigrationRequired) {
               migrateCompanionToOfficialPlay();
@@ -558,7 +582,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
             }
             const ok = (window as any).AndroidCrewCheckNative?.openLifeCompanion?.();
             if (!ok) toast.info('Abra o CrewLife Companion para concluir a conexão com o Samsung Health.');
-          }}>{automaticSamsung ? 'Abrir Companion' : companionMigrationRequired ? 'Migrar para versão oficial' : companionStatus.installed ? 'Conectar' : 'Baixar na Play Store'}</button>
+          }}>{automaticSamsung ? 'Abrir Companion' : companionMigrationRequired ? 'Migrar para versão oficial' : companionConnectedStale ? 'Atualizar no Companion' : companionStatus.installed ? 'Abrir Companion' : 'Baixar na Play Store'}</button>
         </article>
         {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
           <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>
