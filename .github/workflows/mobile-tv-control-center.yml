@@ -1,0 +1,24 @@
+name: Mobile TV control center
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/tv/**'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-mobile-tv-control-center.mjs'
+      - '.github/workflows/mobile-tv-control-center.yml'
+permissions:
+  contents: read
+jobs:
+  tv-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/regression-mobile-tv-control-center.mjs
+      - run: npx tsc --noEmit
+      - run: npm run build

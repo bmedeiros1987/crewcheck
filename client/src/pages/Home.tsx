@@ -84,6 +84,7 @@ import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFo
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
+import TvDeviceControl, { type TvJourneyFinanceContext } from '@/components/tv/TvDeviceControl';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
@@ -2153,6 +2154,50 @@ function financeSnapshot(roster: CrewRoster) {
   const salary = calculateSalary(events, roster);
   return { perdiem, salary };
 }
+
+function tvJourneyFinanceContext(events: ZeroLeg[], roster: CrewRoster): TvJourneyFinanceContext {
+  const finance = financeSnapshot(roster);
+  const salaryByEvent = new Map(finance.salary.rows.map((row) => [row.id, row]));
+  const perDiemByEvent = new Map<string, number>();
+  for (const row of finance.perdiem.rows) {
+    if (!row.eventId || row.convertedBRL === null || !Number.isFinite(Number(row.convertedBRL))) continue;
+    perDiemByEvent.set(row.eventId, (perDiemByEvent.get(row.eventId) || 0) + Number(row.convertedBRL));
+  }
+  const grouped = new Map<string, { production: number; perDiem: number; hasProduction: boolean; hasPerDiem: boolean }>();
+  for (const event of events) {
+    const journeyId = String(event.canonical?.journeyId || '').trim();
+    if (!journeyId) continue;
+    const current = grouped.get(journeyId) || { production: 0, perDiem: 0, hasProduction: false, hasPerDiem: false };
+    const salaryRow = salaryByEvent.get(event.id);
+    if (finance.salary.configured && salaryRow && Number.isFinite(Number(salaryRow.total))) {
+      current.production += Number(salaryRow.total);
+      current.hasProduction = true;
+    }
+    const perDiem = perDiemByEvent.get(event.id);
+    if (finance.perdiem.convertedComplete && Number.isFinite(Number(perDiem))) {
+      current.perDiem += Number(perDiem);
+      current.hasPerDiem = true;
+    }
+    grouped.set(journeyId, current);
+  }
+  const result: TvJourneyFinanceContext = {};
+  for (const [journeyId, value] of grouped) {
+    if (!value.hasProduction && !value.hasPerDiem) continue;
+    const production = value.hasProduction ? Math.round(value.production * 100) / 100 : null;
+    const perDiem = value.hasPerDiem ? Math.round(value.perDiem * 100) / 100 : null;
+    const estimated = Math.round(((production || 0) + (perDiem || 0)) * 100) / 100;
+    result[journeyId] = {
+      finance: {
+        currency: 'BRL',
+        estimated,
+        production,
+        perDiem,
+        note: 'Estimativa calculada pelo CrewCheck Mobile com as regras e parâmetros vigentes neste dispositivo.',
+      },
+    };
+  }
+  return result;
+}
 function notifyCrewCheck(title: string, body: string) {
   try {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -2806,7 +2851,7 @@ function AdminControlView() {
   </>;
 }
 
-function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; actions: QuickActions }) {
+function SettingsView({ setView, actions, journeyFinance }: { setView: (v: ZeroView) => void; actions: QuickActions; journeyFinance: TvJourneyFinanceContext }) {
   const admin = isAdmin();
   const user = getStoredUser();
   const [profileAvatar, setProfileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));
@@ -2861,6 +2906,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <article className="cz-profile"><label className="cc-profile-photo" title="Alterar foto"><span>{profileAvatar ? <img src={profileAvatar} alt="Foto do perfil"/> : <UserRound/>}</span><input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={updateProfileAvatar}/></label><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article>
     {admin && <DatabaseConnectionCard admin/>}
     <PlatformPreferences/>
+    <TvDeviceControl journeyFinance={journeyFinance}/>
     <section className="cz-settings-actions"><button onClick={() => setView('plans')}><ShieldCheck/> Assinaturas e limites</button><button onClick={() => setView('community')}><UserRound/> Pessoas, visitantes e chat</button></section>
 
     <h3>Operacional</h3>
@@ -4792,7 +4838,7 @@ export default function Home() {
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
-    {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
+    {view === 'settings' && <SettingsView setView={setView} actions={actions} journeyFinance={tvJourneyFinanceContext(events, bundle.roster)}/>}
     {view === 'admin' && <AdminControlView/>}
     {view === 'updates' && <UpdateCenterView/>}
     {view === 'maintenance' && <MaintenancePreview/>}
