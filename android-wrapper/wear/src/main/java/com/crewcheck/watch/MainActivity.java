@@ -75,7 +75,10 @@ public final class MainActivity extends FragmentActivity
     private static final int CYAN = Color.rgb(34, 211, 238);
     private static final int BLUE = Color.rgb(59, 130, 246);
     private static final int TEAL = Color.rgb(45, 212, 191);
-    private static final int VIOLET = Color.rgb(139, 92, 246);
+    // violet-400. O 139,92,246 anterior dava 4,02:1 sobre o quadro — abaixo do mínimo de
+    // 4,5:1 — e era o único valor da grade que reprovava. Este é o mesmo violeta que o
+    // atlas do app já usa na web, então corrige contraste e alinha a marca de uma vez.
+    private static final int VIOLET = Color.rgb(167, 139, 250);
     private static final int MAGENTA = Color.rgb(236, 72, 153);
     private static final int SUCCESS = Color.rgb(52, 211, 153);
     private static final int WARNING = Color.rgb(251, 191, 36);
@@ -89,8 +92,13 @@ public final class MainActivity extends FragmentActivity
         @Override
         public void run() {
             if (!ambient && clockView != null) {
-                clockView.setText(LocalTime.now().format(clockFormatter));
-                handler.postDelayed(this, 30_000L);
+                String current = LocalTime.now().format(clockFormatter);
+                if (!current.contentEquals(clockView.getText())) {
+                    clockView.setText(current);
+                }
+                // A tela mostra apenas HH:mm: alinhar o próximo tick à virada do minuto
+                // evita uma atualização inútil no meio dele e reduz trabalho no main thread.
+                handler.postDelayed(this, delayUntilNextMinute());
             }
         }
     };
@@ -100,6 +108,7 @@ public final class MainActivity extends FragmentActivity
     private ScrollView scroll;
     private LinearLayout content;
     private TextView clockView;
+    private TextView ambientClockView;
     private TextView transientStatus;
     private boolean ambient;
     private boolean burnInProtection;
@@ -175,14 +184,10 @@ public final class MainActivity extends FragmentActivity
             @Override
             public void onUpdateAmbient() {
                 if (!ambient) return;
-                // Virada de minuto: só o relógio muda. Reconstruir a árvore inteira aqui
-                // gastava bateria e piscava a tela a cada minuto.
-                if (clockView != null) {
-                    clockView.setText(LocalTime.now().format(clockFormatter));
-                    applyBurnInShift();
-                } else {
-                    renderSnapshot();
-                }
+                // Virada de minuto: só o relógio muda, e o conteúdo anda alguns px quando o
+                // mostrador pede proteção contra burn-in.
+                updateAmbientClock();
+                applyBurnInShift();
             }
         };
     }
@@ -198,6 +203,11 @@ public final class MainActivity extends FragmentActivity
     private void restartClock() {
         handler.removeCallbacks(clockTick);
         if (!ambient) handler.post(clockTick);
+    }
+
+    private static long delayUntilNextMinute() {
+        long now = System.currentTimeMillis();
+        return 60_000L - (now % 60_000L) + 50L;
     }
 
     private void renderRoot() {
@@ -394,6 +404,7 @@ public final class MainActivity extends FragmentActivity
             return;
         }
 
+        ambientClockView = null;
         renderHeader(snapshot);
 
         switch (screenMode) {
@@ -489,8 +500,10 @@ public final class MainActivity extends FragmentActivity
 
         TextView time = text(LocalTime.now().format(clockFormatter), 38,
                 primaryInk, false, Gravity.CENTER);
-        // Guardado para que a virada de minuto troque só este texto, sem reconstruir a tela.
-        clockView = time;
+        // O relógio do modo ambiente fica aceso o tempo todo: é onde o pulo de dígito da
+        // fonte proporcional mais incomoda.
+        tabular(time);
+        ambientClockView = time;
         content.addView(time);
 
         if (snapshot == null || snapshot.isStale(now)) {
@@ -502,10 +515,11 @@ public final class MainActivity extends FragmentActivity
 
         Primary primary = primaryFor(snapshot);
         TextView eyebrow = text(primary.eyebrow, 8, secondaryInk, true, Gravity.CENTER);
-        eyebrow.setPadding(0, dp(12), 0, dp(3));
+        eyebrow.setPadding(0, dp(12), 0, dp(4));
         content.addView(eyebrow);
 
         TextView value = heroValue(primary.value, 14, 22, primaryInk, 2);
+        tabular(value);
         content.addView(value);
 
         if (!snapshot.gateLabel().isBlank()) {
@@ -513,6 +527,15 @@ public final class MainActivity extends FragmentActivity
                     10, secondaryInk, true, Gravity.CENTER);
             gate.setPadding(0, dp(8), 0, 0);
             content.addView(gate);
+        }
+    }
+
+    /** Atualiza somente o relógio no ambiente; o restante da tela permanece estático. */
+    private void updateAmbientClock() {
+        if (ambientClockView == null) return;
+        String current = LocalTime.now().format(clockFormatter);
+        if (!current.contentEquals(ambientClockView.getText())) {
+            ambientClockView.setText(current);
         }
     }
 
@@ -524,7 +547,7 @@ public final class MainActivity extends FragmentActivity
 
         TextView title = text("SINCRONIZAR", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
-        title.setPadding(0, dp(8), 0, dp(5));
+        title.setPadding(0, dp(8), 0, dp(4));
         content.addView(title);
 
         TextView value = heroValue("Conecte ao CrewCheck", 14, 23, WHITE, 2);
@@ -535,7 +558,7 @@ public final class MainActivity extends FragmentActivity
                 10, MUTED, false, Gravity.CENTER
         );
         detail.setMaxLines(4);
-        detail.setPadding(0, dp(6), 0, dp(8));
+        detail.setPadding(0, dp(8), 0, dp(8));
         content.addView(detail);
 
         TextView sync = heroAction("Sincronizar agora", CYAN);
@@ -549,7 +572,7 @@ public final class MainActivity extends FragmentActivity
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 
         TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
-        icon.setPadding(0, dp(8), 0, dp(2));
+        icon.setPadding(0, dp(8), 0, dp(4));
         content.addView(icon);
 
         TextView eyebrow = text(
@@ -577,7 +600,7 @@ public final class MainActivity extends FragmentActivity
 
         if (!primary.secondary.isBlank()) {
             TextView secondary = text(primary.secondary, 9, MUTED, false, Gravity.CENTER);
-            secondary.setPadding(0, dp(4), 0, dp(5));
+            secondary.setPadding(0, dp(4), 0, dp(4));
             secondary.setMaxLines(2);
             content.addView(secondary);
         }
@@ -600,7 +623,7 @@ public final class MainActivity extends FragmentActivity
     private void renderNotifications(WatchContextSnapshot snapshot, long now) {
         TextView title = text("NOTIFICAÇÕES", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
-        title.setPadding(0, dp(4), 0, dp(5));
+        title.setPadding(0, dp(4), 0, dp(4));
         content.addView(title);
 
         boolean enabled = WatchNotificationCenter.isEnabled(this);
@@ -645,7 +668,7 @@ public final class MainActivity extends FragmentActivity
 
     private void renderCrewLife(long now) {
         TextView overline = text("CrewLife opcional", 9, MAGENTA, true, Gravity.CENTER);
-        overline.setPadding(0, dp(3), 0, dp(4));
+        overline.setPadding(0, dp(4), 0, dp(4));
         content.addView(overline);
 
         CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
@@ -659,7 +682,7 @@ public final class MainActivity extends FragmentActivity
                     9, MUTED, false, Gravity.CENTER
             );
             detail.setMaxLines(4);
-            detail.setPadding(0, dp(6), 0, dp(8));
+            detail.setPadding(0, dp(8), 0, dp(8));
             content.addView(detail);
             TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);
             sync.setOnClickListener(view -> requestSync());
@@ -671,13 +694,14 @@ public final class MainActivity extends FragmentActivity
                 ? (life.isEnergyScore() ? life.recoveryScore + "/100" : life.recoveryScore + "%")
                 : life.recoveryLabel;
         TextView score = heroValue(primaryScore, 22, 34, SUCCESS, 1);
+        tabular(score);
         content.addView(score);
 
         String scoreCaption = life.isEnergyScore()
                 ? "Energy Score · Samsung Health"
                 : "Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT);
         TextView label = text(scoreCaption, 10, WHITE, true, Gravity.CENTER);
-        label.setPadding(0, dp(1), 0, dp(6));
+        label.setPadding(0, dp(0), 0, dp(8));
         content.addView(label);
 
         LinearLayout stats = new LinearLayout(this);
@@ -694,7 +718,7 @@ public final class MainActivity extends FragmentActivity
 
         if (!life.recommendation.isBlank()) {
             TextView recommendation = text(life.recommendation, 10, MAGENTA, true, Gravity.CENTER);
-            recommendation.setPadding(0, dp(7), 0, dp(2));
+            recommendation.setPadding(0, dp(8), 0, dp(4));
             content.addView(recommendation);
         }
 
@@ -727,7 +751,7 @@ public final class MainActivity extends FragmentActivity
     private void renderSchedule(WatchContextSnapshot snapshot, long now) {
         TextView title = text("MINHA ESCALA", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.09f);
-        title.setPadding(0, dp(3), 0, dp(2));
+        title.setPadding(0, dp(4), 0, dp(4));
         content.addView(title);
 
         TextView subtitle = text("Próximos passos", 15, WHITE, true, Gravity.CENTER);
@@ -740,7 +764,7 @@ public final class MainActivity extends FragmentActivity
                     10, MUTED, false, Gravity.CENTER
             );
             empty.setMaxLines(4);
-            empty.setPadding(0, dp(10), 0, dp(12));
+            empty.setPadding(0, dp(12), 0, dp(12));
             content.addView(empty);
             return;
         }
@@ -772,6 +796,7 @@ public final class MainActivity extends FragmentActivity
 
         TextView time = text(item.time.isBlank() ? "•" : item.time, 12,
                 first ? accent : WHITE, true, Gravity.CENTER);
+        tabular(time);
         card.addView(time, new LinearLayout.LayoutParams(dp(52), dp(42)));
 
         LinearLayout copy = new LinearLayout(this);
@@ -1041,6 +1066,7 @@ public final class MainActivity extends FragmentActivity
         box.addView(text(label, 7, MUTED, true, Gravity.CENTER));
         TextView metric = text(value, 11, accent, true, Gravity.CENTER);
         metric.setMaxLines(2);
+        tabular(metric);
         box.addView(metric);
 
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
