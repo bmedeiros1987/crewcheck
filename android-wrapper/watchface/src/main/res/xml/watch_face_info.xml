@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Metadados do seletor de mostradores do Wear OS.
+
+  Sem este arquivo o seletor não tem miniatura para mostrar: o CrewCheck Flight Deck
+  aparecia como um quadro vazio entre mostradores com prévia. A prévia é gerada a partir do
+  próprio watchface.xml por scripts/watchface/render_preview.py — regenere quando o
+  desenho mudar.
+-->
+<WatchFaceInfo>
+    <Preview value="@drawable/preview" />
+    <MultipleInstancesAllowed value="false" />
+    <Editable value="true" />
+</WatchFaceInfo>
