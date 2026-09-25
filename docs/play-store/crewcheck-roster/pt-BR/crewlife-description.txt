@@ -1,0 +1,11 @@
+CrewLife — atividade física, sono e bem-estar
+
+CrewLife é um recurso opcional do CrewCheck para acompanhar sua atividade física, descanso e rotina pessoal. Registre manualmente horas de sono, passos e minutos de atividade e acompanhe seu histórico. Os registros manuais não são medições de sensores.
+
+No Android compatível, você também pode instalar separadamente o CrewLife Companion (com.crewcheck.life) e autorizar a integração com o Samsung Health. Quando disponível e autorizada, a integração apresenta resumos de passos, tempo de atividade, distância, calorias de atividade, duração e horários do sono e escores de sono e energia. A disponibilidade depende do dispositivo, do Samsung Health e da autorização da integração. O Companion não é necessário para usar a escala nem para fazer registros manuais no CrewLife.
+
+O CrewCheck Roster (com.crewcheck.app) distribuído pela Google Play não solicita permissões do Health Connect e não acessa o Health Connect. A integração opcional do Companion utiliza o Samsung Health Data SDK.
+
+O espelhamento de resumos no CrewWatch exige consentimento separado. Você pode pausar o CrewLife e apagar seus dados locais sem apagar sua escala. A autorização do Companion no Samsung Health deve ser revogada separadamente para impedir novas leituras por esse aplicativo.
+
+CrewLife e CrewLife Companion não são dispositivos médicos e não diagnosticam, tratam, curam ou previnem qualquer condição médica. Para aconselhamento, diagnóstico ou tratamento médico, consulte um profissional de saúde qualificado. Os dados do CrewLife não determinam aptidão para voo ou trabalho, composição de escala, designações, cumprimento de repouso regulamentar ou decisões operacionais.

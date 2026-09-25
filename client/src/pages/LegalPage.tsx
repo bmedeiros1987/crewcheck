@@ -10,7 +10,7 @@ type LegalSection = {
 };
 
 const TERMS_LAST_UPDATED = '19 de julho de 2026';
-const PRIVACY_LAST_UPDATED = '10 de agosto de 2026';
+const PRIVACY_LAST_UPDATED = '25 de setembro de 2026';
 const PRIVACY_EMAIL = 'suporte@crewcheck.app';
 
 const termsSections: LegalSection[] = [
@@ -143,7 +143,8 @@ const privacySections: LegalSection[] = [
       'Cadastro e segurança: nome, e-mail, senha protegida por hash, sessão, perfil, função, idioma, fuso horário, registros técnicos e sinais de prevenção a fraude.',
       'Escala e atividade profissional: dados presentes no arquivo enviado, como nome, matrícula quando existente, base, função, voos, horários, reservas, sobreavisos, treinamentos, folgas, repousos, pernoites e observações.',
       'Preferências e uso: tema, configurações, histórico, relatórios, alertas, rotinas, veículo, endereços informados, hotel, academia e escolhas de compartilhamento.',
-      'Localização: somente quando o usuário autoriza ou envia voluntariamente para Saída Inteligente, emergência ou busca de locais próximos.',
+      'Localização: somente quando o usuário autoriza ou envia voluntariamente para Saída Inteligente, emergência, busca de locais próximos ou busca na rede do plano de saúde.',
+      'Dados médicos de emergência (opcionais): perfil médico de emergência e cartões Guardian informados pelo usuário, detalhados na seção 3-B.',
       'Assinatura e pagamento: plano, estado, período, provedor e identificadores técnicos. O CrewCheck não armazena o número completo do cartão.',
       'Comunicações: mensagens de suporte, Concierge, notificações, convites e registros necessários para entrega e segurança.',
     ],
@@ -157,13 +158,28 @@ const privacySections: LegalSection[] = [
     ],
   },
   {
-    title: '3-A. Dados de saúde e atividade física — CrewCheck Life',
+    title: '3-A. CrewLife — atividade, sono e bem-estar',
     paragraphs: [
-      'O CrewCheck Life é opcional. No Android, somente depois de o usuário ativar o recurso, aceitar esta finalidade e conceder cada permissão no Health Connect, o aplicativo lê dados autorizados dos últimos 1 a 30 dias: total de passos, distância total, duração total de exercícios, sessão de sono mais recente (horários, duração e origem) e média de frequência cardíaca em repouso. Dados do Samsung Health ou de wearables só chegam ao CrewCheck quando o próprio usuário os sincroniza com o Health Connect e autoriza o acesso. O usuário também pode informar manualmente horas de sono, passos e minutos de atividade.',
-      'Esses dados pessoais sensíveis são usados exclusivamente para mostrar ao próprio usuário resumos e sugestões de organização de descanso, atividade e rotina ao redor da escala. A base legal é o consentimento específico, livre e revogável. O recurso não é necessário para as funções principais, não realiza diagnóstico, não determina aptidão para voo ou trabalho e não acessa prontuários, diagnósticos, medicamentos, exames, dados reprodutivos, nutrição, peso, altura, pressão arterial, glicose, saturação ou frequência cardíaca contínua.',
-      'O resumo autorizado e os lançamentos manuais ficam somente no armazenamento local do aparelho/navegador; registros brutos do Health Connect não são copiados nem enviados aos servidores do CrewCheck. Esses dados não são compartilhados com empregadores, companhias aéreas, anunciantes ou outros terceiros, não são vendidos e não são usados para publicidade, perfil comercial ou decisões automatizadas de emprego.',
-      'Os dados locais permanecem até o usuário usar “Apagar dados do Life”, limpar os dados do aplicativo/navegador ou desinstalar o app. O acesso pode ser revogado em CrewCheck Life ou em Android > Health Connect > Permissões de apps > CrewCheck; a revogação impede novas leituras. “Desconectar” remove o resumo local, e “Apagar dados do Life” remove consentimento, objetivos, lançamentos e resumos locais. Dados mantidos pelo aplicativo de origem ou pelo Health Connect devem ser excluídos nesses próprios serviços.',
-      'A proteção inclui solicitação apenas das permissões de leitura necessárias, acesso restrito à origem HTTPS do CrewCheck, processamento local, minimização, ausência do conteúdo de saúde em logs e analytics e controles do próprio Android/Health Connect.',
+      'CrewLife é um recurso opcional de atividade física, sono e bem-estar pessoal. O aplicativo principal CrewCheck Roster (com.crewcheck.app), na versão distribuída pela Google Play, não solicita permissões do Health Connect e não acessa o Health Connect. O usuário pode registrar manualmente horas de sono, passos e minutos de atividade; esses registros são informações fornecidas pelo usuário, não medições de sensores.',
+      'No Android compatível, a integração automática depende da instalação separada do CrewLife Companion (com.crewcheck.life), da disponibilidade do Samsung Health e da autorização do usuário nesse serviço. O Companion utiliza o Samsung Health Data SDK, não o Health Connect, para obter resumos de passos, tempo de atividade, distância, calorias de atividade, duração e horários do sono e escores de sono e energia, quando disponíveis. A compatibilidade do dispositivo, a versão do Samsung Health e a autorização da integração podem limitar a disponibilidade desses dados.',
+      'Os dados de saúde são dados pessoais sensíveis, tratados com consentimento específico, livre e revogável para exibir ao próprio usuário seu histórico de atividade, descanso e bem-estar. Os recursos principais de escala funcionam sem o CrewLife e sem o Companion. Esses dados não determinam aptidão para voo ou trabalho, composição de escala, designações, cumprimento de repouso regulamentar ou decisões operacionais.',
+      'CrewLife e CrewLife Companion não são dispositivos médicos e não diagnosticam, tratam, curam ou previnem qualquer condição médica. Escores e sugestões têm finalidade de bem-estar e organização pessoal, não de avaliação clínica. Para aconselhamento, diagnóstico ou tratamento médico, consulte um profissional de saúde qualificado.',
+      'O Companion disponibiliza ao CrewCheck um resumo agregado por comunicação entre os aplicativos no próprio aparelho. Os registros manuais e resumos recebidos são armazenados localmente; séries brutas de saúde não são enviadas aos servidores do CrewCheck. O espelhamento de resumos no CrewWatch é opcional, exige consentimento separado e utiliza a sincronização da plataforma Wear OS. Portanto, ao ativá-lo, os campos autorizados também são transferidos para o relógio do usuário.',
+      'Não vendemos dados de saúde nem os utilizamos para publicidade, perfilamento comercial, treinamento de modelos gerais de inteligência artificial, avaliação profissional ou decisões de emprego. Os resumos do CrewLife não são compartilhados com empregadores, companhias aéreas ou anunciantes. Samsung e a plataforma do relógio possuem políticas próprias para os serviços que o usuário decide conectar.',
+      'No CrewLife, o usuário pode pausar o recurso, usar “Revogar conexão e limpar resumo” ou “Apagar todos os dados do Life”. Os registros locais permanecem até serem apagados pelo usuário ou substituídos por novos resumos. A autorização do Companion no Samsung Health é independente: para impedir novas leituras por ele, revogue essa autorização nas permissões do Samsung Health. Apagar dados no CrewCheck não apaga o histórico do Samsung Health nem substitui a revogação do Companion; dados mantidos no aplicativo de origem devem ser administrados nesse próprio serviço.',
+      'A proteção inclui minimização, controles de acesso entre aplicativos, consentimento separado para o relógio e exclusão do conteúdo de saúde de logs e analytics do CrewCheck. Nenhum sistema é totalmente imune a riscos; mantenha o dispositivo protegido. Dúvidas sobre acesso, correção, revogação ou exclusão podem ser encaminhadas para suporte@crewcheck.app.',
+    ],
+  },
+  {
+    title: '3-B. Emergência, Guardian e plano de saúde',
+    paragraphs: [
+      'Emergência e Guardian são recursos opcionais de segurança pessoal. Na Central de Emergência, o usuário pode cadastrar um perfil médico de emergência com tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora e código do plano de saúde. Esse perfil é armazenado nos servidores do CrewCheck com criptografia autenticada e só é usado nos fluxos de emergência descritos nesta seção.',
+      'Um alerta de emergência é enviado pelo Telegram às pessoas configuradas pelo usuário: contatos salvos, conexões aceitas e, quando o usuário e o colega ativaram o compartilhamento de mesmo hotel, colegas hospedados no mesmo hotel na mesma data. Por padrão, o alerta vai aos contatos salvos, às conexões aceitas e aos colegas do mesmo hotel e inclui a localização; o usuário pode alterar essas escolhas nas preferências. O CrewCheck registra o alerta, os destinatários e o link de localização enviado para permitir o acompanhamento e as respostas.',
+      'Os dados médicos só entram em um alerta de emergência médica quando o usuário ativa essa inclusão e marca a autorização “Autorizo o envio desses dados em uma emergência médica confirmada”. Essa inclusão fica desligada por padrão. As mensagens trafegam pelo Telegram, que possui política própria.',
+      'O Guardian gera, a pedido do usuário, um cartão de emergência acessível por QR code ou link, com nome, identificação de tripulante, tipo sanguíneo, alergias, medicamentos, condições, observações críticas e um contato de emergência informados pelo usuário. O conteúdo é armazenado com criptografia, o link tem validade temporária (72 horas por padrão, no máximo 30 dias) e pode ser revogado a qualquer momento. Qualquer pessoa com o QR code ou o link pode ver o cartão enquanto ele estiver válido; compartilhe-o apenas com quem precisar dele.',
+      'A busca na rede credenciada do plano de saúde envia ao CrewCheck a localização, a cidade, o estado e o termo pesquisado, usados para responder à busca na rede publicada pela operadora.',
+      'Esses recursos não são dispositivos médicos e não substituem serviços públicos de emergência nem avaliação médica; em uma emergência, acione também o serviço local (192, 193 ou 190 no Brasil). A entrega do alerta depende do Telegram e dos destinatários configurados. Dados médicos de emergência não são vendidos, não são usados para publicidade e não são compartilhados pelo CrewCheck com empregadores, companhias aéreas ou anunciantes.',
+      'O usuário pode editar ou limpar o perfil médico na Central de Emergência, revogar cartões Guardian a qualquer momento e excluir a conta. A exclusão da conta remove o perfil médico, as preferências, as sessões, os alertas de emergência e os cartões Guardian vinculados à conta.',
     ],
   },
   {
@@ -214,6 +230,7 @@ const privacySections: LegalSection[] = [
     paragraphs: [
       'Dados são mantidos enquanto necessários para fornecer o serviço, preservar segurança, cumprir obrigações legais ou exercer direitos. Escalas e histórico podem ser excluídos pelo usuário ou com a exclusão da conta.',
       'Tokens de acesso do Google Calendar são armazenados no dispositivo e possuem validade limitada. A desconexão remove o token local e solicita a revogação quando suportado. O CrewCheck não solicita senha da Conta Google.',
+      'A exclusão da conta remove também o perfil médico de emergência, as preferências, as sessões, os alertas e os cartões Guardian; os controles do CrewLife estão descritos na seção 3-A.',
       'Após a exclusão da conta, registros mínimos de auditoria, prevenção a fraude, cobrança ou defesa podem ser conservados pelo prazo estritamente necessário e sem reutilização para finalidades incompatíveis.',
     ],
   },
