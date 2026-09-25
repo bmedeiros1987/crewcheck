@@ -9,6 +9,8 @@ on:
       - 'README*'
       - 'scripts/v139/**'
       - 'scripts/v14372/**'
+      - 'scripts/android-play/**'
+      - 'scripts/regression-crewlife-play-disclosure.mjs'
       - '.github/workflows/privacy-p0.yml'
 
 jobs:
@@ -21,8 +23,12 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - name: Validate source CrewLife Play disclosures
+        run: node --test scripts/regression-crewlife-play-disclosure.mjs
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
+      - name: Validate prepared CrewLife Play disclosures
+        run: node --test scripts/regression-crewlife-play-disclosure.mjs
       - name: Preserve executable external endpoint
         shell: bash
         run: |
