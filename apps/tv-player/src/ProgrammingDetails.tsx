@@ -27,6 +27,7 @@ type ExtensionSnapshot=TvSnapshot & {
     operational?:boolean;mobility?:boolean;
   };
   journeyDetails?:Record<string,{
+    operational?:{gateLabel?:string|null;remoteStand?:boolean|null;terminal?:string|null;boardingAt?:string|null;trafficDurationText?:string|null;trafficDelayText?:string|null;trafficStatus?:string|null};
     crew?:Array<{role?:string;name?:string;position?:string}>;
     finance?:{currency?:string;estimated?:number;perDiem?:number;production?:number;note?:string};
     hotel?:{name?:string;room?:string;transport?:string};
@@ -114,9 +115,19 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
   const visitor=isVisitorPresentation(snapshot);
   const permissions=extended.sharePermissions||{};
   const details=extended.journeyDetails?.[program.journeyId||program.key]||{};
-  const gate=currentFact(snapshot.gate);
-  const weather=currentFact(snapshot.weather);
-  const traffic=extended.traffic?.value||null;
+  const isCurrentProgram=Boolean(program.journeyId&&snapshot.next?.journeyId&&program.journeyId===snapshot.next.journeyId);
+  const globalGate=isCurrentProgram?currentFact(snapshot.gate):null;
+  const globalWeather=isCurrentProgram?currentFact(snapshot.weather):null;
+  const globalTraffic=isCurrentProgram?extended.traffic?.value||null:null;
+  const operational=details.operational||{};
+  const routeCodes=new Set(programRouteCodes(program));
+  const programWeather=Array.isArray(details.weather)&&details.weather.length
+    ? details.weather
+    : globalWeather&&routeCodes.has(globalWeather.airport)?[globalWeather]:[];
+  const gateLabel=operational.gateLabel||globalGate?.label||null;
+  const remoteStand=typeof operational.remoteStand==='boolean'?operational.remoteStand:globalGate?.remoteStand;
+  const trafficDuration=operational.trafficDurationText||globalTraffic?.durationText||globalTraffic?.delayText||null;
+  const trafficStatus=operational.trafficStatus||operational.trafficDelayText||globalTraffic?.status||globalTraffic?.delayText||null;
   const codeExplanation=simpleCodeExplanation(program.first.publishedCode);
 
   return <section className="program-details detail">
@@ -125,14 +136,17 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
 
     <div className="details-grid">
       <article className="detail-module operational-module"><header><Plane/><div><small>OPERAÇÃO</small><h2>O que importa para o voo</h2></div></header>
-        <dl><dt>Apresentação</dt><dd>{programPresentation(program)||'Não informada'}</dd>
-          {prefs.gate&&<><dt>Portão</dt><dd>{gate?.label||'Não confirmado'}</dd></>}
-          {prefs.traffic&&<><dt>Trânsito</dt><dd>{traffic?.durationText||traffic?.delayText||'Sem leitura confirmada'}</dd></>}
-        </dl>
+        {permissions.operational===false?<LockedSection title="Contexto operacional"/>:<dl>
+          <dt>Apresentação</dt><dd>{programPresentation(program)||'Não informada'}</dd>
+          {prefs.gate&&<><dt>Portão</dt><dd>{gateLabel||'Não confirmado'}</dd>{remoteStand===true&&<><dt>Embarque</dt><dd>Posição remota</dd></>}{operational.terminal&&<><dt>Terminal</dt><dd>{operational.terminal}</dd></>}</>}
+          {operational.boardingAt&&<><dt>Embarque</dt><dd>{operational.boardingAt}</dd></>}
+          {prefs.traffic&&<><dt>Trânsito</dt><dd>{trafficDuration||'Sem leitura confirmada'}</dd>{trafficStatus&&<><dt>Situação</dt><dd>{trafficStatus}</dd></>}</>}
+        </dl>}
+        {!isCurrentProgram&&!details.operational&&<small className="context-scope-note">Portão e trânsito atuais não são reutilizados em outra programação.</small>}
       </article>
 
-      {prefs.weather&&<article className="detail-module weather-module"><header><CloudSun/><div><small>METEOROLOGIA</small><h2>Condição disponível</h2></div></header>
-        {weather?<div className="detail-weather"><WeatherArtwork label={weather.label}/><div><strong>{Math.round(weather.temperature)}°C</strong><span>{visitorAirportLabel(weather.airport,visitor)} · {weather.label}</span></div></div>:<p>Nenhuma condição confirmada para esta programação.</p>}
+      {prefs.weather&&<article className="detail-module weather-module"><header><CloudSun/><div><small>METEOROLOGIA</small><h2>Condição da programação</h2></div></header>
+        {permissions.weather===false?<LockedSection title="Meteorologia"/>:programWeather.length?<div className="program-weather-list">{programWeather.slice(0,3).map((item,index)=><div className="detail-weather" key={(item.airport||'weather')+'-'+index}><WeatherArtwork label={item.label}/><div><strong>{Number.isFinite(Number(item.temperature))?Math.round(Number(item.temperature))+'°C':'—'}</strong><span>{visitorAirportLabel(item.airport,visitor)} · {item.label||'Condição disponível'}</span>{Number.isFinite(Number(item.wind))&&<small>Vento {Math.round(Number(item.wind))} km/h</small>}{Number.isFinite(Number(item.rainChance))&&<small>Chuva {Math.round(Number(item.rainChance))}%</small>}</div></div>)}</div>:<p>Nenhuma condição confirmada especificamente para esta programação.</p>}
       </article>}
 
       {prefs.crew&&<article className="detail-module sensitive-module"><header><Users/><div><small>DADO SENSÍVEL</small><h2>Tripulação</h2></div></header>
