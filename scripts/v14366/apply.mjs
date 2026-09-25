@@ -31,7 +31,8 @@ update('client/index.html', (source) => {
   next = next.replace(/\s*<script(?:\s+[^>]*)?>[\s\S]*?<\/script>\s*/g, (block) => {
     const forcesReload = /window\.location\.reload\s*\(/.test(block);
     const unregistersWorker = /registration\.unregister\s*\(/.test(block);
-    return forcesReload || unregistersWorker ? '\n' : block;
+    const legacyReleaseWatcher = /crewcheck-release-watch-v\d+/.test(block);
+    return forcesReload || unregistersWorker || legacyReleaseWatcher ? '\n' : block;
   });
 
   if (/window\.location\.reload\s*\(/.test(next)) throw new Error('[v14366] Reload automático ainda presente no HTML final.');

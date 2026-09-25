@@ -137,7 +137,7 @@ const releaseWatcher = `<script id="crewcheck-release-watch-v14343">
       var cooldownMs = 30 * 60 * 1000;
       function normalized(value) { return String(value || '').trim(); }
       async function checkRelease() {
-        if (checking) return;
+        if (checking || navigator.onLine === false) return;
         checking = true;
         try {
           var response = await fetch('/release.json?ts=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' });
@@ -145,18 +145,17 @@ const releaseWatcher = `<script id="crewcheck-release-watch-v14343">
           var payload = await response.json().catch(function () { return {}; });
           var serverRelease = normalized(payload.version);
           if (!serverRelease || serverRelease === normalized(currentRelease)) return;
-          var reloadKey = 'crewcheck-release-reload:' + serverRelease;
-          var previousReload = Number(window.localStorage && window.localStorage.getItem(reloadKey) || 0);
-          if (previousReload && Date.now() - previousReload < cooldownMs) return;
-          if (window.localStorage) window.localStorage.setItem(reloadKey, String(Date.now()));
+          var updateKey = 'crewcheck-release-update:' + serverRelease;
+          var previousCheck = Number(window.localStorage && window.localStorage.getItem(updateKey) || 0);
+          if (previousCheck && Date.now() - previousCheck < cooldownMs) return;
+          if (window.localStorage) window.localStorage.setItem(updateKey, String(Date.now()));
           if ('serviceWorker' in navigator) {
             var registration = await navigator.serviceWorker.getRegistration();
             if (registration) {
               await registration.update().catch(function () {});
-              if (registration.waiting) registration.waiting.postMessage('SKIP_WAITING');
             }
           }
-          window.setTimeout(function () { window.location.reload(); }, 180);
+          // Activation and navigation stay under the safe PWA coordinator.
         } catch (error) {
         } finally {
           checking = false;
