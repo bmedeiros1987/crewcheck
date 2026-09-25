@@ -70,7 +70,8 @@ const ICAO_TO_IATA:Record<string,string>={
   SCEL:'SCL',SPJC:'LIM',SAEZ:'EZE',SABE:'AEP',SUMU:'MVD',SGAS:'ASU',SKBO:'BOG',KMIA:'MIA',KMCO:'MCO',
   KJFK:'JFK',EGLL:'LHR',LFPG:'CDG',LEMD:'MAD',LEBL:'BCN',LPPT:'LIS',LIRF:'FCO',EDDF:'FRA',RJTT:'HND',OMDB:'DXB',
 };
-const IATA_TO_ICAO:Record<string,string>=Object.fromEntries(Object.entries(ICAO_TO_IATA).map(([icao,iata])=>[iata,icao]));
+const IATA_TO_ICAO:Record<string,string>={};
+Object.keys(ICAO_TO_IATA).forEach(icao=>{IATA_TO_ICAO[ICAO_TO_IATA[icao]]=icao;});
 const VISITOR_CITY_NAMES:Record<string,string>={
   SCL:'Santiago',LIM:'Lima',EZE:'Buenos Aires',AEP:'Buenos Aires',MVD:'Montevidéu',
   ASU:'Assunção',BOG:'Bogotá',MIA:'Miami',MCO:'Orlando',
