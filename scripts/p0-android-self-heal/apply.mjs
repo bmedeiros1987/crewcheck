@@ -85,4 +85,5 @@ if (!source.includes('private void verifyCrewCheckShellMounted(final WebView tar
 }
 
 fs.writeFileSync(file, source, 'utf8');
-console.log('[p0-android-self-heal] watchdog de shell + recuperação sem apagar sessão/dados aplicado.');
+await import('./boot-progress.mjs');
+console.log('[p0-android-self-heal] watchdog, recuperação e boot progressivo sem apagar sessão/dados aplicados.');
