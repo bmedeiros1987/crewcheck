@@ -6,12 +6,10 @@ on:
     branches: [feat/android-auto-foundation]
     paths:
       - 'android-wrapper/auto/**'
-      - 'android-wrapper/settings.gradle'
       - '.github/workflows/crewcheck-android-auto-lab.yml'
   pull_request:
     paths:
       - 'android-wrapper/auto/**'
-      - 'android-wrapper/settings.gradle'
       - '.github/workflows/crewcheck-android-auto-lab.yml'
 
 jobs:
@@ -19,8 +17,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout Peripherals
         uses: actions/checkout@v4
+      - name: Guard no phone implementation in Auto
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('android-wrapper/auto')
+          assert not (root / 'phone-bridge').exists(), 'Phone bridge belongs to Mobile Core #839'
+          for p in root.rglob('*'):
+              if p.is_file() and p.suffix in ('.java', '.gradle'):
+                  text = p.read_text()
+                  for forbidden in ('crewcheck_watch_sync', 'ACTION_WATCH_SYNC_REQUEST', 'extends ContentProvider', "project.path == ':app'"):
+                      assert forbidden not in text, str(p) + ': Mobile internals in Auto'
+          print('PASS: Auto owns consumers, not the phone provider')
+          PY
+      - name: Checkout immutable Mobile Core provider source (PR 839)
+        uses: actions/checkout@v4
+        with:
+          repository: bmedeiros1987/crewcheck
+          ref: e995dcf3cb75a150f08330d0aef68bc2495b134f
+          path: mobile-core-provider
+          sparse-checkout: android-wrapper/mobile-core/drive-lab
+          persist-credentials: false
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -38,8 +57,8 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-      - name: Unit tests and Auto APK
-        run: gradle -p android-wrapper --no-daemon --console=plain :auto:testDebugUnitTest :auto:assembleDebug --stacktrace
+      - name: Unit tests and Auto APK (no root-settings write)
+        run: gradle -p android-wrapper -I "$GITHUB_WORKSPACE/android-wrapper/auto/auto-module.init.gradle" --no-daemon --console=plain :auto:testDebugUnitTest :auto:assembleDebug --stacktrace
       - name: Summarize unit tests
         shell: python
         run: |
@@ -53,11 +72,13 @@ jobs:
               for key in totals:
                   totals[key] += int(root.get(key, '0'))
           print('Drive Lab unit tests:', totals)
-          assert totals['tests'] >= 30, 'Expected at least 30 regression tests'
+          assert totals['tests'] >= 30
           assert totals['failures'] == totals['errors'] == totals['skipped'] == 0
-      - name: Build isolated phone lab with read-only bridge
-        run: gradle -p android-wrapper -I "$GITHUB_WORKSPACE/android-wrapper/auto/phone-bridge/init.gradle" --no-daemon --console=plain :app:assembleDriveLab --stacktrace
-      - name: Verify separate package IDs and matching lab signatures
+      - name: Consume Mobile-owned Phone Lab build (same runner and debug key)
+        run: |
+          MOBILE_ROOT="$GITHUB_WORKSPACE/mobile-core-provider/android-wrapper/mobile-core/drive-lab"
+          gradle -p android-wrapper -I "$MOBILE_ROOT/init.gradle" -PcrewcheckMobileDriveLabRoot="$MOBILE_ROOT" --no-daemon --console=plain :app:assembleDriveLab --stacktrace
+      - name: Verify separate packages and matching signatures
         shell: bash
         run: |
           set -euo pipefail
@@ -73,7 +94,8 @@ jobs:
           cp "$AUTO" drive-lab-artifacts/crewcheck-drive-lab.apk
           cp "$PHONE" drive-lab-artifacts/crewcheck-phone-lab.apk
           cp android-wrapper/auto/README.md drive-lab-artifacts/LEIA-ME.md
-          printf '%s\n' "$GITHUB_SHA" > drive-lab-artifacts/COMMIT.txt
+          git rev-parse HEAD > drive-lab-artifacts/AUTO_COMMIT.txt
+          git -C mobile-core-provider rev-parse HEAD > drive-lab-artifacts/MOBILE_COMMIT.txt
           (cd drive-lab-artifacts && sha256sum *.apk > SHA256SUMS.txt)
       - name: Upload test reports
         if: always()

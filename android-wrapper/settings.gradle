@@ -13,6 +13,3 @@ include ':wear'
 include ':watchface'
 
 include ':lifecompanion'
-
-// Isolated Android Auto prototype. Keep out of the production APK until car-category review is complete.
-include ':auto'
