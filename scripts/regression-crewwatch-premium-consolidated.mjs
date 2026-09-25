@@ -20,7 +20,10 @@ assert.match(faceGradle, /applicationId 'com\.crewcheck\.watch\.app'/);
 assert.match(wearGradle, /generateCrewWatchBrandAssets/);
 assert.match(faceGradle, /generateCrewWatchFaceBrandAssets/);
 
-assert.match(wearMain, /CrewLife no relógio ainda não autorizado/);
+// Sem resumo e resumo vencido são estados separados; nenhum afirma consentimento negado.
+assert.doesNotMatch(wearMain, /ainda não autorizado/);
+assert.match(wearMain, /Nenhum resumo CrewLife neste relógio/);
+assert.match(wearMain, /Resumo desatualizado/);
 assert.match(wearMain, /renderNotifications/);
 assert.match(wearMain, /renderCrewLife/);
 assert.match(wearMain, /renderSchedule/);
@@ -76,6 +79,16 @@ assert.match(watchContext, /WATCH_UNCHANGED_REPUBLISH_MS = 10 \* 60 \* 1000/);
 assert.match(watchContext, /Math\.max\(now \+ 15 \* 60 \* 1000/, 'validade mínima precisa seguir maior que o reenvio sem mudança');
 assert.match(home, /const onRequest = \(\) => publishWatchSnapshot\(true\);/);
 assert.match(home, /setInterval\(\(\) => publishWatchSnapshot\(false\), 60_000\)/);
+// Refresh do CrewLife por canal próprio (auditoria CREWLIFE-SYNC-AUDIT no #836).
+const syncClient = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchSyncClient.java');
+const triage = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/DataItemTriage.java');
+assert.match(triage, /CREWLIFE\(WatchContract\.CREWLIFE_PATH, WatchContract\.DATA_KEY_CREWLIFE_JSON\)/);
+assert.match(triage, /ROUTINE\(WatchContract\.ROUTINE_PATH, WatchContract\.DATA_KEY_ROUTINE_JSON\)/);
+assert.match(syncClient, /DataItemTriage\.Channel\.CREWLIFE/);
+assert.match(syncClient, /clearCrewLife\(\)/, 'saúde ausente no Data Layer não fica retida no relógio');
+assert.match(wearMain, /WatchSyncClient\.refresh\(this, crewLifeRequest,/);
+assert.match(wearMain, /report\.crewLifeStatus\(\)/);
+assert.ok(fs.existsSync('android-wrapper/wear/src/test/java/com/crewcheck/watch/CrewLifeSyncTest.java'));
 const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
 assert.match(notificationCenter, /if \(snapshot\.isStale\(System\.currentTimeMillis\(\)\)\) return;/);
 

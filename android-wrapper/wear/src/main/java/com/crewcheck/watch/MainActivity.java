@@ -688,11 +688,19 @@ public final class MainActivity extends FragmentActivity
         RoutineSnapshot routine = wellbeingStore.loadRoutine();
 
         if (life == null || life.isStale(now)) {
-            TextView title = heroValue("CrewLife no pulso", 14, 19, WHITE, 2);
+            // Sem resumo e resumo vencido são estados diferentes, e nenhum dos dois prova
+            // consentimento negado — o relógio não sabe disso. Vencido nunca mostra valores:
+            // um número de ontem lido como de hoje é pior que número nenhum.
+            boolean stale = life != null;
+            TextView title = heroValue(stale ? "Resumo desatualizado" : "CrewLife no pulso",
+                    14, 19, WHITE, 2);
             content.addView(title);
             TextView detail = text(
-                    "CrewLife no relógio ainda não autorizado. No celular, ative “Mostrar CrewLife no relógio”. Só chegam valores agregados que você escolher.",
-                    9, MUTED, false, Gravity.CENTER
+                    stale
+                            ? "O último resumo CrewLife chegou " + ageLabel(life.generatedAtEpochMs, now)
+                                    + " e já passou da validade. Abra o CrewLife no celular para enviar um novo."
+                            : "Nenhum resumo CrewLife neste relógio. No celular, ative “Mostrar CrewLife no relógio”. Só chegam valores agregados que você escolher.",
+                    9, stale ? WARNING : MUTED, false, Gravity.CENTER
             );
             detail.setMaxLines(4);
             detail.setPadding(0, dp(8), 0, dp(8));
@@ -1194,12 +1202,30 @@ public final class MainActivity extends FragmentActivity
         );
     }
 
+    /**
+     * Na tela CrewLife o pedido espera um resumo CrewLife e reporta o status dele: a escala
+     * chegar primeiro não é sucesso de saúde. Nas outras telas, o status é o operacional.
+     */
     private void requestSync() {
+        final boolean crewLifeRequest = screenMode == MODE_CREWLIFE;
         if (transientStatus != null) transientStatus.setText("Buscando celular…");
-        WatchSyncClient.refresh(this, (received, status) -> runOnUiThread(() -> {
+        WatchSyncClient.refresh(this, crewLifeRequest, report -> runOnUiThread(() -> {
             renderSnapshot();
-            if (transientStatus != null) transientStatus.setText(status);
+            if (transientStatus != null) {
+                transientStatus.setText(crewLifeRequest
+                        ? report.crewLifeStatus()
+                        : report.operationalStatus());
+            }
         }));
+    }
+
+    /** "há 3 h", "há 2 dias" — idade de um resumo, sem fingir precisão de minuto. */
+    private static String ageLabel(long generatedAtEpochMs, long now) {
+        long minutes = Math.max(0L, (now - generatedAtEpochMs) / 60_000L);
+        if (minutes < 60) return "há " + Math.max(1L, minutes) + " min";
+        long hours = minutes / 60;
+        if (hours < 48) return "há " + hours + " h";
+        return "há " + (hours / 24) + " dias";
     }
 
     private void requestNotificationPermissionIfNeeded() {
