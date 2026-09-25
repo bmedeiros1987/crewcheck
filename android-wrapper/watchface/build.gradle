@@ -72,3 +72,4 @@ android {
 preBuild.dependsOn generateCrewWatchFaceBrandAssets
 
 apply from: rootProject.file('store-policy.gradle')
+apply from: file('preview-assets.gradle')

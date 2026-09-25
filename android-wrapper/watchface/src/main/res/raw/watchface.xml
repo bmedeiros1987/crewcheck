@@ -6,9 +6,9 @@
   <Metadata key="PREVIEW_TIME" value="18:16:00" />
   <UserConfigurations>
     <ListConfiguration id="crewcheck_style" displayName="crewcheck_style_label" screenReaderText="crewcheck_style_label" defaultValue="0">
-      <ListOption id="0" displayName="crewcheck_style_signature" screenReaderText="crewcheck_style_signature" />
-      <ListOption id="1" displayName="crewcheck_style_flightdeck" screenReaderText="crewcheck_style_flightdeck" />
-      <ListOption id="2" displayName="crewcheck_style_minimal" screenReaderText="crewcheck_style_minimal" />
+      <ListOption id="0" icon="crewcheck_preview_signature" displayName="crewcheck_style_signature" screenReaderText="crewcheck_style_signature" />
+      <ListOption id="1" icon="crewcheck_preview_flightdeck" displayName="crewcheck_style_flightdeck" screenReaderText="crewcheck_style_flightdeck" />
+      <ListOption id="2" icon="crewcheck_preview_minimal" displayName="crewcheck_style_minimal" screenReaderText="crewcheck_style_minimal" />
     </ListConfiguration>
     <ColorConfiguration id="crewcheck_palette" displayName="crewcheck_palette_label" defaultValue="0">
       <ColorOption id="0" displayName="crewcheck_palette_cyan" colors="#FF22D3EE #5522D3EE" />
