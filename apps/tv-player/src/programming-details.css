@@ -142,3 +142,12 @@
 .visitor-airport-glossary small,.visitor-term-glossary small{margin-top:.25vh!important;font-size:.52vw!important;line-height:1.35!important;color:#8da7bc!important}
 .theme-mobile .visitor-airport-glossary>span,.theme-mobile .visitor-term-glossary>span{background:#f6fbfe;border-color:#d3e3ec}
 .theme-mobile .visitor-airport-glossary b,.theme-mobile .visitor-term-glossary b{color:#0d2a3e}
+
+.context-scope-note{display:block;margin-top:.7vh;font-size:.54vw;color:#748ba2;line-height:1.35}
+.program-weather-list{display:flex;flex-direction:column}
+.program-weather-list .detail-weather{margin-top:.55vh;padding:.45vw .55vw;border:1px solid #29465f;border-radius:.55vw;background:rgba(5,28,47,.35)}
+.program-weather-list .detail-weather:first-child{margin-top:0}
+.program-weather-list .detail-weather .weather-art{flex-basis:4.8vw;width:4.8vw;height:4.3vw;margin-right:.65vw}
+.program-weather-list .detail-weather strong{font-size:1.65vw}
+.program-weather-list .detail-weather small{display:block;margin-top:.15vh;font-size:.49vw;color:#7892aa}
+.theme-mobile .program-weather-list .detail-weather{background:#f5fbff;border-color:#d4e4ed}
