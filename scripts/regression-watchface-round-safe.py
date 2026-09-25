@@ -1,15 +1,16 @@
-"""Watch Face visual contracts only. Standard library; no Android or extra dependencies."""
+"""Visual regression matrix only: WFF XML/geometry/privacy, not an Android renderer."""
 from copy import deepcopy
 from hashlib import sha256
-from itertools import combinations
+from itertools import combinations, product
 from math import hypot
 from pathlib import Path
+import re
 import struct
 import xml.etree.ElementTree as ET
 import zlib
 
-FACE = Path('android-wrapper/watchface/src/main/res/raw/watchface.xml')
-LOGO = Path('android-wrapper/watchface/src/main/res/drawable-nodpi/crewcheck_logo_neon.png')
+RES = Path('android-wrapper/watchface/src/main/res')
+FACE, LOGO = RES / 'raw/watchface.xml', RES / 'drawable-nodpi/crewcheck_logo_neon.png'
 PREFIX = 'com.crewcheck.app/com.crewcheck.watch.'
 PROVIDERS = {
     1: ('primaryProvider', PREFIX + 'CrewCheckComplicationService'),
@@ -19,6 +20,8 @@ PROVIDERS = {
     5: ('defaultSystemProvider', 'WATCH_BATTERY'),
     6: ('defaultSystemProvider', 'STEP_COUNT'),
 }
+CLOCKS = {'0': ('88', 'BOLD'), '1': ('84', 'BOLD'), '2': ('88', 'THIN')}
+PALETTES = {'0': '#FF22D3EE #5522D3EE', '1': '#FFA78BFA #55A78BFA', '2': '#FFF472B6 #55F472B6'}
 
 
 def box(node):
@@ -44,7 +47,72 @@ def hidden_in_ambient(node):
                and v.get('value') == '0' for v in node.findall('Variant'))
 
 
-def validate(root):
+def luminance(color):
+    channels = [int(color[i:i + 2], 16) / 255 for i in (3, 5, 7)]
+    channels = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
+    return sum(v * weight for v, weight in zip(channels, (.2126, .7152, .0722)))
+
+
+def validate_config(root, labels):
+    cfg = root.find('UserConfigurations')
+    assert cfg is not None and [n.tag for n in cfg] == ['ListConfiguration', 'ColorConfiguration']
+    choice, palette = cfg
+    assert choice.get('id') == 'crewcheck_style' and palette.get('id') == 'crewcheck_palette'
+    assert choice.get('defaultValue') == palette.get('defaultValue') == '0'
+    assert [n.get('id') for n in choice] == [n.get('id') for n in palette] == ['0', '1', '2']
+    assert all(n.tag == 'ListOption' for n in choice)
+    assert all(n.tag == 'ColorOption' for n in palette)
+    assert {n.get('id'): n.get('colors') for n in palette} == PALETTES
+    for n in root.iter():
+        for attr in ('displayName', 'screenReaderText'):
+            if attr in n.attrib:
+                assert n.get(attr) in labels and labels[n.get(attr)], 'missing editor label'
+    for n in [choice, *choice]:
+        assert n.get('screenReaderText') == n.get('displayName'), 'editor accessibility missing'
+    for n in palette:
+        accent = n.get('colors').split()[0]
+        for bg in ('#FF000000', '#FF0C1726', '#FF050E18'):
+            assert (luminance(accent) + .05) / (luminance(bg) + .05) >= 4.5, 'accent text contrast'
+    scene = root.find('Scene')
+    refs = scene.findall('ListConfiguration')
+    assert len(refs) == 1 and refs[0].get('id') == choice.get('id'), 'unbound style selector'
+    assert [n.get('id') for n in refs[0]] == ['0', '1', '2']
+    for option in refs[0]:
+        assert all(n.tag in ('DigitalClock', 'PartDraw') for n in option), 'profile contains unexpected content'
+        assert len(option.findall('DigitalClock')) == 1
+    # Keep WFF v1 and the installed contract: no duplicate slots, new permissions, custom
+    # gesture handler, Flavors (v2+) or invisible interactive areas masquerading as pages.
+    assert len(root.findall('.//ComplicationSlot')) == len(scene.findall('ComplicationSlot')) == 6
+    assert not root.findall('.//Flavors') and not root.findall('.//Launch')
+    assert not root.findall('.//SecondHand') and not root.findall('.//PartAnimatedImage')
+    for n in root.iter():
+        for value in n.attrib.values():
+            if 'CONFIGURATION.' in value:
+                assert value in ('[CONFIGURATION.crewcheck_palette.0]', '[CONFIGURATION.crewcheck_palette.1]'), 'unknown palette reference'
+    return True
+
+
+def resolve_profile(root, style, palette):
+    """Flatten the selected declarative option for geometry tests, not full WFF execution."""
+    selected = deepcopy(root)
+    scene = selected.find('Scene')
+    config = scene.find('ListConfiguration')
+    option = config.find(f"ListOption[@id='{style}']")
+    assert option is not None, 'unknown profile'
+    index = list(scene).index(config)
+    scene.remove(config)
+    for n in reversed(list(option)):
+        scene.insert(index, deepcopy(n))
+    colors = PALETTES[palette].split()
+    for n in selected.iter():
+        for key, value in list(n.attrib.items()):
+            match = re.fullmatch(r'\[CONFIGURATION\.crewcheck_palette\.([01])\]', value)
+            if match:
+                n.set(key, colors[int(match[1])])
+    return selected
+
+
+def validate(root, style='0'):
     assert root.tag == 'WatchFace' and root.get('width') == root.get('height') == '450'
     scene = root.find('Scene')
     assert scene is not None and scene.get('backgroundColor') == '#FF000000'
@@ -54,19 +122,19 @@ def validate(root):
         assert not overlaps(box(a), box(b)), 'complication slots overlap'
     for slot in slots:
         sid = int(slot.get('slotId'))
-        expected_types = 'LONG_TEXT SHORT_TEXT EMPTY' if sid == 1 else 'SHORT_TEXT EMPTY'
-        assert slot.get('supportedTypes') == expected_types, 'installed types changed'
+        assert slot.get('supportedTypes') == ('LONG_TEXT SHORT_TEXT EMPTY' if sid == 1 else 'SHORT_TEXT EMPTY')
         bound = slot.find('BoundingRoundBox')
         assert bound is not None and box(bound) == (0, 0, box(slot)[2], box(slot)[3])
         round_safe(box(slot), float(bound.get('outlinePadding', '0')))
-        policy = slot.find('DefaultProviderPolicy')
         key, expected = PROVIDERS[sid]
+        policy = slot.find('DefaultProviderPolicy')
         assert policy is not None and policy.get(key) == expected, 'installed provider changed'
-        kind = 'LONG_TEXT' if sid == 1 else 'SHORT_TEXT'
-        assert policy.get('primaryProviderType' if key == 'primaryProvider' else 'defaultSystemProviderType') == kind
-        for complication in slot.findall('Complication'):
-            texts = complication.findall('PartText')
-            assert texts, 'missing complication content'
+        assert policy.get('primaryProviderType' if key == 'primaryProvider' else 'defaultSystemProviderType') == ('LONG_TEXT' if sid == 1 else 'SHORT_TEXT')
+        comps = slot.findall('Complication')
+        assert [c.get('type') for c in comps] == (['LONG_TEXT', 'SHORT_TEXT'] if sid == 1 else ['SHORT_TEXT'])
+        for comp in comps:
+            texts = comp.findall('PartText')
+            assert len(texts) == (1 if sid == 4 else 2), 'missing complication content'
             for a, b in combinations(texts, 2):
                 assert not overlaps(box(a), box(b)), 'title/value overlap'
             for part in texts:
@@ -74,19 +142,19 @@ def validate(root):
                 assert x >= 0 and y >= 0 and x + w <= box(slot)[2] and y + h <= box(slot)[3], 'text leaves slot'
                 text = part.find('Text')
                 assert text is not None and text.get('isAutoSize') == 'TRUE' and text.get('ellipsis') == 'TRUE'
-                assert text.get('maxLines') in ('1', '2'), 'explicit line budget required'
+                assert text.get('maxLines') in ('1', '2')
                 font = text.find('Font')
                 assert font is not None and float(font.get('size')) >= 18, 'tiny label reintroduced'
-                assert font.find('Template') is not None, 'live values must come from provider'
+                assert font.find('Template') is not None, 'provider values missing'
                 expressions = [p.get('expression') for p in font.findall('.//Parameter')]
                 assert expressions and all(e in ('[COMPLICATION.TITLE]', '[COMPLICATION.TEXT]') for e in expressions)
                 if sid in (3, 4, 5, 6):
                     assert hidden_in_ambient(part), 'health/routine/battery/steps must clear in ambient'
     hero = next(s for s in slots if s.get('slotId') == '1')
     assert hero.find("Complication[@type='LONG_TEXT']/PartText[@y='30']/Text").get('maxLines') == '2'
-    clock = scene.find('DigitalClock')
-    assert clock is not None
-    times = clock.findall('TimeText')
+    clocks = scene.findall('DigitalClock')
+    assert len(clocks) == 1, 'profiles must never stack their clocks'
+    times = clocks[0].findall('TimeText')
     assert len(times) == 3
     active, ambient, date = times
     assert active.get('format') == ambient.get('format') == 'hh:mm'
@@ -94,53 +162,50 @@ def validate(root):
     assert active.get('alpha') == '255' and hidden_in_ambient(active)
     assert ambient.get('alpha') == '0'
     assert ambient.find('Variant').attrib == {'mode': 'AMBIENT', 'target': 'alpha', 'value': '255'}
-    assert active.find('Font').get('size') == '88' and active.find('Font').get('weight') == 'BOLD'
+    assert (active.find('Font').get('size'), active.find('Font').get('weight')) == CLOCKS[style]
     assert ambient.find('Font').get('size') == '80' and ambient.find('Font').get('weight') == 'THIN'
+    assert ambient.find('Font').get('color') == '#FFDDE3EC'
     assert date.get('format') == 'EEE dd MMM' and float(date.find('Font').get('size')) >= 20
     for t in times:
         round_safe(box(t))
         assert all(not overlaps(box(t), box(s)) for s in slots), 'clock/date collide with live data'
-    assert not overlaps(box(active), box(date)), 'clock/date collision'
+    assert not overlaps(box(active), box(date))
     images = scene.findall('PartImage')
     assert len(images) == 1 and images[0].find('Image').get('resource') == 'crewcheck_logo_neon'
-    round_safe(box(images[0]))
-    assert hidden_in_ambient(images[0])
+    assert 'tintColor' not in images[0].attrib, 'do not recolor the original logo'
+    round_safe(box(images[0])); assert hidden_in_ambient(images[0])
     assert all(not overlaps(box(images[0]), box(s)) for s in slots)
     surfaces = scene.findall('PartDraw')
-    assert len(surfaces) == 1 and box(surfaces[0]) == box(hero), 'one quiet operational surface only'
-    assert hidden_in_ambient(surfaces[0])
-    assert surfaces[0].find('RoundRectangle/Fill').get('color') == '#FF0C1726'
-    assert not root.findall('.//SecondHand') and not root.findall('.//AnimatedImage'), 'no ticking decoration'
+    assert len(surfaces) == (0 if style == '2' else 1)
+    for surface in surfaces:
+        assert box(surface) == box(hero) and hidden_in_ambient(surface)
+        rect = surface.find('RoundRectangle')
+        assert rect.get('cornerRadiusX') == rect.get('cornerRadiusY') == ('26' if style == '0' else '14')
+        assert rect.find('Fill').get('color') == ('#FF0C1726' if style == '0' else '#FF050E18')
 
 
 def validate_logo():
     data = LOGO.read_bytes()
-    assert sha256(data).hexdigest() == 'b0394a5e1df898be1fbc2fc52b9e71e2d2a37c69ebeb6e8f689bffb39d351fdb', 'logo bytes changed'
+    assert sha256(data).hexdigest() == 'b0394a5e1df898be1fbc2fc52b9e71e2d2a37c69ebeb6e8f689bffb39d351fdb'
     assert data[:8] == b'\x89PNG\r\n\x1a\n'
     offset, compressed, ended = 8, bytearray(), False
     while offset < len(data):
         n = struct.unpack('>I', data[offset:offset + 4])[0]
-        kind = data[offset + 4:offset + 8]
-        payload = data[offset + 8:offset + 8 + n]
-        expected_crc = struct.unpack('>I', data[offset + 8 + n:offset + 12 + n])[0]
-        assert zlib.crc32(kind + payload) & 0xffffffff == expected_crc, 'PNG chunk CRC mismatch'
-        if kind == b'IHDR':
-            assert struct.unpack('>IIBBBBB', payload) == (64, 64, 8, 3, 0, 0, 0)
-        if kind == b'IDAT':
-            compressed.extend(payload)
+        kind, payload = data[offset + 4:offset + 8], data[offset + 8:offset + 8 + n]
+        crc = struct.unpack('>I', data[offset + 8 + n:offset + 12 + n])[0]
+        assert zlib.crc32(kind + payload) & 0xffffffff == crc
+        if kind == b'IHDR': assert struct.unpack('>IIBBBBB', payload) == (64, 64, 8, 3, 0, 0, 0)
+        if kind == b'IDAT': compressed.extend(payload)
         offset += n + 12
-        if kind == b'IEND':
-            ended = True
-            break
-    assert ended and offset == len(data), 'PNG truncated or has trailing bytes'
-    assert len(zlib.decompress(compressed)) == 64 * (1 + 64), 'invalid PNG pixel payload'
+        if kind == b'IEND': ended = True; break
+    assert ended and offset == len(data)
+    assert len(zlib.decompress(compressed)) == 64 * (1 + 64)
 
 
-if __name__ == '__main__':
+def run():
     root = ET.parse(FACE).getroot()
-    validate(root)
-    validate_logo()
-    # Negative tests make sure the checks reject actual regressions, not just a fixture.
+    labels = {n.get('name'): n.text for n in ET.parse(RES / 'values/strings.xml').getroot()}
+    validate_config(root, labels); validate_logo()
     mutations = [
         (".//ComplicationSlot[@slotId='3']", {'x': '48', 'y': '342'}),
         (".//ComplicationSlot[@slotId='2']", {'x': '229'}),
@@ -150,12 +215,28 @@ if __name__ == '__main__':
         ('.//ComplicationSlot//PartText', {'width': '999'}),
         ('.//DigitalClock/TimeText/Variant', {'value': '255'}),
     ]
-    for selector, attrs in mutations:
-        changed = deepcopy(root)
-        changed.find(selector).attrib.update(attrs)
-        try:
-            validate(changed)
-        except AssertionError:
-            continue
-        raise AssertionError(f'mutation not caught: {selector} {attrs}')
-    print('[watchface-premium-layout] PASS: XML, six providers, circular bounds, readable hierarchy, ambient privacy, PNG integrity; 7 negative cases')
+    negative = 0
+    for style, palette in product(CLOCKS, PALETTES):
+        resolved = resolve_profile(root, style, palette)
+        validate(resolved, style)
+        for selector, attrs in mutations:
+            changed = deepcopy(resolved); changed.find(selector).attrib.update(attrs)
+            try: validate(changed, style)
+            except AssertionError: negative += 1; continue
+            raise AssertionError(f'mutation not caught: {selector}')
+    for selector, attrs in [
+        ('UserConfigurations/ListConfiguration', {'defaultValue': '99'}),
+        ('UserConfigurations/ListConfiguration/ListOption', {'displayName': 'missing_label'}),
+        ('Scene/ListConfiguration', {'id': 'missing_config'}),
+        ('Scene/ListConfiguration/ListOption', {'id': '99'}),
+        ('UserConfigurations/ColorConfiguration/ColorOption', {'colors': '#FF000001 #55000001'}),
+    ]:
+        changed = deepcopy(root); changed.find(selector).attrib.update(attrs)
+        try: validate_config(changed, labels)
+        except AssertionError: negative += 1; continue
+        raise AssertionError(f'configuration mutation not caught: {selector}')
+    print(f'[watchface-premium-layout] PASS: 9 style/palette combinations, active/AOD rules, six stable slots, logo integrity; {negative} negative cases')
+
+
+if __name__ == '__main__':
+    run()
