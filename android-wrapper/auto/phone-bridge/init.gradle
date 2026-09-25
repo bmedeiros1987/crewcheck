@@ -1,6 +1,7 @@
-// Opt-in lab build only. Nothing under phone-bridge enters any normal app variant.
+// Opt-in lab build only. Nothing under phone-bridge enters a normal app variant.
+// With -p android-wrapper, Gradle resolves relative -I paths from android-wrapper:
 // gradle -p android-wrapper -I auto/phone-bridge/init.gradle :app:assembleDriveLab
-// When invoked from the repository root, use -I android-wrapper/auto/phone-bridge/init.gradle.
+// CI uses an absolute init-script path to avoid ambiguity.
 gradle.beforeProject { project ->
     if (project.path == ':app') {
         project.plugins.withId('com.android.application') {

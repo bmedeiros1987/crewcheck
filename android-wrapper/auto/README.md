@@ -9,15 +9,16 @@ Protótipo Android Auto / POI. **Não publicado, não aprovado pelo Google, não
 - Tela nativa no celular: consentimento de sincronização, status, até quatro destinos salvos localmente e exclusão confirmada.
 - Ponte de laboratório somente leitura com a projeção `watchContext.ts` v1 já existente. Não calcula APZ, não importa PDF e não percorre escala para inventar próxima jornada.
 - Destino aeroporto apenas quando a projeção informa um voo em REPORTING/LEAVE_SOON/BOARDING com código IATA de apresentação. Hotel apenas de `detail` no estado OVERNIGHT, nunca do hotel futuro.
-- Dados de voo, conexão, folga ou contexto desconhecido não criam sugestão de deslocamento terrestre.
-- Atualização a cada 30 segundos **apenas enquanto a tela está visível**. Sem serviço de localização, sem rastreamento e sem nova API de internet.
-- Snapshot válido por no máximo 15 minutos e nunca além de sua validade original. Relógio regressivo/futuro, mudança de contexto e clique após expiração falham fechados.
-- Projeção canônica apenas em memória, descartada ao sair de todas as telas ou desligar sincronização. Destinos manuais permanecem locais.
-- Testes JVM para contrato, estados, tempo, minimização de dados e URI de navegação.
+- Contextos de voo em andamento, conexão, folga ou estado desconhecido não criam sugestão de deslocamento terrestre.
+- Atualização a cada 30 segundos **apenas enquanto a tela está visível**. Sem serviço de localização, sem rastreamento e sem nova API de internet no módulo Auto.
+- Snapshot válido por no máximo 15 minutos e nunca além de sua validade original. Relógio regressivo/futuro, mudança de contexto e clique após expiração bloqueiam a sugestão.
+- Projeção canônica apenas em memória, descartada um segundo após sair de todas as telas, ou imediatamente ao desligar sincronização. O intervalo curto preserva a transição entre lista e detalhe. Destinos manuais permanecem locais.
+- Seleção preservada quando muda apenas a data de atualização; invalidada quando mudam jornada, hotel ou apresentação.
+- 30 testes JVM para contrato, estados, tempo, minimização de dados, URI de navegação e continuidade da seleção.
 
 ## Testar sem substituir o CrewCheck da Play
 
-O artefato `crewcheck-drive-lab-debug` contém dois APKs **do mesmo build**:
+O workflow foi configurado para gerar o artefato `crewcheck-drive-lab-debug` com dois APKs **do mesmo build**:
 
 1. `crewcheck-phone-lab.apk`: package `com.crewcheck.app.drivelab`. É uma variante isolada do aplicativo de celular existente, com o provedor de testes. Não substitui `com.crewcheck.app`.
 2. `crewcheck-drive-lab.apk`: package `com.crewcheck.auto.prototype`, com a interface Android Auto.
@@ -32,16 +33,16 @@ Use o Desktop Head Unit (DHU) para a primeira validação; habilite as opções 
 
 ## Isolamento de build
 
-A ponte, manifesto e variante de celular ficam sob `auto/phone-bridge/`. Só entram com o init script explícito:
+A ponte, manifesto e variante de celular ficam sob `auto/phone-bridge/`. Só entram com o init script explícito. Execute da raiz do repositório:
 
 ```sh
 gradle -p android-wrapper --no-daemon :auto:testDebugUnitTest :auto:assembleDebug
-gradle -p android-wrapper -I android-wrapper/auto/phone-bridge/init.gradle --no-daemon :app:assembleDriveLab
+gradle -p android-wrapper -I "$(pwd)/android-wrapper/auto/phone-bridge/init.gradle" --no-daemon :app:assembleDriveLab
 ```
 
-Nenhum arquivo do Mobile Core, parser, UI web, permissões do repositório, secrets ou dados de produção foi alterado. Builds normais de `:app:assembleDebug` / `:app:bundleRelease` não incluem esse provider. Nenhum workflow desta trilha publica na Play.
+Nenhum arquivo do Mobile Core, parser, UI web, permissões do repositório, secrets ou dados de produção foi alterado por esta implementação. Builds normais de `:app:assembleDebug` / `:app:bundleRelease` não incluem esse provider. Nenhum workflow desta trilha publica na Play.
 
-O provider aceita somente o package Auto Lab com a mesma assinatura, exige permissão de nível signature e recusa insert/update/delete. A consulta devolve uma allow-list mínima; não transfere cookies, tokens, CPF, saúde, nomes de tripulantes, arrays de escala ou campos de quarto. Não há logs de payload. O consumidor também valida a assinatura do fornecedor, o schema e a janela temporal.
+O provider aceita somente o package Auto Lab com a mesma assinatura, exige permissão de nível signature e recusa insert/update/delete. A consulta devolve uma allow-list mínima; não transfere campos de cookies, tokens, CPF, saúde, nomes de tripulantes, arrays de escala ou campos de quarto. Não há logs de payload. O consumidor também valida a assinatura do fornecedor, o schema e a janela temporal. Campos de texto livres ainda dependem da qualidade dos dados de origem.
 
 ## Limites deliberados / gates antes de produção
 

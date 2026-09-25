@@ -32,14 +32,31 @@ jobs:
           gradle-version: '8.13'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
       - name: Install Android API 36
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
       - name: Unit tests and Auto APK
         run: gradle -p android-wrapper --no-daemon --console=plain :auto:testDebugUnitTest :auto:assembleDebug --stacktrace
+      - name: Summarize unit tests
+        shell: python
+        run: |
+          import pathlib
+          import xml.etree.ElementTree as ET
+          reports = list(pathlib.Path('android-wrapper/auto/build/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+          assert reports, 'No unit-test reports were generated'
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in reports:
+              root = ET.parse(path).getroot()
+              for key in totals:
+                  totals[key] += int(root.get(key, '0'))
+          print('Drive Lab unit tests:', totals)
+          assert totals['tests'] >= 30, 'Expected at least 30 regression tests'
+          assert totals['failures'] == totals['errors'] == totals['skipped'] == 0
       - name: Build isolated phone lab with read-only bridge
-        run: gradle -p android-wrapper -I android-wrapper/auto/phone-bridge/init.gradle --no-daemon --console=plain :app:assembleDriveLab --stacktrace
+        run: gradle -p android-wrapper -I "$GITHUB_WORKSPACE/android-wrapper/auto/phone-bridge/init.gradle" --no-daemon --console=plain :app:assembleDriveLab --stacktrace
       - name: Verify separate package IDs and matching lab signatures
         shell: bash
         run: |
@@ -63,7 +80,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: crewcheck-drive-lab-tests
-          path: android-wrapper/auto/build/reports/tests/testDebugUnitTest
+          path: |
+            android-wrapper/auto/build/reports/tests/testDebugUnitTest
+            android-wrapper/auto/build/test-results/testDebugUnitTest/TEST-*.xml
           if-no-files-found: warn
       - name: Upload paired lab APKs
         uses: actions/upload-artifact@v4
