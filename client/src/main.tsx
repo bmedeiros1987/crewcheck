@@ -20,6 +20,9 @@ import "./styles/web-desktop-shell.css";
 import "./styles/bottom-nav-clarity.css";
 import "./styles/opening-splash-identity.css";
 import "./styles/atlas-1c-semantic-navigation.css";
+import "./styles/ui-lab-foundation.css";
+import "./styles/ui-lab-life-pass2.css";
+import "./styles/ui-lab-roster-pass3.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
