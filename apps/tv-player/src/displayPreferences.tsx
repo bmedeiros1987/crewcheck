@@ -53,6 +53,17 @@ export function useTvDisplayPreferences(){
 }
 export type TvDisplayPreferencesApi=ReturnType<typeof useTvDisplayPreferences>;
 
+export function effectiveTvDisplayPreferences(value:TvDisplayPreferences,visitor:boolean):TvDisplayPreferences{
+  if(!visitor)return value;
+  return {
+    ...value,
+    finance:false,
+    crew:false,
+    mobility:false,
+    visitorExplanations:true,
+  };
+}
+
 const rows:Array<[keyof TvDisplayPreferences,string,string,React.ReactNode,boolean?]>=[
   ['gate','Portão','Exibir portão/embarque quando a fonte estiver válida.',<MapPin/>],
   ['traffic','Trânsito','Priorizar duração de trajeto e atrasos na tela Agora.',<Gauge/>],
