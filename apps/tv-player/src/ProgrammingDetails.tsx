@@ -10,7 +10,7 @@ import { formatTvTime as time, activityLabel } from './presentation';
 import {
   programsForDay, programForKey, programKicker, programPresentation,
   programRouteCodes, programTitle, simpleCodeExplanation, visitorAirportLabel,
-  isVisitorPresentation, type TvProgram,
+  visitorRouteGlossary, visitorOperationalGlossary, isVisitorPresentation, type TvProgram,
 } from './programming';
 import type { TvDisplayPreferences } from './displayPreferences';
 import { UberHandoff, type TvMobilityHandoff } from './UberHandoff';
@@ -150,7 +150,9 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
       {(visitor||prefs.visitorExplanations)&&<article className="detail-module visitor-module"><header><Languages/><div><small>MODO VISITANTE</small><h2>Em linguagem simples</h2></div></header>
         <p>{program.kind==='journey'?`Trajeto: ${routeText(program,true)}.`:programTitle(program,true)}</p>
         {codeExplanation&&<p><b>{program.first.publishedCode}</b> significa “{codeExplanation}”.</p>}
-        <small>Códigos IATA aparecem acompanhados da cidade; siglas internas não ficam sem explicação.</small>
+        {program.kind==='journey'&&<div className="visitor-airport-glossary">{visitorRouteGlossary(program).map(item=><span key={item.iata}><b>{item.city}</b><small>IATA {item.iata}{item.icao?` · ICAO ${item.icao}`:''}</small></span>)}</div>}
+        <div className="visitor-term-glossary">{visitorOperationalGlossary().slice(0,visitor?5:3).map(item=><span key={item.term}><b>{item.term}</b><small>{item.meaning}</small></span>)}</div>
+        <small>Códigos aeronáuticos aparecem acompanhados de significado. Informações internas sem tradução são omitidas do destaque visitante.</small>
       </article>}
     </div>
 
